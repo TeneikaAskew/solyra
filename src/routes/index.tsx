@@ -598,7 +598,7 @@ function ChartVisual() {
                   style={{
                     bottom: `${base}%`,
                     height: `${body + 12}%`,
-                    background: up ? "var(--mint)" : "var(--ember)",
+                    backgroundColor: up ? "var(--mint)" : "var(--ember)",
                     opacity: 0.45,
                   }}
                 />
@@ -607,10 +607,11 @@ function ChartVisual() {
                   style={{
                     bottom: `${base + 4}%`,
                     height: `${body}%`,
-                    background: up ? "var(--mint)" : "var(--ember)",
+                    backgroundColor: up ? "var(--mint)" : "var(--ember)",
                     opacity: 0.85,
                   }}
                 />
+
               </span>
             );
           })}
