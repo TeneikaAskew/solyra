@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Halyard design system.
- * Ink-dark canvas, citrine accent, warm bone text. All colors in oklch.
+ * Volara design system.
+ * Near-black terminal canvas, cool white type, electric-blue signal accent.
  */
 
 @theme inline {
@@ -15,10 +15,10 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --radius-3xl: calc(var(--radius) + 16px);
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -41,9 +41,10 @@
   --color-ring-offset-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
-  --color-citrine: var(--citrine);
-  --color-citrine-soft: var(--citrine-soft);
-  --color-clay: var(--clay);
+  --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
+  --color-mint: var(--mint);
+  --color-ember: var(--ember);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -60,54 +61,59 @@
 }
 
 :root {
-  --radius: 0.25rem;
-  --background: oklch(0.16 0.012 90);
-  --foreground: oklch(0.96 0.008 90);
-  --surface: oklch(0.21 0.013 90);
-  --surface-2: oklch(0.26 0.014 90);
-  --card: oklch(0.21 0.013 90);
-  --card-foreground: oklch(0.96 0.008 90);
-  --popover: oklch(0.21 0.013 90);
-  --popover-foreground: oklch(0.96 0.008 90);
-  --primary: oklch(0.88 0.19 105);
-  --primary-foreground: oklch(0.18 0.02 105);
-  --citrine: oklch(0.88 0.19 105);
-  --citrine-soft: oklch(0.94 0.09 105);
-  --clay: oklch(0.68 0.13 45);
-  --secondary: oklch(0.26 0.014 90);
-  --secondary-foreground: oklch(0.96 0.008 90);
-  --muted: oklch(0.26 0.014 90);
-  --muted-foreground: oklch(0.72 0.014 90);
-  --accent: oklch(0.3 0.02 100);
-  --accent-foreground: oklch(0.96 0.008 90);
+  --radius: 0.875rem;
+  --background: oklch(0.13 0.004 260);
+  --foreground: oklch(0.98 0.002 260);
+  --surface: oklch(0.168 0.005 260);
+  --surface-2: oklch(0.21 0.006 260);
+  --card: oklch(0.168 0.005 260);
+  --card-foreground: oklch(0.98 0.002 260);
+  --popover: oklch(0.168 0.005 260);
+  --popover-foreground: oklch(0.98 0.002 260);
+  --primary: oklch(0.99 0 0);
+  --primary-foreground: oklch(0.15 0.004 260);
+  --signal: oklch(0.66 0.19 262);
+  --signal-soft: oklch(0.8 0.11 255);
+  --mint: oklch(0.82 0.16 165);
+  --ember: oklch(0.75 0.16 60);
+  --secondary: oklch(0.21 0.006 260);
+  --secondary-foreground: oklch(0.98 0.002 260);
+  --muted: oklch(0.21 0.006 260);
+  --muted-foreground: oklch(0.68 0.008 260);
+  --accent: oklch(0.24 0.008 260);
+  --accent-foreground: oklch(0.98 0.002 260);
   --destructive: oklch(0.62 0.2 25);
-  --destructive-foreground: oklch(0.98 0.005 90);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.88 0.19 105);
-  --chart-1: oklch(0.88 0.19 105);
-  --chart-2: oklch(0.68 0.13 45);
-  --chart-3: oklch(0.72 0.09 190);
-  --chart-4: oklch(0.6 0.11 300);
-  --chart-5: oklch(0.8 0.05 90);
-  --sidebar: oklch(0.21 0.013 90);
-  --sidebar-foreground: oklch(0.96 0.008 90);
-  --sidebar-primary: oklch(0.88 0.19 105);
-  --sidebar-primary-foreground: oklch(0.18 0.02 105);
-  --sidebar-accent: oklch(0.26 0.014 90);
-  --sidebar-accent-foreground: oklch(0.96 0.008 90);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.88 0.19 105);
+  --destructive-foreground: oklch(0.98 0.002 260);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.66 0.19 262);
+  --chart-1: oklch(0.66 0.19 262);
+  --chart-2: oklch(0.82 0.16 165);
+  --chart-3: oklch(0.75 0.16 60);
+  --chart-4: oklch(0.7 0.15 320);
+  --chart-5: oklch(0.85 0.02 260);
+  --sidebar: oklch(0.168 0.005 260);
+  --sidebar-foreground: oklch(0.98 0.002 260);
+  --sidebar-primary: oklch(0.66 0.19 262);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.21 0.006 260);
+  --sidebar-accent-foreground: oklch(0.98 0.002 260);
+  --sidebar-border: oklch(1 0 0 / 9%);
+  --sidebar-ring: oklch(0.66 0.19 262);
 }
 
 .dark {
-  --background: oklch(0.16 0.012 90);
-  --foreground: oklch(0.96 0.008 90);
+  --background: oklch(0.13 0.004 260);
+  --foreground: oklch(0.98 0.002 260);
 }
 
 @layer base {
   * {
     border-color: var(--color-border);
+  }
+
+  html {
+    scroll-behavior: smooth;
   }
 
   body {
@@ -122,24 +128,42 @@
   h3,
   h4 {
     font-family: var(--font-display);
-    letter-spacing: -0.03em;
+    letter-spacing: -0.035em;
   }
+}
+
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility halo {
+  background:
+    radial-gradient(60% 55% at 50% 0%, color-mix(in oklab, var(--signal) 22%, transparent), transparent 70%);
+}
+
+@utility panel {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--surface) 92%, transparent), color-mix(in oklab, var(--background) 92%, transparent));
+  border: 1px solid var(--border);
 }
 
 @utility grid-lines {
   background-image:
     linear-gradient(to right, var(--color-border) 1px, transparent 1px),
     linear-gradient(to bottom, var(--color-border) 1px, transparent 1px);
-  background-size: 72px 72px;
-}
-
-@utility glow-citrine {
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--citrine) 30%, transparent),
-    0 24px 80px -32px color-mix(in oklab, var(--citrine) 55%, transparent);
+  background-size: 88px 88px;
 }
 
 @utility marquee-track {
-  animation: marquee 34s linear infinite;
+  animation: marquee 46s linear infinite;
+}
+
+@utility marquee-track-slow {
+  animation: marquee 90s linear infinite;
 }
 
 @keyframes marquee {
@@ -149,4 +173,19 @@
   to {
     transform: translateX(-50%);
   }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility rise-in {
+  animation: rise-in 0.5s ease-out;
 }
