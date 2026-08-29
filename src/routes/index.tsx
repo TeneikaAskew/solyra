@@ -588,8 +588,8 @@ function ChartVisual() {
         ))}
         <div className="absolute inset-0 flex items-end gap-[3px]">
           {Array.from({ length: 54 }).map((_, i) => {
-            const base = 32 + Math.sin(i * 0.32) * 20 + Math.sin(i * 0.11) * 14;
-            const body = 6 + Math.abs(Math.sin(i * 0.9)) * 22;
+            const base = Number((32 + Math.sin(i * 0.32) * 20 + Math.sin(i * 0.11) * 14).toFixed(2));
+            const body = Number((6 + Math.abs(Math.sin(i * 0.9)) * 22).toFixed(2));
             const up = Math.sin(i * 0.9) > 0;
             return (
               <span key={i} className="relative flex-1" style={{ height: "100%" }}>
