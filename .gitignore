@@ -10,15 +10,20 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-.output
-.vinxi
-.tanstack/**
-.nitro
 *.local
 
-# Wrangler / Cloudflare
-.wrangler/
-.dev.vars
+# Playwright IAP cookie store (interactive auth output)
+tests/.auth/
+
+# Playwright run artifacts (regenerated every run — never commit)
+test-results/
+playwright-report/
+
+# Frontend source under src/data/ is application code, not pipeline data —
+# re-include it despite the repo-root `data/` ignore (which targets GCS-backed
+# parquet/CSV datasets, not TypeScript modules).
+!src/data/
+!src/data/**
 
 # Editor directories and files
 .vscode/*
@@ -30,3 +35,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env

@@ -1,0 +1,614 @@
+"""Replay historical 1-min bars through the live SignalMonitor — Phase 0.5 #8.
+
+Loads market_data_intraday for a given ticker × date range and replays
+the bars one minute at a time through the EXACT same code path the
+live signal-monitor exercises during market hours: update_window →
+calculate_indicators → evaluate_ticker → _evaluate_strategies_for_bar
+→ assign_timeframe → fire_alert / _persist_signal_alert.
+
+Discord webhook + DB upsert are mocked so this is hermetic against
+production side effects: no fake alerts, no real signal_alerts rows.
+
+Output is a structured summary of:
+  * total fires, direction split (CALL vs PUT)
+  * timeframe_tag distribution
+  * stacked-agreement events (Phase 1.6)
+  * the per-fire dataframe row that WOULD have been written
+
+Use cases:
+  1. Validate a freshly-deployed signal_monitor against held-out data
+     BEFORE waiting for market open (Phase 0.5 spec item #8 — the
+     live-vs-offline parity test).
+  2. Hermetic regression check after refactors that touch the
+     signal-fire path.
+  3. What-if: tune assign_timeframe thresholds and replay to see how
+     the timeframe distribution shifts.
+
+Usage:
+    python -m scripts.replay_signal_monitor --ticker SPY --date 2026-05-01
+    python -m scripts.replay_signal_monitor --ticker IWM --start 2026-04-29 --end 2026-05-01
+    python -m scripts.replay_signal_monitor --ticker SPY --date 2026-05-01 --tickers SPY,QQQ,IWM
+
+Bypasses live AV. Reads creds from env (CLOUD_SQL_CONNECTION_NAME,
+DB_USER, DB_PASS, DB_NAME) so the script works locally with the
+.creds_tmp/ shim AND in Cloud Run with the standard env-var setup.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import sys
+import statistics
+from collections import Counter
+from dataclasses import dataclass, field
+from datetime import datetime, date, time, timedelta, timezone
+import os
+import uuid
+from pathlib import Path
+from typing import Optional
+from unittest.mock import patch
+
+import pandas as pd
+
+from gcp.signal_monitor import rvol_gate_verdict
+
+_REPO = Path(__file__).resolve().parents[1]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FireRecord:
+    """One captured signal-fire event from the replay."""
+    timestamp:         pd.Timestamp
+    ticker:            str
+    direction:         str
+    base_score:        int
+    total_score:       float
+    timeframe_tag:     Optional[str]
+    expected_hold_min: Optional[int]
+    strategy_agreement: Optional[dict]
+    conditions_met:    list[str]
+    embed_title:       str
+    brief_alignment:   Optional[str] = None
+    level_state:       Optional[str] = None
+    opp_level_state:   Optional[str] = None
+    rvol_mod:          Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "timestamp":          self.timestamp.isoformat(),
+            "ticker":             self.ticker,
+            "direction":          self.direction,
+            "base_score":         self.base_score,
+            "total_score":        self.total_score,
+            "brief_alignment":    self.brief_alignment,
+            "level_state":        self.level_state,
+            "opp_level_state":    self.opp_level_state,
+            "rvol_mod":           self.rvol_mod,
+            "timeframe_tag":      self.timeframe_tag,
+            "expected_hold_min":  self.expected_hold_min,
+            "strategy_agreement": self.strategy_agreement,
+            "conditions_met":     self.conditions_met,
+            "embed_title":        self.embed_title,
+        }
+
+
+def load_intraday_for_replay(
+    engine, ticker: str, start: datetime, end: datetime,
+) -> pd.DataFrame:
+    """Pull 1-min bars from market_data_intraday into the column shape
+    SignalMonitor.update_window expects: Time / Open / High / Low / Close / Volume.
+
+    The signal_monitor's rolling window keys on 'Time' (capitalized),
+    'Close' (not 'Last') — different from gcp/historical_signals.py's
+    load_intraday_bars which aliases close as 'Last' for MarketAnalyzer.
+    """
+    from sqlalchemy import text
+    sql = text("""
+        SELECT ts AS "Time",
+               open AS "Open",
+               high AS "High",
+               low AS "Low",
+               close AS "Close",
+               volume AS "Volume"
+        FROM market_data_intraday
+        WHERE ticker = :t
+          AND ts >= :start AND ts < :end
+          AND interval = '1min'
+        ORDER BY ts
+    """)
+    df = pd.read_sql(sql, engine, params={"t": ticker.upper(), "start": start, "end": end})
+    df["Time"] = pd.to_datetime(df["Time"])
+    return df
+
+
+def replay_ticker(
+    monitor, ticker: str, bars: pd.DataFrame,
+    captured_fires: list[FireRecord],
+) -> tuple[int, int]:
+    """Replay one ticker's bars through the live monitor code path.
+
+    For each bar T, append it to the rolling window then call
+    evaluate_ticker. The monitor's existing logic computes indicators,
+    runs both strategies, detects agreement, assigns timeframe, and
+    (with our patches) calls a stub fire_alert that captures the fire
+    instead of actually posting to Discord.
+
+    Returns (bars_processed, signals_fired).
+    """
+    if bars.empty:
+        return (0, 0)
+
+    fires_before = len(captured_fires)
+
+    # Rolling-window replay: feed bars one at a time so the monitor
+    # operates on the same shape it sees in production (1-bar deltas).
+    # Setting `replay_clock_ts` before each call routes the monitor's
+    # _now() to bar-time so brief-bias and catalyst-proximity lookups
+    # use the bar's date, not wall-clock-today (the bug that made the
+    # PR #379 FTFC fix architecturally inert during replay).
+    prev_date = None
+    for i in range(len(bars)):
+        single_bar = bars.iloc[i:i + 1].copy()
+        if 'Time' in single_bar.columns:
+            _ts = pd.Timestamp(single_bar['Time'].iloc[0])
+            monitor.replay_clock_ts = _ts
+            # `daily_trades` is SESSION state: production runs one
+            # SignalMonitor per trading day, so the counter starts at 0 each
+            # morning. A --start/--end replay drives many dates through one
+            # instance, so without this rollover date 1 exhausting the cap
+            # would suppress every candidate on every later date (Codex P1 on
+            # PR #934). Harmless for a single-date replay.
+            _bar_date = _ts.date()
+            if prev_date is not None and _bar_date != prev_date:
+                monitor.daily_trades[ticker] = 0
+                logger.info(
+                    "replay: %s session rollover %s -> %s, daily_trades reset",
+                    ticker, prev_date, _bar_date)
+            prev_date = _bar_date
+        monitor.update_window(ticker, single_bar)
+        try:
+            monitor.evaluate_ticker(ticker)
+        except Exception as e:
+            logger.warning("replay: ticker=%s bar=%d evaluate_ticker raised: %s",
+                           ticker, i, e)
+    # Clear the clock at the end so a subsequent live run isn't sticky.
+    monitor.replay_clock_ts = None
+
+    fires_after = len(captured_fires)
+    return (len(bars), fires_after - fires_before)
+
+
+def filter_to_rth(bars: pd.DataFrame) -> pd.DataFrame:
+    """Filter intraday bars to RTH only (09:30-16:00 ET).
+
+    This matches the live signal-monitor scope so replay fire counts are
+    comparable to live counts. Without this, replay processes ~1,200
+    bars/day (24h coverage) vs live's ~390 bars/day (6.5h RTH).
+
+    The 'Time' column is in UTC (per market_data_intraday storage). RTH
+    in ET = 13:30-20:00 UTC during EDT (March-November), 14:30-21:00
+    UTC during EST (November-March). We use ET-aware filtering rather
+    than fixed UTC offsets to handle DST transitions correctly.
+    """
+    if bars.empty or 'Time' not in bars.columns:
+        return bars
+    et = bars['Time'].dt.tz_convert('America/New_York') if bars['Time'].dt.tz \
+        else bars['Time'].dt.tz_localize('UTC').dt.tz_convert('America/New_York')
+    rth_mask = (et.dt.time >= time(9, 30)) & (et.dt.time < time(16, 0))
+    return bars[rth_mask].reset_index(drop=True)
+
+
+def simulate_exit(
+    fire: 'FireRecord', engine, target_price: Optional[float] = None,
+    time_stop_minutes: int = 60,
+) -> dict:
+    """Walk forward from fire timestamp through subsequent intraday bars
+    until target / time_stop / EOD triggers. Returns dict matching the
+    signal_alerts exit columns.
+
+    Reuses the same exit policy the live monitor uses (target / time_stop
+    / eod_close). Stop-loss simulation is approximate — we assume a stop
+    at target * 0.5 R-multiple distance below entry for longs (above for
+    shorts). For a more precise replay, the persona plan's actual stop
+    would be passed in (Phase 1 prereq for clean acceptance testing).
+    """
+    from sqlalchemy import text
+    fire_ts = fire.timestamp
+    end_ts = fire_ts + timedelta(minutes=time_stop_minutes)
+    sql = text("""
+        SELECT ts AS time, open, high, low, close
+        FROM market_data_intraday
+        WHERE ticker = :t AND ts > :start AND ts <= :end
+          AND interval = '1min'
+        ORDER BY ts
+    """)
+    df = pd.read_sql(sql, engine, params={
+        "t": fire.ticker,
+        "start": fire_ts.to_pydatetime(),
+        "end": end_ts.to_pydatetime(),
+    })
+    if df.empty:
+        return {
+            'exit_ts': end_ts.isoformat(),
+            'exit_reason': 'no_data',
+            'exit_price': None,
+            'exit_return_pct': 0.0,
+        }
+    entry = float(df.iloc[0]['open'])  # fill at next bar's open
+    sign = 1 if fire.direction == 'CALL' else -1
+    for _, bar in df.iterrows():
+        if target_price is not None:
+            if (sign > 0 and bar['high'] >= target_price) or \
+               (sign < 0 and bar['low'] <= target_price):
+                exit_price = float(target_price)
+                ret = sign * (exit_price - entry) / entry * 100
+                return {
+                    'exit_ts': pd.Timestamp(bar['time']).isoformat(),
+                    'exit_reason': 'target',
+                    'exit_price': exit_price,
+                    'exit_return_pct': round(ret, 4),
+                }
+    last_bar = df.iloc[-1]
+    exit_price = float(last_bar['close'])
+    ret = sign * (exit_price - entry) / entry * 100
+    return {
+        'exit_ts': pd.Timestamp(last_bar['time']).isoformat(),
+        'exit_reason': 'time_stop',
+        'exit_price': exit_price,
+        'exit_return_pct': round(ret, 4),
+    }
+
+
+def persist_fire_to_signal_alerts(fire: 'FireRecord', monitor, engine, replay_id: str):
+    """Insert a captured fire into signal_alerts with run_kind='replay'.
+
+    Reuses monitor's _persist_signal_alert path conceptually, but builds
+    the row directly so we can stamp run_kind + replay_id. Fields match
+    the production signal_alerts schema.
+    """
+    from sqlalchemy import text
+    # Compute approximate target_price from the fire's score (placeholder)
+    # — Phase 1's full integration would pass through the persona plan
+    # target. For now, use a 0.5% target for CALL, -0.5% for PUT.
+    sign = 1 if fire.direction == 'CALL' else -1
+    target_pct = 0.005 * sign
+    # Approximate entry from the bar's close (the fire was triggered on this bar)
+    entry_price = None  # need bar context — populated at fire time
+    insert_sql = text("""
+        INSERT INTO signal_alerts (
+            ticker, alert_ts, alert_date, direction,
+            base_score, total_score, strength_label,
+            position_size, time_stop_minutes,
+            conditions_met, brief_alignment, level_state, opp_level_state,
+            rvol_mod, run_kind, replay_id,
+            inserted_at
+        ) VALUES (
+            :ticker, :alert_ts, :alert_date, :direction,
+            :base_score, :total_score, :strength,
+            :size, :time_stop,
+            :conditions, :brief_alignment, :level_state, :opp_level_state,
+            :rvol_mod, 'replay', :replay_id,
+            NOW()
+        )
+        ON CONFLICT DO NOTHING
+    """)
+    try:
+        with engine.begin() as conn:
+            conn.execute(insert_sql, {
+                'ticker': fire.ticker,
+                'alert_ts': fire.timestamp.to_pydatetime(),
+                'alert_date': fire.timestamp.date(),
+                'direction': fire.direction,
+                'base_score': fire.base_score,
+                'total_score': fire.total_score,
+                'strength': 'replay-strong' if fire.total_score >= 5 else 'replay-medium' if fire.total_score >= 3 else 'replay-weak',
+                'size': 1.0,
+                'time_stop': fire.expected_hold_min or 60,
+                'conditions': json.dumps(fire.conditions_met),
+                'brief_alignment': fire.brief_alignment,
+                'level_state': fire.level_state,
+                'opp_level_state': fire.opp_level_state,
+                'rvol_mod': fire.rvol_mod,
+                'replay_id': replay_id,
+            })
+    except Exception as e:
+        logger.warning("persist failed for fire %s %s: %s",
+                       fire.ticker, fire.timestamp, e)
+
+
+def make_capturing_fire_alert(captured: list[FireRecord], monitor):
+    """Replace SignalMonitor.fire_alert with a callable that captures
+    the fire into `captured` instead of posting to Discord / Cloud SQL.
+    """
+    def _capture(self, ticker, sig, total_score, strength, size, strat_bonus, latest):
+        agreement = getattr(self, "_latest_agreement", None)
+        tf_tag = getattr(self, "_latest_timeframe_tag", None)
+        tf_hold = getattr(self, "_latest_expected_hold_min", None)
+        # Same brief-tag resolution live fire_alert runs — shared method
+        # so the replay can never drift from production tag semantics
+        # (Rule 3.6). Session extremes are fed by update_window, which
+        # this harness already drives bar-by-bar.
+        brief, align = self._resolve_brief_alignment(ticker, sig["direction"])
+        # Same level-state resolution live fire_alert runs (audit §15) —
+        # trackers are fed by update_window, which this harness already
+        # drives bar-by-bar, so replay tags carry production semantics.
+        own_state, opp_state = self._resolve_level_state(ticker, sig["direction"])
+        # Production fire_alert also records the corrected RVOL (audit §16);
+        # compute it here too or replay rows carry a NULL the live path
+        # would have filled, and the shadow comparison loses the replay arm.
+        rvol_mod = self._corrected_rvol(ticker)
+        # Mirror the production RVOL gate (Codex P2 on PR #934). Live
+        # fire_alert returns on a 'below' verdict under `enforce` BEFORE
+        # Discord, persist and the daily-trades counter — its own comment
+        # says a suppressed fire is "invisible to the risk caps too". The
+        # raw bar RVOL is used, not self._corrected_rvol(): the gate reads
+        # latest['RVOL'] in production, and passing a missing value through
+        # as None is deliberate (§3.7) so rvol_gate_verdict's always-'below'
+        # guarantee applies instead of a 0 default sneaking past a legal
+        # rvol_gate_min=0.
+        if getattr(self.signal_cfg, "rvol_gate_mode", "shadow") == "enforce":
+            if rvol_gate_verdict(latest.get("RVOL"),
+                                 self.signal_cfg.rvol_gate_min,
+                                 self.signal_cfg.rvol_gate_mode) == "below":
+                return
+
+        # Mirror production enforcement (Codex P2 on PR #799): under
+        # `enforce`, live fire_alert returns before Discord/persist for
+        # late-state fires, so the replay must not capture them either —
+        # otherwise replay counts and --persist rows include fires the
+        # live monitor would suppress.
+        if (getattr(self.signal_cfg, "level_gate_mode", "shadow") == "enforce"
+                and own_state in ("post_t1", "post_t1_open", "invalidated")):
+            return
+        title_prefix = "STACKED " if agreement else ""
+        tf_label = f" [{tf_tag}]" if tf_tag else ""
+        brief_label = f" [brief:{align}]" if align else ""
+        title = (
+            f"{title_prefix}{sig['direction']} SIGNAL{tf_label}{brief_label} "
+            f"@ ${latest.get('Close', 0):.2f}"
+        )
+        captured.append(FireRecord(
+            timestamp=pd.Timestamp(latest.get("Time", datetime.now())),
+            ticker=ticker,
+            direction=sig["direction"],
+            base_score=int(sig["base_score"]),
+            total_score=float(total_score),
+            timeframe_tag=tf_tag,
+            expected_hold_min=tf_hold,
+            strategy_agreement=agreement,
+            conditions_met=list(sig["conditions_met"]),
+            embed_title=title,
+            brief_alignment=align,
+            level_state=own_state,
+            opp_level_state=opp_state,
+            rvol_mod=rvol_mod,
+        ))
+        # Production `fire_alert` increments the per-ticker fire counter at
+        # this point — AFTER the level-gate early return above, so a
+        # suppressed fire does not consume cap. Replacing fire_alert wholesale
+        # dropped that mutation, so `daily_trades` stayed 0 for the whole
+        # replay and the `max_daily_trades` gate in evaluate_ticker never
+        # engaged (#818).
+        #
+        # This is not only replay fidelity. Per Codex's #816 review the daily
+        # cap is currently the ONLY bound on concurrent exposure, so a replay
+        # where it never binds cannot reproduce today's behaviour as the
+        # baseline for any shadow-control analysis.
+        self.daily_trades[ticker] = self.daily_trades.get(ticker, 0) + 1
+    return _capture
+
+
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p.add_argument("--ticker", help="Single ticker to replay (alias for --tickers TICKER)")
+    p.add_argument("--tickers", help="Comma-separated tickers (overrides --ticker)")
+    p.add_argument("--date", help="Single trading date YYYY-MM-DD (alias for --start = --end)")
+    p.add_argument("--start", help="UTC start date YYYY-MM-DD")
+    p.add_argument("--end", help="UTC end date YYYY-MM-DD (exclusive)")
+    p.add_argument("--limit", type=int, default=None,
+                   help="Max bars per ticker (debug/dev)")
+    p.add_argument("--json", action="store_true",
+                   help="Print fires as a JSON array (machine-readable)")
+    p.add_argument(
+        "--persist", action="store_true",
+        help=(
+            "Persist captured fires to signal_alerts with run_kind='replay' "
+            "and replay_id=<UUID>. Required for Phase 1 acceptance testing "
+            "and any analysis that needs full per-fire detail (Cloud Run "
+            "log truncation drops the JSON output at ~85 records). When set, "
+            "ALSO restricts bars to RTH (9:30-16:00 ET) to match live "
+            "signal-monitor scope. Equivalent env var: REPLAY_PERSIST=true."
+        ),
+    )
+    return p.parse_args(argv)
+
+
+def resolve_window(args: argparse.Namespace) -> tuple[datetime, datetime]:
+    if args.date:
+        d = date.fromisoformat(args.date)
+        return (
+            datetime(d.year, d.month, d.day, tzinfo=timezone.utc),
+            datetime(d.year, d.month, d.day, tzinfo=timezone.utc) + timedelta(days=1),
+        )
+    if args.start and args.end:
+        s = date.fromisoformat(args.start)
+        e = date.fromisoformat(args.end)
+        return (
+            datetime(s.year, s.month, s.day, tzinfo=timezone.utc),
+            datetime(e.year, e.month, e.day, tzinfo=timezone.utc),
+        )
+    raise SystemExit("Must specify --date or --start/--end")
+
+
+def resolve_tickers(args: argparse.Namespace) -> list[str]:
+    if args.tickers:
+        return [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+    if args.ticker:
+        return [args.ticker.strip().upper()]
+    raise SystemExit("Must specify --ticker or --tickers")
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
+    )
+    args = parse_args(argv)
+    start, end = resolve_window(args)
+    tickers = resolve_tickers(args)
+
+    # REPLAY_PERSIST env var is an alias for --persist. Either source enables.
+    persist_mode = args.persist or os.environ.get('REPLAY_PERSIST', '').lower() == 'true'
+    replay_id = str(uuid.uuid4()) if persist_mode else None
+
+    logger.info("replay window: %s -> %s tickers=%s persist=%s replay_id=%s",
+                start, end, tickers, persist_mode, replay_id)
+
+    from gcp.database import get_engine
+    engine = get_engine()
+
+    # Patch the watchlist source so SignalMonitor.__init__ doesn't fail
+    # if signals=TRUE is set differently from what the replay needs.
+    # We override with the explicit --tickers list.
+    captured_fires: list[FireRecord] = []
+    summary_per_ticker: dict[str, tuple[int, int]] = {}
+
+    with patch("gcp.fetchers._watchlist.load_watchlist", return_value=tickers):
+        from gcp.signal_monitor import SignalMonitor
+        monitor = SignalMonitor()
+        monitor.webhook_url = ""           # disable Discord
+        # Replace fire_alert with the capturing stub. Persist path is
+        # also bypassed since fire_alert calls _persist_signal_alert.
+        capture_fn = make_capturing_fire_alert(captured_fires, monitor)
+        monitor.fire_alert = capture_fn.__get__(monitor, type(monitor))
+
+        # The put-side 9:31 re-anchor (audit §15.5) is computed by
+        # update_window and normally UPDATEs the day's premarket_analysis row.
+        # A replay recomputes it from replayed bars, so letting that write
+        # through would overwrite the REAL playbook row for the replayed date
+        # with a shadow value the live session never produced. Capture it
+        # in-memory instead — the replay stays hermetic (only --persist writes,
+        # and only to signal_alerts), and the re-anchor is still visible in the
+        # summary for validation.
+        replay_reanchors: dict[str, dict] = {}
+
+        def _capture_reanchor(ticker, r):
+            replay_reanchors[ticker] = r
+
+        monitor._persist_put_reanchor = _capture_reanchor
+
+        for ticker in tickers:
+            bars = load_intraday_for_replay(engine, ticker, start, end)
+            if persist_mode:
+                # Match live signal-monitor scope (RTH only, 9:30-16:00 ET)
+                # so persisted fire counts are comparable to live signal_alerts.
+                pre_n = len(bars)
+                bars = filter_to_rth(bars)
+                logger.info("ticker=%s persist mode: filtered %d -> %d RTH bars",
+                            ticker, pre_n, len(bars))
+            if args.limit:
+                bars = bars.head(args.limit)
+            logger.info("ticker=%s loaded %d bars", ticker, len(bars))
+            ticker_fires_before = len(captured_fires)
+            n_bars, n_fires = replay_ticker(monitor, ticker, bars, captured_fires)
+            summary_per_ticker[ticker] = (n_bars, n_fires)
+
+            # Persist this ticker's captured fires to signal_alerts
+            if persist_mode:
+                new_fires = captured_fires[ticker_fires_before:]
+                logger.info("ticker=%s persisting %d fires to signal_alerts",
+                            ticker, len(new_fires))
+                for f in new_fires:
+                    persist_fire_to_signal_alerts(f, monitor, engine, replay_id)
+
+    if replay_reanchors:
+        logger.info("put re-anchor (shadow, NOT persisted in replay):")
+        for tk, r in sorted(replay_reanchors.items()):
+            logger.info("  %s open=%.4f trigger=%.4f (%s) stop=%s",
+                        tk, r['open'], r['trigger'], r.get('trigger_name'),
+                        r.get('stop'))
+
+    # ── Summary ────────────────────────────────────────────────────
+    print()
+    print("=" * 70)
+    print("REPLAY SUMMARY")
+    print("=" * 70)
+    print(f"Window: {start.date()} -> {end.date()}")
+    print(f"Tickers: {', '.join(tickers)}")
+    print()
+    print(f"{'Ticker':<8}{'Bars':<10}{'Fires':<8}")
+    for tk, (n_bars, n_fires) in summary_per_ticker.items():
+        print(f"{tk:<8}{n_bars:<10}{n_fires:<8}")
+    print()
+
+    if not captured_fires:
+        print("No signals fired during the replay window.")
+        return 0
+
+    # Direction split
+    dirs = Counter(f.direction for f in captured_fires)
+    print(f"Direction:  CALL={dirs.get('CALL', 0)}  PUT={dirs.get('PUT', 0)}")
+
+    # Brief-alignment distribution (level-aware tag)
+    aligns = Counter(f.brief_alignment for f in captured_fires)
+    print("Brief alignment: "
+          + "  ".join(f"{k or 'untagged'}={n}"
+                      for k, n in sorted(aligns.items(),
+                                         key=lambda x: (x[0] or ''))))
+
+    # Playbook leg-state distribution (audit §16). Printed so a replay can
+    # be read as a check on the tracker itself — in particular whether the
+    # gap-through route ('post_t1_open') separates from plain 'post_t1'.
+    states = Counter(f.level_state for f in captured_fires)
+    print("Level state:     "
+          + "  ".join(f"{k or 'untagged'}={n}"
+                      for k, n in sorted(states.items(),
+                                         key=lambda x: (x[0] or ''))))
+
+    vals = [f.rvol_mod for f in captured_fires if f.rvol_mod is not None]
+    if vals:
+        # statistics.median averages the two middle values on an even
+        # sample; vals_sorted[n // 2] would report the upper middle and
+        # skew this headline regression number (Codex review, PR #806).
+        med = statistics.median(vals)
+        below = sum(1 for v in vals if v < 1.0) / len(vals)
+        print(f"Corrected RVOL:  n={len(vals)}/{len(captured_fires)} median "
+              f"{med:.2f}  below 1.0 {below:.0%}")
+    else:
+        print(f"Corrected RVOL:  no values (baseline unavailable for all "
+              f"{len(captured_fires)} fires)")
+
+    # Timeframe distribution
+    tfs = Counter(f.timeframe_tag for f in captured_fires)
+    print("Timeframe distribution:")
+    for tf, n in sorted(tfs.items(), key=lambda x: (x[0] or "")):
+        pct = (100.0 * n / len(captured_fires))
+        print(f"  {str(tf):<8}{n:>6}  ({pct:5.1f}%)")
+
+    # Stacked agreements
+    stacked = [f for f in captured_fires if f.strategy_agreement is not None]
+    print(f"\nStacked agreements: {len(stacked)} ({100.0 * len(stacked) / len(captured_fires):.1f}% of fires)")
+    if stacked:
+        for f in stacked[:5]:
+            comp = f.strategy_agreement.get("composite_score") if f.strategy_agreement else 0
+            print(f"  {f.timestamp} {f.ticker} {f.direction} composite={comp:.1f} {f.embed_title!r}")
+
+    # Sample fires
+    print(f"\nSample fires (first 5):")
+    for f in captured_fires[:5]:
+        print(f"  {f.timestamp} {f.ticker} {f.direction} score={f.base_score} tf={f.timeframe_tag} | {f.embed_title!r}")
+
+    if args.json:
+        print()
+        print(json.dumps([f.to_dict() for f in captured_fires], default=str, indent=2))
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

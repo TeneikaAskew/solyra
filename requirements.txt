@@ -1,0 +1,128 @@
+# Core data processing
+pandas>=2.1.4,<3
+numpy>=1.26.2
+pyarrow>=14.0.0
+
+# Market data fetching (AlphaVantage via REST API)
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+lxml>=4.9.3
+fredapi>=0.5.0
+# Yahoo Finance — used by scripts/fetch_earnings_calendar.py for the
+# bulk earnings calendar (Calendars.get_earnings_calendar) and per-ticker
+# fallback. 1.2+ required for the Calendars class.
+yfinance>=1.3.0
+
+# Data visualization
+matplotlib>=3.8.2
+seaborn>=0.13.0
+plotly>=5.18.0
+
+# Web apps
+streamlit>=1.28.0
+
+# Finviz peers + news scraper. lib/ticker_info.py imports
+# `finvizfinance` lazily inside get_peers / get_finviz_news, but
+# tests/test_ticker_info.py uses @patch("finvizfinance.quote.finvizfinance")
+# which requires the module to be importable at patch time. Kept in the
+# base requirements alongside google-genai for the same reason — pytest
+# collects every tests/ file regardless of deploy environment.
+finvizfinance>=1.0.0
+
+# Jupyter notebook support
+jupyter>=1.0.0
+jupyterlab>=4.0.9
+notebook>=7.0.6
+ipykernel>=6.27.1
+ipywidgets>=8.1.0
+
+# Machine learning
+scikit-learn>=1.3.2
+scipy>=1.11.4
+
+# Options Greeks calculation
+py_vollib>=1.0.1
+# Vectorized BSM IV solver — used by lib/options_greeks.py to compute Greeks
+# for SPX (AV does not provide Greeks for cash-settled index options).
+# numba 0.65 broke py_vollib_vectorized's recursive black() function
+# (numba.core.errors.TypingError: cannot type infer runaway recursion).
+# Pin <0.65 until py_vollib_vectorized ships a fix. See PR #579 CI.
+numba<0.65
+py_vollib_vectorized>=0.1.1
+
+# Date and time handling
+python-dateutil>=2.8.0
+pytz>=2025.1
+
+# API and data formats
+protobuf>=4.24.0
+websockets>=11.0
+
+# Resilience
+tenacity>=8.2.0
+
+# Testing (optional)
+pytest>=7.4.0
+pytest-cov>=4.1.0
+playwright>=1.40.0
+pytest-playwright>=0.4.0
+
+# Code quality (optional)
+black>=23.0.0
+flake8>=6.1.0
+mypy>=1.5.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Google Cloud
+cloud-sql-python-connector[pg8000]>=1.7.0
+google-cloud-storage>=2.14.0
+# google-genai is imported at module load by lib/agents/vertex_adapter.py
+# (`from google.genai import types`), so tests/test_agent_vertex_adapter.py
+# fails collection / execution without it. Kept in the base requirements
+# for the same reason as the LLM adapter pydantic block below: pytest
+# collects every tests/ file regardless of deploy environment.
+google-genai>=1.0.0
+SQLAlchemy>=2.0.0
+psycopg2-binary>=2.9.9
+pandas-market-calendars>=4.3.1
+
+# LLM agent adapters (lib/agents/*) — pydantic schemas drive the
+# structured-output contract; both anthropic and vertex adapters import
+# pydantic at module load, so tests fail to collect without it. Kept in
+# the base requirements (not just requirements-gcp.txt) because pytest
+# collects every tests/ file regardless of which deploy environment
+# you're running in.
+pydantic>=2.12.0
+
+# Discord-interactions service (gcp/discord_interactions.py) and the
+# insights/admin API router (platform/api/routers/insights.py) both
+# import fastapi at module level, so tests/test_discord_interactions.py
+# and tests/test_routers_insights_admin.py fail collection without it.
+# pynacl is the Ed25519 verifier for Discord webhook signatures.
+fastapi>=0.115.0
+pynacl>=1.5.0
+# httpx is fastapi.testclient's HTTP transport — required at import
+# time even though it's "optional" per FastAPI's own deps. Without it
+# `from fastapi.testclient import TestClient` raises RuntimeError.
+httpx>=0.27.0
+
+# python-multipart backs FastAPI's UploadFile/Form parsing — required at
+# runtime by POST /api/journal/import/preview (platform/api/routers/journal.py,
+# multipart broker-CSV upload). Without it, FastAPI raises at request time
+# ("Form data requires python-multipart to be installed").
+python-multipart>=0.0.9
+
+# cachetools backs the TTLCache used by platform/api/main.py at module
+# load (_SECTORS_CACHE). Was never pinned here even though it's imported
+# unconditionally at import time — every route and every test that
+# imports platform.api.main (e.g. tests/integration/test_journal_*.py)
+# fails collection with ModuleNotFoundError without it.
+cachetools>=5.3.0
+# sqlparse backs gcp/queries/run_query.py (the db-query Cloud Run Job's
+# statement splitter). It was only in requirements-gcp.txt, so the
+# module had zero CI import coverage — an import break there would
+# first surface as a production db-query failure. Found by
+# tests/test_import_coverage.py on 2026-08-24.
+sqlparse>=0.4.4
