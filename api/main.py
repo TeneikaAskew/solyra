@@ -1,0 +1,1236 @@
+"""
+Trading Platform API - FastAPI backend
+Thin wrapper around existing lib/ modules
+"""
+import logging
+import os
+import sys
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+import httpx
+import pandas as pd
+from cachetools import TTLCache
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+# Add project root to path so we can import lib/
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from lib.data_loader import DataLoader
+from api.routers import live, options, playbook, backtest, signals, insights, journal, dashboard, catalysts, admin, analytics, config as config_router, health, glossary, grid, magnitude, earnings, waitlist
+from api.auth import auth_middleware, current_user_email
+
+logger = logging.getLogger(__name__)
+
+# ── Cloud SQL availability ───────────────────────────────────────────────────
+_CLOUD_SQL = False
+try:
+    from gcp.database import is_cloud_sql_configured, query_to_dataframe
+    _CLOUD_SQL = is_cloud_sql_configured()
+except Exception:
+    pass
+
+app = FastAPI(title="Trading Platform API", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origin_regex=r"https://.*\.app\.github\.dev",  # GitHub Codespace tunnel URLs
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# App-level auth, gated by AUTH_MODE (firebase | iap | open). No-op in iap/open
+# mode so production (IAP) is byte-for-byte unchanged. See api/auth.py.
+app.middleware("http")(auth_middleware)
+
+# ── Router includes ──────────────────────────────────────────────────────────
+app.include_router(live.router, prefix="")
+# `grid` MUST mount before `options` — `options` has a greedy
+# `GET /api/options/{ticker}/{date_str}` that would otherwise shadow
+# `/api/options/SPY/grid` and `/api/options/SPY/nodes` (matching
+# `date_str="grid"` / `"nodes"` and 400ing in date validation).
+# Regression test: tests/test_grid_router.py::TestRoutingOrder.
+app.include_router(grid.router, prefix="")
+app.include_router(options.router, prefix="")
+app.include_router(playbook.router, prefix="")
+app.include_router(backtest.router, prefix="")
+app.include_router(signals.router, prefix="")
+app.include_router(insights.router, prefix="")
+app.include_router(journal.router, prefix="")
+app.include_router(dashboard.router, prefix="")
+app.include_router(catalysts.router, prefix="")
+app.include_router(admin.router)
+app.include_router(analytics.router, prefix="")
+app.include_router(config_router.router, prefix="")
+app.include_router(health.router, prefix="")
+app.include_router(glossary.router, prefix="")
+app.include_router(magnitude.router, prefix="")
+app.include_router(earnings.router, prefix="")
+app.include_router(waitlist.router, prefix="")
+
+data_loader = DataLoader()
+
+# ── AlphaVantage helper for reference levels ─────────────────────────────────
+AV_API_KEY = os.environ.get("AV_API_KEY") or os.environ.get("ALPHA_VANTAGE_API_KEY", "")
+AV_BASE = "https://www.alphavantage.co/query"
+# Cloud SQL data older than this is considered stale and we prefer AV
+MAX_CLOUD_SQL_STALENESS_DAYS = 3
+
+
+def _fetch_av_daily_reference(ticker: str, before_date: str) -> Optional[dict]:
+    """Fetch most recent daily OHLC from AlphaVantage strictly before before_date.
+
+    Args:
+        ticker: symbol (e.g. 'IWM')
+        before_date: YYYY-MM-DD string; returns the trading day immediately before this
+
+    Returns: {"date": "YYYYMMDD", "open": ..., "high": ..., "low": ..., "close": ...} or None
+    """
+    if not AV_API_KEY:
+        return None
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            r = client.get(AV_BASE, params={
+                "function": "TIME_SERIES_DAILY",
+                "symbol": ticker,
+                "outputsize": "compact",  # last 100 days is plenty
+                "apikey": AV_API_KEY,
+            })
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            series = data.get("Time Series (Daily)", {})
+            if not series:
+                return None
+            # Find most recent date strictly before before_date
+            dates_sorted = sorted(series.keys(), reverse=True)
+            for d in dates_sorted:
+                if d < before_date:
+                    bar = series[d]
+                    return {
+                        "date": d.replace("-", ""),
+                        "open": float(bar["1. open"]),
+                        "high": float(bar["2. high"]),
+                        "low": float(bar["3. low"]),
+                        "close": float(bar["4. close"]),
+                    }
+    except Exception as e:
+        logger.warning("AV daily reference fetch failed: %s", e)
+    return None
+
+# ── App-level API routes ─────────────────────────────────────────────────────
+
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "ok",
+        "project_root": str(PROJECT_ROOT),
+        "cloud_sql": _CLOUD_SQL,
+        "gcs_bucket": "adept-mountain-474619-d4-trading-data",
+        "lib_dir_exists": (PROJECT_ROOT / "lib").is_dir(),
+    }
+
+
+@app.get("/api/me")
+async def get_current_user(request: Request):
+    """Return the authenticated identity + admin flag.
+
+    `email` is the server-VERIFIED identity: the Firebase token's email in
+    firebase mode, the IAP header in iap mode, or None in local/open. `is_admin`
+    is computed server-side (vs ADMIN_EMAIL) so the frontend can't spoof it.
+    """
+    email = current_user_email(request)
+    admin_email = os.environ.get("ADMIN_EMAIL", "teneika@bictech.org").strip().lower()
+    return {"email": email, "is_admin": bool(email and email == admin_email)}
+
+
+# ── /dev — test-account info page (behind IAP in prod) ─────────────────────
+# Shows the Playwright tester service account, IAP audience, and ready-to-run
+# curl/gcloud snippets. Visible only to humans who already passed IAP, so the
+# page itself is fine to expose publicly within the deployed service.
+
+_DEV_ALLOWED_EMAIL = os.environ.get("DEV_ALLOWED_EMAIL", "teneika@bictech.org").lower()
+
+
+def _iap_user_email(request: Request) -> Optional[str]:
+    """Extract the authenticated user's email from the IAP-injected header.
+
+    IAP sets `X-Goog-Authenticated-User-Email` as `accounts.google.com:user@domain`.
+    Returns None when the header is absent (e.g. local dev without IAP).
+    """
+    raw = request.headers.get("x-goog-authenticated-user-email")
+    if not raw:
+        return None
+    return raw.split(":", 1)[-1].strip().lower()
+
+
+_STRAT_ENGINE_TICKERS = ("IWM", "SPY", "QQQ")
+_STRAT_ENGINE_TFS = ("5m", "15m", "30m")
+
+
+def _strat_engine_state() -> list[dict]:
+    """Snapshot the on-shelf strat-engine state for the /dev page.
+
+    Reads model metadata (metrics.json sidecar) + the live-ECE snapshot
+    from GCS for each deployed (ticker, tf) cell. The model is FROZEN
+    (calibration=none, 143-col enriched feature set). This function does
+    not load model.pkl — it only reports artifact metadata, suitable for
+    an operational health snapshot.
+
+    Returns a list of dicts (one per cell). Cells whose artifacts are
+    missing return available=False so the page degrades gracefully.
+    """
+    rows: list[dict] = []
+    try:
+        from google.cloud import storage as _gcs
+    except ImportError:
+        return rows
+    bucket_name = os.environ.get("GCS_BUCKET", "adept-mountain-474619-d4-trading-data")
+    try:
+        client = _gcs.Client()
+        bucket = client.bucket(bucket_name)
+    except Exception:
+        return rows
+
+    # Live-ECE snapshot — same source as the structure brief.
+    import json as _json
+    snap_cells: dict = {}
+    try:
+        snap_blob = bucket.blob("research/strat_engine/structure_brief_latest.json")
+        if snap_blob.exists():
+            snap_cells = _json.loads(snap_blob.download_as_bytes()).get("cells", {})
+    except Exception:
+        snap_cells = {}
+
+    import re as _re
+    for ticker in _STRAT_ENGINE_TICKERS:
+        for tf in _STRAT_ENGINE_TFS:
+            prefix = f"research/strat_engine/{ticker.lower()}_{tf}"
+            row = {
+                "ticker": ticker,
+                "tf": tf,
+                "available": False,
+                "model_version": None,
+                "last_train_date": None,
+                "live_ece": None,
+            }
+            # Anchor `available` on the SERVED model.pkl pointer, not on
+            # any metrics_<ts>.json — the trainer writes metrics for every
+            # run (incl. diagnostic variants) but only the LOCKED-default
+            # config updates the top-level model.pkl pointer.
+            try:
+                model_blob = bucket.blob(f"{prefix}/model.pkl")
+                model_blob.reload()
+                model_mtime = model_blob.updated
+            except Exception:
+                rows.append(row)
+                continue
+            row["available"] = True
+            try:
+                model_epoch = int(model_mtime.timestamp())
+                best = None
+                best_delta = None
+                for b in client.list_blobs(bucket, prefix=f"{prefix}/metrics_"):
+                    if not b.name.endswith(".json"):
+                        continue
+                    m = _re.search(r"/metrics_(\d{8,})\.json$", b.name)
+                    if not m:
+                        continue
+                    epoch = int(m.group(1))
+                    delta = abs(epoch - model_epoch)
+                    if best_delta is None or delta < best_delta:
+                        best = b
+                        best_delta = delta
+                if best is not None:
+                    metrics = _json.loads(best.download_as_bytes())
+                    row["model_version"] = (
+                        metrics.get("run_id")
+                        or metrics.get("config_signature")
+                        or metrics.get("model_version")
+                    )
+                    if row["model_version"] is None:
+                        m = _re.search(r"/metrics_(\d{8,})\.json$", best.name)
+                        if m:
+                            row["model_version"] = f"epoch-{m.group(1)}"
+                    row["last_train_date"] = (
+                        metrics.get("trained_at")
+                        or metrics.get("computed_at")
+                        or metrics.get("train_until")
+                    )
+                if row["last_train_date"] is None:
+                    row["last_train_date"] = model_mtime.isoformat()
+                if row["model_version"] is None:
+                    row["model_version"] = f"epoch-{model_epoch}"
+            except Exception:
+                pass
+            ece = snap_cells.get(f"{ticker}_{tf}", {}).get("live_ece")
+            if ece is not None:
+                row["live_ece"] = ece
+            rows.append(row)
+    return rows
+
+
+@app.get("/dev", include_in_schema=False)
+async def dev_info(request: Request):
+    from fastapi.responses import HTMLResponse, PlainTextResponse
+
+    email = _iap_user_email(request)
+    # Local dev (no IAP header) → allow. Cloud Run with IAP → require allow-list match.
+    if email is not None and email != _DEV_ALLOWED_EMAIL:
+        return PlainTextResponse("Forbidden", status_code=403)
+
+    project_id = os.environ.get("GCP_PROJECT_ID", "adept-mountain-474619-d4")
+    sa_email = os.environ.get(
+        "PLAYWRIGHT_TESTER_SA",
+        f"playwright-tester@{project_id}.iam.gserviceaccount.com",
+    )
+    iap_audience = os.environ.get("IAP_OAUTH_CLIENT_ID", "<unset — see notes>")
+    revision = os.environ.get("K_REVISION", "local")
+    service_url = str(request.base_url).rstrip("/")
+    viewer = email or "(local dev — no IAP)"
+
+    # Strat-engine operational state. Read-only snapshot of the on-shelf
+    # model artifacts + live ECE per (ticker, tf). Best-effort; if GCS
+    # is unreachable the section renders an "unavailable" note.
+    strat_rows = _strat_engine_state()
+    if strat_rows:
+        strat_table_rows = []
+        for r in strat_rows:
+            if r["available"]:
+                ver = r["model_version"] or "—"
+                trained = r["last_train_date"] or "—"
+                ece = (
+                    f"{r['live_ece']:.4f}" if r["live_ece"] is not None else "—"
+                )
+                strat_table_rows.append(
+                    f"<span class='k'>{r['ticker']:>3} {r['tf']:>3}</span>"
+                    f"  <span class='v'>{ver[:24]:<24}</span>"
+                    f"  <span class='v'>{trained[:19]:<19}</span>"
+                    f"  <span class='v'>{ece}</span>"
+                )
+            else:
+                strat_table_rows.append(
+                    f"<span class='k'>{r['ticker']:>3} {r['tf']:>3}</span>"
+                    f"  <span class='warn'>no artifacts</span>"
+                )
+        strat_table = "\n".join(strat_table_rows)
+    else:
+        strat_table = "(strat-engine artifact state unavailable — GCS unreachable)"
+
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>/dev — test accounts</title>
+<style>
+  body {{ font-family: ui-monospace,Menlo,monospace; background:#111318; color:#e2e2e8;
+         max-width: 880px; margin: 2rem auto; padding: 0 1.5rem; line-height: 1.5; }}
+  h1 {{ color:#8bceff; margin-bottom: 0.25rem; }}
+  h2 {{ color:#bdc8d2; margin-top: 2rem; border-bottom: 1px solid #282a2e; padding-bottom: .25rem; }}
+  code, pre {{ background:#1a1c20; padding: 0.15rem 0.4rem; border-radius: 4px; }}
+  pre {{ padding: .8rem 1rem; overflow-x:auto; white-space: pre-wrap; word-break: break-word; }}
+  .k {{ color:#6e7781; }}
+  .v {{ color:#e2e2e8; }}
+  .warn {{ color:#ffb86b; }}
+</style></head>
+<body>
+<h1>/dev — test accounts &amp; auth</h1>
+<p class="k">Internal page. Visible only to authenticated IAP users.</p>
+
+<h2>Environment</h2>
+<pre><span class="k">viewer         </span><span class="v">{viewer}</span>
+<span class="k">service_url    </span><span class="v">{service_url}</span>
+<span class="k">revision       </span><span class="v">{revision}</span>
+<span class="k">project_id     </span><span class="v">{project_id}</span>
+<span class="k">cloud_sql      </span><span class="v">{_CLOUD_SQL}</span></pre>
+
+<h2>Playwright tester service account</h2>
+<pre><span class="k">email          </span><span class="v">{sa_email}</span>
+<span class="k">iap_audience   </span><span class="v">{iap_audience}</span></pre>
+
+<h2>Strat-engine model state (on-shelf, no scheduler)</h2>
+<pre><span class="k">cell  </span> <span class="k">model_version           </span>  <span class="k">last_train_date    </span>  <span class="k">live_ece</span>
+{strat_table}</pre>
+<p class="k">Calibrated structure prediction. Not a directional or P&amp;L edge. Use with discretion.
+Tracks B (execution backtest) and C (direction R&amp;D) reported FAIL — the model is callable on demand
+via <code>POST /api/admin/strat-engine/predict</code> and is not wired into any scheduler or user-facing route.
+See <code>docs/STRAT_ENGINE_OPERATIONS.md</code> for the activation gate.</p>
+
+<p class="warn">Note: programmatic auth against this IAP-on-Cloud-Run service
+is currently broken (both for SA keys and gcloud user tokens). The legacy
+OAuth-brand admin API was sunset in March 2026 and the auto-managed IAP
+audience does not accept programmatically minted JWTs. Browser SSO is the
+only working path right now; curl/CI flows return 401.</p>
+
+<h2>Browser access (works today)</h2>
+<pre># Sign into bictech.org in your browser, then open:
+{service_url}/
+
+# IAP redirects to Google OAuth, then routes you to the app.</pre>
+
+<h2>If you need a local terminal session</h2>
+<pre>gcloud run services proxy trading-platform --region us-east1
+# then http://localhost:8080 — the proxy authenticates as your gcloud user.</pre>
+
+<h2>Run Playwright locally</h2>
+<pre>cd platform &amp;&amp; npm run test
+# E2E tests target http://localhost:5173 (see playwright.config.ts).
+# To probe the deployed Cloud Run instance use the gcloud token recipe above —
+# the SA path will return 401 until OAuth-brand replacement ships.</pre>
+
+</body></html>"""
+    return HTMLResponse(html)
+
+
+@app.get("/api/market/dates/{ticker}")
+async def get_available_dates(ticker: str):
+    """List available trading dates for a ticker (Cloud SQL → local fallback)."""
+    ticker_upper = ticker.upper()
+    ticker_lower = ticker.lower()
+
+    # ── Cloud SQL primary ────────────────────────────────────────────────────
+    if _CLOUD_SQL:
+        try:
+            df = query_to_dataframe(
+                """
+                SELECT DISTINCT DATE(ts) AS trade_date
+                FROM market_data_intraday
+                WHERE ticker = :ticker AND interval = '1min'
+                ORDER BY trade_date DESC
+                """,
+                {"ticker": ticker_upper},
+            )
+            if not df.empty:
+                dates = [d.strftime("%Y%m%d") for d in df["trade_date"]]
+                # Derive months from the dates for month-level navigation
+                months = sorted(set(d[:6] for d in dates), reverse=True)
+                return {
+                    "ticker": ticker_upper,
+                    "source": "cloud_sql",
+                    "dates": dates,
+                    "months": months,
+                }
+        except Exception as e:
+            logger.warning("Cloud SQL dates query failed, falling back to local: %s", e)
+
+    # ── GCS fallback ─────────────────────────────────────────────────────────
+    from api import gcs_reader
+    dates: list[str] = []
+    months: list[str] = []
+    try:
+        # Daily minute parquets
+        minute_blobs = gcs_reader.list_matching_blobs(
+            f"data/{ticker_lower}/minute/",
+            rf"^{ticker_lower}_minute_(\d{{8}})\.parquet$",
+        )
+        for blob_name in minute_blobs:
+            filename = blob_name.rsplit("/", 1)[-1]
+            date_part = filename.rsplit("_", 1)[-1].replace(".parquet", "")
+            if len(date_part) == 8 and date_part.isdigit():
+                dates.append(date_part)
+        # Monthly intraday parquets
+        intraday_blobs = gcs_reader.list_matching_blobs(
+            f"data/{ticker_lower}/intraday/",
+            rf"^{ticker_lower}_av_1min_(\d{{6}})\.parquet$",
+        )
+        for blob_name in intraday_blobs:
+            filename = blob_name.rsplit("/", 1)[-1]
+            month_part = filename.rsplit("_", 1)[-1].replace(".parquet", "")
+            if len(month_part) == 6 and month_part.isdigit():
+                months.append(month_part)
+    except Exception as e:
+        logger.warning("GCS dates list failed for %s: %s", ticker_upper, e)
+
+    return {
+        "ticker": ticker_upper,
+        "source": "gcs",
+        "dates": sorted(set(dates), reverse=True),
+        "months": sorted(set(months), reverse=True),
+    }
+
+
+@app.get("/api/market/data/{ticker}/{date}")
+async def get_market_data(
+    ticker: str,
+    date: str,
+    timeframe: int = Query(default=1, description="Timeframe in minutes: 1, 5, 15, 30, 60"),
+    end_time: Optional[str] = Query(default=None, description="HH:MM (24h ET) cutoff; returns bars with open_time <= end_time"),
+):
+    """Load intraday OHLCV data for a specific ticker and date.
+
+    date format: YYYYMMDD (e.g., 20260220) or YYYYMM (e.g., 202602)
+    Returns candlestick + volume arrays ready for TradingView Lightweight Charts.
+    If `end_time` is provided (HH:MM ET), only bars whose open-time is at or before
+    that time are returned — used by historical review mode.
+    """
+    ticker_upper = ticker.upper()
+    ticker_lower = ticker.lower()
+
+    try:
+        df = _load_date_data(ticker_lower, date)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    if df is None or df.empty:
+        raise HTTPException(status_code=404, detail=f"No data for {ticker_upper} on {date}")
+
+    # Normalize column names
+    col_map = {}
+    for col in df.columns:
+        lc = col.lower()
+        if lc == 'open':
+            col_map[col] = 'open'
+        elif lc == 'high':
+            col_map[col] = 'high'
+        elif lc == 'low':
+            col_map[col] = 'low'
+        elif lc == 'close':
+            col_map[col] = 'close'
+        elif lc == 'volume':
+            col_map[col] = 'volume'
+    df = df.rename(columns=col_map)
+
+    required = {'open', 'high', 'low', 'close', 'volume'}
+    missing = required - set(df.columns)
+    if missing:
+        raise HTTPException(status_code=500, detail=f"Missing columns: {missing}")
+
+    # Ensure index is datetime
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'Time' in df.columns:
+            df.index = pd.to_datetime(df['Time'])
+        elif 'time' in df.columns:
+            df.index = pd.to_datetime(df['time'])
+        elif 'timestamp' in df.columns:
+            df.index = pd.to_datetime(df['timestamp'])
+        elif 'Datetime' in df.columns:
+            df.index = pd.to_datetime(df['Datetime'])
+
+    # Strip timezone
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+
+    df = df.sort_index()
+
+    # Filter to requested date if YYYYMMDD
+    if len(date) == 8:
+        target = pd.Timestamp(f"{date[:4]}-{date[4:6]}-{date[6:8]}")
+        df = df[df.index.date == target.date()]
+
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"No data for {ticker_upper} on {date}")
+
+    # Aggregate timeframe if > 1 minute
+    if timeframe > 1:
+        df = _aggregate_timeframe(df, timeframe)
+
+    # Apply end_time cutoff — bars with open-time at or before the target
+    if end_time:
+        try:
+            parts = end_time.split(":")
+            cutoff = datetime.strptime(f"{parts[0]}:{parts[1]}", "%H:%M").time()
+            df = df[df.index.time <= cutoff]
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid end_time format (expected HH:MM): {e}")
+
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"No data for {ticker_upper} on {date} at or before end_time={end_time}")
+
+    # Convert to chart format
+    # Timestamps as Unix seconds (naive ET — what the chart expects).
+    # Use as_unit('s') instead of astype('int64')//1e9: the latter assumes a
+    # nanosecond-resolution index, but pandas 2.2+/3.x default to us-resolution
+    # for to_datetime, which made //1e9 return seconds÷1000 (1970-era values)
+    # and broke every chart timestamp. as_unit('s') is resolution-independent.
+    times = df.index.as_unit('s').astype('int64').tolist()
+
+    candlestick = []
+    volume = []
+    for i, (t, row) in enumerate(zip(times, df.itertuples())):
+        o, h, l, c = float(row.open), float(row.high), float(row.low), float(row.close)
+        v = float(row.volume) if pd.notna(row.volume) else 0
+        candlestick.append({"time": t, "open": o, "high": h, "low": l, "close": c})
+        color = "rgba(8, 153, 129, 0.5)" if c >= o else "rgba(242, 54, 69, 0.5)"
+        volume.append({"time": t, "value": v, "color": color})
+
+    return {
+        "ticker": ticker_upper,
+        "date": date,
+        "timeframe": timeframe,
+        "count": len(candlestick),
+        "candlestick": candlestick,
+        "volume": volume,
+    }
+
+
+def _fetch_week_range(ticker_upper: str, before_date: str) -> Optional[dict]:
+    """Fetch the last 5 trading days BEFORE `before_date` and return the
+    overall high/low/start/end across that window. Prefers Cloud SQL
+    `market_data_daily`. Returns None on failure.
+
+    `before_date` format: "YYYY-MM-DD" (exclusive upper bound).
+    """
+    if not _CLOUD_SQL:
+        return None
+    try:
+        df = query_to_dataframe(
+            """
+            SELECT date, high, low, close, rsi_14
+            FROM market_data_daily
+            WHERE ticker = :ticker AND date < :dt
+            ORDER BY date DESC LIMIT 5
+            """,
+            {"ticker": ticker_upper, "dt": before_date},
+        )
+        if df.empty or len(df) < 2:
+            return None
+        # Ensure ascending order for start/end date labels
+        df = df.sort_values("date")
+        start_raw = df["date"].iloc[0]
+        end_raw = df["date"].iloc[-1]
+        start_str = start_raw.strftime("%Y-%m-%d") if hasattr(start_raw, "strftime") else str(start_raw)
+        end_str = end_raw.strftime("%Y-%m-%d") if hasattr(end_raw, "strftime") else str(end_raw)
+        rsi_series = df["rsi_14"].dropna() if "rsi_14" in df.columns else None
+        return {
+            "high": float(df["high"].max()),
+            "low": float(df["low"].min()),
+            "avg_close": float(df["close"].mean()),
+            "avg_rsi_14": float(rsi_series.mean()) if rsi_series is not None and not rsi_series.empty else None,
+            "start_date": start_str,
+            "end_date": end_str,
+            "sessions": int(len(df)),
+        }
+    except Exception as e:
+        logger.warning("Week range query failed for %s: %s", ticker_upper, e)
+        return None
+
+
+@app.get("/api/market/reference/{ticker}/{date}")
+async def get_reference_levels(ticker: str, date: str):
+    """Get previous day OHLC reference levels for support/resistance.
+
+    Strategy:
+      1. AlphaVantage TIME_SERIES_DAILY when requested date is within the last ~30 days
+         (AV is always real-time; avoids stale Cloud SQL issues)
+      2. Cloud SQL market_data_daily for historical requests (fast, has indicators)
+      3. Local parquet fallback (minute bars aggregated)
+
+    Returns the OHLC of the trading day immediately before the requested date,
+    plus a `week` block containing the high/low across the previous 5 trading days.
+    """
+    ticker_upper = ticker.upper()
+    ticker_lower = ticker.lower()
+    date_str = f"{date[:4]}-{date[4:6]}-{date[6:8]}" if len(date) == 8 else date
+
+    # Determine if request is "recent" (within last 30 days) — prefer AV for freshness
+    try:
+        requested_dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+        days_ago = (datetime.now().date() - requested_dt).days
+        is_recent = days_ago < 30
+    except ValueError:
+        is_recent = False
+
+    # ── AlphaVantage primary for recent dates ────────────────────────────────
+    if is_recent:
+        av_result = _fetch_av_daily_reference(ticker_upper, date_str)
+        if av_result:
+            # Week range always comes from Cloud SQL (AV daily doesn't give us
+            # a tidy 5-row window with one call). Best-effort — None if CSQL down.
+            week = _fetch_week_range(ticker_upper, date_str)
+            return {
+                "ticker": ticker_upper,
+                "source": "alphavantage",
+                "week": week,
+                **av_result,
+            }
+        logger.info("AV reference unavailable for %s, falling back to Cloud SQL", ticker_upper)
+
+    # ── Cloud SQL for historical (or AV fallback) ────────────────────────────
+    if _CLOUD_SQL:
+        try:
+            df = query_to_dataframe(
+                """
+                SELECT date, open, high, low, close
+                FROM market_data_daily
+                WHERE ticker = :ticker AND date < :dt
+                ORDER BY date DESC LIMIT 1
+                """,
+                {"ticker": ticker_upper, "dt": date_str},
+            )
+            if not df.empty:
+                row = df.iloc[0]
+                ref_date = row["date"]
+                ref_date_str = ref_date.strftime("%Y-%m-%d") if hasattr(ref_date, "strftime") else str(ref_date)
+                # Check if Cloud SQL data is stale relative to the request
+                try:
+                    ref_dt = datetime.strptime(ref_date_str, "%Y-%m-%d").date()
+                    staleness_days = (requested_dt - ref_dt).days if is_recent else 0
+                except Exception:
+                    staleness_days = 0
+
+                return {
+                    "ticker": ticker_upper,
+                    "source": "cloud_sql",
+                    "stale_days": staleness_days if staleness_days > MAX_CLOUD_SQL_STALENESS_DAYS else 0,
+                    "date": ref_date_str.replace("-", ""),
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "week": _fetch_week_range(ticker_upper, date_str),
+                }
+        except Exception as e:
+            logger.warning("Cloud SQL reference query failed: %s", e)
+
+    # ── GCS fallback ─────────────────────────────────────────────────────────
+    from api import gcs_reader
+    all_dates: list[str] = []
+    try:
+        minute_blobs = gcs_reader.list_matching_blobs(
+            f"data/{ticker_lower}/minute/",
+            rf"^{ticker_lower}_minute_(\d{{8}})\.parquet$",
+        )
+        for blob_name in minute_blobs:
+            filename = blob_name.rsplit("/", 1)[-1]
+            date_part = filename.rsplit("_", 1)[-1].replace(".parquet", "")
+            if len(date_part) == 8 and date_part.isdigit():
+                all_dates.append(date_part)
+    except Exception as e:
+        logger.warning("GCS minute list failed for %s: %s", ticker_upper, e)
+    all_dates.sort()
+
+    if date not in all_dates:
+        raise HTTPException(status_code=404, detail=f"Date {date} not found for {ticker}")
+
+    idx = all_dates.index(date)
+    if idx == 0:
+        raise HTTPException(status_code=404, detail="No previous day available")
+
+    prev_date = all_dates[idx - 1]
+
+    try:
+        df = _load_date_data(ticker_lower, prev_date)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    col_map = {}
+    for col in df.columns:
+        lc = col.lower()
+        if lc in ('open', 'high', 'low', 'close', 'volume'):
+            col_map[col] = lc
+    df = df.rename(columns=col_map)
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        for col_name in ('Time', 'time', 'timestamp', 'Datetime'):
+            if col_name in df.columns:
+                df.index = pd.to_datetime(df[col_name])
+                break
+
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+
+    df = df.sort_index()
+
+    target = pd.Timestamp(f"{prev_date[:4]}-{prev_date[4:6]}-{prev_date[6:8]}")
+    df = df[df.index.date == target.date()]
+
+    rth_mask = (df.index.hour * 60 + df.index.minute >= 570) & (df.index.hour * 60 + df.index.minute < 960)
+    df = df[rth_mask]
+
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"No RTH data for {ticker} on {prev_date}")
+
+    return {
+        "ticker": ticker_upper,
+        "date": prev_date,
+        "open": float(df['open'].iloc[0]),
+        "high": float(df['high'].max()),
+        "low": float(df['low'].min()),
+        "close": float(df['close'].iloc[-1]),
+        "week": _fetch_week_range(ticker_upper, date_str),
+    }
+
+
+def _coverage_from_frames(symbols: list[str], daily_tickers: set[str], intraday_tickers: set[str]) -> dict:
+    """Shape the coverage map. Uppercases + dedupes, preserving first-seen order."""
+    out: dict[str, dict[str, bool]] = {}
+    for s in symbols:
+        u = s.strip().upper()
+        if not u or u in out:
+            continue
+        out[u] = {"intraday": u in intraday_tickers, "daily": u in daily_tickers}
+    return out
+
+
+def _coverage_query(sql: str, params: Optional[dict] = None) -> pd.DataFrame:
+    """Run a coverage SQL query, raising on failure.
+
+    Uses ``query_to_dataframe_strict`` (the RAISING helper), NOT the
+    swallowing ``query_to_dataframe`` used elsewhere in this file for
+    endpoints that have a legitimate GCS fallback. The coverage endpoint has
+    no fallback data source — a real DB error must surface as 5xx, never as
+    a silently-empty "no coverage for any symbol" result (CLAUDE.md Rule 3.7).
+    """
+    from gcp.database import query_to_dataframe_strict
+    return query_to_dataframe_strict(sql, params)
+
+
+@app.get("/api/market/coverage")
+async def market_coverage(symbols: str = Query(..., description="Comma-separated tickers")):
+    """Data coverage per symbol — drives the type-ahead's full/daily/new badges.
+
+    Issues exactly two batched queries regardless of symbol count (CLAUDE.md
+    Rule 0: batch by grouping key, never per-row/per-symbol): one covering
+    market_data_daily, one covering market_data_intraday (the partitioned
+    parent table — see gcp/schema.sql:100).
+
+    NOTE: `symbols` is silently truncated to the first 50 tickers (see the
+    `[:50]` slice below) — requests beyond that count get no error, just a
+    coverage map missing the overflow symbols.
+    """
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()][:50]
+    if not syms:
+        raise HTTPException(status_code=422, detail="symbols query param required")
+
+    # no _CLOUD_SQL gate needed: get_engine() raises RuntimeError, caught below -> 503
+    try:
+        daily = _coverage_query(
+            "SELECT DISTINCT ticker FROM market_data_daily WHERE ticker = ANY(:syms)",
+            {"syms": syms},
+        )
+        intraday = _coverage_query(
+            "SELECT DISTINCT ticker FROM market_data_intraday WHERE ticker = ANY(:syms)",
+            {"syms": syms},
+        )
+    except Exception as e:
+        logger.error("market coverage query failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"database query failed: {type(e).__name__}")
+
+    return {"coverage": _coverage_from_frames(
+        syms,
+        set(daily["ticker"]) if daily is not None and not daily.empty else set(),
+        set(intraday["ticker"]) if intraday is not None and not intraday.empty else set(),
+    )}
+
+
+# ── Sector rotation (SPDR daily closes) ──────────────────────────────────────
+
+SECTOR_NAMES = {
+    "XLK": "Technology",
+    "XLF": "Financials",
+    "XLE": "Energy",
+    "XLV": "Health Care",
+    "XLI": "Industrials",
+    "XLY": "Cons. Discretionary",
+    "XLP": "Cons. Staples",
+    "XLU": "Utilities",
+    "XLB": "Materials",
+    "XLRE": "Real Estate",
+    "XLC": "Communication",
+}
+
+_SECTORS_CACHE: TTLCache = TTLCache(maxsize=1, ttl=600)  # 10m — sector closes update once/day
+
+
+def _sectors_query(sql: str, params: Optional[dict] = None) -> pd.DataFrame:
+    """Run the sector-rotation SQL query, raising on failure.
+
+    Same rationale as ``_coverage_query``: uses ``query_to_dataframe_strict``
+    (the RAISING helper) so a real DB error surfaces as a 503, never as a
+    silently-empty "all sectors unavailable" result (CLAUDE.md Rule 3.7).
+    """
+    from gcp.database import query_to_dataframe_strict
+    return query_to_dataframe_strict(sql, params)
+
+
+def _is_response_json_safe(resp: dict) -> bool:
+    """Sanity check: no sector row contains a non-finite float (CLAUDE.md Rule 3.7).
+
+    Prevents cache poisoning with NaN/Inf that would crash JSON serialization.
+    Returns True if safe; False if any sector row has a non-finite float value.
+    """
+    import math
+    for sector in resp.get("sectors", []):
+        for key, val in sector.items():
+            if isinstance(val, float) and not math.isfinite(val):
+                return False
+    return True
+
+
+def _sector_rotation_from_df(df: pd.DataFrame) -> tuple:
+    """Pure helper: per-sector 1d/5d % change from ticker/date/close rows.
+
+    ``df`` is expected to hold up to the last ~6 trading days of closes per
+    ticker (see the query in ``market_sectors``). Change is computed only
+    from real prior closes — a symbol with 0 or 1 rows gets no fabricated
+    chg_1d_pct (CLAUDE.md Rule 3.7: no silent 0-fallback on a financial
+    field). ``chg_5d_pct`` requires >=6 rows; otherwise it's omitted (None)
+    but the row still reports "ok" as long as chg_1d_pct is available.
+
+    Returns (as_of, sectors) where as_of is the max date across all rows
+    (as an ISO string) or None if df is empty.
+    """
+    sectors: list = []
+    as_of = None
+    has_rows = df is not None and not df.empty
+    if has_rows:
+        as_of = str(df["date"].max())
+
+    for symbol, name in SECTOR_NAMES.items():
+        sub = df[df["ticker"] == symbol] if has_rows else df.iloc[0:0] if df is not None else pd.DataFrame()
+        sub = sub.sort_values("date")
+        # Defense in depth: drop any rows with NaN closes so NULL values in
+        # market_data_daily don't propagate as NaN in the response (CLAUDE.md Rule 3.7).
+        sub = sub.dropna(subset=["close"])
+        n = len(sub)
+        if n == 0:
+            sectors.append({"symbol": symbol, "name": name, "status": "unavailable", "reason": "no rows"})
+            continue
+        if n < 2:
+            sectors.append({
+                "symbol": symbol, "name": name, "status": "unavailable",
+                "reason": "insufficient rows for 1d change",
+            })
+            continue
+
+        closes = sub["close"].astype(float).tolist()
+        last = closes[-1]
+        prev = closes[-2]
+        chg_1d_pct = (last - prev) / prev * 100.0
+        chg_5d_pct = None
+        if n >= 6:
+            first = closes[-6]
+            chg_5d_pct = (last - first) / first * 100.0
+
+        sectors.append({
+            "symbol": symbol,
+            "name": name,
+            "close": last,
+            "chg_1d_pct": chg_1d_pct,
+            "chg_5d_pct": chg_5d_pct,
+            "status": "ok",
+        })
+
+    return as_of, sectors
+
+
+@app.get("/api/market/sectors")
+async def market_sectors():
+    """Sector rotation snapshot computed from SPDR sector ETF daily closes.
+
+    One batched query (CLAUDE.md Rule 0: batch by grouping key, never
+    per-symbol) pulls the last ~10 calendar days of closes for the 11
+    SECTOR_NAMES tickers from market_data_daily, which covers >=6 trading
+    days per ticker in the common case. Cached 10 minutes since sector
+    closes only update once per trading day.
+    """
+    if "sectors" in _SECTORS_CACHE:
+        return _SECTORS_CACHE["sectors"]
+
+    # no _CLOUD_SQL gate needed: get_engine() raises RuntimeError, caught below -> 503
+    try:
+        df = _sectors_query(
+            """
+            SELECT ticker, date, close
+            FROM market_data_daily
+            WHERE ticker = ANY(:syms)
+              AND date >= (SELECT max(date) FROM market_data_daily) - INTERVAL '10 days'
+              AND close IS NOT NULL
+            ORDER BY ticker, date
+            """,
+            {"syms": list(SECTOR_NAMES.keys())},
+        )
+    except Exception as e:
+        logger.error("sector rotation query failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"database query failed: {type(e).__name__}")
+
+    as_of, sectors = _sector_rotation_from_df(df)
+    resp = {"as_of": as_of, "sectors": sectors, "status": "ok"}
+    if all(s["status"] == "unavailable" for s in sectors):
+        resp["status"] = "unavailable"
+        resp["reason"] = "sector ETFs not ingested yet — run the SPDR backfill"
+
+    # Cache only after validating the response is JSON-safe (no NaN/Inf).
+    # This prevents cache poisoning if a row somehow contains a non-finite float
+    # (CLAUDE.md Rule 3.7: defense in depth).
+    if _is_response_json_safe(resp):
+        _SECTORS_CACHE["sectors"] = resp
+    else:
+        logger.error("sector rotation response contains non-finite values; not caching")
+        # Mark all sectors unavailable due to data quality issue
+        for s in resp["sectors"]:
+            if s.get("status") == "ok":
+                s["status"] = "unavailable"
+                s["reason"] = "non-finite computed value"
+        resp["status"] = "unavailable"
+        resp["reason"] = "data quality check failed"
+
+    return resp
+
+
+# ── Most-active ticker bar (top_movers_intraday) ─────────────────────────────
+#
+# GET /api/market/most-active — read endpoint for the marquee. Auth: same gate
+# as /api/market/dates/{ticker} above (neither path is in
+# auth._OPEN_API_PREFIXES, so both are gated identically by AUTH_MODE=firebase
+# and unaffected identically in iap/open mode) — no new auth code needed.
+
+_ET_TZ = ZoneInfo("America/New_York")
+# RTH-window constants formerly lived here but are now superseded by
+# api.routers.live._is_market_open (weekend/holiday-aware) -- see
+# _most_active_label below.
+
+
+def _most_active_query(sql: str, params: Optional[dict] = None) -> pd.DataFrame:
+    """Run the most-active SQL query, raising on failure.
+
+    Same rationale as ``_coverage_query`` / ``_sectors_query``: uses
+    ``query_to_dataframe_strict`` (the RAISING helper) so a real DB error
+    surfaces as a 503, never as a silently-empty "no movers" result
+    (CLAUDE.md Rule 3.7).
+    """
+    from gcp.database import query_to_dataframe_strict
+    return query_to_dataframe_strict(sql, params)
+
+
+def _most_active_label(latest_ts, snapshot_date_str: str, now_utc: Optional[datetime] = None) -> str:
+    """"live" if the latest snapshot is <90min old AND now is within a
+    regular trading session, else the ET snapshot_date string.
+
+    "Regular trading session" reuses ``api.routers.live._is_market_open``
+    (weekend + ``MARKET_HOLIDAYS_2026``-aware) instead of a bare 09:30-16:00
+    ET clock-time check -- a fresh snapshot with a Saturday/holiday `now`
+    must not render "live" even though the clock time falls in RTH (T2
+    review, "Important"). ``live`` is already imported at module level
+    (see the ``from api.routers import live, ...`` block above), so no new
+    import path or circular-import risk is introduced.
+
+    ``now_utc`` is injectable for tests; production calls leave it unset
+    and get the real wall clock.
+    """
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
+    latest = latest_ts.to_pydatetime() if hasattr(latest_ts, "to_pydatetime") else latest_ts
+    if latest.tzinfo is None:
+        latest = latest.replace(tzinfo=timezone.utc)
+    age = now_utc - latest
+    now_et = now_utc.astimezone(_ET_TZ)
+    is_open, session = live._is_market_open(now_et)
+    within_rth = is_open and session == "regular"
+    if age < timedelta(minutes=90) and within_rth:
+        return "live"
+    return snapshot_date_str
+
+
+@app.get("/api/market/most-active")
+async def market_most_active():
+    """Most-active tickers snapshot, with per-ticker snapshot sparklines.
+
+    One SQL (CLAUDE.md Rule 0: batch, never per-ticker) pulls every row for
+    the latest ``snapshot_date`` from ``top_movers_intraday``; the rest is
+    grouped in memory:
+      - items = the latest snapshot_ts's rows, ordered by rank.
+      - spark = each ticker's price series across the date's snapshots,
+        ordered by snapshot_ts — omitted entirely (Rule 3.7: never
+        synthesize a single-point "series") when a ticker has <2 points.
+      - label = "live" / the ET snapshot date (see ``_most_active_label``).
+
+    Empty table -> honest 200 with an empty payload (the bar is decorative
+    and just hides on the frontend) — NOT an error. A real DB failure -> 503,
+    mirroring the sibling ``/api/market/sectors`` / ``/api/market/coverage``
+    endpoints above.
+    """
+    try:
+        df = _most_active_query(
+            """
+            SELECT snapshot_ts, snapshot_date, rank, ticker, price,
+                   change_amount, change_pct, volume
+            FROM top_movers_intraday
+            WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM top_movers_intraday)
+            ORDER BY snapshot_ts, rank
+            """
+        )
+    except Exception as e:
+        logger.error("most-active query failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"database query failed: {type(e).__name__}")
+
+    if df.empty:
+        return {"items": [], "label": None, "snapshot_ts": None, "snapshot_date": None}
+
+    def _finite_or_none(v):
+        if v is None:
+            return None
+        f = float(v)
+        return f if pd.notna(f) else None
+
+    latest_ts = df["snapshot_ts"].max()
+    latest_rows = df[df["snapshot_ts"] == latest_ts].sort_values("rank")
+    snapshot_date_str = str(latest_rows["snapshot_date"].iloc[0])
+
+    # spark: each ticker's price series across the date's snapshots, ordered
+    # by snapshot_ts (df is already ordered snapshot_ts, rank from the SQL).
+    spark_by_ticker: dict = {}
+    for ticker, sub in df.groupby("ticker", sort=False):
+        prices = [p for p in (_finite_or_none(p) for p in sub["price"]) if p is not None]
+        if len(prices) >= 2:
+            spark_by_ticker[ticker] = prices
+
+    items = []
+    for _, row in latest_rows.iterrows():
+        item = {
+            "ticker": row["ticker"],
+            "rank": int(row["rank"]),
+            "price": _finite_or_none(row["price"]),
+            "change_pct": _finite_or_none(row["change_pct"]),
+            "volume": int(row["volume"]) if pd.notna(row["volume"]) else None,
+        }
+        spark = spark_by_ticker.get(row["ticker"])
+        if spark is not None:
+            item["spark"] = spark
+        items.append(item)
+
+    label = _most_active_label(latest_ts, snapshot_date_str)
+
+    return {
+        "snapshot_ts": latest_ts.isoformat() if hasattr(latest_ts, "isoformat") else str(latest_ts),
+        "snapshot_date": snapshot_date_str,
+        "label": label,
+        "items": items,
+    }
+
+
+# ── Internal helpers ─────────────────────────────────────────────────────────
+
+
+def _load_date_data(ticker_lower: str, date: str) -> pd.DataFrame:
+    """Load intraday data for a specific date or month.
+
+    Priority: Cloud SQL → local parquet files.
+    Returns a DataFrame with OHLCV columns and a DatetimeIndex.
+    """
+    ticker_upper = ticker_lower.upper()
+
+    # ── Cloud SQL primary ────────────────────────────────────────────────────
+    if _CLOUD_SQL:
+        try:
+            if len(date) == 8:
+                # Specific date: YYYYMMDD
+                date_str = f"{date[:4]}-{date[4:6]}-{date[6:8]}"
+                df = query_to_dataframe(
+                    """
+                    SELECT ts, open, high, low, close, volume, data_source
+                    FROM market_data_intraday
+                    WHERE ticker = :ticker AND interval = '1min'
+                      AND DATE(ts) = :dt
+                    ORDER BY ts
+                    """,
+                    {"ticker": ticker_upper, "dt": date_str},
+                )
+            elif len(date) == 6:
+                # Month: YYYYMM
+                year, month = int(date[:4]), int(date[4:6])
+                start = f"{year}-{month:02d}-01"
+                if month == 12:
+                    end = f"{year + 1}-01-01"
+                else:
+                    end = f"{year}-{month + 1:02d}-01"
+                df = query_to_dataframe(
+                    """
+                    SELECT ts, open, high, low, close, volume, data_source
+                    FROM market_data_intraday
+                    WHERE ticker = :ticker AND interval = '1min'
+                      AND ts >= :start AND ts < :end
+                    ORDER BY ts
+                    """,
+                    {"ticker": ticker_upper, "start": start, "end": end},
+                )
+            else:
+                df = pd.DataFrame()
+
+            if not df.empty:
+                df.index = pd.to_datetime(df["ts"])
+                # Normalize timezone based on data source:
+                # - alphavantage: ET stored as UTC → just strip tz label
+                # - yfinance: real UTC → convert to ET then strip
+                is_yfinance = (
+                    "data_source" in df.columns
+                    and not df["data_source"].isna().all()
+                    and df["data_source"].iloc[0] == "yfinance"
+                )
+                df = df.drop(columns=["ts", "data_source"], errors="ignore")
+                if df.index.tz is not None:
+                    if is_yfinance:
+                        df.index = df.index.tz_convert("America/New_York").tz_localize(None)
+                    else:
+                        df.index = df.index.tz_localize(None)
+                return df
+        except Exception as e:
+            logger.warning("Cloud SQL intraday load failed for %s/%s: %s", ticker_upper, date, e)
+
+    # ── GCS fallback ─────────────────────────────────────────────────────────
+    from api import gcs_reader
+
+    def _try_gcs_download(blob_path_rel: str) -> pd.DataFrame | None:
+        try:
+            if gcs_reader.blob_exists(blob_path_rel):
+                return gcs_reader.download_parquet(gcs_reader.BASE_PREFIX + blob_path_rel)
+        except Exception as e:
+            logger.warning("GCS download failed for %s: %s", blob_path_rel, e)
+        return None
+
+    if len(date) == 8:
+        df = _try_gcs_download(f"data/{ticker_lower}/minute/{ticker_lower}_minute_{date}.parquet")
+        if df is not None and not df.empty:
+            return df
+
+    month = date[:6] if len(date) >= 6 else date
+    df = _try_gcs_download(f"data/{ticker_lower}/intraday/{ticker_lower}_av_1min_{month}.parquet")
+    if df is not None and not df.empty:
+        return df
+
+    year = date[:4]
+    df = _try_gcs_download(f"data/{ticker_lower}/{ticker_lower}_{year}.parquet")
+    if df is not None and not df.empty:
+        return df
+
+    raise FileNotFoundError(f"No data found in Cloud SQL or GCS for {ticker_lower} date={date}")
+
+
+def _aggregate_timeframe(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
+    """Aggregate 1-minute bars into higher timeframe."""
+    rule = f"{minutes}min"
+    agg = df.resample(rule).agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum',
+    }).dropna(subset=['open'])
+    return agg
+
+
+# ── SPA static file serving (MUST be last — catch-all route) ─────────────────
+# Production: npm run build → uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+_dist = Path(__file__).parent.parent / "dist"
+if _dist.is_dir():
+    from fastapi.responses import FileResponse
+
+    _assets = _dist / "assets"
+    if _assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_assets)), name="static-assets")
+
+    _index_html = _dist / "index.html"
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """SPA fallback — serve index.html for any non-API, non-asset route."""
+        candidate = _dist / full_path
+        if full_path and candidate.is_file() and ".." not in full_path:
+            return FileResponse(candidate)
+        return FileResponse(_index_html)
