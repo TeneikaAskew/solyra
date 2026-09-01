@@ -2,11 +2,18 @@
  * Navigation smoke tests — every route in the AppShell should load without
  * throwing, render its page heading, and not produce console errors.
  *
- * Runs against live dev server (port 5173) + FastAPI backend (port 8000).
+ * Fully hermetic: `mockAllPages` composes every per-page fixture, so each
+ * route's whole endpoint fan-out answers 200. That matters here specifically
+ * because the "no console errors" assertion below treats any failed resource
+ * load as fatal, and with the E2E proxy pinned to a dead backend every
+ * unmocked /api call is a 500 Chrome logs as a console error — which made
+ * the smoke loop race-flaky (pass or fail depending on whether the error
+ * landed before the assertion ran).
  */
 import { test, expect, Page } from '@playwright/test';
 import { mockCommon, M } from './helpers/mocks';
 import { MOCK_GRID, MOCK_LEVELS } from './helpers/fixtures/options';
+import { mockAllPages } from './helpers/fixtures/all';
 
 const ROUTES: Array<{ path: string; heading: RegExp }> = [
   { path: '/dashboard', heading: /dashboard/i },
@@ -31,12 +38,10 @@ async function collectConsoleErrors(page: Page): Promise<string[]> {
 }
 
 test.describe('Navigation smoke', () => {
-  // Hermetic auth: open mode regardless of what backend (if any) answers the
-  // proxy — these tests exercise routing/nav, not the login flow.
+  // Every page's fan-out, all 200s (includes the open-mode auth probe). Tests
+  // below that need a specific payload re-register after this and win.
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/config/firebase', (route) =>
-      route.fulfill({ status: 200, body: JSON.stringify({ authMode: 'open', firebase: null }) })
-    );
+    await mockAllPages(page);
   });
 
   test('top nav renders inline tabs + Market/Learn/Support dropdowns for non-admin', async ({ page }) => {
