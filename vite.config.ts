@@ -40,7 +40,28 @@ function localApiIsUp(): Promise<boolean> {
 async function resolveApiTarget(): Promise<string> {
   const override = process.env.VITE_API_PROXY_TARGET
   if (override) return override
-  return (await localApiIsUp()) ? LOCAL_API : STAGING_API
+  return (await waitForLocalApi()) ? LOCAL_API : STAGING_API
+}
+
+/**
+ * Probe repeatedly before giving up on a local backend.
+ *
+ * `make dev` starts Vite and uvicorn together, and uvicorn regularly needs more
+ * than one probe window to bind :8000. A single probe would lose that race and
+ * silently send local journal writes and admin mutations to the deployed
+ * staging service. Retrying across ~5 s covers realistic startup times.
+ *
+ * The target is fixed once the dev server starts — Vite builds each proxy with
+ * its target baked in, so it genuinely cannot be changed per request. If a
+ * backend comes up after this resolves, restart Vite or force the target with
+ * VITE_API_PROXY_TARGET=http://localhost:8000.
+ */
+async function waitForLocalApi(attempts = 6, gapMs = 800): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    if (await localApiIsUp()) return true
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, gapMs))
+  }
+  return false
 }
 
 /**
@@ -72,8 +93,12 @@ export default defineConfig(async () => {
   if (offline) {
     console.log('[api-proxy] VITE_NO_BACKEND=1 — serving stubbed open-auth config')
   } else {
-    const note = target === STAGING_API ? '  (no local backend on :8000)' : ''
-    console.log(`[api-proxy] /api -> ${target}${note}`)
+    console.log(`[api-proxy] /api -> ${target}`)
+    if (target === STAGING_API) {
+      console.log('[api-proxy] No local backend on :8000 — using the DEPLOYED staging service.')
+      console.log('[api-proxy] Writes from this session hit staging. To work against a local')
+      console.log('[api-proxy] backend, start it and restart Vite, or set VITE_API_PROXY_TARGET.')
+    }
   }
 
   return {
