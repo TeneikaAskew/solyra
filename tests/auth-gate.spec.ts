@@ -59,6 +59,42 @@ test.describe('Auth gate', () => {
     await expect(page.locator('nav a[href="/help"]')).toHaveCount(0);
   });
 
+  // The two boot-failure specs below are the regression fence for issue #5:
+  // commit 34588bc (bot edit) once swapped this exact path to a silent
+  // fail-open, stripping the auth gate whenever the API was unreachable.
+  // main.tsx's header comment forbids that; these make the posture executable.
+
+  test('config fetch failure → config-error screen, app never renders', async ({ page }) => {
+    await mockCommon(page);
+    await page.route('**/api/config/firebase', (r) =>
+      r.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"boom"}' }),
+    );
+
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByTestId('config-error')).toBeVisible();
+    // Neither the ungated app shell nor the login screen may appear.
+    await expect(page.getByTestId('nav-menu-support')).toHaveCount(0);
+    await expect(page.getByTestId('signin-screen')).toHaveCount(0);
+  });
+
+  test('config endpoint answering HTML (static-host fallback) → config-error screen', async ({
+    page,
+  }) => {
+    await mockCommon(page);
+    // A static host with SPA history-fallback answers /api/* with index.html
+    // and a 200 — the shape guard must treat that as a failed boot, not as
+    // open mode (confirmed real via HAR, see src/main.tsx).
+    await page.route('**/api/config/firebase', (r) =>
+      r.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><html></html>' }),
+    );
+
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByTestId('config-error')).toBeVisible();
+    await expect(page.getByTestId('nav-menu-support')).toHaveCount(0);
+  });
+
   test('login screen toggles between sign-in and sign-up', async ({ page }) => {
     await mockCommon(page);
     await page.route('**/api/config/firebase', (r) =>
