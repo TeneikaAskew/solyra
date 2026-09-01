@@ -261,7 +261,14 @@ export const MOCK_IMPORT_PREVIEW = {
 /** Commit of the preview above with the duplicate left unchecked. */
 export const MOCK_IMPORT_COMMIT = { imported: 2, skipped_duplicates: 1 };
 
+/** POST /api/journal/export/{ticker} — pipeline acknowledgement. */
+export const MOCK_JOURNAL_EXPORT = { ticker: 'IWM', exported: 1, status: 'ok' };
+
 export interface JournalMockOpts {
+  /** Called with the parsed POST body of an export, to assert that only
+   *  closed trades were sent. */
+  onExport?: (body: unknown) => void;
+  exportResponse?: unknown;
   /** The user's own journal. Default: empty. */
   own?: JournalTradesResponse;
   /** The Examples union. Default: empty. */
@@ -293,5 +300,17 @@ export async function mockJournalApi(page: Page, opts: JournalMockOpts = {}) {
   await page.route('**/api/journal/trades/IWM*', (r) => {
     opts.onOwnTradesFetch?.();
     return r.fulfill(M.ok(own));
+  });
+
+  // CSV export. The page filters to CLOSED trades before posting (an active
+  // row has no exit and the server 422s on a partial item), so a spec can use
+  // `onExport` to assert that filtering actually happened.
+  await page.route('**/api/journal/export/*', (r) => {
+    try {
+      opts.onExport?.(JSON.parse(r.request().postData() || '{}'));
+    } catch {
+      opts.onExport?.(null);
+    }
+    return r.fulfill(M.ok(opts.exportResponse ?? MOCK_JOURNAL_EXPORT));
   });
 }

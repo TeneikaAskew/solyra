@@ -13,12 +13,19 @@
  * that conditional rather than always-200, because "wrong token is
  * rejected" is the behaviour most worth protecting here.
  *
- * `useStructureBrief` / `useStratEngineState` also live in useAdmin.ts but
- * AdminPage does NOT call them — they back a separate dev-only surface, so
- * they are deliberately not wired here.
+ * AdminPage also renders <StructureBrief> (which embeds <PredictForm>) and
+ * <ModelStateSnapshot>, so the strat-engine endpoints below are part of this
+ * page's surface too — an earlier version of this file wrongly claimed they
+ * were not.
  */
 import type { Page } from '@playwright/test';
-import type { AvailableModelRow, RouteRow } from '@/hooks/useAdmin';
+import type {
+  AvailableModelRow,
+  RouteRow,
+  StratEngineStateResponse,
+  StratPredictResponse,
+  StructureBriefResponse,
+} from '@/hooks/useAdmin';
 import { M, mockCommon } from '../mocks';
 
 /** The token `mockAdminApi` accepts by default. */
@@ -89,6 +96,9 @@ export interface AdminMockOpts {
   models?: { models: AvailableModelRow[] };
   /** Called with the parsed body of each PUT /api/admin/routes/{role}. */
   onRoutePut?: (role: string, body: unknown) => void;
+  structureBrief?: StructureBriefResponse;
+  stratState?: StratEngineStateResponse;
+  predict?: StratPredictResponse;
 }
 
 /**
@@ -136,4 +146,125 @@ export async function mockAdminApi(page: Page, opts: AdminMockOpts = {}) {
     opts.onRoutePut?.(role, body);
     return r.fulfill(M.ok(updatedRoute(role, String(body.model ?? ''))));
   });
+
+  // Strat-engine surface (below the routing table) — see note above.
+  await page.route('**/api/admin/structure-brief', (r) =>
+    r.fulfill(M.ok(opts.structureBrief ?? MOCK_STRUCTURE_BRIEF))
+  );
+  await page.route('**/api/admin/strat-engine/state', (r) =>
+    r.fulfill(M.ok(opts.stratState ?? MOCK_STRAT_ENGINE_STATE))
+  );
+  await page.route('**/api/admin/strat-engine/predict', (r) =>
+    r.fulfill(M.ok(opts.predict ?? MOCK_STRAT_PREDICT))
+  );
 }
+
+// ── Strat-engine surface ───────────────────────────────────────────────────
+// AdminPage renders <StructureBrief> and <ModelStateSnapshot> below the
+// routing table, and <PredictForm> inside the brief. All three hit
+// admin-gated endpoints, so an unmocked /admin visit leaves them erroring.
+
+const SCOPE = 'Type-model probabilities only. Not a directional forecast.';
+
+/** One available cell and one muted cell, so both the populated distribution
+ *  and the "muted, here's why" branch render. */
+export const MOCK_STRUCTURE_BRIEF = {
+  scope_statement: SCOPE,
+  ece_ceiling: 0.08,
+  cells: [
+    {
+      ticker: 'IWM',
+      timeframe: '30m',
+      available: true,
+      top_class: '2U',
+      top_prob: 0.41,
+      distribution: [
+        { cls: '1', prob: 0.19 },
+        { cls: '2U', prob: 0.41 },
+        { cls: '2D', prob: 0.28 },
+        { cls: '3', prob: 0.12 },
+      ],
+      live_ece: 0.052,
+      ece_ceiling: 0.08,
+      muted: false,
+      mute_reason: null,
+      refreshed_at: '2026-04-25T20:00:00+00:00',
+      note: null,
+    },
+    {
+      ticker: 'IWM',
+      timeframe: '1h',
+      available: false,
+      top_class: null,
+      top_prob: null,
+      distribution: [],
+      live_ece: 0.113,
+      ece_ceiling: 0.08,
+      muted: true,
+      mute_reason: 'live ECE 0.113 exceeds the 0.08 ceiling',
+      refreshed_at: '2026-04-25T20:00:00+00:00',
+      note: 'calibration drift — retrain pending',
+    },
+  ],
+} satisfies StructureBriefResponse;
+
+/** Nothing trained yet — the brief's honest empty state. */
+export const MOCK_STRUCTURE_BRIEF_EMPTY = {
+  scope_statement: SCOPE,
+  ece_ceiling: 0.08,
+  cells: [],
+} satisfies StructureBriefResponse;
+
+export const MOCK_STRAT_ENGINE_STATE = {
+  ece_ceiling: 0.08,
+  cells: [
+    {
+      ticker: 'IWM',
+      timeframe: '30m',
+      available: true,
+      model_version: 'strat-30m-2026.04.20',
+      last_train_date: '2026-04-20',
+      live_ece: 0.052,
+    },
+    {
+      ticker: 'IWM',
+      timeframe: '1h',
+      available: false,
+      model_version: null,
+      last_train_date: null,
+      live_ece: null,
+    },
+  ],
+} satisfies StratEngineStateResponse;
+
+export const MOCK_STRAT_PREDICT = {
+  ticker: 'IWM',
+  timeframe: '30m',
+  ts: '2026-04-25T19:30:00+00:00',
+  available: true,
+  top_class: '2U',
+  top_prob: 0.41,
+  class_probs: { '1': 0.19, '2U': 0.41, '2D': 0.28, '3': 0.12 },
+  model_version: 'strat-30m-2026.04.20',
+  last_train_date: '2026-04-20',
+  live_ece: 0.052,
+  muted: false,
+  mute_reason: null,
+  scope_statement: SCOPE,
+  note: null,
+} satisfies StratPredictResponse;
+
+/** Muted prediction — probabilities suppressed, reason surfaced. */
+export const MOCK_STRAT_PREDICT_MUTED = {
+  ...MOCK_STRAT_PREDICT,
+  timeframe: '1h',
+  available: false,
+  top_class: null,
+  top_prob: null,
+  class_probs: { '1': 0, '2U': 0, '2D': 0, '3': 0 },
+  model_version: null,
+  last_train_date: null,
+  live_ece: 0.113,
+  muted: true,
+  mute_reason: 'live ECE 0.113 exceeds the 0.08 ceiling',
+} satisfies StratPredictResponse;

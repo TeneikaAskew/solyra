@@ -89,7 +89,7 @@ interface SectorRowOk {
 interface SectorRowUnavailable {
   symbol: string; name: string; status: 'unavailable'; reason: string;
 }
-type SectorRow = SectorRowOk | SectorRowUnavailable;
+export type SectorRow = SectorRowOk | SectorRowUnavailable;
 interface SectorsResponse {
   as_of: string | null; status: 'ok' | 'unavailable'; reason?: string;
   sectors: SectorRow[];
