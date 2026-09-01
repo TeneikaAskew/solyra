@@ -7,102 +7,19 @@
  *   - ChartsPage: Gamma toggle button presence (only for ETF tickers) and
  *     that toggling it adds horizontal price lines to the chart.
  *   - HelpPage: 'Gamma Levels' category exists with the new entries.
- *   - API: GET /api/options/{ticker}/{date}/levels returns the GammaSummary
- *     contract.
  *
- * Requires:
- *   - FastAPI backend on :8000 with Cloud SQL configured + chain data for QQQ
- *   - Vite dev server on :5173
+ * The "Gamma Levels: API contract" describe that used to head this file made
+ * live requests to a FastAPI backend on :8000. It asserted the GammaSummary /
+ * greeks response shapes -- i.e. it tested the BACKEND, which no longer lives
+ * in this repo (it moved to stocks, deployed as the trading-platform Cloud Run
+ * service). Those contract tests belong beside the code they exercise; what
+ * stays here is the frontend's rendering of that contract, mocked via
+ * mockOptionsApi so it is deterministic and needs no backend.
+ *
+ * Requires: Vite dev server on :5173.
  */
 import { test, expect } from '@playwright/test';
 import { mockOptionsApi } from './helpers/fixtures/options';
-
-const ETF_TICKER = 'QQQ'; // a ticker we know has chain data
-
-test.describe('Gamma Levels: API contract', () => {
-  test('GET /api/options/dates/{ticker} returns options snapshot dates', async ({ request }) => {
-    const res = await request.get(`http://localhost:8000/api/options/dates/${ETF_TICKER}`);
-    expect(res.ok()).toBeTruthy();
-    const json = await res.json();
-    expect(Array.isArray(json.dates)).toBeTruthy();
-    expect(json.dates.length).toBeGreaterThan(0);
-  });
-
-  test('GET /api/options/{ticker}/{date}/levels returns the GammaSummary shape', async ({ request }) => {
-    const datesRes = await request.get(`http://localhost:8000/api/options/dates/${ETF_TICKER}`);
-    const { dates } = await datesRes.json();
-    const date = dates[0]; // most recent
-
-    const res = await request.get(`http://localhost:8000/api/options/${ETF_TICKER}/${date}/levels`);
-    expect(res.ok()).toBeTruthy();
-    const summary = await res.json();
-
-    // Top-level GammaSummary fields
-    expect(summary).toHaveProperty('ticker');
-    expect(summary.ticker).toBe(ETF_TICKER);
-    expect(summary).toHaveProperty('snapshot_date');
-    expect(summary).toHaveProperty('spot');
-    expect(summary).toHaveProperty('gamma_balance'); // may be null
-    expect(summary).toHaveProperty('gamma_flip'); // may be null
-    expect(summary).toHaveProperty('regime');
-    expect(['positive_gamma', 'negative_gamma', 'unknown']).toContain(summary.regime);
-    expect(summary).toHaveProperty('total_gex');
-    expect(summary).toHaveProperty('levels');
-    expect(summary).toHaveProperty('kings');
-    expect(summary).toHaveProperty('gates');
-    expect(summary).toHaveProperty('gamma_balance_levels');
-    expect(summary).toHaveProperty('warnings');
-    expect(summary).toHaveProperty('chain_size');
-
-    // Spot estimate sub-shape
-    expect(summary.spot).toHaveProperty('price');
-    expect(summary.spot).toHaveProperty('method');
-    expect(['parity', 'delta', 'median_strike', 'override', 'none']).toContain(summary.spot.method);
-  });
-
-  test('GET /levels?spot=... overrides the estimated spot', async ({ request }) => {
-    const datesRes = await request.get(`http://localhost:8000/api/options/dates/${ETF_TICKER}`);
-    const { dates } = await datesRes.json();
-    const date = dates[0];
-
-    const customSpot = 999.99;
-    const res = await request.get(`http://localhost:8000/api/options/${ETF_TICKER}/${date}/levels?spot=${customSpot}`);
-    expect(res.ok()).toBeTruthy();
-    const summary = await res.json();
-    expect(summary.spot.price).toBe(customSpot);
-    expect(summary.spot.method).toBe('override');
-  });
-
-  test('GET /api/options/greeks total_gex equals sum of per-strike (sign consistency)', async ({ request }) => {
-    // Pull the chain
-    const datesRes = await request.get(`http://localhost:8000/api/options/dates/${ETF_TICKER}`);
-    const { dates } = await datesRes.json();
-    const date = dates[0];
-    const chainRes = await request.get(`http://localhost:8000/api/options/${ETF_TICKER}/${date}`);
-    const chain = await chainRes.json();
-    if (!chain.options?.length) test.skip(true, 'no chain data');
-
-    // Pull the levels endpoint just to get a server-estimated spot
-    const lvlRes = await request.get(`http://localhost:8000/api/options/${ETF_TICKER}/${date}/levels`);
-    const summary = await lvlRes.json();
-    const spot = summary.spot.price;
-    if (spot <= 0) test.skip(true, 'no spot');
-
-    // POST to /greeks
-    const greeksRes = await request.post(`http://localhost:8000/api/options/greeks`, {
-      data: { options: chain.options, spot_price: spot },
-    });
-    expect(greeksRes.ok()).toBeTruthy();
-    const greeks = await greeksRes.json();
-
-    const sumOfPerStrike = greeks.gex_by_strike.reduce(
-      (acc: number, s: { gex: number }) => acc + s.gex,
-      0
-    );
-    // Total GEX must match sum of per-strike (the sign-consistency invariant)
-    expect(greeks.metrics.total_gex).toBeCloseTo(sumOfPerStrike, 0);
-  });
-});
 
 // The /options page was restructured (OptionsFlowPage.tsx): it opens on the
 // Heatseeker tab (SwingMode gamma cockpit) and the original levels/chain
