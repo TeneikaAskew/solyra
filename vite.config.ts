@@ -4,14 +4,14 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import net from 'net'
 import type { IncomingMessage, ServerResponse } from 'http'
+import { LOCAL_API, STAGING_API } from './src/lib/apiTargets'
 
 // Where /api/* goes. This repo holds the frontend only — the FastAPI backend
 // lives in the stocks repo, deployed as the trading-platform Cloud Run service.
 // The proxy is server-side, so the browser still sees same-origin /api/* calls:
 // neither the ~73 bare fetch('/api/...') call sites nor the API's CORS
-// allow-list need to change.
-const LOCAL_API = 'http://localhost:8000'
-const STAGING_API = 'https://trading-platform-staging-5sjtb3yl7a-ue.a.run.app'
+// allow-list need to change. The origins themselves live in src/lib/apiTargets.ts,
+// ONE module shared with the browser-side rewrite (issue #11).
 
 /**
  * Is a backend listening on localhost:8000?
