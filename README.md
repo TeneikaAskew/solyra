@@ -87,9 +87,16 @@ so a dev server left pointing at staging can't silently back a test run:
 npm run e2e
 ```
 
-If a run is interrupted and a later one fails with "http://localhost:5199 is
-already used", kill the leaked server and re-run — Playwright refuses to
-adopt a server it didn't configure, on purpose.
+Interrupted runs are self-healing: the launcher (`scripts/e2e-server.mjs`)
+kills a Vite leaked by a hard-killed earlier run before starting its own, and
+refuses to start while another Playwright run is active against this repo
+(`.e2e-server.lock`) — two runs sharing one strict port would contaminate each
+other's results. Playwright still never adopts a server it didn't configure,
+on purpose.
+
+Perf-budget tests assert a relaxed 8s ceiling by default (still catches a
+route accidentally waiting on live infrastructure); run with `PERF=1` to
+assert the strict per-page budgets on a quiet machine.
 
 Backend contract tests — the ones that made live requests to `:8000` and
 asserted API response shapes — are **not** here. They test code this repo no
