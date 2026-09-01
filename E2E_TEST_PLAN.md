@@ -11,7 +11,7 @@
 
 | Layer | What it proves | Tooling | Where | Run command |
 |---|---|---|---|---|
-| **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `platform/tests/*.spec.ts` | `cd platform && npm run e2e` |
+| **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `platform/tests/*.spec.ts` | `npm run e2e` |
 | **Frontend E2E (live)** | The deployed Cloud Run app behind IAP serves real data | Playwright (`cloud` project) | same specs, `baseURL` = Cloud Run URL | `npm run e2e:cloud:auth` then `npm run e2e:cloud` |
 | **Backend unit** | `lib/` math (indicators, strat, gamma, backtest), API contracts | pytest | `tests/test_*.py` | `make test` |
 | **Backend E2E / scripts** | Pipeline scripts, fetchers, signal monitor | pytest | `tests/test_e2e.py`, `tests/test_scripts_*.py` | `make test-e2e` · `make test-scripts` |
@@ -44,7 +44,7 @@
 
 ### Run
 ```bash
-cd platform
+# (run from repo root)
 PLAYWRIGHT_START_VITE=1 npm run e2e            # auto-starts vite, runs chromium
 # or, against an already-running dev server:
 npm run e2e
