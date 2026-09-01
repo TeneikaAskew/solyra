@@ -1,29 +1,10 @@
-import { defineConfig, type Plugin } from 'vitest/config'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
-import type { IncomingMessage, ServerResponse } from 'http'
-
-// Dev-server fallback for the runtime auth config. In production the backend
-// serves /api/config/firebase; in this environment there is no backend on
-// :8000, so answer it directly with open auth mode.
-function runtimeConfigPlugin(): Plugin {
-  return {
-    name: 'runtime-config-endpoint',
-    configureServer(server) {
-      server.middlewares.use(
-        '/api/config/firebase',
-        (_req: IncomingMessage, res: ServerResponse) => {
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ authMode: 'open', firebase: null }))
-        },
-      )
-    },
-  }
-}
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), runtimeConfigPlugin()],
+  plugins: [react(), tailwindcss()],
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
   },
