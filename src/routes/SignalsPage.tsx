@@ -19,7 +19,9 @@ import { TickerCombobox } from '@/components/shared/TickerCombobox';
 import { fmtPct, fmtNum } from '@/lib/format';
 
 // ── Types ──────────────────────────────────────────────────────────────────
-interface SignalRow {
+// Exported so tests/helpers/fixtures/signals.ts can pin its fixtures to the
+// real contract (see the same note in ReportsPage.tsx).
+export interface SignalRow {
   time: string;
   ticker: string;
   direction: string;
@@ -32,7 +34,7 @@ interface SignalRow {
   [key: string]: unknown;
 }
 
-interface SignalsResponse {
+export interface SignalsResponse {
   ticker: string;
   count: number;
   signals: SignalRow[];

@@ -2,90 +2,18 @@
  * E2E: Catalysts ("/catalysts") — earnings, 8-K, FDA, M&A event timeline,
  * news catalysts, insider clusters, plus the unified-feed UX
  * (Hot Now panel, impact filter, click-to-navigate, sentiment indicator).
+ *
+ * Payloads live in tests/helpers/fixtures/catalysts.ts, typed against the
+ * page's own CatalystsResponse / CatalystTypesResponse contracts. The Hot Now
+ * rows are built against the clock (today/tomorrow) inside the fixture, so
+ * they can't silently stop being "hot" the day after they were written.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
-
-// today + tomorrow ISO so 'Hot Now' selectors fire deterministically
-const TODAY_ISO = new Date().toISOString().slice(0, 10);
-const TOMORROW_ISO = (() => {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
-})();
-
-const MOCK_EVENTS = {
-  status: 'ok',
-  source: 'mock',
-  date_range: { from: '2026-04-25', to: '2026-05-09' },
-  total: 4,
-  events_by_date: {
-    [TODAY_ISO]: [
-      {
-        // Hot Now eligible: high impact + today.
-        date: TODAY_ISO,
-        ticker: 'AVGO',
-        catalyst_type: 'MERGER_ACQUISITION',
-        title: 'Broadcom rises on AI deals; BofA says visibility improves',
-        impact: 'High',
-        source: 'AV news',
-        sentiment_score: 0.73,
-        sentiment_label: 'Bullish',
-        relevance_score: 1.0,
-      },
-    ],
-    '2026-04-28': [
-      {
-        date: '2026-04-28',
-        ticker: 'AAPL',
-        company_name: 'Apple Inc.',
-        catalyst_type: 'EARNINGS',
-        event: 'Q2 2026 Earnings',
-        expected_impact: 'high',
-        confirmed: true,
-        source: 'mock',
-      },
-    ],
-    '2026-04-30': [
-      {
-        date: '2026-04-30',
-        ticker: 'MSFT',
-        company_name: 'Microsoft Corp.',
-        catalyst_type: 'CONFERENCE_CALL',
-        event: 'Investor Day',
-        expected_impact: 'medium',
-        confirmed: true,
-        source: 'mock',
-      },
-    ],
-    [TOMORROW_ISO]: [
-      {
-        date: TOMORROW_ISO,
-        ticker: 'MACRO',
-        catalyst_type: 'ECONOMIC',
-        title: 'CPI release',
-        impact: 'High',
-        source: 'FRED/Calendar',
-      },
-    ],
-  },
-};
+import { mockCatalystsApi } from './helpers/fixtures/catalysts';
 
 test.describe('Catalysts', () => {
   test.beforeEach(async ({ page }) => {
-    await mockCommon(page);
-    await page.route('**/api/catalysts/events**', (r) => r.fulfill(M.ok(MOCK_EVENTS)));
-    await page.route('**/api/catalysts/types', (r) =>
-      r.fulfill(
-        M.ok({
-          benzinga_types: {
-            EARNINGS: { label: 'Earnings', color: 'red', icon: 'TrendingUp' },
-          },
-          wsh_only_types: {},
-          upgrade_note: 'Upgrade for full coverage',
-        })
-      )
-    );
+    await mockCatalystsApi(page);
   });
 
   test('renders catalysts heading', async ({ page }) => {

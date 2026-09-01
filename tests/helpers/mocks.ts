@@ -7,6 +7,7 @@
  * specs short and the mock surface explicit.
  */
 import type { Page } from '@playwright/test';
+import type { WatchlistResponse } from '@/types/watchlist';
 
 const ok = (body: unknown) => ({
   status: 200,
@@ -45,8 +46,25 @@ export async function mockCommon(page: Page) {
     r.fulfill(ok({ session: 'closed', is_open: false, ts: '2026-04-25T20:00:00Z' }))
   );
   await page.route('**/api/dashboard/brief/*', (r) => r.fulfill(notFound()));
+  // Deterministic-ranker output for WatchlistPanel (mounted on /insights and
+  // /help). This used to answer `{ tickers: [...] }`, which is NOT the
+  // WatchlistResponse contract — the panel read `ranked` as undefined and
+  // rendered its empty branch, so watchlist assertions passed without the
+  // panel ever being exercised. An honest empty ranking renders the same
+  // empty state, but now for the right reason; specs wanting rows use
+  // MOCK_WATCHLIST from fixtures/insights.ts.
   await page.route('**/api/insights/watchlist*', (r) =>
-    r.fulfill(ok({ tickers: ['IWM'], generated_at: '2026-04-25T20:00:00Z' }))
+    r.fulfill(
+      ok({
+        run_id: 'bbbbbbbb-0000-0000-0000-000000000000',
+        as_of: '2026-04-25T20:00:00Z',
+        candidate_count: 0,
+        excluded_count: 0,
+        ranked: [],
+        weights_used: {},
+        duration_ms: 0,
+      } satisfies WatchlistResponse)
+    )
   );
   // Most-active ticker bar (mounted on Market pages + /journal via AppShell).
   // Default is an honest empty response so the bar hides itself — specs that
