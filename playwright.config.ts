@@ -37,6 +37,17 @@ const wantsLocalServer = !process.argv.some(
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
+  // ONE worker, deliberately. `fullyParallel: false` only serializes tests
+  // WITHIN a file; separate files still fan out across workers (default: half
+  // the cores), and every worker's Chromium hammers the single shared Vite
+  // dev server on E2E_PORT. Measured on the same tree, same day (2026-09-01):
+  //   default workers: 46 failed / 28 flaky / 87 passed — 218 thirty-second
+  //                    timeouts, pages dying during fixture setup
+  //   workers: 1     : 18 failed /  5 flaky / 138 passed — timeouts 218 → 64
+  // The remaining failures are real and tracked; the fan-out ones were not.
+  // Raise this only alongside a dev server that can take the load (or a
+  // prebuilt bundle served statically).
+  workers: 1,
   timeout: 30_000,
   webServer: wantsLocalServer
     ? {
