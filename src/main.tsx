@@ -86,7 +86,11 @@ async function bootstrap() {
 
   setRuntimeConfig(config)
   if (config.authMode === 'firebase' && config.firebase) {
-    initFirebase(config.firebase)
+    // Awaited: initFirebase now lazy-loads the Auth SDK chunk (see
+    // lib/firebase.ts), and the gate below must not render until auth state
+    // can actually be observed. Other modes never reach this line, so they
+    // never download the SDK at all.
+    await initFirebase(config.firebase)
   }
 
   createRoot(document.getElementById('root')!).render(

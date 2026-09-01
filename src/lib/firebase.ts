@@ -1,35 +1,60 @@
 /**
- * Thin wrapper around the Firebase Auth JS SDK. Only loaded/used in
- * `firebase` auth mode (see runtimeConfig). Sign-in/out happens entirely
- * client-side; the backend just verifies the resulting ID token.
+ * Lazy facade over the Firebase Auth SDK.
+ *
+ * Why this exists: the SDK used to be statically imported here, and this
+ * module is reachable from the EAGER graph five ways (main.tsx, authedFetch,
+ * useUser, SignInScreen, SignOutButton) — so ~identitytoolkit and friends
+ * landed in the main chunk that every visitor downloads, in every auth mode,
+ * even though not one of these call sites runs outside `firebase` mode. The
+ * main bundle was 732 kB minified with the SDK inside.
+ *
+ * The rule now: ./firebaseImpl.ts is the only module that imports the SDK,
+ * and ONLY initFirebase() loads it (via dynamic import). Every other export
+ * here reproduces the old "not initialized" behaviour without touching the
+ * network:
+ *
+ *   getIdToken            → resolves null        (was: null via _auth?.…)
+ *   firebaseSignOut       → resolved promise     (unchanged)
+ *   subscribeAuth         → cb(null), noop unsub (unchanged)
+ *   signInWith…/signUpWith… → REJECTED promise   (was: synchronous throw —
+ *                           callers already `await` inside try/catch, so the
+ *                           error surfaces identically)
+ *
+ * main.tsx awaits initFirebase() before rendering, so in firebase mode the
+ * SDK is fully loaded before any component can call these; the pending-load
+ * branches below are belt-and-braces, not a path the app relies on.
+ *
+ * Import types only from 'firebase/auth' here — `import type` is erased at
+ * build time and adds nothing to the bundle.
  */
-import { initializeApp, type FirebaseApp } from 'firebase/app';
-import {
-  getAuth,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  type Auth,
-  type User,
-} from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import type { FirebaseWebConfig } from './runtimeConfig';
 
-let _auth: Auth | null = null;
+type Impl = typeof import('./firebaseImpl');
 
-export function initFirebase(cfg: FirebaseWebConfig): Auth {
-  if (_auth) return _auth;
-  const app: FirebaseApp = initializeApp(cfg);
-  _auth = getAuth(app);
-  return _auth;
+// Set exactly once, by initFirebase. Null = firebase mode never engaged —
+// every facade export below must behave like the old uninitialized state
+// WITHOUT importing the SDK.
+let _ready: Promise<Impl> | null = null;
+
+/**
+ * Load the SDK chunk and initialize the app. Idempotent. This is the single
+ * trigger for the network fetch of the Firebase code — call it only when the
+ * runtime config says authMode is 'firebase' (main.tsx does, and awaits it
+ * before first render).
+ */
+export function initFirebase(cfg: FirebaseWebConfig): Promise<void> {
+  _ready ??= import('./firebaseImpl').then((m) => {
+    m.initFirebase(cfg);
+    return m;
+  });
+  return _ready.then(() => undefined);
 }
 
 /** The current ID token (Firebase auto-refreshes when near expiry), or null. */
 export async function getIdToken(forceRefresh = false): Promise<string | null> {
-  const user = _auth?.currentUser;
-  return user ? user.getIdToken(forceRefresh) : null;
+  if (!_ready) return null;
+  return (await _ready).getIdToken(forceRefresh);
 }
 
 /**
@@ -46,6 +71,8 @@ export async function getIdToken(forceRefresh = false): Promise<string | null> {
  * `signInWithRedirect` is NOT a fix either — Google's sign-in page refuses to
  * be framed, so the redirect dead-ends. The only reliable path is to leave the
  * iframe, which is what the sign-in screen offers when this returns true.
+ *
+ * Lives on the facade (not the impl) because it needs no SDK.
  */
 export function isFramed(): boolean {
   try {
@@ -56,30 +83,46 @@ export function isFramed(): boolean {
   }
 }
 
-export function signInWithGoogle() {
-  if (!_auth) throw new Error('Firebase not initialized');
-  return signInWithPopup(_auth, new GoogleAuthProvider());
+export async function signInWithGoogle() {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).signInWithGoogle();
 }
 
-export function signInWithEmail(email: string, password: string) {
-  if (!_auth) throw new Error('Firebase not initialized');
-  return signInWithEmailAndPassword(_auth, email, password);
+export async function signInWithEmail(email: string, password: string) {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).signInWithEmail(email, password);
 }
 
-export function signUpWithEmail(email: string, password: string) {
-  if (!_auth) throw new Error('Firebase not initialized');
-  return createUserWithEmailAndPassword(_auth, email, password);
+export async function signUpWithEmail(email: string, password: string) {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).signUpWithEmail(email, password);
 }
 
-export function firebaseSignOut(): Promise<void> {
-  return _auth ? signOut(_auth) : Promise.resolve();
+export async function firebaseSignOut(): Promise<void> {
+  if (!_ready) return;
+  return (await _ready).firebaseSignOut();
 }
 
-/** Subscribe to auth-state changes. Returns an unsubscribe fn. */
+/**
+ * Subscribe to auth-state changes. Returns an unsubscribe fn, synchronously —
+ * the shape useUser's effect cleanup depends on. If the SDK is still loading
+ * (only possible before main.tsx's await resolves, which is before render),
+ * the subscription attaches when it lands and the returned fn still cancels
+ * correctly either way.
+ */
 export function subscribeAuth(cb: (user: User | null) => void): () => void {
-  if (!_auth) {
+  if (!_ready) {
     cb(null);
     return () => {};
   }
-  return onAuthStateChanged(_auth, cb);
+  let unsub: (() => void) | null = null;
+  let cancelled = false;
+  void _ready.then((m) => {
+    if (cancelled) return;
+    unsub = m.subscribeAuth(cb);
+  });
+  return () => {
+    cancelled = true;
+    unsub?.();
+  };
 }
