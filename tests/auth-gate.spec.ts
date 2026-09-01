@@ -30,7 +30,11 @@ test.describe('Auth gate', () => {
     await mockCommon(page); // config → { authMode: 'open' }
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.locator('nav a[href="/help"]')).toBeVisible();
+    // The app shell mounted: /help now lives inside the Support dropdown
+    // (navConfig.ts SUPPORT group, menu: true), so there is no bare
+    // `a[href="/help"]` until that menu opens. The menu trigger itself is the
+    // stable "the nav rendered" signal.
+    await expect(page.getByTestId('nav-menu-support')).toBeVisible();
     await expect(page.getByTestId('signin-screen')).toHaveCount(0);
   });
 

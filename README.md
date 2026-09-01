@@ -55,7 +55,7 @@ would then 401.
 | `npm run build` | `tsc -b` across all three TS projects, then `vite build` |
 | `npm run lint` | ESLint |
 | `npm test` | Vitest unit tests (`src/**/*.test.ts{,x}`) |
-| `npm run e2e` | Playwright E2E against a running dev server |
+| `npm run e2e` | Playwright E2E (boots its own Vite on :5199) |
 
 ### TypeScript projects
 
@@ -79,12 +79,17 @@ data lives in `tests/helpers/`:
   helper covering that page's full endpoint fan-out. Fixtures use `satisfies`
   against the real response types, so they can't drift from the contracts.
 
-Run them with a dev server already up, or let Playwright start one:
+Playwright boots its **own** Vite on a dedicated port (:5199) with the /api
+proxy pinned to a local backend — it never adopts your `npm run dev` server,
+so a dev server left pointing at staging can't silently back a test run:
 
 ```sh
-npm run e2e                          # reuses a server on :5173
-PLAYWRIGHT_START_VITE=1 npm run e2e  # boots one itself
+npm run e2e
 ```
+
+If a run is interrupted and a later one fails with "http://localhost:5199 is
+already used", kill the leaked server and re-run — Playwright refuses to
+adopt a server it didn't configure, on purpose.
 
 Backend contract tests — the ones that made live requests to `:8000` and
 asserted API response shapes — are **not** here. They test code this repo no

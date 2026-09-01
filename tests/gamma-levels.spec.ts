@@ -20,6 +20,8 @@
  */
 import { test, expect } from '@playwright/test';
 import { mockOptionsApi } from './helpers/fixtures/options';
+import { mockChartsApi } from './helpers/fixtures/charts';
+import { mockHelpApi } from './helpers/fixtures/help';
 
 // The /options page was restructured (OptionsFlowPage.tsx): it opens on the
 // Heatseeker tab (SwingMode gamma cockpit) and the original levels/chain
@@ -100,6 +102,14 @@ test.describe('Gamma Levels: OptionsFlowPage UI', () => {
 });
 
 test.describe('Gamma Levels: ChartsPage overlay', () => {
+  // Without this the boot probe /api/config/firebase 500s through the dead
+  // E2E proxy and main.tsx fail-louds with the config-error screen, so no
+  // page ever mounts. mockChartsApi also answers the /levels fetch the Gamma
+  // toggle triggers (MOCK_LEVELS_POPULATED).
+  test.beforeEach(async ({ page }) => {
+    await mockChartsApi(page);
+  });
+
   test('Gamma toggle is visible for ETF tickers', async ({ page }) => {
     await page.goto('/charts');
     await page.waitForTimeout(2000);
@@ -131,6 +141,12 @@ test.describe('Gamma Levels: ChartsPage overlay', () => {
 });
 
 test.describe('Gamma Levels: Help page glossary', () => {
+  // Same boot-probe reason as above; mockHelpApi also serves the indicator
+  // config the glossary entries read their thresholds from.
+  test.beforeEach(async ({ page }) => {
+    await mockHelpApi(page);
+  });
+
   test('Gamma Levels category pill exists', async ({ page }) => {
     await page.goto('/help');
     await page.waitForLoadState('networkidle');
