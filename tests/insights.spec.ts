@@ -1,99 +1,28 @@
 /**
  * E2E: Structured AI Insights page.
  *
- * All backend calls are mocked via page.route so this spec doesn't
- * require Cloud SQL or the agent pipeline to be running. The mocks
- * cover three flows:
+ * All backend calls are mocked so this spec doesn't require Cloud SQL or the
+ * agent pipeline to be running. Payloads live in
+ * tests/helpers/fixtures/insights.ts, typed against InsightReportEnvelope /
+ * InsightHistoryResponse / RefreshResponse / RunStatus / WatchlistResponse.
+ *
+ * The mocks cover three flows:
  *   - existing report loads and renders all the cards
  *   - empty state shows the CTA when /report returns 404
  *   - refresh runs the queued -> running -> done polling loop and
  *     eventually reloads the report
  */
 import { test, expect } from '@playwright/test';
-
-const MOCK_REPORT = {
-  ticker: 'IWM',
-  as_of: '2026-04-15T14:30:00Z',
-  report: {
-    ticker: 'IWM',
-    as_of: '2026-04-15T14:30:00Z',
-    direction: 'long',
-    conviction: 'high',
-    thesis: 'Breakout above prior-day high with FTFC bullish and supportive volume.',
-    entry_zone: { low: 220.0, high: 221.5 },
-    stop: 218.0,
-    targets: [224.0, 228.0],
-    invalidation: 'Close below 218 on the 1-hour chart.',
-    time_horizon: 'swing',
-    key_levels: { support: 218.0, resistance: 224.0, pivot: 220.0 },
-    strat_status: {
-      last_candle: '2U',
-      in_force_combo: '212_bull_reversal',
-      ftfc_score: 0.72,
-      ftfc_direction: 'bullish',
-      trigger_high: 221.0,
-      trigger_low: 218.5,
-    },
-    catalysts: [
-      { name: 'CPI', date: '2026-04-22', impact: 'high', kind: 'economic' },
-    ],
-    bull_case: 'Volume + FTFC + trigger break aligned.',
-    bear_case: 'Tight stop, CPI in window.',
-    risk_flags: [
-      { persona: 'conservative', severity: 'warn', message: 'CPI release within holding period.' },
-    ],
-    persona_plans: [
-      {
-        persona: 'aggressive',
-        entry_zone: { low: 220.0, high: 222.5 },
-        stop: 215.0,
-        targets: [228.0, 234.0, 240.0],
-        position_size_pct: 1.5,
-        rationale: 'Wider stop, extended targets on high-conviction setup.',
-      },
-      {
-        persona: 'neutral',
-        entry_zone: { low: 220.0, high: 221.5 },
-        stop: 218.0,
-        targets: [223.0, 226.0, 229.0],
-        position_size_pct: 1.0,
-        rationale: '~1 ATR stop with 1R/2R/3R targets.',
-      },
-      {
-        persona: 'conservative',
-        entry_zone: { low: 220.5, high: 221.0 },
-        stop: 219.0,
-        targets: [222.5, 224.0],
-        position_size_pct: 0.4,
-        rationale: 'Reduced size + tight stop into CPI window.',
-      },
-    ],
-    supporting_signals: [
-      { alert_ts: '2026-04-15T14:30:00Z', direction: 'CALL', strength: 'strong', score: 4.5 },
-    ],
-    similar_past_trades: [],
-    confidence_score: 0.78,
-    failed_sections: [],
-    model_versions: { trader: 'vertex:gemini-2.0-flash' },
-    run_cost_usd: 0.0134,
-    run_latency_ms: 12500,
-  },
-  model_versions: { trader: 'vertex:gemini-2.0-flash' },
-  cost_usd: 0.0134,
-  latency_ms: 12500,
-};
+import { M } from './helpers/mocks';
+import {
+  MOCK_INSIGHT_REPORT,
+  mockInsightsApi,
+  runStatus,
+} from './helpers/fixtures/insights';
 
 test.describe('AI Insights (structured)', () => {
   test('renders a full report with all cards', async ({ page }) => {
-    await page.route('**/api/insights/report/IWM', (route) =>
-      route.fulfill({ status: 200, body: JSON.stringify(MOCK_REPORT) })
-    );
-    await page.route('**/api/insights/report/IWM/history**', (route) =>
-      route.fulfill({
-        status: 200,
-        body: JSON.stringify({ ticker: 'IWM', count: 0, reports: [] }),
-      })
-    );
+    await mockInsightsApi(page);
     await page.goto('/insights');
     await page.waitForLoadState('networkidle');
 
@@ -133,15 +62,7 @@ test.describe('AI Insights (structured)', () => {
   });
 
   test('shows empty-state CTA when no report exists', async ({ page }) => {
-    await page.route('**/api/insights/report/IWM', (route) =>
-      route.fulfill({ status: 404, body: JSON.stringify({ detail: 'not found' }) })
-    );
-    await page.route('**/api/insights/report/IWM/history**', (route) =>
-      route.fulfill({
-        status: 200,
-        body: JSON.stringify({ ticker: 'IWM', count: 0, reports: [] }),
-      })
-    );
+    await mockInsightsApi(page, { report: null });
     await page.goto('/insights');
     await page.waitForLoadState('networkidle');
 
@@ -150,48 +71,21 @@ test.describe('AI Insights (structured)', () => {
   });
 
   test('refresh runs the queued -> running -> done polling loop', async ({ page }) => {
-    let pollCount = 0;
-    // First call returns 404, after refresh returns real report
+    await mockInsightsApi(page, { report: null });
+
+    // Sequenced routes, re-registered after the helper so they win
+    // (Playwright matches newest-first): the report 404s until the refresh
+    // lands, and the run poll reports `running` before `done`.
     let reportFetches = 0;
     await page.route('**/api/insights/report/IWM', (route) => {
       reportFetches += 1;
-      if (reportFetches === 1) {
-        return route.fulfill({ status: 404, body: JSON.stringify({ detail: 'nf' }) });
-      }
-      return route.fulfill({ status: 200, body: JSON.stringify(MOCK_REPORT) });
+      if (reportFetches === 1) return route.fulfill(M.notFound());
+      return route.fulfill(M.ok(MOCK_INSIGHT_REPORT));
     });
-    await page.route('**/api/insights/report/IWM/history**', (route) =>
-      route.fulfill({
-        status: 200,
-        body: JSON.stringify({ ticker: 'IWM', count: 0, reports: [] }),
-      })
-    );
-    await page.route('**/api/insights/report/IWM/refresh', (route) =>
-      route.fulfill({
-        status: 200,
-        body: JSON.stringify({
-          run_id: '00000000-0000-0000-0000-000000000001',
-          ticker: 'IWM',
-          status: 'queued',
-        }),
-      })
-    );
+    let pollCount = 0;
     await page.route('**/api/insights/runs/**', (route) => {
       pollCount += 1;
-      const status = pollCount >= 2 ? 'done' : 'running';
-      return route.fulfill({
-        status: 200,
-        body: JSON.stringify({
-          id: '00000000-0000-0000-0000-000000000001',
-          ticker: 'IWM',
-          status,
-          trigger: 'local_dev',
-          started_at: '2026-04-15T14:30:05Z',
-          finished_at: status === 'done' ? '2026-04-15T14:30:17Z' : null,
-          error: null,
-          report_id: status === 'done' ? 'abc' : null,
-        }),
-      });
+      return route.fulfill(M.ok(runStatus(pollCount >= 2 ? 'done' : 'running')));
     });
 
     await page.goto('/insights');
@@ -212,64 +106,16 @@ test.describe('AI Insights (structured)', () => {
 
 test.describe('AI Insights — point-in-time replay', () => {
   /**
-   * Stand up the minimal mock surface every replay test needs:
-   *   - GET report          (initial render)
-   *   - GET history         (empty)
-   *   - POST refresh        (records the URL so we can assert on
-   *                          whether ?as_of= rode through)
-   *   - GET runs/{id}       (immediately reports done so polling
-   *                          terminates fast)
+   * Stand up the replay mock surface: a report that always loads, an empty
+   * history, a refresh that records the URL it was called with, and a run
+   * poll that reports `done` immediately so polling terminates fast.
    *
-   * Returns the array of refresh-URLs the page hit, so each test
-   * can assert exactly which query strings the UI sent.
+   * Returns the array of refresh-URLs the page hit, so each test can assert
+   * exactly which query strings the UI sent.
    */
   async function installRoutes(page: import('@playwright/test').Page): Promise<string[]> {
     const refreshUrls: string[] = [];
-
-    await page.route('**/api/insights/report/IWM', (route) =>
-      route.fulfill({ status: 200, body: JSON.stringify(MOCK_REPORT) })
-    );
-    await page.route('**/api/insights/report/IWM/history**', (route) =>
-      route.fulfill({
-        status: 200,
-        body: JSON.stringify({ ticker: 'IWM', count: 0, reports: [] }),
-      })
-    );
-    await page.route('**/api/insights/report/IWM/refresh**', (route) => {
-      refreshUrls.push(route.request().url());
-      return route.fulfill({
-        status: 200,
-        body: JSON.stringify({
-          run_id: '00000000-0000-0000-0000-000000000001',
-          ticker: 'IWM',
-          status: 'queued',
-        }),
-      });
-    });
-    await page.route('**/api/insights/runs/**', (route) =>
-      route.fulfill({
-        status: 200,
-        body: JSON.stringify({
-          id: '00000000-0000-0000-0000-000000000001',
-          ticker: 'IWM',
-          status: 'done',
-          trigger: 'local_dev',
-          started_at: '2026-04-15T14:30:05Z',
-          finished_at: '2026-04-15T14:30:17Z',
-          error: null,
-          report_id: 'abc',
-        }),
-      })
-    );
-    // The watchlist panel reads insights_watchlist; mock it as empty so
-    // the panel shows its empty state rather than blocking on a fetch.
-    await page.route('**/api/insights/watchlist**', (route) =>
-      route.fulfill({
-        status: 200,
-        body: JSON.stringify({ tickers: [] }),
-      })
-    );
-
+    await mockInsightsApi(page, { onRefresh: (url) => refreshUrls.push(url) });
     return refreshUrls;
   }
 

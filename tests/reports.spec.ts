@@ -1,35 +1,15 @@
 /**
  * E2E: Reports ("/reports") — phase analysis reports list and viewer.
+ *
+ * Payloads live in tests/helpers/fixtures/reports.ts, typed against the
+ * page's own ReportListResponse contract.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
-
-const MOCK_REPORT_LIST = {
-  ticker: 'IWM',
-  reports: [
-    { phase: 'phase1', filename: 'phase1_iwm.md', path: 'reports/phase1_iwm.md' },
-    { phase: 'phase6_playbook', filename: 'phase6_playbook_iwm.md', path: 'reports/phase6_playbook_iwm.md' },
-  ],
-};
-
-const MOCK_REPORT_BODY = `# Phase 1: IWM Backtest
-
-## Summary
-Sharpe 11.05 on 1m+30m timeframe combo over 2015-2026.
-
-## Trades
-- Total: 1,234
-- Win rate: 62%
-- Avg return: 0.85%
-`;
+import { mockReportsApi } from './helpers/fixtures/reports';
 
 test.describe('Reports', () => {
   test.beforeEach(async ({ page }) => {
-    await mockCommon(page);
-    await page.route('**/api/reports/list/IWM', (r) => r.fulfill(M.ok(MOCK_REPORT_LIST)));
-    await page.route('**/api/reports/IWM/*', (r) =>
-      r.fulfill({ status: 200, contentType: 'text/plain', body: MOCK_REPORT_BODY })
-    );
+    await mockReportsApi(page);
   });
 
   test('renders reports heading', async ({ page }) => {

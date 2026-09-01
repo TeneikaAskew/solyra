@@ -5,7 +5,10 @@ import DOMPurify from 'dompurify';
 import { useTickerStore } from '@/stores/tickerStore';
 import { FileText, AlertTriangle } from 'lucide-react';
 
-interface ReportEntry {
+// Exported so tests/helpers/fixtures/reports.ts can pin its fixtures to the
+// real contract — a backend shape change then fails `tsc -b` instead of
+// silently drifting past a hand-written mock.
+export interface ReportEntry {
   filename: string;
   phase: string;
   path: string;
@@ -20,7 +23,7 @@ function phaseLabel(phase: string): string {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
-interface ReportListResponse {
+export interface ReportListResponse {
   ticker: string;
   reports: ReportEntry[];
 }

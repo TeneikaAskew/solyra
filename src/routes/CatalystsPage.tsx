@@ -14,7 +14,9 @@ import { addDaysToISO, todayET } from '@/lib/dates';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface CatalystEvent {
+// Exported so tests/helpers/fixtures/catalysts.ts can pin its fixtures to
+// the real contract (see the same note in ReportsPage.tsx).
+export interface CatalystEvent {
   date: string;
   ticker: string;
   company_name?: string;
@@ -66,7 +68,7 @@ function eventTitle(e: CatalystEvent): string {
   return e.title || e.event || `${e.ticker} ${e.catalyst_type}`;
 }
 
-interface CatalystsResponse {
+export interface CatalystsResponse {
   status: string;
   source: string;
   date_range: { from: string; to: string };
@@ -75,7 +77,7 @@ interface CatalystsResponse {
   message?: string;
 }
 
-interface CatalystTypesResponse {
+export interface CatalystTypesResponse {
   benzinga_types: Record<string, { label: string; color: string; icon: string }>;
   wsh_only_types: Record<string, { label: string; color: string; icon: string }>;
   upgrade_note: string;

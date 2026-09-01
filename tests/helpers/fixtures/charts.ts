@@ -1,0 +1,205 @@
+/**
+ * Typed fixtures + route wiring for the Charts page (`/charts`).
+ *
+ * Endpoint fan-out, read off ChartsPage.tsx:
+ *   GET  /api/market/dates/{ticker}          useAvailableDates    → DatesResponse
+ *   GET  /api/market/data/{ticker}/{date}    useMarketData        → MarketDataResponse
+ *   GET  /api/market/reference/{t}/{date}    useReferenceLevels   → ReferenceLevels
+ *   GET  /api/options/{t}/{date}/levels      useGammaLevels       → GammaLevelsResponse
+ *   POST /api/live/indicators                useLiveIndicators    → IndicatorsResponse
+ *   POST /api/live/signal-series             useSignalSeries      → SignalSeriesResponse
+ *   GET  /api/journal/trades/{ticker}        useJournalChartTrades
+ *   GET  /api/signals/{ticker}/similar       useSimilarSetups     → SimilarResponse
+ *   GET  /api/signals/{ticker}               (sibling signal reads)
+ *
+ * Bars, indicators and reference levels are imported from ./live rather than
+ * duplicated — POST /api/live/indicators and /api/market/* are the same
+ * endpoints the Live page uses, and two copies of a 60-line indicator
+ * payload is exactly the drift this module exists to remove.
+ *
+ * Mutation-only endpoints (POST /api/journal, POST /api/backtest/replay-trades)
+ * are not wired: they fire on user action, and the specs that drive them want
+ * to assert on the request body themselves.
+ */
+import type { Page } from '@playwright/test';
+import type { SignalSeriesResponse } from '@/hooks/useLiveIndicators';
+import type { SimilarResponse } from '@/hooks/useSimilarSetups';
+import type { JournalRow } from '@/hooks/useJournalChartTrades';
+import { M, mockCommon, MOCK_LEVELS_POPULATED } from '../mocks';
+import {
+  MOCK_CANDLES,
+  MOCK_LIVE_INDICATORS,
+  MOCK_MARKET_DATA,
+  MOCK_REFERENCE_LEVELS,
+} from './live';
+
+export { MOCK_LIVE_INDICATORS, MOCK_MARKET_DATA, MOCK_REFERENCE_LEVELS };
+
+/** The chart's last bar, as ChartsPage stringifies it when matching fires. */
+export const LAST_BAR_TIME = String(MOCK_CANDLES[MOCK_CANDLES.length - 1].time);
+
+/**
+ * `DatesResponse` is internal to useMarketData.ts, so the shape is restated
+ * here. `months` is required and the literal this replaced omitted it —
+ * the sort of silent contract gap a typed fixture is meant to surface.
+ */
+interface DatesResponse {
+  ticker: string;
+  dates: string[];
+  months: string[];
+}
+
+export const MOCK_MARKET_DATES = {
+  ticker: 'IWM',
+  dates: ['2026-04-25', '2026-04-24', '2026-04-23'],
+  months: ['2026-04'],
+} satisfies DatesResponse;
+
+/**
+ * One CALL fire on the LAST bar, so SimilarSetupsCard's populated branch is
+ * exercised deterministically. `time` must equal `LAST_BAR_TIME` exactly —
+ * ChartsPage matches fires to bars by stringified time.
+ */
+export const MOCK_SIGNAL_SERIES = {
+  fires: [{ time: LAST_BAR_TIME, direction: 'CALL', score: 4, bar_index: MOCK_CANDLES.length - 1 }],
+} satisfies SignalSeriesResponse;
+
+/** No fires — the card falls back to its "waits for the voter" placeholder. */
+export const MOCK_SIGNAL_SERIES_EMPTY = {
+  fires: [],
+} satisfies SignalSeriesResponse;
+
+/** Historical setups matching the fired CALL bar. */
+export const MOCK_SIMILAR_SETUPS = {
+  ticker: 'IWM',
+  direction: 'CALL',
+  rsi: 35,
+  score: 4,
+  rsi_band: 5,
+  stats: {
+    count: 240,
+    avg_mfe_pct: 0.094,
+    median_mfe_pct: 0.077,
+    p25_mfe_pct: 0.012,
+    p75_mfe_pct: 0.18,
+    avg_return_5min: 0.04,
+    avg_return_20min: 0.082,
+    pct_profitable: 0.858,
+    earliest: '2015-01-15T14:00:00+00:00',
+    latest: '2026-04-07T20:00:00+00:00',
+  },
+  matches: [
+    {
+      time: '2026-04-07 14:44:00+00:00',
+      direction: 'CALL',
+      price: 250.41,
+      score: 4,
+      rsi: 35.8,
+      return_pct: 0.012,
+      return_5min: 0.012,
+      return_20min: 0.012,
+    },
+  ],
+} satisfies SimilarResponse;
+
+/**
+ * No historical matches. Every stat is null rather than 0 — the contract
+ * makes them nullable so "no data" is distinguishable from "measured zero".
+ */
+export const MOCK_SIMILAR_SETUPS_EMPTY = {
+  ticker: 'IWM',
+  direction: 'CALL',
+  rsi: 35,
+  score: 4,
+  rsi_band: 5,
+  stats: {
+    count: 0,
+    avg_mfe_pct: null,
+    median_mfe_pct: null,
+    p25_mfe_pct: null,
+    p75_mfe_pct: null,
+    avg_return_5min: null,
+    avg_return_20min: null,
+    pct_profitable: null,
+    earliest: null,
+    latest: null,
+  },
+  matches: [],
+} satisfies SimilarResponse;
+
+/** `JournalTradesResponse` is internal to useJournalChartTrades.ts. */
+interface JournalTradesResponse {
+  ticker: string;
+  source: 'cloud_sql' | 'local';
+  count: number;
+  trades: JournalRow[];
+}
+
+export const MOCK_JOURNAL_TRADES_EMPTY = {
+  ticker: 'IWM',
+  source: 'cloud_sql',
+  count: 0,
+  trades: [],
+} satisfies JournalTradesResponse;
+
+/**
+ * One CLOSED trade. Used by the strip-down test to prove the Trades panel is
+ * genuinely gone rather than just empty — an empty list would prove nothing.
+ */
+export const MOCK_JOURNAL_TRADES_ONE_CLOSED = {
+  ticker: 'IWM',
+  source: 'cloud_sql',
+  count: 1,
+  trades: [
+    {
+      id: 'closed-trade-1',
+      ticker: 'IWM',
+      direction: 'CALL',
+      entry_ts: '2026-04-25T09:31:00',
+      exit_ts: '2026-04-25T10:15:00',
+      entry_price: 220.0,
+      exit_price: 222.5,
+      return_pct: 1.1364,
+      notes: '',
+      take_profits: [223, 225],
+      stop_loss: 218.5,
+      status: 'win',
+      source: 'chart',
+      session_id: null,
+      created_at: '2026-04-25T09:31:01',
+    },
+  ],
+} satisfies JournalTradesResponse;
+
+export interface ChartsMockOpts {
+  trades?: JournalTradesResponse;
+  signalSeries?: SignalSeriesResponse;
+  similar?: SimilarResponse;
+}
+
+/**
+ * Intercept every endpoint `/charts` hits on first paint, scoped to IWM.
+ * Includes `mockCommon`, so callers don't need it separately.
+ *
+ * Registration order matters: Playwright matches newest-first, so the
+ * broad `**\/api/signals/IWM*` glob goes BEFORE the more specific
+ * `/similar` pattern, letting the latter win.
+ */
+export async function mockChartsApi(page: Page, opts: ChartsMockOpts = {}) {
+  await mockCommon(page);
+  const trades = opts.trades ?? MOCK_JOURNAL_TRADES_EMPTY;
+  const signalSeries = opts.signalSeries ?? MOCK_SIGNAL_SERIES;
+  const similar = opts.similar ?? MOCK_SIMILAR_SETUPS;
+
+  await page.route('**/api/market/dates/IWM', (r) => r.fulfill(M.ok(MOCK_MARKET_DATES)));
+  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
+  await page.route('**/api/market/reference/IWM/*', (r) => r.fulfill(M.ok(MOCK_REFERENCE_LEVELS)));
+  await page.route('**/api/options/IWM/*/levels*', (r) => r.fulfill(M.ok(MOCK_LEVELS_POPULATED)));
+  await page.route('**/api/live/indicators', (r) => r.fulfill(M.ok(MOCK_LIVE_INDICATORS)));
+  await page.route('**/api/live/signal-series', (r) => r.fulfill(M.ok(signalSeries)));
+  await page.route('**/api/journal/trades/IWM', (r) => r.fulfill(M.ok(trades)));
+  await page.route('**/api/signals/IWM*', (r) =>
+    r.fulfill(M.ok({ ticker: 'IWM', count: 0, signals: [] }))
+  );
+  await page.route('**/api/signals/IWM/similar*', (r) => r.fulfill(M.ok(similar)));
+}
