@@ -1,6 +1,6 @@
 # Test-Coverage Audit — the frontend-only migration
 
-**Date:** 2026-09-01 · **Branch:** `feature/frontend-only` · **Status:** draft pending E2E + forensics results
+**Date:** 2026-09-01 · **Branch:** `feature/frontend-only` · **Status:** final. Clean solo re-verification of `gamma-levels` and `navigation` after their fixes is deferred until no second Playwright runner is active (see §6, infra item 4); `auth-gate` re-verified 4/4.
 
 This document is the durable record of the test-data audit that ran alongside the
 repo split (Solyra → frontend-only SPA; `api/` + `lib/` + `gcp/` + `scripts/` →
@@ -190,7 +190,80 @@ succeeding against staging — which is exactly the failure mode the typed
 fixtures exist to expose. This removes the two big confounds from earlier runs
 (cold-compile blowing perf budgets; a shared mutable dev server).
 
-> **E2E RESULTS: full per-spec verdicts — pending, will be filled in below.**
+### Full-suite run (25 specs, 161 tests, chromium)
+
+Method: batches of ~6 spec files, then every spec with any batch failure
+re-run **alone** to separate machine contention from real defects. Verdicts
+rest only on conclusive runs.
+
+**Result: 152 of 161 tests healthy. 13 real failures in 3 files — all
+test-side (two fixture gaps, one stale selector); no app regressions.**
+
+| Spec | Tests | Solo verdict |
+| --- | --- | --- |
+| admin-auth, admin, catalysts, dashboard, dashboard-chart-fit, demo-banners, help, insights, journal, journal-import, journal-onestop, landing, live-market, most-active-bar, movement-read, options-flow, playbook, replay-trainer, reports, signals, ticker-combobox, charts-cards | 148 | **PASS** — every batch failure in these files cleared when run alone (e.g. `dashboard` 1/7 in batch → 7/7 solo, perf budget met in 1.8s vs 25s under contention) |
+| `auth-gate.spec.ts` | 3 | **1 real failure** — `nav a[href="/help"]` no longer exists: `/help` moved into the Support dropdown (`navConfig.ts` SUPPORT group, `menu: true`). Stale selector; the behaviour it guards (open mode → no login screen) holds. |
+| `gamma-levels.spec.ts` | 12 | **7 real failures** — the ChartsPage-overlay and Help-glossary describes registered **no mocks at all**, so the boot probe `/api/config/firebase` 500'd through the dead proxy and `main.tsx` rendered its config-error screen instead of the app. Fixture gap. |
+| `navigation.spec.ts` | 14 | **~5 race-flaky failures** — the route-smoke loop mocked only `/api/config/firebase`; every other `/api` call 500'd and Chrome's "Failed to load resource" console error raced the test's `expect(fatal).toEqual([])`. Different routes failed each run; `/help` failed every run. Fixture gap. |
+
+**Fixes applied** (same commit as this section):
+- `auth-gate`: assert on the `nav-menu-support` trigger — the stable "shell mounted" signal — instead of a link that only exists once the menu opens.
+- `gamma-levels`: the two describes now call `mockChartsApi` / `mockHelpApi`.
+- `navigation`: new `tests/helpers/fixtures/all.ts` exports `mockAllPages()`, which composes every per-page helper in a deliberate order (later `mockCommon` calls shadow earlier specific routes, so the "must win" registrations go last — documented in the file). The smoke loop now sees 200s on every route it walks.
+
+**Re-verification status:** `auth-gate` 4/4 solo after the fix. `gamma-levels`
+and `navigation` were re-run while a second full-suite runner was live on the
+same repo (infra item 4 below); in that run the two *fixed* describes in
+`gamma-levels` passed, while four tests in its previously-green first describe
+hung at the 30s budget - the contention signature, not a defect in the fixes.
+A clean solo run with no concurrent runner is the outstanding step; it is
+tracked on #9.
+
+### Infrastructure findings from the run
+
+These explain why batch numbers overstated real problems by an order of
+magnitude, and are worth knowing for anyone reading future CI output:
+
+1. **A second Playwright runner was active on this repo during the run**
+   (`--retries=1` invocations and `-retry1` artifact dirs the verifier never
+   produced). With `reuseExistingServer: false` on a strict port, two runners
+   fight over `:5199` and CPU: this caused a 23-failure batch meltdown,
+   mid-run `ERR_CONNECTION_REFUSED` server deaths, and "port already used"
+   aborts. Any E2E result taken while another runner is live is suspect.
+2. **Roving ~30s navigation stalls** — one random test per run would eat a
+   `page.goto` timeout while siblings on the same route passed in 1–5s; solo
+   re-runs always cleared it. Consistent with the OneDrive-synced working tree
+   blocking Vite file I/O under load. One captured failure showed Vite's HMR
+   overlay reporting a **Unicode-mangled read** of `src/lib/firebase.ts`
+   (`Unexpected "→"`) while the file on disk is valid — i.e. the filesystem,
+   not the app.
+3. Batch runs use 4 workers against one Vite; under contention that amplified
+   stalls. Solo runs are the trustworthy signal in this environment.
+4. **A `vite --port 5199 --strictPort` holding the port is usually a LIVE
+   run's server, not an orphan - check the parent chain before killing it.**
+   During this audit a second full-suite run (`--workers=1 --retries=1`,
+   started 08:50, launched from a Git Bash shell) was in progress; its Vite
+   was misread as a leftover - only one parent level was checked, the
+   `cmd.exe` that spawned it, not the Playwright CLI above that - and killed
+   at ~09:31. From then on both runs shared whichever server was up,
+   contended for CPU (54 headless Chrome processes at one point), and each
+   saw the other's teardown as `ERR_CONNECTION_REFUSED`. Results from *both*
+   runs in that window are contaminated. The correct check is
+   `Get-CimInstance Win32_Process -Filter "ProcessId=<pid>"` walked up two
+   levels: a live `@playwright/test/cli.js` ancestor means leave it alone.
+   Clear a true orphan with `Stop-Process -Id <pid> -Force`; under Git Bash,
+   `taskkill /PID ...` silently does nothing (MSYS rewrites `/PID` as a
+   path). Better still: a global-setup step that refuses to start when
+   another Playwright CLI is already active against the repo.
+5. **`[WebServer] Error: connect ECONNREFUSED 127.0.0.1:8000` spam is
+   expected.** It is Vite's proxy logging every unmocked `/api` request from
+   the warmup project (which mounts each route with only `mockCommon`)
+   hitting the deliberately dead backend pin. It is not a test failure and
+   not a sign the proxy is misconfigured — it is the hermetic setup working.
+
+Recommendation: run E2E from a non-synced checkout (or exclude the repo from
+OneDrive sync), never with a second runner live, and check port 5199 is free
+before starting.
 
 Unit suite: Vitest passing at every committed point — 27 files / 253 tests at
 `042d986` and `8768250`; **29 files / 263 tests** after the fixture-binding
@@ -202,10 +275,30 @@ active trades map to `undefined` financials (never 0), replay rows keep the
 analytics-hygiene keys, the export guard drops exactly the rows the server
 would 422 on, and the report fixture genuinely exercises the GFM table path.
 
-## 7. Commit trail
+## 7. Open items → GitHub issues
+
+Everything this audit left open is tracked; nothing lives only in this file.
+
+| Item | Issue |
+| --- | --- |
+| Journal stats math: delete `useTradeAnalytics` POST client or rewire JournalPage to the server endpoint | [solyra#13](https://github.com/TeneikaAskew/solyra/issues/13) |
+| "My style" panel: re-home in the Journal cockpit or delete `useMineMyStyle` | [solyra#14](https://github.com/TeneikaAskew/solyra/issues/14) |
+| Delete never-used `DataTable.tsx`, `Tabs.tsx` | [solyra#15](https://github.com/TeneikaAskew/solyra/issues/15) |
+| Delete superseded `TermHover.tsx` + `useGammaGlossary.ts` | [solyra#16](https://github.com/TeneikaAskew/solyra/issues/16) |
+| `DataPipelineStatus.tsx`: delete or revive (product call) | [solyra#17](https://github.com/TeneikaAskew/solyra/issues/17) |
+| `dashboard.spec.ts` still inlines card payloads — rewire to `mockDashboardCards()` | [solyra#18](https://github.com/TeneikaAskew/solyra/issues/18) |
+| stocks: stale `platform/tests/phase1-charts.spec.ts` asserts pre-Task-6 UI | [stocks#958](https://github.com/TeneikaAskew/stocks/issues/958) |
+| `/help` nav link vs `auth-gate.spec` — spec side fixed here; product half still open | [solyra#8](https://github.com/TeneikaAskew/solyra/issues/8) (commented) |
+| E2E port hardening — orphaned strict-port Vite, second-runner contention, OneDrive I/O stalls | [solyra#9](https://github.com/TeneikaAskew/solyra/issues/9) (commented) |
+| `admin-auth` logout-button flake — passed 13/13 solo on this run | [solyra#10](https://github.com/TeneikaAskew/solyra/issues/10) (commented) |
+
+## 8. Commit trail
 
 | Commit | What |
 | --- | --- |
 | `bb773d1` (content via PR #3 squash → `33c309a`) | 7 per-page fixture modules, `tsconfig.test.json`, 7 specs rewired, 3 route-type exports |
 | `042d986` | Dashboard/Options/Journal fixtures out of `mocks.ts`; market-hours + journal-shape contract fixes |
 | `8768250` | Final gap closure: admin strat-engine, insights chat/agents, help indicators, landing waitlist, journal export, dashboard cards |
+| `2108f0e` | Fixture-binding Vitest tests (29 files / 263 tests); first version of this document |
+| `a7476c8` | `mockAllPages()` composer; fixes for the three real E2E failures (`auth-gate`, `gamma-levels`, `navigation`) |
+| *(this)* | Final audit document: E2E section, infra findings, open-items → issues index |
