@@ -16,7 +16,7 @@
 
 **Tech Stack:** React 19 + Vite 7 + TS 5.9, react-router-dom v7, plain CSS (design tokens), FastAPI + SQLAlchemy (`gcp.database.get_engine`), pytest (hermetic TestClient), vitest, Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-07-05-solyra-landing-page-design.md` — read it before starting.
+**Spec:** `docs/solyra-landing-page-design.md` — read it before starting.
 
 ## Global Constraints
 
@@ -347,7 +347,7 @@ Create `src/routes/LandingPage.tsx`:
 ```tsx
 /**
  * Solyra public landing page — spec:
- * docs/superpowers/specs/2026-07-05-solyra-landing-page-design.md
+ * docs/solyra-landing-page-design.md
  * The site's DEFAULT page: served publicly at `/` in every auth mode.
  * The app lives at /dashboard behind AuthGate. Must not require auth
  * or Firebase.
@@ -851,7 +851,7 @@ Replace `src/routes/LandingPage.tsx` with:
 ```tsx
 /**
  * Solyra public landing page — spec:
- * docs/superpowers/specs/2026-07-05-solyra-landing-page-design.md
+ * docs/solyra-landing-page-design.md
  * The site's DEFAULT page: served publicly at `/` in every auth mode.
  * The app lives at /dashboard behind AuthGate. Must not require auth
  * or Firebase.
@@ -1610,7 +1610,7 @@ export function LandingFAQ() {
 ```tsx
 /**
  * Solyra public landing page — spec:
- * docs/superpowers/specs/2026-07-05-solyra-landing-page-design.md
+ * docs/solyra-landing-page-design.md
  * The site's DEFAULT page: served publicly at `/` in every auth mode.
  * The app lives at /dashboard behind AuthGate. Must not require auth
  * or Firebase.
@@ -1720,7 +1720,7 @@ Run (in `platform/`): `npm run lint` → clean. `npm run build` → passes. `npx
 git add tests/landing.spec.ts src/components/landing/fixtures.ts
 git commit -m "test: landing page e2e smoke + proof tile data"
 git push -u origin feature/solyra-landing
-gh pr create --base main --title "feat: Solyra public landing page + waitlist API" --body "Implements docs/superpowers/specs/2026-07-05-solyra-landing-page-design.md — landing page as the default / route (app moves to /dashboard), waitlist endpoint + table, 10 marketing sections with app-faithful gamma visuals. Deployment note: apply gcp/schema.sql (waitlist_signups) via the apply-schema-migrations Cloud Run job before flipping firebase-mode traffic."
+gh pr create --base main --title "feat: Solyra public landing page + waitlist API" --body "Implements docs/solyra-landing-page-design.md — landing page as the default / route (app moves to /dashboard), waitlist endpoint + table, 10 marketing sections with app-faithful gamma visuals. Deployment note: apply gcp/schema.sql (waitlist_signups) via the apply-schema-migrations Cloud Run job before flipping firebase-mode traffic."
 ```
 
 PR description must include the capacity note (Rule 0): waitlist endpoint = 1 INSERT per request, rate-limited 5/10min/IP, no scheduled jobs, no new Cloud Run resources → no capacity/cost impact.
