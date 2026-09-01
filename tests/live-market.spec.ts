@@ -10,6 +10,7 @@
  * doesn't exist.
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { mockLiveApi } from './helpers/fixtures/live';
 
 test.describe('Live Market', () => {
@@ -35,10 +36,10 @@ test.describe('Live Market', () => {
     await expect(page.getByText(/market open|market closed|pre-market|after hours/i).first()).toBeVisible();
   });
 
-  test('renders within 5s perf budget', async ({ page }) => {
+  test('renders within perf budget (strict 5s)', async ({ page }) => {
     const start = Date.now();
     await page.goto('/live');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(5000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(5000));
   });
 });

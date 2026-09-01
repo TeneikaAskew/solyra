@@ -5,6 +5,7 @@
  * All API calls mocked; perf budget = first contentful render under 5s.
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { M } from './helpers/mocks';
 import { mockDashboard } from './helpers/fixtures/dashboard';
 
@@ -232,13 +233,13 @@ test.describe('Dashboard', () => {
     await expect(newsCard.getByText('Small-cap earnings season kicks off with mixed guidance')).toBeVisible();
   });
 
-  test('renders within 7s perf budget', async ({ page }) => {
+  test('renders within perf budget (strict 7s)', async ({ page }) => {
     // Dashboard has heavy API fan-out (brief + backtest + equity + signals +
     // playbook + live quote/history/avg-vol + reference). 7s allows for the
     // first-paint waterfall before mocks fully resolve.
     const start = Date.now();
     await page.goto('/dashboard');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(7000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(7000));
   });
 });

@@ -19,6 +19,9 @@ tests/.auth/
 test-results/
 playwright-report/
 
+# E2E dev-server lock (scripts/e2e-server.mjs) — per-run, PID-scoped
+.e2e-server.lock
+
 # Frontend source under src/data/ is application code, not pipeline data —
 # re-include it despite the repo-root `data/` ignore (which targets GCS-backed
 # parquet/CSV datasets, not TypeScript modules).

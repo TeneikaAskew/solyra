@@ -2,6 +2,7 @@
  * E2E: Help & Glossary ("/help") — static page, search-filterable terms.
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { mockCommon } from './helpers/mocks';
 
 test.describe('Help & Glossary', () => {
@@ -21,10 +22,10 @@ test.describe('Help & Glossary', () => {
     await expect(page.locator('input[type="text"], input[placeholder*="search" i]').first()).toBeVisible();
   });
 
-  test('renders within 3s perf budget (static page)', async ({ page }) => {
+  test('renders within perf budget (strict 3s, static page)', async ({ page }) => {
     const start = Date.now();
     await page.goto('/help');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(3000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(3000));
   });
 });
