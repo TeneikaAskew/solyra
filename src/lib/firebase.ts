@@ -32,6 +32,30 @@ export async function getIdToken(forceRefresh = false): Promise<string | null> {
   return user ? user.getIdToken(forceRefresh) : null;
 }
 
+/**
+ * True when the app is running inside an iframe — e.g. a Lovable preview.
+ *
+ * Load-bearing for Google sign-in. `signInWithPopup` authenticates in the
+ * popup and then `postMessage`s the credential back to the window that opened
+ * it; from a CROSS-ORIGIN iframe that channel is blocked by storage
+ * partitioning, so the popup succeeds while the embedded app never hears back
+ * and `onAuthStateChanged` never fires — the user is left staring at the login
+ * form. Being listed in Firebase's authorized domains does not help: this is a
+ * framing restriction, not a domain one.
+ *
+ * `signInWithRedirect` is NOT a fix either — Google's sign-in page refuses to
+ * be framed, so the redirect dead-ends. The only reliable path is to leave the
+ * iframe, which is what the sign-in screen offers when this returns true.
+ */
+export function isFramed(): boolean {
+  try {
+    return window.self !== window.top;
+  } catch {
+    // Reading window.top cross-origin throws — which itself proves we're framed.
+    return true;
+  }
+}
+
 export function signInWithGoogle() {
   if (!_auth) throw new Error('Firebase not initialized');
   return signInWithPopup(_auth, new GoogleAuthProvider());
