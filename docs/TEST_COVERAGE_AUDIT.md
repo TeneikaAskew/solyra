@@ -1,6 +1,6 @@
 # Test-Coverage Audit — the frontend-only migration
 
-**Date:** 2026-09-01 · **Branch:** `feature/frontend-only` · **Status:** final. Clean solo re-verification of `gamma-levels` and `navigation` after their fixes is deferred until no second Playwright runner is active (see §6, infra item 4); `auth-gate` re-verified 4/4.
+**Date:** 2026-09-01 · **Branch:** `feature/frontend-only` · **Status:** final. All three fixed specs re-verified solo with no concurrent runner: `auth-gate` 4/4, `gamma-levels` 13/13, `navigation` 15/15.
 
 This document is the durable record of the test-data audit that ran alongside the
 repo split (Solyra → frontend-only SPA; `api/` + `lib/` + `gcp/` + `scripts/` →
@@ -211,13 +211,7 @@ test-side (two fixture gaps, one stale selector); no app regressions.**
 - `gamma-levels`: the two describes now call `mockChartsApi` / `mockHelpApi`.
 - `navigation`: new `tests/helpers/fixtures/all.ts` exports `mockAllPages()`, which composes every per-page helper in a deliberate order (later `mockCommon` calls shadow earlier specific routes, so the "must win" registrations go last — documented in the file). The smoke loop now sees 200s on every route it walks.
 
-**Re-verification status:** `auth-gate` 4/4 solo after the fix. `gamma-levels`
-and `navigation` were re-run while a second full-suite runner was live on the
-same repo (infra item 4 below); in that run the two *fixed* describes in
-`gamma-levels` passed, while four tests in its previously-green first describe
-hung at the 30s budget - the contention signature, not a defect in the fixes.
-A clean solo run with no concurrent runner is the outstanding step; it is
-tracked on #9.
+**Re-verification (final):** with no concurrent runner on the machine, `gamma-levels` **13/13** (2.6 min incl. warmup; every test 2.4–4.5 s) and `navigation` **15/15** (3.0 min; route-smoke tests 2.1–4.6 s each), on top of `auth-gate` 4/4. The same `gamma-levels` tests had hung at the 30 s `page.goto` budget minutes earlier while a second full-suite runner was live — a direct A/B on contention as the cause (infra item 4).
 
 ### Infrastructure findings from the run
 
@@ -301,4 +295,5 @@ Everything this audit left open is tracked; nothing lives only in this file.
 | `8768250` | Final gap closure: admin strat-engine, insights chat/agents, help indicators, landing waitlist, journal export, dashboard cards |
 | `2108f0e` | Fixture-binding Vitest tests (29 files / 263 tests); first version of this document |
 | `a7476c8` | `mockAllPages()` composer; fixes for the three real E2E failures (`auth-gate`, `gamma-levels`, `navigation`) |
-| *(this)* | Final audit document: E2E section, infra findings, open-items → issues index |
+| `df0f633` | Final audit document: E2E section, infra findings, open-items → issues index |
+| *(this)* | Clean re-verification numbers for the three fixed specs |
