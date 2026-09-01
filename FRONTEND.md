@@ -36,9 +36,10 @@ platform/
 ├─ screenshot_pages.mjs         # Playwright util for capturing each page
 ├─ src/
 │  ├─ main.tsx                  # ReactDOM.createRoot(...).render(<App />)
-│  ├─ App.tsx                   # QueryClientProvider + RouterProvider (12 routes)
-│  ├─ routes/                   # 12 lazy-loaded pages — one per sidebar nav item
-│  │  ├─ DashboardPage.tsx      # /         — Data pipeline health, watchlist summary
+│  ├─ App.tsx                   # QueryClientProvider + RouterProvider (15 routes)
+│  ├─ routes/                   # 15 lazy-loaded pages (13 in the app shell + landing + settings)
+│  │  ├─ LandingPage.tsx        # /         — public marketing/landing (all auth modes)
+│  │  ├─ DashboardPage.tsx      # /dashboard— briefing-first Overview (brief, KPIs, cards)
 │  │  ├─ LiveMarketPage.tsx     # /live     — real-time quote + indicators
 │  │  ├─ ChartsPage.tsx         # /charts   — candlestick / area chart + strategy conditions
 │  │  ├─ OptionsFlowPage.tsx    # /options  — Greeks, GEX, options table
@@ -49,7 +50,8 @@ platform/
 │  │  ├─ InsightsPage.tsx       # /insights — AI insight cards + watchlist + refresh
 │  │  ├─ CatalystsPage.tsx      # /catalysts— Benzinga catalysts calendar
 │  │  ├─ AdminPage.tsx          # /admin    — admin-only (model_routing, role routes)
-│  │  └─ HelpPage.tsx           # /help     — glossary, Strat methodology refs
+│  │  ├─ HelpPage.tsx           # /help     — glossary, Strat methodology refs
+│  │  └─ SettingsPage.tsx       # /settings — user preferences
 │  ├─ components/
 │  │  ├─ layout/                # AppShell, Header, Sidebar (12 nav items + ticker switcher)
 │  │  ├─ shared/                # DataTable, MetricCard, Modal, Tabs, DateSelector,
@@ -80,17 +82,24 @@ platform/
 
 ## Routing model
 
-`App.tsx` builds a single `createBrowserRouter` tree with one **layout route** (`AppShell`) wrapping **12 child routes**. Each child:
+`App.tsx` builds a single `createBrowserRouter` tree with three top-level
+entries: the public **`LandingPage` at `/`** (rendered in every auth mode),
+a **`/welcome` → `/` redirect**, and one **layout route**
+(`AuthGate` wrapping `AppShell`) with **13 child routes** — in firebase mode a
+signed-out visitor hitting any app route sees the sign-in screen, then the app.
+Each child:
 
 - is `React.lazy`-loaded, so the initial bundle is only the shell + the active page;
 - is wrapped in a `<Suspense fallback={<PageLoader />}>` for the lazy-load handoff;
 - carries its own `errorElement={<RouteErrorBoundary />}` — when a page crashes during render, the boundary catches it, keeps sidebar + header rendered, and shows a card with the error + a refresh button. The crash does **not** unmount the chrome.
 
-The 12 routes:
+The 15 routes:
 
 | Path        | Page                 | Purpose | Primary API surface |
 |-------------|----------------------|---------|---------------------|
-| `/`         | `DashboardPage`      | Data-pipeline freshness + watchlist summary | `/api/dashboard/brief/{ticker}` |
+| `/`         | `LandingPage`        | Public marketing/landing — the site's default page in every auth mode | static |
+| `/welcome`  | —                    | Redirect to `/` | — |
+| `/dashboard`| `DashboardPage`      | Briefing-first Overview — pre-market brief, KPI tiles, sector rotation, news, intraday chart, backtester | `/api/dashboard/brief/{ticker}` |
 | `/live`     | `LiveMarketPage`     | Real-time quote, intraday indicators | `/api/live/quote`, `/api/live/indicators`, `/api/live/history`, `/api/live/avg-volume`, `/api/live/status` |
 | `/charts`   | `ChartsPage`         | Candlestick + area + strategy-conditions card | `/api/market/data/{ticker}/{date}`, `/api/market/dates`, `/api/market/reference` |
 | `/options`  | `OptionsFlowPage`    | Greeks, GEX, options chain | `/api/options/greeks` |
@@ -102,6 +111,7 @@ The 12 routes:
 | `/catalysts`| `CatalystsPage`      | Benzinga catalysts calendar | `/api/catalysts/*` |
 | `/admin`    | `AdminPage`          | Admin-only — model routing, role/route grants | `/api/admin/models`, `/api/admin/routes/{role}` |
 | `/help`     | `HelpPage`           | Glossary + Strat methodology refs | static |
+| `/settings` | `SettingsPage`       | User preferences | — |
 
 The `Sidebar` filters `/admin` out for non-admin users (server-resolved via `useUser` → `/api/me`).
 

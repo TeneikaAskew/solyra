@@ -10,8 +10,10 @@
 
 > Canonical test strategy for the Obsidian Analyst redesign. Three layers —
 > **frontend E2E (Playwright)**, **backend (pytest)**, and **GCP data/pipeline
-> validation** — each runnable independently. Mirrors the actual harness in
-> `platform/` and the repo root, so every command below is copy-pasteable.
+> validation** — each runnable independently. Frontend commands run from THIS
+> repo's root (`package.json`, `playwright.config.ts` and `tests/` live here);
+> the backend (`make …`) and GCP commands run from the stocks repo, which owns
+> that code.
 
 ---
 
@@ -19,7 +21,7 @@
 
 | Layer | What it proves | Tooling | Where | Run command |
 |---|---|---|---|---|
-| **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `tests/*.spec.ts` | `cd platform && npm run e2e` |
+| **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `tests/*.spec.ts` | `npm run e2e` |
 | **Frontend E2E (live)** | The deployed Cloud Run app behind IAP serves real data | Playwright (`cloud` project) | same specs, `baseURL` = Cloud Run URL | `npm run e2e:cloud:auth` then `npm run e2e:cloud` |
 | **Backend unit** | `lib/` math (indicators, strat, gamma, backtest), API contracts | pytest | `tests/test_*.py` | `make test` |
 | **Backend E2E / scripts** | Pipeline scripts, fetchers, signal monitor | pytest | `tests/test_e2e.py`, `tests/test_scripts_*.py` | `make test-e2e` · `make test-scripts` |
@@ -30,7 +32,7 @@
 ## 1. Frontend E2E (Playwright) — primary
 
 **Config:** `playwright.config.ts` — `testDir: ./tests`, 3 projects:
-- **`chromium`** (default): `baseURL=http://localhost:5173`, all `/api/**` **mocked** per-spec → no backend needed, hermetic, fast (~3 min full run).
+- **`chromium`** (default): boots its **own** Vite on the dedicated E2E port (`:5199`, never your `:5173` dev server), all `/api/**` **mocked** per-spec → no backend needed, hermetic, fast.
 - **`iap-setup`** / **`cloud`**: run against the live Cloud Run URL behind IAP — skipped by the default command. For the **no-IAP staging service** you can skip the interactive Google sign-in entirely — see §6.
 
 **Mock strategy:** `tests/helpers/mocks.ts` `mockCommon(page)` stubs the cross-cutting endpoints (`/api/health`, `/api/live/status`, brief, watchlist); each spec adds its own `page.route('**/api/<endpoint>', …)` with realistic fixtures. **Fixtures must match the production response shape** (CLAUDE.md Rule 0.3) — e.g. the dashboard brief mock carries `daily_indicators.close`, the signals mock carries `analytics/summary`.
@@ -47,14 +49,13 @@
 | `options-flow.spec.ts` · `gamma-levels.spec.ts` | `/options` | Heatseeker grid · GEX/VEX · King/Gate fallback · live-AV badge |
 | `live-market.spec.ts` · `charts-cards.spec.ts` · `phase1-charts.spec.ts` | `/live` `/charts` | hero tiles · candlestick canvas · reference levels |
 | `playbook.spec.ts` · `reports.spec.ts` · `help.spec.ts` · `admin.spec.ts` · `admin-auth.spec.ts` | `/playbook` `/reports` `/help` `/admin` | cards · glossary · admin auth gate |
-| `navigation.spec.ts` | all 12 routes | each route loads without a fatal error |
+| `navigation.spec.ts` | every route | each route loads without a fatal error |
 | `api-smoke.spec.ts` | API contracts | health/freshness, market dates, signals, options, backtest, insights as-of-replay rejects bad cutoffs |
 
 ### Run
 ```bash
-cd platform
-PLAYWRIGHT_START_VITE=1 npm run e2e            # auto-starts vite, runs chromium
-# or, against an already-running dev server:
+# From this repo's root. Playwright always boots its own Vite on :5199 —
+# it never adopts a running dev server (see playwright.config.ts).
 npm run e2e
 npx playwright test --project=chromium tests/journal.spec.ts   # a single spec
 ```
