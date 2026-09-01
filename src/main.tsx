@@ -66,6 +66,16 @@ function renderConfigError(message: string): void {
 // fetch wrapper, THEN render. installAuthFetch must run before the app renders
 // so the very first /api/* data call already carries the bearer token.
 async function bootstrap() {
+  // Install FIRST, before the config fetch below. The wrapper also rewrites
+  // relative /api/* onto VITE_API_BASE_URL when that's set, and
+  // /api/config/firebase is itself an /api call — installing after it would
+  // leave the very first request pointing at an origin that may not serve the
+  // API at all (a static host answers it with index.html, and the JSON parse
+  // then fails the whole boot). Token attachment still no-ops until
+  // setRuntimeConfig marks the mode as `firebase`, and this path is in
+  // OPEN_PREFIXES regardless, so nothing else changes.
+  installAuthFetch()
+
   let config: RuntimeConfig
   try {
     config = await fetchRuntimeConfig()
@@ -78,7 +88,6 @@ async function bootstrap() {
   if (config.authMode === 'firebase' && config.firebase) {
     initFirebase(config.firebase)
   }
-  installAuthFetch() // no-op unless firebase mode
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

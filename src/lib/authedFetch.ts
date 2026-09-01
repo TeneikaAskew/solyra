@@ -1,18 +1,38 @@
 /**
- * Global `window.fetch` wrapper that attaches the Firebase ID token to every
- * same-origin `/api/*` request.
+ * Global `window.fetch` wrapper doing two things for every `/api/*` request:
  *
- * Why a global monkeypatch: the app makes ~60 backend calls across ~30 files as
+ *  1. Re-point it at an absolute backend origin, when one is configured.
+ *  2. Attach the Firebase ID token (firebase auth mode only).
+ *
+ * Why a global monkeypatch: the app makes ~73 backend calls across ~30 files as
  * bare relative `fetch('/api/...')` with no central client and no
  * WebSocket/EventSource. Wrapping the one network primitive covers every call
- * site (current and future) with zero per-file edits. It is a strict no-op
- * unless auth mode is `firebase`, so iap/open/local behaviour is unchanged.
+ * site (current and future) with zero per-file edits.
+ *
+ * ── On the absolute origin ────────────────────────────────────────────────
+ * Relative `/api/*` works wherever something maps that path to FastAPI: the
+ * Vite dev proxy locally, and same-origin serving on Cloud Run (one container
+ * serves the SPA and the API). It does NOT work on a host that serves a static
+ * build with SPA history-fallback — there `/api/live/quote/IWM` returns
+ * index.html with `200 text/html`, so `r.json()` throws and every page shows
+ * as broken. A Lovable preview does exactly this (confirmed via HAR).
+ *
+ * Setting `VITE_API_BASE_URL` at build time rewrites those calls to an
+ * absolute origin instead. Leave it UNSET for local dev and Cloud Run, where
+ * same-origin is correct and cheaper — this is a strict no-op when empty.
+ *
+ * NOTE: a cross-origin base makes these calls subject to CORS. The backend
+ * must send `Access-Control-Allow-Origin` for the host serving the SPA (and
+ * allow the `Authorization` header on preflight), or the browser blocks them.
  */
 import { getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 
 // Reachable pre-auth — must match api/auth._OPEN_API_PREFIXES.
 const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase'];
+
+// Trailing slash trimmed so `${API_BASE}${path}` never doubles up.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 
 let _installed = false;
 let _onUnauthorized: (() => void) | null = null;
@@ -40,14 +60,45 @@ function isGatedApiPath(path: string): boolean {
   return !OPEN_PREFIXES.some((p) => path === p || path.startsWith(p));
 }
 
+/**
+ * Rewrite a relative `/api/*` request onto API_BASE. No-op when API_BASE is
+ * empty, when the path isn't `/api/*`, or when the caller already passed an
+ * absolute URL (it chose an origin deliberately — don't second-guess it).
+ */
+function withApiBase(input: RequestInfo | URL): RequestInfo | URL {
+  if (!API_BASE) return input;
+
+  if (typeof input === 'string') {
+    return input.startsWith('/api/') ? `${API_BASE}${input}` : input;
+  }
+  if (input instanceof Request) {
+    const path = new URL(input.url, window.location.origin).pathname;
+    if (!path.startsWith('/api/')) return input;
+    // Same-origin absolute already → rewrite; a Request is immutable, so clone
+    // it onto the new URL, preserving method/body/headers/credentials.
+    const url = new URL(input.url, window.location.origin);
+    if (url.origin !== window.location.origin) return input;
+    return new Request(`${API_BASE}${url.pathname}${url.search}`, input);
+  }
+  // URL instance
+  if (input.origin === window.location.origin && input.pathname.startsWith('/api/')) {
+    return new URL(`${API_BASE}${input.pathname}${input.search}`);
+  }
+  return input;
+}
+
 export function installAuthFetch(): void {
   if (_installed || typeof window === 'undefined') return;
   _installed = true;
   const nativeFetch = window.fetch.bind(window);
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    // Base rewrite happens for EVERY mode — a static host serving the SPA has
+    // no /api route regardless of how auth is configured.
+    const target = withApiBase(input);
+
     if (getAuthMode() !== 'firebase' || !isGatedApiPath(pathOf(input))) {
-      return nativeFetch(input, init);
+      return nativeFetch(target, init);
     }
 
     const token = await getIdToken().catch(() => null);
@@ -55,13 +106,13 @@ export function installAuthFetch(): void {
     if (token) {
       // Merge onto existing headers (preserve X-Admin-Token, Content-Type, …).
       const headers = new Headers(
-        init?.headers ?? (input instanceof Request ? input.headers : undefined),
+        init?.headers ?? (target instanceof Request ? target.headers : undefined),
       );
       headers.set('Authorization', `Bearer ${token}`);
       nextInit = { ...init, headers };
     }
 
-    const resp = await nativeFetch(input, nextInit);
+    const resp = await nativeFetch(target, nextInit);
     if (resp.status === 401 && _onUnauthorized) _onUnauthorized();
     return resp;
   };
