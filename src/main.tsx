@@ -79,8 +79,10 @@ async function bootstrap() {
   try {
     config = await fetchRuntimeConfig()
   } catch (err) {
-    renderConfigError((err as Error).message ?? 'unknown error')
-    return
+    // No backend reachable (static/preview hosting): fall back to open mode
+    // so the app renders instead of blocking on an error screen.
+    console.warn('runtime config unavailable, defaulting to open mode:', err)
+    config = { authMode: 'open', firebase: null }
   }
 
   setRuntimeConfig(config)
