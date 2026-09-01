@@ -26,7 +26,16 @@ async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
   if (!r.ok) {
     throw new Error(`/api/config/firebase returned ${r.status}`)
   }
-  return (await r.json()) as RuntimeConfig
+  // Guard against non-JSON responses (e.g. a static host's SPA fallback
+  // returning index.html with a 200). Parse defensively and validate shape.
+  const text = await r.text()
+  try {
+    const data = JSON.parse(text) as RuntimeConfig
+    if (data && typeof data.authMode === 'string') return data
+  } catch {
+    /* fall through to error below */
+  }
+  throw new Error('/api/config/firebase did not return a valid config payload')
 }
 
 function renderConfigError(message: string): void {
