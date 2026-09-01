@@ -25,83 +25,29 @@
 import { test, expect } from '@playwright/test';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mockCommon, M } from './helpers/mocks';
+import { M } from './helpers/mocks';
+import {
+  MOCK_IMPORT_COMMIT,
+  MOCK_IMPORT_PREVIEW,
+  mockJournalApi,
+} from './helpers/fixtures/journal';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROBINHOOD_FIXTURE = path.join(__dirname, 'fixtures', 'robinhood_sample.csv');
 
-const EMPTY_TRADES = { ticker: 'IWM', source: 'cloud_sql', count: 0, trades: [] };
-const MOCK_MARKET_DATA = { ticker: 'IWM', date: '2026-04-25', count: 0, candlestick: [], volume: [] };
-
-// Realistic preview response — see file header for the CSV -> payload derivation.
-const PREVIEW_RESPONSE = {
-  broker: 'robinhood',
-  trades: [
-    {
-      ticker: 'IWM',
-      direction: 'CALL',
-      entry_ts: '2026-06-01 00:00',
-      entry_price: 1.42,
-      exit_ts: '2026-06-03 00:00',
-      exit_price: 1.71,
-      return_pct: 20.42,
-      quantity: 2,
-      status: 'closed',
-      duplicate: true,
-    },
-    {
-      ticker: 'SPY',
-      direction: 'PUT',
-      entry_ts: '2026-06-02 00:00',
-      entry_price: 3.10,
-      exit_ts: '2026-06-05 00:00',
-      exit_price: 2.95,
-      return_pct: -4.84,
-      quantity: 1,
-      status: 'closed',
-      duplicate: false,
-    },
-    {
-      ticker: 'QQQ',
-      direction: 'CALL',
-      entry_ts: '2026-06-04 00:00',
-      entry_price: 5.20,
-      exit_ts: null,
-      exit_price: null,
-      return_pct: null,
-      quantity: 1,
-      status: 'active',
-      duplicate: false,
-    },
-  ],
-  skipped: [
-    { raw_index: 5, reason: 'shares — options only in v1' },
-    { raw_index: 6, reason: 'short options not supported' },
-    { raw_index: 7, reason: 'unsupported activity type: CDIV' },
-    { raw_index: 8, reason: 'unsupported activity type: ACH' },
-  ],
-};
-
+/**
+ * The import modal lives on /journal, so the page needs its full first-paint
+ * surface mocked. `onOwnTradesFetch` counts GETs of the own-journal route so
+ * the specs can assert the post-commit query invalidation actually refetched.
+ */
 async function mockJournalImportPage(
   page: import('@playwright/test').Page,
   opts: { ownTradesCounter: { count: number } }
 ) {
-  await mockCommon(page);
-  await page.route('**/api/market/dates/IWM', (r) => r.fulfill(M.ok({ ticker: 'IWM', dates: [] })));
-  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
-  await page.route('**/api/config/market-hours', (r) =>
-    r.fulfill(
-      M.ok({
-        regular: { open: '09:30', close: '16:00' },
-        premarket: { open: '04:00', close: '09:30' },
-        afterhours: { open: '16:00', close: '20:00' },
-      })
-    )
-  );
-  await page.route('**/api/journal/examples/IWM', (r) => r.fulfill(M.ok(EMPTY_TRADES)));
-  await page.route('**/api/journal/trades/IWM', (r) => {
-    opts.ownTradesCounter.count += 1;
-    return r.fulfill(M.ok(EMPTY_TRADES));
+  await mockJournalApi(page, {
+    onOwnTradesFetch: () => {
+      opts.ownTradesCounter.count += 1;
+    },
   });
 }
 
@@ -116,13 +62,13 @@ test.describe('Broker CSV import', () => {
     await page.route('**/api/journal/import/preview', async (route) => {
       const req = route.request();
       previewRequestWasMultipart = (req.headers()['content-type'] ?? '').includes('multipart/form-data');
-      await route.fulfill(M.ok(PREVIEW_RESPONSE));
+      await route.fulfill(M.ok(MOCK_IMPORT_PREVIEW));
     });
 
     let commitBody: unknown = null;
     await page.route('**/api/journal/import/commit', async (route) => {
       commitBody = route.request().postDataJSON();
-      await route.fulfill(M.ok({ imported: 2, skipped_duplicates: 1 }));
+      await route.fulfill(M.ok(MOCK_IMPORT_COMMIT));
     });
 
     await page.goto('/journal');

@@ -43,7 +43,9 @@ interface DailyIndicators {
   strat_candle?: string; strat_combo?: string;
   ftfc_score?: number; ftfc_direction?: string;
 }
-interface BriefResponse {
+// Exported so tests/helpers/fixtures/dashboard.ts can pin its fixtures to
+// the real contract (see the same note in ReportsPage.tsx).
+export interface BriefResponse {
   ticker: string; source: string; bias: string; reason?: string;
   rsi?: number; strat_candle?: string; strat_combo?: string;
   ftfc_score?: number; ftfc_direction?: string; signal_status?: string;
@@ -57,14 +59,14 @@ interface PlaybookCard {
   horizons?: SetupHorizon[];
   best_horizon_min?: number | null; best_horizon_win_rate?: number | null; best_horizon_avg_bps?: number | null;
 }
-interface PlaybookResponse { ticker: string; cards: PlaybookCard[] }
+export interface PlaybookResponse { ticker: string; cards: PlaybookCard[] }
 interface SignalEntry {
   time: string; direction: string; score: number;
   conditions_met: string; return_pct: number;
 }
 interface SignalsResponse { ticker: string; count: number; signals: SignalEntry[] }
 
-interface ReferenceResponse {
+export interface ReferenceResponse {
   ticker: string; date: string; close: number; high: number; low: number;
   week?: { high: number; low: number; avg_close?: number } | null;
 }

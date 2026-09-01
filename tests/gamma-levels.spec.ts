@@ -15,7 +15,7 @@
  *   - Vite dev server on :5173
  */
 import { test, expect } from '@playwright/test';
-import { mockOptionsApi } from './helpers/mocks';
+import { mockOptionsApi } from './helpers/fixtures/options';
 
 const ETF_TICKER = 'QQQ'; // a ticker we know has chain data
 

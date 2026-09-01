@@ -5,7 +5,8 @@
  * All API calls mocked; perf budget = first contentful render under 5s.
  */
 import { test, expect } from '@playwright/test';
-import { mockDashboard, M } from './helpers/mocks';
+import { M } from './helpers/mocks';
+import { mockDashboard } from './helpers/fixtures/dashboard';
 
 // Relative-to-now ISO dates so the News card's day-granularity relative
 // label ("yesterday") and forward-event dates are deterministic regardless

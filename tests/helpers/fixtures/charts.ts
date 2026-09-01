@@ -24,8 +24,9 @@
 import type { Page } from '@playwright/test';
 import type { SignalSeriesResponse } from '@/hooks/useLiveIndicators';
 import type { SimilarResponse } from '@/hooks/useSimilarSetups';
-import type { JournalRow } from '@/hooks/useJournalChartTrades';
-import { M, mockCommon, MOCK_LEVELS_POPULATED } from '../mocks';
+import { M, mockCommon } from '../mocks';
+import { MOCK_LEVELS_POPULATED } from './options';
+import type { JournalTradesResponse } from './journal';
 import {
   MOCK_CANDLES,
   MOCK_LIVE_INDICATORS,
@@ -126,14 +127,6 @@ export const MOCK_SIMILAR_SETUPS_EMPTY = {
   },
   matches: [],
 } satisfies SimilarResponse;
-
-/** `JournalTradesResponse` is internal to useJournalChartTrades.ts. */
-interface JournalTradesResponse {
-  ticker: string;
-  source: 'cloud_sql' | 'local';
-  count: number;
-  trades: JournalRow[];
-}
 
 export const MOCK_JOURNAL_TRADES_EMPTY = {
   ticker: 'IWM',
