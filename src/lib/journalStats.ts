@@ -1,3 +1,24 @@
+/**
+ * Journal-scope aggregates, computed CLIENT-SIDE — deliberately (issue #13).
+ *
+ * This is not a violation of the "financial math lives server-side" rule; it
+ * is the ratified division of labor:
+ *
+ *  - Server (`/api/analytics/summary`, `/api/analytics/trade-stats`) owns
+ *    P&L-dollar aggregates over `{status, pnl, optionType}` trades — DB-backed
+ *    backtest rows the client never holds in full.
+ *  - THIS module owns return-% aggregates over journal entries the client
+ *    already holds completely: equity curve, practice-trade (replay)
+ *    exclusion, per-session date scoping, avg R:R, TP1 hit rate. None of
+ *    that math exists server-side; the two stat sets are different models,
+ *    not duplicates. Wiring the journal tiles to the POST endpoint would
+ *    silently change their meaning (dollars vs %) and drop the Task 5
+ *    product semantics pinned by journalStats.test.ts /
+ *    journalNullSafety.test.ts / journalFixtureMapping.test.ts.
+ *
+ * If a server-side consumer ever needs these journal aggregates, port THIS
+ * contract (tests first) rather than approximating it with trade-stats.
+ */
 import type { PricePoint } from '@/components/charts/PriceAreaChart';
 import { riskReward } from '@/lib/risk';
 
