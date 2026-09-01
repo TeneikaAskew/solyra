@@ -42,3 +42,11 @@ __pycache__/
 .venv/
 venv/
 .env
+
+# Network captures. Kept out of the repo because a HAR is a verbatim recording
+# of a browsing session: request/response bodies, cookies, auth headers and
+# analytics identifiers. Useful to hand to a debugging session, never something
+# to commit.
+*.har
+har.json
+docs/har.json

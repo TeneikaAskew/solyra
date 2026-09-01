@@ -6,7 +6,8 @@
  * those banners so they can't vanish while the tabs stay mock.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M, MOCK_GRID, MOCK_LEVELS } from './helpers/mocks';
+import { mockCommon, M } from './helpers/mocks';
+import { MOCK_GRID, MOCK_LEVELS } from './helpers/fixtures/options';
 
 test.describe('Mock data surfaces stay banner-honest', () => {
   test.beforeEach(async ({ page }) => {

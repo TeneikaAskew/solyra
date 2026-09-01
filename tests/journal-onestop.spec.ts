@@ -11,7 +11,12 @@
  * interaction recipe is reused from charts-cards.spec.ts (Task 2.3 block).
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
+import { M } from './helpers/mocks';
+import {
+  MOCK_JOURNAL_DATES,
+  mockJournalApi,
+  type JournalTradesResponse,
+} from './helpers/fixtures/journal';
 
 // 30 bars walking up — same synthetic series as charts-cards.spec.ts so the
 // canvas-click recipe resolves clicks to real bars deterministically.
@@ -81,7 +86,7 @@ const EXAMPLE_TRADES = {
       session_id: null,
     },
   ],
-};
+} satisfies JournalTradesResponse;
 
 // One own closed trade on the chart date — drives the My-journal rail card
 // and risk-column assertions.
@@ -108,9 +113,9 @@ const OWN_TRADES = {
       created_at: '2026-04-25T09:31:01',
     },
   ],
-};
+} satisfies JournalTradesResponse;
 
-const EMPTY_TRADES = { ticker: 'IWM', source: 'cloud_sql', count: 0, trades: [] };
+const EMPTY_TRADES = { ticker: 'IWM', source: 'cloud_sql', count: 0, trades: [] } satisfies JournalTradesResponse;
 
 // task-examples-union: the Examples union response contains BOTH an
 // admin-authored journal_entries row (source:'chart', same as EXAMPLE_TRADES
@@ -158,30 +163,20 @@ const UNION_EXAMPLE_TRADES = {
       session_id: null,
     },
   ],
-};
+} satisfies JournalTradesResponse;
 
 async function mockJournalOneStop(
   page: import('@playwright/test').Page,
-  { own, examples }: { own: unknown; examples: unknown },
+  { own, examples }: { own: JournalTradesResponse; examples: JournalTradesResponse },
 ) {
-  await mockCommon(page);
-  // Dates come back as YYYYMMDD in production (platform/api/main.py) — the
-  // page's ISO conversion assumes that (see charts-cards.spec.ts Task 2.3).
-  await page.route('**/api/market/dates/IWM', (r) =>
-    r.fulfill(M.ok({ ticker: 'IWM', dates: ['20260425'] }))
-  );
+  // Structure (dates / market-hours / journal routes) comes from the shared
+  // journal fixture. Dates come back as YYYYMMDD in production - the page's
+  // ISO conversion assumes that.
+  await mockJournalApi(page, { own, examples, dates: MOCK_JOURNAL_DATES });
+  // This spec's chart card needs REAL candles on the session date, not the
+  // shared fixture's empty default. Registered after mockJournalApi so it
+  // wins - Playwright matches newest-first.
   await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
-  await page.route('**/api/config/market-hours', (r) =>
-    r.fulfill(
-      M.ok({
-        regular: { open: '09:30', close: '16:00' },
-        premarket: { open: '04:00', close: '09:30' },
-        afterhours: { open: '16:00', close: '20:00' },
-      })
-    )
-  );
-  await page.route('**/api/journal/trades/IWM', (r) => r.fulfill(M.ok(own)));
-  await page.route('**/api/journal/examples/IWM', (r) => r.fulfill(M.ok(examples)));
 }
 
 test.describe('Journal one-stop cockpit — Examples default', () => {
@@ -468,7 +463,7 @@ test.describe('Journal one-stop cockpit — table/rail-card time parity (regress
         session_id: null,
       },
     ],
-  };
+  } satisfies JournalTradesResponse;
 
   test.beforeEach(async ({ page }) => {
     await mockJournalOneStop(page, { own: TZ_BUG_OWN_TRADES, examples: EXAMPLE_TRADES });
@@ -613,7 +608,7 @@ const ALERT_ENRICHED_TRADES = {
       session_id: null,
     },
   ],
-};
+} satisfies JournalTradesResponse;
 
 test.describe('Journal one-stop cockpit — Examples alert enrichment (TPs + per-row time-stop)', () => {
   test.beforeEach(async ({ page }) => {

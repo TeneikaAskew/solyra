@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Loader2, Mail, Lock } from 'lucide-react';
 import { Brand } from '@/components/layout/Brand';
 import {
+  isFramed,
   signInWithGoogle,
   signInWithEmail,
   signUpWithEmail,
@@ -38,6 +39,12 @@ function friendlyError(code: string | undefined, fallback: string): string {
 }
 
 export function SignInScreen() {
+  // Computed once at mount: whether we can complete a Google popup at all.
+  // See isFramed() — inside a cross-origin preview iframe the popup's result
+  // never reaches us, so we send the user to a top-level tab instead of
+  // opening a popup that silently strands them here. Email/password is
+  // unaffected (no popup, no cross-window handshake) and stays available.
+  const [framed] = useState(isFramed);
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -88,16 +95,36 @@ export function SignInScreen() {
             : 'Sign up with your email, or continue with Google.'}
         </p>
 
-        {/* Google SSO */}
-        <button
-          type="button"
-          disabled={busy}
-          data-testid="google-signin"
-          onClick={() => run(signInWithGoogle)}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--on-surface)] ring-1 ring-[var(--outline,rgba(255,255,255,0.08))] transition hover:opacity-90 disabled:opacity-50"
-        >
-          <GoogleGlyph /> Continue with Google
-        </button>
+        {/* Google SSO. Framed (preview iframe) → break out to a top-level tab,
+            where the popup handshake can actually complete. */}
+        {framed ? (
+          <>
+            <a
+              href={window.location.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="google-signin-newtab"
+              className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--on-surface)] ring-1 ring-[var(--outline,rgba(255,255,255,0.08))] transition hover:opacity-90"
+            >
+              <GoogleGlyph /> Continue with Google — opens a new tab
+            </a>
+            <p className="mb-4 text-[11px] leading-relaxed text-[var(--on-surface-muted)]">
+              Google sign-in can&apos;t finish inside an embedded preview. Opening
+              the app in its own tab lets it complete; email sign-in below works
+              here either way.
+            </p>
+          </>
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            data-testid="google-signin"
+            onClick={() => run(signInWithGoogle)}
+            className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--on-surface)] ring-1 ring-[var(--outline,rgba(255,255,255,0.08))] transition hover:opacity-90 disabled:opacity-50"
+          >
+            <GoogleGlyph /> Continue with Google
+          </button>
+        )}
 
         <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-[0.08em] text-[var(--on-surface-muted)]">
           <span className="h-px flex-1 bg-[var(--outline,rgba(255,255,255,0.08))]" />

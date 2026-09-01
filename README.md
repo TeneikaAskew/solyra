@@ -1,24 +1,103 @@
 # Solyra
 
-Build an original, polished AI marketing site inspired by the overall page structure of skylit.ai, without copying its branding, wording, imagery, or proprietary design. Include a strong hero section, social proof or trust strip, feature sections, an intuitive product workflow section, pricing, FAQ, and repeated clear calls to action. Create a distinct contemporary visual identity and responsive experience. This is a marketing-only site, so no backend is needed.
+The frontend for the trading platform — a React + TypeScript single-page app
+covering the market dashboard, live quotes, charts, options/gamma analysis,
+signals, the trade journal, AI insights, and catalysts.
 
-This project was built with [Lovable](https://lovable.dev).
+**This repo holds the frontend only.** The FastAPI backend, the research
+pipeline, and the GCP jobs live in the **stocks** repo and are deployed
+together as the `trading-platform` Cloud Run service. Solyra's dev server
+proxies `/api/*` to that backend, so the browser still sees same-origin
+requests and none of the ~73 bare `fetch('/api/...')` call sites need to know
+where the API actually is.
+
+Built with [Lovable](https://lovable.dev).
+
+## Development
+
+You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+
+```sh
+npm i
+npm run dev
+```
+
+The app runs on <http://localhost:5173>.
+
+### Where `/api` goes
+
+The dev server picks its proxy target by **probing for a backend**, not by
+sniffing environment variables — detecting the backend is more robust than
+detecting the environment, and stays correct no matter what Lovable,
+Codespaces, or CI happen to set:
+
+| Situation | `/api/*` is proxied to |
+| --- | --- |
+| Something is listening on `localhost:8000` | that local backend |
+| Nothing is (Lovable's cloud preview, a plain checkout) | `trading-platform-staging` on Cloud Run |
+| `VITE_API_PROXY_TARGET` is set | that URL, unconditionally |
+
+So a fresh clone gets **real data with no setup**. To run against a local
+backend instead, start the API from the stocks repo on port 8000 and restart
+the dev server — it will pick it up.
+
+For offline UI work with no backend at all, `VITE_NO_BACKEND=1 npm run dev`
+stubs `/api/config/firebase` with open auth so the SPA can boot. It is opt-in
+because that stub would otherwise shadow a real backend, reporting `authMode:
+'open'` while the API still expects a Firebase ID token — every gated call
+would then 401.
+
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Vite dev server on :5173 |
+| `npm run build` | `tsc -b` across all three TS projects, then `vite build` |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest unit tests (`src/**/*.test.ts{,x}`) |
+| `npm run e2e` | Playwright E2E against a running dev server |
+
+### TypeScript projects
+
+`tsconfig.json` is a solution file referencing three projects: `app` (`src/`),
+`node` (`vite.config.ts`), and `test` (`tests/`). The test project exists so
+the E2E fixtures are type-checked against the real app contracts — a backend
+schema change breaks `tsc -b` instead of silently drifting past a hand-written
+mock.
+
+## Tests
+
+**Unit** — Vitest, colocated in `src/` as `*.test.ts{,x}`.
+
+**E2E** — Playwright, in `tests/`. These are **hermetic**: every `/api` call is
+intercepted with `page.route`, so they need no backend and no network. Test
+data lives in `tests/helpers/`:
+
+- `mocks.ts` — `mockCommon` (the cross-cutting endpoints every page hits) plus
+  the `M` fulfil helpers.
+- `fixtures/<page>.ts` — per-page typed payloads and a `mockXxxApi(page)`
+  helper covering that page's full endpoint fan-out. Fixtures use `satisfies`
+  against the real response types, so they can't drift from the contracts.
+
+Run them with a dev server already up, or let Playwright start one:
+
+```sh
+npm run e2e                          # reuses a server on :5173
+PLAYWRIGHT_START_VITE=1 npm run e2e  # boots one itself
+```
+
+Backend contract tests — the ones that made live requests to `:8000` and
+asserted API response shapes — are **not** here. They test code this repo no
+longer contains, so they belong beside it in stocks.
 
 ## Build with Lovable
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/f6c1be2f-245d-4a43-8110-dd05ffafa8af).
+Continue developing in the [Lovable editor](https://lovable.dev/projects/f6c1be2f-245d-4a43-8110-dd05ffafa8af).
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
 - **Stay in sync**: every change made in Lovable is committed straight to this repository.
 - **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
-```
+> Avoid rewriting published git history (force-push, or rebasing/amending/
+> squashing pushed commits) — it rewrites history on Lovable's side and can
+> lose project history. See `AGENTS.md`.

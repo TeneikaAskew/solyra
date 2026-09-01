@@ -5,7 +5,8 @@
  * Runs against live dev server (port 5173) + FastAPI backend (port 8000).
  */
 import { test, expect, Page } from '@playwright/test';
-import { mockCommon, M, MOCK_GRID, MOCK_LEVELS } from './helpers/mocks';
+import { mockCommon, M } from './helpers/mocks';
+import { MOCK_GRID, MOCK_LEVELS } from './helpers/fixtures/options';
 
 const ROUTES: Array<{ path: string; heading: RegExp }> = [
   { path: '/dashboard', heading: /dashboard/i },

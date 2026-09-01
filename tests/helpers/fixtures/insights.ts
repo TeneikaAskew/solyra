@@ -26,6 +26,7 @@ import type {
   RunStatus,
 } from '@/types/insights';
 import type { WatchlistResponse } from '@/types/watchlist';
+import type { RouteRow } from '@/hooks/useAdmin';
 import { M, mockCommon } from '../mocks';
 
 export const RUN_ID = '00000000-0000-0000-0000-000000000001';
@@ -253,6 +254,23 @@ export const MOCK_WATCHLIST_EMPTY = {
   duration_ms: 1100,
 } satisfies WatchlistResponse;
 
+/** Model-routing rows behind <AgentsPanel> on this page. */
+export const MOCK_AGENT_ROUTES = {
+  routes: [
+    { role: 'analyst', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
+    { role: 'bull', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
+    { role: 'bear', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
+    { role: 'judge', provider: 'vertex', model: 'gemini-2.5-pro', updated_at: null, updated_by: null },
+  ],
+} satisfies { routes: RouteRow[] };
+
+/** Streamed assistant reply. Multi-sentence so the incremental-append path
+ *  has more than one decode to concatenate. */
+export const MOCK_CHAT_REPLY =
+  'IWM is holding above the prior-day high with FTFC bullish. ' +
+  'The 220 strike carries the largest positive gamma, so expect it to act as a magnet into the close. ' +
+  'Invalidation is a 1-hour close below 218.';
+
 export interface InsightsMockOpts {
   /** Envelope for GET /report/{ticker}; `null` fulfils a 404 (no report yet). */
   report?: InsightReportEnvelope | null;
@@ -262,6 +280,8 @@ export interface InsightsMockOpts {
   runStatusValue?: RunStatus['status'];
   /** Called with the full URL of each POST …/refresh, for ?as_of= assertions. */
   onRefresh?: (url: string) => void;
+  /** Body the streaming chat endpoint returns. */
+  chatReply?: string;
 }
 
 /**
@@ -293,4 +313,20 @@ export async function mockInsightsApi(page: Page, opts: InsightsMockOpts = {}) {
     r.fulfill(report === null ? M.notFound() : M.ok(report))
   );
   await page.route('**/api/insights/watchlist**', (r) => r.fulfill(M.ok(watchlist)));
+
+  // AgentsPanel (rendered on this page) reads the model-routing table. It is
+  // NOT admin-gated in the UI here, so an unmocked /insights visit leaves the
+  // panel erroring.
+  await page.route('**/api/admin/routes', (r) => r.fulfill(M.ok(MOCK_AGENT_ROUTES)));
+
+  // Chat is a STREAMING endpoint: the page reads resp.body via a reader and
+  // concatenates decoded chunks, so this must be fulfilled as plain text, not
+  // JSON. Fulfilling it as JSON would render the raw envelope into the bubble.
+  await page.route('**/api/insights/chat', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'text/plain; charset=utf-8',
+      body: opts.chatReply ?? MOCK_CHAT_REPLY,
+    })
+  );
 }

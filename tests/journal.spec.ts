@@ -1,86 +1,27 @@
 /**
  * E2E: Trade Journal ("/journal") — list trades, add/delete, export CSV.
+ *
+ * Payloads live in tests/helpers/fixtures/journal.ts, typed against
+ * useJournalChartTrades.ts's JournalRow. The fixture this spec used to carry
+ * for the closed trade was off-contract (`trade_id`/`shares`/`pnl`,
+ * `direction: 'long'`) while its sibling in the same file used the real
+ * shape; both are now the one typed fixture.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
-
-const MOCK_TRADES = {
-  ticker: 'IWM',
-  count: 1,
-  trades: [
-    {
-      trade_id: '00000000-0000-0000-0000-000000000001',
-      ticker: 'IWM',
-      direction: 'long',
-      entry_ts: '2026-04-24T14:00:00Z',
-      exit_ts: '2026-04-24T15:30:00Z',
-      entry_price: 220.0,
-      exit_price: 222.5,
-      shares: 100,
-      pnl: 250.0,
-      notes: 'Breakout above PD high.',
-    },
-  ],
-};
-
-// One closed trade + one ACTIVE (null-exit, chart-marked) trade — the
-// shared GET /api/journal/trades/{ticker} endpoint returns these for
-// open positions and JournalPage must render both without crashing.
-const MOCK_TRADES_WITH_ACTIVE = {
-  ticker: 'IWM',
-  count: 2,
-  trades: [
-    {
-      id: '00000000-0000-0000-0000-000000000001',
-      ticker: 'IWM',
-      direction: 'CALL',
-      entry_ts: '2026-04-24T14:00:00Z',
-      exit_ts: '2026-04-24T15:30:00Z',
-      entry_price: 220.0,
-      exit_price: 222.5,
-      return_pct: 1.14,
-      notes: 'Breakout above PD high.',
-      status: 'win',
-      source: 'manual',
-    },
-    {
-      id: '00000000-0000-0000-0000-000000000002',
-      ticker: 'IWM',
-      direction: 'PUT',
-      entry_ts: '2026-04-25T09:31:00Z',
-      exit_ts: null,
-      entry_price: 218.0,
-      exit_price: null,
-      return_pct: null,
-      notes: 'Still open — chart-marked.',
-      status: 'active',
-      source: 'chart',
-      take_profits: [216, 214],
-      stop_loss: 220,
-      session_id: null,
-    },
-  ],
-};
-
-// Task 5 (journal one-stop): the page now also fetches the trading-date list
-// + market data (for the interactive chart) and the admin Examples dataset.
-// These structural mocks keep the legacy tests deterministic: an empty dates
-// list renders the chart card's honest no-data state, and empty Examples
-// keep the legacy own-journal assertions meaningful.
-async function mockOneStopStructure(page: import('@playwright/test').Page) {
-  await page.route('**/api/market/dates/IWM', (r) =>
-    r.fulfill(M.ok({ ticker: 'IWM', dates: [], months: [] }))
-  );
-  await page.route('**/api/journal/examples/IWM', (r) =>
-    r.fulfill(M.ok({ ticker: 'IWM', source: 'cloud_sql', count: 0, trades: [] }))
-  );
-}
+import { M } from './helpers/mocks';
+import {
+  MOCK_JOURNAL_EMPTY,
+  MOCK_JOURNAL_TRADES,
+  MOCK_JOURNAL_TRADES_WITH_ACTIVE,
+  MOCK_MIXED_TRADES,
+  mockJournalApi,
+} from './helpers/fixtures/journal';
 
 test.describe('Trade Journal', () => {
   test.beforeEach(async ({ page }) => {
-    await mockCommon(page);
-    await mockOneStopStructure(page);
-    await page.route('**/api/journal/trades/IWM*', (r) => r.fulfill(M.ok(MOCK_TRADES)));
+    // Empty dates → the chart card's honest no-data state; empty Examples →
+    // the legacy own-journal assertions stay meaningful.
+    await mockJournalApi(page, { own: MOCK_JOURNAL_TRADES });
   });
 
   test('renders journal heading', async ({ page }) => {
@@ -96,9 +37,7 @@ test.describe('Trade Journal', () => {
   });
 
   test('shows empty state when no trades', async ({ page }) => {
-    await page.route('**/api/journal/trades/IWM*', (r) =>
-      r.fulfill(M.ok({ ticker: 'IWM', count: 0, trades: [] }))
-    );
+    await page.route('**/api/journal/trades/IWM*', (r) => r.fulfill(M.ok(MOCK_JOURNAL_EMPTY)));
     await page.goto('/journal');
     await page.waitForLoadState('networkidle');
     // Task 5 structural re-anchor: an empty own journal now DEFAULTS to the
@@ -128,7 +67,9 @@ test.describe('Trade Journal', () => {
   });
 
   test('renders an active (null-exit) trade alongside a closed one without crashing', async ({ page }) => {
-    await page.route('**/api/journal/trades/IWM*', (r) => r.fulfill(M.ok(MOCK_TRADES_WITH_ACTIVE)));
+    await page.route('**/api/journal/trades/IWM*', (r) =>
+      r.fulfill(M.ok(MOCK_JOURNAL_TRADES_WITH_ACTIVE))
+    );
     await page.goto('/journal');
     await page.waitForLoadState('networkidle');
 
@@ -146,40 +87,8 @@ test.describe('Trade Journal', () => {
 // every stats aggregate by default, foldable back in via the "Include
 // practice sessions" toggle.
 test.describe('Trade Journal — practice-trade analytics hygiene (Task 5.3)', () => {
-  const MANUAL_TRADE = {
-    id: '00000000-0000-0000-0000-0000000000a1',
-    ticker: 'IWM',
-    direction: 'CALL',
-    entry_ts: '2026-04-24T14:00:00Z',
-    exit_ts: '2026-04-24T15:30:00Z',
-    entry_price: 220.0,
-    exit_price: 242.0,
-    return_pct: 10.0,
-    notes: 'Manual win trade.',
-    status: 'win',
-    source: 'manual',
-    session_id: null,
-  };
-  const REPLAY_TRADE = {
-    id: '00000000-0000-0000-0000-0000000000a2',
-    ticker: 'IWM',
-    direction: 'PUT',
-    entry_ts: '2026-04-25T09:36:00',
-    exit_ts: '2026-04-25T09:40:00',
-    entry_price: 220.25,
-    exit_price: 330.375,
-    return_pct: -50.0,
-    notes: 'Practice replay trade.',
-    status: 'loss',
-    source: 'replay',
-    session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-  };
-  const MIXED_TRADES = { ticker: 'IWM', source: 'cloud_sql', count: 2, trades: [MANUAL_TRADE, REPLAY_TRADE] };
-
   test.beforeEach(async ({ page }) => {
-    await mockCommon(page);
-    await mockOneStopStructure(page);
-    await page.route('**/api/journal/trades/IWM*', (r) => r.fulfill(M.ok(MIXED_TRADES)));
+    await mockJournalApi(page, { own: MOCK_MIXED_TRADES });
   });
 
   test('excludes replay trades from stats by default; toggle folds them in; exclusion note mentions practice trades', async ({ page }) => {
@@ -208,10 +117,8 @@ test.describe('Trade Journal — practice-trade analytics hygiene (Task 5.3)', (
   // muted "practice" badge next to the direction cell in the trade table —
   // same visual weight as the existing "active" badge, so a practice trade
   // is visually distinguishable from a real one even when its stats are
-  // folded into the aggregates via the toggle above. Placed in THIS spec
-  // (rather than journal-onestop.spec.ts) because MIXED_TRADES above is
-  // already the one fixture in the suite with a real source:'replay' row
-  // rendered in the table — reusing it avoids inventing a second one.
+  // folded into the aggregates via the toggle above. MOCK_MIXED_TRADES is
+  // the one fixture with a real source:'replay' row rendered in the table.
   test('replay-sourced rows carry a muted "practice" badge next to the direction cell', async ({ page }) => {
     await page.goto('/journal');
     await page.waitForLoadState('networkidle');
