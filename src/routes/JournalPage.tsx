@@ -30,6 +30,7 @@ import {
   type TradeMarkingChartHandle,
 } from '@/components/journal/TradeMarkingChart';
 import { TradeRailCard } from '@/components/journal/TradeRailCard';
+import { MyStylePanel } from '@/components/journal/MyStylePanel';
 import { ImportTradesModal } from '@/components/journal/ImportTradesModal';
 import type { DrawingStep } from '@/hooks/useTradeMarking';
 import { useMarketData, useAvailableDates } from '@/hooks/useMarketData';
@@ -689,6 +690,11 @@ export default function JournalPage() {
           )}
         </>
       )}
+
+      {/* "My style" — mines MY closed trades server-side, so it renders only
+          on the My-journal view (mining is meaningless against the Examples
+          teaching layer). Re-homed from ChartsPage's Analytics tab, issue #14. */}
+      {!isExamples && <MyStylePanel ticker={activeTicker} />}
 
       {/* Add Trade Form */}
       {showForm && (

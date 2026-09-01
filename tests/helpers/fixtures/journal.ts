@@ -19,7 +19,11 @@
  * so that can't recur.
  */
 import type { Page } from '@playwright/test';
-import type { JournalRow } from '@/hooks/useJournalChartTrades';
+import type {
+  JournalRow,
+  MineStyleSuccess,
+  MineStyleUnavailable,
+} from '@/hooks/useJournalChartTrades';
 import { M, mockCommon } from '../mocks';
 import { MOCK_MARKET_HOURS } from './dashboard';
 
@@ -263,6 +267,38 @@ export const MOCK_IMPORT_COMMIT = { imported: 2, skipped_duplicates: 1 };
 
 /** POST /api/journal/export/{ticker} — pipeline acknowledgement. */
 export const MOCK_JOURNAL_EXPORT = { ticker: 'IWM', exported: 1, status: 'ok' };
+
+// ── "My style" panel (POST /api/style/mine-and-validate, issue #14) ────────
+// NOT wired into mockJournalApi: the panel only POSTs on an explicit button
+// click, and its specs assert on the request body, so they register their own
+// handlers — same convention as the import/commit mutations above.
+
+/** Mined + walk-forward-validated profile — the panel's full success render:
+ *  direction badge, three condition chips (one parameterized), support/total
+ *  sample sizes, fold count + stability, staged marker. */
+export const MOCK_MINE_STYLE_SUCCESS = {
+  profile: {
+    direction: 'CALL',
+    conditions: ['rsi_50_75', 'above_vwap', 'consec_up_ge_3'],
+    support: 9,
+    total: 14,
+  },
+  aggregate_metrics: {
+    avg_expectancy_pct: 0.42, // TRUE PERCENT
+    avg_win_rate: 0.57, // 0-1 fraction
+    total_trades_all_folds: 63,
+    total_folds: 5,
+  },
+  stability_score: 0.8,
+  staged: true,
+} satisfies MineStyleSuccess;
+
+/** The server's honest not-enough-signal envelope (always a 200 — Rule 3.7:
+ *  an expected, recoverable state, not an error). */
+export const MOCK_MINE_STYLE_UNAVAILABLE = {
+  status: 'unavailable',
+  reason: 'Need at least 10 closed trades to mine a style profile (have 3).',
+} satisfies MineStyleUnavailable;
 
 export interface JournalMockOpts {
   /** Called with the parsed POST body of an export, to assert that only
