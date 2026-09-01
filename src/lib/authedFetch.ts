@@ -21,6 +21,11 @@
  * absolute origin instead. Leave it UNSET for local dev and Cloud Run, where
  * same-origin is correct and cheaper — this is a strict no-op when empty.
  *
+ * Lovable hosts are detected at runtime so no build-time env var has to be set
+ * there. The dev-server probe in vite.config.ts cannot cover this: it runs in
+ * Node when the dev server boots and only configures a proxy, whereas a static
+ * build has neither. The hostname is the one signal available in the browser.
+ *
  * NOTE: a cross-origin base makes these calls subject to CORS. The backend
  * must send `Access-Control-Allow-Origin` for the host serving the SPA (and
  * allow the `Authorization` header on preflight), or the browser blocks them.
@@ -31,8 +36,31 @@ import { getAuthMode } from './runtimeConfig';
 // Reachable pre-auth — must match api/auth._OPEN_API_PREFIXES.
 const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase'];
 
+// Public URL of the deployed staging API. Not a secret: the service is
+// unauthenticated at the edge and gated per-request by Firebase token
+// verification, and the bundle already ships the public Firebase web config.
+const STAGING_API = 'https://trading-platform-staging-5sjtb3yl7a-ue.a.run.app';
+
+/**
+ * Absolute origin for `/api/*`, or '' to keep requests same-origin.
+ *
+ * Explicit env var wins, so any host can be pointed anywhere. Otherwise
+ * `*.lovable.app` — preview and published alike — gets staging, because those
+ * are static hosts that would answer `/api/*` with index.html. Everything else
+ * (local dev behind the Vite proxy, Cloud Run serving SPA and API from one
+ * container) stays same-origin.
+ */
+function resolveApiBase(): string {
+  const explicit = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+  if (explicit) return explicit;
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('.lovable.app')) {
+    return STAGING_API;
+  }
+  return '';
+}
+
 // Trailing slash trimmed so `${API_BASE}${path}` never doubles up.
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+const API_BASE = resolveApiBase();
 
 let _installed = false;
 let _onUnauthorized: (() => void) | null = null;
