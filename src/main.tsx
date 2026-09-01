@@ -38,6 +38,48 @@ async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
   throw new Error('/api/config/firebase did not return a valid config payload')
 }
 
+/**
+ * The fail-LOUD surface for a broken boot. Restored after commit 34588bc
+ * removed it and swapped in a silent fallback to open mode — the exact
+ * behaviour the header comment above forbids (see issue #5).
+ *
+ * This is also the correct signal for a static host with no /api proxy or a
+ * backend without CORS for this origin: the shape guard in fetchRuntimeConfig
+ * turns "index.html with a 200" into this screen, instead of into an ungated
+ * app whose every data pane is broken.
+ */
+function renderConfigError(message: string): void {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <div
+        data-testid="config-error"
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.75rem',
+          padding: '1.5rem',
+          background: 'var(--surface-0, #0b0b0f)',
+          color: 'var(--on-surface, #e5e7eb)',
+          fontFamily: 'system-ui, sans-serif',
+          textAlign: 'center',
+        }}
+      >
+        <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+          Could not load application configuration
+        </h1>
+        <p style={{ fontSize: 13, opacity: 0.8, margin: 0, maxWidth: 420 }}>
+          The server did not return a valid auth configuration, so the app
+          cannot start safely. This usually means the backend is unreachable or
+          misconfigured. Refresh to retry.
+        </p>
+        <p style={{ fontSize: 11, opacity: 0.5, margin: 0 }}>{message}</p>
+      </div>
+    </StrictMode>,
+  )
+}
 
 // Bootstrap: load the runtime auth config, init Firebase + the token-injecting
 // fetch wrapper, THEN render. installAuthFetch must run before the app renders
@@ -57,10 +99,10 @@ async function bootstrap() {
   try {
     config = await fetchRuntimeConfig()
   } catch (err) {
-    // No backend reachable (static/preview hosting): fall back to open mode
-    // so the app renders instead of blocking on an error screen.
-    console.warn('runtime config unavailable, defaulting to open mode:', err)
-    config = { authMode: 'open', firebase: null }
+    // Fail loud, never open — see the header comment. A swallowed failure
+    // here would render the full app ungated to an anonymous visitor.
+    renderConfigError((err as Error).message ?? 'unknown error')
+    return
   }
 
   setRuntimeConfig(config)
