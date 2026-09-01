@@ -62,10 +62,22 @@ export default defineConfig({
       }
     : undefined,
   projects: [
+    // Warms every lazy route against the freshly-booted Vite so the specs'
+    // wall-clock budgets measure a warm server rather than a cold transform.
+    // A dependency of `chromium` only, so cloud runs never trigger it.
+    // The filename deliberately avoids both `*.spec.ts` (the default
+    // testMatch) and `*.setup.ts` (the iap-setup project's), so no other
+    // project picks it up.
+    {
+      name: 'warmup',
+      testMatch: /routes\.warmup\.ts$/,
+      use: { ...devices['Desktop Chrome'], baseURL: E2E_BASE_URL, ignoreHTTPSErrors: true },
+    },
     // Default: local-dev specs against Playwright's own Vite (see E2E_PORT).
     {
       name: 'chromium',
       testIgnore: /\.setup\.ts$/,
+      dependencies: ['warmup'],
       use: {
         ...devices['Desktop Chrome'],
         baseURL: E2E_BASE_URL,
