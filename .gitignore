@@ -53,3 +53,8 @@ venv/
 *.har
 har.json
 docs/har.json
+
+# Claude Code local session settings (permissions allowlist) — personal, not repo config
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
