@@ -1,6 +1,6 @@
 // Pure logic for the Expected-Move card affordances. No React, no fetches —
 // unit-tested in expectedMove.test.ts. p_tail thresholds are base-rate grounded
-// (see docs/superpowers/specs/2026-07-13-expected-move-affordances-design.md).
+// (see docs/expected-move-affordances-design.md).
 export const SIZE_LIGHT_GREEN = 0.2;
 export const SIZE_LIGHT_AMBER = 0.1;
 
