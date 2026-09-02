@@ -55,6 +55,11 @@ Each of these is documented in-file with the reasoning. If a test is failing,
   a human previewing the app, wrong for a test run, because unmocked endpoints
   would silently succeed against real infrastructure. It also puts a
   cold-starting Cloud Run service in the path of every navigation.
+- **The launcher, `node scripts/e2e-server.mjs --port 5199`.** `webServer`
+  runs this instead of `npm run dev` — see "Port and concurrency hygiene"
+  below. Vite is spawned straight from `node_modules` so no intermediate
+  shell/npm process can be missed by a process-tree kill (that layer is
+  exactly how servers got stranded on Windows).
 - **`workers: 1`.** Measured on the same tree the same day (2026-09-01):
   default workers → 46 failed / 28 flaky / 87 passed, 218 thirty-second
   timeouts, pages dying during fixture setup. `workers: 1` → 18 failed /
@@ -131,9 +136,9 @@ rather than inventing it.
 2. **Unmocked endpoint?** Add `page.on('request', r => console.log(r.url()))`
    or check the trace's network tab for a pending/failed `/api/*` call. This is
    the most common cause.
-3. **Leaked dev server?** `"http://localhost:5199 is already used"` after an
-   interrupted run means a stale Vite. Kill it and re-run — Playwright refuses
-   to adopt a server it didn't configure, on purpose.
+3. **Port or concurrency problem?** See the dedicated section below — the
+   launcher now self-heals a leaked server, so this presents differently than
+   it used to.
 4. **Stale selector?** Read the component and confirm the role/text still
    exists. A renamed heading is a real (if small) regression in the spec, not
    in the app.
@@ -143,6 +148,37 @@ rather than inventing it.
    over `waitForTimeout`. Never add a bare sleep to fix a race.
 7. **Real regression?** Only conclude this after 1–6. Then report it with the
    failing assertion, the component `file:line`, and what changed.
+
+## Port and concurrency hygiene (`scripts/e2e-server.mjs`)
+
+The launcher closes two failure modes measured on 2026-09-01 and written up in
+`docs/TEST_COVERAGE_AUDIT.md` §6 / `docs/E2E_TEST_PLAN.md`:
+
+1. **Leaked server** — a hard-killed run (closed terminal, SIGKILL) strands its
+   Vite holding the strict port. The launcher detects the leak, positively
+   identifies the listener as *this checkout's* Vite, kills it, and proceeds.
+   **You should no longer have to kill a stale server by hand.** If you see
+   `http://localhost:5199 is already used` reaching Playwright, the launcher
+   declined to kill it — which means it was NOT identifiable as this repo's
+   Vite. Something else is on 5199. Find out what before killing anything; the
+   launcher's refusal is a safety feature, not a bug to work around.
+
+2. **Concurrent runs** — two runs on one strict port share a server, contend
+   for CPU, and read each other's teardown as `ERR_CONNECTION_REFUSED`, making
+   both runs' results garbage. A PID-liveness-checked lockfile
+   (`.e2e-server.lock`) makes the second run refuse loudly instead.
+
+So when a run aborts at startup, read which of the two it is:
+
+- "another run holds the lock" → a real second run is active, or a stale lock
+  from a killed process. Wait for it, or verify the PID is dead.
+- "port in use, not our Vite" → investigate the listener; do not blind-kill.
+
+**Never resolve either by setting `reuseExistingServer: true` or changing the
+port.** That re-opens exactly the contamination the launcher exists to prevent.
+
+Do not run two `npm run e2e` invocations in parallel yourself — including
+backgrounding one while starting another.
 
 ## Adding coverage for a new page
 

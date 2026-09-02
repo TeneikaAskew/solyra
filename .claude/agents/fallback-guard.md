@@ -20,7 +20,7 @@ the user — the ones that render a fabricated number as if it were a real
 measurement, without ever raising an alarm.
 
 The policy is `CLAUDE.md` **Rule 4** ("No Silent Fallbacks"). It originated in
-the stocks repo as **Rule 3.7**, and 36 files under `src/` and `tests/` still
+the stocks repo as **Rule 3.7**, and 37 files under `src/` and `tests/` still
 cite it by that number. **Both names refer to the same rule.** Never tell an
 author their `§3.7` citation is wrong.
 

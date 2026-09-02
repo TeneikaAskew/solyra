@@ -56,8 +56,10 @@ the commit, so doc and code land together.
 |---|---|---|
 | `package.json` scripts | `README.md` → Scripts table | A script is added, removed, or its behaviour changes |
 | `vite.config.ts` (proxy logic) | `README.md` → "Where `/api` goes" | Proxy target resolution or env-var handling changes |
+| `src/lib/apiTargets.ts` | `README.md` → "Where `/api` goes"; `CLAUDE.md` → Where `/api` goes | An origin or `STATIC_FRONTEND_HOST_SUFFIXES` changes — also needs the CORS allow-list updated in the stocks repo |
 | `playwright.config.ts` | `README.md` → Tests; `CLAUDE.md` → Testing | Ports, workers, projects, or isolation settings change |
-| `tests/**` | `docs/TEST_COVERAGE_AUDIT.md` | New spec, removed spec, or a coverage verdict changes |
+| `scripts/e2e-server.mjs` | `docs/E2E_TEST_PLAN.md`; `README.md` → Tests | Port/lock/kill behaviour changes |
+| `tests/**` | `docs/TEST_COVERAGE_AUDIT.md`, `docs/E2E_TEST_PLAN.md` | New spec, removed spec, or a coverage verdict changes |
 | `src/lib/authedFetch.ts` | `README.md` → auth; `CLAUDE.md` → Auth | `OPEN_PREFIXES` or origin resolution changes |
 | `src/types/**` | `docs/options_flow_data_contract.md` (if options-related) | A response contract changes |
 | `src/routes/**` (new route) | `README.md` | A page is added or removed |

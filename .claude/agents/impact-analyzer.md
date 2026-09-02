@@ -23,7 +23,9 @@ Categorize each file, roughly in descending blast radius:
 | Category | Why it matters |
 |---|---|
 | `src/types/` | Consumed by components, hooks, AND `tests/helpers/fixtures/` — widest reach |
+| `src/lib/apiTargets.ts` | Imported from BOTH sides of the toolchain — `vite.config.ts` (Node) and `authedFetch.ts` (browser). A change here alters where every `/api` call goes in dev, in tests, and on static hosts, and may need a matching CORS change in the **stocks** repo |
 | `src/lib/authedFetch.ts` | Wraps **every** `/api` call in the app |
+| `scripts/e2e-server.mjs`, `playwright.config.ts` | Affects whether the whole E2E suite can run at all |
 | `src/lib/` (other) | Shared pure helpers |
 | `src/stores/` | Zustand state read across unrelated routes |
 | `src/hooks/` | Usually 1–N components |
