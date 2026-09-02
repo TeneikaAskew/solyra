@@ -22,12 +22,13 @@
  * miss — that extra layer is exactly how servers got stranded on Windows.
  *
  * Safety posture: this script only ever kills a process it has positively
- * identified as a Vite dev server (command line contains "vite"). If it
- * cannot identify the listener it fails loud with instructions instead of
- * killing blind.
+ * identified as THIS CHECKOUT'S Vite dev server (command line contains
+ * "vite" AND the process's command path or working directory is rooted in
+ * this repo). Anything else — another project's Vite included — fails loud
+ * with instructions instead of being killed blind.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, readlinkSync, rmSync, writeSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -121,6 +122,39 @@ function commandLineOf(pid) {
   }
 }
 
+/** Best-effort working directory of a PID; null when it can't be read. */
+function cwdOf(pid) {
+  try {
+    if (process.platform === 'linux') return readlinkSync(`/proc/${pid}/cwd`)
+    if (process.platform === 'darwin') {
+      const out = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+        encoding: 'utf8',
+      })
+      const m = out.match(/^n(.+)$/m)
+      return m ? m[1] : null
+    }
+    // win32: no dependency-free way to read another process's cwd — the
+    // command-line check below covers it, because this launcher always
+    // spawns Vite by its absolute node_modules path under repoRoot.
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A Vite on the E2E port is only OURS to kill when it provably belongs to
+ * THIS checkout — its command line references repoRoot (how this launcher
+ * spawns it) or its working directory is rooted there. A Vite from another
+ * checkout or project that happens to hold the port is refused, not killed
+ * (caught by Codex on PR #21).
+ */
+function belongsToThisCheckout(pid, cmd) {
+  if (cmd !== null && cmd.includes(repoRoot)) return true
+  const cwd = cwdOf(pid)
+  return cwd !== null && (cwd === repoRoot || cwd.startsWith(repoRoot + path.sep))
+}
+
 function killPid(pid) {
   if (process.platform === 'win32') {
     execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' })
@@ -131,24 +165,45 @@ function killPid(pid) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function guardLockfile() {
-  if (!existsSync(LOCK_FILE)) return
-  let lock = null
-  try {
-    lock = JSON.parse(readFileSync(LOCK_FILE, 'utf8'))
-  } catch {
-    /* unreadable lock → treat as stale */
+/**
+ * Acquire the lock ATOMICALLY via exclusive create (open flag 'wx'), so two
+ * launchers racing to start can never both pass a check-then-write gap —
+ * exactly one open('wx') succeeds (caught by Codex on PR #21). On EEXIST the
+ * holder is inspected: a live PID means an active run (refuse), a dead one
+ * means a stale lock (remove and retry the exclusive create — a concurrent
+ * racer may legitimately win the recreate, which the next attempt sees as an
+ * active holder).
+ */
+function acquireLock() {
+  const payload =
+    JSON.stringify({ pid: process.pid, port, startedAt: new Date().toISOString() }) + '\n'
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const fd = openSync(LOCK_FILE, 'wx')
+      writeSync(fd, payload)
+      closeSync(fd)
+      return
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err
+    }
+    let lock = null
+    try {
+      lock = JSON.parse(readFileSync(LOCK_FILE, 'utf8'))
+    } catch {
+      /* unreadable or vanished between open and read → treat as stale */
+    }
+    if (lock && isPidAlive(lock.pid)) {
+      fail(
+        `Another E2E run appears ACTIVE against this repo (launcher PID ${lock.pid}, since ${lock.startedAt}).`,
+        `Refusing to start a second server on :${port} — two runs on one strict port contaminate`,
+        `each other's results (issue #9). Wait for that run to finish, or if you are certain it is`,
+        `dead, delete ${LOCK_FILE} and retry.`,
+      )
+    }
+    console.log('[e2e-server] removing stale lockfile from a dead run')
+    rmSync(LOCK_FILE, { force: true })
   }
-  if (lock && isPidAlive(lock.pid)) {
-    fail(
-      `Another E2E run appears ACTIVE against this repo (launcher PID ${lock.pid}, since ${lock.startedAt}).`,
-      `Refusing to start a second server on :${port} — two runs on one strict port contaminate`,
-      `each other's results (issue #9). Wait for that run to finish, or if you are certain it is`,
-      `dead, delete ${LOCK_FILE} and retry.`,
-    )
-  }
-  console.log('[e2e-server] removing stale lockfile from a dead run')
-  rmSync(LOCK_FILE, { force: true })
+  fail(`could not acquire ${LOCK_FILE} after repeated attempts — another launcher keeps racing it.`)
 }
 
 async function guardPort() {
@@ -156,10 +211,11 @@ async function guardPort() {
   const pid = findListenerPid()
   const cmd = pid ? commandLineOf(pid) : null
   const looksLikeVite = cmd !== null && /vite/i.test(cmd)
-  if (!pid || !looksLikeVite) {
+  if (!pid || !looksLikeVite || !belongsToThisCheckout(pid, cmd)) {
     fail(
       `Port :${port} is already in use and the listener ${pid ? `(PID ${pid}, command: ${cmd ?? 'unreadable'})` : 'PID could not be determined'}.`,
-      `Not killing a process this script cannot positively identify as a Vite dev server.`,
+      `Not killing a process this script cannot positively identify as THIS checkout's Vite dev`,
+      `server (${repoRoot}) — it may be another project's server that happens to hold the port.`,
       `Free the port yourself, then re-run. (Linux/macOS: lsof -ti tcp:${port} | xargs kill;`,
       `Windows PowerShell: Get-NetTCPConnection -State Listen -LocalPort ${port} | % { Stop-Process -Id $_.OwningProcess -Force })`,
     )
@@ -185,17 +241,23 @@ async function guardPort() {
   fail(`Port :${port} is still occupied after killing PID ${pid}. Free it manually and re-run.`)
 }
 
+/** Remove the lock ONLY when it is ours — a launcher that lost the
+ *  acquisition race must never delete the winner's lock on its way out. */
 function removeLock() {
+  try {
+    const lock = JSON.parse(readFileSync(LOCK_FILE, 'utf8'))
+    if (lock.pid !== process.pid) return
+  } catch {
+    return // absent or unreadable — nothing of ours to remove
+  }
   rmSync(LOCK_FILE, { force: true })
 }
 
-await guardLockfile()
+// Lock FIRST, then the port: holding the lock makes the leak-kill decision
+// mutually exclusive too, so two racing launchers can't both conclude the
+// same listener is leaked.
+acquireLock()
 await guardPort()
-
-writeFileSync(
-  LOCK_FILE,
-  JSON.stringify({ pid: process.pid, port, startedAt: new Date().toISOString() }) + '\n',
-)
 
 const viteBin = path.join(repoRoot, 'node_modules', 'vite', 'bin', 'vite.js')
 const child = spawn(process.execPath, [viteBin, '--port', String(port), '--strictPort'], {
