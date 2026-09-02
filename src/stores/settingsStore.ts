@@ -57,9 +57,14 @@ function loadPersisted(): Persisted {
 function applyShellClasses(density: Density, accent: Accent) {
   if (typeof document === 'undefined') return;
   const body = document.body;
-  body.classList.forEach((c) => {
-    if (c.startsWith('density-') || c.startsWith('accent-')) body.classList.remove(c);
-  });
+  // Snapshot the class list before mutating it: removing items during a
+  // live forEach shifts indices and skips every other match, leaving stale
+  // density-*/accent-* classes on <body> that override the new ones by CSS
+  // source order.
+  const stale = Array.from(body.classList).filter(
+    (c) => c.startsWith('density-') || c.startsWith('accent-'),
+  );
+  for (const c of stale) body.classList.remove(c);
   body.classList.add(`density-${density}`, `accent-${accent}`);
 }
 
