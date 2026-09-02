@@ -32,14 +32,10 @@
  */
 import { getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
+import { STAGING_API, isStaticFrontendHost } from './apiTargets';
 
 // Reachable pre-auth — must match api/auth._OPEN_API_PREFIXES.
 const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase'];
-
-// Public URL of the deployed staging API. Not a secret: the service is
-// unauthenticated at the edge and gated per-request by Firebase token
-// verification, and the bundle already ships the public Firebase web config.
-const STAGING_API = 'https://trading-platform-staging-5sjtb3yl7a-ue.a.run.app';
 
 /**
  * Absolute origin for `/api/*`, or '' to keep requests same-origin.
@@ -53,7 +49,7 @@ const STAGING_API = 'https://trading-platform-staging-5sjtb3yl7a-ue.a.run.app';
 function resolveApiBase(): string {
   const explicit = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
   if (explicit) return explicit;
-  if (typeof window !== 'undefined' && window.location.hostname.endsWith('.lovable.app')) {
+  if (typeof window !== 'undefined' && isStaticFrontendHost(window.location.hostname)) {
     return STAGING_API;
   }
   return '';

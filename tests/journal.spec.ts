@@ -8,6 +8,7 @@
  * shape; both are now the one typed fixture.
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { M } from './helpers/mocks';
 import {
   MOCK_JOURNAL_EMPTY,
@@ -50,11 +51,11 @@ test.describe('Trade Journal', () => {
     await expect(page.getByText(/no trades logged for iwm yet/i)).toBeVisible();
   });
 
-  test('renders within 5s perf budget', async ({ page }) => {
+  test('renders within perf budget (strict 5s)', async ({ page }) => {
     const start = Date.now();
     await page.goto('/journal');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(5000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(5000));
   });
 
   test('equity curve card shows a placeholder when under 2 closed trades', async ({ page }) => {

@@ -2,6 +2,7 @@
  * E2E: Playbook ("/playbook") — top setup, conditions checklist, FTFC strat.
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { mockCommon, M } from './helpers/mocks';
 
 const MOCK_PLAYBOOK = {
@@ -56,12 +57,12 @@ test.describe('Playbook', () => {
     await expect(page.getByText(/no playbook|no.*card|run.*pipeline|empty/i).first()).toBeVisible();
   });
 
-  test('renders within 7s perf budget', async ({ page }) => {
+  test('renders within perf budget (strict 7s)', async ({ page }) => {
     // Slightly looser than 5s — playbook page does signals + reference + brief
     // fanout, so it sits at the cold-warm transition boundary.
     const start = Date.now();
     await page.goto('/playbook');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(7000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(7000));
   });
 });

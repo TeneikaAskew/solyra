@@ -51,7 +51,12 @@ export default defineConfig({
   timeout: 30_000,
   webServer: wantsLocalServer
     ? {
-        command: `npm run dev -- --port ${E2E_PORT} --strictPort`,
+        // The launcher (not bare `npm run dev`) owns port + concurrency
+        // hygiene: it kills a Vite leaked by a hard-killed earlier run, and
+        // refuses to start while another Playwright run holds the repo's
+        // .e2e-server.lock — two runs sharing one strict port contaminate
+        // each other's results (issue #9).
+        command: `node scripts/e2e-server.mjs --port ${E2E_PORT}`,
         url: E2E_BASE_URL,
         // Never adopt a server this config didn't configure — see the note above.
         reuseExistingServer: false,

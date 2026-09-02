@@ -9,6 +9,7 @@
  * they can't silently stop being "hot" the day after they were written.
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { mockCatalystsApi } from './helpers/fixtures/catalysts';
 
 test.describe('Catalysts', () => {
@@ -35,11 +36,11 @@ test.describe('Catalysts', () => {
     await expect(page.getByText(/earnings/i).first()).toBeVisible();
   });
 
-  test('renders within 5s perf budget', async ({ page }) => {
+  test('renders within perf budget (strict 5s)', async ({ page }) => {
     const start = Date.now();
     await page.goto('/catalysts');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(5000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(5000));
   });
 
   test('renders Hot Now panel for today/tomorrow high-impact events', async ({ page }) => {

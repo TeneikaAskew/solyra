@@ -5,6 +5,7 @@
  * page's own SignalsResponse / TradeStats contracts.
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { M } from './helpers/mocks';
 import { MOCK_SIGNALS_EMPTY, mockSignalsApi } from './helpers/fixtures/signals';
 
@@ -50,12 +51,12 @@ test.describe('Signal Explorer', () => {
     await expect(page.getByText(/no.*signal|empty/i).first()).toBeVisible();
   });
 
-  test('renders within 7s perf budget', async ({ page }) => {
+  test('renders within perf budget (strict 7s)', async ({ page }) => {
     // First-paint of the signals table includes initial bundle download +
     // GCS parquet fetch on cold cache. 7s budget is the post-warm target.
     const start = Date.now();
     await page.goto('/signals');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(7000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(7000));
   });
 });

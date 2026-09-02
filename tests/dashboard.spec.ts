@@ -2,154 +2,26 @@
  * E2E: Dashboard ("/dashboard") — the app's home view anchored on activeTicker.
  *
  * Covers brief tile, latest signals, KPI grid, best/worst trades.
- * All API calls mocked; perf budget = first contentful render under 5s.
+ * All API calls mocked; perf budget policy lives in helpers/perfBudget.ts.
+ *
+ * Card/chart payloads (sectors, news, bars, backtest trio) come from the
+ * typed fixture layer in helpers/fixtures/dashboard.ts — the spec carries no
+ * inline copies, so the shapes stay pinned by `satisfies` in one place (#18).
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { M } from './helpers/mocks';
-import { mockDashboard } from './helpers/fixtures/dashboard';
-
-// Relative-to-now ISO dates so the News card's day-granularity relative
-// label ("yesterday") and forward-event dates are deterministic regardless
-// of when the suite runs.
-const TODAY_ISO = new Date().toISOString().slice(0, 10);
-const YESTERDAY_ISO = (() => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-})();
-const TOMORROW_ISO = (() => {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
-})();
-
-// Sector rotation: 3 ok rows (ranked distinctly for 1D vs 5D) + 1 unavailable row.
-const MOCK_SECTORS = {
-  as_of: '2026-04-25',
-  status: 'ok',
-  sectors: [
-    { symbol: 'XLK', name: 'Technology', close: 250.1, chg_1d_pct: 1.25, chg_5d_pct: 3.4, status: 'ok' },
-    { symbol: 'XLF', name: 'Financials', close: 45.2, chg_1d_pct: 2.5, chg_5d_pct: -1.1, status: 'ok' },
-    { symbol: 'XLE', name: 'Energy', close: 90.3, chg_1d_pct: -0.75, chg_5d_pct: 4.2, status: 'ok' },
-    { symbol: 'XLY', name: 'Consumer Discretionary', status: 'unavailable', reason: 'stale data' },
-  ],
-};
-
-// Real /api/backtest/results/{ticker} shape (empty CSV branch): ticker,
-// filename, trade_count, summary, trades — same corrected contract as
-// dashboard-chart-fit.spec.ts (#714 item 2). No assertion reads these
-// values; the mock exists so the dashboard fan-out resolves.
-const MOCK_BACKTEST = {
-  ticker: 'IWM',
-  filename: 'backtest_IWM_20260420_150000.csv',
-  trade_count: 0,
-  summary: {},
-  trades: [],
-};
-
-// News is backward-dated (yesterday) alongside 3 forward-dated catalyst
-// events — regression coverage for the news-card contract: the fixed
-// frontend matches on `source === 'AV news'` against the FULL events array,
-// which is robust regardless of dating or slicing. The old frontend matched
-// on `sentiment_label || catalyst_type === 'NEWS'`; the backend never emits
-// catalyst_type literally 'NEWS' (it maps to NEWS_CATALYST/EARNINGS_NEWS/
-// MERGER_ACQUISITION/IPO/ECONOMIC), so these rows — carrying an empty
-// sentiment_label, as real low-confidence articles sometimes do — pin the
-// exact match condition this fix changed: "0 fresh" on the old filter,
-// "2 fresh" once matched by `source` instead.
-const MOCK_EVENTS_WITH_NEWS = {
-  status: 'ok',
-  source: 'mock',
-  date_range: { from: YESTERDAY_ISO, to: TOMORROW_ISO },
-  total: 5,
-  events_by_date: {
-    [YESTERDAY_ISO]: [
-      {
-        date: YESTERDAY_ISO,
-        ticker: 'IWM',
-        catalyst_type: 'NEWS_CATALYST',
-        title: 'Russell 2000 constituents rally on rate-cut optimism',
-        impact: 'Medium',
-        source: 'AV news',
-        sentiment_label: '',
-        sentiment_score: 0.31,
-      },
-      {
-        date: YESTERDAY_ISO,
-        ticker: 'IWM',
-        catalyst_type: 'NEWS_CATALYST',
-        title: 'Small-cap earnings season kicks off with mixed guidance',
-        impact: 'Low',
-        source: 'AV news',
-        sentiment_label: '',
-        sentiment_score: 0.02,
-      },
-    ],
-    [TODAY_ISO]: [
-      {
-        date: TODAY_ISO,
-        ticker: 'AAPL',
-        catalyst_type: 'EARNINGS',
-        event: 'Q2 2026 Earnings',
-        expected_impact: 'high',
-        source: 'mock',
-      },
-      {
-        date: TODAY_ISO,
-        ticker: 'MSFT',
-        catalyst_type: 'CONFERENCE_CALL',
-        event: 'Investor Day',
-        expected_impact: 'medium',
-        source: 'mock',
-      },
-    ],
-    [TOMORROW_ISO]: [
-      {
-        date: TOMORROW_ISO,
-        ticker: 'MACRO',
-        catalyst_type: 'ECONOMIC',
-        title: 'CPI release',
-        impact: 'High',
-        source: 'FRED/Calendar',
-      },
-    ],
-  },
-};
+import {
+  mockDashboard,
+  mockDashboardCards,
+  MOCK_SECTORS,
+  buildDashboardNews,
+} from './helpers/fixtures/dashboard';
 
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {
     await mockDashboard(page);
-    await page.route('**/api/backtest/results/IWM', (r) => r.fulfill(M.ok(MOCK_BACKTEST)));
-    // Real equity shape: ticker, filename, summary, dates, values — the
-    // dates/values contract BacktesterSection.tsx actually reads (#714).
-    await page.route('**/api/backtest/equity/IWM', (r) =>
-      r.fulfill(
-        M.ok({
-          ticker: 'IWM',
-          filename: 'equity_IWM_20260420_150000.csv',
-          summary: {},
-          dates: [],
-          values: [],
-        })
-      )
-    );
-    // Real /api/backtest/all/{ticker} shape: ticker, total_runs, runs.
-    await page.route('**/api/backtest/all/IWM', (r) =>
-      r.fulfill(M.ok({ ticker: 'IWM', total_runs: 0, runs: [] }))
-    );
-    // Intraday bars so the Overview chart card renders (candlestick default).
-    const bars = [10, 11, 12, 13, 14, 15].map((h) => {
-      const time = Date.UTC(2026, 3, 24, h, 0, 0) / 1000;
-      const p = 219 + h * 0.1;
-      return { time, open: p - 0.2, high: p + 0.3, low: p - 0.3, close: p };
-    });
-    await page.route('**/api/market/data/IWM/*', (r) =>
-      r.fulfill(M.ok({
-        ticker: 'IWM', date: '2026-04', count: bars.length,
-        candlestick: bars,
-        volume: bars.map((b) => ({ time: b.time, value: 1_000_000 })),
-      }))
-    );
+    await mockDashboardCards(page);
   });
 
   test('renders Overview heading + pre-market brief for the active ticker', async ({ page }) => {
@@ -222,7 +94,12 @@ test.describe('Dashboard', () => {
   });
 
   test('News card counts AV-news rows dated in the past and shows both headlines', async ({ page }) => {
-    await page.route('**/api/catalysts/events**', (r) => r.fulfill(M.ok(MOCK_EVENTS_WITH_NEWS)));
+    // Explicit re-registration (fixture default): this test's assertions pin
+    // the news-card match condition (`source === 'AV news'` over the FULL
+    // events array — see the fixture's docstring), so its dependency on the
+    // payload stays visible here even though mockDashboardCards already
+    // serves the same rows.
+    await page.route('**/api/catalysts/events**', (r) => r.fulfill(M.ok(buildDashboardNews())));
     await page.goto('/dashboard');
     await page.waitForLoadState('networkidle');
 
@@ -232,13 +109,13 @@ test.describe('Dashboard', () => {
     await expect(newsCard.getByText('Small-cap earnings season kicks off with mixed guidance')).toBeVisible();
   });
 
-  test('renders within 7s perf budget', async ({ page }) => {
+  test('renders within perf budget (strict 7s)', async ({ page }) => {
     // Dashboard has heavy API fan-out (brief + backtest + equity + signals +
     // playbook + live quote/history/avg-vol + reference). 7s allows for the
     // first-paint waterfall before mocks fully resolve.
     const start = Date.now();
     await page.goto('/dashboard');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(7000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(7000));
   });
 });

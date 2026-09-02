@@ -5,6 +5,7 @@
  * page's own ReportListResponse contract.
  */
 import { test, expect } from '@playwright/test';
+import { perfBudgetMs } from './helpers/perfBudget';
 import { mockReportsApi } from './helpers/fixtures/reports';
 
 test.describe('Reports', () => {
@@ -24,10 +25,10 @@ test.describe('Reports', () => {
     await expect(page.getByText(/phase1|phase 1/i).first()).toBeVisible();
   });
 
-  test('renders within 5s perf budget', async ({ page }) => {
+  test('renders within perf budget (strict 5s)', async ({ page }) => {
     const start = Date.now();
     await page.goto('/reports');
     await page.waitForLoadState('networkidle');
-    expect(Date.now() - start).toBeLessThan(5000);
+    expect(Date.now() - start).toBeLessThan(perfBudgetMs(5000));
   });
 });

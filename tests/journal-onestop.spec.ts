@@ -14,6 +14,8 @@ import { test, expect } from '@playwright/test';
 import { M } from './helpers/mocks';
 import {
   MOCK_JOURNAL_DATES,
+  MOCK_MINE_STYLE_SUCCESS,
+  MOCK_MINE_STYLE_UNAVAILABLE,
   mockJournalApi,
   type JournalTradesResponse,
 } from './helpers/fixtures/journal';
@@ -661,5 +663,93 @@ test.describe('Journal one-stop cockpit — Examples alert enrichment (TPs + per
     await expect(page.locator('canvas').first()).toBeVisible();
     const railTps = page.locator('[data-testid="trade-rail-card"]').getByText(/TP/);
     await expect(railTps.first()).toBeVisible();
+  });
+});
+
+test.describe('Journal one-stop cockpit — "My style" panel (issue #14 re-home)', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockJournalOneStop(page, { own: OWN_TRADES, examples: EXAMPLE_TRADES });
+  });
+
+  test('absent on the Examples view, present on My journal', async ({ page }) => {
+    await page.goto('/journal');
+    await page.waitForLoadState('networkidle');
+
+    // Own journal non-empty → defaults to My journal → panel present.
+    await expect(page.getByTestId('my-style-panel')).toBeVisible();
+
+    // Mining runs server-side against MY closed trades; on the Examples
+    // teaching layer it is meaningless, so the panel must disappear there.
+    await page.getByTestId('view-toggle').getByRole('button', { name: /examples/i }).click();
+    await expect(page.getByTestId('my-style-panel')).toHaveCount(0);
+  });
+
+  test('not-enough-signal envelope renders as a muted note with the server reason, not an error', async ({ page }) => {
+    await page.route('**/api/style/mine-and-validate', (r) =>
+      r.fulfill(M.ok(MOCK_MINE_STYLE_UNAVAILABLE)),
+    );
+    await page.goto('/journal');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByTestId('mine-style-btn').click();
+    await expect(page.getByTestId('my-style-unavailable')).toContainText(
+      'Need at least 10 closed trades',
+    );
+    await expect(page.getByTestId('my-style-error')).toHaveCount(0);
+    await expect(page.getByTestId('my-style-result')).toHaveCount(0);
+  });
+
+  test('success renders condition chips, sample sizes and the fold/stability line; POST carries the ticker', async ({ page }) => {
+    let postBody: unknown = null;
+    await page.route('**/api/style/mine-and-validate', (r) => {
+      postBody = JSON.parse(r.request().postData() || 'null');
+      return r.fulfill(M.ok(MOCK_MINE_STYLE_SUCCESS));
+    });
+    await page.goto('/journal');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByTestId('mine-style-btn').click();
+
+    const result = page.getByTestId('my-style-result');
+    await expect(result).toBeVisible();
+
+    // Condition chips through styleConditionLabel — including the
+    // parameterized consec_up_ge_3 → "3+ up moves" mapping.
+    const chips = page.getByTestId('my-style-condition');
+    await expect(chips).toHaveCount(3);
+    await expect(chips.nth(0)).toHaveText('RSI 50-75');
+    await expect(chips.nth(1)).toHaveText('Above VWAP');
+    await expect(chips.nth(2)).toHaveText('3+ up moves');
+
+    // Sample sizes with the metrics (design spec Task 4.4: "win rate/
+    // expectancy WITH sample sizes").
+    await expect(result).toContainText('Mined from 9 of 14 closed trades');
+    await expect(result).toContainText('57%'); // avg_win_rate 0.57
+    await expect(result).toContainText('+0.42%'); // avg_expectancy_pct
+    await expect(result).toContainText('63 out-of-sample trades');
+    await expect(page.getByTestId('my-style-validation')).toHaveText(
+      'Validated across 5 folds · stability 80%',
+    );
+    await expect(page.getByTestId('my-style-staged')).toBeVisible();
+
+    expect(postBody).toEqual({ ticker: 'IWM' });
+  });
+
+  test('a genuine backend failure surfaces as a loud inline error with the server detail', async ({ page }) => {
+    await page.route('**/api/style/mine-and-validate', (r) =>
+      r.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'journal database not configured' }),
+      }),
+    );
+    await page.goto('/journal');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByTestId('mine-style-btn').click();
+    await expect(page.getByTestId('my-style-error')).toContainText(
+      'journal database not configured',
+    );
+    await expect(page.getByTestId('my-style-result')).toHaveCount(0);
   });
 });
