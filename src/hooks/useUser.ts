@@ -50,9 +50,16 @@ export function useUser() {
     enabled: meEnabled,
     queryFn: async () => {
       const r = await fetch('/api/me');
-      if (!r.ok) return { email: null, is_admin: false };
+      // A non-OK answer is a server failure, not an identity — /api/me is an
+      // open path that answers 200 with { email: null } for anonymous. Throw
+      // so React Query retries and keeps the failure refetchable (on focus /
+      // remount) instead of caching a fabricated anonymous is_admin: false
+      // for the whole staleTime. Consumers read isAdmin === false while the
+      // query errors, so a persistent failure still fails closed.
+      if (!r.ok) throw new Error(`/api/me ${r.status}`);
       return r.json();
     },
+    retry: 1,
     staleTime: 5 * 60_000,
   });
 
