@@ -13,8 +13,9 @@ ATR-20 — derived, never fabricated.
 
 ## Context
 
-The card (`platform/src/components/dashboard/MovementRead.tsx`, endpoint
-`GET /api/movement-statement`, assembler `lib/movement_statement.py`) is LIVE
+The card (`src/components/dashboard/MovementRead.tsx`, endpoint
+`GET /api/movement-statement`, assembler `lib/movement_statement.py` in the
+stocks repo) is LIVE
 (2026-07-12) showing: TYPE continuation headline + validated 15m SIZE bucket +
 levels-to-go with reach-rates + gamma regime + the "not a directional edge"
 scope guard. Magnitude buckets are defined in ATR-20 units (`mag_config.py`):

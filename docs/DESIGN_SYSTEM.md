@@ -12,6 +12,12 @@ By moving away from the bright greens of the reference material and adopting a s
 
 The palette is anchored in deep charcoals and obsidian blacks, providing a high-contrast stage for critical data points.
 
+> **Naming note:** this document uses Material-style role names
+> (`surface-container-low`, `primary`, …). The implemented custom properties
+> in `src/index.css` use shorter names (`--surface-1`, `--brand`, …) — the
+> values match, the names don't. See the token mapping in §8 before writing
+> any `var(...)`.
+
 ### The Palette
 
 - **Primary (Vibrant Blue):** `#8bceff` (Primary) / `#00b2ff` (Container). Used for active states, CTAs, and primary brand accents.
@@ -180,6 +186,25 @@ It moved here from `stocks/docs/DESIGN_SYSTEM.md` when the frontend split out;
 the paths below were `platform/src/...` in that repo.
 
 - All color tokens live in [`src/index.css`](../src/index.css) as CSS custom properties under `:root` (dark) and `[data-theme="light"]` (light).
+- **Token name mapping.** The role names used throughout this document are
+  Material-style; the implemented custom properties are shorter. Write the
+  right-hand names in code — the left-hand names resolve to nothing:
+
+  | Doc name | Implemented property |
+  |---|---|
+  | `surface` | `--surface-0` |
+  | `surface-container-low` | `--surface-1` |
+  | `surface-container-high` | `--surface-2` |
+  | `surface-container-highest` | `--surface-3` |
+  | `surface-container-lowest` | `--surface-lowest` |
+  | `primary` / `surface-tint` | `--brand` |
+  | `primary-container` | `--brand-container` |
+  | `on-primary` | `--on-brand` |
+  | `on-surface` | `--on-surface` |
+  | `on-surface-variant` | `--on-surface-variant` |
+  | `outline` / ghost border | `--outline` |
+  | `outline-variant` | `--outline-variant` |
+  | bullish / bearish / warning | `--bull` / `--bear` / `--warn` |
 - Theme state is managed by [`src/stores/themeStore.ts`](../src/stores/themeStore.ts) (Zustand) and applied by setting `data-theme` on the `<html>` element.
 - Chart instances (lightweight-charts, Recharts) read these same variables through [`src/lib/chartTheme.ts`](../src/lib/chartTheme.ts), so they swap with the global theme rather than carrying their own palette.
 - Back-compat aliases keep existing `var(--color-accent-blue)` etc. working while the codebase migrates to the new token names.
