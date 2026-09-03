@@ -52,8 +52,8 @@ export interface GammaGridSummary {
   total_gex: number;
   total_vex: number;
   cells: GammaGridCell[];
-  expirations: string[]; // ascending — column headers
-  strikes: number[]; // ascending — row headers
+  expirations: string[]; // ascending: column headers
+  strikes: number[]; // ascending: row headers
   window_pct: number;
   warnings: string[];
   reason?: string; // present on the unavailable envelope

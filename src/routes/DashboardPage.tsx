@@ -178,7 +178,7 @@ function briefBullets(b: BriefResponse): { text: string; tone: Tone }[] {
     const z = rsiZone(rsi);
     out.push({ text: `RSI(14) ${fmtNum(rsi, 1)} · ${z.label}`, tone: z.tone });
   }
-  if (b.signal_status) out.push({ text: `Signal status — ${b.signal_status}`, tone: 'brand' });
+  if (b.signal_status) out.push({ text: `Signal status: ${b.signal_status}`, tone: 'brand' });
   return out.slice(0, 5);
 }
 
@@ -245,7 +245,7 @@ export default function DashboardPage() {
   );
   const pickChart = (s: 'candle' | 'area') => {
     setChartStyle(s);
-    try { localStorage.setItem('overview-chart', s); } catch { /* storage unavailable — non-fatal */ }
+    try { localStorage.setItem('overview-chart', s); } catch { /* storage unavailable, non-fatal */ }
   };
 
   const { data: status } = useLiveStatus();
@@ -518,7 +518,7 @@ export default function DashboardPage() {
               {heroQuote && <Delta value={heroQuote.change} pct={heroQuote.change_pct} />}
             </div>
 
-            {/* Bullets — derived from real brief fields */}
+            {/* Bullets: derived from real brief fields */}
             <div className="mt-3 flex flex-col gap-2">
               {brief && brief.source !== 'unavailable' ? (
                 briefBullets(brief).map((b, i) => (
@@ -534,7 +534,7 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <Unavailable msg={brief?.reason || 'Pre-market brief unavailable — Cloud SQL not connected or no brief for today.'} />
+                <Unavailable msg={brief?.reason || 'Pre-market brief unavailable, Cloud SQL not connected or no brief for today.'} />
               )}
             </div>
           </div>
@@ -587,7 +587,7 @@ export default function DashboardPage() {
             ) : (
               <div>
                 <MicroLabel>Top setup</MicroLabel>
-                <Unavailable msg="No playbook setups yet — run the pipeline to populate." />
+                <Unavailable msg="No playbook setups yet, run the pipeline to populate." />
               </div>
             )}
           </div>
@@ -621,7 +621,7 @@ export default function DashboardPage() {
           consults 5m/15m cells (IWM/SPY/QQQ); the dashboard's tickers are
           exactly those, so the active ticker is always valid here.
 
-          Live-only: the Movement Read is a "current read" — its hook calls the
+          Live-only: the Movement Read is a "current read", its hook calls the
           live /api/movement-statement (ticker/timeframe only, no as_of). In
           REVIEW/historical mode (reviewDate set) every surrounding card is
           keyed to the selected as-of date, so rendering this live card would
@@ -728,7 +728,7 @@ export default function DashboardPage() {
 
       {/* ── 3. Sector rotation · AI take · News ──────────────────────────── */}
       <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 lg:grid-cols-3">
-        {/* Sector rotation — ranked SPDR daily closes, fed by /api/market/sectors */}
+        {/* Sector rotation, ranked SPDR daily closes, fed by /api/market/sectors */}
         <Card className="min-w-0">
           {/* Card doesn't forward arbitrary props, so data-testid lives on this wrapper. */}
           <div data-testid="sector-rotation-card">
@@ -804,7 +804,7 @@ export default function DashboardPage() {
               <div className="line-clamp-4 text-[12px] leading-[1.5] text-[var(--on-surface-variant)]">{rep.thesis}</div>
             </div>
           ) : (
-            <Unavailable msg={`No insight report for ${activeTicker} — generate one on the AI Insights page.`} />
+            <Unavailable msg={`No insight report for ${activeTicker}, generate one on the AI Insights page.`} />
           )}
         </Card>
 

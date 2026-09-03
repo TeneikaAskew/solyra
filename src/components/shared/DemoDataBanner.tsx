@@ -20,7 +20,7 @@ export function DemoDataBanner({ detail, className = '' }: DemoDataBannerProps) 
       className={`flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-[var(--warn)] ${className}`}
     >
       <AlertTriangle size={14} className="shrink-0" />
-      <span className="font-semibold">Demo data — not live.</span>
+      <span className="font-semibold">Demo data, not live.</span>
       {detail && <span className="text-[var(--warn)]/80">{detail}</span>}
     </div>
   );

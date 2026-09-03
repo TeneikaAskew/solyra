@@ -30,7 +30,7 @@ export function SimilarSetupsCard({ ticker, direction, rsi, score }: Props) {
           Similar Past Setups
         </div>
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-          Waits for the voter to fire — no setup currently active.
+          Waits for the voter to fire, no setup currently active.
         </p>
       </div>
     );

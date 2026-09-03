@@ -35,7 +35,7 @@ export function RouteErrorBoundary() {
             </h2>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
               This page crashed before it could render. The rest of the
-              app is unaffected — try reloading or going back to the
+              app is unaffected, try reloading or going back to the
               dashboard.
             </p>
 

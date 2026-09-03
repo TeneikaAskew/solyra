@@ -32,14 +32,14 @@ export default function OptionsFlowPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Page toolbar — symbol focus + view switcher, all on one row */}
+      {/* Page toolbar, symbol focus + view switcher, all on one row */}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-[var(--on-surface-label)]">
           Symbol
         </span>
         <TickerCombobox />
 
-        {/* View switcher — single horizontal segmented control */}
+        {/* View switcher, single horizontal segmented control */}
         <div className="ml-auto inline-flex gap-0.5 rounded-lg bg-[var(--surface-2)] p-1 ring-1 ring-[var(--outline-variant)]">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button

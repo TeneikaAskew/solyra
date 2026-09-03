@@ -8,7 +8,7 @@ function GammaMapDive() {
         <div className="sl-kicker">Gamma Map · dealer positioning</div>
         <h3 style={{ fontSize: 22, fontWeight: 800, margin: '8px 0' }}>See the wall before price hits it.</h3>
         <p className="sl-mut" style={{ fontSize: 14, lineHeight: 1.6 }}>
-          A strike-by-expiry grid of net dealer gamma, refreshed all session — green where calls
+          A strike-by-expiry grid of net dealer gamma, refreshed all session, green where calls
           dominate and dealers pin, red where puts dominate and moves accelerate. The gold cell is
           the King: the strike dealers defend hardest.
         </p>
@@ -99,7 +99,7 @@ function FlowDive() {
         <h3 style={{ fontSize: 22, fontWeight: 800, margin: '8px 0' }}>Flow without the firehose.</h3>
         <p className="sl-mut" style={{ fontSize: 14, lineHeight: 1.6 }}>
           Raw tape is noise. Solyra clusters sweeps, tags likely opens vs. closes, and only flags
-          flow that agrees — or violently disagrees — with dealer positioning. When three ask-side
+          flow that agrees, or violently disagrees, with dealer positioning. When three ask-side
           sweeps hit the same strike dealers are short, you get one clear flag, not 400 rows.
         </p>
         <div className="sl-dim" style={{ fontSize: 12, marginTop: 8 }}>↳ coming to early access</div>
@@ -119,7 +119,7 @@ function CouncilDive() {
         </h3>
         <p className="sl-mut" style={{ fontSize: 14, lineHeight: 1.6 }}>
           A bull and a bear debate every ticker with live evidence. A risk officer stress-tests
-          the loser&rsquo;s best point. Personas — scalper, swing, income — each get their own plan.
+          the loser&rsquo;s best point. Personas: scalper, swing, income: each get their own plan.
           You read one page: verdict, levels, plan, and what would change the Council&rsquo;s mind.
         </p>
         <div className="sl-dim" style={{ fontSize: 12, marginTop: 8 }}>

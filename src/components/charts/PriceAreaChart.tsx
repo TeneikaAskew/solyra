@@ -218,7 +218,7 @@ export function PriceAreaChart({
         </AreaChart>
       </ResponsiveContainer>
 
-      {/* Legend row under the chart — matches NVDA reference */}
+      {/* Legend row under the chart, matches NVDA reference */}
       <div className="mt-2 flex items-center gap-5 text-xs">
         <span className="flex items-center gap-2" style={{ color: theme.textMuted }}>
           <span

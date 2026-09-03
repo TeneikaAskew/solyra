@@ -16,7 +16,7 @@ export async function submitWaitlist(email: string, source: string, website = ''
       body: JSON.stringify({ email: email.trim().toLowerCase(), source, website }),
     });
   } catch {
-    throw new Error('Could not reach the server — check your connection and retry.');
+    throw new Error('Could not reach the server, check your connection and retry.');
   }
   if (!res.ok) {
     let detail = `signup failed (${res.status})`;

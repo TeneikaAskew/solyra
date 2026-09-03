@@ -85,7 +85,7 @@ export function SetupCardDetails({ card, price }: {
             />
           </div>
           <div className="mt-1 text-[9px] text-[var(--color-text-muted)] opacity-80">
-            Price-only, no fees. Win rate = how often target hits before stop — not the move size.
+            Price-only, no fees. Win rate = how often target hits before stop, not the move size.
           </div>
         </div>
       )}

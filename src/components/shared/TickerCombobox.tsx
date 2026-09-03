@@ -267,7 +267,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
         onSuccess: () =>
           showIngestNotice({
             kind: 'success',
-            message: `Tracking ${upper} — daily data lands after tonight's fetch`,
+            message: `Tracking ${upper}: daily data lands after tonight's fetch`,
           }),
         onError: (err) =>
           // Never swallow the failure — browsing is still allowed (setTicker
@@ -275,7 +275,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
           // didn't happen so pages can't silently look "tracked".
           showIngestNotice({
             kind: 'error',
-            message: `couldn't add ${upper} to tracking — ${err.message}`,
+            message: `couldn't add ${upper} to tracking, ${err.message}`,
           }),
       });
     }
@@ -414,7 +414,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
                     dedupeSearchResults dropped entirely because every hit
                     already renders as a quick-pick/recent chip above
                     ("matches shown above"). Reusing "no matches" for the
-                    latter would be a lie — the API DID find matches. */}
+                    latter would be a lie, the API DID find matches. */}
                 {!search.isError && !search.isLoading && searchRows.length === 0 && merged.length === 0 && (
                   <div
                     className="px-1.5 py-2 text-xs text-[var(--on-surface-muted)]"
@@ -431,7 +431,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
                     Matches shown above
                   </div>
                 )}
-                {/* Coverage lookup failed but search itself succeeded — still
+                {/* Coverage lookup failed but search itself succeeded, still
                     render suggestions (badges honestly default to "new" per
                     coverageBadge's contract) plus a subtle hint that the
                     badges may not reflect real coverage. */}
@@ -440,7 +440,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
                     className="px-1.5 pb-1.5 text-[10px] text-[var(--on-surface-muted)]"
                     data-testid="ticker-coverage-error"
                   >
-                    coverage lookup unavailable — badges may be inaccurate
+                    coverage lookup unavailable, badges may be inaccurate
                   </div>
                 )}
                 {!search.isError &&
@@ -474,7 +474,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
         </div>
       )}
 
-      {/* Auto-ingest notice — success or failure of the watchlist-add fired
+      {/* Auto-ingest notice, success or failure of the watchlist-add fired
           from `choose()` above. Renders below the trigger (popover is
           already closed by the time this can appear) and self-clears after
           INGEST_NOTICE_MS, mirroring JournalPage's exportStatus toast. */}

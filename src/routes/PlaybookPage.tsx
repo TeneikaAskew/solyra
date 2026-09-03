@@ -308,7 +308,7 @@ export default function PlaybookPage() {
           <p className="text-xs text-[var(--color-text-muted)]">
             {hasLiveData
               ? 'Cards light up as live market conditions are met'
-              : 'No live data — evaluation paused'}
+              : 'No live data, evaluation paused'}
           </p>
         </div>
         {data && (
@@ -321,7 +321,7 @@ export default function PlaybookPage() {
       {isError && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]">
           <AlertTriangle size={16} />
-          Playbook not found — run the phase 6 playbook generation for {activeTicker} first.
+          Playbook not found, run the phase 6 playbook generation for {activeTicker} first.
         </div>
       )}
 

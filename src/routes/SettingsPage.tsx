@@ -182,7 +182,7 @@ export default function SettingsPage() {
         <p className="mt-1 text-[12px]" aria-live="polite">
           {prefs.error ? (
             <span className="text-[var(--bear)]">
-              Appearance not synced — {prefs.error.message}. Changes still apply on this device.
+              Appearance not synced, {prefs.error.message}. Changes still apply on this device.
             </span>
           ) : loadError ? (
             <span className="text-[var(--bear)]">{loadError.message}</span>
@@ -194,7 +194,7 @@ export default function SettingsPage() {
         </p>
       </header>
 
-      {/* Scrollable tab strip — stays usable on a 360px viewport. */}
+      {/* Scrollable tab strip, stays usable on a 360px viewport. */}
       <div className="-mx-1 min-w-0 overflow-x-auto px-1 pb-1">
         <div className="flex w-max gap-1" role="tablist" aria-label="Settings sections">
           {TABS.map(({ id, label, icon: Icon }) => (
