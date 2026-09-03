@@ -5,7 +5,7 @@ import {
   TrendingUp, Phone, Target, DollarSign, Scissors, Rocket,
   GitMerge, Shield, Star, Globe, Calendar, RefreshCw, Filter,
   Lock, ArrowUpRight, Users, Building, Presentation, Monitor,
-  Video, Briefcase, Flame, ChevronRight,
+  Video, Briefcase, Flame, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { useTickerStore } from '@/stores/tickerStore';
