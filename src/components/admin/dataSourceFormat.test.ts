@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coverage, fmtCount, fmtWhen } from './DataSourcesPanel';
+import { coverage, fmtCount, fmtWhen } from './dataSourceFormat';
 import type { AdminDataSourceRow } from '@/hooks/useAdmin';
 
 const base: AdminDataSourceRow = {
