@@ -30,7 +30,6 @@ import {
   Pill, Metric, MicroLabel, Delta, ScoreStars, DirTag, Card, CardHeader, KpiTile,
 } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
-import { DataGate } from '@/components/shared/SignInEmptyState';
 import { WidgetState } from '@/components/shared/WidgetState';
 import { useAuthBlocked } from '@/lib/authGate';
 import { MovementRead } from '@/components/dashboard/MovementRead';
