@@ -248,7 +248,7 @@ function EventRow({ event, onOpenTicker }: {
   const macro = event.ticker === 'MACRO' || !event.ticker;
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="group flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
+    <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 py-2 px-3 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
       <ImpactDot event={event} />
       {macro ? (
         <span className="w-16 shrink-0 text-xs font-bold text-[var(--on-surface-variant)]">
@@ -269,7 +269,7 @@ function EventRow({ event, onOpenTicker }: {
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
         title={expanded ? 'Collapse details' : 'Show full title'}
-        className="flex flex-1 items-start gap-1 min-w-0 text-left text-sm text-[var(--on-surface)]"
+        className="order-last flex basis-full items-start gap-1 pl-7 min-w-0 text-left text-sm text-[var(--on-surface)] sm:order-none sm:flex-1 sm:basis-auto sm:pl-0"
       >
         <span className={expanded ? 'flex-1 break-words' : 'flex-1 truncate'}>
           {eventTitle(event)}
