@@ -168,10 +168,14 @@ Batches, in order: sparkline, mobile-layout, date-picker and Catalysts-title
 fixes (11:41-11:56), the admin data-management build-out
 (`e87d86d`..`265f246` — it starts at `e87d86d`, the 122-line `useAdmin.ts`
 query/mutation API layer the admin UI commits consume), the Reports layout
-rebuild (`4c86b75`..`ac3efae`), the Settings tab reorganization
-(`35a7974`..`313bd30`), the em-dash/AI-idiom copy pass (`53e579b`/`cde84c4`),
-and the auth-gate suite (`80e59c0`..`03ddb06`). Verdicts from reading the
-diffs:
+rebuild (`4c86b75`..`9b5e00f`), a Catalysts mobile header-overlap fix
+(`c01aa21`..`ac3efae` — CatalystsPage only, despite following the Reports
+checkpoint), the Settings tab reorganization (`35a7974`..`313bd30`), the
+em-dash/AI-idiom copy pass (`0b01c2d`..`cde84c4` — the 46-file sweep is
+`0b01c2d`; `6834a31`/`53e579b` are two small follow-ups before the
+checkpoint), the auth-gate suite (`80e59c0`..`86501e3`), and a
+footer/LandingFAQ layout rebuild (`0e7b91d`..`03ddb06`). Verdicts from
+reading the diffs:
 
 - `cde84c4` "Removed em dashes and AI idioms" (46 files): prose copy only.
   Inspected via the first-parent diff (it is a checkpoint merge, so a plain
@@ -187,10 +191,12 @@ diffs:
 - `191a2cf` "Guarded flat sparklines": hides missing/short/constant series
   instead of fabricating a flat line, with unit tests
   (`MostActiveBar.test.tsx`) pinning the rejection cases.
-- `80e59c0` "Work in progress" is `src/lib/authGate.ts` plus page wiring;
-  the follow-up commits completed it and added `authGate.test.ts` /
-  `authedFetch.test.ts`. Only nit: a WIP-titled commit on the connected
-  branch.
+- `80e59c0` "Work in progress" ships `src/lib/authGate.ts` together with
+  its own `authGate.test.ts`, plus page wiring; the follow-up commits
+  complete the UI suite (sign-in empty states, CTA banner, WidgetState
+  retry with `WidgetState.test.ts`, auth indicator). `authedFetch.test.ts`
+  arrived later in `d3cef29` (#34), outside this Lovable range. Only nit: a
+  WIP-titled commit on the connected branch.
 - The admin data-management and Settings-tab batches were reconciled with
   the test suite in PR #40 (tabbed admin specs, Settings spec, reports spec
   rewrite); role-based auth then superseded the admin token gate via #34.
