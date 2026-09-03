@@ -868,36 +868,42 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .hs-stage { grid-template-columns: 1fr; }
 }
 
-/* ── Heatseeker responsive containment ────────────────────────────────────
-   Grid/flex children default to min-width:auto, so wide numeric content
-   (heatmap cells, bar rows, long tactical copy) pushed the cards past the
-   viewport on mobile. Constrain the tracks and give the genuinely wide
-   tables their own horizontal scroller instead of bleeding the page. */
-.hs-stage { min-width: 0; }
-.hs-stage > *, .hs-stage .col, .hs-stage .col > * { min-width: 0; }
+/* ── Heatseeker mobile containment ────────────────────────────────────────
+   Grid and flex children default to `min-width: auto`, so a real snapshot
+   (~6 expirations × ~25 strikes, plus long tactical copy) widened the CARDS
+   instead of scrolling inside them: the whole page then scrolled sideways and
+   the right-hand column of every card was unreachable on a phone.
+   Rule: the card box never exceeds the viewport; genuinely wide tables get
+   their own in-card scroller. Cover: tests/options-mobile-fit.spec.ts. */
+.hs-stage,
+.hs-stage > *,
+.hs-stage .col,
+.hs-stage .col > * { min-width: 0; }
+
 .card-i { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
-.card-h { flex-wrap: wrap; gap: 4px 12px; }
+.card-h { flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
+.card-h > * { min-width: 0; }
 
 .hs-tactical, .hs-tactical p, .hs-tactical .scenario { min-width: 0; overflow-wrap: anywhere; }
 .hs-nodes .node { min-width: 0; gap: 8px; }
 .hs-nodes .node .left { min-width: 0; flex-wrap: wrap; }
+.hs-legend { flex-wrap: wrap; min-width: 0; }
 
-/* heatmap: scroll inside the card rather than widening it */
-.hs-grid-card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* heatmap + bar rail: scroll inside the card, never widen it */
+.hs-grid-card, .hs-roc-card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .hs-grid { min-width: 0; }
-.hs-grid .col-header, .hs-grid .row-header { min-width: 0; }
 .hs-cell { min-width: 0; overflow: hidden; }
-.hs-cell:hover { transform: none; }
 
-/* bar drill view: fixed 7-column track needs a scroller on narrow screens */
-.hs-bars-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.hs-roc-bar { min-width: 0; }
-.hs-roc-bar .strike, .hs-roc-bar .val { flex: none; }
-
-@media (max-width: 760px) {
+@media (max-width: 900px) {
+  /* Below this the 1fr columns collapse below legibility, so switch the grid
+     to intrinsic width and let the card scroll horizontally instead. */
   .hs-grid { min-width: max-content; }
-  .hs-cell { min-width: 44px; }
-  .hs-grid .row-header { position: sticky; left: 0; z-index: 3; background: var(--surface-2); padding-right: 6px; }
+  .hs-cell { min-width: 46px; }
+  .hs-grid .col-header { min-width: 46px; }
+  .hs-grid .row-header {
+    position: sticky; left: 0; z-index: 3;
+    background: var(--surface-1, var(--surface-2)); padding-right: 6px;
+  }
+  .hs-cell:hover { transform: none; }
   .hs-bars { min-width: 620px; }
-  .hs-legend .chip { flex: 1 1 auto; }
 }
