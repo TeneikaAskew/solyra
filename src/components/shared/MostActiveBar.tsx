@@ -49,6 +49,19 @@ export function formatChangePct(pct: number | null | undefined): string {
 }
 
 /**
+ * A spark series is only drawable when it has ≥2 finite points AND a non-zero
+ * range. A constant (or single-valued) series would render as a flat stroke,
+ * which reads as a real "unchanged" measurement — Rule 3.7: show nothing
+ * rather than a misleading shape.
+ */
+export function hasUsableSpark(values: number[] | undefined | null): boolean {
+  if (!values || values.length < 2) return false;
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length < 2) return false;
+  return Math.max(...finite) > Math.min(...finite);
+}
+
+/**
  * Maps a price series onto a `width` x `height` canvas: min value -> bottom
  * (y = height), max value -> top (y = 0). Flat series render a mid-height
  * line rather than dividing by a zero range.
@@ -70,6 +83,7 @@ export function sparklinePoints(values: number[], width: number, height: number)
 export function isBullishSpark(values: number[]): boolean {
   return values[values.length - 1] >= values[0];
 }
+
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(
@@ -112,6 +126,7 @@ function Sparkline({ values }: { values: number[] }) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, SPARK_WIDTH, SPARK_HEIGHT);
 
+    if (!hasUsableSpark(values)) return;
     const points = sparklinePoints(values, SPARK_WIDTH, SPARK_HEIGHT);
     if (points.length < 2) return;
 
@@ -151,7 +166,7 @@ function MostActiveItemChip({ item }: { item: MostActiveItem }) {
       <span className="mab-price">{item.price != null ? `$${item.price.toFixed(2)}` : '—'}</span>
       <span className={`mab-change${changeTone}`}>{formatChangePct(item.change_pct)}</span>
       <span className="mab-volume">{formatCompactVolume(item.volume)} vol</span>
-      {item.spark && item.spark.length >= 2 && <Sparkline values={item.spark} />}
+      {hasUsableSpark(item.spark) && <Sparkline values={item.spark as number[]} />}
     </div>
   );
 }
