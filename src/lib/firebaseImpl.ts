@@ -15,6 +15,9 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
+  setPersistence,
+  browserLocalPersistence,
+  indexedDBLocalPersistence,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
@@ -32,8 +35,18 @@ export function initFirebase(cfg: FirebaseWebConfig): Auth {
   if (_auth) return _auth;
   const app: FirebaseApp = initializeApp(cfg);
   _auth = getAuth(app);
+  // Persist the session across reloads and browser restarts, and say so
+  // explicitly rather than relying on the SDK default: a signed-in user
+  // should not have to sign in again on every visit. IndexedDB first,
+  // localStorage as the fallback for browsers/modes where it is unavailable.
+  // The promise is fire-and-forget; a failure here only means a shorter-lived
+  // session, never a broken sign-in, so it must not block init.
+  void setPersistence(_auth, indexedDBLocalPersistence).catch(() =>
+    setPersistence(_auth as Auth, browserLocalPersistence).catch(() => {}),
+  );
   return _auth;
 }
+
 
 /** The current ID token (Firebase auto-refreshes when near expiry), or null. */
 export async function getIdToken(forceRefresh = false): Promise<string | null> {

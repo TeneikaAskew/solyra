@@ -206,3 +206,37 @@ describe('installAuthFetch — other modes', () => {
     expect(native.mock.calls[0]?.[1]).toBeUndefined();
   });
 });
+
+describe('installAuthFetch — stale token retry', () => {
+  it('retries a gated 401 once with a force-refreshed token and does not report signed-out on success', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-1');
+    getIdToken.mockImplementation(async (force?: boolean) => (force ? 'tok-fresh' : 'tok-stale'));
+    const { native, onUnauthorized, fetch } = await install();
+    native
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+
+    const resp = await fetch('/api/admin/routes');
+
+    expect(resp.status).toBe(200);
+    expect(native).toHaveBeenCalledTimes(2);
+    expect(new Headers((native.mock.calls[1]?.[1] as RequestInit)?.headers).get('Authorization')).toBe(
+      'Bearer tok-fresh',
+    );
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('reports signed-out when the refreshed token also 401s, and retries only once', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-1');
+    getIdToken.mockImplementation(async (force?: boolean) => (force ? 'tok-fresh' : 'tok-stale'));
+    const { native, onUnauthorized, fetch } = await install();
+    native.mockResolvedValue(new Response('{}', { status: 401 }));
+
+    await fetch('/api/admin/routes');
+
+    expect(native).toHaveBeenCalledTimes(2);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+});
