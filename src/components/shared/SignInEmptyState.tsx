@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Lock } from 'lucide-react';
 import { useAuthBlocked } from '@/lib/authGate';
+import { useUser } from '@/hooks/useUser';
 
 /**
  * Empty state shown inside a data card when the API answered 401: the user
