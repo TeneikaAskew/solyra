@@ -8,7 +8,7 @@
 
 # FRONTEND ARCHITECTURE
 
-> **Companion to** [`ARCHITECTURE.md`](ARCHITECTURE.md) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app that ships inside the `trading-platform` Cloud Run service.
+> **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app that ships inside the `trading-platform` Cloud Run service.
 > **Last refreshed:** 2026-05-22.
 > **Companion diagram:** [`Frontend.drawio`](Frontend.drawio).
 
@@ -189,7 +189,7 @@ npm run build                       # tsc -b && vite build → platform/dist/
 
 ### Docker image
 
-[`platform/Dockerfile`](platform/Dockerfile) is multi-stage:
+[`platform/Dockerfile`](https://github.com/TeneikaAskew/stocks/blob/main/platform/Dockerfile) (stocks) is multi-stage:
 
 1. **`frontend` stage** (`node:20-slim`) — runs `npm ci` + `npm run build`, outputs `/build/platform/dist/`.
 2. **`runtime` stage** (`python:3.11-slim`) — installs FastAPI deps, copies `lib/` + `gcp/` + `platform/api/`, then `COPY --from=frontend /build/platform/dist /app/platform/dist` so the same Python process serves the SPA + `/api/*`. `main.py` mounts `dist/` as a `StaticFiles` at `/`.
@@ -208,10 +208,15 @@ This means **one Cloud Run service, one port, one TLS cert** — no separate CDN
 
 CI wiring:
 
-- [`.github/workflows/deploy-platform-staging.yml`](.github/workflows/deploy-platform-staging.yml) — triggers on push to `main` touching `platform/**`, `lib/**`, `requirements.txt`, or `gcp/database.py`. Runs `STAGING=1 ./platform/deploy.sh`.
-- [`.github/workflows/promote-platform-prod.yml`](.github/workflows/promote-platform-prod.yml) — manual `workflow_dispatch`, promotes the staging revision. Shares the staging workflow's concurrency group so deploy + promote can't interleave.
+- `.github/workflows/deploy-platform-staging.yml` — triggers on push to `main` touching `platform/**`, `lib/**`, `requirements.txt`, or `gcp/database.py`. Runs `STAGING=1 ./platform/deploy.sh`.
+- `.github/workflows/promote-platform-prod.yml` — manual `workflow_dispatch`, promotes the staging revision. Shares the staging workflow's concurrency group so deploy + promote can't interleave.
 
 Both authenticate via the `CLAUDE_CODE_WEB_GCP_SA_KEY` repo secret (the same `claude-web@` SA used by every other GCP-touching workflow).
+
+> These were stocks workflow files, and as of 2026-09-03 neither exists on
+> stocks `main` any more — `platform/deploy.sh` there is the surviving deploy
+> entry point, so the CI wiring above describes the setup as of this doc's
+> last refresh, not the current one.
 
 ## Testing
 
