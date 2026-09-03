@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { renderReportHtml } from './ReportsPage';
+import { renderReportHtml } from '@/lib/reports';
 
 describe('renderReportHtml', () => {
   it('strips script tags and inline handlers from report markdown', () => {
