@@ -30,6 +30,8 @@ import {
   Pill, Metric, MicroLabel, Delta, ScoreStars, DirTag, Card, CardHeader, KpiTile,
 } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
+import { WidgetState } from '@/components/shared/WidgetState';
+import { useAuthBlocked } from '@/lib/authGate';
 import { MovementRead } from '@/components/dashboard/MovementRead';
 import { SetupCardDetails, type SetupHorizon } from '@/components/playbook/SetupCardDetails';
 import { PriceAreaChart, type PricePoint } from '@/components/charts/PriceAreaChart';
@@ -178,7 +180,7 @@ function briefBullets(b: BriefResponse): { text: string; tone: Tone }[] {
     const z = rsiZone(rsi);
     out.push({ text: `RSI(14) ${fmtNum(rsi, 1)} · ${z.label}`, tone: z.tone });
   }
-  if (b.signal_status) out.push({ text: `Signal status — ${b.signal_status}`, tone: 'brand' });
+  if (b.signal_status) out.push({ text: `Signal status: ${b.signal_status}`, tone: 'brand' });
   return out.slice(0, 5);
 }
 
@@ -245,7 +247,7 @@ export default function DashboardPage() {
   );
   const pickChart = (s: 'candle' | 'area') => {
     setChartStyle(s);
-    try { localStorage.setItem('overview-chart', s); } catch { /* storage unavailable — non-fatal */ }
+    try { localStorage.setItem('overview-chart', s); } catch { /* storage unavailable, non-fatal */ }
   };
 
   const { data: status } = useLiveStatus();
@@ -277,7 +279,7 @@ export default function DashboardPage() {
   const reviewQuote = useReviewQuote(activeTicker, reviewDate, reviewTime);
   const heroQuote = isReview ? reviewQuote : quote;
 
-  const { data: brief } = useFetch<BriefResponse>(
+  const briefQ = useFetch<BriefResponse>(
     ['brief', activeTicker, reviewDate ?? 'live'],
     isReview
       ? `/api/dashboard/brief/${activeTicker}?date=${reviewDate}`
@@ -285,14 +287,16 @@ export default function DashboardPage() {
     true,
     isOpen && !isReview ? 15_000 : false,
   );
+  const brief = briefQ.data;
   const { data: playbook } = useFetch<PlaybookResponse>(
     ['playbook', activeTicker, reviewDate ?? 'live'],
     isReview ? `/api/playbook/${activeTicker}?date=${reviewDate}` : `/api/playbook/${activeTicker}`,
   );
-  const { data: signalsResp } = useFetch<SignalsResponse>(
+  const signalsQ = useFetch<SignalsResponse>(
     ['signals', activeTicker, reviewDate ?? 'live', reviewTime ?? 'eod'],
     `/api/signals/${activeTicker}?limit=20${reviewSuffix}`,
   );
+  const signalsResp = signalsQ.data;
   // Catalysts: "upcoming" is relative to the as-of day in review mode, not today.
   const catalystFrom = isReview && reviewDate ? reviewDate : todayISO();
   const catalystTo = isReview && reviewDate ? isoPlusDaysFrom(reviewDate, 7) : isoPlusDays(7);
@@ -304,11 +308,14 @@ export default function DashboardPage() {
   const { data: insight } = useInsightReport(activeTicker, reviewDate ?? undefined);
 
   // Sector rotation — market-wide (not ticker-scoped), 1D/5D toggle.
-  const { data: sectorsResp, isLoading: sectorsLoading } = useFetch<SectorsResponse>(
+  const sectorsQ = useFetch<SectorsResponse>(
     ['market-sectors'],
     '/api/market/sectors',
   );
+  const sectorsResp = sectorsQ.data;
+  const sectorsLoading = sectorsQ.isLoading;
   const [sectorPeriod, setSectorPeriod] = useState<'1d' | '5d'>('1d');
+  const authBlocked = useAuthBlocked();
   const sectorRows = useMemo(() => {
     const rows = sectorsResp?.sectors ?? [];
     return [...rows].sort((a, b) => {
@@ -337,15 +344,17 @@ export default function DashboardPage() {
     ? reviewCompact
     : (brief?.daily_indicators?.date ?? todayISO()).replace(/-/g, '');
   const monthCode = anchorDate.slice(0, 6);
-  const { data: reference } = useFetch<ReferenceResponse>(
+  const referenceQ = useFetch<ReferenceResponse>(
     ['reference', activeTicker, anchorDate],
     `/api/market/reference/${activeTicker}/${anchorDate}`,
   );
-  const { data: hourly } = useFetch<MarketDataResponse>(
+  const reference = referenceQ.data;
+  const hourlyQ = useFetch<MarketDataResponse>(
     ['hourly', activeTicker, monthCode],
     `/api/market/data/${activeTicker}/${monthCode}?timeframe=60`,
     !!brief,
   );
+  const hourly = hourlyQ.data;
 
   // 4 daily KPIs (prev close · latest close · 2-day change · RSI).
   const kpiCards = useMemo(() => {
@@ -493,6 +502,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 1. Briefing strip ───────────────────────────────────────────── */}
+      <WidgetState query={briefQ} skeletonRows={4}>
       <div
         className="rounded-xl p-[var(--card-pad,14px)]"
         style={{
@@ -518,7 +528,7 @@ export default function DashboardPage() {
               {heroQuote && <Delta value={heroQuote.change} pct={heroQuote.change_pct} />}
             </div>
 
-            {/* Bullets — derived from real brief fields */}
+            {/* Bullets: derived from real brief fields */}
             <div className="mt-3 flex flex-col gap-2">
               {brief && brief.source !== 'unavailable' ? (
                 briefBullets(brief).map((b, i) => (
@@ -534,7 +544,7 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <Unavailable msg={brief?.reason || 'Pre-market brief unavailable — Cloud SQL not connected or no brief for today.'} />
+                <Unavailable msg={brief?.reason || 'Pre-market brief unavailable, Cloud SQL not connected or no brief for today.'} />
               )}
             </div>
           </div>
@@ -587,14 +597,16 @@ export default function DashboardPage() {
             ) : (
               <div>
                 <MicroLabel>Top setup</MicroLabel>
-                <Unavailable msg="No playbook setups yet — run the pipeline to populate." />
+                <Unavailable msg="No playbook setups yet, run the pipeline to populate." />
               </div>
             )}
           </div>
         </div>
       </div>
+      </WidgetState>
 
       {/* ── Daily KPIs ──────────────────────────────────────────────────── */}
+      <WidgetState query={referenceQ} compact skeletonRows={2}>
       {kpiCards && (
         <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
           <KpiTile label="Prev close" value={fmtPrice(kpiCards.prevClose)} />
@@ -613,6 +625,7 @@ export default function DashboardPage() {
           />
         </div>
       )}
+      </WidgetState>
 
       {/* ── Movement Read (PHASE 3, feature-flagged) ───────────────────────
           Self-hiding: when MOVEMENT_STATEMENT_ENABLED is OFF the endpoint
@@ -621,7 +634,7 @@ export default function DashboardPage() {
           consults 5m/15m cells (IWM/SPY/QQQ); the dashboard's tickers are
           exactly those, so the active ticker is always valid here.
 
-          Live-only: the Movement Read is a "current read" — its hook calls the
+          Live-only: the Movement Read is a "current read", its hook calls the
           live /api/movement-statement (ticker/timeframe only, no as_of). In
           REVIEW/historical mode (reviewDate set) every surrounding card is
           keyed to the selected as-of date, so rendering this live card would
@@ -631,8 +644,9 @@ export default function DashboardPage() {
       {!isReview && <MovementRead ticker={activeTicker} timeframe="15m" />}
 
       {/* ── Intraday price (candlestick default · area toggle) ──────────────── */}
-      {(hourly?.candlestick?.length ?? 0) > 0 && (
+      {((hourly?.candlestick?.length ?? 0) > 0 || authBlocked || hourlyQ.isLoading || hourlyQ.isError) && (
         <Card>
+          <WidgetState query={hourlyQ} compact skeletonRows={5}>
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--on-surface)]">{activeTicker} · intraday</h3>
             <div className="flex items-center gap-3">
@@ -660,10 +674,12 @@ export default function DashboardPage() {
               height={260}
             />
           )}
+          </WidgetState>
         </Card>
       )}
 
       {/* ── 2. Live signals · Today's catalysts ─────────────────────────── */}
+      <WidgetState query={signalsQ} compact skeletonRows={4}>
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[1.4fr_1fr]">
         {/* Live signals */}
         <Card interactive onClick={() => navigate('/signals')} className="min-w-0">
@@ -715,7 +731,7 @@ export default function DashboardPage() {
                 <div key={i} className="flex items-center gap-3 border-t border-[var(--outline-variant)] py-2 first:border-t-0">
                   <div className="w-[52px] shrink-0 tabular-nums text-[11px] text-[var(--on-surface-muted)]">{c.date?.slice(5)}</div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12.5px] font-semibold text-[var(--on-surface)]">{eventTitle(c)}</div>
+                    <div className="line-clamp-2 break-words text-[12.5px] font-semibold text-[var(--on-surface)]" title={eventTitle(c)}>{eventTitle(c)}</div>
                     <div className="text-[11px] text-[var(--on-surface-muted)]">{c.ticker}{c.catalyst_type ? ` · ${c.catalyst_type}` : ''}</div>
                   </div>
                   <Pill tone={impactTone(c)}>{impactLabel(c)}</Pill>
@@ -725,10 +741,12 @@ export default function DashboardPage() {
           )}
         </Card>
       </div>
+      </WidgetState>
 
       {/* ── 3. Sector rotation · AI take · News ──────────────────────────── */}
+      <WidgetState query={sectorsQ} compact skeletonRows={4}>
       <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 lg:grid-cols-3">
-        {/* Sector rotation — ranked SPDR daily closes, fed by /api/market/sectors */}
+        {/* Sector rotation, ranked SPDR daily closes, fed by /api/market/sectors */}
         <Card className="min-w-0">
           {/* Card doesn't forward arbitrary props, so data-testid lives on this wrapper. */}
           <div data-testid="sector-rotation-card">
@@ -804,7 +822,7 @@ export default function DashboardPage() {
               <div className="line-clamp-4 text-[12px] leading-[1.5] text-[var(--on-surface-variant)]">{rep.thesis}</div>
             </div>
           ) : (
-            <Unavailable msg={`No insight report for ${activeTicker} — generate one on the AI Insights page.`} />
+            <Unavailable msg={`No insight report for ${activeTicker}, generate one on the AI Insights page.`} />
           )}
         </Card>
 
@@ -839,6 +857,7 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
+      </WidgetState>
     </div>
   );
 }

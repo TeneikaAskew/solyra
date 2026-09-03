@@ -11,7 +11,7 @@
  * would pass even if the table silently degraded to a paragraph.
  */
 import { describe, expect, it } from 'vitest';
-import { renderReportHtml } from './ReportsPage';
+import { renderReportHtml } from '@/lib/reports';
 import { MOCK_REPORT_BODY } from '../../tests/helpers/fixtures/reports';
 
 describe('renderReportHtml on MOCK_REPORT_BODY', () => {

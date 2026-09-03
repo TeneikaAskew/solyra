@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -5,12 +6,13 @@ import {
   TrendingUp, Phone, Target, DollarSign, Scissors, Rocket,
   GitMerge, Shield, Star, Globe, Calendar, RefreshCw, Filter,
   Lock, ArrowUpRight, Users, Building, Presentation, Monitor,
-  Video, Briefcase, Flame, ChevronRight,
+  Video, Briefcase, Flame, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { useTickerStore } from '@/stores/tickerStore';
 import type { Ticker } from '@/types';
 import { addDaysToISO, todayET } from '@/lib/dates';
+import { DateRangePicker } from '@/components/shared/DateRangePicker';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -202,7 +204,7 @@ function CatalystBadge({ type }: { type: string }) {
   const Icon = config.icon;
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+      className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
       style={{ backgroundColor: color + '22', color, border: `1px solid ${color}44` }}
     >
       <Icon size={11} />
@@ -232,7 +234,7 @@ function SentimentIndicator({ event }: { event: CatalystEvent }) {
   const symbol = s > 0 ? '▲' : '▼';
   return (
     <span
-      className={`text-[10px] font-bold ${cls} tabular-nums`}
+      className={`shrink-0 whitespace-nowrap text-[10px] font-bold ${cls} tabular-nums`}
       title={`Sentiment ${s.toFixed(2)} (${event.sentiment_label || ''})`}
     >
       {symbol} {Math.abs(s).toFixed(2)}
@@ -245,8 +247,9 @@ function EventRow({ event, onOpenTicker }: {
   onOpenTicker: (ticker: string) => void;
 }) {
   const macro = event.ticker === 'MACRO' || !event.ticker;
+  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="group flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
+    <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 py-2 px-3 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
       <ImpactDot event={event} />
       {macro ? (
         <span className="w-16 shrink-0 text-xs font-bold text-[var(--on-surface-variant)]">
@@ -262,9 +265,21 @@ function EventRow({ event, onOpenTicker }: {
         </button>
       )}
       <CatalystBadge type={event.catalyst_type} />
-      <span className="flex-1 truncate text-sm text-[var(--on-surface)]">
-        {eventTitle(event)}
-      </span>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        title={expanded ? 'Collapse details' : 'Show full title'}
+        className="order-last flex basis-full items-start gap-1 pl-7 min-w-0 text-left text-sm text-[var(--on-surface)] sm:order-none sm:flex-1 sm:basis-auto sm:pl-0"
+      >
+        <span className={expanded ? 'flex-1 break-words' : 'flex-1 truncate'}>
+          {eventTitle(event)}
+        </span>
+        <ChevronDown
+          size={13}
+          className={`mt-0.5 shrink-0 text-[var(--on-surface-variant)] transition-transform${expanded ? ' rotate-180' : ''}`}
+        />
+      </button>
       <SentimentIndicator event={event} />
       {event.source && (
         <span className="hidden md:inline text-[10px] text-[var(--on-surface-variant)] truncate max-w-[110px]">
@@ -299,17 +314,17 @@ function DateGroup({ date, events, onOpenTicker }: {
     return (a.ticker || '').localeCompare(b.ticker || '');
   });
   return (
-    <div className={`rounded-xl p-6 ${isToday ? 'bg-[var(--surface-2)] ring-1 ring-[var(--brand)]' : 'bg-[var(--surface-1)]'}`}>
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+    <div className={`rounded-xl p-4 sm:p-6 ${isToday ? 'bg-[var(--surface-2)] ring-1 ring-[var(--brand)]' : 'bg-[var(--surface-1)]'}`}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-sm font-semibold text-[var(--on-surface)]">{formatDate(date)}</span>
           {isToday && (
-            <span className="rounded-lg bg-[var(--brand)] px-2 py-0.5 text-[10px] font-bold text-[var(--on-brand)]">
+            <span className="shrink-0 rounded-lg bg-[var(--brand)] px-2 py-0.5 text-[10px] font-bold text-[var(--on-brand)]">
               TODAY
             </span>
           )}
         </div>
-        <span className="text-xs text-[var(--on-surface-variant)]">
+        <span className="shrink-0 text-xs text-[var(--on-surface-variant)]">
           {relative} &middot; {events.length} events
         </span>
       </div>
@@ -464,26 +479,14 @@ export default function CatalystsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-1.5 text-[11px] text-[var(--on-surface-variant)]">
-            From
-            <input
-              type="date"
-              value={dateFrom}
-              max={dateTo}
-              onChange={e => setDateFrom(e.target.value)}
-              className="rounded-md bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--on-surface)] outline-none ring-1 ring-transparent focus:ring-[var(--brand)]"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 text-[11px] text-[var(--on-surface-variant)]">
-            To
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom}
-              onChange={e => setDateTo(e.target.value)}
-              className="rounded-md bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--on-surface)] outline-none ring-1 ring-transparent focus:ring-[var(--brand)]"
-            />
-          </label>
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={(from, to) => {
+              setDateFrom(from);
+              setDateTo(to);
+            }}
+          />
           <button
             onClick={resetDates}
             className="rounded-md bg-[var(--surface-2)] px-2 py-1 text-[11px] font-medium text-[var(--on-surface-variant)] hover:bg-[var(--surface-3)] hover:text-[var(--on-surface)] transition-colors"
@@ -502,7 +505,8 @@ export default function CatalystsPage() {
         </div>
       </div>
 
-      {/* Hot Now — high-impact catalysts in today/tomorrow window */}
+      {/* Hot Now, high-impact catalysts in today/tomorrow window */}
+      <DataGate>
       {hotEvents.length > 0 && (
         <div className="rounded-xl bg-[var(--surface-1)] p-3 ring-1 ring-[var(--warn)]/30">
           <div className="flex items-center gap-2 mb-2">
@@ -621,6 +625,7 @@ export default function CatalystsPage() {
 
       {/* WSH upgrade banner */}
       <WSHUpgradeBanner types={typesData} />
+      </DataGate>
     </div>
   );
 }

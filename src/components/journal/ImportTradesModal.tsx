@@ -259,7 +259,7 @@ export function ImportTradesModal({ open, onClose, onImported }: ImportTradesMod
             {broker && !isNativeBroker && (
               <div>
                 <div className="mb-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
-                  Column mapping —{' '}
+                  Column mapping:{' '}
                   {file ? "match each field to your CSV's header" : 'upload a CSV to populate header options'}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -275,7 +275,7 @@ export function ImportTradesModal({ open, onClose, onImported }: ImportTradesMod
                         disabled={headers.length === 0}
                         className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 py-1 text-xs text-[var(--color-text-primary)] disabled:opacity-50"
                       >
-                        <option value="">— select column —</option>
+                        <option value="">Select a column</option>
                         {headers.map((h) => (
                           <option key={h} value={h}>
                             {h}
@@ -359,7 +359,7 @@ export function ImportTradesModal({ open, onClose, onImported }: ImportTradesMod
                       <td className="px-2 py-1.5">
                         {t.duplicate ? (
                           <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-text-muted)]">
-                            duplicate — already in journal
+                            duplicate: already in journal
                           </span>
                         ) : t.status === 'active' ? (
                           <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-500/70">

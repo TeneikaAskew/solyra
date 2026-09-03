@@ -242,7 +242,7 @@ const tactical: HSTactical = {
   currentState:
     'Pinning between Flip 588.50 and Anchor 600. Spot 593.42 holding above Gate 589 with rising Δ GEX in the 0–7DTE band.',
   longSetup:
-    'Reclaim Gate 594 → target Anchor 600. Stop tight under Spot 593 — invalid if 5m closes below 593.',
+    'Reclaim Gate 594 → target Anchor 600. Stop tight under Spot 593, invalid if 5m closes below 593.',
   shortSetup:
     'Fade Anchor 600 / fail at Gate 594 → target Flip 588.50. Add on break with target Trigger 587 (largest negative GEX).',
   invalidation:
@@ -255,13 +255,13 @@ const tactical: HSTactical = {
 export const glossary: Record<string, HSGlossaryTerm> = {
   king: {
     name: 'King',
-    short: 'Strike where |Net GEX| ≥ 50% of max in window — primary dealer magnet / pin.',
+    short: 'Strike where |Net GEX| ≥ 50% of max in window, primary dealer magnet / pin.',
     long: 'First touches of a King react ~80% of the time in positive gamma regime.',
     math: 'Σ (call_gamma×call_oi − put_gamma×put_oi) × spot² · max in window',
   },
   gate: {
     name: 'Gate',
-    short: 'Secondary high-|GEX| strike (≥20% of max) between current spot and the King — must break before price can reach the King.',
+    short: 'Secondary high-|GEX| strike (≥20% of max) between current spot and the King, must break before price can reach the King.',
     long: 'Failed test of a Gate frequently precedes a trend shift; persistent rejection is a continuation signal.',
   },
   spot: {
@@ -276,7 +276,7 @@ export const glossary: Record<string, HSGlossaryTerm> = {
   },
   midpoint: {
     name: 'Midpoint',
-    short: 'Range middle — historically worst R:R as MMs trap orders in both directions.',
+    short: 'Range middle: historically worst R:R as MMs trap orders in both directions.',
     long: 'Often the chop zone where intraday counter-trend trades go to die. Better to wait for Gate or Spot.',
   },
   hedge: {
@@ -302,7 +302,7 @@ export const glossary: Record<string, HSGlossaryTerm> = {
   },
   pull: {
     name: 'Pull',
-    short: 'Composite magnetism — combination of |GEX|, OI density, and proximity to spot.',
+    short: 'Composite magnetism: combination of |GEX|, OI density, and proximity to spot.',
   },
   parity: {
     name: 'Spot method: parity',
@@ -314,7 +314,7 @@ export const glossary: Record<string, HSGlossaryTerm> = {
   },
   median: {
     name: 'Spot method: median strike',
-    short: 'Last resort — chain too thin to derive spot. Treat the chart with caution.',
+    short: 'Last resort: chain too thin to derive spot. Treat the chart with caution.',
   },
 };
 

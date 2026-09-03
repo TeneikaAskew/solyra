@@ -146,14 +146,14 @@ function TrinityPanel({ symbol }: { symbol: string }) {
                     {r.strike.toFixed(r.strike % 1 === 0 ? 0 : 1)}
                     {isKing ? ' ♔' : ''}
                   </span>
-                  {/* put side — grows leftward */}
+                  {/* put side, grows leftward */}
                   <div className="flex justify-end">
                     <div
                       className="h-3 rounded-l-sm"
                       style={{ width: `${putW}%`, background: 'var(--bear)', opacity: 0.55 }}
                     />
                   </div>
-                  {/* call side — grows rightward */}
+                  {/* call side, grows rightward */}
                   <div className="flex justify-start">
                     <div
                       className="h-3 rounded-r-sm"
@@ -178,7 +178,7 @@ export default function TrinityTab() {
           Trinity · synced index gamma
         </h3>
         <span className="text-xs text-[var(--on-surface-muted)]">
-          SPX · SPY · QQQ — strike ladders aligned
+          SPX · SPY · QQQ, strike ladders aligned
         </span>
       </div>
 

@@ -58,6 +58,9 @@
 @media (max-width: 720px) {
   .sl-nav { padding: 14px 5vw; }
   .sl-nav-links { display: none !important; }
-  .sl-nav-signin { display: none !important; }
-  .sl-nav-cta { padding: 8px 12px !important; font-size: 12px !important; }
+  /* Sign in must stay reachable on phones — the landing page is the only
+     entry point to /dashboard. Only the section anchors (which have in-page
+     equivalents further down) collapse; the auth pair shrinks to fit. */
+  .sl-nav-signin { font-size: 12px !important; white-space: nowrap; }
+  .sl-nav-cta { padding: 7px 11px !important; font-size: 11px !important; white-space: nowrap; }
 }

@@ -110,8 +110,8 @@ export default function FlowseekerTab({
 
   return (
     <div className="space-y-4">
-      {/* Demo banner — make it unmistakable this isn't live */}
-      <DemoDataBanner detail="No live flow feed connected — placeholder tape until an options flow-tape endpoint exists." />
+      {/* Demo banner, make it unmistakable this isn't live */}
+      <DemoDataBanner detail="No live flow feed connected, placeholder tape until an options flow-tape endpoint exists." />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px] lg:items-start">
         {/* Left column: scanner strip + feed */}

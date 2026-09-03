@@ -157,21 +157,20 @@ export function MovementReadView({ statement }: { statement: MovementStatement }
         meta={`${ticker} · ${timeframe}`}
       />
 
-      {/* Headline — the calibrated continuation probability ONLY. */}
+      {/* Headline: the calibrated continuation probability ONLY. */}
       <HeadlineLine statement={statement} />
 
       {/* Levels ladder with per-tier reach-rates + low-sample badges. */}
       <LevelsLadder levels={levels} />
 
-      {/* Context modifiers — visually secondary / muted. */}
+      {/* Context modifiers, visually secondary / muted. */}
       <ContextModifiers modifiers={confidence_modifiers} />
 
       {/* Expected-move affordances (size light, magnitude, direction line,
-          risk hint, options idea, opt-in sizing calculator). Size only —
-          never a direction call. */}
+          risk hint, options idea, opt-in sizing calculator). Size only:           never a direction call. */}
       <ExpectedMoveAffordances expectedMove={confidence_modifiers?.expected_move ?? null} />
 
-      {/* Scope disclaimer — always present. */}
+      {/* Scope disclaimer, always present. */}
       <p className="mt-3 text-[10px] leading-relaxed text-[var(--on-surface-muted)]">
         {scope_statement}
       </p>
@@ -267,7 +266,7 @@ function ContextModifiers({
       className="mt-3 rounded-md border border-[var(--outline-variant)] bg-[var(--surface-1)] px-2.5 py-2 opacity-80"
     >
       <div className="mb-1 text-[10px] uppercase tracking-[0.04em] text-[var(--on-surface-muted)]">
-        Context — does not change the probability
+        Context: does not change the probability
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--on-surface-muted)]">
         <ExpectedMoveLine em={em} />
@@ -365,7 +364,7 @@ function SizeCalculator({ em }: { em: MovementExpectedMove }) {
       <summary className="cursor-pointer text-[var(--on-surface-muted)]">Size this trade</summary>
       <div className="mt-1.5 space-y-1.5">
         {atrMissing ? (
-          <p className="text-[var(--on-surface-muted)]">ATR unavailable — sizing disabled.</p>
+          <p className="text-[var(--on-surface-muted)]">ATR unavailable: sizing disabled.</p>
         ) : (
           <>
             <div className="flex items-center gap-2">
@@ -397,7 +396,7 @@ function SizeCalculator({ em }: { em: MovementExpectedMove }) {
           </>
         )}
         <p className="text-[10px] text-[var(--on-surface-muted)]">
-          Calculator, not a recommendation — sizing math on the model's expected move (stop = bucket
+          Calculator, not a recommendation, sizing math on the model's expected move (stop = bucket
           × ATR). Verify against your own plan.
         </p>
       </div>
@@ -420,7 +419,7 @@ function ExpectedMoveAffordances({ expectedMove }: { expectedMove: MovementExpec
         </span>
       </div>
       <p data-testid="direction-line" className="mt-1 text-[10px] text-[var(--on-surface-muted)]">
-        Direction: not predicted — you supply it from your levels/read.
+        Direction: not predicted: you supply it from your levels/read.
       </p>
       {hint && (
         <p data-testid="risk-hint" className="mt-1 text-[11px] text-[var(--on-surface)]">
@@ -430,7 +429,7 @@ function ExpectedMoveAffordances({ expectedMove }: { expectedMove: MovementExpec
       {showOptionsIdea(pExplosive) && (
         <p data-testid="options-idea" className="mt-1 text-[11px] text-[var(--on-surface)]">
           <span className="text-[var(--on-surface-muted)]">Suggestion:</span> non-directional
-          structure (straddle/strangle) favored — profits from size, not direction.
+          structure (straddle/strangle) favored: profits from size, not direction.
         </p>
       )}
       <SizeCalculator em={expectedMove} />
