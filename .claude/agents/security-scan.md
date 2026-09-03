@@ -14,7 +14,8 @@ You NEVER modify code — only report findings with severity and a fix.
 
 - **Exit 0** — clean
 - **Exit 1** — MEDIUM/LOW findings only
-- **Exit 2** — any CRITICAL finding
+- **Exit 2** — any HIGH or CRITICAL finding (a token leak or auth-gate
+  finding blocks the same as a committed secret)
 
 Print `SECURITY_SCAN_EXIT=<0|1|2>` at the end.
 
@@ -42,11 +43,19 @@ Exclude: `node_modules/`, `dist/`, `test-results/`, `playwright-report/`.
 ### [CRITICAL] 1. Committed secrets and credential files
 
 ```bash
-git ls-files | grep -E "(^|/)\.env($|\.)|\.gcp-key\.json$|service-account.*\.json$|(^|/)credentials\.json$" \
+# .env.example / .env.sample / .env.template are sanitized templates by
+# convention — allowed by name, content-scanned below instead.
+git ls-files | grep -E "(^|/)\.env($|\.)" | grep -vE "\.env\.(example|sample|template)$" \
+  && echo "[CRITICAL] secret file committed"
+git ls-files | grep -E "\.gcp-key\.json$|service-account.*\.json$|(^|/)credentials\.json$" \
   && echo "[CRITICAL] secret file committed"
 git ls-files | grep -E "\.har$|har\.json$" \
   && echo "[CRITICAL] HAR capture committed — contains cookies, auth headers, response bodies"
-grep -rn "BEGIN PRIVATE KEY\|BEGIN RSA PRIVATE KEY" src public index.html 2>/dev/null
+for f in $(git ls-files | grep -E "\.env\.(example|sample|template)$"); do
+  grep -nE "^[A-Za-z0-9_]+\s*=\s*\S{20,}" "$f" \
+    && echo "[HIGH] $f carries long values — verify they are placeholders, not real credentials"
+done
+grep -rn "BEGIN PRIVATE KEY\|BEGIN RSA PRIVATE KEY" src tests public index.html *.ts *.mjs *.json 2>/dev/null
 ```
 
 `.gitignore` already excludes `.env`, `*.har`, `har.json`, `docs/har.json`, and
@@ -57,9 +66,13 @@ a real credential.
 ### [CRITICAL] 2. Hardcoded API keys / tokens / long-lived credentials
 
 ```bash
+# Cover the declared scope: src/tests TS, public/ assets (shipped verbatim to
+# every visitor), and root config files (history keeps whatever lands there).
 grep -rnE "(api[_-]?key|apiKey|secret|password|passwd|private[_-]?key)\s*[:=]\s*['\"\`][^'\"\`]{16,}" \
-  src tests --include=*.ts --include=*.tsx
-grep -rnE "\b(ghp_|github_pat_|sk-|AIza[0-9A-Za-z_-]{30,}|xox[baprs]-)" src tests public index.html
+  src tests public --include=*.ts --include=*.tsx --include=*.json --include=*.html 2>/dev/null
+grep -nE "(api[_-]?key|apiKey|secret|password|passwd|private[_-]?key)\s*[:=]\s*['\"\`]?[^'\"\` ]{16,}" \
+  *.ts *.mjs *.json index.html 2>/dev/null
+grep -rnE "\b(ghp_|github_pat_|sk-|AIza[0-9A-Za-z_-]{30,}|xox[baprs]-)" src tests public index.html *.ts *.mjs *.json 2>/dev/null
 grep -rn "Bearer [A-Za-z0-9._-]\{20,\}" src tests --include=*.ts --include=*.tsx
 ```
 

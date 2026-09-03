@@ -137,8 +137,12 @@ journal-level statistics from trade rows.
 - **Null propagation**: a trade missing `exit_price` should be excluded from a
   P&L average, not counted as `0`. Excluding and zero-filling give very
   different averages.
-- **Profit factor**: `gross_wins / |gross_losses|`, always > 0. A negative or
-  `Infinity` result reaching the UI needs an explicit render, not a `?? 0`.
+- **Profit factor**: `gross_wins / |gross_losses|`, domain non-negative — `0`
+  is a legitimate value for a period with losses and no winners, not a
+  fabricated number, so don't flag or "fix" an honest zero. The edge cases
+  needing an explicit render (never a `?? 0`) are `gross_losses = 0`
+  (`Infinity`, or undefined with no closed trades) and anything negative,
+  which can only come from a sign bug.
 - **Averages of percentages** — averaging return percentages is not the same
   as the return of the portfolio. If a label implies the latter, it's wrong.
 

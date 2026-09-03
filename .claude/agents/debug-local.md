@@ -142,9 +142,14 @@ npm run build
 git status --porcelain | grep -E "^\?\?|^ M" | grep -E "dist/|test-results/|playwright-report/" \
   && echo "FAIL: build artifacts in working tree (should be gitignored)"
 
-# 6. No secrets or captures staged
-git diff --cached --name-only | grep -E "(^|/)\.env|\.har$|har\.json$|\.gcp-key\.json$" \
-  && echo "FAIL: secret/capture staged"
+# 6. No secrets or captures anywhere on the branch — at pre-push the work is
+#    usually already committed, so --cached alone is empty; check the branch
+#    diff from the merge base plus anything still staged or unstaged.
+BASE="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD)"
+{ git diff "$BASE" --name-only; git status --porcelain | awk '{print $NF}'; } | \
+  grep -E "(^|/)\.env($|\.)|\.har$|har\.json$|\.gcp-key\.json$" | \
+  grep -vE "\.env\.(example|sample|template)$" \
+  && echo "FAIL: secret/capture on branch"
 
 # 7. On a feature branch, not the Lovable-connected branch
 git rev-parse --abbrev-ref HEAD

@@ -123,10 +123,21 @@ This is the cross-repo drift risk (CLAUDE.md Rule 6). A changed response type
 should come with a changed fixture:
 
 ```bash
-if git diff "$RANGE" --name-only | grep -q '^src/types/'; then
-  git diff "$RANGE" --name-only | grep -q '^tests/helpers/fixtures/' || \
-    echo "[GAP] src/types/ changed but no fixture updated — verify the backend actually returns the new shape"
-fi
+# Per-type, not directory-boolean: an unrelated fixture edit must not suppress
+# the warning for a different changed contract. Fixtures import via
+# `from '@/types/<base>'`, so map each changed type file to its consumers.
+for t in $(git diff "$RANGE" --name-only | grep '^src/types/'); do
+  base=$(basename "$t" .ts)
+  consumers=$(grep -rln "types/$base" tests/helpers/ 2>/dev/null)
+  if [ -n "$consumers" ]; then
+    for fx in $consumers; do
+      git diff "$RANGE" --name-only | grep -qx "$fx" || \
+        echo "[GAP] $t changed but $fx not updated — verify the backend actually returns the new shape"
+    done
+  else
+    echo "[CHECK] $t changed and no fixture/mock imports it — confirm it isn't an API response type"
+  fi
+done
 ```
 
 Note: `npx tsc -b` type-checks the `test` project, so a *breaking* type change
@@ -136,15 +147,20 @@ compiles fine but leaves the fixture never exercising it.
 ### New endpoint consumer without a mock
 
 ```bash
-# The sed program must be single-quoted: in double quotes the shell expands
-# `$-` to its option flags, and the character class silently loses both `$`
-# and `-`, truncating /api/foo-bar/${ticker} to /api/foo.
-git diff "$RANGE" | grep -E "^\+.*fetch\(['\"\`]/api/" | sed -E 's#.*(/api/[a-zA-Z0-9/_{}$-]+).*#\1#' | sort -u
+# Extract /api/ paths from ALL added lines, not just lines containing
+# `fetch(` — this repo often builds the URL first and calls `fetch(url)`
+# (useGammaGrid, useMovementStatement), and the literal can sit on a
+# different line than the call. The pattern must be single-quoted: in double
+# quotes the shell expands `$-` to its option flags and the character class
+# silently loses both `$` and `-`, truncating /api/foo-bar/${ticker}.
+git diff "$RANGE" | grep -E '^\+' | grep -oE '/api/[a-zA-Z0-9/_{}$-]+' | sort -u
 ```
 
-For each new endpoint, confirm it appears in `tests/helpers/mocks.ts` or a
-fixture. An unmocked endpoint doesn't fail loudly — it hangs the spec until the
-30s timeout, so this gap presents as flakiness later.
+The extraction over-collects (comments, test URLs), so for each path first
+confirm a real consumer (grep the source), then confirm it appears in
+`tests/helpers/mocks.ts` or a fixture. An unmocked endpoint doesn't fail
+loudly — it hangs the spec until the 30s timeout, so this gap presents as
+flakiness later.
 
 ## Phase 4: Modified-export coverage
 

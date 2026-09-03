@@ -153,7 +153,11 @@ default, forces every caller to invent a value. This is the same violation one
 layer up, and it's harder to spot because no `??` appears in the diff.
 
 ```bash
-git diff HEAD -- src/types | grep -E "^[+-].*(\?:|\| null)"
+# Merge-base diff: after a commit `git diff HEAD` is empty and a committed
+# narrowing would slip through. Diffing from the merge base covers committed
+# and uncommitted changes alike.
+BASE="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD)"
+git diff "$BASE" -- src/types | grep -E "^[+-].*(\?:|\| null)"
 ```
 
 Flag when a diff removes `| null` or `?` from a field on the forbidden list
