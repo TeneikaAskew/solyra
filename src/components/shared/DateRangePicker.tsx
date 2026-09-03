@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Calendar as CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { RangeCalendar } from '@heroui/react';
 import { parseDate } from '@internationalized/date';
-import type { CalendarDate, DateRange } from '@internationalized/date';
+import type { CalendarDate } from '@internationalized/date';
+
+type DateRange = { start: CalendarDate; end: CalendarDate };
 
 function fmtShort(d: CalendarDate): string {
   return d.toDate('America/New_York').toLocaleDateString('en-US', {
