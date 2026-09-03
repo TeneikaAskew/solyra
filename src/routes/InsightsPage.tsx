@@ -105,7 +105,7 @@ export default function InsightsPage() {
   const isRunning = !!currentRunId && runStatus.data?.status !== 'done' && runStatus.data?.status !== 'failed';
 
   return (
-    <div className="flex h-full flex-col gap-6" style={{ maxHeight: 'calc(100vh - 180px)' }}>
+    <div className="flex h-full min-w-0 flex-col gap-4 md:gap-6 md:max-h-[calc(100vh-180px)]">
       {/* Page header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
@@ -115,8 +115,9 @@ export default function InsightsPage() {
         <TickerCombobox />
       </div>
 
-      {/* Tab bar */}
-      <div className="flex items-center gap-2">
+      {/* Tab bar — scrolls horizontally on narrow screens instead of squashing */}
+      <div className="-mx-1 flex min-w-0 items-center gap-2 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
+
         <TabButton
           active={tab === 'report'}
           onClick={() => {
