@@ -25,7 +25,7 @@ export function LandingFAQ() {
               display: 'flex',
               flexWrap: 'wrap',
               alignItems: 'center',
-              columnGap: 10,
+              columnGap: 6,
               rowGap: 6,
               fontSize: 12,
             }}
