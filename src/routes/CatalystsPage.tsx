@@ -264,9 +264,21 @@ function EventRow({ event, onOpenTicker }: {
         </button>
       )}
       <CatalystBadge type={event.catalyst_type} />
-      <span className="flex-1 truncate text-sm text-[var(--on-surface)]">
-        {eventTitle(event)}
-      </span>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        title={expanded ? 'Collapse details' : 'Show full title'}
+        className="flex flex-1 items-start gap-1 min-w-0 text-left text-sm text-[var(--on-surface)]"
+      >
+        <span className={expanded ? 'flex-1 break-words' : 'flex-1 truncate'}>
+          {eventTitle(event)}
+        </span>
+        <ChevronDown
+          size={13}
+          className={`mt-0.5 shrink-0 text-[var(--on-surface-variant)] transition-transform${expanded ? ' rotate-180' : ''}`}
+        />
+      </button>
       <SentimentIndicator event={event} />
       {event.source && (
         <span className="hidden md:inline text-[10px] text-[var(--on-surface-variant)] truncate max-w-[110px]">
