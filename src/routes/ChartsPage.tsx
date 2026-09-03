@@ -26,7 +26,7 @@ import { StrategyConditionsCard } from '@/components/charts/StrategyConditionsCa
 import { SimilarSetupsCard } from '@/components/charts/SimilarSetupsCard';
 import { ReplaySessionControls } from '@/components/charts/ReplaySessionControls';
 import { useReplaySession } from '@/hooks/useReplaySession';
-import { reviewCutoffTs as cutoffTs } from '@/hooks/useReviewQuote';
+import { reviewCutoffTs as cutoffTs, REVIEW_DEFAULT_CUTOFF } from '@/hooks/useReviewQuote';
 import { useLiveIndicators, useSignalSeries } from '@/hooks/useLiveIndicators';
 import { EMPTY_INDICATORS, type Bar } from '@/lib/indicators';
 import type { Timeframe, TradeDirection, ChartVoter } from '@/types';
@@ -147,12 +147,16 @@ export default function ChartsPage() {
     };
   }, [isReview, reviewDate, dates, localSelectedDate]);
 
-  // Fetch data — pass end_time only in review mode
+  // Fetch data — pass end_time only in review mode. The DEFAULT cutoff must
+  // reach the bar fetch too: passing null here while trades were cut at
+  // 16:00 let post-close bars flow into effectiveCandlestick and the
+  // server-side indicator/signal requests (Codex review on the cutoff
+  // unification).
   const { data: marketData, isLoading, error } = useMarketData(
     activeTicker,
     selectedDate,
     timeframe,
-    isReview ? reviewTime : null
+    isReview ? reviewTime ?? REVIEW_DEFAULT_CUTOFF : null
   );
 
   // Bar-replay trainer session (Task 5.2) — reveals `marketData.candlestick`
