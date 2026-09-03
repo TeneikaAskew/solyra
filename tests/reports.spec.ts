@@ -22,7 +22,13 @@ test.describe('Reports', () => {
   test('lists available phase reports', async ({ page }) => {
     await page.goto('/reports');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByText(/phase1|phase 1/i).first()).toBeVisible();
+    // The picker is a <select> grouped by phase, and options inside a closed
+    // select are never "visible" to Playwright — assert the active report's
+    // rendered header plus the select state instead of bare text.
+    await expect(page.getByRole('heading', { name: /phase 1/i }).first()).toBeVisible();
+    const picker = page.getByLabel('Select report');
+    await expect(picker).toHaveValue('phase1');
+    await expect(picker.locator('option')).toHaveCount(2);
   });
 
   test('renders within perf budget (strict 5s)', async ({ page }) => {

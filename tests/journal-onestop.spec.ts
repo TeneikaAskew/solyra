@@ -194,7 +194,7 @@ test.describe('Journal one-stop cockpit — Examples default', () => {
     await expect(page.getByTestId('ex-badge').first()).toBeVisible();
 
     // Scope label opens in Overview.
-    await expect(page.getByTestId('scope-label')).toHaveText(/overview — all dates/i);
+    await expect(page.getByTestId('scope-label')).toHaveText(/overview: all dates/i);
 
     // All 7 KPI tiles, populated from the examples dataset.
     await expect(page.getByText('Trades', { exact: true })).toBeVisible();
@@ -393,13 +393,13 @@ test.describe('Journal one-stop cockpit — My journal view', () => {
     await page.waitForLoadState('networkidle');
 
     const label = page.getByTestId('scope-label');
-    await expect(label).toHaveText(/overview — all dates/i);
+    await expect(label).toHaveText(/overview: all dates/i);
 
     await page.locator('input[type="date"]').first().fill('2026-04-25');
-    await expect(label).toHaveText(/session — 04\/25\/2026/i);
+    await expect(label).toHaveText(/session: 04\/25\/2026/i);
 
     await page.getByTestId('clear-date').click();
-    await expect(label).toHaveText(/overview — all dates/i);
+    await expect(label).toHaveText(/overview: all dates/i);
   });
 
   test('hovering a rail card highlights its markers on the chart, and mouseleave clears it', async ({ page }) => {

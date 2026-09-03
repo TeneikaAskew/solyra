@@ -30,13 +30,19 @@
  * must send `Access-Control-Allow-Origin` for the host serving the SPA (and
  * allow the `Authorization` header on preflight), or the browser blocks them.
  */
-import { getIdToken } from './firebase';
+import { getCurrentUid, getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
 import { markAuthBlocked, clearAuthBlocked } from './authGate';
 
-// Reachable pre-auth — must match api/auth._OPEN_API_PREFIXES.
-const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase'];
+// Paths the backend answers WITHOUT auth (api/auth._OPEN_API_PREFIXES — keep
+// in sync), so the sign-in screen, shell, and public landing page can work.
+// Open ≠ anonymous: the ID token still attaches when present, because
+// /api/me resolves a presented bearer token server-side
+// (auth.current_user_email) to the real email + is_admin. This list decides
+// which 401s mean "signed out", and (with isIdentityPath) which requests may
+// still go out anonymously when token acquisition fails.
+const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase', '/api/waitlist'];
 
 /**
  * Absolute origin for `/api/*`, or '' to keep requests same-origin.
@@ -86,6 +92,16 @@ function isGatedApiPath(path: string): boolean {
 }
 
 /**
+ * Paths whose RESPONSE is the identity (or data keyed to it): /api/me and
+ * everything under it. Open in the auth sense, but never safe to downgrade
+ * to anonymous — an anonymous answer here is fabricated data, not a public
+ * resource.
+ */
+function isIdentityPath(path: string): boolean {
+  return path === '/api/me' || path.startsWith('/api/me/');
+}
+
+/**
  * Rewrite a relative `/api/*` request onto API_BASE. No-op when API_BASE is
  * empty, when the path isn't `/api/*`, or when the caller already passed an
  * absolute URL (it chose an origin deliberately — don't second-guess it).
@@ -121,7 +137,8 @@ export function installAuthFetch(): void {
     // Base rewrite happens for EVERY mode — a static host serving the SPA has
     // no /api route regardless of how auth is configured.
     const target = withApiBase(input);
-    const gated = isGatedApiPath(pathOf(input));
+    const path = pathOf(input);
+    const gated = isGatedApiPath(path);
 
     // Track gated-call outcomes in every auth mode so data cards can show a
     // "Sign in to load data" empty state on 401 instead of rendering blank.
@@ -131,15 +148,53 @@ export function installAuthFetch(): void {
       return resp;
     };
 
-    if (getAuthMode() !== 'firebase' || !gated) {
+    if (getAuthMode() !== 'firebase' || !path.startsWith('/api/')) {
       const resp = await nativeFetch(target, init);
       return gated ? track(resp) : resp;
     }
 
-    const token = await getIdToken().catch(() => null);
+    // Attach the identity to EVERY /api request when signed in, the
+    // OPEN_PREFIXES paths included — see the note on OPEN_PREFIXES. Skipping
+    // the header on /api/me left the role-based admin gate reading an
+    // anonymous identity forever.
+    //
+    // Resolving null means genuinely signed out: open paths proceed
+    // anonymously, gated paths will 401 into the sign-in flow. A REJECTED
+    // lookup is neither — retry once with a forced refresh (the SDK remedy
+    // for a stale cached token). If that also fails, what happens depends on
+    // whether anonymity changes the request's meaning:
+    //  - identity paths (/api/me…): reject — an anonymous answer is
+    //    fabricated data that useUser would cache for its whole staleTime;
+    //  - gated paths: reject — sending without the header guarantees a 401
+    //    that would bounce the user to sign-in over a transient blip;
+    //  - public open paths (health, config, waitlist): proceed anonymously —
+    //    the backend serves them identically without identity, and failing
+    //    them would misreport a reachable server as down.
+    // The uid at request initiation. A forced-refresh retry takes long enough
+    // for a cross-tab account switch to land, and getIdToken(true) mints a
+    // token for whoever is signed in AT RETRY TIME — without this check, a
+    // request initiated as account A could go out carrying B's token.
+    const uidAtStart = await getCurrentUid();
+    let token: string | null;
+    try {
+      token = await getIdToken();
+    } catch {
+      try {
+        token = await getIdToken(true);
+      } catch (err) {
+        if (isIdentityPath(path) || isGatedApiPath(path)) throw err;
+        token = null;
+      }
+      if (token !== null && (await getCurrentUid()) !== uidAtStart) {
+        if (isIdentityPath(path) || isGatedApiPath(path)) {
+          throw new Error('signed-in account changed during token refresh');
+        }
+        token = null; // public path: proceed, but never with the other account's token
+      }
+    }
     let nextInit = init;
     if (token) {
-      // Merge onto existing headers (preserve X-Admin-Token, Content-Type, …).
+      // Merge onto existing headers (preserve Content-Type and friends).
       const headers = new Headers(
         init?.headers ?? (target instanceof Request ? target.headers : undefined),
       );
@@ -148,7 +203,9 @@ export function installAuthFetch(): void {
     }
 
     const resp = await nativeFetch(target, nextInit);
-    if (resp.status === 401 && _onUnauthorized) _onUnauthorized();
-    return track(resp);
+    // Only gated paths signal "signed out": an open path answers without auth
+    // by design, so a 401 from one is a server bug, not an expired session.
+    if (resp.status === 401 && gated && _onUnauthorized) _onUnauthorized();
+    return gated ? track(resp) : resp;
   };
 }

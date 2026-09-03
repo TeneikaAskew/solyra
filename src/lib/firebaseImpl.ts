@@ -41,6 +41,12 @@ export async function getIdToken(forceRefresh = false): Promise<string | null> {
   return user ? user.getIdToken(forceRefresh) : null;
 }
 
+/** The signed-in user's uid, or null when signed out. Synchronous read of the
+ *  SDK's current auth state — used to detect a cross-tab account switch. */
+export function currentUid(): string | null {
+  return _auth?.currentUser?.uid ?? null;
+}
+
 export function signInWithGoogle() {
   if (!_auth) throw new Error('Firebase not initialized');
   return signInWithPopup(_auth, new GoogleAuthProvider());
