@@ -60,7 +60,12 @@ export function useUser() {
       return r.json();
     },
     retry: 1,
-    staleTime: 5 * 60_000,
+    // Short on purpose: the uid key only covers ACCOUNT switches, while a
+    // role granted or revoked for the SAME account changes /api/me's answer
+    // without changing the key. The server enforces the role on every API
+    // call immediately; this bound is how long the UI (denied card, admin
+    // shell, nav link) can lag behind before a mount/focus refetch converges.
+    staleTime: 30_000,
   });
 
   const email = query.data?.email ?? null;

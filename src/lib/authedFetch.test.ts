@@ -18,10 +18,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 const getIdToken = vi.fn();
+const getCurrentUid = vi.fn();
 const getAuthMode = vi.fn();
 
 vi.mock('./firebase', () => ({
   getIdToken: (forceRefresh?: boolean) => getIdToken(forceRefresh),
+  getCurrentUid: () => getCurrentUid(),
 }));
 vi.mock('./runtimeConfig', () => ({ getAuthMode: () => getAuthMode() }));
 
@@ -55,6 +57,7 @@ function sentAuthHeader(native: Mock): string | null {
 afterEach(() => {
   vi.unstubAllGlobals();
   getIdToken.mockReset();
+  getCurrentUid.mockReset();
   getAuthMode.mockReset();
 });
 
@@ -129,6 +132,33 @@ describe('installAuthFetch — firebase mode', () => {
     await fetch('/api/health');
 
     expect(native).toHaveBeenCalledTimes(2);
+    expect(sentAuthHeader(native)).toBeNull();
+  });
+
+  it('aborts a gated request when the account switches during the forced retry', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValueOnce('uid-A').mockResolvedValueOnce('uid-B');
+    getIdToken
+      .mockRejectedValueOnce(new Error('refresh blip'))
+      .mockResolvedValueOnce('tok-of-B');
+    const { native, fetch } = await install();
+
+    await expect(fetch('/api/admin/routes')).rejects.toThrow(
+      'signed-in account changed during token refresh',
+    );
+    expect(native).not.toHaveBeenCalled();
+  });
+
+  it('strips the token instead when the account switches and the path is public', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValueOnce('uid-A').mockResolvedValueOnce('uid-B');
+    getIdToken
+      .mockRejectedValueOnce(new Error('refresh blip'))
+      .mockResolvedValueOnce('tok-of-B');
+    const { native, fetch } = await install();
+
+    await fetch('/api/health');
+
     expect(sentAuthHeader(native)).toBeNull();
   });
 

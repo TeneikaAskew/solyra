@@ -30,7 +30,7 @@
  * must send `Access-Control-Allow-Origin` for the host serving the SPA (and
  * allow the `Authorization` header on preflight), or the browser blocks them.
  */
-import { getIdToken } from './firebase';
+import { getCurrentUid, getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
 
@@ -159,12 +159,27 @@ export function installAuthFetch(): void {
     //  - public open paths (health, config, waitlist): proceed anonymously —
     //    the backend serves them identically without identity, and failing
     //    them would misreport a reachable server as down.
+    // The uid at request initiation. A forced-refresh retry takes long enough
+    // for a cross-tab account switch to land, and getIdToken(true) mints a
+    // token for whoever is signed in AT RETRY TIME — without this check, a
+    // request initiated as account A could go out carrying B's token.
+    const uidAtStart = await getCurrentUid();
     let token: string | null;
     try {
-      token = await getIdToken().catch(() => getIdToken(true));
-    } catch (err) {
-      if (isIdentityPath(path) || isGatedApiPath(path)) throw err;
-      token = null;
+      token = await getIdToken();
+    } catch {
+      try {
+        token = await getIdToken(true);
+      } catch (err) {
+        if (isIdentityPath(path) || isGatedApiPath(path)) throw err;
+        token = null;
+      }
+      if (token !== null && (await getCurrentUid()) !== uidAtStart) {
+        if (isIdentityPath(path) || isGatedApiPath(path)) {
+          throw new Error('signed-in account changed during token refresh');
+        }
+        token = null; // public path: proceed, but never with the other account's token
+      }
     }
     let nextInit = init;
     if (token) {
