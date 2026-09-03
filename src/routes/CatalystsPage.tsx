@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -505,6 +506,7 @@ export default function CatalystsPage() {
       </div>
 
       {/* Hot Now, high-impact catalysts in today/tomorrow window */}
+      <DataGate>
       {hotEvents.length > 0 && (
         <div className="rounded-xl bg-[var(--surface-1)] p-3 ring-1 ring-[var(--warn)]/30">
           <div className="flex items-center gap-2 mb-2">
@@ -623,6 +625,7 @@ export default function CatalystsPage() {
 
       {/* WSH upgrade banner */}
       <WSHUpgradeBanner types={typesData} />
+      </DataGate>
     </div>
   );
 }

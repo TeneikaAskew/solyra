@@ -5,6 +5,7 @@ import { TickerCombobox } from '@/components/shared/TickerCombobox';
 import HeatseekerSection from '@/components/options/HeatseekerSection';
 import FlowseekerSection from '@/components/options/FlowseekerSection';
 import ProfilesTab from '@/components/options/ProfilesTab';
+import { DataGate } from '@/components/shared/SignInEmptyState';
 
 // Options Flow — restructured to Skylit's real IA. Three TOP views switched by a
 // single-row segmented control, each with an inner mode toggle where applicable:
@@ -59,9 +60,11 @@ export default function OptionsFlowPage() {
         </div>
       </div>
 
+      <DataGate>
       {tab === 'heatseeker' && <HeatseekerSection focusSymbol={activeTicker} />}
       {tab === 'flowseeker' && <FlowseekerSection />}
       {tab === 'profiles' && <ProfilesTab activeTicker={activeTicker} />}
+      </DataGate>
     </div>
   );
 }

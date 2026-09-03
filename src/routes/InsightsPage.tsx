@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Loader2, RefreshCw, History as HistoryIcon, FileText, MessageCircle, Send, ListChecks, Network } from 'lucide-react';
 import { useTickerStore } from '@/stores/tickerStore';
@@ -194,6 +195,8 @@ export default function InsightsPage() {
 
       {/* Tab body */}
       <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <DataGate>
+
 
         {tab === 'report' ? (
           <ReportView
@@ -240,6 +243,7 @@ export default function InsightsPage() {
         ) : (
           <ChatView ticker={activeTicker} />
         )}
+        </DataGate>
       </div>
     </div>
   );

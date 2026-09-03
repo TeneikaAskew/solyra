@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTickerStore } from '@/stores/tickerStore';
@@ -158,6 +159,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      <DataGate>
       {listError && (
         <div className="flex items-center gap-2 rounded-lg border border-[var(--warn)]/40 p-3 text-sm text-[var(--warn)]">
           <AlertTriangle size={14} />
@@ -192,6 +194,7 @@ export default function ReportsPage() {
           )
         )}
       </div>
+      </DataGate>
     </div>
   );
 }
