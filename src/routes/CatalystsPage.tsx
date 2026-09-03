@@ -11,6 +11,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import { useTickerStore } from '@/stores/tickerStore';
 import type { Ticker } from '@/types';
 import { addDaysToISO, todayET } from '@/lib/dates';
+import { DateRangePicker } from '@/components/shared/DateRangePicker';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
