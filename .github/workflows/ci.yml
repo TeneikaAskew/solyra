@@ -1,0 +1,108 @@
+# CI for Solyra (frontend-only).
+#
+# Until this landed, no automated check ran on any PR — `tsc -b`, the Vitest
+# suite and the E2E suite were all manual. That mattered most for cross-repo
+# contract drift: `src/types/` and `tests/helpers/fixtures/` are maintained
+# here while the API that produces those shapes lives in the stocks repo, and
+# `tsc -b` type-checks the fixtures against the real contracts. It is the one
+# mechanical guard the repo has against a fixture quietly drifting, so it needs
+# to run on every PR rather than when someone remembers.
+#
+# `docs/E2E_TEST_PLAN.md` §5 prescribes lint + build + e2e as the PR gate. Two
+# deliberate deviations, both verified against `main` rather than assumed:
+#
+#   * `npm run lint` is NOT gated yet — it exits 1 on `main` today with 32
+#     errors, so gating on it would paint every PR red on arrival. 27 of the 32
+#     are `react-refresh/only-export-components`, which fires on exactly the
+#     pattern this codebase uses on purpose: exporting a pure helper next to
+#     its component so it can be unit-tested (`renderReportHtml` in
+#     ReportsPage.tsx, `deltaText` in primitives/index.tsx, ...). The remaining
+#     5 are React Compiler "setState synchronously within an effect" errors and
+#     look real. Gating needs that decision made first — relax the rule for
+#     deliberate helper exports, then fix the 5 — not a `continue-on-error`
+#     that trains everyone to ignore a permanently red check.
+#
+#   * `make test` from the plan is gone — that was the Python backend, which
+#     now lives in the stocks repo.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A new push to the same branch supersedes the previous run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: types · unit · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # Node 22 LTS. Vite 7 requires 20.19+ / 22.12+; the dev machine runs 24,
+      # which is also supported — bump both together if you pin a version.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Type-check the `app`, `node` AND `test` projects. Run before the build
+      # so a type error reports as a type error rather than a build failure.
+      # This is the check that catches E2E fixtures drifting from src/types.
+      - name: Type-check (tsc -b)
+        run: npx tsc -b
+
+      - name: Unit tests (vitest)
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: e2e (chromium, mocked)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Hermetic: every /api call is intercepted with page.route, so this needs
+      # no backend and no network. playwright.config.ts boots its own Vite on
+      # :5199 via scripts/e2e-server.mjs with workers:1 — a fresh runner has no
+      # leaked server and no concurrent run, which is the condition the
+      # single-worker measurement in docs/TEST_COVERAGE_AUDIT.md §6 was taken
+      # under. Do not raise workers here without re-measuring.
+      - name: E2E
+        run: npm run e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore

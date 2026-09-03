@@ -89,7 +89,7 @@ test.describe('Charts page — Phase D/4/5 cards', () => {
 // the Trades/Analytics side panel (TradeRailCard list, Backtest-my-trades,
 // "My style" tab), trade JSON/CSV export, and the admin seed-trade teaching
 // layer (Playbook seed) all moved to the Journal page (/journal) — see
-// docs/superpowers/specs/2026-07-11-journal-one-stop-shop-design.md
+// docs/journal-one-stop-shop-design.md
 // §"Charts page (/charts) — journal activity removed". The describes that
 // used to exercise those features (Task 2.3 persistence, Task 2.4 seed
 // layer, Task 3.3 backtest-my-trades, Task 4.4 My style) are DELETED here,
