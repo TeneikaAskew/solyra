@@ -10,7 +10,7 @@
  * string, which is the kind of mismatch a hand-inlined mock invites.
  */
 import type { Page } from '@playwright/test';
-import type { ReportListResponse } from '@/routes/ReportsPage';
+import type { ReportListResponse } from '@/lib/reports';
 import { M, mockCommon } from '../mocks';
 
 /** Two phases so the list renders more than one row and phaseLabel()'s

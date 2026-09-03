@@ -169,6 +169,20 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   color: var(--color-text-secondary);
   font-size: 0.8125rem;
   line-height: 1.6;
+  overflow-wrap: break-word;
+}
+/* Tables scroll internally instead of pushing the page wider than the
+   viewport on narrow screens. */
+.prose-report table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.prose-report th,
+.prose-report td {
+  padding: 0.25rem 0.6rem;
+  white-space: nowrap;
 }
 .prose-report h1 {
   font-size: 1.25rem;
