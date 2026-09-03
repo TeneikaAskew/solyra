@@ -57,7 +57,22 @@ export default function SettingsPage() {
       <header>
         <h1 className="text-2xl font-semibold text-[var(--on-surface)]">Settings</h1>
         <p className="mt-1 text-sm text-[var(--on-surface-muted)]">
-          Appearance &amp; display preferences. Saved to this device.
+          Appearance &amp; display preferences. Saved to your account, so they
+          follow you to any device.
+        </p>
+        {/* Sync state is shown, never silently swallowed (CLAUDE.md Rule 4). */}
+        <p className="mt-1 text-[12px]" aria-live="polite">
+          {error ? (
+            <span className="text-[var(--bear)]">
+              Preferences not synced — {error.message}. Changes still apply on this device.
+            </span>
+          ) : loading ? (
+            <span className="text-[var(--on-surface-muted)]">Loading your saved preferences…</span>
+          ) : saving ? (
+            <span className="text-[var(--on-surface-muted)]">Saving…</span>
+          ) : (
+            <span className="text-[var(--on-surface-muted)]">Synced to your account.</span>
+          )}
         </p>
       </header>
 
