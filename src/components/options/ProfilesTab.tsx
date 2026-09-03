@@ -16,6 +16,7 @@ import {
 import type { Ticker } from '@/types';
 import * as d3 from 'd3';
 import { estimateSpotStrikeFromDeltas } from './swingGridUtils';
+import { isoToEtDisplay } from '@/lib/time';
 import { ChevronLeft, ChevronRight, AlertTriangle, Info } from 'lucide-react';
 
 type Metric = 'gex' | 'vex';
@@ -314,19 +315,6 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
   // instead of silently anchoring on an arbitrary contract.
   const estimatedSpot = estimateSpotStrikeFromDeltas(options) ?? 0;
 
-  // Initial spot from local delta proxy (used until /levels returns the
-  // server-estimated parity-based spot).
-  const localSpot = spotOverride ? parseFloat(spotOverride) : estimatedSpot;
-
-  // All Greek/node math is server-side. See lib/indicators.py discipline —
-  // we never duplicate financial math in the app.
-  const greeksQuery = useOptionsGreeks(options, localSpot);
-  const greeks = greeksQuery.data ?? EMPTY_GREEKS;
-  const gexData = greeks.gex_by_strike;
-  const metrics = greeks.metrics;
-  const nodes = greeks.nodes;
-  const rangePct = greeks.config.strike_range_pct;
-
   // Gamma flip / regime / Stratalyst-style King/Gate/Spot/Flip taxonomy
   // come from the chain-source-aware /levels endpoint. The hook does its
   // own server-side spot estimation (parity → delta → median fallback)
@@ -340,6 +328,26 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
   const regime = gammaLevels?.regime ?? 'unknown';
   const spotMethod = gammaLevels?.spot.method;
   const serverSpot = gammaLevels?.spot.price;
+
+  // Spot fed to the Greeks query: override → local delta proxy → server
+  // parity spot. The server fallback matters when EVERY delta is null: the
+  // local proxy is honestly 0 then, and without a fallback the Greeks query
+  // stayed disabled forever while the metrics section rendered EMPTY_GREEKS
+  // zeros as if they were computed results.
+  const greeksSpot = spotOverride
+    ? parseFloat(spotOverride)
+    : estimatedSpot > 0 ? estimatedSpot
+    : serverSpot && serverSpot > 0 ? serverSpot
+    : 0;
+
+  // All Greek/node math is server-side. See lib/indicators.py discipline —
+  // we never duplicate financial math in the app.
+  const greeksQuery = useOptionsGreeks(options, greeksSpot);
+  const greeks = greeksQuery.data ?? EMPTY_GREEKS;
+  const gexData = greeks.gex_by_strike;
+  const metrics = greeks.metrics;
+  const nodes = greeks.nodes;
+  const rangePct = greeks.config.strike_range_pct;
   // Prefer server-estimated spot when available — it uses put-call parity
   // which is far more accurate than the local delta proxy.
   const finalSpot = spotOverride
@@ -628,7 +636,10 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
             ? 'AlphaVantage Live'
             : 'AlphaVantage EOD · Cloud SQL'} · {options.length} contracts · snapshot {optionsData.snapshot_timestamp
             ? (optionsData.metadata?.source === 'alphavantage_live'
-                ? optionsData.snapshot_timestamp.replace('T', ' ').slice(0, 16)
+                // Live snapshots arrive as offset-bearing UTC — convert to ET
+                // and label it; truncating the offset displayed 20:00 UTC as
+                // a bare "20:00" beside the app's ET times.
+                ? isoToEtDisplay(optionsData.snapshot_timestamp)
                 : optionsData.snapshot_timestamp.slice(0, 10))
             : 'time unavailable'}
         </div>

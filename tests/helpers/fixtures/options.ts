@@ -293,3 +293,49 @@ export async function mockOptionsApi(page: Page) {
   await page.route('**/api/options/IWM/*/levels*', (r) => r.fulfill(M.ok(MOCK_LEVELS_POPULATED)));
   await page.route('**/api/options/greeks', (r) => r.fulfill(M.ok(MOCK_GREEKS)));
 }
+
+// ── Wide grid (mobile-fit regression cover) ────────────────────────────────
+//
+// MOCK_GRID_POPULATED is intentionally tiny (2 expirations × 5 strikes) so the
+// content assertions stay readable — but it also fits on a 390px phone, which
+// makes it useless for layout-overflow cover. A production IWM snapshot spans
+// ~6 expirations and ~25 strikes; this fixture matches that shape so
+// options-mobile-fit.spec.ts exercises the real containment path.
+
+const WIDE_EXPIRATIONS = [
+  '2026-04-25',
+  '2026-05-01',
+  '2026-05-08',
+  '2026-05-16',
+  '2026-06-19',
+  '2026-09-18',
+];
+
+const WIDE_STRIKES = Array.from({ length: 25 }, (_, i) => 208 + i);
+
+export const MOCK_GRID_WIDE = {
+  ...MOCK_GRID_POPULATED,
+  cells: WIDE_STRIKES.flatMap((strike) =>
+    WIDE_EXPIRATIONS.map((expiration, i) =>
+      gridCell(
+        strike,
+        expiration,
+        [0, 6, 13, 21, 55, 146][i],
+        // Deterministic, sign-alternating magnitudes — wide digit strings are
+        // what actually stress the cell track width.
+        (strike % 2 === 0 ? 1 : -1) * (120_000 + strike * 37_000 + i * 11_000),
+        -(20_000 + strike * 900 + i * 3_000),
+      ),
+    ),
+  ),
+  expirations: WIDE_EXPIRATIONS,
+  strikes: WIDE_STRIKES,
+} satisfies GammaGridSummary;
+
+/**
+ * Swap the grid endpoint over to the wide snapshot. Call AFTER mockOptionsApi
+ * — Playwright matches routes newest-first, so this registration wins.
+ */
+export async function mockOptionsWideGrid(page: Page) {
+  await page.route('**/api/options/IWM/grid*', (r) => r.fulfill(M.ok(MOCK_GRID_WIDE)));
+}

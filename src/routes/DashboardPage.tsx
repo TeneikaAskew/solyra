@@ -736,8 +736,8 @@ export default function DashboardPage() {
             title={<><Grid3x3 size={13} className="mr-1.5 inline align-middle" />Sector rotation</>}
             meta={
               <div className="flex items-center gap-2">
-                <span>SPDRs{sectorsResp?.as_of ? ` · as of ${sectorsResp.as_of}` : ''}</span>
-                <div className="segctrl">
+                <span className="whitespace-nowrap">SPDRs{sectorsResp?.as_of ? ` · as of ${sectorsResp.as_of}` : ''}</span>
+                <div className="segctrl shrink-0">
                   <button className={sectorPeriod === '1d' ? 'active' : ''} onClick={() => setSectorPeriod('1d')}>1D</button>
                   <button className={sectorPeriod === '5d' ? 'active' : ''} onClick={() => setSectorPeriod('5d')}>5D</button>
                 </div>

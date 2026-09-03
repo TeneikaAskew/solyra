@@ -272,8 +272,8 @@ export function Card({
 
 export function CardHeader({ title, meta }: { title: ReactNode; meta?: ReactNode }) {
   return (
-    <div className="mb-2.5 flex items-baseline justify-between">
-      <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--on-surface)]">{title}</h3>
+    <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+      <h3 className="whitespace-nowrap text-[13px] font-semibold tracking-[-0.01em] text-[var(--on-surface)]">{title}</h3>
       {meta != null && <span className="text-[11px] tracking-[0.04em] text-[var(--on-surface-muted)]">{meta}</span>}
     </div>
   );

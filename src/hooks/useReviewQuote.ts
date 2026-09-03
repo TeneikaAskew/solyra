@@ -32,9 +32,14 @@ interface HistoricalDayResponse {
 // cutoff is built with Date.UTC against the review wall-clock (matches the
 // DashboardPage pricePoints / LiveMarketPage reviewTs convention). Exported
 // for direct unit testing — the rest of the hook is data-fetching glue.
+/** The one default review cutoff — the 16:00 ET close. Every review surface
+ *  (trade filters, bar fetches, quote reconstruction) must use this same
+ *  default so one review moment never shows two different as-of datasets. */
+export const REVIEW_DEFAULT_CUTOFF = '16:00';
+
 export function reviewCutoffTs(reviewDate: string, reviewTime: string | null): number {
   const [y, m, d] = reviewDate.split('-').map(Number);
-  const [hh, mm] = (reviewTime ?? '16:00').split(':').map(Number);
+  const [hh, mm] = (reviewTime ?? REVIEW_DEFAULT_CUTOFF).split(':').map(Number);
   return Math.floor(Date.UTC(y, m - 1, d, hh, mm) / 1000);
 }
 

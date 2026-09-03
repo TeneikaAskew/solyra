@@ -6,6 +6,7 @@ import { Header } from './Header';
 import { CommandPalette } from './CommandPalette';
 import { MostActiveBar } from '@/components/shared/MostActiveBar';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { usePreferencesSync } from '@/hooks/usePreferences';
 
 // Routes the most-active marquee mounts on: the MARKET nav group
 // (/live, /charts, /options, /signals — see navConfig.ts) plus /journal,
@@ -22,6 +23,9 @@ function showMostActiveBar(pathname: string): boolean {
 
 export function AppShell() {
   const { navPattern } = useSettingsStore();
+  // Hydrate appearance from the server once per session, then write through
+  // on every change. Mounted here so it covers every authenticated route.
+  usePreferencesSync();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { pathname } = useLocation();
 

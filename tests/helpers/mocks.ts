@@ -48,18 +48,16 @@ export async function mockCommon(page: Page) {
     r.fulfill(ok({ authMode: 'open', firebase: null }))
   );
   await page.route('**/api/me', (r) => r.fulfill(ok({ email: null, is_admin: false })));
-  // Appearance preferences — usePreferencesSync mounts in AppShell, so EVERY
-  // page GETs this on load (with retry: 1, an unmocked answer logs TWO console
-  // errors and fails every clean-console assertion). "Nothing stored" is
-  // answered as a 200 all-null payload rather than the contract's 404 because
-  // Chrome logs any non-2xx resource load as a console error. PUT echoes the
-  // update back like the real endpoint.
-  await page.route('**/api/me/preferences', (r) => {
-    if (r.request().method() === 'PUT') {
-      return r.fulfill(ok(JSON.parse(r.request().postData() ?? '{}')));
-    }
-    return r.fulfill(ok({ theme: null, nav_pattern: null, density: null, accent: null }));
-  });
+  // Per-user shell preferences (usePreferencesSync, mounted in AppShell on
+  // every route). 404 = "no stored preferences" — the app keeps its local
+  // choice. Unmocked, this hits the proxy and logs a 500 console error that
+  // trips the "renders without console errors" assertions on every page.
+  // 200 with all-null fields = "nothing stored yet" without the 404 that
+  // browsers log as a console error (several specs assert a clean console).
+  await page.route('**/api/me/preferences', (r) =>
+    r.fulfill(ok({ theme: null, nav_pattern: null, density: null, accent: null }))
+  );
+
   await page.route('**/api/live/status', (r) =>
     r.fulfill(ok({ session: 'closed', is_open: false, ts: '2026-04-25T20:00:00Z' }))
   );
