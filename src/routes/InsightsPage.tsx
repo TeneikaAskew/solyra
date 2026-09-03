@@ -190,11 +190,11 @@ export default function InsightsPage() {
             )}
             {asOf ? 'Replay' : 'Re-analyze'}
           </button>
-        </div>
       </div>
 
       {/* Tab body */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+
         {tab === 'report' ? (
           <ReportView
             loading={
