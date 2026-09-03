@@ -13,6 +13,17 @@ import { useUser } from '@/hooks/useUser';
 import { StructureBrief } from '@/components/structure_brief/StructureBrief';
 import { PredictForm } from '@/components/structure_brief/PredictForm';
 import { ModelStateSnapshot } from '@/components/structure_brief/ModelStateSnapshot';
+import { UsersPanel } from '@/components/admin/UsersPanel';
+import { DataSourcesPanel } from '@/components/admin/DataSourcesPanel';
+
+type AdminTab = 'users' | 'data' | 'models';
+
+const ADMIN_TABS: { id: AdminTab; label: string }[] = [
+  { id: 'users', label: 'Users & roles' },
+  { id: 'data', label: 'Chart & report data' },
+  { id: 'models', label: 'Models & routing' },
+];
+
 
 // ---------------------------------------------------------------------------
 // Admin page — per-role model routing dashboard.
