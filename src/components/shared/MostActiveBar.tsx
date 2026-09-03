@@ -49,6 +49,19 @@ export function formatChangePct(pct: number | null | undefined): string {
 }
 
 /**
+ * A spark series is only drawable when it has ≥2 finite points AND a non-zero
+ * range. A constant (or single-valued) series would render as a flat stroke,
+ * which reads as a real "unchanged" measurement — Rule 3.7: show nothing
+ * rather than a misleading shape.
+ */
+export function hasUsableSpark(values: number[] | undefined | null): boolean {
+  if (!values || values.length < 2) return false;
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length < 2) return false;
+  return Math.max(...finite) > Math.min(...finite);
+}
+
+/**
  * Maps a price series onto a `width` x `height` canvas: min value -> bottom
  * (y = height), max value -> top (y = 0). Flat series render a mid-height
  * line rather than dividing by a zero range.
@@ -70,6 +83,7 @@ export function sparklinePoints(values: number[], width: number, height: number)
 export function isBullishSpark(values: number[]): boolean {
   return values[values.length - 1] >= values[0];
 }
+
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(
