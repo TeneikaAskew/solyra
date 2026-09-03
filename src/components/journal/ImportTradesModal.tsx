@@ -259,7 +259,7 @@ export function ImportTradesModal({ open, onClose, onImported }: ImportTradesMod
             {broker && !isNativeBroker && (
               <div>
                 <div className="mb-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
-                  Column mapping —{' '}
+                  Column mapping:{' '}
                   {file ? "match each field to your CSV's header" : 'upload a CSV to populate header options'}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -275,7 +275,7 @@ export function ImportTradesModal({ open, onClose, onImported }: ImportTradesMod
                         disabled={headers.length === 0}
                         className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 py-1 text-xs text-[var(--color-text-primary)] disabled:opacity-50"
                       >
-                        <option value="">— select column —</option>
+                        <option value="">Select a column</option>
                         {headers.map((h) => (
                           <option key={h} value={h}>
                             {h}

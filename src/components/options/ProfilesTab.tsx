@@ -607,7 +607,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
             <div className="flex gap-3 text-[10px] text-[var(--color-text-muted)]">
               <span className="text-[var(--bull)]">■ Positive</span>
               <span className="text-[var(--brand)]">■ Negative</span>
-              <span className="text-[var(--bear)]">— Spot</span>
+              <span className="text-[var(--bear)]">▬ Spot</span>
             </div>
           </div>
           <GEXHeatmap
