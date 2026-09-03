@@ -105,7 +105,7 @@ export default function InsightsPage() {
   const isRunning = !!currentRunId && runStatus.data?.status !== 'done' && runStatus.data?.status !== 'failed';
 
   return (
-    <div className="flex h-full flex-col gap-6" style={{ maxHeight: 'calc(100vh - 180px)' }}>
+    <div className="flex h-full min-w-0 flex-col gap-4 md:gap-6 md:max-h-[calc(100vh-180px)]">
       {/* Page header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
@@ -115,8 +115,9 @@ export default function InsightsPage() {
         <TickerCombobox />
       </div>
 
-      {/* Tab bar */}
-      <div className="flex items-center gap-2">
+      {/* Tab bar — scrolls horizontally on narrow screens instead of squashing */}
+      <div className="-mx-1 flex min-w-0 items-center gap-2 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
+
         <TabButton
           active={tab === 'report'}
           onClick={() => {
@@ -142,8 +143,11 @@ export default function InsightsPage() {
         <TabButton active={tab === 'chat'} onClick={() => setTab('chat')} icon={<MessageCircle size={14} />}>
           Chat
         </TabButton>
+      </div>
 
-        <div className="ml-auto flex items-center gap-3">
+      {/* Run controls — own row on mobile, no cramped overlap with the tabs */}
+      <div className="-mt-1 flex flex-wrap items-center gap-x-3 gap-y-2 md:-mt-4">
+
           {isRunning && (
             <span className="flex items-center gap-1 text-xs text-[var(--on-surface-muted)]">
               <Loader2 size={12} className="animate-spin" />
@@ -186,11 +190,11 @@ export default function InsightsPage() {
             )}
             {asOf ? 'Replay' : 'Re-analyze'}
           </button>
-        </div>
       </div>
 
       {/* Tab body */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+
         {tab === 'report' ? (
           <ReportView
             loading={
@@ -255,7 +259,7 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
         active
           ? 'bg-[var(--brand)]/15 text-[var(--brand)]'
           : 'bg-[var(--surface-2)] text-[var(--on-surface-variant)] hover:text-[var(--on-surface)] hover:bg-[var(--surface-3)]'
