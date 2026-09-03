@@ -3,9 +3,8 @@ import { Loader2, RefreshCw } from 'lucide-react';
 import {
   useAdminDataSources,
   useRefreshDataSource,
-  type DataSourceStatus,
 } from '@/hooks/useAdmin';
-import { coverage, fmtCount, fmtWhen } from './dataSourceFormat';
+import { coverage, fmtCount, fmtWhen, statusClass } from './dataSourceFormat';
 
 /**
  * The datasets that feed charts and reports: freshness, coverage and a
