@@ -83,12 +83,15 @@ export function SignInBanner({ label }: { label: string }) {
 }
 
 /**
- * Wraps a data card's body: while gated API calls are answering 401, renders
- * the sign-in empty state instead of the (blank) content. Self-heals — the
- * flag clears on the next successful gated response, e.g. after sign-in.
+ * Wraps a page/section body. It only replaces the content when the user is
+ * genuinely signed out, i.e. no request can succeed. A single gated 401 while
+ * signed in no longer unmounts a whole page (that would drop in-progress form
+ * state); the page-level <SignInBanner /> plus each widget's own 401 state
+ * communicate that case instead.
  */
 export function DataGate({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
   const blocked = useAuthBlocked();
-  if (blocked) return <SignInEmptyState compact={compact} />;
+  const { isSignedIn, isLoading } = useUser();
+  if (blocked && !isLoading && !isSignedIn) return <SignInEmptyState compact={compact} />;
   return <>{children}</>;
 }
