@@ -715,7 +715,7 @@ export default function DashboardPage() {
                 <div key={i} className="flex items-center gap-3 border-t border-[var(--outline-variant)] py-2 first:border-t-0">
                   <div className="w-[52px] shrink-0 tabular-nums text-[11px] text-[var(--on-surface-muted)]">{c.date?.slice(5)}</div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12.5px] font-semibold text-[var(--on-surface)]">{eventTitle(c)}</div>
+                    <div className="line-clamp-2 break-words text-[12.5px] font-semibold text-[var(--on-surface)]" title={eventTitle(c)}>{eventTitle(c)}</div>
                     <div className="text-[11px] text-[var(--on-surface-muted)]">{c.ticker}{c.catalyst_type ? ` · ${c.catalyst_type}` : ''}</div>
                   </div>
                   <Pill tone={impactTone(c)}>{impactLabel(c)}</Pill>
