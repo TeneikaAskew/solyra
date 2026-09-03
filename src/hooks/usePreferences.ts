@@ -162,17 +162,23 @@ export function usePreferencesSync() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, theme, navPattern, density, accent, query.isPending]);
 
-  const status: PreferencesSyncStatus = {
-    loading: isOwner ? query.isPending : sharedStatus.loading,
-    saving: isOwner ? mutation.isPending : sharedStatus.saving,
-    error: isOwner
-      ? ((query.error ?? mutation.error) as Error | null)
-      : sharedStatus.error,
-  };
-  if (isOwner) sharedStatus = status;
-  return {
-    ...status,
-    /** Whether the server currently holds stored preferences for this user. */
-    stored: query.data ?? null,
-  };
+  // Publish the owner's state so passive consumers (Settings page) can render
+  // sync status without mounting a second syncer.
+  const loading = query.isPending;
+  const saving = mutation.isPending;
+  const error = (query.error ?? mutation.error) as Error | null;
+  const shared = useSyncStatusStore();
+  useEffect(() => {
+    if (!isOwner) return;
+    useSyncStatusStore.setState({ loading, saving, error });
+  }, [isOwner, loading, saving, error]);
+
+  return isOwner
+    ? { loading, saving, error, stored: query.data ?? null }
+    : { ...shared, stored: query.data ?? null };
+}
+
+/** Read-only sync status for components that don't own the syncer. */
+export function usePreferencesStatus(): PreferencesSyncStatus {
+  return useSyncStatusStore();
 }
