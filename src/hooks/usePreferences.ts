@@ -17,7 +17,7 @@
  * never replaced with fabricated defaults. A 404 is a real, distinguishable
  * "no preferences stored" answer — it is not a failure.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserPreferences, UserPreferencesUpdate } from '@/types/preferences';
@@ -123,17 +123,25 @@ export function usePreferencesSync() {
     useSettingsStore();
 
   // Claim ownership for this component instance; later mounts stay passive.
-  const owner = useRef<boolean | null>(null);
-  if (owner.current === null) {
-    owner.current = !syncOwnerClaimed;
-    if (owner.current) syncOwnerClaimed = true;
-  }
-  const isOwner = owner.current;
+  // The claim MUST happen in an effect (commit phase), never during render:
+  // StrictMode's dev-mode double render discards the first render's hook
+  // state but not a module-level mutation made during it, so a render-phase
+  // claim leaves the flag set with no live owner — the retained instance
+  // goes passive and preferences never load or save in dev builds.
+  const [isOwner, setIsOwner] = useState(false);
   useEffect(() => {
+    if (syncOwnerClaimed) return undefined;
+    syncOwnerClaimed = true;
+    // One deliberate post-commit setState: the re-render is what arms the
+    // query's `enabled` after the claim; it happens once per mount, so no
+    // cascade. A render-phase claim is the StrictMode bug described above.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsOwner(true);
     return () => {
-      if (isOwner) syncOwnerClaimed = false;
+      syncOwnerClaimed = false;
+      setIsOwner(false);
     };
-  }, [isOwner]);
+  }, []);
 
   const query = useQuery({
     queryKey: QUERY_KEY,

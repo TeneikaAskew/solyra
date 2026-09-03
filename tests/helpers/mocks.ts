@@ -13,6 +13,7 @@
  */
 import type { Page } from '@playwright/test';
 import type { MarketHours } from '@/hooks/useConfig';
+import type { UserPreferences } from '@/types/preferences';
 import type { WatchlistResponse } from '@/types/watchlist';
 
 const ok = (body: unknown) => ({
@@ -55,7 +56,9 @@ export async function mockCommon(page: Page) {
   // 200 with all-null fields = "nothing stored yet" without the 404 that
   // browsers log as a console error (several specs assert a clean console).
   await page.route('**/api/me/preferences', (r) =>
-    r.fulfill(ok({ theme: null, nav_pattern: null, density: null, accent: null }))
+    r.fulfill(
+      ok({ theme: null, nav_pattern: null, density: null, accent: null } satisfies UserPreferences)
+    )
   );
 
   await page.route('**/api/live/status', (r) =>

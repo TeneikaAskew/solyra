@@ -176,8 +176,16 @@ export interface AdminMockOpts {
   admin?: boolean;
   routes?: { routes: RouteRow[] };
   models?: { models: AvailableModelRow[] };
+  users?: AdminUsersResponse;
+  dataSources?: AdminDataSourcesResponse;
   /** Called with the parsed body of each PUT /api/admin/routes/{role}. */
   onRoutePut?: (role: string, body: unknown) => void;
+  /** Called with the parsed body of each PUT /api/admin/users/{uid}/roles. */
+  onUserRolesPut?: (uid: string, body: unknown) => void;
+  /** Called with the parsed body of each PUT /api/admin/users/{uid}/status. */
+  onUserStatusPut?: (uid: string, body: unknown) => void;
+  /** Called with the id of each POST /api/admin/data-sources/{id}/refresh. */
+  onSourceRefresh?: (id: string) => void;
   structureBrief?: StructureBriefResponse;
   stratState?: StratEngineStateResponse;
   predict?: StratPredictResponse;
@@ -222,13 +230,15 @@ export async function mockAdminApi(page: Page, opts: AdminMockOpts = {}) {
 
   // Users & roles tab (default tab) + data-sources tab. General GET routes
   // first; the more specific mutation patterns registered after, so they win.
-  await page.route('**/api/admin/users', (r) => r.fulfill(M.ok(MOCK_ADMIN_USERS)));
+  const users = opts.users ?? MOCK_ADMIN_USERS;
+  await page.route('**/api/admin/users', (r) => r.fulfill(M.ok(users)));
   await page.route('**/api/admin/users/*/roles', (r) => {
     const req = r.request();
     if (req.method() !== 'PUT') return r.continue();
     const uid = new URL(req.url()).pathname.split('/').at(-2) ?? '';
     const body = JSON.parse(req.postData() || '{}') as { roles?: string[] };
-    const row = MOCK_ADMIN_USERS.users.find((u) => u.uid === uid) ?? MOCK_ADMIN_USERS.users[0];
+    opts.onUserRolesPut?.(uid, body);
+    const row = users.users.find((u) => u.uid === uid) ?? users.users[0];
     return r.fulfill(M.ok({ ...row, roles: body.roles ?? [] } satisfies AdminUserRow));
   });
   await page.route('**/api/admin/users/*/status', (r) => {
@@ -236,15 +246,17 @@ export async function mockAdminApi(page: Page, opts: AdminMockOpts = {}) {
     if (req.method() !== 'PUT') return r.continue();
     const uid = new URL(req.url()).pathname.split('/').at(-2) ?? '';
     const body = JSON.parse(req.postData() || '{}') as { disabled?: boolean };
-    const row = MOCK_ADMIN_USERS.users.find((u) => u.uid === uid) ?? MOCK_ADMIN_USERS.users[0];
+    opts.onUserStatusPut?.(uid, body);
+    const row = users.users.find((u) => u.uid === uid) ?? users.users[0];
     return r.fulfill(M.ok({ ...row, disabled: body.disabled ?? false } satisfies AdminUserRow));
   });
   await page.route('**/api/admin/data-sources', (r) =>
-    r.fulfill(M.ok(MOCK_ADMIN_DATA_SOURCES))
+    r.fulfill(M.ok(opts.dataSources ?? MOCK_ADMIN_DATA_SOURCES))
   );
   await page.route('**/api/admin/data-sources/*/refresh', (r) => {
     if (r.request().method() !== 'POST') return r.continue();
     const id = new URL(r.request().url()).pathname.split('/').at(-2) ?? '';
+    opts.onSourceRefresh?.(id);
     return r.fulfill(M.ok({ id, queued: true, job_id: 'job-e2e-1' }));
   });
 
