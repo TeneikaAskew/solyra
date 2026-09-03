@@ -34,8 +34,13 @@ import { getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
 
-// Reachable pre-auth — must match api/auth._OPEN_API_PREFIXES.
-const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase'];
+// Reachable pre-auth — must match api/auth's _OPEN_API_EXACT and
+// _OPEN_API_PREFIXES in the stocks repo. `/api/me` is EXACT on purpose: the
+// path itself is the pre-auth identity probe, but its sub-paths carry
+// per-user data (`/api/me/preferences`) and are gated server-side — a prefix
+// match here would skip attaching the token and every such call would 401.
+const OPEN_EXACT = ['/api/me'];
+const OPEN_PREFIXES = ['/api/health', '/api/config/firebase'];
 
 /**
  * Absolute origin for `/api/*`, or '' to keep requests same-origin.
@@ -79,8 +84,10 @@ function pathOf(input: RequestInfo | URL): string {
   return '';
 }
 
-function isGatedApiPath(path: string): boolean {
+/** Exported for unit tests — the gate list must mirror the backend's. */
+export function isGatedApiPath(path: string): boolean {
   if (!path.startsWith('/api/')) return false;
+  if (OPEN_EXACT.includes(path)) return false;
   return !OPEN_PREFIXES.some((p) => path === p || path.startsWith(p));
 }
 
@@ -121,10 +128,17 @@ export function installAuthFetch(): void {
     // no /api route regardless of how auth is configured.
     const target = withApiBase(input);
 
-    if (getAuthMode() !== 'firebase' || !isGatedApiPath(pathOf(input))) {
+    const path = pathOf(input);
+    if (getAuthMode() !== 'firebase' || !path.startsWith('/api/')) {
       return nativeFetch(target, init);
     }
 
+    // Attach the token to EVERY /api/* call when one exists — open paths
+    // included. The backend resolves identity from the bearer on open paths
+    // (api/auth.current_user_email), so /api/me only reports the verified
+    // email + is_admin when the token rides along; without it the app shows
+    // a signed-in user as anonymous. Signed out, getIdToken resolves null
+    // and the request goes out bare, so pre-auth boot calls are unaffected.
     const token = await getIdToken().catch(() => null);
     let nextInit = init;
     if (token) {
@@ -137,7 +151,9 @@ export function installAuthFetch(): void {
     }
 
     const resp = await nativeFetch(target, nextInit);
-    if (resp.status === 401 && _onUnauthorized) _onUnauthorized();
+    // Only a GATED 401 means "the session is gone — prompt sign-in"; open
+    // paths never require auth, so a 401 there is that endpoint's own error.
+    if (resp.status === 401 && isGatedApiPath(path) && _onUnauthorized) _onUnauthorized();
     return resp;
   };
 }

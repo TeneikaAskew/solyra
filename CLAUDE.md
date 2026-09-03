@@ -399,8 +399,10 @@ at an absolute origin when one is configured (using `apiTargets.ts`) and
 ~73 bare relative `fetch('/api/...')` calls across ~30 files with no central
 client.
 
-`OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`) must stay in
-sync with the backend's `api/auth._OPEN_API_PREFIXES` in stocks.
+`OPEN_EXACT` (`/api/me` — the path itself is open, its sub-paths like
+`/api/me/preferences` are gated) and `OPEN_PREFIXES` (`/api/health`,
+`/api/config/firebase`) must stay in sync with the backend's
+`api/auth._OPEN_API_EXACT` / `_OPEN_API_PREFIXES` in stocks.
 
 ---
 
