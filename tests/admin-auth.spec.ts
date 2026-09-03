@@ -14,41 +14,9 @@
  *   5. Sidebar shows the Admin link only for the admin role
  */
 import { test, expect } from '@playwright/test';
+import { mockAdminApi } from './helpers/fixtures/admin';
 
 const ADMIN_EMAIL = 'teneika@bictech.org';
-
-const MOCK_ROUTES = {
-  routes: [
-    { role: 'analyst', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
-    { role: 'bull', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
-    { role: 'bear', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
-    { role: 'judge', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
-    { role: 'trader', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
-    { role: 'risk', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
-    { role: 'portfolio_manager', provider: 'vertex', model: 'gemini-2.0-flash', updated_at: null, updated_by: null },
-  ],
-};
-
-const MOCK_MODELS = {
-  models: [
-    { provider: 'vertex', model: 'gemini-2.0-flash', has_credentials: true, input_usd_per_mtok: 0.1, output_usd_per_mtok: 0.4 },
-    { provider: 'vertex', model: 'gemini-2.5-pro', has_credentials: true, input_usd_per_mtok: 1.25, output_usd_per_mtok: 10.0 },
-    { provider: 'anthropic', model: 'claude-sonnet-4-6', has_credentials: false, input_usd_per_mtok: 3.0, output_usd_per_mtok: 15.0 },
-  ],
-};
-
-/** Set up common admin API mocks (routes + models always succeed). */
-async function mockAdminApi(page: import('@playwright/test').Page) {
-  await page.route('**/api/admin/routes', (route) => {
-    if (route.request().method() === 'GET') {
-      return route.fulfill({ status: 200, body: JSON.stringify(MOCK_ROUTES) });
-    }
-    return route.continue();
-  });
-  await page.route('**/api/admin/models', (route) =>
-    route.fulfill({ status: 200, body: JSON.stringify(MOCK_MODELS) }),
-  );
-}
 
 // The boot-time runtime-config probe must resolve to a valid config or the app
 // renders its "could not load configuration" error screen instead of the app
@@ -74,7 +42,10 @@ test.describe('Admin — role-based access', () => {
 
     await page.goto('/admin');
 
-    // Routing table renders directly off the role — nothing to unlock
+    // The dashboard renders directly off the role — nothing to unlock. The
+    // Users & roles tab is the default; routing sits behind the models tab.
+    await expect(page.getByTestId('admin-users-panel')).toBeVisible();
+    await page.getByTestId('admin-tab-models').click();
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     await expect(page.getByText('analyst')).toBeVisible();
     await expect(page.getByText('portfolio_manager')).toBeVisible();
@@ -109,6 +80,7 @@ test.describe('Admin — role-based access', () => {
     });
 
     await page.goto('/admin');
+    await page.getByTestId('admin-tab-models').click();
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
 
     // Change model for trader
@@ -233,7 +205,10 @@ test.describe('Sidebar — Admin link visibility', () => {
     await adminLink.click();
     await page.waitForURL('**/admin');
 
-    // Should go straight to the routing panel, no token gate
+    // Should go straight to the dashboard (Users & roles default tab), no
+    // token gate; the routing table renders behind the models tab.
+    await expect(page.getByTestId('admin-users-panel')).toBeVisible();
+    await page.getByTestId('admin-tab-models').click();
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
   });
 

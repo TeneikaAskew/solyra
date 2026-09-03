@@ -21,16 +21,22 @@ test.describe('Admin — model routing', () => {
     await expect(page.getByTestId('admin-routes-table')).not.toBeVisible();
   });
 
-  test('admin role renders the routing table directly — no token prompt exists', async ({ page }) => {
+  test('admin role renders the dashboard directly — no token prompt exists', async ({ page }) => {
     await mockAdminApi(page);
 
     await page.goto('/admin');
 
+    // The role IS the gate: the tabbed shell renders straight away, with the
+    // Users & roles tab as the default.
+    await expect(page.getByTestId('admin-users-panel')).toBeVisible();
+    // The sessionStorage token gate is gone from the codebase entirely.
+    await expect(page.getByTestId('admin-token-input')).toHaveCount(0);
+
+    // Model routing lives behind the Models & routing tab now.
+    await page.getByTestId('admin-tab-models').click();
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     await expect(page.getByText('analyst')).toBeVisible();
     await expect(page.getByText('portfolio_manager')).toBeVisible();
-    // The sessionStorage token gate is gone from the codebase entirely.
-    await expect(page.getByTestId('admin-token-input')).toHaveCount(0);
   });
 
   test('editing a route saves via PUT and reflects the new value', async ({ page }) => {
@@ -44,6 +50,7 @@ test.describe('Admin — model routing', () => {
     });
 
     await page.goto('/admin');
+    await page.getByTestId('admin-tab-models').click();
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
 
     // Change trader model

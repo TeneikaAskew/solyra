@@ -5,6 +5,10 @@
  *   GET /api/admin/routes         useAdminRoutes    → { routes }
  *   GET /api/admin/models         useAdminModels    → { models }
  *   PUT /api/admin/routes/{role}  useUpdateAdminRoute → RouteRow
+ *   GET /api/admin/users          useAdminUsers     → { users, available_roles }
+ *   PUT /api/admin/users/{uid}/…  role/status mutations → AdminUserRow
+ *   GET /api/admin/data-sources   useAdminDataSources → { sources }
+ *   POST /api/admin/data-sources/{id}/refresh → { id, queued, job_id }
  *   GET /api/me                   useUser — THE auth decision
  *
  * Admin auth is role-based (no shared token): the page renders the
@@ -21,6 +25,9 @@
  */
 import type { Page } from '@playwright/test';
 import type {
+  AdminDataSourcesResponse,
+  AdminUserRow,
+  AdminUsersResponse,
   AvailableModelRow,
   RouteRow,
   StratEngineStateResponse,
@@ -75,6 +82,83 @@ export const MOCK_ADMIN_MODELS = {
     },
   ],
 } satisfies { models: AvailableModelRow[] };
+
+/** Users & roles tab — one admin, one plain user, one disabled account, so
+ *  the toggle, empty-role, and disabled branches all render. */
+export const MOCK_ADMIN_USERS = {
+  users: [
+    {
+      uid: 'uid-admin',
+      email: 'teneika@bictech.org',
+      display_name: 'Teneika',
+      roles: ['admin'],
+      disabled: false,
+      created_at: '2026-01-05T15:00:00Z',
+      last_sign_in_at: '2026-04-25T13:10:00Z',
+    },
+    {
+      uid: 'uid-member',
+      email: 'member@example.com',
+      display_name: null,
+      roles: [],
+      disabled: false,
+      created_at: '2026-03-11T09:30:00Z',
+      last_sign_in_at: null,
+    },
+    {
+      uid: 'uid-blocked',
+      email: 'blocked@example.com',
+      display_name: 'Blocked',
+      roles: [],
+      disabled: true,
+      created_at: null,
+      last_sign_in_at: null,
+    },
+  ],
+  available_roles: ['admin'],
+} satisfies AdminUsersResponse;
+
+/** Data tab — one healthy source, one stale-with-message, one unrefreshable. */
+export const MOCK_ADMIN_DATA_SOURCES = {
+  sources: [
+    {
+      id: 'market_data_daily',
+      label: 'Daily OHLCV',
+      category: 'charts',
+      status: 'ok',
+      row_count: 125_000,
+      last_refreshed_at: '2026-04-25T20:05:00Z',
+      coverage_start: '2020-01-02',
+      coverage_end: '2026-04-25',
+      message: null,
+      refreshable: true,
+    },
+    {
+      id: 'news_sentiment',
+      label: 'News sentiment',
+      category: 'reports',
+      status: 'stale',
+      row_count: 4_812,
+      last_refreshed_at: '2026-04-20T06:00:00Z',
+      coverage_start: '2025-06-01',
+      coverage_end: '2026-04-19',
+      message: 'last fetch skipped: vendor quota',
+      refreshable: true,
+    },
+    {
+      id: 'gamma_snapshots',
+      label: 'Options gamma snapshots',
+      category: 'signals',
+      status: 'unknown',
+      row_count: null,
+      last_refreshed_at: null,
+      coverage_start: null,
+      coverage_end: null,
+      message: null,
+      refreshable: false,
+    },
+  ],
+} satisfies AdminDataSourcesResponse;
 
 /** The row a successful PUT /api/admin/routes/{role} echoes back. */
 export function updatedRoute(role: string, model: string): RouteRow {
@@ -134,6 +218,34 @@ export async function mockAdminApi(page: Page, opts: AdminMockOpts = {}) {
     const body = JSON.parse(req.postData() || '{}');
     opts.onRoutePut?.(role, body);
     return r.fulfill(M.ok(updatedRoute(role, String(body.model ?? ''))));
+  });
+
+  // Users & roles tab (default tab) + data-sources tab. General GET routes
+  // first; the more specific mutation patterns registered after, so they win.
+  await page.route('**/api/admin/users', (r) => r.fulfill(M.ok(MOCK_ADMIN_USERS)));
+  await page.route('**/api/admin/users/*/roles', (r) => {
+    const req = r.request();
+    if (req.method() !== 'PUT') return r.continue();
+    const uid = new URL(req.url()).pathname.split('/').at(-2) ?? '';
+    const body = JSON.parse(req.postData() || '{}') as { roles?: string[] };
+    const row = MOCK_ADMIN_USERS.users.find((u) => u.uid === uid) ?? MOCK_ADMIN_USERS.users[0];
+    return r.fulfill(M.ok({ ...row, roles: body.roles ?? [] } satisfies AdminUserRow));
+  });
+  await page.route('**/api/admin/users/*/status', (r) => {
+    const req = r.request();
+    if (req.method() !== 'PUT') return r.continue();
+    const uid = new URL(req.url()).pathname.split('/').at(-2) ?? '';
+    const body = JSON.parse(req.postData() || '{}') as { disabled?: boolean };
+    const row = MOCK_ADMIN_USERS.users.find((u) => u.uid === uid) ?? MOCK_ADMIN_USERS.users[0];
+    return r.fulfill(M.ok({ ...row, disabled: body.disabled ?? false } satisfies AdminUserRow));
+  });
+  await page.route('**/api/admin/data-sources', (r) =>
+    r.fulfill(M.ok(MOCK_ADMIN_DATA_SOURCES))
+  );
+  await page.route('**/api/admin/data-sources/*/refresh', (r) => {
+    if (r.request().method() !== 'POST') return r.continue();
+    const id = new URL(r.request().url()).pathname.split('/').at(-2) ?? '';
+    return r.fulfill(M.ok({ id, queued: true, job_id: 'job-e2e-1' }));
   });
 
   // Strat-engine surface (below the routing table) — see note above.
