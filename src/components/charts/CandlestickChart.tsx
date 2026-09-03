@@ -16,7 +16,6 @@ import {
   CrosshairMode,
   LineStyle,
   type SeriesMarker,
-  type AutoscaleInfo,
 } from 'lightweight-charts';
 import type { CandlestickBar, VolumeBar } from '@/hooks/useMarketData';
 
@@ -159,41 +158,6 @@ function isVolumeArrayUnchanged(prev: VolumeComparableBar[], next: VolumeCompara
   return true;
 }
 
-/**
- * Clamps the y-axis autoscale range so a single outlier wick (bad vendor
- * print, extended-hours spike) can't stretch the price scale until every
- * real candle flattens into a line. The clamp is anchored on the MEDIAN
- * close — not the range midpoint, which the outlier itself would drag —
- * and spans the wider of:
- *   - 12x the median bar range (high - low): always enough to show
- *     ordinary bar-to-bar movement, or
- *   - 1.5% of the median price: a sensible floor when bars are tiny
- *     (roughly "$1–5 around the price" for typical large-cap/ETF quotes,
- *     scaled proportionally for cheaper or pricier tickers).
- * Prices outside the clamp simply render off-screen; the data itself is
- * untouched, and dragging the price scale still reveals the outlier.
- */
-export function clampAutoscaleRange(
-  range: { minValue: number; maxValue: number },
-  candles: OhlcBar[],
-): { minValue: number; maxValue: number } {
-  if (candles.length === 0) return range;
-  const closes = candles.map((c) => c.close).sort((a, b) => a - b);
-  const medianClose = closes[Math.floor(closes.length / 2)];
-  const barRanges = candles.map((c) => Math.max(c.high - c.low, 0)).sort((a, b) => a - b);
-  const medianBarRange = barRanges[Math.floor(barRanges.length / 2)];
-  const halfSpan = Math.max(6 * medianBarRange, 0.0075 * medianClose);
-  const minValue = Math.max(range.minValue, medianClose - halfSpan);
-  const maxValue = Math.min(range.maxValue, medianClose + halfSpan);
-  // Guard against a degenerate inverted range when the outlier sits far
-  // from the median: fall back to the clamp window rather than handing
-  // lightweight-charts min > max.
-  if (minValue >= maxValue) {
-    return { minValue: medianClose - halfSpan, maxValue: medianClose + halfSpan };
-  }
-  return { minValue, maxValue };
-}
-
 export function CandlestickChart({
   candlestick,
   volume,
@@ -257,19 +221,6 @@ export function CandlestickChart({
       borderDownColor: chartTheme.bear,
       wickUpColor: chartTheme.bull,
       wickDownColor: chartTheme.bear,
-      // Keep the y-axis on the real price action: re-run the clamp against
-      // the series' current data on every autoscale, so appends and resets
-      // re-anchor automatically without touching user pan/zoom.
-      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
-        const info = original();
-        if (!info || !info.priceRange) return info;
-        const candles = candleSeriesRef.current?.data() as unknown as OhlcBar[] | undefined;
-        if (!candles || candles.length === 0) return info;
-        return {
-          ...info,
-          priceRange: clampAutoscaleRange(info.priceRange, candles),
-        };
-      },
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
