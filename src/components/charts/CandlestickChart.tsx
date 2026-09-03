@@ -16,6 +16,7 @@ import {
   CrosshairMode,
   LineStyle,
   type SeriesMarker,
+  type AutoscaleInfo,
 } from 'lightweight-charts';
 import type { CandlestickBar, VolumeBar } from '@/hooks/useMarketData';
 
@@ -259,7 +260,7 @@ export function CandlestickChart({
       // Keep the y-axis on the real price action: re-run the clamp against
       // the series' current data on every autoscale, so appends and resets
       // re-anchor automatically without touching user pan/zoom.
-      autoscaleInfoProvider: (original) => {
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const info = original();
         if (!info) return info;
         const priceRange = info.priceRange();
