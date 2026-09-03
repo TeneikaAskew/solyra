@@ -1,8 +1,8 @@
 # Journal One-Stop-Shop Redesign — Design Spec
 
 **Date:** 2026-07-11
-**Status:** design approved via mockups (layout B "Cockpit"; CSV import v1, options-only) — see https://claude.ai/code/artifact/b57f184d-15e2-4ca3-89d1-3cf78e4793af
-**Driver:** The Journal page must be the complete, self-contained trading-journal surface — chart, trade marking, examples, analytics, risk — on ONE page. The Charts page must carry ZERO journal activity (user directive, 2026-07-11: "charts should NOT be used for any journal activities at all, that is completely separate"). Examples dataset = the admin's real journal trades.
+**Status:** implemented — the cockpit ships in `src/routes/JournalPage.tsx` (Examples/My-journal views, chart + trade rail, scoped KPI row, equity curve, risk table, broker-import modal), covered by `tests/journal-onestop.spec.ts` and `tests/journal-import.spec.ts`; divergences from this spec are marked inline. Design was approved via mockups (layout B "Cockpit"; CSV import v1, options-only) — see https://claude.ai/code/artifact/b57f184d-15e2-4ca3-89d1-3cf78e4793af
+**Driver:** The Journal page must be the complete, self-contained trading-journal surface — chart, trade marking, examples, analytics, risk — on ONE page. The Charts page must carry ZERO journal activity (user directive, 2026-07-11: "charts should NOT be used for any journal activities at all, that is completely separate"). Examples dataset = the admin's real journal trades plus read-only pipeline `trades` rows (see Views).
 
 ## The problem being fixed
 
@@ -57,7 +57,7 @@ An **Import from broker** button joins the trades section (all views; writes to 
 
 ### Backend
 
-- **New:** `GET /api/journal/examples/{ticker}` — returns the admin's journal rows for the ticker in exactly the shape of `GET /api/journal/trades/{ticker}`. Admin identity from server config (`ADMIN_EMAIL`), never from the client. Read-only; no write variant. Auth: any signed-in user may read (it's teaching data). Excludes `source='replay'` rows (practice noise is not teaching material).
+- **New:** `GET /api/journal/examples/{ticker}` — returns the **Examples union** (the admin's journal rows plus automated pipeline `trades` rows, surfaced with `source='pipeline'` and their alert enrichment) for the ticker in exactly the shape of `GET /api/journal/trades/{ticker}`. Admin identity from server config (`ADMIN_EMAIL`), never from the client. Read-only; no write variant. Auth: any signed-in user may read (it's teaching data). Excludes `source='replay'` rows (practice noise is not teaching material).
 - Everything else exists: per-user trades CRUD, market data/dates, replay/backtest endpoints.
 - Capacity (Rule 0): one additional indexed SELECT per journal page load (`user_email = ADMIN_EMAIL AND ticker = X`, same query shape/index as the existing per-user GET). No new jobs, no schedulers.
 

@@ -108,8 +108,11 @@ inherit the Rule-3.7 "—/unavailable" discipline.
 
 ## Error handling (Rule 3.7)
 
-- `expected_move.status !== 'OK'` → the whole affordance block renders "—"
-  (no chip, no calculator), same as today.
+- `expected_move.status !== 'OK'` → the shipped `ExpectedMoveAffordances`
+  omits the whole block (it returns `null` — no chip, no calculator); the
+  pre-existing context row is what carries the "—"/unavailable value. The
+  original design said the block itself would render "—"; the omission is
+  the ratified behavior.
 - `atr_20 == null` → Tier 1/2 still render (they only need the bucket); Tier 3
   calculator is disabled with "ATR unavailable" — never a fabricated stop.
 - Chip/label/hint are pure functions of already-present fields; no new fetches.
