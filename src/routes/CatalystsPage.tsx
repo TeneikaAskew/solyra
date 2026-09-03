@@ -5,7 +5,7 @@ import {
   TrendingUp, Phone, Target, DollarSign, Scissors, Rocket,
   GitMerge, Shield, Star, Globe, Calendar, RefreshCw, Filter,
   Lock, ArrowUpRight, Users, Building, Presentation, Monitor,
-  Video, Briefcase, Flame, ChevronRight,
+  Video, Briefcase, Flame, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { useTickerStore } from '@/stores/tickerStore';
@@ -246,8 +246,9 @@ function EventRow({ event, onOpenTicker }: {
   onOpenTicker: (ticker: string) => void;
 }) {
   const macro = event.ticker === 'MACRO' || !event.ticker;
+  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="group flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
+    <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 py-2 px-3 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
       <ImpactDot event={event} />
       {macro ? (
         <span className="w-16 shrink-0 text-xs font-bold text-[var(--on-surface-variant)]">
@@ -263,9 +264,21 @@ function EventRow({ event, onOpenTicker }: {
         </button>
       )}
       <CatalystBadge type={event.catalyst_type} />
-      <span className="flex-1 truncate text-sm text-[var(--on-surface)]">
-        {eventTitle(event)}
-      </span>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        title={expanded ? 'Collapse details' : 'Show full title'}
+        className="order-last flex basis-full items-start gap-1 pl-7 min-w-0 text-left text-sm text-[var(--on-surface)] sm:order-none sm:flex-1 sm:basis-auto sm:pl-0"
+      >
+        <span className={expanded ? 'flex-1 break-words' : 'flex-1 truncate'}>
+          {eventTitle(event)}
+        </span>
+        <ChevronDown
+          size={13}
+          className={`mt-0.5 shrink-0 text-[var(--on-surface-variant)] transition-transform${expanded ? ' rotate-180' : ''}`}
+        />
+      </button>
       <SentimentIndicator event={event} />
       {event.source && (
         <span className="hidden md:inline text-[10px] text-[var(--on-surface-variant)] truncate max-w-[110px]">
