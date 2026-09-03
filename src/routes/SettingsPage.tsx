@@ -43,6 +43,7 @@ function Section({ title, desc, children }: { title: string; desc: string; child
 export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore();
   const { navPattern, setNavPattern, density, setDensity, accent, setAccent } = useSettingsStore();
+  const { loading, saving, error } = usePreferencesSync();
 
   const densities: Density[] = ['comfy', 'default', 'dense'];
   const navs: { value: NavPattern; icon: typeof PanelLeft; label: string }[] = [
