@@ -152,6 +152,10 @@ export function usePreferencesSync() {
   // local stores lead and we push changes up.
   const hydrated = useRef(false);
   const lastSent = useRef<string | null>(null);
+  // The write-through effect runs in the same commit as hydration, but its
+  // closure still holds the PRE-hydration store values — publishing those
+  // would overwrite the server with stale local state. Skip exactly one pass.
+  const skipNextWrite = useRef(false);
   useEffect(() => {
     if (!isOwner || hydrated.current || query.isPending) return;
     hydrated.current = true;
@@ -171,6 +175,7 @@ export function usePreferencesSync() {
         remote?.accent ?? accent,
       ),
     );
+    skipNextWrite.current = true;
     // Store setters are stable; the local values are read only at hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, query.isPending, query.data]);
@@ -178,6 +183,10 @@ export function usePreferencesSync() {
   // Write through whenever the local appearance changes post-hydration.
   useEffect(() => {
     if (!isOwner || !hydrated.current || lastSent.current === null) return;
+    if (skipNextWrite.current) {
+      skipNextWrite.current = false;
+      return;
+    }
     const payload = toPayload(theme, navPattern, density, accent);
     const serialized = JSON.stringify(payload);
     if (lastSent.current === serialized) return;
