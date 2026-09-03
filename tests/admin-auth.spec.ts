@@ -1,17 +1,17 @@
 /**
  * E2E: Admin role-based access control.
  *
- * Tests the IAP-email-based admin bypass, sidebar visibility, and
- * token-gate fallback. Backend is fully mocked via page.route.
+ * Admin auth is role-based ONLY — the shared X-Admin-Token / sessionStorage
+ * gate was removed (the backend stopped accepting it; see routers/admin.py
+ * `_require_admin`). /api/me's server-verified `is_admin` decides both nav
+ * visibility and whether /admin renders the dashboard.
  *
  * Scenarios:
- *   1. Admin email (teneika@bictech.org) bypasses the token gate
- *   2. Admin email sees the routing panel without a logout button
- *   3. Non-admin users see the token gate on /admin
- *   4. Sidebar shows Admin link only for the admin email
- *   5. Sidebar hides Admin link for non-admin / anonymous users
- *   6. Non-admin with valid token still sees logout button
- *   7. Admin can edit routes without needing a token header
+ *   1. Admin role renders the routing panel; no token UI exists anywhere
+ *   2. Admin can edit routes with no extra credential
+ *   3. Non-admin / anonymous users see the access-denied card
+ *   4. /api/me failure denies rather than granting
+ *   5. Sidebar shows the Admin link only for the admin role
  */
 import { test, expect } from '@playwright/test';
 
@@ -65,12 +65,8 @@ test.beforeEach(async ({ page }) => {
 // Admin email bypass
 // ---------------------------------------------------------------------------
 
-test.describe('Admin — IAP email bypass', () => {
-  test.beforeEach(async ({ context }) => {
-    await context.clearCookies();
-  });
-
-  test('admin email skips token gate and sees routing panel directly', async ({ page }) => {
+test.describe('Admin — role-based access', () => {
+  test('admin role renders the routing panel; no token UI exists', async ({ page }) => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: ADMIN_EMAIL, is_admin: true }) }),
     );
@@ -78,29 +74,17 @@ test.describe('Admin — IAP email bypass', () => {
 
     await page.goto('/admin');
 
-    // Token gate should NOT appear
-    await expect(page.getByTestId('admin-token-input')).not.toBeVisible();
-
-    // Routing table should render directly
+    // Routing table renders directly off the role — nothing to unlock
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     await expect(page.getByText('analyst')).toBeVisible();
     await expect(page.getByText('portfolio_manager')).toBeVisible();
+
+    // The token gate and its logout affordance are gone from the codebase
+    await expect(page.getByTestId('admin-token-input')).toHaveCount(0);
+    await expect(page.getByTestId('admin-logout')).toHaveCount(0);
   });
 
-  test('admin email does not see the logout button', async ({ page }) => {
-    await page.route('**/api/me', (route) =>
-      route.fulfill({ status: 200, body: JSON.stringify({ email: ADMIN_EMAIL, is_admin: true }) }),
-    );
-    await mockAdminApi(page);
-
-    await page.goto('/admin');
-
-    await expect(page.getByTestId('admin-routes-table')).toBeVisible();
-    // Logout button should be hidden for IAP-authenticated admin
-    await expect(page.getByTestId('admin-logout')).not.toBeVisible();
-  });
-
-  test('admin email can edit a route without providing a token', async ({ page }) => {
+  test('admin role can edit a route with no extra credential', async ({ page }) => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: ADMIN_EMAIL, is_admin: true }) }),
     );
@@ -143,11 +127,7 @@ test.describe('Admin — IAP email bypass', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Admin — non-admin users', () => {
-  test.beforeEach(async ({ context }) => {
-    await context.clearCookies();
-  });
-
-  test('anonymous user sees token gate', async ({ page }) => {
+  test('anonymous user sees the access-denied card', async ({ page }) => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: null, is_admin: false }) }),
     );
@@ -155,11 +135,11 @@ test.describe('Admin — non-admin users', () => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByTestId('admin-token-input')).toBeVisible();
+    await expect(page.getByTestId('admin-denied')).toBeVisible();
     await expect(page.getByTestId('admin-routes-table')).not.toBeVisible();
   });
 
-  test('non-admin email sees token gate', async ({ page }) => {
+  test('non-admin email sees the access-denied card', async ({ page }) => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: 'someone@example.com', is_admin: false }) }),
     );
@@ -167,38 +147,11 @@ test.describe('Admin — non-admin users', () => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByTestId('admin-token-input')).toBeVisible();
+    await expect(page.getByTestId('admin-denied')).toBeVisible();
     await expect(page.getByTestId('admin-routes-table')).not.toBeVisible();
   });
 
-  test('non-admin with valid token sees logout button', async ({ page }) => {
-    await page.route('**/api/me', (route) =>
-      route.fulfill({ status: 200, body: JSON.stringify({ email: 'someone@example.com', is_admin: false }) }),
-    );
-    await page.route('**/api/admin/routes', (route) => {
-      const token = route.request().headers()['x-admin-token'];
-      if (token === 'valid-token') {
-        return route.fulfill({ status: 200, body: JSON.stringify(MOCK_ROUTES) });
-      }
-      return route.fulfill({ status: 401, body: JSON.stringify({ detail: 'bad' }) });
-    });
-    await page.route('**/api/admin/models', (route) =>
-      route.fulfill({ status: 200, body: JSON.stringify(MOCK_MODELS) }),
-    );
-
-    await page.goto('/admin');
-    await page.waitForLoadState('networkidle');
-
-    // Unlock via token
-    await page.getByTestId('admin-token-input').fill('valid-token');
-    await page.getByTestId('admin-submit').click();
-
-    await expect(page.getByTestId('admin-routes-table')).toBeVisible();
-    // Non-admin token users SHOULD see the logout button
-    await expect(page.getByTestId('admin-logout')).toBeVisible();
-  });
-
-  test('/api/me failure gracefully falls back to non-admin', async ({ page }) => {
+  test('/api/me failure denies rather than granting', async ({ page }) => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 500, body: 'Internal Server Error' }),
     );
@@ -206,11 +159,10 @@ test.describe('Admin — non-admin users', () => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    // Should fall back to the token gate
-    await expect(page.getByTestId('admin-token-input')).toBeVisible();
+    await expect(page.getByTestId('admin-denied')).toBeVisible();
+    await expect(page.getByTestId('admin-routes-table')).not.toBeVisible();
   });
 });
-
 // ---------------------------------------------------------------------------
 // Sidebar visibility
 // ---------------------------------------------------------------------------

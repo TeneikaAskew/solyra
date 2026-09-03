@@ -8,8 +8,8 @@
 // the 24-fold walk-forward showed is regime-stable on raw ECE).
 //
 // This component is DEV-ONLY. It is mounted behind the admin auth gate
-// (IAP email OR X-Admin-Token), and is NOT linked from any user-facing
-// route or nav. It does NOT run via any scheduler.
+// (server-verified identity holding the admin role), and is NOT linked
+// from any user-facing route or nav. It does NOT run via any scheduler.
 //
 // Self-mute: if the rolling live ECE for a cell exceeds the per-cell
 // ceiling, the prediction is hidden and a mute reason is shown instead.

@@ -2,16 +2,17 @@
  * Typed fixtures + route wiring for the model-routing dashboard (`/admin`).
  *
  * Endpoint fan-out, read off AdminPage.tsx:
- *   GET /api/admin/routes         token probe + useAdminRoutes → { routes }
- *   GET /api/admin/models         useAdminModels               → { models }
- *   PUT /api/admin/routes/{role}  useUpdateAdminRoute          → RouteRow
- *   GET /api/me                   useUser (via mockCommon, non-admin)
+ *   GET /api/admin/routes         useAdminRoutes    → { routes }
+ *   GET /api/admin/models         useAdminModels    → { models }
+ *   PUT /api/admin/routes/{role}  useUpdateAdminRoute → RouteRow
+ *   GET /api/me                   useUser — THE auth decision
  *
- * The page authenticates with an `X-Admin-Token` header pulled from
- * sessionStorage, and the GET /routes call doubles as the credential probe:
- * 401 keeps the gate up, 200 unlocks the table. `mockAdminApi` reproduces
- * that conditional rather than always-200, because "wrong token is
- * rejected" is the behaviour most worth protecting here.
+ * Admin auth is role-based (no shared token): the page renders the
+ * dashboard only when /api/me reports `is_admin: true`, and the server
+ * gates /api/admin/* on the same role check. `mockAdminApi` therefore
+ * pins /api/me to an admin identity by default (pass `admin: false` to
+ * exercise the access-denied card), and the admin endpoints answer 200 —
+ * "non-admin never reaches the table" is the behaviour worth protecting.
  *
  * AdminPage also renders <StructureBrief> (which embeds <PredictForm>) and
  * <ModelStateSnapshot>, so the strat-engine endpoints below are part of this
@@ -27,9 +28,6 @@ import type {
   StructureBriefResponse,
 } from '@/hooks/useAdmin';
 import { M, mockCommon } from '../mocks';
-
-/** The token `mockAdminApi` accepts by default. */
-export const VALID_ADMIN_TOKEN = 'correct-token';
 
 /** All seven routable agent roles, so the table renders its full height. */
 export const MOCK_ADMIN_ROUTES = {
@@ -90,8 +88,8 @@ export function updatedRoute(role: string, model: string): RouteRow {
 }
 
 export interface AdminMockOpts {
-  /** Token the mocked backend accepts. Defaults to VALID_ADMIN_TOKEN. */
-  token?: string;
+  /** /api/me identity: admin by default; false renders the denied card. */
+  admin?: boolean;
   routes?: { routes: RouteRow[] };
   models?: { models: AvailableModelRow[] };
   /** Called with the parsed body of each PUT /api/admin/routes/{role}. */
@@ -102,41 +100,32 @@ export interface AdminMockOpts {
 }
 
 /**
- * Intercept every endpoint `/admin` can hit, reproducing the token gate:
- * GET /api/admin/routes answers 401 unless the request carries the matching
- * `X-Admin-Token`. Includes `mockCommon` (which pins /api/me to a non-admin
- * user, so the gate is shown rather than bypassed).
+ * Intercept every endpoint `/admin` can hit. Includes `mockCommon` (which
+ * pins /api/me to a non-admin user), then overrides /api/me with an admin
+ * identity unless `admin: false` — the role IS the gate now, so simulating
+ * auth means simulating /api/me, not a header check.
  */
 export async function mockAdminApi(page: Page, opts: AdminMockOpts = {}) {
   await mockCommon(page);
-  const token = opts.token ?? VALID_ADMIN_TOKEN;
   const routes = opts.routes ?? MOCK_ADMIN_ROUTES;
   const models = opts.models ?? MOCK_ADMIN_MODELS;
 
-  // Registered before the /routes/{role} handler below so that the more
-  // specific PUT pattern, registered later, wins (Playwright matches
+  // Registered AFTER mockCommon so this /api/me wins (Playwright matches
   // newest-first).
+  if (opts.admin !== false) {
+    await page.route('**/api/me', (r) =>
+      r.fulfill(M.ok({ email: 'teneika@bictech.org', is_admin: true }))
+    );
+  }
+
+  // Registered before the /routes/{role} handler below so that the more
+  // specific PUT pattern, registered later, wins.
   await page.route('**/api/admin/routes', (r) => {
-    if (r.request().headers()['x-admin-token'] !== token) {
-      return r.fulfill({
-        status: 401,
-        contentType: 'application/json',
-        body: JSON.stringify({ detail: 'bad token' }),
-      });
-    }
+    if (r.request().method() !== 'GET') return r.continue();
     return r.fulfill(M.ok(routes));
   });
 
-  await page.route('**/api/admin/models', (r) => {
-    if (r.request().headers()['x-admin-token'] !== token) {
-      return r.fulfill({
-        status: 401,
-        contentType: 'application/json',
-        body: JSON.stringify({ detail: 'bad token' }),
-      });
-    }
-    return r.fulfill(M.ok(models));
-  });
+  await page.route('**/api/admin/models', (r) => r.fulfill(M.ok(models)));
 
   await page.route('**/api/admin/routes/*', (r) => {
     const req = r.request();

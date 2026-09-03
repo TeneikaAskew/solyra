@@ -128,7 +128,7 @@ export function installAuthFetch(): void {
     const token = await getIdToken().catch(() => null);
     let nextInit = init;
     if (token) {
-      // Merge onto existing headers (preserve X-Admin-Token, Content-Type, …).
+      // Merge onto existing headers (preserve Content-Type and friends).
       const headers = new Headers(
         init?.headers ?? (target instanceof Request ? target.headers : undefined),
       );

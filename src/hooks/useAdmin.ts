@@ -1,31 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 // ---------------------------------------------------------------------------
-// Admin token lives in sessionStorage, NOT in a build-time env var. The
-// server validates it via the X-Admin-Token header. See routers/admin.py.
+// Admin auth is ROLE-BASED — no shared token, nothing in browser storage.
+// authedFetch attaches the signed-in user's Firebase ID token to every /api
+// request; the server (routers/admin.py `_require_admin`) verifies that
+// identity and checks the admin role via `is_admin_email` (the `user_roles`
+// table, with ADMIN_EMAIL as a no-DB fallback) — the same check behind
+// /api/me's `is_admin` flag, so UI visibility and the API gate cannot drift.
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'admin-token';
-
-export function getAdminToken(): string | null {
-  try {
-    return sessionStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setAdminToken(token: string): void {
-  sessionStorage.setItem(STORAGE_KEY, token);
-}
-
-export function clearAdminToken(): void {
-  sessionStorage.removeItem(STORAGE_KEY);
-}
-
-function authHeaders(): HeadersInit {
-  const tok = getAdminToken();
-  return tok ? { 'X-Admin-Token': tok } : {};
+/** Both "not signed in" (401) and "signed in without the admin role" (403). */
+function isAuthFailure(status: number): boolean {
+  return status === 401 || status === 403;
 }
 
 export interface RouteRow {
@@ -48,8 +34,8 @@ export function useAdminRoutes(enabled: boolean) {
   return useQuery<{ routes: RouteRow[] }>({
     queryKey: ['admin-routes'],
     queryFn: async () => {
-      const r = await fetch('/api/admin/routes', { headers: authHeaders() });
-      if (r.status === 401) throw new Error('unauthorized');
+      const r = await fetch('/api/admin/routes');
+      if (isAuthFailure(r.status)) throw new Error('unauthorized');
       if (!r.ok) throw new Error(`admin routes ${r.status}`);
       return r.json();
     },
@@ -62,8 +48,8 @@ export function useAdminModels(enabled: boolean) {
   return useQuery<{ models: AvailableModelRow[] }>({
     queryKey: ['admin-models'],
     queryFn: async () => {
-      const r = await fetch('/api/admin/models', { headers: authHeaders() });
-      if (r.status === 401) throw new Error('unauthorized');
+      const r = await fetch('/api/admin/models');
+      if (isAuthFailure(r.status)) throw new Error('unauthorized');
       if (!r.ok) throw new Error(`admin models ${r.status}`);
       return r.json();
     },
@@ -109,8 +95,8 @@ export function useStructureBrief(enabled: boolean) {
   return useQuery<StructureBriefResponse>({
     queryKey: ['admin-structure-brief'],
     queryFn: async () => {
-      const r = await fetch('/api/admin/structure-brief', { headers: authHeaders() });
-      if (r.status === 401) throw new Error('unauthorized');
+      const r = await fetch('/api/admin/structure-brief');
+      if (isAuthFailure(r.status)) throw new Error('unauthorized');
       if (!r.ok) throw new Error(`structure brief ${r.status}`);
       return r.json();
     },
@@ -169,8 +155,8 @@ export function useStratEngineState(enabled: boolean) {
   return useQuery<StratEngineStateResponse>({
     queryKey: ['admin-strat-engine-state'],
     queryFn: async () => {
-      const r = await fetch('/api/admin/strat-engine/state', { headers: authHeaders() });
-      if (r.status === 401) throw new Error('unauthorized');
+      const r = await fetch('/api/admin/strat-engine/state');
+      if (isAuthFailure(r.status)) throw new Error('unauthorized');
       if (!r.ok) throw new Error(`state ${r.status}`);
       return r.json();
     },
@@ -185,10 +171,10 @@ export function usePredictMutation() {
     mutationFn: async (body) => {
       const r = await fetch('/api/admin/strat-engine/predict', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (r.status === 401) throw new Error('unauthorized');
+      if (isAuthFailure(r.status)) throw new Error('unauthorized');
       if (!r.ok) {
         const text = await r.text().catch(() => '');
         throw new Error(`predict failed: ${r.status} ${text}`);
@@ -209,13 +195,10 @@ export function useUpdateAdminRoute() {
     mutationFn: async ({ role, provider, model }) => {
       const r = await fetch(`/api/admin/routes/${role}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders(),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, model }),
       });
-      if (r.status === 401) throw new Error('unauthorized');
+      if (isAuthFailure(r.status)) throw new Error('unauthorized');
       if (!r.ok) {
         const text = await r.text().catch(() => '');
         throw new Error(`update route failed: ${r.status} ${text}`);

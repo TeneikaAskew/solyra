@@ -1,46 +1,36 @@
 /**
  * E2E: Admin model-routing dashboard.
  *
- * Tests the sessionStorage-token auth flow and the routing table
- * render/update path. Backend is fully mocked.
- *
- * Payloads and the token gate itself live in tests/helpers/fixtures/admin.ts,
- * typed against useAdmin.ts's RouteRow / AvailableModelRow. `mockAdminApi`
- * reproduces the real gate — GET /api/admin/routes answers 401 unless the
- * request carries the matching X-Admin-Token — because "a wrong token is
- * rejected" is the behaviour most worth protecting here.
+ * Admin auth is role-based (no shared token): /api/me's `is_admin` decides
+ * whether the dashboard renders, and the server gates /api/admin/* on the
+ * same role check. Payloads live in tests/helpers/fixtures/admin.ts, typed
+ * against useAdmin.ts's RouteRow / AvailableModelRow. The behaviour most
+ * worth protecting: a non-admin account never reaches the table.
  */
 import { test, expect } from '@playwright/test';
-import { VALID_ADMIN_TOKEN, mockAdminApi } from './helpers/fixtures/admin';
+import { mockAdminApi } from './helpers/fixtures/admin';
 
 test.describe('Admin — model routing', () => {
-  test.beforeEach(async ({ context }) => {
-    // Clear any persisted token between tests (fresh tab)
-    await context.clearCookies();
-  });
-
-  test('token gate rejects invalid tokens and accepts the correct one', async ({ page }) => {
-    await mockAdminApi(page);
+  test('non-admin account sees the access-denied card, never the table', async ({ page }) => {
+    await mockAdminApi(page, { admin: false });
 
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    // Gate visible
-    await expect(page.getByTestId('admin-token-input')).toBeVisible();
+    await expect(page.getByTestId('admin-denied')).toBeVisible();
+    await expect(page.getByTestId('admin-routes-table')).not.toBeVisible();
+  });
 
-    // Wrong token
-    await page.getByTestId('admin-token-input').fill('wrong-token');
-    await page.getByTestId('admin-submit').click();
-    await expect(page.getByTestId('admin-error')).toContainText(/invalid token/i);
+  test('admin role renders the routing table directly — no token prompt exists', async ({ page }) => {
+    await mockAdminApi(page);
 
-    // Correct token
-    await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
-    await page.getByTestId('admin-submit').click();
+    await page.goto('/admin');
 
-    // Routing table renders
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     await expect(page.getByText('analyst')).toBeVisible();
     await expect(page.getByText('portfolio_manager')).toBeVisible();
+    // The sessionStorage token gate is gone from the codebase entirely.
+    await expect(page.getByTestId('admin-token-input')).toHaveCount(0);
   });
 
   test('editing a route saves via PUT and reflects the new value', async ({ page }) => {
@@ -54,12 +44,6 @@ test.describe('Admin — model routing', () => {
     });
 
     await page.goto('/admin');
-    await page.waitForLoadState('networkidle');
-
-    // Unlock with valid token
-    await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
-    await page.getByTestId('admin-submit').click();
-
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
 
     // Change trader model
