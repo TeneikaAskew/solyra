@@ -23,6 +23,9 @@ function showMostActiveBar(pathname: string): boolean {
 
 export function AppShell() {
   const { navPattern } = useSettingsStore();
+  // Hydrate appearance from the server once per session, then write through
+  // on every change. Mounted here so it covers every authenticated route.
+  usePreferencesSync();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { pathname } = useLocation();
 
