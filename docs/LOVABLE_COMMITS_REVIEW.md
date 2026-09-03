@@ -197,8 +197,9 @@ reading the diffs:
   retry with `WidgetState.test.ts`, auth indicator). `authedFetch.test.ts`
   arrived later in `d3cef29` (#34), outside this Lovable range. Only nit: a
   WIP-titled commit on the connected branch.
-- The admin data-management and Settings-tab batches were reconciled with
-  the test suite in PR #40 (tabbed admin specs, Settings spec, reports spec
-  rewrite); role-based auth then superseded the admin token gate via #34.
+- Role-based admin auth (#34, `d3cef29`) superseded the token gate these
+  batches built against; PR #40's test reconciliation (tabbed admin specs,
+  Settings spec, reports spec rewrite) landed after it, against the
+  already role-based UI.
 - E2E/unit state on this exact tree (`35f0f4d`): 198/198 Playwright,
   328/328 Vitest, verified green on PR #40's CI before merge.
