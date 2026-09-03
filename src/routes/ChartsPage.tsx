@@ -26,6 +26,7 @@ import { StrategyConditionsCard } from '@/components/charts/StrategyConditionsCa
 import { SimilarSetupsCard } from '@/components/charts/SimilarSetupsCard';
 import { ReplaySessionControls } from '@/components/charts/ReplaySessionControls';
 import { useReplaySession } from '@/hooks/useReplaySession';
+import { reviewCutoffTs as cutoffTs } from '@/hooks/useReviewQuote';
 import { useLiveIndicators, useSignalSeries } from '@/hooks/useLiveIndicators';
 import { EMPTY_INDICATORS, type Bar } from '@/lib/indicators';
 import type { Timeframe, TradeDirection, ChartVoter } from '@/types';
@@ -105,7 +106,7 @@ export default function ChartsPage() {
   // Crosshair info
   const [crosshairData, setCrosshairData] = useState<{
     time: number;
-    price: number;
+    price: number | null;
     ohlc?: CandlestickBar;
   } | null>(null);
 
@@ -271,9 +272,10 @@ export default function ChartsPage() {
   // Trades for current date/ticker — filter out trades after reviewTs in review mode
   const reviewCutoffTs = useMemo(() => {
     if (!isReview || !reviewDate) return null;
-    const [y, m, d] = reviewDate.split('-').map(Number);
-    const [hh, mm] = (reviewTime ?? '23:59').split(':').map(Number);
-    return Math.floor(Date.UTC(y, m - 1, d, hh, mm) / 1000);
+    // Shared 16:00-close default via cutoffTs — this page previously
+    // defaulted to 23:59 while Dashboard used 16:00, so the same review
+    // moment showed different as-of data across pages.
+    return cutoffTs(reviewDate, reviewTime);
   }, [isReview, reviewDate, reviewTime]);
 
   // Replay leakage guard: while a session is active, any of the user's OWN
@@ -333,21 +335,32 @@ export default function ChartsPage() {
     ? replay.revealedBars
     : marketData?.candlestick ?? [];
   const effectiveVolume: VolumeBar[] = replay.active ? revealedVolume : marketData?.volume ?? [];
+  // Volume joined to candles BY TIME, not array index — /api/market/data's
+  // two arrays are meant to be lockstep, but a positional join silently
+  // attributes the WRONG bar's volume on any offset (the replay warn above
+  // exists precisely because they can diverge), and these bars feed the
+  // server's VWAP/RVOL math via /api/live/indicators. Same keyed join as
+  // CandlestickChart.filterRTHVolume.
+  const volumeByTime = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const v of effectiveVolume) m.set(v.time, v.value);
+    return m;
+  }, [effectiveVolume]);
   const chartBars: Bar[] = useMemo(() => {
     if (effectiveCandlestick.length === 0) return [];
-    return effectiveCandlestick.map((c, i) => ({
+    return effectiveCandlestick.map((c) => ({
       time: String(c.time),
       open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
-      // Pre-existing `?? 0` on a financial field (volume), carried over
-      // unchanged from before this task — not introduced or extended here,
-      // just re-sourced from effectiveVolume for replay leakage-safety.
-      // Flagged for remediation per CLAUDE.md Rule 3.7.
-      volume: effectiveVolume[i]?.value ?? 0,
+      // AUDIT-2026-05-13: silent fallback — a candle with no matching volume
+      // bar is sent as volume 0 because the backend `_Bar` schema requires
+      // `volume: float` (a 0-volume bar is at least VWAP-neutral). Honest
+      // null needs a stocks-side schema change to `float | None`.
+      volume: volumeByTime.get(c.time) ?? 0,
     }));
-  }, [effectiveCandlestick, effectiveVolume]);
+  }, [effectiveCandlestick, volumeByTime]);
 
   // Live Strategy Conditions panel — mirrors LiveMarketPage.tsx's
   // useLiveIndicators usage so the same server-computed indicators drive
@@ -359,7 +372,12 @@ export default function ChartsPage() {
     {
       bars: chartBars,
       current_price: lastChartBar?.close ?? null,
-      current_volume: lastChartBar?.volume ?? null,
+      // Honest null for RVOL: the boundary `?? 0` above already erased
+      // "missing" from lastChartBar.volume, so read the un-laundered map.
+      current_volume:
+        effectiveCandlestick.length > 0
+          ? volumeByTime.get(effectiveCandlestick[effectiveCandlestick.length - 1].time) ?? null
+          : null,
       avg_volume_20d: null,
     },
     chartBars.length >= 14,

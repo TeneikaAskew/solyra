@@ -190,21 +190,25 @@ export default function SignalsPage() {
       </div>
 
       {/* ── Performance summary (90-day backtest) ───────────────────────── */}
-      {pnl && pnl.closedTrades > 0 && (() => {
-        const wr = pnl.winRate <= 1 ? pnl.winRate * 100 : pnl.winRate;
-        return (
+      {/* winRate is 0-100 percent per the analytics contract (analytics.py
+          _compute_stats: wins/closed × 100) — the old `<= 1 → ×100` unit
+          sniffing turned any true win rate of 1% or less into 50%+.
+          totalPnL/avgPnL are summed `return_pct` (the trades table stores no
+          dollar P&L), so % formatting is correct and the labels now say what
+          the numbers are. profitFactor null = no closed trades OR no losing
+          trades — either way not "< 1", so its tone stays neutral. */}
+      {pnl && pnl.closedTrades > 0 && (
           <div>
             <MicroLabel className="mb-2">Performance · 90-day backtest</MicroLabel>
             <div className="grid grid-cols-2 gap-[14px] md:grid-cols-3 lg:grid-cols-5">
-              <KpiTile label="Win rate" value={`${wr.toFixed(1)}%`} tone={wr >= 50 ? 'bull' : 'bear'} sub={`${pnl.winCount}W / ${pnl.lossCount}L`} />
-              <KpiTile label="Total P&L" value={fmtPct(pnl.totalPnL)} tone={pnl.totalPnL >= 0 ? 'bull' : 'bear'} />
-              <KpiTile label="Avg / trade" value={fmtPct(pnl.avgPnL)} tone={pnl.avgPnL >= 0 ? 'bull' : 'bear'} />
-              <KpiTile label="Profit factor" value={fmtNum(pnl.profitFactor, 2)} tone={(pnl.profitFactor ?? 0) >= 1 ? 'bull' : 'bear'} />
+              <KpiTile label="Win rate" value={`${pnl.winRate.toFixed(1)}%`} tone={pnl.winRate >= 50 ? 'bull' : 'bear'} sub={`${pnl.winCount}W / ${pnl.lossCount}L`} />
+              <KpiTile label="Σ return" value={fmtPct(pnl.totalPnL)} tone={pnl.totalPnL >= 0 ? 'bull' : 'bear'} />
+              <KpiTile label="Avg return / trade" value={fmtPct(pnl.avgPnL)} tone={pnl.avgPnL >= 0 ? 'bull' : 'bear'} />
+              <KpiTile label="Profit factor" value={fmtNum(pnl.profitFactor, 2)} tone={pnl.profitFactor == null ? 'default' : pnl.profitFactor >= 1 ? 'bull' : 'bear'} />
               <KpiTile label="Closed trades" value={pnl.closedTrades.toLocaleString()} sub={`${pnl.callCount} call · ${pnl.putCount} put`} />
             </div>
           </div>
-        );
-      })()}
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-[var(--surface-2)] px-3 py-2">

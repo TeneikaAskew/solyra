@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectValue, buildGrid } from './swingGridUtils';
+import { selectValue, buildGrid, estimateSpotStrikeFromDeltas } from './swingGridUtils';
 import { formatGex, formatPctChange } from '@/lib/formatGex';
 import type { GammaGridCell, GammaGridSummary } from '@/hooks/useGammaGrid';
 
@@ -83,5 +83,34 @@ describe('formatGex / formatPctChange', () => {
     expect(formatPctChange(12.4)).toBe('+12%');
     expect(formatPctChange(-8.6)).toBe('-9%');
     expect(formatPctChange(11000)).toBe('+999+%');
+  });
+});
+
+describe('buildGrid — spot row honesty (Rule 4)', () => {
+  it('marks the strike nearest a real spot', () => {
+    const g = buildGrid(summary([cell({ strike: 715 }), cell({ strike: 720 })]), 'gex', 'net');
+    expect(g.spotStrike).toBe(720); // spot 718: |720-718| = 2 beats |715-718| = 3
+  });
+  it('returns spotStrike null when the spot price is missing, never the lowest strike', () => {
+    const s = summary([cell({ strike: 715 }), cell({ strike: 720 })]);
+    s.spot = { ...s.spot, price: 0 };
+    expect(buildGrid(s, 'gex', 'net').spotStrike).toBeNull();
+  });
+});
+
+describe('estimateSpotStrikeFromDeltas', () => {
+  const o = (strike: number, type: 'call' | 'put', delta: number | null) => ({ strike, type, delta });
+  it('picks the strike whose delta is nearest ATM', () => {
+    expect(
+      estimateSpotStrikeFromDeltas([o(700, 'call', 0.9), o(718, 'call', 0.52), o(730, 'put', -0.1)]),
+    ).toBe(718);
+  });
+  it('ignores null-delta contracts instead of scoring them as delta 0', () => {
+    // A null delta used to score |0 - 0.5| = 0.5 and could win by arriving
+    // first in the reduce; a real 0.48 delta must beat it.
+    expect(estimateSpotStrikeFromDeltas([o(650, 'call', null), o(718, 'call', 0.48)])).toBe(718);
+  });
+  it('returns null when no contract has a usable delta', () => {
+    expect(estimateSpotStrikeFromDeltas([o(650, 'call', null), o(660, 'put', null)])).toBeNull();
   });
 });

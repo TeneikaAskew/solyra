@@ -670,9 +670,15 @@ export default function JournalPage() {
           </div>
           <div className="grid grid-cols-2 gap-[14px] md:grid-cols-4 lg:grid-cols-7">
             <KpiTile label="Trades" value={String(totalCount)} sub={`${winCount}W / ${lossCount}L`} />
-            <KpiTile label="Win rate" value={winRate !== null ? `${winRate.toFixed(0)}%` : NA} tone={(winRate ?? 0) >= 50 ? 'bull' : 'bear'} />
-            <KpiTile label="Total P&L" value={fmtPct(totalReturn)} tone={(totalReturn ?? 0) >= 0 ? 'bull' : 'bear'} />
-            <KpiTile label="Avg / trade" value={fmtPct(avgReturn)} tone={(avgReturn ?? 0) >= 0 ? 'bull' : 'bear'} />
+            {/* Rule 4 in the color channel too: a null stat renders NA/— as
+                text, so its tone must be neutral — `?? 0` here painted "no
+                data" red (win rate) or green (returns). "Σ return" replaces
+                "Total P&L": the value is a sum of per-trade return
+                percentages (journalStats), not currency and not compounded
+                portfolio return. */}
+            <KpiTile label="Win rate" value={winRate !== null ? `${winRate.toFixed(0)}%` : NA} tone={winRate == null ? 'default' : winRate >= 50 ? 'bull' : 'bear'} />
+            <KpiTile label="Σ return" value={fmtPct(totalReturn)} tone={totalReturn == null ? 'default' : totalReturn >= 0 ? 'bull' : 'bear'} />
+            <KpiTile label="Avg / trade" value={fmtPct(avgReturn)} tone={avgReturn == null ? 'default' : avgReturn >= 0 ? 'bull' : 'bear'} />
             <KpiTile label="Avg win" value={fmtPct(avgWin)} tone="bull" />
             <KpiTile label="Avg R:R" value={avgRR !== null ? avgRR.toFixed(2) : NA} />
             <KpiTile label="TP1 hit" value={tp1HitRate !== null ? `${tp1HitRate.toFixed(0)}%` : NA} tone={(tp1HitRate ?? 0) >= 50 ? 'bull' : 'default'} />

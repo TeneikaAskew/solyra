@@ -199,7 +199,7 @@ test.describe('Journal one-stop cockpit — Examples default', () => {
     // All 7 KPI tiles, populated from the examples dataset.
     await expect(page.getByText('Trades', { exact: true })).toBeVisible();
     await expect(page.getByText('Win rate')).toBeVisible();
-    await expect(page.getByText('Total P&L')).toBeVisible();
+    await expect(page.getByText('Σ return')).toBeVisible();
     await expect(page.getByText('Avg / trade')).toBeVisible();
     await expect(page.getByText('Avg win')).toBeVisible();
     await expect(page.getByText('Avg R:R')).toBeVisible();

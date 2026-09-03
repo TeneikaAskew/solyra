@@ -15,6 +15,7 @@ import {
 } from '@/hooks/useGammaLevels';
 import type { Ticker } from '@/types';
 import * as d3 from 'd3';
+import { estimateSpotStrikeFromDeltas } from './swingGridUtils';
 import { ChevronLeft, ChevronRight, AlertTriangle, Info } from 'lucide-react';
 
 type Metric = 'gex' | 'vex';
@@ -306,14 +307,12 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
 
   const options: OptionRecord[] = optionsData?.options ?? [];
 
-  // Compute spot price (override or estimate from ATM options)
-  const estimatedSpot = options.length > 0
-    ? options.reduce((best, o) => {
-        const delta = Math.abs((o.delta ?? 0) - (o.type === 'call' ? 0.5 : -0.5));
-        const bestDelta = Math.abs((best.delta ?? 0) - (best.type === 'call' ? 0.5 : -0.5));
-        return delta < bestDelta ? o : best;
-      }).strike
-    : 0;
+  // Compute spot price (override or estimate from ATM options). Null-delta
+  // contracts are excluded inside the helper (Rule 4) — 0 is this page's
+  // existing "no estimate" sentinel, gated everywhere by `finalSpot > 0`,
+  // so an all-null chain now reaches the "Couldn't estimate spot" state
+  // instead of silently anchoring on an arbitrary contract.
+  const estimatedSpot = estimateSpotStrikeFromDeltas(options) ?? 0;
 
   // Initial spot from local delta proxy (used until /levels returns the
   // server-estimated parity-based spot).
@@ -627,7 +626,11 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         <div className="text-right text-[10px] text-[var(--color-text-muted)]">
           Source: {optionsData.metadata?.source === 'alphavantage_live'
             ? 'AlphaVantage Live'
-            : 'AlphaVantage EOD · Cloud SQL'} · {options.length} contracts · snapshot {optionsData.snapshot_timestamp?.slice(0, 10) ?? selectedDate}
+            : 'AlphaVantage EOD · Cloud SQL'} · {options.length} contracts · snapshot {optionsData.snapshot_timestamp
+            ? (optionsData.metadata?.source === 'alphavantage_live'
+                ? optionsData.snapshot_timestamp.replace('T', ' ').slice(0, 16)
+                : optionsData.snapshot_timestamp.slice(0, 10))
+            : 'time unavailable'}
         </div>
       )}
     </div>

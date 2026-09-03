@@ -79,7 +79,12 @@ export const MOCK_TRADE_SUMMARY = {
   activeTrades: 12,
   winCount: 186,
   lossCount: 114,
-  winRate: 0.62,
+  // 0-100 percent, matching analytics.py _compute_stats (wins/closed × 100).
+  // This fixture previously said 0.62 — the fraction drift (Rule 6) that
+  // motivated the page's unit-sniffing heuristic.
+  winRate: 62,
+  // Summed / mean `return_pct` (percent) — the trades table stores no
+  // dollar P&L; GET /summary uses return_pct as the per-trade pnl proxy.
   totalPnL: 41.8,
   avgPnL: 0.139,
   maxWin: 3.4,

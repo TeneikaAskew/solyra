@@ -61,15 +61,47 @@ export function buildGrid(
     }
   }
   const strikesDesc = [...summary.strikes].sort((a, b) => b - a);
-  let spotStrike: number | null = strikesDesc[0] ?? null;
-  let best = Infinity;
-  const spot = summary.spot?.price ?? 0;
-  for (const s of strikesDesc) {
-    const d = Math.abs(s - spot);
-    if (d < best) {
-      best = d;
-      spotStrike = s;
+  // Rule 4: derive the spot row only from a real spot price. Defaulting a
+  // missing spot to 0 would mark the LOWEST strike (nearest to zero) as
+  // "current price" — a confident, wrong marker nothing downstream could
+  // distinguish from a real one. No spot → spotStrike stays null and no
+  // row is tagged.
+  let spotStrike: number | null = null;
+  const spotPrice = summary.spot?.price;
+  if (spotPrice != null && spotPrice > 0) {
+    let best = Infinity;
+    for (const s of strikesDesc) {
+      const d = Math.abs(s - spotPrice);
+      if (d < best) {
+        best = d;
+        spotStrike = s;
+      }
     }
   }
   return { cellMap, strikesDesc, columns, maxAbs, dteByExp, spotStrike, kingKey };
+}
+
+/** Nearest-ATM spot estimate from option deltas (ProfilesTab's local proxy,
+ *  used until the server's parity-based /levels spot arrives).
+ *
+ *  Rule 4: contracts with a null delta are EXCLUDED rather than scored as
+ *  delta 0 — a `?? 0` here made a missing delta score as the worst possible
+ *  ATM distance and, when every delta was null, let an arbitrary contract
+ *  win the reduce. Returns null when no contract carries a usable delta
+ *  (the caller's "Couldn't estimate spot" state, whose copy already
+ *  promises exactly this condition). */
+export function estimateSpotStrikeFromDeltas(
+  options: ReadonlyArray<{ strike: number; type: 'call' | 'put'; delta: number | null }>,
+): number | null {
+  let bestStrike: number | null = null;
+  let bestScore = Infinity;
+  for (const o of options) {
+    if (o.delta == null) continue;
+    const score = Math.abs(o.delta - (o.type === 'call' ? 0.5 : -0.5));
+    if (score < bestScore) {
+      bestScore = score;
+      bestStrike = o.strike;
+    }
+  }
+  return bestStrike;
 }
