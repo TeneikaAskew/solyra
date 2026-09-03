@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState, type Key } from 'react';
 import {
   Moon, Sun, PanelLeft, LayoutGrid, User, Palette, LineChart, Bell, ShieldCheck,
 } from 'lucide-react';
-import { ToggleButton, ToggleButtonGroup, Button, Switch } from '@heroui/react';
+import { ToggleButton, ToggleButtonGroup, Button } from '@heroui/react';
 import { useThemeStore } from '@/stores/themeStore';
 import {
   useSettingsStore, ACCENTS, type Density, type NavPattern, type Accent,
@@ -91,6 +91,33 @@ function parseNum(raw: string): number | null {
   if (raw.trim() === '') return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
+}
+
+
+/** Accessible on/off row — a plain switch so it renders identically in both themes. */
+function ToggleRow({
+  label, isOn, onToggle,
+}: { label: string; isOn: boolean; onToggle: (next: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={isOn}
+      onClick={() => onToggle(!isOn)}
+      className="flex w-full min-w-0 items-center justify-between gap-3 text-left"
+    >
+      <span className="min-w-0 text-sm text-[var(--on-surface)]">{label}</span>
+      <span
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+          isOn ? 'bg-[var(--accent)]' : 'bg-[var(--surface-2)] ring-1 ring-[var(--border)]'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${isOn ? 'left-[1.15rem]' : 'left-0.5'}`}
+        />
+      </span>
+    </button>
+  );
 }
 
 export default function SettingsPage() {
@@ -259,12 +286,11 @@ export default function SettingsPage() {
               </Field>
             </div>
             <div className="mt-4">
-              <Switch
-                isSelected={draft.show_extended_hours === true}
-                onChange={(v) => set('show_extended_hours', v)}
-              >
-                <span className="text-sm">Show extended-hours data on charts</span>
-              </Switch>
+              <ToggleRow
+                label="Show extended-hours data on charts"
+                isOn={draft.show_extended_hours === true}
+                onToggle={(v) => set('show_extended_hours', v)}
+              />
             </div>
           </Section>
           {saveBar}
@@ -401,24 +427,21 @@ export default function SettingsPage() {
         <>
           <Section title="Email" desc="Delivery goes to your sign-in address.">
             <div className="space-y-3">
-              <Switch
-                isSelected={draft.notify_daily_digest === true}
-                onChange={(v) => set('notify_daily_digest', v)}
-              >
-                <span className="text-sm">Daily market digest before the open</span>
-              </Switch>
-              <Switch
-                isSelected={draft.notify_catalyst_alerts === true}
-                onChange={(v) => set('notify_catalyst_alerts', v)}
-              >
-                <span className="text-sm">Catalyst alerts for watchlist tickers</span>
-              </Switch>
-              <Switch
-                isSelected={draft.notify_signal_alerts === true}
-                onChange={(v) => set('notify_signal_alerts', v)}
-              >
-                <span className="text-sm">Signal triggers from your playbook setups</span>
-              </Switch>
+              <ToggleRow
+                label="Daily market digest before the open"
+                isOn={draft.notify_daily_digest === true}
+                onToggle={(v) => set('notify_daily_digest', v)}
+              />
+              <ToggleRow
+                label="Catalyst alerts for watchlist tickers"
+                isOn={draft.notify_catalyst_alerts === true}
+                onToggle={(v) => set('notify_catalyst_alerts', v)}
+              />
+              <ToggleRow
+                label="Signal triggers from your playbook setups"
+                isOn={draft.notify_signal_alerts === true}
+                onToggle={(v) => set('notify_signal_alerts', v)}
+              />
             </div>
             <p className="mt-3 text-[11px] text-[var(--on-surface-muted)]">
               Sending to {email ?? EM_DASH}.
