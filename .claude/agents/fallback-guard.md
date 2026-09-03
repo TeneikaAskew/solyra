@@ -65,12 +65,18 @@ The forbidden-field list (match case-insensitively against the property name):
   `n_with_options`, `n_q5_directional`
 
 ```bash
-# ?? and || zero-ish defaults
-grep -rnE "\?\?\s*(0|0\.0|0\.5|-0\.5|''|\"\")|\|\|\s*(0|0\.0|0\.5)" src --include=*.ts --include=*.tsx
-# Number() coercion laundering a null into 0
-grep -rnE "Number\([^)]*\)\s*\|\|\s*0|\+\s*\(.*\?\?\s*0\)" src --include=*.ts --include=*.tsx
-# toFixed on a possibly-null value
-grep -rnE "\?\?\s*0\s*\)\.toFixed" src --include=*.ts --include=*.tsx
+# Sweep only the files this branch changed — a whole-src sweep surfaces the
+# pre-existing AUDIT backlog and mislabels it as this change's regressions.
+BASE="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD)"
+CHANGED=$(git diff "$BASE" --name-only --diff-filter=d | grep -E '^src/.*\.(ts|tsx)$')
+if [ -n "$CHANGED" ]; then
+  # ?? and || zero-ish defaults
+  grep -nE "\?\?\s*(0|0\.0|0\.5|-0\.5|''|\"\")|\|\|\s*(0|0\.0|0\.5)" $CHANGED 2>/dev/null
+  # Number() coercion laundering a null into 0
+  grep -nE "Number\([^)]*\)\s*\|\|\s*0|\+\s*\(.*\?\?\s*0\)" $CHANGED 2>/dev/null
+  # toFixed on a possibly-null value
+  grep -nE "\?\?\s*0\s*\)\.toFixed" $CHANGED 2>/dev/null
+fi
 ```
 
 **False positives are common and you must filter them.** Read the surrounding

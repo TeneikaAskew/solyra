@@ -88,8 +88,10 @@ The backend is a **different repo** (stocks). Changes to what this app requests
 or expects can break at runtime with nothing failing locally.
 
 ```bash
-# endpoints touched by the diff
-git diff "$RANGE" | grep -E "^[+-].*['\"\`]/api/" | sed -E "s#.*(/api/[a-zA-Z0-9/_{}\$-]+).*#\1#" | sort -u
+# endpoints touched by the diff — match-only extraction so a single changed
+# line carrying two endpoint alternatives yields both (a greedy sed keeps
+# only the last); single quotes keep `$-` literal inside the class
+git diff "$RANGE" | grep -E '^[+-]' | grep -oE '/api/[a-zA-Z0-9/_{}$-]+' | sort -u
 
 # all call sites for an endpoint
 grep -rn "/api/live/quote" src --include=*.ts --include=*.tsx

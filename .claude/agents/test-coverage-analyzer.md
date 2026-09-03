@@ -123,20 +123,20 @@ This is the cross-repo drift risk (CLAUDE.md Rule 6). A changed response type
 should come with a changed fixture:
 
 ```bash
-# Per-type, not directory-boolean: an unrelated fixture edit must not suppress
-# the warning for a different changed contract. Fixtures import via
-# `from '@/types/<base>'`, so map each changed type file to its consumers.
-for t in $(git diff "$RANGE" --name-only | grep '^src/types/'); do
-  base=$(basename "$t" .ts)
-  consumers=$(grep -rln "types/$base" tests/helpers/ 2>/dev/null)
-  if [ -n "$consumers" ]; then
-    for fx in $consumers; do
-      git diff "$RANGE" --name-only | grep -qx "$fx" || \
-        echo "[GAP] $t changed but $fx not updated — verify the backend actually returns the new shape"
-    done
-  else
-    echo "[CHECK] $t changed and no fixture/mock imports it — confirm it isn't an API response type"
-  fi
+# Contracts don't only live in src/types/ — hooks and routes export response
+# shapes too (LiveQuote in useLiveQuote.ts). Treat ANY changed src module
+# that tests/helpers imports (via `@/<path>`) as a candidate contract, and
+# check each importer individually — an unrelated fixture edit must not
+# suppress the warning for a different changed contract.
+for f in $(git diff "$RANGE" --name-only --diff-filter=d | grep -E '^src/.*\.(ts|tsx)$' | grep -v '\.test\.'); do
+  mod="${f#src/}"; mod="${mod%.tsx}"; mod="${mod%.ts}"
+  importers=$(grep -rln "@/$mod'" tests/helpers/ 2>/dev/null)
+  for fx in $importers; do
+    git diff "$RANGE" --name-only | grep -qx "$fx" || \
+      echo "[GAP] $f changed but $fx not updated — verify the backend actually returns the new shape"
+  done
+  case "$f" in src/types/*) [ -z "$importers" ] && \
+    echo "[CHECK] $f changed and no fixture/mock imports it — confirm it isn't an API response type";; esac
 done
 ```
 
@@ -157,10 +157,12 @@ git diff "$RANGE" | grep -E '^\+' | grep -oE '/api/[a-zA-Z0-9/_{}$-]+' | sort -u
 ```
 
 The extraction over-collects (comments, test URLs), so for each path first
-confirm a real consumer (grep the source), then confirm it appears in
-`tests/helpers/mocks.ts` or a fixture. An unmocked endpoint doesn't fail
-loudly — it hangs the spec until the 30s timeout, so this gap presents as
-flakiness later.
+confirm a real consumer (grep the source), then confirm it is mocked in
+`tests/helpers/mocks.ts`, a fixture, **or a direct `page.route` registration
+inside a `tests/*.spec.ts`** — several specs (e.g. `movement-read.spec.ts`)
+mock inline rather than through the helpers, and that coverage counts. An
+unmocked endpoint doesn't fail loudly — it hangs the spec until the 30s
+timeout, so this gap presents as flakiness later.
 
 ## Phase 4: Modified-export coverage
 

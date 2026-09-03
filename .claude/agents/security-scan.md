@@ -55,7 +55,7 @@ for f in $(git ls-files | grep -E "\.env\.(example|sample|template)$"); do
   grep -nE "^[A-Za-z0-9_]+\s*=\s*\S{20,}" "$f" \
     && echo "[HIGH] $f carries long values — verify they are placeholders, not real credentials"
 done
-grep -rn "BEGIN PRIVATE KEY\|BEGIN RSA PRIVATE KEY" src tests public index.html *.ts *.mjs *.json 2>/dev/null
+grep -rn "BEGIN PRIVATE KEY\|BEGIN RSA PRIVATE KEY" src tests public index.html *.ts *.js *.mjs *.cjs *.json 2>/dev/null
 ```
 
 `.gitignore` already excludes `.env`, `*.har`, `har.json`, `docs/har.json`, and
@@ -71,8 +71,8 @@ a real credential.
 grep -rnE "(api[_-]?key|apiKey|secret|password|passwd|private[_-]?key)\s*[:=]\s*['\"\`][^'\"\`]{16,}" \
   src tests public --include=*.ts --include=*.tsx --include=*.json --include=*.html 2>/dev/null
 grep -nE "(api[_-]?key|apiKey|secret|password|passwd|private[_-]?key)\s*[:=]\s*['\"\`]?[^'\"\` ]{16,}" \
-  *.ts *.mjs *.json index.html 2>/dev/null
-grep -rnE "\b(ghp_|github_pat_|sk-|AIza[0-9A-Za-z_-]{30,}|xox[baprs]-)" src tests public index.html *.ts *.mjs *.json 2>/dev/null
+  *.ts *.js *.mjs *.cjs *.json index.html 2>/dev/null
+grep -rnE "\b(ghp_|github_pat_|sk-|AIza[0-9A-Za-z_-]{30,}|xox[baprs]-)" src tests public index.html *.ts *.js *.mjs *.cjs *.json 2>/dev/null
 grep -rn "Bearer [A-Za-z0-9._-]\{20,\}" src tests --include=*.ts --include=*.tsx
 ```
 
@@ -146,11 +146,15 @@ pre-auth. It must mirror the backend's `api/auth._OPEN_API_PREFIXES` in the
 
 ```bash
 grep -n -A6 "OPEN_PREFIXES" src/lib/authedFetch.ts
-# Diff from the merge base with main, not HEAD: once a change is committed,
-# `git diff HEAD` is empty and an added prefix slips through. Diffing from the
-# merge base covers committed and uncommitted changes alike.
+# Compare the resolved declaration across revisions (merge base → working
+# tree, so committed and uncommitted changes both count). Don't grep the diff
+# for the name: with a multiline list, an added entry's diff line does not
+# contain the text OPEN_PREFIXES and a name-anchored grep misses exactly
+# that edit.
 BASE="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD)"
-git diff "$BASE" -- src/lib/authedFetch.ts | grep -E "^[+-].*OPEN_PREFIXES" -A6
+diff <(git show "$BASE:src/lib/authedFetch.ts" 2>/dev/null | grep -A8 "OPEN_PREFIXES") \
+     <(grep -A8 "OPEN_PREFIXES" src/lib/authedFetch.ts) \
+  || echo "OPEN_PREFIXES changed since merge base — flag HIGH, confirm backend parity"
 ```
 
 Flag **HIGH** on any addition to that list. Widening it client-side does not
@@ -166,7 +170,9 @@ Also flag a diff that removes or bypasses the auth gate component in
 ```bash
 grep -rn "target=[\"']_blank[\"']" src --include=*.tsx | grep -v "noopener"
 grep -rnE "(window\.)?location\s*(\.href)?\s*=\s*[^'\"]" src --include=*.ts --include=*.tsx
-grep -rn "href={\`\?\${" src --include=*.tsx
+# any nonliteral href — href={url}, href={item.link}, or an interpolated
+# template — can carry a javascript: URL; constant strings are fine
+grep -rnE "href=\{" src --include=*.tsx | grep -vE "href=\{(\"[^\"$]*\"|'[^'$]*'|\`[^\`$]*\`)\}"
 ```
 
 `target="_blank"` without `rel="noopener noreferrer"` gives the opened page a

@@ -138,9 +138,11 @@ npm test
 # 4. Full build (catches transform / bundling issues tsc alone misses)
 npm run build
 
-# 5. No stale build output committed
-git status --porcelain | grep -E "^\?\?|^ M" | grep -E "dist/|test-results/|playwright-report/" \
-  && echo "FAIL: build artifacts in working tree (should be gitignored)"
+# 5. No build output tracked, staged, or loose — a committed or staged
+#    artifact passes an untracked/unstaged-only status check.
+{ git ls-files; git status --porcelain | awk '{print $NF}'; } | \
+  grep -E "(^|/)(dist|test-results|playwright-report)/" \
+  && echo "FAIL: build artifacts tracked, staged, or in working tree (should be gitignored)"
 
 # 6. No secrets or captures anywhere on the branch — at pre-push the work is
 #    usually already committed, so --cached alone is empty; check the branch
