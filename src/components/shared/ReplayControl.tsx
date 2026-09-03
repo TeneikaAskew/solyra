@@ -183,7 +183,7 @@ export function ReplayControl() {
       </div>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl">
+        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl max-sm:fixed max-sm:left-1/2 max-sm:right-auto max-sm:top-14 max-sm:mt-0 max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-80 max-sm:-translate-x-1/2">
           {/* Selected-moment header (TradingView style) */}
           <div className="bg-[var(--brand)] px-4 py-3 text-[var(--on-brand)]">
             <div className="text-[11px] font-medium opacity-80">{draftDate ? draftDate.year : 'Replay'}</div>
