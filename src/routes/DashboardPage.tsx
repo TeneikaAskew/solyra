@@ -30,7 +30,7 @@ import {
   Pill, Metric, MicroLabel, Delta, ScoreStars, DirTag, Card, CardHeader, KpiTile,
 } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
-import { DataGate } from '@/components/shared/SignInEmptyState';
+import { WidgetState } from '@/components/shared/WidgetState';
 import { useAuthBlocked } from '@/lib/authGate';
 import { MovementRead } from '@/components/dashboard/MovementRead';
 import { SetupCardDetails, type SetupHorizon } from '@/components/playbook/SetupCardDetails';
@@ -279,7 +279,7 @@ export default function DashboardPage() {
   const reviewQuote = useReviewQuote(activeTicker, reviewDate, reviewTime);
   const heroQuote = isReview ? reviewQuote : quote;
 
-  const { data: brief } = useFetch<BriefResponse>(
+  const briefQ = useFetch<BriefResponse>(
     ['brief', activeTicker, reviewDate ?? 'live'],
     isReview
       ? `/api/dashboard/brief/${activeTicker}?date=${reviewDate}`
@@ -287,14 +287,16 @@ export default function DashboardPage() {
     true,
     isOpen && !isReview ? 15_000 : false,
   );
+  const brief = briefQ.data;
   const { data: playbook } = useFetch<PlaybookResponse>(
     ['playbook', activeTicker, reviewDate ?? 'live'],
     isReview ? `/api/playbook/${activeTicker}?date=${reviewDate}` : `/api/playbook/${activeTicker}`,
   );
-  const { data: signalsResp } = useFetch<SignalsResponse>(
+  const signalsQ = useFetch<SignalsResponse>(
     ['signals', activeTicker, reviewDate ?? 'live', reviewTime ?? 'eod'],
     `/api/signals/${activeTicker}?limit=20${reviewSuffix}`,
   );
+  const signalsResp = signalsQ.data;
   // Catalysts: "upcoming" is relative to the as-of day in review mode, not today.
   const catalystFrom = isReview && reviewDate ? reviewDate : todayISO();
   const catalystTo = isReview && reviewDate ? isoPlusDaysFrom(reviewDate, 7) : isoPlusDays(7);
@@ -306,10 +308,12 @@ export default function DashboardPage() {
   const { data: insight } = useInsightReport(activeTicker, reviewDate ?? undefined);
 
   // Sector rotation — market-wide (not ticker-scoped), 1D/5D toggle.
-  const { data: sectorsResp, isLoading: sectorsLoading } = useFetch<SectorsResponse>(
+  const sectorsQ = useFetch<SectorsResponse>(
     ['market-sectors'],
     '/api/market/sectors',
   );
+  const sectorsResp = sectorsQ.data;
+  const sectorsLoading = sectorsQ.isLoading;
   const [sectorPeriod, setSectorPeriod] = useState<'1d' | '5d'>('1d');
   const authBlocked = useAuthBlocked();
   const sectorRows = useMemo(() => {
@@ -340,15 +344,17 @@ export default function DashboardPage() {
     ? reviewCompact
     : (brief?.daily_indicators?.date ?? todayISO()).replace(/-/g, '');
   const monthCode = anchorDate.slice(0, 6);
-  const { data: reference } = useFetch<ReferenceResponse>(
+  const referenceQ = useFetch<ReferenceResponse>(
     ['reference', activeTicker, anchorDate],
     `/api/market/reference/${activeTicker}/${anchorDate}`,
   );
-  const { data: hourly } = useFetch<MarketDataResponse>(
+  const reference = referenceQ.data;
+  const hourlyQ = useFetch<MarketDataResponse>(
     ['hourly', activeTicker, monthCode],
     `/api/market/data/${activeTicker}/${monthCode}?timeframe=60`,
     !!brief,
   );
+  const hourly = hourlyQ.data;
 
   // 4 daily KPIs (prev close · latest close · 2-day change · RSI).
   const kpiCards = useMemo(() => {
@@ -496,7 +502,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 1. Briefing strip ───────────────────────────────────────────── */}
-      <DataGate>
+      <WidgetState query={briefQ} skeletonRows={4}>
       <div
         className="rounded-xl p-[var(--card-pad,14px)]"
         style={{
@@ -597,11 +603,11 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-      </DataGate>
+      </WidgetState>
 
       {/* ── Daily KPIs ──────────────────────────────────────────────────── */}
+      <WidgetState query={referenceQ} compact skeletonRows={2}>
       {kpiCards && (
-        <DataGate compact>
         <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
           <KpiTile label="Prev close" value={fmtPrice(kpiCards.prevClose)} />
           <KpiTile label="Latest close" value={fmtPrice(kpiCards.latestClose)} />
@@ -618,8 +624,8 @@ export default function DashboardPage() {
             sub={kpiCards.rsi == null ? undefined : rsiZone(kpiCards.rsi).label}
           />
         </div>
-        </DataGate>
       )}
+      </WidgetState>
 
       {/* ── Movement Read (PHASE 3, feature-flagged) ───────────────────────
           Self-hiding: when MOVEMENT_STATEMENT_ENABLED is OFF the endpoint
@@ -638,9 +644,9 @@ export default function DashboardPage() {
       {!isReview && <MovementRead ticker={activeTicker} timeframe="15m" />}
 
       {/* ── Intraday price (candlestick default · area toggle) ──────────────── */}
-      {((hourly?.candlestick?.length ?? 0) > 0 || authBlocked) && (
+      {((hourly?.candlestick?.length ?? 0) > 0 || authBlocked || hourlyQ.isLoading || hourlyQ.isError) && (
         <Card>
-          <DataGate compact>
+          <WidgetState query={hourlyQ} compact skeletonRows={5}>
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--on-surface)]">{activeTicker} · intraday</h3>
             <div className="flex items-center gap-3">
@@ -668,12 +674,12 @@ export default function DashboardPage() {
               height={260}
             />
           )}
-          </DataGate>
+          </WidgetState>
         </Card>
       )}
 
       {/* ── 2. Live signals · Today's catalysts ─────────────────────────── */}
-      <DataGate compact>
+      <WidgetState query={signalsQ} compact skeletonRows={4}>
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[1.4fr_1fr]">
         {/* Live signals */}
         <Card interactive onClick={() => navigate('/signals')} className="min-w-0">
@@ -735,10 +741,10 @@ export default function DashboardPage() {
           )}
         </Card>
       </div>
-      </DataGate>
+      </WidgetState>
 
       {/* ── 3. Sector rotation · AI take · News ──────────────────────────── */}
-      <DataGate compact>
+      <WidgetState query={sectorsQ} compact skeletonRows={4}>
       <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 lg:grid-cols-3">
         {/* Sector rotation, ranked SPDR daily closes, fed by /api/market/sectors */}
         <Card className="min-w-0">
@@ -851,7 +857,7 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
-      </DataGate>
+      </WidgetState>
     </div>
   );
 }
