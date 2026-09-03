@@ -4,8 +4,9 @@ Every commit authored by Lovable (`gpt-engineer-app[bot]` and `Lovable`) in this
 repository, listed oldest to newest, so they can be reviewed as one set. All of
 these commits are already on `main`; this document is the review index for them.
 
-Generated from `git log` on 2026-09-03, covering main through `83ae883`
-(2026-09-03 11:40 UTC). 67 commits total: 65 by `gpt-engineer-app[bot]`, 2 by
+Generated from `git log` on 2026-09-03, covering main through `03ddb06`
+(2026-09-03 13:07 UTC, the last Lovable commit before role-based admin auth
+landed via #34). 137 commits total: 135 by `gpt-engineer-app[bot]`, 2 by
 `Lovable`. Lovable commits continuously while the editor is in use, so commits
 after that cutoff are not listed here.
 
@@ -78,14 +79,114 @@ after that cutoff are not listed here.
 | 65 | `5ae702d` | 2026-09-03 11:40 | gpt-engineer-app[bot] | Changes | 2 files changed, 26 insertions(+) | `pw.sandbox.config.ts` `tests/landing.spec.ts` |
 | 66 | `d553e4d` | 2026-09-03 11:40 | gpt-engineer-app[bot] | Changes | 1 file changed, 3 deletions(-) | `pw.sandbox.config.ts` |
 | 67 | `83ae883` | 2026-09-03 11:40 | gpt-engineer-app[bot] | Restored sign-in and waitlist | merge | (merge commit - see parent commits) |
+| 68 | `7f2279e` | 2026-09-03 11:41 | gpt-engineer-app[bot] | Changes | 1 file changed, 14 insertions(+) | `src/components/shared/MostActiveBar.tsx` |
+| 69 | `b059cbc` | 2026-09-03 11:41 | gpt-engineer-app[bot] | Changes | 1 file changed, 2 insertions(+), 1 deletion(-) | `src/components/shared/MostActiveBar.tsx` |
+| 70 | `61ae1b7` | 2026-09-03 11:42 | gpt-engineer-app[bot] | Changes | 1 file changed, 35 insertions(+) | `src/components/shared/MostActiveBar.test.tsx` |
+| 71 | `191a2cf` | 2026-09-03 11:42 | gpt-engineer-app[bot] | Guarded flat sparklines | merge | (merge commit - see parent commits) |
+| 72 | `d464a92` | 2026-09-03 11:42 | gpt-engineer-app[bot] | Changes | 1 file changed, 4 insertions(+), 3 deletions(-) | `src/routes/InsightsPage.tsx` |
+| 73 | `57e9eaa` | 2026-09-03 11:43 | gpt-engineer-app[bot] | Changes | 1 file changed, 4 insertions(+), 1 deletion(-) | `src/routes/InsightsPage.tsx` |
+| 74 | `69e3bc2` | 2026-09-03 11:43 | gpt-engineer-app[bot] | Changes | 1 file changed, 2 insertions(+), 2 deletions(-) | `src/routes/InsightsPage.tsx` |
+| 75 | `6de41ce` | 2026-09-03 11:43 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+), 1 deletion(-) | `src/routes/InsightsPage.tsx` |
+| 76 | `a02ef44` | 2026-09-03 11:44 | gpt-engineer-app[bot] | Fixed Insights mobile layout | merge | (merge commit - see parent commits) |
+| 77 | `448e61b` | 2026-09-03 11:44 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+), 1 deletion(-) | `src/components/shared/TickerCombobox.tsx` |
+| 78 | `8b23cf6` | 2026-09-03 11:45 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+), 1 deletion(-) | `src/components/shared/TickerCombobox.tsx` |
+| 79 | `05ac385` | 2026-09-03 11:45 | gpt-engineer-app[bot] | Fixed ticker search mobile layout | merge | (merge commit - see parent commits) |
+| 80 | `e92f0d3` | 2026-09-03 11:46 | gpt-engineer-app[bot] | Changes | 1 file changed, 138 insertions(+) | `src/components/shared/DateRangePicker.tsx` |
+| 81 | `dbd70e7` | 2026-09-03 11:46 | gpt-engineer-app[bot] | Changes | 1 file changed, 3 insertions(+), 1 deletion(-) | `src/components/shared/DateRangePicker.tsx` |
+| 82 | `1a4d207` | 2026-09-03 11:46 | gpt-engineer-app[bot] | Changes | 1 file changed, 8 insertions(+), 20 deletions(-) | `src/routes/CatalystsPage.tsx` |
+| 83 | `01c3c10` | 2026-09-03 11:47 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+) | `src/routes/CatalystsPage.tsx` |
+| 84 | `3a3fb5e` | 2026-09-03 11:49 | gpt-engineer-app[bot] | Unified date pickers to range | merge | (merge commit - see parent commits) |
+| 85 | `52f1011` | 2026-09-03 11:49 | gpt-engineer-app[bot] | Changes | 1 file changed, 2 insertions(+), 1 deletion(-) | `src/routes/CatalystsPage.tsx` |
+| 86 | `4480484` | 2026-09-03 11:49 | gpt-engineer-app[bot] | Changes | 1 file changed, 15 insertions(+), 3 deletions(-) | `src/routes/CatalystsPage.tsx` |
+| 87 | `9bd6533` | 2026-09-03 11:50 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+), 1 deletion(-) | `src/routes/CatalystsPage.tsx` |
+| 88 | `7a71960` | 2026-09-03 11:53 | gpt-engineer-app[bot] | Changes | 1 file changed, 2 insertions(+), 2 deletions(-) | `src/routes/CatalystsPage.tsx` |
+| 89 | `774e913` | 2026-09-03 11:55 | gpt-engineer-app[bot] | Fixed cutoff titles via expand | merge | (merge commit - see parent commits) |
+| 90 | `b459a7f` | 2026-09-03 11:56 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+), 1 deletion(-) | `src/routes/DashboardPage.tsx` |
+| 91 | `6383ca7` | 2026-09-03 11:56 | gpt-engineer-app[bot] | Fixed Catalysts title wrapping | merge | (merge commit - see parent commits) |
+| 92 | `e87d86d` | 2026-09-03 11:57 | gpt-engineer-app[bot] | Changes | 1 file changed, 122 insertions(+) | `src/hooks/useAdmin.ts` |
+| 93 | `ed50372` | 2026-09-03 11:58 | gpt-engineer-app[bot] | Changes | 2 files changed, 332 insertions(+) | `src/components/admin/DataSourcesPanel.tsx` `src/components/admin/UsersPanel.tsx` |
+| 94 | `f408e12` | 2026-09-03 11:58 | gpt-engineer-app[bot] | Changes | 1 file changed, 80 insertions(+), 30 deletions(-) | `src/routes/AdminPage.tsx` |
+| 95 | `4e45950` | 2026-09-03 11:58 | gpt-engineer-app[bot] | Changes | 1 file changed, 11 insertions(+) | `src/routes/AdminPage.tsx` |
+| 96 | `ad29ef3` | 2026-09-03 11:59 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+) | `src/routes/AdminPage.tsx` |
+| 97 | `e0a3013` | 2026-09-03 11:59 | gpt-engineer-app[bot] | Changes | 2 files changed, 32 insertions(+), 3 deletions(-) | `src/components/admin/DataSourcesPanel.test.ts` `src/components/admin/DataSourcesPanel.tsx` |
+| 98 | `b8a666e` | 2026-09-03 12:00 | gpt-engineer-app[bot] | Changes | 3 files changed, 29 insertions(+), 25 deletions(-) | `src/components/admin/DataSourcesPanel.tsx` `src/components/admin/dataSourceFormat.test.ts` `src/components/admin/dataSourceFormat.ts` |
+| 99 | `dd6b6da` | 2026-09-03 12:00 | gpt-engineer-app[bot] | Changes | 2 files changed, 3 insertions(+), 4 deletions(-) | `src/components/admin/DataSourcesPanel.tsx` `src/components/admin/dataSourceFormat.ts` |
+| 100 | `265f246` | 2026-09-03 12:01 | gpt-engineer-app[bot] | Added admin data management | merge | (merge commit - see parent commits) |
+| 101 | `4c86b75` | 2026-09-03 12:28 | gpt-engineer-app[bot] | Changes | 1 file changed, 145 insertions(+), 41 deletions(-) | `src/routes/ReportsPage.tsx` |
+| 102 | `91a50a0` | 2026-09-03 12:28 | gpt-engineer-app[bot] | Changes | 2 files changed, 48 insertions(+) | `src/index.css` `src/routes/reportsGrouping.test.ts` |
+| 103 | `127d912` | 2026-09-03 12:29 | gpt-engineer-app[bot] | Changes | 1 file changed, 68 insertions(+) | `src/lib/reports.ts` |
+| 104 | `b6644a4` | 2026-09-03 12:29 | gpt-engineer-app[bot] | Changes | 5 files changed, 9 insertions(+), 105 deletions(-) | `src/routes/ReportsPage.tsx` `src/routes/reportsFixtureRender.test.ts` `src/routes/reportsGrouping.test.ts` `src/routes/reportsSanitize.test.ts` `tests/helpers/fixtures/reports.ts` |
+| 105 | `6950b44` | 2026-09-03 12:29 | gpt-engineer-app[bot] | Changes | 1 file changed, 34 insertions(+) | `src/lib/reports.test.ts` |
+| 106 | `9b5e00f` | 2026-09-03 12:32 | gpt-engineer-app[bot] | Rebuilt report layout design | merge | (merge commit - see parent commits) |
+| 107 | `c01aa21` | 2026-09-03 12:33 | gpt-engineer-app[bot] | Changes | 1 file changed, 7 insertions(+), 7 deletions(-) | `src/routes/CatalystsPage.tsx` |
+| 108 | `ac3efae` | 2026-09-03 12:35 | gpt-engineer-app[bot] | Fixed mobile header overlap | merge | (merge commit - see parent commits) |
+| 109 | `35a7974` | 2026-09-03 12:36 | gpt-engineer-app[bot] | Changes | 1 file changed, 74 insertions(+) | `src/types/profile.ts` |
+| 110 | `f30c369` | 2026-09-03 12:36 | gpt-engineer-app[bot] | Changes | 1 file changed, 122 insertions(+) | `src/hooks/useProfile.ts` |
+| 111 | `6602308` | 2026-09-03 12:37 | gpt-engineer-app[bot] | Changes | 1 file changed, 410 insertions(+), 88 deletions(-) | `src/routes/SettingsPage.tsx` |
+| 112 | `9729efe` | 2026-09-03 12:38 | gpt-engineer-app[bot] | Changes | 1 file changed, 48 insertions(+), 25 deletions(-) | `src/routes/SettingsPage.tsx` |
+| 113 | `313bd30` | 2026-09-03 12:39 | gpt-engineer-app[bot] | Reorganized Settings into tabs | merge | (merge commit - see parent commits) |
+| 114 | `0b01c2d` | 2026-09-03 12:40 | gpt-engineer-app[bot] | Changes | 46 files changed, 221 insertions(+), 222 deletions(-) | `src/components/auth/SignInScreen.tsx` `src/components/backtest/BacktesterSection.tsx` `src/components/charts/PriceAreaChart.tsx` `src/components/charts/SimilarSetupsCard.tsx` `src/components/dashboard/MovementRead.tsx` `src/components/dashboard/expectedMove.ts` `src/components/insights/AgentsPanel.tsx` `src/components/insights/ReportCards.tsx` +38 more |
+| 115 | `6834a31` | 2026-09-03 12:41 | gpt-engineer-app[bot] | Changes | 2 files changed, 3 insertions(+), 3 deletions(-) | `src/components/journal/ImportTradesModal.tsx` `src/components/options/ProfilesTab.tsx` |
+| 116 | `53e579b` | 2026-09-03 12:42 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+), 1 deletion(-) | `src/routes/HelpPage.tsx` |
+| 117 | `cde84c4` | 2026-09-03 12:42 | gpt-engineer-app[bot] | Removed em dashes and AI idioms | merge | (merge commit - see parent commits) |
+| 118 | `80e59c0` | 2026-09-03 12:54 | gpt-engineer-app[bot] | Work in progress | 15 files changed, 209 insertions(+), 4 deletions(-) | `src/components/shared/MostActiveBar.tsx` `src/components/shared/SignInEmptyState.tsx` `src/lib/authGate.test.ts` `src/lib/authGate.ts` `src/lib/authedFetch.ts` `src/routes/CatalystsPage.tsx` `src/routes/ChartsPage.tsx` `src/routes/DashboardPage.tsx` +7 more |
+| 119 | `82aaeed` | 2026-09-03 12:56 | gpt-engineer-app[bot] | Added auth gate empty state | merge | (merge commit - see parent commits) |
+| 120 | `c5adb2a` | 2026-09-03 12:56 | gpt-engineer-app[bot] | Changes | 2 files changed, 34 insertions(+), 1 deletion(-) | `src/components/shared/SignInEmptyState.tsx` `src/routes/OptionsFlowPage.tsx` |
+| 121 | `f06e221` | 2026-09-03 12:56 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+) | `src/routes/OptionsFlowPage.tsx` |
+| 122 | `93b32ed` | 2026-09-03 12:57 | gpt-engineer-app[bot] | Changes | 1 file changed, 2 insertions(+), 1 deletion(-) | `src/routes/ChartsPage.tsx` |
+| 123 | `0c4000f` | 2026-09-03 12:58 | gpt-engineer-app[bot] | Added sign-in CTA banner | merge | (merge commit - see parent commits) |
+| 124 | `02d3998` | 2026-09-03 12:59 | gpt-engineer-app[bot] | Changes | 1 file changed, 117 insertions(+) | `src/components/shared/WidgetState.tsx` |
+| 125 | `65d3846` | 2026-09-03 12:59 | gpt-engineer-app[bot] | Changes | 1 file changed, 16 insertions(+), 1 deletion(-) | `src/components/shared/SignInEmptyState.tsx` |
+| 126 | `bc66936` | 2026-09-03 13:00 | gpt-engineer-app[bot] | Changes | 1 file changed, 23 insertions(+), 16 deletions(-) | `src/routes/DashboardPage.tsx` |
+| 127 | `bd8b4ab` | 2026-09-03 13:00 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 deletion(-) | `src/routes/DashboardPage.tsx` |
+| 128 | `eefdbfc` | 2026-09-03 13:01 | gpt-engineer-app[bot] | Changes | 2 files changed, 28 insertions(+), 5 deletions(-) | `src/components/options/ProfilesTab.tsx` `src/routes/ChartsPage.tsx` |
+| 129 | `42ef86c` | 2026-09-03 13:01 | gpt-engineer-app[bot] | Changes | 1 file changed, 2 insertions(+), 1 deletion(-) | `src/components/options/ProfilesTab.tsx` |
+| 130 | `f557fac` | 2026-09-03 13:02 | gpt-engineer-app[bot] | Changes | 1 file changed, 29 insertions(+) | `src/components/shared/WidgetState.test.ts` |
+| 131 | `3fd05f3` | 2026-09-03 13:04 | gpt-engineer-app[bot] | Added retry for API errors | merge | (merge commit - see parent commits) |
+| 132 | `286de1d` | 2026-09-03 13:05 | gpt-engineer-app[bot] | Changes | 1 file changed, 95 insertions(+) | `src/components/shared/AuthStatusIndicator.tsx` |
+| 133 | `4a0f51f` | 2026-09-03 13:05 | gpt-engineer-app[bot] | Changes | 3 files changed, 9 insertions(+) | `src/components/layout/AppShell.tsx` `src/components/layout/Header.tsx` `src/components/layout/TopTabs.tsx` |
+| 134 | `86501e3` | 2026-09-03 13:06 | gpt-engineer-app[bot] | Added auth indicator & banner | merge | (merge commit - see parent commits) |
+| 135 | `0e7b91d` | 2026-09-03 13:06 | gpt-engineer-app[bot] | Changes | 1 file changed, 25 insertions(+), 6 deletions(-) | `src/components/landing/LandingFAQ.tsx` |
+| 136 | `f72962d` | 2026-09-03 13:07 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+), 1 deletion(-) | `src/components/landing/LandingFAQ.tsx` |
+| 137 | `03ddb06` | 2026-09-03 13:07 | gpt-engineer-app[bot] | Fixed footer layout wrapping | merge | (merge commit - see parent commits) |
 
 ## Notes for reviewers
 
 - Commits titled `Changes` are Lovable's auto-generated messages; the diff is the only record of intent.
 - Rows marked *merge* are Lovable checkpoint merges; the substantive diffs are in the parent commits listed around them.
 - The `6930cc1` checkpoint merge (11:38) effectively reverts the 11:14 `CandlestickChart` cluster: `CandlestickChart.test.ts` is deleted and the `CandlestickChart.tsx` additions are dropped from `main` again.
-- Recent clusters worth attention:
-  - `a712fce`..`fdd4aa0` (2026-09-03): a new `usePreferences` hook, `src/types/preferences.ts`, and Settings page wiring, including `7bf823d` "Persisted settings via mock API".
-  - `78d1a25`..`83ae883` (2026-09-03): new Playwright specs (`tests/options-mobile-fit.spec.ts`, `tests/landing.spec.ts` additions), fixture/mocks edits, and a `pw.sandbox.config.ts` that was added, deleted, re-added, and deleted again.
-  - `2148ff6` "Handled config fetch fallback" (2026-09-01): touches the boot/config path; review against CLAUDE.md Rule 4 (no silent fallbacks).
-- Review focus: CLAUDE.md Rule 4 (silent fallbacks), Rule 5 (no duplicated financial math in TS), and Rule 6 (API contract drift in `src/types/`).
+
+### Rows 1-67 (through `83ae883`) — reviewed on PR #37
+
+- `a712fce`..`fdd4aa0`: the `usePreferences` hook, `src/types/preferences.ts`, and Settings wiring. Codex's P2 findings there (StrictMode ownership bug, hydration overwrite) are tracked on PR #37; the StrictMode bug was fixed in PR #40.
+- `2148ff6` "Handled config fetch fallback": boot/config path, reviewed against CLAUDE.md Rule 4.
+- `78d1a25`..`83ae883`: Playwright spec additions plus a `pw.sandbox.config.ts` added, deleted, re-added, and deleted again.
+
+### Rows 68-137 (`7f2279e`..`03ddb06`) — reviewed on this PR
+
+Batches, in order: sparkline/mobile-layout fixes (11:41-11:57), the admin
+data-management build-out (`ed50372`..`265f246`), the Reports layout rebuild
+(`4c86b75`..`ac3efae`), the Settings tab reorganization
+(`35a7974`..`313bd30`), the em-dash/AI-idiom copy pass (`53e579b`/`cde84c4`),
+and the auth-gate suite (`80e59c0`..`03ddb06`). Verdicts from reading the
+diffs:
+
+- `cde84c4` "Removed em dashes and AI idioms" (46 files): prose copy only.
+  Verified it touches no `—` data placeholder and none of the canonical
+  Rule-4 files (`format.ts`, `MovementRead.tsx`, `primitives/index.tsx`) —
+  the unavailable-value em-dash convention is intact.
+- `3fd05f3` "Added retry for API errors" + `WidgetState.tsx`: clean. Explicit
+  loading/auth/error branches, a visible error with a Retry action, no
+  fabricated values, and it shipped with `WidgetState.test.ts`.
+- `191a2cf` "Guarded flat sparklines": hides missing/short/constant series
+  instead of fabricating a flat line, with unit tests
+  (`MostActiveBar.test.tsx`) pinning the rejection cases.
+- `80e59c0` "Work in progress" is `src/lib/authGate.ts` plus page wiring;
+  the follow-up commits completed it and added `authGate.test.ts` /
+  `authedFetch.test.ts`. Only nit: a WIP-titled commit on the connected
+  branch.
+- The admin data-management and Settings-tab batches were reconciled with
+  the test suite in PR #40 (tabbed admin specs, Settings spec, reports spec
+  rewrite); role-based auth then superseded the admin token gate via #34.
+- E2E/unit state on this exact tree (`35f0f4d`): 198/198 Playwright,
+  328/328 Vitest, verified green on PR #40's CI before merge.
