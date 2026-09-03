@@ -262,17 +262,13 @@ export function CandlestickChart({
       // re-anchor automatically without touching user pan/zoom.
       autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const info = original();
-        if (!info) return info;
-        const priceRange = info.priceRange();
-        if (!priceRange) return info;
+        if (!info || !info.priceRange) return info;
         const candles = candleSeriesRef.current?.data() as unknown as OhlcBar[] | undefined;
         if (!candles || candles.length === 0) return info;
         return {
           ...info,
-          priceRange: () => clampAutoscaleRange(priceRange, candles),
-          // Spread AutoscaleInfo is a class instance; replace just the
-          // priceRange accessor while preserving margins/maxIndex etc.
-        } as typeof info;
+          priceRange: clampAutoscaleRange(info.priceRange, candles),
+        };
       },
     });
 
