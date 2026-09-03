@@ -5,6 +5,7 @@ import App from './App'
 import { setRuntimeConfig, type RuntimeConfig } from './lib/runtimeConfig'
 import { initFirebase } from './lib/firebase'
 import { installAuthFetch } from './lib/authedFetch'
+import { isStaticFrontendHost } from './lib/apiTargets'
 
 /**
  * Boot-time runtime-config fetch.
@@ -81,6 +82,21 @@ function renderConfigError(message: string): void {
   )
 }
 
+/**
+ * Turn a raw boot failure into an actionable message. On a static Lovable host
+ * the /api/* calls are re-pointed cross-origin at the deployed API, so a bare
+ * "Failed to fetch" almost always means that exact origin is missing from the
+ * backend's CORS allow-list, not that the API is down.
+ */
+function describeBootFailure(err: Error): string {
+  const base = err?.message ?? 'unknown error'
+  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+  if (base.toLowerCase().includes('failed to fetch') && isStaticFrontendHost(host)) {
+    return `${base} (origin ${window.location.origin} is likely not in the API CORS allow-list)`
+  }
+  return base
+}
+
 // Bootstrap: load the runtime auth config, init Firebase + the token-injecting
 // fetch wrapper, THEN render. installAuthFetch must run before the app renders
 // so the very first /api/* data call already carries the bearer token.
@@ -101,7 +117,7 @@ async function bootstrap() {
   } catch (err) {
     // Fail loud, never open — see the header comment. A swallowed failure
     // here would render the full app ungated to an anonymous visitor.
-    renderConfigError((err as Error).message ?? 'unknown error')
+    renderConfigError(describeBootFailure(err as Error))
     return
   }
 
