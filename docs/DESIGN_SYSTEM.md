@@ -43,7 +43,7 @@ To avoid a flat "Bootstrap" appearance, use **Glassmorphism** for floating eleme
 
 We use a dual-typeface system to balance technical precision with human readability.
 
-- **Display & Headlines (Space Grotesk):** This typeface provides a technical, "engineered" aesthetic. Use `display-lg` (`3.5rem`) for hero data and `headline-sm` (`1.5rem`) for card titles. Its geometric nature signals modern AI sophistication.
+- **Display & Headlines (Space Grotesk):** This typeface provides a technical, "engineered" aesthetic. Use `display-lg` (`3.5rem`) for hero data and `headline-sm` (`1.125rem`) for card titles. Its geometric nature signals modern AI sophistication.
 - **Body & Labels (Manrope):** A highly legible sans-serif used for insights and data values. `body-md` (`0.875rem`) is the workhorse for analysis reports.
 - **Contrast as Hierarchy:** High-value data (tickers, prices) should always use `on-surface` (`#e2e2e8`) for maximum impact, while metadata uses `on-surface-variant` (`#bdc8d2`).
 
@@ -144,7 +144,12 @@ The system supports a light mode variant that preserves the Obsidian Analyst phi
 ### Light Mode Rules
 
 - Same "no-line" rule applies — use tonal shifts between `surface-container-*` levels
-- Semantic green / red stay the same (bullish / bearish)
+- Semantic bull / bear / warn keep their meaning but **not** their values:
+  light mode deliberately darkens them (`#22c55e → #15803d`,
+  `#ef4444 → #b91c1c`, `#ffb86b → #b45309`) because the dark-theme shades
+  only reach ~2.5:1 against light cards, failing AA for normal text — see
+  the comment above the overrides in `src/index.css`. Never copy the
+  dark-theme semantic values into a light-mode surface.
 - Charts darken grid lines to `#e4e7ee` for subtlety
 - Glass elements use light-tinted blur
 
@@ -179,13 +184,19 @@ the paths below were `platform/src/...` in that repo.
 - Chart instances (lightweight-charts, Recharts) read these same variables through [`src/lib/chartTheme.ts`](../src/lib/chartTheme.ts), so they swap with the global theme rather than carrying their own palette.
 - Back-compat aliases keep existing `var(--color-accent-blue)` etc. working while the codebase migrates to the new token names.
 
-### Known divergence — typefaces
+### Known divergences — typefaces and type scale
 
 §3 specifies a **Space Grotesk / Manrope** pair. `src/index.css` currently
-imports **Montserrat** only (`:1`), and uses it for both display and body. The
-type *scale* in §3 is implemented; the typefaces are not.
+imports **Montserrat** only (`:1`), and uses it for both display and body.
 
-This is recorded rather than silently reconciled, because closing it is a
-design decision: either load the specified pair, or update §3 to ratify
-Montserrat. Until then, treat §3's scale as current and its font names as
-intent.
+The §3 type scale is only partially implemented, and not at the documented
+sizes. Of the table's nine rows, `src/index.css` defines classes for two:
+`.display-lg` at **3rem**, not the specified 3.5rem, and `.headline-sm` at
+the specified 1.125rem — plus a `.label-micro` (11px) the table doesn't
+name. The remaining rows (`display-md`, `display-sm`, `headline-lg`,
+`body-*`, `label-*`) have no implementation yet.
+
+These are recorded rather than silently reconciled, because closing them is
+a design decision: load the specified pair or ratify Montserrat, and either
+resize `.display-lg` to 3.5rem or update the table to 3rem. Until then,
+treat §3 as intent and `src/index.css` as current.
