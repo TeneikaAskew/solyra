@@ -4,8 +4,10 @@ Every commit authored by Lovable (`gpt-engineer-app[bot]` and `Lovable`) in this
 repository, listed oldest to newest, so they can be reviewed as one set. All of
 these commits are already on `main`; this document is the review index for them.
 
-Generated from `git log` on 2026-09-03. 54 commits total: 52 by
-`gpt-engineer-app[bot]`, 2 by `Lovable`.
+Generated from `git log` on 2026-09-03, covering main through `83ae883`
+(2026-09-03 11:40 UTC). 67 commits total: 65 by `gpt-engineer-app[bot]`, 2 by
+`Lovable`. Lovable commits continuously while the editor is in use, so commits
+after that cutoff are not listed here.
 
 | # | Commit | Date (UTC) | Author | Subject | Changes | Files touched |
 |---|--------|------------|--------|---------|---------|---------------|
@@ -63,14 +65,27 @@ Generated from `git log` on 2026-09-03. 54 commits total: 52 by
 | 52 | `e7c952c` | 2026-09-03 11:14 | gpt-engineer-app[bot] | Changes | 1 file changed, 39 insertions(+) | `src/components/charts/CandlestickChart.test.ts` |
 | 53 | `83b68b0` | 2026-09-03 11:17 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+), 1 deletion(-) | `src/components/shared/ReplayControl.tsx` |
 | 54 | `edb87b3` | 2026-09-03 11:19 | gpt-engineer-app[bot] | Changes | 1 file changed, 34 insertions(+) | `src/index.css` |
+| 55 | `78d1a25` | 2026-09-03 11:26 | gpt-engineer-app[bot] | Changes | 1 file changed, 104 insertions(+) | `tests/options-mobile-fit.spec.ts` |
+| 56 | `ec96d54` | 2026-09-03 11:27 | gpt-engineer-app[bot] | Changes | 1 file changed, 46 insertions(+) | `tests/helpers/fixtures/options.ts` |
+| 57 | `7b0078f` | 2026-09-03 11:28 | gpt-engineer-app[bot] | Changes | 1 file changed, 2 insertions(+) | `pw.sandbox.config.ts` |
+| 58 | `deb296d` | 2026-09-03 11:30 | gpt-engineer-app[bot] | Changes | 1 file changed, 3 insertions(+), 1 deletion(-) | `pw.sandbox.config.ts` |
+| 59 | `524bea1` | 2026-09-03 11:32 | gpt-engineer-app[bot] | Changes | 1 file changed, 40 insertions(+) | `src/index.css` |
+| 60 | `d4bd14e` | 2026-09-03 11:34 | gpt-engineer-app[bot] | Changes | 1 file changed, 6 insertions(+) | `tests/helpers/mocks.ts` |
+| 61 | `1a3c951` | 2026-09-03 11:38 | gpt-engineer-app[bot] | Changes | 1 file changed, 5 insertions(+), 1 deletion(-) | `tests/helpers/mocks.ts` |
+| 62 | `88a3552` | 2026-09-03 11:38 | gpt-engineer-app[bot] | Changes | 1 file changed, 4 deletions(-) | `pw.sandbox.config.ts` |
+| 63 | `6930cc1` | 2026-09-03 11:38 | gpt-engineer-app[bot] | Fixed options overflow wrap | merge | (merge commit - see parent commits) |
+| 64 | `58c912f` | 2026-09-03 11:39 | gpt-engineer-app[bot] | Changes | 1 file changed, 5 insertions(+), 2 deletions(-) | `src/components/landing/landing.css` |
+| 65 | `5ae702d` | 2026-09-03 11:40 | gpt-engineer-app[bot] | Changes | 2 files changed, 26 insertions(+) | `pw.sandbox.config.ts` `tests/landing.spec.ts` |
+| 66 | `d553e4d` | 2026-09-03 11:40 | gpt-engineer-app[bot] | Changes | 1 file changed, 3 deletions(-) | `pw.sandbox.config.ts` |
+| 67 | `83ae883` | 2026-09-03 11:40 | gpt-engineer-app[bot] | Restored sign-in and waitlist | merge | (merge commit - see parent commits) |
 
 ## Notes for reviewers
 
 - Commits titled `Changes` are Lovable's auto-generated messages; the diff is the only record of intent.
 - Rows marked *merge* are Lovable checkpoint merges; the substantive diffs are in the parent commits listed around them.
+- The `6930cc1` checkpoint merge (11:38) effectively reverts the 11:14 `CandlestickChart` cluster: `CandlestickChart.test.ts` is deleted and the `CandlestickChart.tsx` additions are dropped from `main` again.
 - Recent clusters worth attention:
   - `a712fce`..`fdd4aa0` (2026-09-03): a new `usePreferences` hook, `src/types/preferences.ts`, and Settings page wiring, including `7bf823d` "Persisted settings via mock API".
-  - `1a91c9a`..`e7c952c` (2026-09-03): `CandlestickChart` changes plus a new test file.
+  - `78d1a25`..`83ae883` (2026-09-03): new Playwright specs (`tests/options-mobile-fit.spec.ts`, `tests/landing.spec.ts` additions), fixture/mocks edits, and a `pw.sandbox.config.ts` that was added, deleted, re-added, and deleted again.
   - `2148ff6` "Handled config fetch fallback" (2026-09-01): touches the boot/config path; review against CLAUDE.md Rule 4 (no silent fallbacks).
-  - `edb87b3` (2026-09-03, current `main` HEAD): 34 lines added to `src/index.css`.
 - Review focus: CLAUDE.md Rule 4 (silent fallbacks), Rule 5 (no duplicated financial math in TS), and Rule 6 (API contract drift in `src/types/`).
