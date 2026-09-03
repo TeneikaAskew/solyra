@@ -14,6 +14,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import {
   useSettingsStore, ACCENTS, type Density, type NavPattern, type Accent,
 } from '@/stores/settingsStore';
+import { usePreferencesSync } from '@/hooks/usePreferences';
 
 /** Accent swatch colors (match index.css .accent-* palettes; blue = brand). */
 const ACCENT_SWATCH: Record<Accent, string> = {
