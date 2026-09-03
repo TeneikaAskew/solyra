@@ -18,6 +18,7 @@
  * "no preferences stored" answer — it is not a failure.
  */
 import { useEffect, useRef } from 'react';
+import { create } from 'zustand';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserPreferences, UserPreferencesUpdate } from '@/types/preferences';
 import { useThemeStore, type Theme } from '@/stores/themeStore';
