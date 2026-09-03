@@ -60,6 +60,7 @@ export default function OptionsFlowPage() {
         </div>
       </div>
 
+      <SignInBanner label="options data" />
       <DataGate>
       {tab === 'heatseeker' && <HeatseekerSection focusSymbol={activeTicker} />}
       {tab === 'flowseeker' && <FlowseekerSection />}
