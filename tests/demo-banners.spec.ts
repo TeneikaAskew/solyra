@@ -35,8 +35,8 @@ test.describe('Mock data surfaces stay banner-honest', () => {
     await page.getByRole('button', { name: /Flowseeker/i }).click();
     // Wait for the component to render
     await page.waitForLoadState('networkidle');
-    // FlowseekerTab renders <DemoDataBanner> with text "Demo data — not live."
-    // (The em dash is U+2014, copied from DemoDataBanner.tsx line 23)
-    await expect(page.getByText('Demo data — not live.').first()).toBeVisible();
+    // FlowseekerTab renders <DemoDataBanner> with text "Demo data, not live."
+    // (copy must match DemoDataBanner.tsx line 23 exactly)
+    await expect(page.getByText('Demo data, not live.').first()).toBeVisible();
   });
 });

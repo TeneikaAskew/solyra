@@ -14,6 +14,12 @@
  *   7. Admin can edit routes without needing a token header
  */
 import { test, expect } from '@playwright/test';
+import {
+  MOCK_ADMIN_DATA_SOURCES,
+  MOCK_ADMIN_USERS,
+  MOCK_STRAT_ENGINE_STATE,
+  MOCK_STRUCTURE_BRIEF,
+} from './helpers/fixtures/admin';
 
 const ADMIN_EMAIL = 'teneika@bictech.org';
 
@@ -37,7 +43,13 @@ const MOCK_MODELS = {
   ],
 };
 
-/** Set up common admin API mocks (routes + models always succeed). */
+/**
+ * Set up common admin API mocks (always succeed — this spec exercises WHO
+ * gets in, not the token gate; tests/admin.spec.ts covers gating). The page
+ * is tabbed and lands on the users tab after auth, so /api/admin/users and
+ * /api/admin/data-sources are part of an authed visit's fan-out and must be
+ * mocked to keep the suite hermetic.
+ */
 async function mockAdminApi(page: import('@playwright/test').Page) {
   await page.route('**/api/admin/routes', (route) => {
     if (route.request().method() === 'GET') {
@@ -48,6 +60,25 @@ async function mockAdminApi(page: import('@playwright/test').Page) {
   await page.route('**/api/admin/models', (route) =>
     route.fulfill({ status: 200, body: JSON.stringify(MOCK_MODELS) }),
   );
+  await page.route('**/api/admin/users', (route) =>
+    route.fulfill({ status: 200, body: JSON.stringify(MOCK_ADMIN_USERS) }),
+  );
+  await page.route('**/api/admin/data-sources', (route) =>
+    route.fulfill({ status: 200, body: JSON.stringify(MOCK_ADMIN_DATA_SOURCES) }),
+  );
+  // Strat-engine widgets mount alongside the routing table on the models tab.
+  await page.route('**/api/admin/structure-brief', (route) =>
+    route.fulfill({ status: 200, body: JSON.stringify(MOCK_STRUCTURE_BRIEF) }),
+  );
+  await page.route('**/api/admin/strat-engine/state', (route) =>
+    route.fulfill({ status: 200, body: JSON.stringify(MOCK_STRAT_ENGINE_STATE) }),
+  );
+}
+
+/** The routing table lives under the models tab; auth lands on users. */
+async function openModelsTab(page: import('@playwright/test').Page) {
+  await expect(page.getByTestId('admin-tab-models')).toBeVisible();
+  await page.getByTestId('admin-tab-models').click();
 }
 
 // The boot-time runtime-config probe must resolve to a valid config or the app
@@ -78,10 +109,12 @@ test.describe('Admin — IAP email bypass', () => {
 
     await page.goto('/admin');
 
-    // Token gate should NOT appear
+    // Admin lands on the users tab (default) with no token gate in sight
+    await expect(page.getByTestId('admin-users-panel')).toBeVisible();
     await expect(page.getByTestId('admin-token-input')).not.toBeVisible();
 
-    // Routing table should render directly
+    // Routing table renders under the models tab
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     await expect(page.getByText('analyst')).toBeVisible();
     await expect(page.getByText('portfolio_manager')).toBeVisible();
@@ -95,6 +128,7 @@ test.describe('Admin — IAP email bypass', () => {
 
     await page.goto('/admin');
 
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     // Logout button should be hidden for IAP-authenticated admin
     await expect(page.getByTestId('admin-logout')).not.toBeVisible();
@@ -125,6 +159,7 @@ test.describe('Admin — IAP email bypass', () => {
     });
 
     await page.goto('/admin');
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
 
     // Change model for trader
@@ -175,6 +210,10 @@ test.describe('Admin — non-admin users', () => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: 'someone@example.com', is_admin: false }) }),
     );
+    // Base mocks first (covers users/data-sources, hit by the landing tab);
+    // then the token-gated /routes override, which wins as the newer
+    // registration for that pattern.
+    await mockAdminApi(page);
     await page.route('**/api/admin/routes', (route) => {
       const token = route.request().headers()['x-admin-token'];
       if (token === 'valid-token') {
@@ -182,9 +221,6 @@ test.describe('Admin — non-admin users', () => {
       }
       return route.fulfill({ status: 401, body: JSON.stringify({ detail: 'bad' }) });
     });
-    await page.route('**/api/admin/models', (route) =>
-      route.fulfill({ status: 200, body: JSON.stringify(MOCK_MODELS) }),
-    );
 
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
@@ -193,6 +229,7 @@ test.describe('Admin — non-admin users', () => {
     await page.getByTestId('admin-token-input').fill('valid-token');
     await page.getByTestId('admin-submit').click();
 
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     // Non-admin token users SHOULD see the logout button
     await expect(page.getByTestId('admin-logout')).toBeVisible();
@@ -281,7 +318,11 @@ test.describe('Sidebar — Admin link visibility', () => {
     await adminLink.click();
     await page.waitForURL('**/admin');
 
-    // Should go straight to the routing panel, no token gate
+    // Should go straight in with no token gate; the users tab is the landing
+    // view and the routing table renders after switching to models.
+    await expect(page.getByTestId('admin-users-panel')).toBeVisible();
+    await expect(page.getByTestId('admin-token-input')).not.toBeVisible();
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
   });
 

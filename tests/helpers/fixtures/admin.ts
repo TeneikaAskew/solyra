@@ -2,10 +2,20 @@
  * Typed fixtures + route wiring for the model-routing dashboard (`/admin`).
  *
  * Endpoint fan-out, read off AdminPage.tsx:
- *   GET /api/admin/routes         token probe + useAdminRoutes → { routes }
- *   GET /api/admin/models         useAdminModels               → { models }
- *   PUT /api/admin/routes/{role}  useUpdateAdminRoute          → RouteRow
- *   GET /api/me                   useUser (via mockCommon, non-admin)
+ *   GET  /api/admin/routes            token probe + useAdminRoutes → { routes }
+ *   GET  /api/admin/models            useAdminModels               → { models }
+ *   PUT  /api/admin/routes/{role}     useUpdateAdminRoute          → RouteRow
+ *   GET  /api/admin/users             useAdminUsers                → AdminUsersResponse
+ *   PUT  /api/admin/users/{uid}/roles useUpdateUserRoles           → AdminUserRow
+ *   PUT  /api/admin/users/{uid}/status useUpdateUserStatus         → AdminUserRow
+ *   GET  /api/admin/data-sources      useAdminDataSources          → AdminDataSourcesResponse
+ *   POST /api/admin/data-sources/{id}/refresh  useRefreshDataSource
+ *   GET  /api/me                      useUser (via mockCommon, non-admin)
+ *
+ * The page is tabbed (users | data | models) and lands on the USERS tab
+ * after auth, so /api/admin/users is the first admin call an authed visit
+ * fires — leaving it unmocked breaks the hermetic-suite guarantee for every
+ * admin spec, not just the ones that assert on the users table.
  *
  * The page authenticates with an `X-Admin-Token` header pulled from
  * sessionStorage, and the GET /routes call doubles as the credential probe:
@@ -18,8 +28,11 @@
  * page's surface too — an earlier version of this file wrongly claimed they
  * were not.
  */
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
 import type {
+  AdminDataSourcesResponse,
+  AdminUserRow,
+  AdminUsersResponse,
   AvailableModelRow,
   RouteRow,
   StratEngineStateResponse,
@@ -78,6 +91,81 @@ export const MOCK_ADMIN_MODELS = {
   ],
 } satisfies { models: AvailableModelRow[] };
 
+/**
+ * Users & roles tab. One admin with full metadata, one plain user with null
+ * display name / last sign-in so the em-dash branch renders (Rule 4: nulls
+ * stay null to the presentation layer).
+ */
+export const MOCK_ADMIN_USERS = {
+  users: [
+    {
+      uid: 'uid-admin-1',
+      email: 'teneika@bictech.org',
+      display_name: 'Teneika',
+      roles: ['admin', 'user'],
+      disabled: false,
+      created_at: '2026-01-10T12:00:00Z',
+      last_sign_in_at: '2026-04-25T09:30:00Z',
+    },
+    {
+      uid: 'uid-user-2',
+      email: 'trader@example.com',
+      display_name: null,
+      roles: ['user'],
+      disabled: false,
+      created_at: '2026-03-02T08:15:00Z',
+      last_sign_in_at: null,
+    },
+  ],
+  available_roles: ['admin', 'user'],
+} satisfies AdminUsersResponse;
+
+/**
+ * Chart & report data tab. One refreshable healthy dataset, one stale
+ * refreshable one, and one that cannot be refreshed on demand (its message
+ * explains why), so the disabled-button branch is exercised.
+ */
+export const MOCK_ADMIN_DATA_SOURCES = {
+  sources: [
+    {
+      id: 'market_data_daily',
+      label: 'Daily OHLCV bars',
+      category: 'charts',
+      status: 'ok',
+      row_count: 412_345,
+      last_refreshed_at: '2026-04-25T20:05:00Z',
+      coverage_start: '2019-01-02',
+      coverage_end: '2026-04-25',
+      message: null,
+      refreshable: true,
+    },
+    {
+      id: 'options_chain',
+      label: 'Options chain snapshots',
+      category: 'charts',
+      status: 'stale',
+      row_count: 98_765,
+      last_refreshed_at: '2026-04-23T20:05:00Z',
+      coverage_start: '2024-06-01',
+      coverage_end: '2026-04-23',
+      message: 'Last fetch older than 24h.',
+      refreshable: true,
+    },
+    {
+      id: 'insight_reports',
+      label: 'AI insight reports',
+      category: 'reports',
+      status: 'unknown',
+      row_count: null,
+      last_refreshed_at: null,
+      coverage_start: null,
+      coverage_end: null,
+      message: 'Produced by the scheduled pipeline; no on-demand job.',
+      refreshable: false,
+    },
+  ],
+} satisfies AdminDataSourcesResponse;
+
 /** The row a successful PUT /api/admin/routes/{role} echoes back. */
 export function updatedRoute(role: string, model: string): RouteRow {
   return {
@@ -94,8 +182,12 @@ export interface AdminMockOpts {
   token?: string;
   routes?: { routes: RouteRow[] };
   models?: { models: AvailableModelRow[] };
+  users?: AdminUsersResponse;
+  dataSources?: AdminDataSourcesResponse;
   /** Called with the parsed body of each PUT /api/admin/routes/{role}. */
   onRoutePut?: (role: string, body: unknown) => void;
+  /** Called with the id of each POST /api/admin/data-sources/{id}/refresh. */
+  onRefreshPost?: (id: string) => void;
   structureBrief?: StructureBriefResponse;
   stratState?: StratEngineStateResponse;
   predict?: StratPredictResponse;
@@ -112,6 +204,15 @@ export async function mockAdminApi(page: Page, opts: AdminMockOpts = {}) {
   const token = opts.token ?? VALID_ADMIN_TOKEN;
   const routes = opts.routes ?? MOCK_ADMIN_ROUTES;
   const models = opts.models ?? MOCK_ADMIN_MODELS;
+  const users = opts.users ?? MOCK_ADMIN_USERS;
+  const dataSources = opts.dataSources ?? MOCK_ADMIN_DATA_SOURCES;
+
+  const badToken = {
+    status: 401,
+    contentType: 'application/json',
+    body: JSON.stringify({ detail: 'bad token' }),
+  };
+  const tokenOk = (r: Route) => r.request().headers()['x-admin-token'] === token;
 
   // Registered before the /routes/{role} handler below so that the more
   // specific PUT pattern, registered later, wins (Playwright matches
@@ -145,6 +246,38 @@ export async function mockAdminApi(page: Page, opts: AdminMockOpts = {}) {
     const body = JSON.parse(req.postData() || '{}');
     opts.onRoutePut?.(role, body);
     return r.fulfill(M.ok(updatedRoute(role, String(body.model ?? ''))));
+  });
+
+  // Users & roles tab (the page's default landing tab after auth).
+  await page.route('**/api/admin/users', (r) =>
+    tokenOk(r) ? r.fulfill(M.ok(users)) : r.fulfill(badToken)
+  );
+  await page.route('**/api/admin/users/*/roles', (r) => {
+    if (!tokenOk(r)) return r.fulfill(badToken);
+    const uid = new URL(r.request().url()).pathname.split('/').at(-2) ?? '';
+    const body = JSON.parse(r.request().postData() || '{}') as { roles?: string[] };
+    const row = users.users.find((u) => u.uid === uid);
+    if (!row) return r.fulfill(M.notFound());
+    return r.fulfill(M.ok({ ...row, roles: body.roles ?? row.roles } satisfies AdminUserRow));
+  });
+  await page.route('**/api/admin/users/*/status', (r) => {
+    if (!tokenOk(r)) return r.fulfill(badToken);
+    const uid = new URL(r.request().url()).pathname.split('/').at(-2) ?? '';
+    const body = JSON.parse(r.request().postData() || '{}') as { disabled?: boolean };
+    const row = users.users.find((u) => u.uid === uid);
+    if (!row) return r.fulfill(M.notFound());
+    return r.fulfill(M.ok({ ...row, disabled: body.disabled ?? row.disabled } satisfies AdminUserRow));
+  });
+
+  // Chart & report data tab.
+  await page.route('**/api/admin/data-sources', (r) =>
+    tokenOk(r) ? r.fulfill(M.ok(dataSources)) : r.fulfill(badToken)
+  );
+  await page.route('**/api/admin/data-sources/*/refresh', (r) => {
+    if (!tokenOk(r)) return r.fulfill(badToken);
+    const id = new URL(r.request().url()).pathname.split('/').at(-2) ?? '';
+    opts.onRefreshPost?.(id);
+    return r.fulfill(M.ok({ id, queued: true, job_id: 'exec-mock-001' }));
   });
 
   // Strat-engine surface (below the routing table) — see note above.

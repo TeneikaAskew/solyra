@@ -247,7 +247,7 @@ test.describe('TickerCombobox', () => {
 
     await expect(page.getByTestId('ticker-ingest-notice')).toBeVisible();
     await expect(page.getByTestId('ticker-ingest-notice')).toContainText(
-      "Tracking AAPL — daily data lands after tonight's fetch"
+      "Tracking AAPL: daily data lands after tonight's fetch"
     );
     expect(addRequestBody).toEqual({ ticker: 'AAPL' });
   });
@@ -420,7 +420,7 @@ test.describe('TickerCombobox', () => {
     // The selection → auto-ingest flow fires the watchlist POST.
     await expect(page.getByTestId('ticker-ingest-notice')).toBeVisible();
     await expect(page.getByTestId('ticker-ingest-notice')).toContainText(
-      "Tracking AAPL — daily data lands after tonight's fetch"
+      "Tracking AAPL: daily data lands after tonight's fetch"
     );
     expect(addRequestBody).toEqual({ ticker: 'AAPL' });
     await expect(page.getByTestId('ticker-combobox')).toContainText('AAPL');
@@ -476,7 +476,7 @@ test.describe('TickerCombobox', () => {
     // The selection → auto-ingest flow fires the watchlist POST.
     await expect(page.getByTestId('ticker-ingest-notice')).toBeVisible();
     await expect(page.getByTestId('ticker-ingest-notice')).toContainText(
-      "Tracking AAPL — daily data lands after tonight's fetch"
+      "Tracking AAPL: daily data lands after tonight's fetch"
     );
     expect(addRequestBody).toEqual({ ticker: 'AAPL' });
     await expect(page.getByTestId('ticker-combobox-panel')).not.toBeVisible();

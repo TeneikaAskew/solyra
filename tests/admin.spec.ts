@@ -13,6 +13,16 @@
 import { test, expect } from '@playwright/test';
 import { VALID_ADMIN_TOKEN, mockAdminApi } from './helpers/fixtures/admin';
 
+/**
+ * The admin page is tabbed (Users & roles | Chart & report data | Models &
+ * routing) and lands on the USERS tab after auth. The routing table only
+ * mounts under the models tab, so specs asserting on it click there first.
+ */
+const openModelsTab = async (page: import('@playwright/test').Page) => {
+  await expect(page.getByTestId('admin-tab-models')).toBeVisible();
+  await page.getByTestId('admin-tab-models').click();
+};
+
 test.describe('Admin — model routing', () => {
   test.beforeEach(async ({ context }) => {
     // Clear any persisted token between tests (fresh tab)
@@ -37,7 +47,9 @@ test.describe('Admin — model routing', () => {
     await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
     await page.getByTestId('admin-submit').click();
 
-    // Routing table renders
+    // Unlock lands on the users tab; the routing table lives under models.
+    await expect(page.getByTestId('admin-users-panel')).toBeVisible();
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     await expect(page.getByText('analyst')).toBeVisible();
     await expect(page.getByText('portfolio_manager')).toBeVisible();
@@ -60,6 +72,7 @@ test.describe('Admin — model routing', () => {
     await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
     await page.getByTestId('admin-submit').click();
 
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
 
     // Change trader model
@@ -72,5 +85,44 @@ test.describe('Admin — model routing', () => {
       model: 'gemini-2.5-pro',
     });
     expect(putRole).toBe('trader');
+  });
+
+  test('users tab is the default and renders rows with em-dash honesty for null fields', async ({ page }) => {
+    await mockAdminApi(page);
+
+    await page.goto('/admin');
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
+    await page.getByTestId('admin-submit').click();
+
+    // No tab click: users is the landing tab.
+    await expect(page.getByTestId('admin-users-table')).toBeVisible();
+    await expect(page.getByText('teneika@bictech.org')).toBeVisible();
+    // uid-user-2 has last_sign_in_at: null → its row renders an em-dash,
+    // never a fabricated date (Rule 4).
+    const row = page.locator('tr', { hasText: 'trader@example.com' });
+    await expect(row).toContainText('—');
+    // Role chips come from available_roles.
+    await expect(page.getByTestId('role-uid-user-2-admin')).toBeVisible();
+  });
+
+  test('data tab renders freshness rows and refresh POSTs to the right dataset', async ({ page }) => {
+    let refreshed: string | null = null;
+    await mockAdminApi(page, { onRefreshPost: (id) => { refreshed = id; } });
+
+    await page.goto('/admin');
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
+    await page.getByTestId('admin-submit').click();
+
+    await page.getByTestId('admin-tab-data').click();
+    await expect(page.getByTestId('admin-sources-table')).toBeVisible();
+    await expect(page.getByText('Daily OHLCV bars')).toBeVisible();
+
+    // Non-refreshable dataset keeps its button disabled.
+    await expect(page.getByTestId('refresh-insight_reports')).toBeDisabled();
+
+    await page.getByTestId('refresh-market_data_daily').click();
+    await expect.poll(() => refreshed, { timeout: 5_000 }).toBe('market_data_daily');
   });
 });
