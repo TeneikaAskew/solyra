@@ -126,6 +126,7 @@ function Sparkline({ values }: { values: number[] }) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, SPARK_WIDTH, SPARK_HEIGHT);
 
+    if (!hasUsableSpark(values)) return;
     const points = sparklinePoints(values, SPARK_WIDTH, SPARK_HEIGHT);
     if (points.length < 2) return;
 
@@ -165,7 +166,7 @@ function MostActiveItemChip({ item }: { item: MostActiveItem }) {
       <span className="mab-price">{item.price != null ? `$${item.price.toFixed(2)}` : '—'}</span>
       <span className={`mab-change${changeTone}`}>{formatChangePct(item.change_pct)}</span>
       <span className="mab-volume">{formatCompactVolume(item.volume)} vol</span>
-      {item.spark && item.spark.length >= 2 && <Sparkline values={item.spark} />}
+      {hasUsableSpark(item.spark) && <Sparkline values={item.spark as number[]} />}
     </div>
   );
 }
