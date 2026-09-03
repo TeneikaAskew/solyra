@@ -314,7 +314,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(18rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl md:left-0 md:right-auto md:w-72">
           <div className="border-b border-[var(--outline-variant)] p-2">
             <div className="flex items-center gap-2 rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-lowest)] px-2.5 py-1.5">
               <Search size={13} className="shrink-0 text-[var(--on-surface-muted)]" />
