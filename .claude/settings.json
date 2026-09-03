@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq 'if (.prompt // \"\" | contains(\"<github-webhook-activity>\")) then {hookSpecificOutput: {hookEventName: \"UserPromptSubmit\", additionalContext: \"Before acting on this webhook event: fetch the current state of the referenced GitHub object (PR comment, review, issue, run, commit) before reasoning. Webhooks lag — the underlying state may have already changed (comment edited, CI run finished, review dismissed, PR merged). Reconcile against live state, then decide. Use the GitHub MCP tools (mcp__github__*) when present, otherwise gh. For surfaces neither exposes (branch protection, rulesets), dispatch .github/workflows/gh-api.yml and read the response back from the job log.\"}} else empty end'"
+          }
+        ]
+      }
+    ]
+  }
+}
