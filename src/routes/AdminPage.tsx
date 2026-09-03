@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Lock, LogOut, Save } from 'lucide-react';
+import { useState } from 'react';
+import { Loader2, Lock, Save } from 'lucide-react';
 import {
-  clearAdminToken,
-  getAdminToken,
-  setAdminToken,
   useAdminModels,
   useAdminRoutes,
   useUpdateAdminRoute,
@@ -28,24 +25,17 @@ const ADMIN_TABS: { id: AdminTab; label: string }[] = [
 // ---------------------------------------------------------------------------
 // Admin page — per-role model routing dashboard.
 //
-// Auth: If the user is the admin email (via IAP), they bypass the token gate
-// entirely. Otherwise, a token must be entered per-tab (sessionStorage).
+// Auth is ROLE-BASED: the server-verified identity (Firebase token / IAP
+// email) must hold the admin role — api/auth.is_admin_email in stocks (the
+// `user_roles` table with ADMIN_EMAIL as fallback), the same check behind
+// /api/me's `is_admin` flag. The old shared X-Admin-Token + sessionStorage
+// gate is GONE: the backend no longer accepts a token, and a per-user,
+// revocable role is the credential a shared secret never was.
 // ---------------------------------------------------------------------------
 
 export default function AdminPage() {
   const { isAdmin, isLoading: userLoading } = useUser();
-  const [token, setToken] = useState<string | null>(getAdminToken());
   const [tab, setTab] = useState<AdminTab>('users');
-
-  // #702 follow-ups Task 4 item 5: stable identity across renders so
-  // RoutingPanel's `useEffect([routesQuery.error, onLogout])` doesn't
-  // re-run on every parent re-render from a fresh inline arrow. Declared
-  // before the userLoading early return — Rules of Hooks requires every
-  // hook to run on every render, regardless of which branch below returns.
-  const onLogout = useCallback(() => {
-    clearAdminToken();
-    setToken(null);
-  }, []);
 
   if (userLoading) {
     return (
@@ -55,8 +45,7 @@ export default function AdminPage() {
     );
   }
 
-  // Admin email gets straight through — no token needed
-  const authed = isAdmin || !!token;
+  const authed = isAdmin;
 
   return (
     <div className="mx-auto min-w-0 max-w-5xl p-4">
@@ -110,7 +99,7 @@ export default function AdminPage() {
 
           {tab === 'models' && (
             <div className="min-w-0 space-y-8">
-              <RoutingPanel onLogout={onLogout} showLogout={!isAdmin} />
+              <RoutingPanel />
 
               <section>
                 <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">
@@ -145,88 +134,25 @@ export default function AdminPage() {
           )}
         </div>
       ) : (
-        <TokenGate onAuthed={(t) => setToken(t)} />
+        <div
+          className="mx-auto max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6"
+          data-testid="admin-denied"
+        >
+          <div className="mb-3 flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
+            <Lock size={14} />
+            Admin access required
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Admin access is granted per account: the signed-in identity must hold the admin
+            role (assigned server-side alongside the Firebase sign-in). This account doesn't.
+            Shared admin tokens are no longer accepted.
+          </p>
+        </div>
       )}
     </div>
   );
 }
 
-
-// ---------------------------------------------------------------------------
-// Token gate
-// ---------------------------------------------------------------------------
-
-function TokenGate({ onAuthed }: { onAuthed: (token: string) => void }) {
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!value.trim()) return;
-    setChecking(true);
-    setError(null);
-    try {
-      // Probe /api/admin/routes as the credential check — we don't
-      // want to persist a bad token into sessionStorage.
-      const r = await fetch('/api/admin/routes', {
-        headers: { 'X-Admin-Token': value.trim() },
-      });
-      if (r.status === 401) {
-        setError('Invalid token.');
-        return;
-      }
-      if (r.status === 503) {
-        setError('Server has no ADMIN_TOKEN configured.');
-        return;
-      }
-      if (!r.ok) {
-        setError(`Admin API returned ${r.status}.`);
-        return;
-      }
-      setAdminToken(value.trim());
-      onAuthed(value.trim());
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  return (
-    <form
-      onSubmit={onSubmit}
-      className="mx-auto max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6"
-    >
-      <div className="mb-3 flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
-        <Lock size={14} />
-        Enter admin token
-      </div>
-      <p className="mb-4 text-xs text-[var(--color-text-muted)]">
-        The token is stored in sessionStorage for this tab only. Close the tab and you'll be
-        prompted again.
-      </p>
-      <input
-        type="password"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="X-Admin-Token"
-        data-testid="admin-token-input"
-        className="mb-3 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-accent-blue)] focus:outline-none"
-      />
-      {error && <div className="mb-3 text-xs text-[var(--bear)]" data-testid="admin-error">{error}</div>}
-      <button
-        type="submit"
-        disabled={checking}
-        data-testid="admin-submit"
-        className="flex w-full items-center justify-center gap-1.5 rounded bg-[var(--color-accent-blue)] px-4 py-2 text-sm font-medium text-[var(--on-brand)] disabled:opacity-50"
-      >
-        {checking ? <Loader2 size={14} className="animate-spin" /> : null}
-        Unlock
-      </button>
-    </form>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Routing panel
@@ -241,24 +167,23 @@ function TokenGate({ onAuthed }: { onAuthed: (token: string) => void }) {
 // stays a single-model deployment by design (not a bug).
 // ---------------------------------------------------------------------------
 
-function RoutingPanel({ onLogout, showLogout = true }: { onLogout: () => void; showLogout?: boolean }) {
+function RoutingPanel() {
   const routesQuery = useAdminRoutes(true);
   const modelsQuery = useAdminModels(true);
   const updateMut = useUpdateAdminRoute();
   const [draft, setDraft] = useState<Record<string, { provider: string; model: string }>>({});
 
-  // Log-out on any 401 (token expired / changed on server) — side effect
-  // moved out of render into an effect; logout mutates app state (clears
-  // the token, calls back up to the parent) and must not run during render.
-  useEffect(() => {
-    if (routesQuery.error?.message === 'unauthorized') {
-      clearAdminToken();
-      onLogout();
-    }
-  }, [routesQuery.error, onLogout]);
-
-  if (routesQuery.error?.message === 'unauthorized') {
-    return null;
+  // No token to clear and no gate to fall back to — an auth failure here
+  // means /api/me said admin but the admin routes disagreed (role drift, or
+  // an expired sign-in). Say so instead of rendering an empty table.
+  if (routesQuery.error) {
+    return (
+      <div className="p-4 text-xs text-[var(--bear)]" data-testid="admin-error">
+        {routesQuery.error.message === 'unauthorized'
+          ? 'The server rejected this account for admin routes — sign in again, or check the admin role assignment.'
+          : `Failed to load routes: ${routesQuery.error.message}`}
+      </div>
+    );
   }
 
   const routes = routesQuery.data?.routes ?? [];
@@ -309,18 +234,7 @@ function RoutingPanel({ onLogout, showLogout = true }: { onLogout: () => void; s
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-[var(--color-text-primary)]">Model Routing</h2>
-        {showLogout && (
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-1 rounded border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            data-testid="admin-logout"
-          >
-            <LogOut size={12} /> Sign out
-          </button>
-        )}
-      </div>
+      <h2 className="text-sm font-medium text-[var(--color-text-primary)]">Model Routing</h2>
 
       <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]" data-testid="admin-routes-table">
         <table className="w-full text-xs">

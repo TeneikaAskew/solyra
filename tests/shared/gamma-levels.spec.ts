@@ -167,8 +167,8 @@ test.describe('Gamma Levels: Help page glossary', () => {
     await expect(page.getByText('Gamma Flip', { exact: true })).toBeVisible();
     await expect(page.getByText('King Node (★)')).toBeVisible();
     await expect(page.getByText('Gate Node (◆)')).toBeVisible();
-    await expect(page.getByText(/^Regime — Positive Gamma$/)).toBeVisible();
-    await expect(page.getByText(/^Regime — Negative Gamma$/)).toBeVisible();
+    await expect(page.getByText(/^Regime: Positive Gamma$/)).toBeVisible();
+    await expect(page.getByText(/^Regime: Negative Gamma$/)).toBeVisible();
   });
 
   test('Failed 2U / Failed 2D entries exist under The Strat category', async ({ page }) => {

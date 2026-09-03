@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Loader2, RefreshCw, History as HistoryIcon, FileText, MessageCircle, Send, ListChecks, Network } from 'lucide-react';
 import { useTickerStore } from '@/stores/tickerStore';
@@ -115,7 +116,7 @@ export default function InsightsPage() {
         <TickerCombobox />
       </div>
 
-      {/* Tab bar — scrolls horizontally on narrow screens instead of squashing */}
+      {/* Tab bar, scrolls horizontally on narrow screens instead of squashing */}
       <div className="-mx-1 flex min-w-0 items-center gap-2 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
 
         <TabButton
@@ -145,7 +146,7 @@ export default function InsightsPage() {
         </TabButton>
       </div>
 
-      {/* Run controls — own row on mobile, no cramped overlap with the tabs */}
+      {/* Run controls, own row on mobile, no cramped overlap with the tabs */}
       <div className="-mt-1 flex flex-wrap items-center gap-x-3 gap-y-2 md:-mt-4">
 
           {isRunning && (
@@ -155,7 +156,7 @@ export default function InsightsPage() {
             </span>
           )}
           <label className="flex items-center gap-1.5 text-xs text-[var(--on-surface-muted)]">
-            <span title="Point-in-time replay — runs the pipeline against data available at this date/time">
+            <span title="Point-in-time replay, runs the pipeline against data available at this date/time">
               Replay as of
             </span>
             <input
@@ -194,6 +195,8 @@ export default function InsightsPage() {
 
       {/* Tab body */}
       <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <DataGate>
+
 
         {tab === 'report' ? (
           <ReportView
@@ -240,6 +243,7 @@ export default function InsightsPage() {
         ) : (
           <ChatView ticker={activeTicker} />
         )}
+        </DataGate>
       </div>
     </div>
   );
@@ -336,7 +340,7 @@ function ReportView({
     <div className="space-y-4">
       {historical && (
         <div className="flex items-center justify-between rounded-lg border border-[var(--warn)]/40 bg-[var(--warn)]/10 px-4 py-2.5 text-xs text-[var(--warn)]">
-          <span>Viewing historical report — not the current latest.</span>
+          <span>Viewing historical report, not the current latest.</span>
           <button
             onClick={onBackToLatest}
             className="flex items-center gap-1 rounded border border-[var(--warn)]/40 px-2 py-0.5 text-[10px] text-[var(--warn)] hover:bg-[var(--warn)]/10"

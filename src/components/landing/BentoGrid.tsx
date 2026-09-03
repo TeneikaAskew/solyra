@@ -69,7 +69,7 @@ export function BentoGrid() {
     <section className="sl-sec" id="modules">
       <h2 className="sl-h2">Everything that moves the market. One surface.</h2>
       <p className="sl-mut" style={{ margin: '0 0 20px', fontSize: 14 }}>
-        Six systems, one verdict — every tile is the real product&rsquo;s own visual, not marketing art.
+        Six systems, one verdict: every tile is the real product&rsquo;s own visual, not marketing art.
       </p>
       <div
         style={{

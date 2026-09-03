@@ -57,6 +57,14 @@ export async function getIdToken(forceRefresh = false): Promise<string | null> {
   return (await _ready).getIdToken(forceRefresh);
 }
 
+/** The signed-in user's uid, or null (signed out, or firebase never engaged).
+ *  authedFetch compares this across a forced token retry to catch a cross-tab
+ *  account switch mid-request. */
+export async function getCurrentUid(): Promise<string | null> {
+  if (!_ready) return null;
+  return (await _ready).currentUid();
+}
+
 /**
  * True when the app is running inside an iframe — e.g. a Lovable preview.
  *

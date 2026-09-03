@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTickerStore } from '@/stores/tickerStore';
@@ -115,7 +116,7 @@ export default function ReportsPage() {
           keeps the full page width on every screen size. */}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-          Reports — {activeTicker}
+          Reports: {activeTicker}
         </span>
         <div className="relative min-w-0 flex-1 sm:max-w-md">
           <FileText
@@ -158,6 +159,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      <DataGate>
       {listError && (
         <div className="flex items-center gap-2 rounded-lg border border-[var(--warn)]/40 p-3 text-sm text-[var(--warn)]">
           <AlertTriangle size={14} />
@@ -192,6 +194,7 @@ export default function ReportsPage() {
           )
         )}
       </div>
+      </DataGate>
     </div>
   );
 }

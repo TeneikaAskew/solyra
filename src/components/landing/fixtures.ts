@@ -9,11 +9,11 @@
  */
 export const AGENT_LINES: { tag: string; text: string }[] = [
   { tag: '', text: '06:58:12 · waking 7 agents for SPY, QQQ, IWM…' },
-  { tag: 'brief', text: 'daily bias LONG — full-timeframe continuity 3/4 aligned' },
+  { tag: 'brief', text: 'daily bias LONG, full-timeframe continuity 3/4 aligned' },
   { tag: 'gamma', text: 'dealer wall at 592 · flip zone 585 · dealers short gamma' },
   { tag: 'flow', text: '3× sweep clusters on 590C 0DTE, $4.2M premium, ask-side' },
   { tag: 'council', text: 'bull 6.2 / bear 3.8 → verdict: LONG above 588' },
-  { tag: 'catalyst', text: 'CPI 8:30a — expect widened range; plan sized at ½R' },
+  { tag: 'catalyst', text: 'CPI 8:30a: expect widened range; plan sized at ½R' },
   { tag: '', text: '07:00:00 · your brief is ready. read it →' },
 ];
 
@@ -109,7 +109,7 @@ export const FLOW_ROWS: {
 ];
 
 export const COUNCIL = {
-  bull: { score: 6.2, quote: '"Timeframes aligned long, dealers short gamma above 588 — rallies get chased, not sold."' },
+  bull: { score: 6.2, quote: '"Timeframes aligned long, dealers short gamma above 588, rallies get chased, not sold."' },
   bear: { score: 3.8, quote: '"CPI at 8:30 can flip the tape; RSI is stretched into the King."' },
   verdict: 'LONG above 588 · target 592 · invalidated below 585 · half size until CPI prints',
   personas: ['scalper plan', 'swing plan', 'income plan'],
@@ -118,14 +118,14 @@ export const COUNCIL = {
 export const RHYTHM = [
   {
     time: '07:00', phase: 'LEARN', title: 'The Brief',
-    body: `Bias, the three levels that matter, today’s catalysts, and the setup the playbook likes — in plain language, with every term one tap from its glossary definition. Five minutes, coffee in hand.`,
+    body: `Bias, the three levels that matter, today’s catalysts, and the setup the playbook likes, in plain language, with every term one tap from its glossary definition. Five minutes, coffee in hand.`,
   },
   {
-    time: '09:30', phase: 'DO', title: 'The open — signals live',
+    time: '09:30', phase: 'DO', title: 'The open: signals live',
     body: 'Agents watch every 1-minute bar. When a playbook setup triggers, you get the alert with entry, target, stop, and the win rate that earned it a place in the book. No chart-staring required.',
   },
   {
-    time: '16:00', phase: 'ACT', title: 'The close — review & compound',
+    time: '16:00', phase: 'ACT', title: 'The close: review & compound',
     body: `Movement Read explains the day in one paragraph. Your journal auto-grades the signals you took against the ones you skipped. Tomorrow’s you starts smarter.`,
   },
 ];
@@ -133,7 +133,7 @@ export const RHYTHM = [
 export const FAQ = [
   {
     q: 'Is this financial advice?',
-    a: `No — Solyra is an analytics and education platform. It shows you what’s happening and what has historically followed; decisions stay yours.`,
+    a: `No: Solyra is an analytics and education platform. It shows you what’s happening and what has historically followed; decisions stay yours.`,
   },
   {
     q: 'Do I need options experience?',
@@ -141,6 +141,6 @@ export const FAQ = [
   },
   {
     q: 'Where does the data come from?',
-    a: 'Institutional options chains, 1-minute market data, and a validated signal engine — every signal graded daily against reality.',
+    a: 'Institutional options chains, 1-minute market data, and a validated signal engine, every signal graded daily against reality.',
   },
 ];

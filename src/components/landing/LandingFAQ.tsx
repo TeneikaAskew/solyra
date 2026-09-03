@@ -13,19 +13,38 @@ export function LandingFAQ() {
             </div>
           ))}
         </div>
-        <div className="sl-dim" style={{ width: 220 }}>
+        <div className="sl-dim" style={{ flexBasis: 220, flexGrow: 1, minWidth: 220 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <div className="sl-sun" style={{ width: 16, height: 16 }} />
             <span style={{ fontWeight: 800, letterSpacing: '2px', color: 'var(--sl-text)' }}>SOLYRA</span>
           </div>
-          <div style={{ fontSize: 12, lineHeight: 2 }}>
-            <a href="#modules" style={{ color: 'inherit', textDecoration: 'none' }}>Modules</a> ·{' '}
-            <a href="#learn" style={{ color: 'inherit', textDecoration: 'none' }}>Learn</a> ·{' '}
+          {/* One horizontal row of links: the old markup forced three lines
+              with <br>, so a wide footer column still read as a stack. */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              columnGap: 6,
+              rowGap: 6,
+              fontSize: 12,
+            }}
+          >
+            <a href="#modules" style={{ color: 'inherit', textDecoration: 'none' }}>Modules</a>
+            <span aria-hidden>·</span>
+            <a href="#learn" style={{ color: 'inherit', textDecoration: 'none' }}>Learn</a>
+            <span aria-hidden>·</span>
             <a href="#faq" style={{ color: 'inherit', textDecoration: 'none' }}>FAQ</a>
-            <br />Privacy · Terms · Disclosures
-            <br />© 2026 Solyra
+            <span aria-hidden>·</span>
+            <span>Privacy</span>
+            <span aria-hidden>·</span>
+            <span>Terms</span>
+            <span aria-hidden>·</span>
+            <span>Disclosures</span>
           </div>
+          <div style={{ fontSize: 12, marginTop: 8 }}>© 2026 Solyra</div>
         </div>
+
       </div>
     </section>
   );

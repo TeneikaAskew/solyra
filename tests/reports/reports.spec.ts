@@ -20,7 +20,7 @@ test.describe('Reports', () => {
     await mockReportsApi(page);
     await page.goto('/reports');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByText('Reports — IWM')).toBeVisible();
+    await expect(page.getByText('Reports: IWM')).toBeVisible();
   });
 
   test('picker lists every phase report and lands on the first', async ({ page }) => {

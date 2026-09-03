@@ -64,7 +64,7 @@ export function MyStylePanel({ ticker }: { ticker: string }) {
         </button>
         {mine.isPending && (
           <span className="text-[11px] text-[var(--on-surface-muted)]">
-            Mining {ticker} closed trades and running the walk-forward validation — this takes a
+            Mining {ticker} closed trades and running the walk-forward validation, this takes a
             few seconds.
           </span>
         )}

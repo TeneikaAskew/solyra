@@ -5,6 +5,7 @@ import { TickerCombobox } from '@/components/shared/TickerCombobox';
 import HeatseekerSection from '@/components/options/HeatseekerSection';
 import FlowseekerSection from '@/components/options/FlowseekerSection';
 import ProfilesTab from '@/components/options/ProfilesTab';
+import { DataGate, SignInBanner } from '@/components/shared/SignInEmptyState';
 
 // Options Flow — restructured to Skylit's real IA. Three TOP views switched by a
 // single-row segmented control, each with an inner mode toggle where applicable:
@@ -32,14 +33,14 @@ export default function OptionsFlowPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Page toolbar — symbol focus + view switcher, all on one row */}
+      {/* Page toolbar, symbol focus + view switcher, all on one row */}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-[var(--on-surface-label)]">
           Symbol
         </span>
         <TickerCombobox />
 
-        {/* View switcher — single horizontal segmented control */}
+        {/* View switcher, single horizontal segmented control */}
         <div className="ml-auto inline-flex gap-0.5 rounded-lg bg-[var(--surface-2)] p-1 ring-1 ring-[var(--outline-variant)]">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
@@ -59,9 +60,12 @@ export default function OptionsFlowPage() {
         </div>
       </div>
 
+      <SignInBanner label="options data" />
+      <DataGate>
       {tab === 'heatseeker' && <HeatseekerSection focusSymbol={activeTicker} />}
       {tab === 'flowseeker' && <FlowseekerSection />}
       {tab === 'profiles' && <ProfilesTab activeTicker={activeTicker} />}
+      </DataGate>
     </div>
   );
 }

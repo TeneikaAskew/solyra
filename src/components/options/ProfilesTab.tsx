@@ -17,7 +17,8 @@ import type { Ticker } from '@/types';
 import * as d3 from 'd3';
 import { estimateSpotStrikeFromDeltas } from './swingGridUtils';
 import { isoToEtDisplay } from '@/lib/time';
-import { ChevronLeft, ChevronRight, AlertTriangle, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, Info, RefreshCw } from 'lucide-react';
+import { WidgetSkeleton } from '@/components/shared/WidgetState';
 
 type Metric = 'gex' | 'vex';
 type Filter = 'net' | 'calls' | 'puts';
@@ -295,6 +296,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     isLoading: datesLoading,
     isError: datesError,
     error: datesErrorObj,
+    refetch: refetchDates,
   } = useOptionsDates(activeTicker);
   const dates = datesData?.dates ?? [];
   const selectedDate = dates[dateIdx] ?? '';
@@ -304,6 +306,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     isLoading,
     isError,
     error: optionsErrorObj,
+    refetch: refetchOptions,
   } = useOptionsData(activeTicker, selectedDate, dates.length > 0);
 
   const options: OptionRecord[] = optionsData?.options ?? [];
@@ -444,7 +447,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         </div>
       </div>
 
-      {/* Error surfacing — show the real message from the API when present */}
+      {/* Error surfacing, show the real message from the API when present */}
       {datesError && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -453,6 +456,14 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
             <div className="mt-1 text-xs text-[var(--warn)]/90">
               {(datesErrorObj as Error | undefined)?.message ?? 'Unknown error'}
             </div>
+            <button
+              type="button"
+              onClick={() => void refetchDates()}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-[var(--outline-variant)] px-3 py-1.5 text-xs font-semibold text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+            >
+              <RefreshCw size={12} aria-hidden />
+              Retry
+            </button>
           </div>
         </div>
       )}
@@ -465,17 +476,28 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
             <div className="mt-1 text-xs text-[var(--warn)]/90">
               {(optionsErrorObj as Error | undefined)?.message ?? 'Unknown error'}
             </div>
+            <button
+              type="button"
+              onClick={() => void refetchOptions()}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-[var(--outline-variant)] px-3 py-1.5 text-xs font-semibold text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+            >
+              <RefreshCw size={12} aria-hidden />
+              Retry
+            </button>
           </div>
         </div>
       )}
 
       {(datesLoading || isLoading) && (
-        <div className="rounded-xl bg-[var(--surface-2)] p-8 text-center text-sm text-[var(--color-text-muted)]">
-          {datesLoading ? 'Loading available dates…' : 'Loading options chain…'}
+        <div className="rounded-xl bg-[var(--surface-2)] p-6">
+          <p className="mb-3 text-center text-sm text-[var(--color-text-muted)]">
+            {datesLoading ? 'Loading available dates…' : 'Loading options chain…'}
+          </p>
+          <WidgetSkeleton rows={5} />
         </div>
       )}
 
-      {/* Spot estimation failure — surface explicitly so the user knows
+      {/* Spot estimation failure, surface explicitly so the user knows
           why the metrics + heatmap are missing. */}
       {!isLoading && !datesLoading && options.length > 0 && finalSpot <= 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-400">
@@ -602,12 +624,12 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         <div className="rounded-xl bg-[var(--surface-2)] p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs text-[var(--color-text-muted)]">
-              {metric.toUpperCase()} by Strike — {filter === 'net' ? 'Net' : filter === 'calls' ? 'Calls Only' : 'Puts Only'} — ±{Math.round(rangePct * 100)}% range ({focusedGex.length} strikes)
+              {metric.toUpperCase()} by Strike, {filter === 'net' ? 'Net' : filter === 'calls' ? 'Calls Only' : 'Puts Only'}: ±{Math.round(rangePct * 100)}% range ({focusedGex.length} strikes)
             </span>
             <div className="flex gap-3 text-[10px] text-[var(--color-text-muted)]">
               <span className="text-[var(--bull)]">■ Positive</span>
               <span className="text-[var(--brand)]">■ Negative</span>
-              <span className="text-[var(--bear)]">— Spot</span>
+              <span className="text-[var(--bear)]">▬ Spot</span>
             </div>
           </div>
           <GEXHeatmap

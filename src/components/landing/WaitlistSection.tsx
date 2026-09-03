@@ -42,7 +42,7 @@ export function WaitlistSection() {
       />
       <h2 style={{ fontSize: 'clamp(22px, 3vw, 28px)', fontWeight: 800, margin: 0 }}>Be there at first light.</h2>
       <p className="sl-mut" style={{ fontSize: 15, margin: '10px auto 20px', maxWidth: 480 }}>
-        Early access opens in small cohorts. Founding members shape the modules — and keep
+        Early access opens in small cohorts. Founding members shape the modules, and keep
         founder pricing for life.
       </p>
       {status === 'done' ? (

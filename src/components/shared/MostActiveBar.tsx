@@ -1,3 +1,4 @@
+import { useAuthBlocked } from '@/lib/authGate';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -175,6 +176,19 @@ export function MostActiveBar() {
   const { data } = useMostActive();
   const reducedMotion = usePrefersReducedMotion();
   const items = data?.items ?? [];
+  const authBlocked = useAuthBlocked();
+
+  // Auth-gated feed answered 401: say so instead of silently hiding.
+  if (authBlocked) {
+    return (
+      <div className="most-active-bar" data-testid="most-active-bar">
+        <div className="mab-label">
+          <span className="mab-label-title">Most Active</span>
+          <span className="mab-label-sub">Sign in to load data</span>
+        </div>
+      </div>
+    );
+  }
 
   // Decorative and Rule-3.7-honest: no skeleton flash, just hidden until
   // there's real data to show.

@@ -575,7 +575,7 @@ export function seedBenchmark(rows: SeedTradeRow[]): SeedBenchmark {
  * `lib.style_miner.StyleProfile` field-for-field. */
 export interface MineStyleProfile {
   direction: string; // 'CALL' | 'PUT'
-  conditions: string[]; // vocabulary strings — see styleConditionLabel below
+  conditions: string[]; // vocabulary strings, see styleConditionLabel below
   support: number;
   total: number;
 }
@@ -711,7 +711,7 @@ export interface ImportPreviewTrade {
   entry_price: number;
   exit_ts: string | null;
   exit_price: number | null;
-  return_pct: number | null; // ADVISORY ONLY — import_commit recomputes server-side
+  return_pct: number | null; // ADVISORY ONLY, import_commit recomputes server-side
   quantity: number;
   status: string; // 'active' | 'closed'
   duplicate: boolean;

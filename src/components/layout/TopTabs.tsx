@@ -7,6 +7,7 @@ import { MarketSessionBadge } from './MarketSessionBadge';
 import { NAV_GROUPS, type NavGroup, type NavItem } from './navConfig';
 import { ReplayControl } from '@/components/shared/ReplayControl';
 import { SignOutButton } from '@/components/auth/SignOutButton';
+import { AuthStatusIndicator } from '@/components/shared/AuthStatusIndicator';
 import { useUser } from '@/hooks/useUser';
 import { useThemeStore } from '@/stores/themeStore';
 
@@ -93,7 +94,7 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
         <Brand />
       </div>
 
-      {/* Desktop: groups in order — inline tabs or dropdown triggers. */}
+      {/* Desktop: groups in order, inline tabs or dropdown triggers. */}
       <nav
         ref={menusRef}
         className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] sm:flex [&::-webkit-scrollbar]:hidden"
@@ -168,7 +169,7 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
       {/* Mobile: spacer pushes the utility cluster to the right. */}
       <div className="flex-1 sm:hidden" />
 
-      {/* Utility cluster — one row: replay · search · sign-out · theme. */}
+      {/* Utility cluster, one row: replay · search · sign-out · theme. */}
       <ReplayControl />
 
       <Button
@@ -181,6 +182,10 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
       >
         <Search size={15} />
       </Button>
+
+      <div className="shrink-0">
+        <AuthStatusIndicator />
+      </div>
 
       <div className="hidden shrink-0 sm:block">
         <SignOutButton />

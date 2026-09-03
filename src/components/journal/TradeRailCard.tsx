@@ -62,7 +62,7 @@ export function TradeRailCard({
       onMouseEnter={() => onHover?.(trade.id)}
       onMouseLeave={() => onHover?.(null)}
     >
-      {/* Top row — direction (+EX) | return % centered+largest | time+actions */}
+      {/* Top row, direction (+EX) | return % centered+largest | time+actions */}
       <div className="grid grid-cols-3 items-center">
         <div className="flex items-center gap-1 justify-self-start">
           <span
@@ -75,7 +75,7 @@ export function TradeRailCard({
           {example && (
             <span
               data-testid="ex-badge"
-              title="Example — read-only teaching trade"
+              title="Example: read-only teaching trade"
               className="rounded bg-[var(--color-bg-hover)] px-1 py-0.5 text-[9px] font-semibold tracking-wide text-[var(--color-text-muted)]"
             >
               EX
@@ -83,13 +83,13 @@ export function TradeRailCard({
           )}
           {/* task-examples-union: origin badge for a pipeline-sourced
              (automated signal-engine) example row, distinguishing it from
-             an admin-authored one — same muted weight as the EX badge
+             an admin-authored one, same muted weight as the EX badge
              above, shown alongside it (a pipeline row is always also an
              example row). */}
           {trade.source === 'pipeline' && (
             <span
               data-testid="pipeline-badge"
-              title="Pipeline — automated signal-engine trade"
+              title="Pipeline: automated signal-engine trade"
               className="rounded bg-[var(--color-bg-hover)] px-1 py-0.5 text-[9px] font-semibold tracking-wide text-[var(--color-text-muted)]"
             >
               pipeline
@@ -133,7 +133,7 @@ export function TradeRailCard({
         </div>
       </div>
 
-      {/* Line 2 — Entry → Exit */}
+      {/* Line 2, Entry → Exit */}
       <div className="mt-1 text-center text-xs text-[var(--color-text-secondary)]">
         <span className="font-mono">${trade.entryPrice.toFixed(2)}</span>
         {' → '}
@@ -142,7 +142,7 @@ export function TradeRailCard({
         </span>
       </div>
 
-      {/* Line 3 — TP · SL · R:R (each "—" when missing) */}
+      {/* Line 3, TP · SL · R:R (each "—" when missing) */}
       <div className="mt-0.5 text-center text-[10px] text-[var(--color-text-muted)]">
         <span className="text-[var(--color-accent-green)]">
           TP{' '}

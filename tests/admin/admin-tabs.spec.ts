@@ -1,38 +1,28 @@
 /**
  * E2E: Admin tabbed shell — Users & roles and Chart & report data tabs.
  *
- * The Admin page now splits into three tabs (users | data | models); the
- * routing table's own flows stay in admin.spec.ts / admin-auth.spec.ts. This
- * suite covers what those don't: the default-tab landing, tab switching, and
- * the two new panels' interactions (role toggles, enable/disable, category
- * filters, refresh) plus their Rule-4 branches (em-dash for null fields,
- * visible error on load failure).
+ * Auth is role-based: `mockAdminApi` pins /api/me to an admin identity, so
+ * the dashboard renders straight away (the access-control matrix itself is
+ * admin-auth.spec.ts's job; the routing table's flows are admin.spec.ts's).
+ * This suite covers the two newer panels' behaviour: tab switching, role and
+ * status mutations, search, category filters, refresh queueing, and the
+ * Rule-4 branches (em-dash for null fields, visible error on load failure).
  *
  * Payloads live in tests/helpers/fixtures/admin.ts, typed against
  * useAdmin.ts's AdminUsersResponse / AdminDataSourcesResponse.
  */
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { VALID_ADMIN_TOKEN, mockAdminApi, type AdminMockOpts } from '../helpers/fixtures/admin';
+import { mockAdminApi, type AdminMockOpts } from '../helpers/fixtures/admin';
 
-async function unlock(page: Page) {
-  await page.goto('/admin');
-  await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
-  await page.getByTestId('admin-submit').click();
-}
-
-async function mockAndUnlock(page: Page, opts: AdminMockOpts = {}) {
+async function mockAndOpen(page: Page, opts: AdminMockOpts = {}) {
   await mockAdminApi(page, opts);
-  await unlock(page);
+  await page.goto('/admin');
 }
 
 test.describe('Admin — tabbed shell', () => {
-  test.beforeEach(async ({ context }) => {
-    await context.clearCookies();
-  });
-
-  test('unlock lands on Users & roles; tabs switch panels', async ({ page }) => {
-    await mockAndUnlock(page);
+  test('lands on Users & roles; tabs switch panels', async ({ page }) => {
+    await mockAndOpen(page);
 
     // Default tab: users panel visible, other panels absent
     await expect(page.getByTestId('admin-users-table')).toBeVisible();
@@ -53,29 +43,27 @@ test.describe('Admin — tabbed shell', () => {
 });
 
 test.describe('Admin — Users & roles tab', () => {
-  test.beforeEach(async ({ context }) => {
-    await context.clearCookies();
-  });
-
-  test('renders users; null email/timestamps render as em-dash, never a fabricated value', async ({
+  test('renders users; null name/timestamps render as em-dash, never a fabricated value', async ({
     page,
   }) => {
-    await mockAndUnlock(page);
+    await mockAndOpen(page);
     await expect(page.getByTestId('admin-users-table')).toBeVisible();
 
-    await expect(page.getByText('alice@example.com')).toBeVisible();
-    // The all-null user's row: identity cell and both date cells fall back to —
-    const nullRow = page.locator('tr', { hasText: 'uid-null-fields' });
-    await expect(nullRow).toContainText('—');
-    await expect(nullRow).not.toContainText('Invalid Date');
+    // Scoped to the table: the shell's auth-status pill shows the same email
+    const table = page.getByTestId('admin-users-table');
+    await expect(table.getByText('teneika@bictech.org')).toBeVisible();
+    // uid-member keeps display_name and last_sign_in_at null → em-dash cells
+    const memberRow = page.locator('tr', { hasText: 'uid-member' });
+    await expect(memberRow).toContainText('—');
+    await expect(memberRow).not.toContainText('Invalid Date');
   });
 
   test('search filters rows and shows the honest empty state', async ({ page }) => {
-    await mockAndUnlock(page);
+    await mockAndOpen(page);
     await expect(page.getByTestId('admin-users-table')).toBeVisible();
 
-    await page.getByTestId('admin-users-search').fill('alice');
-    await expect(page.getByText('alice@example.com')).toBeVisible();
+    await page.getByTestId('admin-users-search').fill('teneika');
+    await expect(page.getByTestId('admin-users-table').getByText('teneika@bictech.org')).toBeVisible();
     await expect(page.getByText('blocked@example.com')).not.toBeVisible();
 
     await page.getByTestId('admin-users-search').fill('no-such-user');
@@ -86,7 +74,7 @@ test.describe('Admin — Users & roles tab', () => {
   test('toggling a role PUTs the new roles array', async ({ page }) => {
     let putUid: string | null = null;
     let putBody: unknown = null;
-    await mockAndUnlock(page, {
+    await mockAndOpen(page, {
       onUserRolesPut: (uid, body) => {
         putUid = uid;
         putBody = body;
@@ -94,26 +82,26 @@ test.describe('Admin — Users & roles tab', () => {
     });
     await expect(page.getByTestId('admin-users-table')).toBeVisible();
 
-    // Alice has ['trader']; toggling admin ON should send both roles
-    await page.getByTestId('role-uid-alice-admin').click();
-    await expect.poll(() => putBody, { timeout: 5_000 }).toEqual({ roles: ['trader', 'admin'] });
-    expect(putUid).toBe('uid-alice');
+    // uid-member has no roles; toggling admin ON sends ['admin']
+    await page.getByTestId('role-uid-member-admin').click();
+    await expect.poll(() => putBody, { timeout: 5_000 }).toEqual({ roles: ['admin'] });
+    expect(putUid).toBe('uid-member');
   });
 
   test('disable and enable buttons PUT the flipped status', async ({ page }) => {
     const statusPuts: Array<{ uid: string; body: unknown }> = [];
-    await mockAndUnlock(page, {
+    await mockAndOpen(page, {
       onUserStatusPut: (uid, body) => statusPuts.push({ uid, body }),
     });
     await expect(page.getByTestId('admin-users-table')).toBeVisible();
 
     // Active user shows Disable; disabled user shows Enable
-    await expect(page.getByTestId('status-uid-alice')).toContainText('Disable');
-    await expect(page.getByTestId('status-uid-disabled')).toContainText('Enable');
+    await expect(page.getByTestId('status-uid-member')).toContainText('Disable');
+    await expect(page.getByTestId('status-uid-blocked')).toContainText('Enable');
 
-    await page.getByTestId('status-uid-alice').click();
+    await page.getByTestId('status-uid-member').click();
     await expect.poll(() => statusPuts.length, { timeout: 5_000 }).toBeGreaterThan(0);
-    expect(statusPuts[0]).toEqual({ uid: 'uid-alice', body: { disabled: true } });
+    expect(statusPuts[0]).toEqual({ uid: 'uid-member', body: { disabled: true } });
   });
 
   test('load failure surfaces a visible error, not an empty table', async ({ page }) => {
@@ -122,7 +110,7 @@ test.describe('Admin — Users & roles tab', () => {
     await page.route('**/api/admin/users', (r) =>
       r.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"boom"}' }),
     );
-    await unlock(page);
+    await page.goto('/admin');
 
     await expect(page.getByTestId('admin-users-error')).toBeVisible();
     await expect(page.getByTestId('admin-users-error')).toContainText(/could not load users/i);
@@ -131,49 +119,45 @@ test.describe('Admin — Users & roles tab', () => {
 });
 
 test.describe('Admin — Chart & report data tab', () => {
-  test.beforeEach(async ({ context }) => {
-    await context.clearCookies();
-  });
-
   test('renders sources with statuses; null rows/refresh render as em-dash', async ({ page }) => {
-    await mockAndUnlock(page);
+    await mockAndOpen(page);
     await page.getByTestId('admin-tab-data').click();
     await expect(page.getByTestId('admin-sources-table')).toBeVisible();
 
-    await expect(page.getByText('Daily OHLCV bars')).toBeVisible();
-    await expect(page.getByText('vendor feed lagging')).toBeVisible();
+    await expect(page.getByText('Daily OHLCV')).toBeVisible();
+    await expect(page.getByText('last fetch skipped: vendor quota')).toBeVisible();
 
-    // The error-status row keeps row_count and last_refreshed_at null → em-dash
-    const errorRow = page.locator('tr', { hasText: 'insight-reports' });
-    await expect(errorRow).toContainText('error');
-    await expect(errorRow).toContainText('—');
-    await expect(errorRow).not.toContainText('NaN');
+    // gamma_snapshots keeps row_count and last_refreshed_at null → em-dash
+    const unknownRow = page.locator('tr', { hasText: 'gamma_snapshots' });
+    await expect(unknownRow).toContainText('unknown');
+    await expect(unknownRow).toContainText('—');
+    await expect(unknownRow).not.toContainText('NaN');
   });
 
   test('category filter narrows the table', async ({ page }) => {
-    await mockAndUnlock(page);
+    await mockAndOpen(page);
     await page.getByTestId('admin-tab-data').click();
     await expect(page.getByTestId('admin-sources-table')).toBeVisible();
 
     await page.getByTestId('source-filter-reports').click();
-    await expect(page.getByText('Insight reports')).toBeVisible();
-    await expect(page.getByText('Daily OHLCV bars')).not.toBeVisible();
+    await expect(page.getByText('News sentiment')).toBeVisible();
+    await expect(page.getByText('Daily OHLCV')).not.toBeVisible();
 
     await page.getByTestId('source-filter-all').click();
-    await expect(page.getByText('Daily OHLCV bars')).toBeVisible();
+    await expect(page.getByText('Daily OHLCV')).toBeVisible();
   });
 
   test('refresh POSTs for a refreshable source; non-refreshable button is disabled', async ({
     page,
   }) => {
     let refreshedId: string | null = null;
-    await mockAndUnlock(page, { onSourceRefresh: (id) => (refreshedId = id) });
+    await mockAndOpen(page, { onSourceRefresh: (id) => (refreshedId = id) });
     await page.getByTestId('admin-tab-data').click();
     await expect(page.getByTestId('admin-sources-table')).toBeVisible();
 
-    await expect(page.getByTestId('refresh-insight-reports')).toBeDisabled();
+    await expect(page.getByTestId('refresh-gamma_snapshots')).toBeDisabled();
 
-    await page.getByTestId('refresh-ohlcv-daily').click();
-    await expect.poll(() => refreshedId, { timeout: 5_000 }).toBe('ohlcv-daily');
+    await page.getByTestId('refresh-market_data_daily').click();
+    await expect.poll(() => refreshedId, { timeout: 5_000 }).toBe('market_data_daily');
   });
 });

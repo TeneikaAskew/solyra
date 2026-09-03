@@ -30,8 +30,8 @@ export function bucketToAtrLabel(sizeClass: string | null | undefined): string {
 
 export function riskHint(sizeClass: string | null | undefined): string | null {
   if (sizeClass === 'EXPANDED' || sizeClass === 'EXPLOSIVE')
-    return 'bigger move likely — consider wider stops / smaller size';
-  if (sizeClass === 'TIGHT') return 'quiet — tighter stops OK';
+    return 'bigger move likely, consider wider stops / smaller size';
+  if (sizeClass === 'TIGHT') return 'quiet: tighter stops OK';
   return null;
 }
 

@@ -23,14 +23,14 @@ function friendlyError(code: string | undefined, fallback: string): string {
     case 'auth/invalid-email':
       return 'That email address is not valid.';
     case 'auth/email-already-in-use':
-      return 'An account with that email already exists — try signing in.';
+      return 'An account with that email already exists, try signing in.';
     case 'auth/weak-password':
       return 'Password must be at least 6 characters.';
     case 'auth/popup-closed-by-user':
     case 'auth/cancelled-popup-request':
       return 'Sign-in was cancelled.';
     case 'auth/popup-blocked':
-      return 'Popup blocked — allow popups and try again.';
+      return 'Popup blocked, allow popups and try again.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Try again later.';
     default:
@@ -106,7 +106,7 @@ export function SignInScreen() {
               data-testid="google-signin-newtab"
               className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--on-surface)] ring-1 ring-[var(--outline,rgba(255,255,255,0.08))] transition hover:opacity-90"
             >
-              <GoogleGlyph /> Continue with Google — opens a new tab
+              <GoogleGlyph /> Continue with Google, opens a new tab
             </a>
             <p className="mb-4 text-[11px] leading-relaxed text-[var(--on-surface-muted)]">
               Google sign-in can&apos;t finish inside an embedded preview. Opening

@@ -108,7 +108,7 @@ export default function ContractDrilldown({ selected }: { selected?: SelectedCon
   return (
     <div className="space-y-4">
       {/* Demo banner */}
-      <DemoDataBanner detail="No contract-tape endpoint connected — placeholder drilldown until a per-contract tape exists." />
+      <DemoDataBanner detail="No contract-tape endpoint connected, placeholder drilldown until a per-contract tape exists." />
 
       {/* Header row */}
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-[var(--surface-2)] px-4 py-3">
@@ -140,7 +140,7 @@ export default function ContractDrilldown({ selected }: { selected?: SelectedCon
         ))}
       </div>
 
-      {/* Chain ratio bar — Bid% ↔ Ask% with $ on each side */}
+      {/* Chain ratio bar, Bid% ↔ Ask% with $ on each side */}
       <div className="rounded-xl bg-[var(--surface-2)] p-4">
         <div className="mb-2 flex items-center justify-between text-[11px]">
           <span className="font-semibold" style={{ color: 'var(--bear)' }}>

@@ -55,9 +55,9 @@ The existing brief enforces this via a vitest unit test that source-scans the co
 
 | Surface | Route | Auth | Built? | Design opportunity |
 |---|---|---|---|---|
-| **Structure Brief** | `/admin` (section) | IAP email or admin token | ✅ scaffolded | Polish layout, mute state, info hierarchy |
+| **Structure Brief** | `/admin` (section) | admin role (server-verified identity) | ✅ scaffolded | Polish layout, mute state, info hierarchy |
 | **Model State Snapshot** | `/dev` (section) | IAP email | ✅ scaffolded | Convert from text-table to a richer ops dashboard |
-| **On-Demand Predict** | `POST /api/admin/strat-engine/predict` (API) | admin token | ✅ live | NEW: build a UI form for the API |
+| **On-Demand Predict** | `POST /api/admin/strat-engine/predict` (API) | admin role (server-verified identity) | ✅ live | NEW: build a UI form for the API |
 | **Cell Detail / Drill-down** | — | — | — | NEW: per-cell drill-down with reliability curve, recent predictions, fold history |
 
 The first two are already on the page (basic scaffolding). The last two are opportunities for design to define.
@@ -298,7 +298,7 @@ Constraints if you support mobile:
 | State | What to render |
 |---|---|
 | Initial load | Skeleton: 9 cells with shimmer placeholders |
-| Auth failure (401) | Don't render the brief; show the existing admin-token gate UI |
+| Auth failure (401/403) | Don't render the brief; show the admin-access-required card (role-based — there is no token gate) |
 | Network error | Single retry button, error message in `var(--color-text-muted)`, "Structure brief unavailable: <message>" |
 | Cell-specific unavailable | The dim grey placeholder with the `note` text (already specified above) |
 | Mute | The mute card design (already specified above) |
