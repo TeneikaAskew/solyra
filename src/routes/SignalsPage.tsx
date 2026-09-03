@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTickerStore } from '@/stores/tickerStore';
@@ -189,6 +190,7 @@ export default function SignalsPage() {
         <TickerCombobox />
       </div>
 
+      <DataGate>
       {/* ── Performance summary (90-day backtest) ───────────────────────── */}
       {/* winRate is 0-100 percent per the analytics contract (analytics.py
           _compute_stats: wins/closed × 100): the old `<= 1 → ×100` unit
@@ -341,6 +343,7 @@ export default function SignalsPage() {
           )}
         </div>
       )}
+      </DataGate>
     </div>
   );
 }

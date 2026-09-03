@@ -1,3 +1,5 @@
+import { DataGate, SignInBanner } from '@/components/shared/SignInEmptyState';
+import { WidgetState } from '@/components/shared/WidgetState';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTickerStore } from '@/stores/tickerStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -152,12 +154,13 @@ export default function ChartsPage() {
   // 16:00 let post-close bars flow into effectiveCandlestick and the
   // server-side indicator/signal requests (Codex review on the cutoff
   // unification).
-  const { data: marketData, isLoading, error } = useMarketData(
+  const marketQ = useMarketData(
     activeTicker,
     selectedDate,
     timeframe,
     isReview ? reviewTime ?? REVIEW_DEFAULT_CUTOFF : null
   );
+  const { data: marketData, isLoading, error } = marketQ;
 
   // Bar-replay trainer session (Task 5.2) — reveals `marketData.candlestick`
   // bar-by-bar. `revealedBars` is the ONLY slice of the day anything
@@ -495,6 +498,7 @@ export default function ChartsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <SignInBanner label="chart data" />
       {/* Chart area, Task 6 (journal-one-stop) removed the Trades/Analytics
           side panel that used to sit beside this at w-72; the chart now
           takes the full row width. */}
@@ -710,6 +714,7 @@ export default function ChartsPage() {
           className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)]"
           style={{ height: 'clamp(400px, calc(100vh - 340px), 900px)' }}
         >
+          <WidgetState query={marketQ} skeletonRows={6}>
           {isLoading ? (
             <div className="flex h-full items-center justify-center">
               <LoadingSpinner size={32} />
@@ -768,9 +773,11 @@ export default function ChartsPage() {
               Select a date to load chart data
             </div>
           )}
+          </WidgetState>
         </div>
       </div>
 
+    <DataGate compact>
     {/* Live strategy conditions, server-computed chart teaching voter
         (POST /api/live/indicators -> chart_voter, lib/chart_voter.py),
         the July-6 5-condition presentation restored per Task 3. */}
@@ -803,6 +810,7 @@ export default function ChartsPage() {
 
     {/* Backtester section (merged from former /backtest page) */}
     <BacktesterSection ticker={activeTicker} />
+    </DataGate>
 
     {/* Task 5.3 post-replay-session scorecard, the only remaining trigger
         for this modal after Task 6 removed the Task 3.3 on-demand

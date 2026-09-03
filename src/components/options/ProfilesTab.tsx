@@ -17,7 +17,8 @@ import type { Ticker } from '@/types';
 import * as d3 from 'd3';
 import { estimateSpotStrikeFromDeltas } from './swingGridUtils';
 import { isoToEtDisplay } from '@/lib/time';
-import { ChevronLeft, ChevronRight, AlertTriangle, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, Info, RefreshCw } from 'lucide-react';
+import { WidgetSkeleton } from '@/components/shared/WidgetState';
 
 type Metric = 'gex' | 'vex';
 type Filter = 'net' | 'calls' | 'puts';
@@ -295,6 +296,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     isLoading: datesLoading,
     isError: datesError,
     error: datesErrorObj,
+    refetch: refetchDates,
   } = useOptionsDates(activeTicker);
   const dates = datesData?.dates ?? [];
   const selectedDate = dates[dateIdx] ?? '';
@@ -304,6 +306,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     isLoading,
     isError,
     error: optionsErrorObj,
+    refetch: refetchOptions,
   } = useOptionsData(activeTicker, selectedDate, dates.length > 0);
 
   const options: OptionRecord[] = optionsData?.options ?? [];
@@ -453,6 +456,14 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
             <div className="mt-1 text-xs text-[var(--warn)]/90">
               {(datesErrorObj as Error | undefined)?.message ?? 'Unknown error'}
             </div>
+            <button
+              type="button"
+              onClick={() => void refetchDates()}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-[var(--outline-variant)] px-3 py-1.5 text-xs font-semibold text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+            >
+              <RefreshCw size={12} aria-hidden />
+              Retry
+            </button>
           </div>
         </div>
       )}
@@ -465,13 +476,24 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
             <div className="mt-1 text-xs text-[var(--warn)]/90">
               {(optionsErrorObj as Error | undefined)?.message ?? 'Unknown error'}
             </div>
+            <button
+              type="button"
+              onClick={() => void refetchOptions()}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-[var(--outline-variant)] px-3 py-1.5 text-xs font-semibold text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+            >
+              <RefreshCw size={12} aria-hidden />
+              Retry
+            </button>
           </div>
         </div>
       )}
 
       {(datesLoading || isLoading) && (
-        <div className="rounded-xl bg-[var(--surface-2)] p-8 text-center text-sm text-[var(--color-text-muted)]">
-          {datesLoading ? 'Loading available dates…' : 'Loading options chain…'}
+        <div className="rounded-xl bg-[var(--surface-2)] p-6">
+          <p className="mb-3 text-center text-sm text-[var(--color-text-muted)]">
+            {datesLoading ? 'Loading available dates…' : 'Loading options chain…'}
+          </p>
+          <WidgetSkeleton rows={5} />
         </div>
       )}
 

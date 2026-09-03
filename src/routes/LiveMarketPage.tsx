@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTickerStore } from '@/stores/tickerStore';
@@ -297,6 +298,7 @@ export default function LiveMarketPage() {
       </div>
 
       {/* Quote card */}
+      <DataGate>
       {quoteError ? (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]">
           Live data unavailable, API key not configured or rate limited. Indicators will populate once history loads.
@@ -396,6 +398,7 @@ export default function LiveMarketPage() {
           Last signal: <strong>{lastFired.direction}</strong> at {lastFired.time}
         </div>
       )}
+      </DataGate>
     </div>
   );
 }

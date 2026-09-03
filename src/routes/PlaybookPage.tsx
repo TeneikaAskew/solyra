@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { todayET } from '@/lib/dates';
@@ -318,6 +319,7 @@ export default function PlaybookPage() {
         )}
       </div>
 
+      <DataGate>
       {isError && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]">
           <AlertTriangle size={16} />
@@ -349,6 +351,7 @@ export default function PlaybookPage() {
           />
         ))}
       </div>
+      </DataGate>
     </div>
   );
 }

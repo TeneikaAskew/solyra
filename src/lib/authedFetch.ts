@@ -33,6 +33,7 @@
 import { getCurrentUid, getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
+import { markAuthBlocked, clearAuthBlocked } from './authGate';
 
 // Paths the backend answers WITHOUT auth (api/auth._OPEN_API_PREFIXES — keep
 // in sync), so the sign-in screen, shell, and public landing page can work.
@@ -137,9 +138,19 @@ export function installAuthFetch(): void {
     // no /api route regardless of how auth is configured.
     const target = withApiBase(input);
     const path = pathOf(input);
+    const gated = isGatedApiPath(path);
+
+    // Track gated-call outcomes in every auth mode so data cards can show a
+    // "Sign in to load data" empty state on 401 instead of rendering blank.
+    const track = (resp: Response): Response => {
+      if (resp.status === 401) markAuthBlocked();
+      else if (resp.ok) clearAuthBlocked();
+      return resp;
+    };
 
     if (getAuthMode() !== 'firebase' || !path.startsWith('/api/')) {
-      return nativeFetch(target, init);
+      const resp = await nativeFetch(target, init);
+      return gated ? track(resp) : resp;
     }
 
     // Attach the identity to EVERY /api request when signed in, the
@@ -194,7 +205,7 @@ export function installAuthFetch(): void {
     const resp = await nativeFetch(target, nextInit);
     // Only gated paths signal "signed out": an open path answers without auth
     // by design, so a 401 from one is a server bug, not an expired session.
-    if (resp.status === 401 && isGatedApiPath(path) && _onUnauthorized) _onUnauthorized();
-    return resp;
+    if (resp.status === 401 && gated && _onUnauthorized) _onUnauthorized();
+    return gated ? track(resp) : resp;
   };
 }
