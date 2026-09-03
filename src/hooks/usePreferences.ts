@@ -85,7 +85,12 @@ async function savePreferences(update: UserPreferencesUpdate): Promise<UserPrefe
 
 /**
  * Hydrate the appearance stores from the server once, then write through on
- * every subsequent change. Mount once, high in the app tree.
+ * every subsequent change.
+ *
+ * Mount EXACTLY once (AppShell does it). A second live instance would treat
+ * the first one's hydration as a local edit and echo it straight back as a
+ * redundant PUT, so the module-level guard makes extra mounts inert and they
+ * read status from the shared store instead.
  */
 export function usePreferencesSync() {
   const queryClient = useQueryClient();
@@ -93,11 +98,25 @@ export function usePreferencesSync() {
   const { navPattern, density, accent, setNavPattern, setDensity, setAccent } =
     useSettingsStore();
 
+  // Claim ownership for this component instance; later mounts stay passive.
+  const owner = useRef<boolean | null>(null);
+  if (owner.current === null) {
+    owner.current = !syncOwnerClaimed;
+    if (owner.current) syncOwnerClaimed = true;
+  }
+  const isOwner = owner.current;
+  useEffect(() => {
+    return () => {
+      if (isOwner) syncOwnerClaimed = false;
+    };
+  }, [isOwner]);
+
   const query = useQuery({
     queryKey: QUERY_KEY,
     queryFn: fetchPreferences,
     staleTime: 5 * 60_000,
     retry: 1,
+    enabled: isOwner,
   });
 
   const mutation = useMutation({
@@ -108,43 +127,51 @@ export function usePreferencesSync() {
   // Apply the server's stored values exactly once per session. After that the
   // local stores lead and we push changes up.
   const hydrated = useRef(false);
-  useEffect(() => {
-    if (hydrated.current || query.isPending) return;
-    hydrated.current = true;
-    const remote = query.data;
-    if (!remote) return;
-    if (remote.theme && remote.theme !== theme) setTheme(remote.theme);
-    if (remote.nav_pattern && remote.nav_pattern !== navPattern) setNavPattern(remote.nav_pattern);
-    if (remote.density && remote.density !== density) setDensity(remote.density);
-    if (remote.accent && remote.accent !== accent) setAccent(remote.accent);
-    // Store setters are stable; the local values are read only at hydration.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.isPending, query.data]);
-
-  // Write through whenever the local appearance changes post-hydration.
   const lastSent = useRef<string | null>(null);
   useEffect(() => {
-    if (!hydrated.current) return;
+    if (!isOwner || hydrated.current || query.isPending) return;
+    hydrated.current = true;
+    const remote = query.data;
+    if (remote) {
+      if (remote.theme && remote.theme !== theme) setTheme(remote.theme);
+      if (remote.nav_pattern && remote.nav_pattern !== navPattern) setNavPattern(remote.nav_pattern);
+      if (remote.density && remote.density !== density) setDensity(remote.density);
+      if (remote.accent && remote.accent !== accent) setAccent(remote.accent);
+    }
+    // Baseline is the state we just applied, so hydration itself never PUTs.
+    lastSent.current = JSON.stringify(
+      toPayload(
+        remote?.theme ?? theme,
+        remote?.nav_pattern ?? navPattern,
+        remote?.density ?? density,
+        remote?.accent ?? accent,
+      ),
+    );
+    // Store setters are stable; the local values are read only at hydration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwner, query.isPending, query.data]);
+
+  // Write through whenever the local appearance changes post-hydration.
+  useEffect(() => {
+    if (!isOwner || !hydrated.current || lastSent.current === null) return;
     const payload = toPayload(theme, navPattern, density, accent);
     const serialized = JSON.stringify(payload);
-    if (lastSent.current === null) {
-      // Baseline right after hydration — nothing changed yet, don't PUT.
-      lastSent.current = serialized;
-      return;
-    }
     if (lastSent.current === serialized) return;
     lastSent.current = serialized;
     mutation.mutate(payload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, navPattern, density, accent, query.isPending]);
+  }, [isOwner, theme, navPattern, density, accent, query.isPending]);
 
+  const status: PreferencesSyncStatus = {
+    loading: isOwner ? query.isPending : sharedStatus.loading,
+    saving: isOwner ? mutation.isPending : sharedStatus.saving,
+    error: isOwner
+      ? ((query.error ?? mutation.error) as Error | null)
+      : sharedStatus.error,
+  };
+  if (isOwner) sharedStatus = status;
   return {
-    /** True while the initial server read is in flight. */
-    loading: query.isPending,
-    /** True while a change is being written back. */
-    saving: mutation.isPending,
-    /** Non-null when the last read or write failed — render it, don't hide it. */
-    error: (query.error ?? mutation.error) as Error | null,
+    ...status,
     /** Whether the server currently holds stored preferences for this user. */
     stored: query.data ?? null,
   };
