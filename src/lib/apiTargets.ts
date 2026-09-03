@@ -34,7 +34,7 @@ export const STAGING_API = 'https://trading-platform-staging-5sjtb3yl7a-ue.a.run
  * must be re-pointed at STAGING_API (see authedFetch.ts). `*.lovable.app`
  * covers Lovable preview and published domains alike.
  */
-const STATIC_FRONTEND_HOST_SUFFIXES = ['.lovable.app']
+const STATIC_FRONTEND_HOST_SUFFIXES = ['.lovable.app', '.lovableproject.com']
 
 /** True when the given browser hostname is a known static (API-less) host. */
 export function isStaticFrontendHost(hostname: string): boolean {
