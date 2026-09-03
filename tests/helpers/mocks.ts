@@ -48,6 +48,12 @@ export async function mockCommon(page: Page) {
     r.fulfill(ok({ authMode: 'open', firebase: null }))
   );
   await page.route('**/api/me', (r) => r.fulfill(ok({ email: null, is_admin: false })));
+  // Per-user shell preferences (usePreferencesSync, mounted in AppShell on
+  // every route). 404 = "no stored preferences" — the app keeps its local
+  // choice. Unmocked, this hits the proxy and logs a 500 console error that
+  // trips the "renders without console errors" assertions on every page.
+  await page.route('**/api/me/preferences', (r) => r.fulfill(notFound()));
+
   await page.route('**/api/live/status', (r) =>
     r.fulfill(ok({ session: 'closed', is_open: false, ts: '2026-04-25T20:00:00Z' }))
   );
