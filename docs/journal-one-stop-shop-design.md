@@ -36,21 +36,21 @@ An **Import from broker** button joins the trades section (all views; writes to 
    - Same `CandlestickChart` component and market-data hooks as Charts; timeframe buttons (1m/5m/15m/30m/1h), Vol + RTH toggles; viewport-based height (same clamp as the restored Charts page).
    - **Full Mark Entry flow lives HERE**: Mark Entry → click chart (entry price) → CALL/PUT → click TP1 → TP2 → TP3 (ESC skips) → click Stop Loss (ESC skips); later "exit" per trade. Identical state machine to today's ChartsPage implementation — moved, not rewritten.
    - Trades of the **active view** (Examples or My journal) whose entry/exit fall on the selected date are drawn: entry/exit markers + TP/SL price lines. Example trades draw in the muted seed style; own trades in the standard style.
-3. **KPI tiles + notes** (existing): Trades, Win rate, Total P&L, Avg/trade, Avg win, include-practice toggle, exclusion notes — computed over the ACTIVE VIEW's trades. Rendered whenever the view has ≥1 trade.
-4. **Equity curve** (existing card with placeholder).
+3. **KPI tiles + notes**: the 7-tile row from the rail refinements above — Trades, Win rate, Total P&L, Avg/trade, Avg win, **Avg R:R**, **TP1 hit** — plus include-practice toggle and exclusion notes, computed over the ACTIVE VIEW's trades. Rendered whenever the view has ≥1 trade.
+4. **Equity curve** — lives in the trade rail under the trade cards (per the rail refinements above), always cumulative across all dates; NOT a separate full-width section.
 5. **Trade table** (existing) **+ risk columns**: Stop, TPs (e.g. "223 / 225"), and R:R (|entry−TP1| / |entry−stop|, "—" when either is missing; display-layer only, no fabricated values per Rule 3.7). Per-trade actions: exit-on-chart, delete — disabled in Examples view.
 
 ### Views
 
-- **Examples** = the admin's real journal trades (`journal_entries WHERE user_email = ADMIN_EMAIL`), read-only for everyone (including admin — admin edits via My journal, which IS the same data).
+- **Examples** = the union of the admin's real journal trades (`journal_entries WHERE user_email = ADMIN_EMAIL`) and automated pipeline `trades` rows, surfaced read-only with `source='pipeline'` and their alert enrichment (see `src/hooks/useJournalChartTrades.ts`); read-only for everyone (including admin — admin edits via My journal, which IS the same journal data).
 - **My journal** = the signed-in user's trades (current behavior).
-- **Default view**: Examples when the user's own journal for the ticker is empty; otherwise My journal. Manual toggle always available and sticky per session.
+- **Default view**: Examples when the user's own journal for the ticker is empty; otherwise My journal. Manual toggle always available. *Known divergence (2026-09-03):* the shipped toggle is component state (`viewOverride` `useState` in `JournalPage.tsx`), so it resets when the route remounts instead of persisting for the browser session — closing it means persisting the override (e.g. `sessionStorage`) or ratifying mount-local here.
 - **Marking always writes to MY journal.** If the user marks a trade while viewing Examples, the view flips to My journal to show it. For the admin, own trades and Examples are the same dataset.
 - **Nothing is gated on having trades.** Chart renders with market data regardless; Examples populate tiles/curve/table by default; a truly empty Examples set shows honest empty states inside each card (never a bare page).
 
 ### Charts page (`/charts`) — journal activity removed
 
-- **REMOVE:** Mark Entry flow + drawing state machine, Trades/Analytics side panel (TradeCard list, Backtest-my-trades, trade analytics tab), trade JSON/CSV export, journal-trade fetching, seed-trade markers + Playbook-seed panel.
+- **REMOVE:** Mark Entry flow + drawing state machine, Trades/Analytics side panel (TradeCard list, Backtest-my-trades, trade analytics tab), trade JSON/CSV export, journal-trade fetching *for display* (the retained bar-replay trainer still calls `useJournalChartTrades` for leakage-cutoff filtering and its session scorecard — see `ChartsPage.tsx` and `tests/charts-cards.spec.ts` — so the fetch itself stays), seed-trade markers + Playbook-seed panel.
 - **KEEP:** chart + toolbar (timeframes, Vol/RTH/Ref/Gamma/Sig), restored Live Strategy Conditions card, Similar Past Setups, signal overlay, historical review/date selection, **bar-replay trainer**.
 - **Flagged decision (recommend keep-as-is):** the replay trainer stays on Charts as a practice/research tool. Its practice sessions still persist as `source='replay'` journal rows (excluded from stats by default) — that storage is an implementation detail, not user-facing journaling. Veto if you want the trainer moved to Journal too.
 - Layout after removal: chart keeps full width (side panel gone → more chart), cards below unchanged.

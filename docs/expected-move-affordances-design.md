@@ -1,7 +1,7 @@
 # Expected-Move Card Affordances — Design
 
 **Date:** 2026-07-13
-**Status:** approved design → implementation plan next
+**Status:** implemented — shipped in `src/components/dashboard/MovementRead.tsx` with the pure helpers in `src/components/dashboard/expectedMove.ts`, covered by unit tests and `tests/movement-read.spec.ts`. Kept as the design record; the deliverables below are written in the future tense from when this was a plan.
 
 ## Goal
 
@@ -74,8 +74,9 @@ expander the user opens:
   - **suggested share size** = `floor((account × risk%) / stop_distance)`.
 - Rendered with an explicit "calculator, not a recommendation — sizing math on
   the model's expected move; verify against your own plan" note.
-- Requires the current **ATR-20** and **price**, which Tier 1/2 do not — so the
-  backend adds them to the `expected_move` block (below).
+- Requires the current **ATR-20**, which Tier 1/2 do not — so the backend adds
+  it to the `expected_move` block (below). `current_price` rides along as
+  display context only; the shipped calculator does not consume it.
 
 ## Data flow / backend change
 
@@ -87,13 +88,16 @@ probabilities + model_version + ts. Add two fields for Tier 3:
   and disables the calculator (never fabricates a stop).
 - `current_price`: the latest close for context (the levels block already
   carries `current_price`; reuse it if present, else the same features row).
+  *Implementation note:* the shipped Tier-3 sizing (`sizeCalc` +
+  `SizeCalculator`) consumes only `atr_20` — do not treat `current_price` as
+  a required sizing input.
 
 Everything else is frontend-only (`MovementRead.tsx`).
 
 ## Components (frontend)
 
-- `SizeLightChip` — pure function `sizeLight(p_tail) → {level, label, color}`;
-  small, unit-tested.
+- `SizeLightChip` — pure function `sizeLight(p_tail) → {level, label, tone}`
+  (the chip maps the semantic `tone` to a color); small, unit-tested.
 - `ExpectedMoveMagnitude` — bucket → ATR-range label (pure).
 - `DirectionLine` — static muted line.
 - `RiskHint` / `OptionsIdea` — pure, bucket/`p_explosive`-driven, labeled.

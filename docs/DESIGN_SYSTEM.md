@@ -86,7 +86,7 @@ For floating modals, use a large `48px` blur with 8% opacity, tinted with the `s
 
 ### The Ghost Border
 
-For accessibility on interactive inputs, use a 1px border with `outline-variant` (`#3e4851`) at **20% opacity**. It should be felt, not seen.
+For accessibility on interactive inputs, use a 1px border with `outline-variant` (`#3e4851`) at **35% opacity** — the implemented `--outline-variant` is `rgba(62, 72, 81, 0.35)` (the original spec said 20%; the token is the source of truth). Apply the token directly rather than stacking your own opacity on top. It should be felt, not seen.
 
 ---
 
@@ -206,7 +206,7 @@ the paths below were `platform/src/...` in that repo.
   | `outline-variant` | `--outline-variant` |
   | bullish / bearish / warning | `--bull` / `--bear` / `--warn` |
 - Theme state is managed by [`src/stores/themeStore.ts`](../src/stores/themeStore.ts) (Zustand) and applied by setting `data-theme` on the `<html>` element.
-- Chart instances (lightweight-charts, Recharts) read these same variables through [`src/lib/chartTheme.ts`](../src/lib/chartTheme.ts), so they swap with the global theme rather than carrying their own palette.
+- Chart instances (lightweight-charts, Recharts) generally read these same variables through [`src/lib/chartTheme.ts`](../src/lib/chartTheme.ts), so they swap with the global theme. Known exceptions that bypass it and do NOT adapt in light mode: `ChartsPage.tsx` hard-codes the dark bull/bear hexes for its signal markers, and `ContractDrilldown.tsx` keeps a fixed white-alpha tooltip cursor and a fixed gold price line. Audit those when touching chart theming.
 - Back-compat aliases keep existing `var(--color-accent-blue)` etc. working while the codebase migrates to the new token names.
 
 ### Known divergences — typefaces and type scale
