@@ -13,6 +13,17 @@ import { useUser } from '@/hooks/useUser';
 import { StructureBrief } from '@/components/structure_brief/StructureBrief';
 import { PredictForm } from '@/components/structure_brief/PredictForm';
 import { ModelStateSnapshot } from '@/components/structure_brief/ModelStateSnapshot';
+import { UsersPanel } from '@/components/admin/UsersPanel';
+import { DataSourcesPanel } from '@/components/admin/DataSourcesPanel';
+
+type AdminTab = 'users' | 'data' | 'models';
+
+const ADMIN_TABS: { id: AdminTab; label: string }[] = [
+  { id: 'users', label: 'Users & roles' },
+  { id: 'data', label: 'Chart & report data' },
+  { id: 'models', label: 'Models & routing' },
+];
+
 
 // ---------------------------------------------------------------------------
 // Admin page — per-role model routing dashboard.
@@ -24,6 +35,7 @@ import { ModelStateSnapshot } from '@/components/structure_brief/ModelStateSnaps
 export default function AdminPage() {
   const { isAdmin, isLoading: userLoading } = useUser();
   const [token, setToken] = useState<string | null>(getAdminToken());
+  const [tab, setTab] = useState<AdminTab>('users');
 
   // #702 follow-ups Task 4 item 5: stable identity across renders so
   // RoutingPanel's `useEffect([routesQuery.error, onLogout])` doesn't
@@ -47,41 +59,90 @@ export default function AdminPage() {
   const authed = isAdmin || !!token;
 
   return (
-    <div className="mx-auto max-w-5xl p-4">
+    <div className="mx-auto min-w-0 max-w-5xl p-4">
       <h1 className="mb-4 text-[22px] font-bold tracking-[-0.02em] text-[var(--on-surface)]">Admin</h1>
       {authed ? (
-        <div className="space-y-8">
-          <RoutingPanel onLogout={onLogout} showLogout={!isAdmin} />
+        <div className="min-w-0 space-y-5">
+          <div className="-mx-4 overflow-x-auto px-4">
+            <div className="flex w-max gap-1.5" role="tablist" aria-label="Admin sections">
+              {ADMIN_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  role="tab"
+                  aria-selected={tab === t.id}
+                  onClick={() => setTab(t.id)}
+                  data-testid={`admin-tab-${t.id}`}
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                    tab === t.id
+                      ? 'border-[var(--color-accent-blue)] text-[var(--color-accent-blue)]'
+                      : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <section>
-            <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">
-              Structure Brief
-              <span className="ml-2 rounded bg-[var(--color-bg-muted)] px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--color-text-muted)]">
-                dev only · deploy blocked
-              </span>
-            </h2>
-            <StructureBrief enabled={authed} />
-          </section>
+          {tab === 'users' && (
+            <section className="min-w-0">
+              <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">Users &amp; roles</h2>
+              <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+                Toggle a role to grant or revoke it immediately. Disabling a user blocks sign-in without deleting
+                their history.
+              </p>
+              <UsersPanel enabled={authed} />
+            </section>
+          )}
 
-          <section>
-            <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">
-              On-Demand Predict
-              <span className="ml-2 rounded bg-[var(--color-bg-muted)] px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--color-text-muted)]">
-                admin tool · single bar
-              </span>
-            </h2>
-            <PredictForm enabled={authed} />
-          </section>
+          {tab === 'data' && (
+            <section className="min-w-0">
+              <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">
+                Chart &amp; report data
+              </h2>
+              <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+                Freshness and coverage for every dataset the charts and reports read from. Refresh queues a job on
+                the pipeline; nothing here is cached client-side.
+              </p>
+              <DataSourcesPanel enabled={authed} />
+            </section>
+          )}
 
-          <section>
-            <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">
-              Model State Snapshot
-              <span className="ml-2 rounded bg-[var(--color-bg-muted)] px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--color-text-muted)]">
-                operator view · on shelf
-              </span>
-            </h2>
-            <ModelStateSnapshot enabled={authed} />
-          </section>
+          {tab === 'models' && (
+            <div className="min-w-0 space-y-8">
+              <RoutingPanel onLogout={onLogout} showLogout={!isAdmin} />
+
+              <section>
+                <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">
+                  Structure Brief
+                  <span className="ml-2 rounded bg-[var(--color-bg-muted)] px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--color-text-muted)]">
+                    dev only · deploy blocked
+                  </span>
+                </h2>
+                <StructureBrief enabled={authed} />
+              </section>
+
+              <section>
+                <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">
+                  On-Demand Predict
+                  <span className="ml-2 rounded bg-[var(--color-bg-muted)] px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--color-text-muted)]">
+                    admin tool · single bar
+                  </span>
+                </h2>
+                <PredictForm enabled={authed} />
+              </section>
+
+              <section>
+                <h2 className="mb-3 text-base font-semibold text-[var(--color-text-primary)]">
+                  Model State Snapshot
+                  <span className="ml-2 rounded bg-[var(--color-bg-muted)] px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-[var(--color-text-muted)]">
+                    operator view · on shelf
+                  </span>
+                </h2>
+                <ModelStateSnapshot enabled={authed} />
+              </section>
+            </div>
+          )}
         </div>
       ) : (
         <TokenGate onAuthed={(t) => setToken(t)} />
@@ -89,6 +150,7 @@ export default function AdminPage() {
     </div>
   );
 }
+
 
 // ---------------------------------------------------------------------------
 // Token gate
