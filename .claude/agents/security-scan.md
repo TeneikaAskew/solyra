@@ -133,7 +133,11 @@ pre-auth. It must mirror the backend's `api/auth._OPEN_API_PREFIXES` in the
 
 ```bash
 grep -n -A6 "OPEN_PREFIXES" src/lib/authedFetch.ts
-git diff HEAD -- src/lib/authedFetch.ts | grep -E "^[+-].*OPEN_PREFIXES" -A6
+# Diff from the merge base with main, not HEAD: once a change is committed,
+# `git diff HEAD` is empty and an added prefix slips through. Diffing from the
+# merge base covers committed and uncommitted changes alike.
+BASE="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD)"
+git diff "$BASE" -- src/lib/authedFetch.ts | grep -E "^[+-].*OPEN_PREFIXES" -A6
 ```
 
 Flag **HIGH** on any addition to that list. Widening it client-side does not
@@ -161,7 +165,10 @@ http(s) allowlist.
 
 ```bash
 npm audit --omit=dev 2>/dev/null | tail -20
-git diff HEAD -- package.json | grep -E "^\+.*\"[a-z@]" | head
+# Merge-base diff for the same reason as the auth-gate check: `git diff HEAD`
+# misses dependencies added in already-committed work.
+BASE="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD)"
+git diff "$BASE" -- package.json | grep -E "^\+.*\"[a-z@]" | head
 ```
 
 Report new production dependencies added in the diff — a frontend bundle is

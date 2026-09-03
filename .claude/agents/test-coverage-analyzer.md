@@ -78,7 +78,9 @@ catches those; don't report a `[GAP]` without checking.
 
 ```bash
 for r in $(git diff "$RANGE" --name-only --diff-filter=A | grep '^src/routes/.*Page\.tsx$'); do
-  name=$(basename "$r" Page.tsx | tr '[:upper:]' '[:lower:]')
+  # PascalCase → kebab-case: specs are kebab-case, so OptionsFlowPage must
+  # map to options-flow (plain lowercasing yields optionsflow → false [GAP])
+  name=$(basename "$r" Page.tsx | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr '[:upper:]' '[:lower:]')
   ls tests/*"$name"*.spec.ts >/dev/null 2>&1 || \
     echo "[GAP] new route $r -> add tests/$name.spec.ts + tests/helpers/fixtures/$name.ts"
 done
@@ -134,7 +136,10 @@ compiles fine but leaves the fixture never exercising it.
 ### New endpoint consumer without a mock
 
 ```bash
-git diff "$RANGE" | grep -E "^\+.*fetch\(['\"\`]/api/" | sed -E "s#.*(/api/[a-zA-Z0-9/_{}$-]+).*#\1#" | sort -u
+# The sed program must be single-quoted: in double quotes the shell expands
+# `$-` to its option flags, and the character class silently loses both `$`
+# and `-`, truncating /api/foo-bar/${ticker} to /api/foo.
+git diff "$RANGE" | grep -E "^\+.*fetch\(['\"\`]/api/" | sed -E 's#.*(/api/[a-zA-Z0-9/_{}$-]+).*#\1#' | sort -u
 ```
 
 For each new endpoint, confirm it appears in `tests/helpers/mocks.ts` or a

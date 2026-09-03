@@ -81,8 +81,10 @@ against the project rules, especially:
   `catch { return [] }` in a data path, fabricated success, hardcoded neutral
   defaults. Verify INTERNAL vs EXTERNAL on every `try`/`catch`: our own code
   failing is a bug and must surface; a vendor/network failure must render an
-  explicit unavailable state. The ONLY allowed fallback is display-layer
-  `null` → `—`, and it must stay in the JSX, never in a hook or lib helper.
+  explicit unavailable state. The ONLY allowed fallback is `null` → `—` in
+  presentation formatting — JSX or a pure display-text formatter like
+  `src/lib/format.ts` / `deltaText` — never in data access or calculation
+  (a hook, fetch wrapper, parser, or math helper).
 - **Rule 5 (One source of truth for math)** — is this new calculation
   duplicating something an endpoint already returns?
 - **Rule 6 (Cross-repo contract drift)** — did a type change get matched by a
