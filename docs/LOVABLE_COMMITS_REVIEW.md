@@ -164,17 +164,23 @@ after that cutoff are not listed here.
 
 ### Rows 68-137 (`7f2279e`..`03ddb06`) — reviewed on this PR
 
-Batches, in order: sparkline/mobile-layout fixes (11:41-11:57), the admin
-data-management build-out (`ed50372`..`265f246`), the Reports layout rebuild
-(`4c86b75`..`ac3efae`), the Settings tab reorganization
+Batches, in order: sparkline, mobile-layout, date-picker and Catalysts-title
+fixes (11:41-11:56), the admin data-management build-out
+(`e87d86d`..`265f246` — it starts at `e87d86d`, the 122-line `useAdmin.ts`
+query/mutation API layer the admin UI commits consume), the Reports layout
+rebuild (`4c86b75`..`ac3efae`), the Settings tab reorganization
 (`35a7974`..`313bd30`), the em-dash/AI-idiom copy pass (`53e579b`/`cde84c4`),
 and the auth-gate suite (`80e59c0`..`03ddb06`). Verdicts from reading the
 diffs:
 
 - `cde84c4` "Removed em dashes and AI idioms" (46 files): prose copy only.
-  Verified it touches no `—` data placeholder and none of the canonical
-  Rule-4 files (`format.ts`, `MovementRead.tsx`, `primitives/index.tsx`) —
-  the unavailable-value em-dash convention is intact.
+  Inspected via the first-parent diff (it is a checkpoint merge, so a plain
+  `git show` hides its content): `MovementRead.tsx` IS among the modified
+  files — 9 lines of comment and sentence punctuation (em dashes in prose
+  became colons/commas) — but every `—` data placeholder is unchanged, and
+  `MovementRead.test.tsx`'s null-does-not-coerce-to-0% fence still passes.
+  `format.ts` and `primitives/index.tsx` are untouched. The
+  unavailable-value em-dash convention is intact.
 - `3fd05f3` "Added retry for API errors" + `WidgetState.tsx`: clean. Explicit
   loading/auth/error branches, a visible error with a Retry action, no
   fabricated values, and it shipped with `WidgetState.test.ts`.
