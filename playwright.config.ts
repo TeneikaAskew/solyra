@@ -48,6 +48,18 @@ export default defineConfig({
   // Raise this only alongside a dev server that can take the load (or a
   // prebuilt bundle served statically).
   workers: 1,
+  // Retry only on CI. Measured on this tree 2026-09-02: a full local run was
+  // 166 passed / 1 failed — admin-auth.spec.ts:73 timing out on
+  // `admin-routes-table` — and that same file then passed 14/14 run solo.
+  // That is the contention flake from docs/TEST_COVERAGE_AUDIT.md §6 (infra
+  // item 4, tracked as issue #10), not a real regression, and it is what
+  // would otherwise paint a red X on unrelated PRs.
+  //
+  // This does NOT hide the flake: a test that passes on retry is reported as
+  // "flaky" in the run summary and the HTML report, so the signal stays
+  // visible and issue #10 stays honest. Locally retries stay at 0 so a flake
+  // is felt rather than papered over.
+  retries: process.env.CI ? 2 : 0,
   timeout: 30_000,
   webServer: wantsLocalServer
     ? {
