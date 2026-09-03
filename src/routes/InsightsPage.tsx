@@ -143,8 +143,11 @@ export default function InsightsPage() {
         <TabButton active={tab === 'chat'} onClick={() => setTab('chat')} icon={<MessageCircle size={14} />}>
           Chat
         </TabButton>
+      </div>
 
-        <div className="ml-auto flex items-center gap-3">
+      {/* Run controls — own row on mobile, no cramped overlap with the tabs */}
+      <div className="-mt-1 flex flex-wrap items-center gap-x-3 gap-y-2 md:-mt-4">
+
           {isRunning && (
             <span className="flex items-center gap-1 text-xs text-[var(--on-surface-muted)]">
               <Loader2 size={12} className="animate-spin" />
