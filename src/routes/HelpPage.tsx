@@ -26,7 +26,7 @@ function buildGlossary(cfg: IndicatorConfig | undefined): GlossaryEntry[] {
 
   return [
   // Strategy & Signals
-  { term: 'Win Rate', short: 'Percentage of trades that were profitable.', detail: 'A 41% win rate means roughly 4 out of every 10 trades made money. Win rate alone doesn\'t determine profitability, if winners are larger than losers, you can profit with a low win rate.', category: 'Performance' },
+  { term: 'Win Rate', short: 'Percentage of trades that were profitable.', detail: 'A 41% win rate means roughly 4 out of every 10 trades made money. Win rate alone doesn\'t determine profitability. If winners are larger than losers, you can profit with a low win rate.', category: 'Performance' },
   { term: 'Profit Factor', short: 'Total gains divided by total losses.', detail: 'A profit factor of 1.03 means for every $1 lost, the strategy made $1.03. Above 1.0 = profitable. Above 1.5 = strong. Below 1.0 = losing money.', category: 'Performance' },
   { term: 'Total Return', short: 'Cumulative profit/loss across all trades.', detail: 'Expressed as a percentage of starting equity. A +9.6% total return means the strategy grew the account by 9.6% over the backtest period.', category: 'Performance' },
   { term: 'Max Drawdown (Max DD)', short: 'Largest peak-to-trough decline in equity.', detail: 'If the account went from $10,000 to $9,730 before recovering, the max drawdown is -2.7%. This measures worst-case pain during the strategy\'s lifetime.', category: 'Performance' },
