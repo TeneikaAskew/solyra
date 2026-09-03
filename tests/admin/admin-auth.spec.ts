@@ -4,6 +4,11 @@
  * Tests the IAP-email-based admin bypass, sidebar visibility, and
  * token-gate fallback. Backend is fully mocked via page.route.
  *
+ * The Admin page is tabbed (users | data | models) and lands on Users &
+ * roles; scenarios that assert on the routing table switch to the Models &
+ * routing tab first via openModelsTab(). Tab-content behaviour itself is
+ * covered in admin-tabs.spec.ts.
+ *
  * Scenarios:
  *   1. Admin email (teneika@bictech.org) bypasses the token gate
  *   2. Admin email sees the routing panel without a logout button
@@ -37,7 +42,26 @@ const MOCK_MODELS = {
   ],
 };
 
-/** Set up common admin API mocks (routes + models always succeed). */
+// The Admin page is tabbed (users | data | models) and lands on Users & roles,
+// so the users/data-sources endpoints are part of every authed visit's fan-out.
+// Stubbing them keeps this suite hermetic — an unmocked call would leak through
+// the dev proxy toward real infrastructure (see playwright.config.ts).
+const MOCK_USERS = {
+  users: [
+    {
+      uid: 'uid-1',
+      email: 'alice@example.com',
+      display_name: 'Alice',
+      roles: ['trader'],
+      disabled: false,
+      created_at: '2026-03-01T09:00:00Z',
+      last_sign_in_at: '2026-04-25T12:00:00Z',
+    },
+  ],
+  available_roles: ['admin', 'trader', 'viewer'],
+};
+
+/** Set up common admin API mocks (every admin GET always succeeds). */
 async function mockAdminApi(page: import('@playwright/test').Page) {
   await page.route('**/api/admin/routes', (route) => {
     if (route.request().method() === 'GET') {
@@ -48,6 +72,18 @@ async function mockAdminApi(page: import('@playwright/test').Page) {
   await page.route('**/api/admin/models', (route) =>
     route.fulfill({ status: 200, body: JSON.stringify(MOCK_MODELS) }),
   );
+  await page.route('**/api/admin/users', (route) =>
+    route.fulfill({ status: 200, body: JSON.stringify(MOCK_USERS) }),
+  );
+  await page.route('**/api/admin/data-sources', (route) =>
+    route.fulfill({ status: 200, body: JSON.stringify({ sources: [] }) }),
+  );
+}
+
+/** The routing panel lives under the Models & routing tab; the authed shell
+ *  lands on Users & roles, so specs asserting on the table switch tabs first. */
+async function openModelsTab(page: import('@playwright/test').Page) {
+  await page.getByTestId('admin-tab-models').click();
 }
 
 // The boot-time runtime-config probe must resolve to a valid config or the app
@@ -78,10 +114,12 @@ test.describe('Admin — IAP email bypass', () => {
 
     await page.goto('/admin');
 
-    // Token gate should NOT appear
+    // Token gate should NOT appear — the tabbed admin shell renders directly
+    await expect(page.getByTestId('admin-tab-models')).toBeVisible();
     await expect(page.getByTestId('admin-token-input')).not.toBeVisible();
 
-    // Routing table should render directly
+    // Routing table renders under the Models & routing tab, no token needed
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     await expect(page.getByText('analyst')).toBeVisible();
     await expect(page.getByText('portfolio_manager')).toBeVisible();
@@ -94,6 +132,7 @@ test.describe('Admin — IAP email bypass', () => {
     await mockAdminApi(page);
 
     await page.goto('/admin');
+    await openModelsTab(page);
 
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     // Logout button should be hidden for IAP-authenticated admin
@@ -125,6 +164,7 @@ test.describe('Admin — IAP email bypass', () => {
     });
 
     await page.goto('/admin');
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
 
     // Change model for trader
@@ -175,6 +215,9 @@ test.describe('Admin — non-admin users', () => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: 'someone@example.com', is_admin: false }) }),
     );
+    // Base always-200 mocks first, then the token-gated /routes override —
+    // Playwright matches newest-first, so the gate below wins for /routes.
+    await mockAdminApi(page);
     await page.route('**/api/admin/routes', (route) => {
       const token = route.request().headers()['x-admin-token'];
       if (token === 'valid-token') {
@@ -182,9 +225,6 @@ test.describe('Admin — non-admin users', () => {
       }
       return route.fulfill({ status: 401, body: JSON.stringify({ detail: 'bad' }) });
     });
-    await page.route('**/api/admin/models', (route) =>
-      route.fulfill({ status: 200, body: JSON.stringify(MOCK_MODELS) }),
-    );
 
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
@@ -192,6 +232,7 @@ test.describe('Admin — non-admin users', () => {
     // Unlock via token
     await page.getByTestId('admin-token-input').fill('valid-token');
     await page.getByTestId('admin-submit').click();
+    await openModelsTab(page);
 
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     // Non-admin token users SHOULD see the logout button
@@ -281,7 +322,10 @@ test.describe('Sidebar — Admin link visibility', () => {
     await adminLink.click();
     await page.waitForURL('**/admin');
 
-    // Should go straight to the routing panel, no token gate
+    // Should go straight to the tabbed admin shell, no token gate
+    await expect(page.getByTestId('admin-tab-models')).toBeVisible();
+    await expect(page.getByTestId('admin-token-input')).not.toBeVisible();
+    await openModelsTab(page);
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
   });
 

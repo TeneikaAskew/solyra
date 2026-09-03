@@ -11,7 +11,7 @@
  * rejected" is the behaviour most worth protecting here.
  */
 import { test, expect } from '@playwright/test';
-import { VALID_ADMIN_TOKEN, mockAdminApi } from './helpers/fixtures/admin';
+import { VALID_ADMIN_TOKEN, mockAdminApi } from '../helpers/fixtures/admin';
 
 test.describe('Admin — model routing', () => {
   test.beforeEach(async ({ context }) => {
@@ -37,6 +37,10 @@ test.describe('Admin — model routing', () => {
     await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
     await page.getByTestId('admin-submit').click();
 
+    // Unlock lands on the tabbed admin shell (default tab: Users & roles);
+    // the routing table lives under the Models & routing tab.
+    await page.getByTestId('admin-tab-models').click();
+
     // Routing table renders
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
     await expect(page.getByText('analyst')).toBeVisible();
@@ -56,9 +60,10 @@ test.describe('Admin — model routing', () => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    // Unlock with valid token
+    // Unlock with valid token, then switch to the Models & routing tab
     await page.getByTestId('admin-token-input').fill(VALID_ADMIN_TOKEN);
     await page.getByTestId('admin-submit').click();
+    await page.getByTestId('admin-tab-models').click();
 
     await expect(page.getByTestId('admin-routes-table')).toBeVisible();
 
