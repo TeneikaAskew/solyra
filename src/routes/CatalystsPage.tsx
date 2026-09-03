@@ -504,7 +504,7 @@ export default function CatalystsPage() {
         </div>
       </div>
 
-      {/* Hot Now — high-impact catalysts in today/tomorrow window */}
+      {/* Hot Now, high-impact catalysts in today/tomorrow window */}
       {hotEvents.length > 0 && (
         <div className="rounded-xl bg-[var(--surface-1)] p-3 ring-1 ring-[var(--warn)]/30">
           <div className="flex items-center gap-2 mb-2">

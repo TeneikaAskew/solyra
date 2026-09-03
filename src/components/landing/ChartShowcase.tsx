@@ -16,7 +16,7 @@ export function ChartShowcase() {
       </h2>
       <p className="sl-mut" style={{ margin: '0 0 18px', fontSize: 14, maxWidth: 560 }}>
         Every level on a Solyra chart exists because dealers put it there. King, Gate, and Flip
-        are drawn from live options positioning — not trendline art.
+        are drawn from live options positioning, not trendline art.
       </p>
       <div className="sl-panel" style={{ padding: '18px 20px', overflowX: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 10 }}>
@@ -28,17 +28,17 @@ export function ChartShowcase() {
             <line key={y} x1="0" y1={y} x2="720" y2={y} stroke="rgba(255,255,255,.04)" />
           ))}
 
-          {/* KING — solid gold, width 2 (ChartsPage lineStyle 0) */}
+          {/* KING: solid gold, width 2 (ChartsPage lineStyle 0) */}
           <line x1="0" y1="42" x2="640" y2="42" stroke="#f59e0b" strokeWidth="2" />
           <rect x="640" y="32" width="80" height="20" rx="4" fill="rgba(245,158,11,.12)" stroke="#f59e0b" strokeWidth=".7" />
           <text x="680" y="46" fill="#f59e0b" fontSize="11" textAnchor="middle" fontFamily="Consolas">★ KING 592</text>
 
-          {/* GATE — dotted blue (ChartsPage lineStyle 2) */}
+          {/* GATE: dotted blue (ChartsPage lineStyle 2) */}
           <line x1="0" y1="154" x2="640" y2="154" stroke="#3b82f6" strokeWidth="1.2" strokeDasharray="2 4" />
           <rect x="640" y="144" width="80" height="20" rx="4" fill="rgba(59,130,246,.1)" stroke="#3b82f6" strokeWidth=".7" />
           <text x="680" y="158" fill="#60a5fa" fontSize="11" textAnchor="middle" fontFamily="Consolas">◆ GATE 588</text>
 
-          {/* FLIP — dashed violet (ChartsPage lineStyle 1) */}
+          {/* FLIP: dashed violet (ChartsPage lineStyle 1) */}
           <line x1="0" y1="238" x2="640" y2="238" stroke="#a78bfa" strokeWidth="2" strokeDasharray="8 5" />
           <rect x="640" y="228" width="80" height="20" rx="4" fill="rgba(167,139,250,.1)" stroke="#a78bfa" strokeWidth=".7" />
           <text x="680" y="242" fill="#a78bfa" fontSize="11" textAnchor="middle" fontFamily="Consolas">⇅ FLIP 585</text>
@@ -69,7 +69,7 @@ export function ChartShowcase() {
 
           {/* rejection annotation */}
           <rect x="255" y="18" width="150" height="20" rx="5" fill="rgba(245,158,11,.08)" stroke="rgba(245,158,11,.35)" strokeWidth=".8" />
-          <text x="330" y="32" fill="#f59e0b" fontSize="10.5" textAnchor="middle" fontFamily="Consolas">King rejection — dealers sell</text>
+          <text x="330" y="32" fill="#f59e0b" fontSize="10.5" textAnchor="middle" fontFamily="Consolas">King rejection, dealers sell</text>
         </svg>
       </div>
     </section>

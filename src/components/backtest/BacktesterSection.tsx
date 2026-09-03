@@ -363,7 +363,7 @@ export default function BacktesterSection({ ticker }: { ticker: string }) {
           </h2>
           <p className="text-xs text-[var(--color-text-muted)]">
             {hasData
-              ? `${runs.length} backtest run${runs.length > 1 ? 's' : ''} — viewing: ${selectedRun ?? latestRun?.timestamp ?? ''}`
+              ? `${runs.length} backtest run${runs.length > 1 ? 's' : ''}: viewing: ${selectedRun ?? latestRun?.timestamp ?? ''}`
               : 'No backtest results found'}
           </p>
         </div>

@@ -55,7 +55,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         items: [
           { label: 'New journal entry', hint: 'create', to: '/journal' },
           { label: "Open today's brief", hint: 'view', to: '/insights' },
-          { label: 'Dealer gamma — Options Flow', hint: 'view', to: '/options' },
+          { label: 'Dealer gamma: Options Flow', hint: 'view', to: '/options' },
         ],
       },
     ];

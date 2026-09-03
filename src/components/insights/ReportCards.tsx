@@ -363,7 +363,7 @@ export function PersonaPlansCard({ plans }: { plans: PersonaPlan[] }) {
     return (
       <Card title="Persona Plans">
         <div className="text-xs text-[var(--color-text-muted)]">
-          No persona plans available — risk debate did not produce concrete trade plans.
+          No persona plans available, risk debate did not produce concrete trade plans.
         </div>
       </Card>
     );
@@ -469,7 +469,7 @@ export function DegradationBanner({ failedSections }: { failedSections: string[]
   return (
     <div className="rounded-lg border border-[var(--warn)]/40 bg-[var(--warn)]/10 px-4 py-2.5 text-xs text-[var(--warn)]">
       <AlertTriangle size={12} className="mr-1 inline" />
-      Partial report — the following sections were unavailable:{' '}
+      Partial report: the following sections were unavailable:{' '}
       <span className="font-mono">{failedSections.join(', ')}</span>
     </div>
   );
@@ -512,7 +512,7 @@ export function BriefVsInsightsCard({
     return (
       <Card title="House Views" className="border-[var(--outline-variant)]">
         <p className="text-xs text-[var(--on-surface-muted)]">
-          Brief unavailable for {ticker} — insight pipeline shipping
+          Brief unavailable for {ticker}, insight pipeline shipping
           standalone.
         </p>
       </Card>
@@ -530,7 +530,7 @@ export function BriefVsInsightsCard({
     : 'text-[var(--warn)]';
 
   return (
-    <Card title={`House Views — ${headlineLabel}`} className={accent}>
+    <Card title={`House Views, ${headlineLabel}`} className={accent}>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="rounded border border-[var(--outline-variant)] p-2.5">
           <div className="mb-1 text-[10px] uppercase tracking-wide text-[var(--on-surface-muted)]">
@@ -584,7 +584,7 @@ export function BriefVsInsightsCard({
       {!agree && (
         <p className={`mt-2.5 text-[11px] ${headlineColor}`}>
           <AlertTriangle size={11} className="mr-1 inline" />
-          Read both before sizing — divergence usually means one signal
+          Read both before sizing, divergence usually means one signal
           is leading the other (gap-up that brief saw before insights
           finalized) or there's an unresolved conflict (catalyst-block
           forcing flat against bullish FTFC).

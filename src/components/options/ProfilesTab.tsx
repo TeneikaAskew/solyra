@@ -444,7 +444,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         </div>
       </div>
 
-      {/* Error surfacing — show the real message from the API when present */}
+      {/* Error surfacing, show the real message from the API when present */}
       {datesError && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -475,7 +475,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         </div>
       )}
 
-      {/* Spot estimation failure — surface explicitly so the user knows
+      {/* Spot estimation failure, surface explicitly so the user knows
           why the metrics + heatmap are missing. */}
       {!isLoading && !datesLoading && options.length > 0 && finalSpot <= 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-400">
@@ -602,7 +602,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         <div className="rounded-xl bg-[var(--surface-2)] p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs text-[var(--color-text-muted)]">
-              {metric.toUpperCase()} by Strike — {filter === 'net' ? 'Net' : filter === 'calls' ? 'Calls Only' : 'Puts Only'} — ±{Math.round(rangePct * 100)}% range ({focusedGex.length} strikes)
+              {metric.toUpperCase()} by Strike, {filter === 'net' ? 'Net' : filter === 'calls' ? 'Calls Only' : 'Puts Only'}: ±{Math.round(rangePct * 100)}% range ({focusedGex.length} strikes)
             </span>
             <div className="flex gap-3 text-[10px] text-[var(--color-text-muted)]">
               <span className="text-[var(--bull)]">■ Positive</span>

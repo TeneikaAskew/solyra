@@ -191,12 +191,12 @@ export default function SignalsPage() {
 
       {/* ── Performance summary (90-day backtest) ───────────────────────── */}
       {/* winRate is 0-100 percent per the analytics contract (analytics.py
-          _compute_stats: wins/closed × 100) — the old `<= 1 → ×100` unit
+          _compute_stats: wins/closed × 100): the old `<= 1 → ×100` unit
           sniffing turned any true win rate of 1% or less into 50%+.
           totalPnL/avgPnL are summed `return_pct` (the trades table stores no
           dollar P&L), so % formatting is correct and the labels now say what
           the numbers are. profitFactor null = no closed trades OR no losing
-          trades — either way not "< 1", so its tone stays neutral. */}
+          trades: either way not "< 1", so its tone stays neutral. */}
       {pnl && pnl.closedTrades > 0 && (
           <div>
             <MicroLabel className="mb-2">Performance · 90-day backtest</MicroLabel>
@@ -265,7 +265,7 @@ export default function SignalsPage() {
             disabled={isReview}
             onChange={e => setLocalDateTo(e.target.value)}
             className="rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1 text-xs text-[var(--color-text-primary)] disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isReview ? 'Set by global historical mode — clear review mode to edit' : undefined}
+            title={isReview ? 'Set by global historical mode, clear review mode to edit' : undefined}
           />
           {isReview && (
             <span className="text-[10px] text-[var(--warn)]">global</span>

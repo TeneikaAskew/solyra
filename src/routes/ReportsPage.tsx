@@ -115,7 +115,7 @@ export default function ReportsPage() {
           keeps the full page width on every screen size. */}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-          Reports — {activeTicker}
+          Reports: {activeTicker}
         </span>
         <div className="relative min-w-0 flex-1 sm:max-w-md">
           <FileText

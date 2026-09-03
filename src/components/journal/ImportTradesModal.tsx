@@ -359,7 +359,7 @@ export function ImportTradesModal({ open, onClose, onImported }: ImportTradesMod
                       <td className="px-2 py-1.5">
                         {t.duplicate ? (
                           <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-text-muted)]">
-                            duplicate — already in journal
+                            duplicate: already in journal
                           </span>
                         ) : t.status === 'active' ? (
                           <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-500/70">

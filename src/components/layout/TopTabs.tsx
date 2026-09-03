@@ -93,7 +93,7 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
         <Brand />
       </div>
 
-      {/* Desktop: groups in order — inline tabs or dropdown triggers. */}
+      {/* Desktop: groups in order, inline tabs or dropdown triggers. */}
       <nav
         ref={menusRef}
         className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] sm:flex [&::-webkit-scrollbar]:hidden"
@@ -168,7 +168,7 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
       {/* Mobile: spacer pushes the utility cluster to the right. */}
       <div className="flex-1 sm:hidden" />
 
-      {/* Utility cluster — one row: replay · search · sign-out · theme. */}
+      {/* Utility cluster, one row: replay · search · sign-out · theme. */}
       <ReplayControl />
 
       <Button

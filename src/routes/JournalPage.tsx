@@ -276,8 +276,8 @@ export default function JournalPage() {
     : viewRows;
 
   const scopeLabel = selectedDate
-    ? `Session — ${selectedDate.slice(4, 6)}/${selectedDate.slice(6, 8)}/${selectedDate.slice(0, 4)}`
-    : 'Overview — all dates';
+    ? `Session: ${selectedDate.slice(4, 6)}/${selectedDate.slice(6, 8)}/${selectedDate.slice(0, 4)}`
+    : 'Overview: all dates';
 
   const viewLoading = isExamples ? examplesQuery.isLoading : ownQuery.isLoading;
 
@@ -334,11 +334,11 @@ export default function JournalPage() {
         setExportStatus(`Exported ${d.trades_exported} closed trades${skippedNote} → ${d.filename}`);
       } else {
         downloadCsv(csv, `${activeTicker.toLowerCase()}_journal.csv`);
-        setExportStatus('API unavailable — downloaded CSV locally');
+        setExportStatus('API unavailable: downloaded CSV locally');
       }
     } catch {
       downloadCsv(csv, `${activeTicker.toLowerCase()}_journal.csv`);
-      setExportStatus('API unavailable — downloaded CSV locally');
+      setExportStatus('API unavailable: downloaded CSV locally');
     }
     setTimeout(() => setExportStatus(null), 5000);
   };
@@ -361,7 +361,7 @@ export default function JournalPage() {
         <div className="flex flex-wrap items-center gap-2">
           <TickerCombobox />
 
-          {/* Trading-date picker — clearable back to the Overview state. */}
+          {/* Trading-date picker, clearable back to the Overview state. */}
           <input
             type="date"
             value={toInputFormat(selectedDate)}
@@ -376,13 +376,13 @@ export default function JournalPage() {
               data-testid="clear-date"
               onClick={() => setSelectedDate('')}
               className="flex items-center gap-1 rounded border border-[var(--color-border)] px-2 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
-              title="Clear the session date — back to Overview (all dates)"
+              title="Clear the session date, back to Overview (all dates)"
             >
               <X size={11} /> Overview
             </button>
           )}
 
-          {/* Mark-Entry flow — drives TradeMarkingChart's state machine via
+          {/* Mark-Entry flow, drives TradeMarkingChart's state machine via
               tradeMarkingRef; drawingStep is the onDrawingStepChange mirror
               (ChartsPage's exact pattern, Task 4 handoff). */}
           {drawingStep === 'idle' ? (
@@ -465,7 +465,7 @@ export default function JournalPage() {
             </button>
           )}
 
-          {/* View toggle — right-aligned. */}
+          {/* View toggle, right-aligned. */}
           <div className="flex rounded border border-[var(--color-border)]" data-testid="view-toggle">
             {(['examples', 'mine'] as const).map((v) => (
               <button
@@ -492,18 +492,18 @@ export default function JournalPage() {
 
       {addTrade.isError && (
         <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-[var(--bear)]">
-          <AlertCircle size={14} /> Failed to save trade — check API connection.
+          <AlertCircle size={14} /> Failed to save trade, check API connection.
         </div>
       )}
 
       {isExamples && examplesUnavailable && (
         <div data-testid="examples-unavailable" className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-[var(--warn)]">
-          <AlertCircle size={14} /> Examples unavailable — the journal database didn't respond.
+          <AlertCircle size={14} /> Examples unavailable, the journal database didn't respond.
         </div>
       )}
 
       {/* ── Chart + rail row (layout B "Cockpit") ──────────────────────── */}
-      {/* Mobile (below lg): the rail stacks BELOW the chart — a fixed-width
+      {/* Mobile (below lg): the rail stacks BELOW the chart, a fixed-width
           rail beside a flex-1 chart collapsed the chart to an illegible
           sliver on phone viewports (staging bug report, ~390-412px). */}
       <div className="flex flex-col gap-4 lg:flex-row">
@@ -549,7 +549,7 @@ export default function JournalPage() {
             </span>
           </div>
 
-          {/* Chart card — same viewport height clamp as ChartsPage. */}
+          {/* Chart card, same viewport height clamp as ChartsPage. */}
           <div
             data-testid="journal-chart-card"
             className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)]"
@@ -608,7 +608,7 @@ export default function JournalPage() {
         <div className="w-full space-y-2 lg:w-[340px] lg:shrink-0">
           <div className="text-xs font-semibold text-[var(--color-text-secondary)]">
             {isExamples ? 'Example trades' : 'My trades'}
-            {chartIsoDate ? ` — ${chartIsoDate}` : ''}
+            {chartIsoDate ? `, ${chartIsoDate}` : ''}
           </div>
           {railTrades.length === 0 ? (
             <p className="rounded border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3 text-center text-xs text-[var(--color-text-muted)]">
@@ -630,7 +630,7 @@ export default function JournalPage() {
             ))
           )}
 
-          {/* Equity curve — ALWAYS cumulative across all dates. */}
+          {/* Equity curve, ALWAYS cumulative across all dates. */}
           <Card>
             <CardHeader title={`${activeTicker} equity curve`} meta="cumulative P&L %" />
             {curveStats.equityPoints.length > 1 ? (
@@ -671,7 +671,7 @@ export default function JournalPage() {
           <div className="grid grid-cols-2 gap-[14px] md:grid-cols-4 lg:grid-cols-7">
             <KpiTile label="Trades" value={String(totalCount)} sub={`${winCount}W / ${lossCount}L`} />
             {/* Rule 4 in the color channel too: a null stat renders NA/— as
-                text, so its tone must be neutral — `?? 0` here painted "no
+                text, so its tone must be neutral, `?? 0` here painted "no
                 data" red (win rate) or green (returns). "Σ return" replaces
                 "Total P&L": the value is a sum of per-trade return
                 percentages (journalStats), not currency and not compounded
@@ -690,19 +690,19 @@ export default function JournalPage() {
           )}
           {!includeReplay && replayExcludedCount > 0 && (
             <p data-testid="replay-exclusion-note" className="text-[11px] text-[var(--on-surface-muted)]">
-              {replayExcludedCount} practice trade{replayExcludedCount === 1 ? '' : 's'} excluded from stats — toggle
+              {replayExcludedCount} practice trade{replayExcludedCount === 1 ? '' : 's'} excluded from stats, toggle
               "Include practice sessions" to include them.
             </p>
           )}
         </>
       )}
 
-      {/* "My style" — mines MY closed trades server-side, so it renders only
+      {/* "My style", mines MY closed trades server-side, so it renders only
           on the My-journal view (mining is meaningless against the Examples
           teaching layer). Re-homed from ChartsPage's Analytics tab, issue #14.
           Keyed by ticker: useMineMyStyle's mutation retains its data across
           re-renders, so without a remount a profile mined for ticker A would
-          keep rendering after switching to ticker B — and an in-flight
+          keep rendering after switching to ticker B, and an in-flight
           response could land after the switch. The key remounts the panel
           with fresh mutation state on every ticker change. */}
       {!isExamples && <MyStylePanel key={activeTicker} ticker={activeTicker} />}
@@ -711,7 +711,7 @@ export default function JournalPage() {
       {showForm && (
         <div className="rounded-xl bg-[var(--surface-2)] p-4">
           <h3 className="mb-3 text-sm font-semibold text-[var(--color-text-primary)]">
-            New Trade — {activeTicker}
+            New Trade: {activeTicker}
           </h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -833,7 +833,7 @@ export default function JournalPage() {
       ) : (
         tableRows.length === 0 ? (
           <div className="rounded-xl bg-[var(--surface-2)] p-8 text-center text-sm text-[var(--color-text-muted)]">
-            No trades on this session — clear the date for the Overview.
+            No trades on this session, clear the date for the Overview.
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -868,7 +868,7 @@ export default function JournalPage() {
                         {/* Task 7 carried item (T6 review, Important): a
                             practice (bar-replay-trainer) row gets the same
                             muted-badge treatment TradeRailCard's "EX" badge
-                            uses — same weight as "active" above, distinct
+                            uses: same weight as "active" above, distinct
                             (muted, not amber) color so it reads as
                             "not a real fill" rather than "still open." */}
                         {e.source === 'replay' && (
@@ -905,11 +905,11 @@ export default function JournalPage() {
                           </span>
                         )}
                       </td>
-                      {/* Risk columns — "—" when the plan leg is missing (Rule 3.7).
+                      {/* Risk columns, "—" when the plan leg is missing (Rule 3.7).
                           task-alerts-enrichment: a pipeline row with no stop PRICE
                           but a matched alert's time_stop_minutes renders its OWN
                           "<N>m time-stop" text (stopDisplayText, shared with
-                          TradeRailCard's SL segment) — USER REQUIREMENT
+                          TradeRailCard's SL segment): USER REQUIREMENT
                           (verbatim): never a fixed label, each row shows its
                           own value. */}
                       <td data-testid="table-stop-cell" className="px-3 py-1.5 font-mono text-xs text-[var(--color-text-primary)]">
@@ -948,7 +948,7 @@ export default function JournalPage() {
         )
       )}
 
-      {/* Broker CSV import (Task 7) — always writes to MY journal; a
+      {/* Broker CSV import (Task 7): always writes to MY journal; a
           successful commit flips the view so the user sees where the
           imported trades landed, same rule as chart marking above. */}
       <ImportTradesModal

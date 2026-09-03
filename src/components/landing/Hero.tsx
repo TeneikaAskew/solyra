@@ -33,7 +33,7 @@ export function Hero() {
         </h1>
         <p className="sl-mut" style={{ fontSize: 16, lineHeight: 1.55, margin: '18px 0 24px', maxWidth: 440 }}>
           Solyra&rsquo;s agents read dealer positioning, options flow, and every catalyst on the
-          calendar — then hand you a plain-language brief, live signals, and the reason behind
+          calendar: then hand you a plain-language brief, live signals, and the reason behind
           every move. Learn it. Trade it. Review it.
         </p>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
