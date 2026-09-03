@@ -1,4 +1,5 @@
 import { DataGate, SignInBanner } from '@/components/shared/SignInEmptyState';
+import { WidgetState } from '@/components/shared/WidgetState';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTickerStore } from '@/stores/tickerStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -153,12 +154,13 @@ export default function ChartsPage() {
   // 16:00 let post-close bars flow into effectiveCandlestick and the
   // server-side indicator/signal requests (Codex review on the cutoff
   // unification).
-  const { data: marketData, isLoading, error } = useMarketData(
+  const marketQ = useMarketData(
     activeTicker,
     selectedDate,
     timeframe,
     isReview ? reviewTime ?? REVIEW_DEFAULT_CUTOFF : null
   );
+  const { data: marketData, isLoading, error } = marketQ;
 
   // Bar-replay trainer session (Task 5.2) — reveals `marketData.candlestick`
   // bar-by-bar. `revealedBars` is the ONLY slice of the day anything
@@ -712,7 +714,7 @@ export default function ChartsPage() {
           className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)]"
           style={{ height: 'clamp(400px, calc(100vh - 340px), 900px)' }}
         >
-          <DataGate>
+          <WidgetState query={marketQ} skeletonRows={6}>
           {isLoading ? (
             <div className="flex h-full items-center justify-center">
               <LoadingSpinner size={32} />
@@ -771,7 +773,7 @@ export default function ChartsPage() {
               Select a date to load chart data
             </div>
           )}
-          </DataGate>
+          </WidgetState>
         </div>
       </div>
 
