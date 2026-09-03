@@ -7,6 +7,7 @@ import { MarketSessionBadge } from './MarketSessionBadge';
 import { NAV_GROUPS, type NavGroup, type NavItem } from './navConfig';
 import { ReplayControl } from '@/components/shared/ReplayControl';
 import { SignOutButton } from '@/components/auth/SignOutButton';
+import { AuthStatusIndicator } from '@/components/shared/AuthStatusIndicator';
 import { useUser } from '@/hooks/useUser';
 import { useThemeStore } from '@/stores/themeStore';
 
@@ -181,6 +182,10 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
       >
         <Search size={15} />
       </Button>
+
+      <div className="shrink-0">
+        <AuthStatusIndicator />
+      </div>
 
       <div className="hidden shrink-0 sm:block">
         <SignOutButton />

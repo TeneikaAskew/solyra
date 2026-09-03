@@ -2,6 +2,7 @@ import { Moon, Sun } from 'lucide-react';
 import { useThemeStore } from '@/stores/themeStore';
 import { ReplayControl } from '@/components/shared/ReplayControl';
 import { SignOutButton } from '@/components/auth/SignOutButton';
+import { AuthStatusIndicator } from '@/components/shared/AuthStatusIndicator';
 
 /**
  * Thin global utility bar — SIDEBAR nav pattern only (top-tabs folds these
@@ -15,6 +16,7 @@ export function Header() {
 
   return (
     <header className="flex min-h-12 flex-wrap items-center justify-end gap-2 bg-[var(--surface-1)] px-5 py-1.5 sm:h-12 sm:flex-nowrap sm:gap-3 sm:py-0">
+      <AuthStatusIndicator />
       <SignOutButton />
       <ReplayControl />
       <button
