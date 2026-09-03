@@ -14,7 +14,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import {
   useSettingsStore, ACCENTS, type Density, type NavPattern, type Accent,
 } from '@/stores/settingsStore';
-import { usePreferencesSync } from '@/hooks/usePreferences';
+import { usePreferencesStatus } from '@/hooks/usePreferences';
 
 /** Accent swatch colors (match index.css .accent-* palettes; blue = brand). */
 const ACCENT_SWATCH: Record<Accent, string> = {
@@ -44,7 +44,7 @@ function Section({ title, desc, children }: { title: string; desc: string; child
 export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore();
   const { navPattern, setNavPattern, density, setDensity, accent, setAccent } = useSettingsStore();
-  const { loading, saving, error } = usePreferencesSync();
+  const { loading, saving, error } = usePreferencesStatus();
 
   const densities: Density[] = ['comfy', 'default', 'dense'];
   const navs: { value: NavPattern; icon: typeof PanelLeft; label: string }[] = [
