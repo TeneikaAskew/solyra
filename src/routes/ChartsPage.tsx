@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTickerStore } from '@/stores/tickerStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -710,6 +711,7 @@ export default function ChartsPage() {
           className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)]"
           style={{ height: 'clamp(400px, calc(100vh - 340px), 900px)' }}
         >
+          <DataGate>
           {isLoading ? (
             <div className="flex h-full items-center justify-center">
               <LoadingSpinner size={32} />
@@ -768,9 +770,11 @@ export default function ChartsPage() {
               Select a date to load chart data
             </div>
           )}
+          </DataGate>
         </div>
       </div>
 
+    <DataGate compact>
     {/* Live strategy conditions, server-computed chart teaching voter
         (POST /api/live/indicators -> chart_voter, lib/chart_voter.py),
         the July-6 5-condition presentation restored per Task 3. */}
@@ -803,6 +807,7 @@ export default function ChartsPage() {
 
     {/* Backtester section (merged from former /backtest page) */}
     <BacktesterSection ticker={activeTicker} />
+    </DataGate>
 
     {/* Task 5.3 post-replay-session scorecard, the only remaining trigger
         for this modal after Task 6 removed the Task 3.3 on-demand

@@ -30,6 +30,8 @@ import {
   Pill, Metric, MicroLabel, Delta, ScoreStars, DirTag, Card, CardHeader, KpiTile,
 } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
+import { DataGate } from '@/components/shared/SignInEmptyState';
+import { useAuthBlocked } from '@/lib/authGate';
 import { MovementRead } from '@/components/dashboard/MovementRead';
 import { SetupCardDetails, type SetupHorizon } from '@/components/playbook/SetupCardDetails';
 import { PriceAreaChart, type PricePoint } from '@/components/charts/PriceAreaChart';
@@ -309,6 +311,7 @@ export default function DashboardPage() {
     '/api/market/sectors',
   );
   const [sectorPeriod, setSectorPeriod] = useState<'1d' | '5d'>('1d');
+  const authBlocked = useAuthBlocked();
   const sectorRows = useMemo(() => {
     const rows = sectorsResp?.sectors ?? [];
     return [...rows].sort((a, b) => {
@@ -493,6 +496,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 1. Briefing strip ───────────────────────────────────────────── */}
+      <DataGate>
       <div
         className="rounded-xl p-[var(--card-pad,14px)]"
         style={{
@@ -593,9 +597,11 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      </DataGate>
 
       {/* ── Daily KPIs ──────────────────────────────────────────────────── */}
       {kpiCards && (
+        <DataGate compact>
         <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
           <KpiTile label="Prev close" value={fmtPrice(kpiCards.prevClose)} />
           <KpiTile label="Latest close" value={fmtPrice(kpiCards.latestClose)} />
@@ -612,6 +618,7 @@ export default function DashboardPage() {
             sub={kpiCards.rsi == null ? undefined : rsiZone(kpiCards.rsi).label}
           />
         </div>
+        </DataGate>
       )}
 
       {/* ── Movement Read (PHASE 3, feature-flagged) ───────────────────────
@@ -631,8 +638,9 @@ export default function DashboardPage() {
       {!isReview && <MovementRead ticker={activeTicker} timeframe="15m" />}
 
       {/* ── Intraday price (candlestick default · area toggle) ──────────────── */}
-      {(hourly?.candlestick?.length ?? 0) > 0 && (
+      {((hourly?.candlestick?.length ?? 0) > 0 || authBlocked) && (
         <Card>
+          <DataGate compact>
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--on-surface)]">{activeTicker} · intraday</h3>
             <div className="flex items-center gap-3">
@@ -660,10 +668,12 @@ export default function DashboardPage() {
               height={260}
             />
           )}
+          </DataGate>
         </Card>
       )}
 
       {/* ── 2. Live signals · Today's catalysts ─────────────────────────── */}
+      <DataGate compact>
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[1.4fr_1fr]">
         {/* Live signals */}
         <Card interactive onClick={() => navigate('/signals')} className="min-w-0">
@@ -725,8 +735,10 @@ export default function DashboardPage() {
           )}
         </Card>
       </div>
+      </DataGate>
 
       {/* ── 3. Sector rotation · AI take · News ──────────────────────────── */}
+      <DataGate compact>
       <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 lg:grid-cols-3">
         {/* Sector rotation, ranked SPDR daily closes, fed by /api/market/sectors */}
         <Card className="min-w-0">
@@ -839,6 +851,7 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
+      </DataGate>
     </div>
   );
 }

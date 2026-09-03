@@ -33,6 +33,7 @@
 import { getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
+import { markAuthBlocked, clearAuthBlocked } from './authGate';
 
 // Reachable pre-auth — must match api/auth._OPEN_API_PREFIXES.
 const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase'];
@@ -120,9 +121,19 @@ export function installAuthFetch(): void {
     // Base rewrite happens for EVERY mode — a static host serving the SPA has
     // no /api route regardless of how auth is configured.
     const target = withApiBase(input);
+    const gated = isGatedApiPath(pathOf(input));
 
-    if (getAuthMode() !== 'firebase' || !isGatedApiPath(pathOf(input))) {
-      return nativeFetch(target, init);
+    // Track gated-call outcomes in every auth mode so data cards can show a
+    // "Sign in to load data" empty state on 401 instead of rendering blank.
+    const track = (resp: Response): Response => {
+      if (resp.status === 401) markAuthBlocked();
+      else if (resp.ok) clearAuthBlocked();
+      return resp;
+    };
+
+    if (getAuthMode() !== 'firebase' || !gated) {
+      const resp = await nativeFetch(target, init);
+      return gated ? track(resp) : resp;
     }
 
     const token = await getIdToken().catch(() => null);
@@ -138,6 +149,6 @@ export function installAuthFetch(): void {
 
     const resp = await nativeFetch(target, nextInit);
     if (resp.status === 401 && _onUnauthorized) _onUnauthorized();
-    return resp;
+    return track(resp);
   };
 }

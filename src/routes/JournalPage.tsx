@@ -1,3 +1,4 @@
+import { DataGate } from '@/components/shared/SignInEmptyState';
 import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTickerStore } from '@/stores/tickerStore';
@@ -502,6 +503,7 @@ export default function JournalPage() {
         </div>
       )}
 
+      <DataGate>
       {/* ── Chart + rail row (layout B "Cockpit") ──────────────────────── */}
       {/* Mobile (below lg): the rail stacks BELOW the chart, a fixed-width
           rail beside a flex-1 chart collapsed the chart to an illegible
@@ -956,6 +958,7 @@ export default function JournalPage() {
         onClose={() => setImportOpen(false)}
         onImported={() => setViewOverride('mine')}
       />
+      </DataGate>
     </div>
   );
 }
