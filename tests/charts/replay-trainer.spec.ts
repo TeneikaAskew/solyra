@@ -26,7 +26,7 @@
  * no longer exists anywhere on this page to gate.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
+import { mockCommon, M } from '../helpers/mocks';
 
 // 30 one-minute bars starting 09:31 "ET" (naive-ET-as-UTC epoch, matching
 // this repo's chart-time convention), so every bar falls inside the default

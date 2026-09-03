@@ -9,14 +9,14 @@
  * inline copies, so the shapes stay pinned by `satisfies` in one place (#18).
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { M } from './helpers/mocks';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { M } from '../helpers/mocks';
 import {
   mockDashboard,
   mockDashboardCards,
   MOCK_SECTORS,
   buildDashboardNews,
-} from './helpers/fixtures/dashboard';
+} from '../helpers/fixtures/dashboard';
 
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {

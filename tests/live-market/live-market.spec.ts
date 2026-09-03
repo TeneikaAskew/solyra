@@ -10,8 +10,8 @@
  * doesn't exist.
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { mockLiveApi } from './helpers/fixtures/live';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { mockLiveApi } from '../helpers/fixtures/live';
 
 test.describe('Live Market', () => {
   test.beforeEach(async ({ page }) => {

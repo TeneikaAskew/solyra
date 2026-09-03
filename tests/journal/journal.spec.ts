@@ -8,15 +8,15 @@
  * shape; both are now the one typed fixture.
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { M } from './helpers/mocks';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { M } from '../helpers/mocks';
 import {
   MOCK_JOURNAL_EMPTY,
   MOCK_JOURNAL_TRADES,
   MOCK_JOURNAL_TRADES_WITH_ACTIVE,
   MOCK_MIXED_TRADES,
   mockJournalApi,
-} from './helpers/fixtures/journal';
+} from '../helpers/fixtures/journal';
 
 test.describe('Trade Journal', () => {
   test.beforeEach(async ({ page }) => {

@@ -8,7 +8,7 @@
  * hermetic, no live backend required.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
+import { mockCommon, M } from '../helpers/mocks';
 
 const MOCK_BRIEF = {
   ticker: 'IWM',

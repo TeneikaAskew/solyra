@@ -13,12 +13,12 @@
  *     eventually reloads the report
  */
 import { test, expect } from '@playwright/test';
-import { M } from './helpers/mocks';
+import { M } from '../helpers/mocks';
 import {
   MOCK_INSIGHT_REPORT,
   mockInsightsApi,
   runStatus,
-} from './helpers/fixtures/insights';
+} from '../helpers/fixtures/insights';
 
 test.describe('AI Insights (structured)', () => {
   test('renders a full report with all cards', async ({ page }) => {

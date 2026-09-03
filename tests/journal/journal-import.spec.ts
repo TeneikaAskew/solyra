@@ -25,15 +25,15 @@
 import { test, expect } from '@playwright/test';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { M } from './helpers/mocks';
+import { M } from '../helpers/mocks';
 import {
   MOCK_IMPORT_COMMIT,
   MOCK_IMPORT_PREVIEW,
   mockJournalApi,
-} from './helpers/fixtures/journal';
+} from '../helpers/fixtures/journal';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROBINHOOD_FIXTURE = path.join(__dirname, 'fixtures', 'robinhood_sample.csv');
+const ROBINHOOD_FIXTURE = path.join(__dirname, '..', 'fixtures', 'robinhood_sample.csv');
 
 /**
  * The import modal lives on /journal, so the page needs its full first-paint

@@ -9,7 +9,7 @@
  * with a realistic payload and produces screenshots for visual verification.
  */
 import { test, expect } from '@playwright/test';
-import { mockDashboard } from './helpers/fixtures/dashboard';
+import { mockDashboard } from '../helpers/fixtures/dashboard';
 
 // A realistic assembled statement — shape verified live against the production
 // assembler (lib/movement_statement.py) with the flag on: validated 15m model.

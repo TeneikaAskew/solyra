@@ -103,7 +103,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **Child components:** `BentoGrid`, `ChartShowcase`, `DailyRhythm`, `Hero`, `LandingFAQ`, `LandingNav`, `ModuleDives`, `WaitlistSection`
 - **API calls (from source):** none found in the page component — issued by child components or hooks
 - **States present:** none detected · **absent:** load, err, empty, stale
-- **E2E specs:** `tests/demo-banners.spec.ts`, `tests/landing.spec.ts`
+- **E2E specs:** `tests/options/demo-banners.spec.ts`, `tests/landing/landing.spec.ts`
 - **PR lineage:** [#684](https://github.com/TeneikaAskew/stocks/pull/684) origin · [#686](https://github.com/TeneikaAskew/stocks/pull/686) real walk-forward proof tile · [#683](https://github.com/TeneikaAskew/stocks/issues/683) perf open
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -129,7 +129,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** `/api/catalysts/events`, `/api/dashboard/brief/`, `/api/market/data/`, `/api/market/reference/`, `/api/market/sectors`, `/api/playbook/`, `/api/signals/`
 - **Stores:** `useReviewDateStore`, `useTickerStore`
 - **States present:** load, err, empty, stale
-- **E2E specs:** `tests/dashboard-chart-fit.spec.ts`, `tests/dashboard.spec.ts`, `tests/most-active-bar.spec.ts`, `tests/movement-read.spec.ts`
+- **E2E specs:** `tests/dashboard/dashboard-chart-fit.spec.ts`, `tests/dashboard/dashboard.spec.ts`, `tests/shared/most-active-bar.spec.ts`, `tests/dashboard/movement-read.spec.ts`
 - **PR lineage:** [#649](https://github.com/TeneikaAskew/stocks/pull/649)/[#650](https://github.com/TeneikaAskew/stocks/pull/650) movement statement · [#729](https://github.com/TeneikaAskew/stocks/pull/729) enable + e2e · [#732](https://github.com/TeneikaAskew/stocks/pull/732) most-active bar · [#733](https://github.com/TeneikaAskew/stocks/pull/733) expected-move card (disabled by [#810](https://github.com/TeneikaAskew/stocks/pull/810))
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -143,7 +143,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** `/api/market/data/`
 - **Stores:** `useReviewDateStore`, `useTickerStore`
 - **States present:** err, empty, stale · **absent:** load
-- **E2E specs:** `tests/live-market.spec.ts`, `tests/movement-read.spec.ts`
+- **E2E specs:** `tests/live-market/live-market.spec.ts`, `tests/dashboard/movement-read.spec.ts`
 - **PR lineage:** [#690](https://github.com/TeneikaAskew/stocks/pull/690) market dropdown + truthful session badge · [#700](https://github.com/TeneikaAskew/stocks/pull/700) one-source-of-truth signals
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -157,7 +157,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** none found in the page component — issued by child components or hooks
 - **Stores:** `useReviewDateStore`, `useSettingsStore`, `useTickerStore`
 - **States present:** load, err, empty, stale
-- **E2E specs:** `tests/charts-cards.spec.ts`, `tests/phase1-charts.spec.ts`, `tests/ticker-combobox.spec.ts`
+- **E2E specs:** `tests/charts/charts-cards.spec.ts`, `tests/dashboard/ticker-combobox.spec.ts`
 - **PR lineage:** [#715](https://github.com/TeneikaAskew/stocks/pull/715) restore charts UI · [#703](https://github.com/TeneikaAskew/stocks/pull/703) ticker type-ahead · [#700](https://github.com/TeneikaAskew/stocks/pull/700)
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -171,7 +171,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** none found in the page component — issued by child components or hooks
 - **Stores:** `useTickerStore`
 - **States present:** none detected · **absent:** load, err, empty, stale
-- **E2E specs:** `tests/gamma-levels.spec.ts`, `tests/options-flow.spec.ts`
+- **E2E specs:** `tests/shared/gamma-levels.spec.ts`, `tests/options/options-flow.spec.ts`
 - **PR lineage:** [#255](https://github.com/TeneikaAskew/stocks/pull/255) Cloudflare→FastAPI cutover · [#540](https://github.com/TeneikaAskew/stocks/pull/540)/[#541](https://github.com/TeneikaAskew/stocks/pull/541) grid math + endpoints · [#645](https://github.com/TeneikaAskew/stocks/pull/645) wire Swing Mode to real /grid
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -185,7 +185,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** `/api/market/reference/`, `/api/playbook/`
 - **Stores:** `useTickerStore`
 - **States present:** load, err, empty, stale
-- **E2E specs:** `tests/playbook.spec.ts`
+- **E2E specs:** `tests/playbook/playbook.spec.ts`
 - **PR lineage:** [#444](https://github.com/TeneikaAskew/stocks/pull/444) EOD outcome tracking + as-of cutoff · [#620](https://github.com/TeneikaAskew/stocks/pull/620) as-of review mode · [#774](https://github.com/TeneikaAskew/stocks/pull/774) silent resolver outage fix
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -198,7 +198,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** `/api/reports/`, `/api/reports/list/`
 - **Stores:** `useTickerStore`
 - **States present:** load, err, empty, stale
-- **E2E specs:** `tests/replay-trainer.spec.ts`, `tests/reports.spec.ts`
+- **E2E specs:** `tests/charts/replay-trainer.spec.ts`, `tests/reports/reports.spec.ts`
 - **PR lineage:** [#513](https://github.com/TeneikaAskew/stocks/pull/513) backtest→Cloud Run · [#548](https://github.com/TeneikaAskew/stocks/pull/548) walk-forward stage · [#706](https://github.com/TeneikaAskew/stocks/pull/706) backtest my trades · [#710](https://github.com/TeneikaAskew/stocks/pull/710) bar-replay trainer
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -212,7 +212,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** `/api/signals/`
 - **Stores:** `useReviewDateStore`, `useTickerStore`
 - **States present:** load, err, empty, stale
-- **E2E specs:** `tests/signals.spec.ts`
+- **E2E specs:** `tests/signals/signals.spec.ts`
 - **PR lineage:** [#184](https://github.com/TeneikaAskew/stocks/pull/184) lib/strategies origin · [#504](https://github.com/TeneikaAskew/stocks/pull/504) dedicated Discord channel · [#803](https://github.com/TeneikaAskew/stocks/pull/803) RVOL respecification
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -226,7 +226,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** `/api/journal/export/`, `/api/journal/trades`
 - **Stores:** `useSettingsStore`, `useTickerStore`
 - **States present:** load, err, empty, stale
-- **E2E specs:** `tests/journal-import.spec.ts`, `tests/journal-onestop.spec.ts`, `tests/journal.spec.ts`
+- **E2E specs:** `tests/journal/journal-import.spec.ts`, `tests/journal/journal-onestop.spec.ts`, `tests/journal/journal.spec.ts`
 - **PR lineage:** [#626](https://github.com/TeneikaAskew/stocks/pull/626) per-user scoping · [#705](https://github.com/TeneikaAskew/stocks/pull/705) chart trades persist · [#718](https://github.com/TeneikaAskew/stocks/pull/718) one-stop cockpit · [#764](https://github.com/TeneikaAskew/stocks/pull/764) tz guard
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -240,7 +240,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** `/api/insights/chat`
 - **Stores:** `useTickerStore`
 - **States present:** load, err, empty, stale
-- **E2E specs:** `tests/insights.spec.ts`
+- **E2E specs:** `tests/insights/insights.spec.ts`
 - **PR lineage:** [#353](https://github.com/TeneikaAskew/stocks/pull/353) divergence card · [#344](https://github.com/TeneikaAskew/stocks/pull/344) reflection memory · [#451](https://github.com/TeneikaAskew/stocks/pull/451) break feedback loop
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -253,7 +253,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **API calls (from source):** `/api/catalysts/events`, `/api/catalysts/types`
 - **Stores:** `useThemeStore`, `useTickerStore`
 - **States present:** load, err, stale · **absent:** empty
-- **E2E specs:** `tests/catalysts.spec.ts`
+- **E2E specs:** `tests/catalysts/catalysts.spec.ts`
 - **PR lineage:** [#624](https://github.com/TeneikaAskew/stocks/pull/624) earnings router origin · [#220](https://github.com/TeneikaAskew/stocks/pull/220) catalyst proximity · [#532](https://github.com/TeneikaAskew/stocks/pull/532) $-attribution
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -266,7 +266,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **Child components:** `ModelStateSnapshot`, `PredictForm`, `StructureBrief`
 - **API calls (from source):** `/api/admin/routes`
 - **States present:** load, err · **absent:** empty, stale
-- **E2E specs:** `tests/admin-auth.spec.ts`, `tests/admin.spec.ts`
+- **E2E specs:** `tests/admin/admin-auth.spec.ts`, `tests/admin/admin-tabs.spec.ts`, `tests/admin/admin.spec.ts`
 - **PR lineage:** [#567](https://github.com/TeneikaAskew/stocks/pull/567)/[#568](https://github.com/TeneikaAskew/stocks/pull/568) strat_engine state dashboard · [#635](https://github.com/TeneikaAskew/stocks/pull/635) platform audit
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -278,7 +278,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **Component:** `src/routes/HelpPage.tsx` (296 lines)
 - **API calls (from source):** none found in the page component — issued by child components or hooks
 - **States present:** empty · **absent:** load, err, stale
-- **E2E specs:** `tests/help.spec.ts`
+- **E2E specs:** `tests/help/help.spec.ts`
 - **PR lineage:** [#539](https://github.com/TeneikaAskew/stocks/pull/539) gamma glossary + endpoint · [#546](https://github.com/TeneikaAskew/stocks/pull/546) TermHover · [#423](https://github.com/TeneikaAskew/stocks/pull/423) 11 Strat entries
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.

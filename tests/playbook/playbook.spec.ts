@@ -2,8 +2,8 @@
  * E2E: Playbook ("/playbook") — top setup, conditions checklist, FTFC strat.
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { mockCommon, M } from './helpers/mocks';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { mockCommon, M } from '../helpers/mocks';
 
 const MOCK_PLAYBOOK = {
   ticker: 'IWM',

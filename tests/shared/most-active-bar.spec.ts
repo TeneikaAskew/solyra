@@ -10,8 +10,8 @@
  * container).
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
-import { mockDashboard } from './helpers/fixtures/dashboard';
+import { mockCommon, M } from '../helpers/mocks';
+import { mockDashboard } from '../helpers/fixtures/dashboard';
 
 const MOCK_MOST_ACTIVE = {
   snapshot_ts: '2026-07-12T14:30:00+00:00',

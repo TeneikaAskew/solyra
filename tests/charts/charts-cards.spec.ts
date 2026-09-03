@@ -16,7 +16,7 @@ import { test, expect } from '@playwright/test';
 import {
   MOCK_JOURNAL_TRADES_ONE_CLOSED,
   mockChartsApi,
-} from './helpers/fixtures/charts';
+} from '../helpers/fixtures/charts';
 
 test.describe('Charts page — Phase D/4/5 cards', () => {
   test.beforeEach(async ({ page }) => {

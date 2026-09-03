@@ -11,9 +11,9 @@
  * landed before the assertion ran).
  */
 import { test, expect, Page } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
-import { MOCK_GRID, MOCK_LEVELS } from './helpers/fixtures/options';
-import { mockAllPages } from './helpers/fixtures/all';
+import { mockCommon, M } from '../helpers/mocks';
+import { MOCK_GRID, MOCK_LEVELS } from '../helpers/fixtures/options';
+import { mockAllPages } from '../helpers/fixtures/all';
 
 const ROUTES: Array<{ path: string; heading: RegExp }> = [
   { path: '/dashboard', heading: /dashboard/i },

@@ -9,8 +9,8 @@
  * hermetic and doesn't depend on a live authenticated backend.
  */
 import { test, expect } from '@playwright/test';
-import { M } from './helpers/mocks';
-import { mockDashboard } from './helpers/fixtures/dashboard';
+import { M } from '../helpers/mocks';
+import { mockDashboard } from '../helpers/fixtures/dashboard';
 
 test.describe('Dashboard intraday candle chart', () => {
   test.beforeEach(async ({ page }) => {

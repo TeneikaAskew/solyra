@@ -19,7 +19,7 @@
  * `9f28a60^:platform/tests/data-pipeline-status.spec.ts`.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from './helpers/mocks';
+import { mockCommon, M } from '../helpers/mocks';
 
 // Mirrors the real /api/health/freshness envelope (stocks
 // platform/api/routers/health.py get_freshness → audit_data_freshness

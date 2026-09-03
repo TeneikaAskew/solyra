@@ -9,8 +9,8 @@
  * they can't silently stop being "hot" the day after they were written.
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { mockCatalystsApi } from './helpers/fixtures/catalysts';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { mockCatalystsApi } from '../helpers/fixtures/catalysts';
 
 test.describe('Catalysts', () => {
   test.beforeEach(async ({ page }) => {

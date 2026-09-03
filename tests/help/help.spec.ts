@@ -2,8 +2,8 @@
  * E2E: Help & Glossary ("/help") — static page, search-filterable terms.
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { mockCommon } from './helpers/mocks';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { mockCommon } from '../helpers/mocks';
 
 test.describe('Help & Glossary', () => {
   test.beforeEach(async ({ page }) => {

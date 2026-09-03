@@ -10,7 +10,7 @@
  * gate's render decision + that the login UI is present in firebase mode.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon } from './helpers/mocks';
+import { mockCommon } from '../helpers/mocks';
 
 // A well-formed (but fake) Firebase web config — enough for initializeApp() to
 // construct without throwing; no network is needed to render the signed-out UI.

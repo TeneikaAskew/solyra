@@ -13,15 +13,15 @@
  * backend.
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { mockCommon, M } from './helpers/mocks';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { mockCommon, M } from '../helpers/mocks';
 import {
   mockOptionsApi,
   MOCK_OPTIONS_DATES,
   MOCK_OPTIONS_CHAIN,
   MOCK_GRID_POPULATED,
   MOCK_GREEKS,
-} from './helpers/fixtures/options';
+} from '../helpers/fixtures/options';
 
 /** Open the Profiles tab (the original chain-profile view). */
 async function openProfilesTab(page: import('@playwright/test').Page) {

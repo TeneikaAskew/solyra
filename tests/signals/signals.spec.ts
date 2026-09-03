@@ -5,9 +5,9 @@
  * page's own SignalsResponse / TradeStats contracts.
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { M } from './helpers/mocks';
-import { MOCK_SIGNALS_EMPTY, mockSignalsApi } from './helpers/fixtures/signals';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { M } from '../helpers/mocks';
+import { MOCK_SIGNALS_EMPTY, mockSignalsApi } from '../helpers/fixtures/signals';
 
 test.describe('Signal Explorer', () => {
   test.beforeEach(async ({ page }) => {

@@ -18,7 +18,7 @@
  * the small MOCK_GRID_POPULATED fits on a phone and would pass vacuously.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { mockOptionsApi, mockOptionsWideGrid } from './helpers/fixtures/options';
+import { mockOptionsApi, mockOptionsWideGrid } from '../helpers/fixtures/options';
 
 const PHONES = [
   { name: 'iPhone-ish 390px', width: 390, height: 844 },

@@ -11,14 +11,14 @@
  * interaction recipe is reused from charts-cards.spec.ts (Task 2.3 block).
  */
 import { test, expect } from '@playwright/test';
-import { M } from './helpers/mocks';
+import { M } from '../helpers/mocks';
 import {
   MOCK_JOURNAL_DATES,
   MOCK_MINE_STYLE_SUCCESS,
   MOCK_MINE_STYLE_UNAVAILABLE,
   mockJournalApi,
   type JournalTradesResponse,
-} from './helpers/fixtures/journal';
+} from '../helpers/fixtures/journal';
 
 // 30 bars walking up — same synthetic series as charts-cards.spec.ts so the
 // canvas-click recipe resolves clicks to real bars deterministically.

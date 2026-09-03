@@ -5,8 +5,8 @@
  * page's own ReportListResponse contract.
  */
 import { test, expect } from '@playwright/test';
-import { perfBudgetMs } from './helpers/perfBudget';
-import { mockReportsApi } from './helpers/fixtures/reports';
+import { perfBudgetMs } from '../helpers/perfBudget';
+import { mockReportsApi } from '../helpers/fixtures/reports';
 
 test.describe('Reports', () => {
   test.beforeEach(async ({ page }) => {

@@ -19,9 +19,9 @@
  * Requires: Vite dev server on :5173.
  */
 import { test, expect } from '@playwright/test';
-import { mockOptionsApi } from './helpers/fixtures/options';
-import { mockChartsApi } from './helpers/fixtures/charts';
-import { mockHelpApi } from './helpers/fixtures/help';
+import { mockOptionsApi } from '../helpers/fixtures/options';
+import { mockChartsApi } from '../helpers/fixtures/charts';
+import { mockHelpApi } from '../helpers/fixtures/help';
 
 // The /options page was restructured (OptionsFlowPage.tsx): it opens on the
 // Heatseeker tab (SwingMode gamma cockpit) and the original levels/chain
