@@ -50,4 +50,14 @@
   box-shadow: 0 0 14px rgba(255, 150, 70, 0.5);
 }
 .sl-2col { display: flex; gap: 36px; align-items: center; }
+.sl-nav {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 16px 6vw; max-width: 1200px; margin: 0 auto;
+}
 @media (max-width: 900px) { .sl-2col { flex-direction: column; } .sl-sec { padding: 48px 5vw; } }
+@media (max-width: 720px) {
+  .sl-nav { padding: 14px 5vw; }
+  .sl-nav-links { display: none !important; }
+  .sl-nav-signin { display: none !important; }
+  .sl-nav-cta { padding: 8px 12px !important; font-size: 12px !important; }
+}
