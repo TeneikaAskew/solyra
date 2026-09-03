@@ -181,6 +181,12 @@ export function usePreferencesSync() {
     const payload = toPayload(theme, navPattern, density, accent);
     const serialized = JSON.stringify(payload);
     if (lastSent.current === serialized) return;
+    // Also skip when the "change" merely restates what the server already
+    // stores — e.g. a remount replaying hydration. Saves a pointless write.
+    if (query.data && JSON.stringify(query.data) === serialized) {
+      lastSent.current = serialized;
+      return;
+    }
     lastSent.current = serialized;
     mutation.mutate(payload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
