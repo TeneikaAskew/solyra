@@ -246,8 +246,9 @@ function EventRow({ event, onOpenTicker }: {
   onOpenTicker: (ticker: string) => void;
 }) {
   const macro = event.ticker === 'MACRO' || !event.ticker;
+  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="group flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
+    <div className="group flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
       <ImpactDot event={event} />
       {macro ? (
         <span className="w-16 shrink-0 text-xs font-bold text-[var(--on-surface-variant)]">
