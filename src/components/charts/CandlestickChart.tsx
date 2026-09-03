@@ -40,7 +40,7 @@ interface CandlestickChartProps {
   markers?: SeriesMarker<Time>[];
   priceLines?: PriceLineConfig[];
   onChartClick?: (data: ChartClickData) => void;
-  onCrosshairMove?: (data: { time: number; price: number; ohlc?: CandlestickBar } | null) => void;
+  onCrosshairMove?: (data: { time: number; price: number | null; ohlc?: CandlestickBar } | null) => void;
   /** Optional minimum height (px) for the chart container. Undefined = no
    *  floor, so the caller's own wrapper controls sizing (e.g. a dashboard
    *  card that must clip at a fixed height). Callers that need a chart to
@@ -452,7 +452,10 @@ export function CandlestickChart({
         return;
       }
       const data = param.seriesData?.get(candleSeriesRef.current) as CandlestickBar | undefined;
-      const price = data?.close ?? 0;
+      // No bar under the crosshair → price is honestly null (the callback
+      // type says so); consumers render from `ohlc` and must never receive
+      // a fabricated 0 they could mistake for a quote.
+      const price = data?.close ?? null;
       onCrosshairMove({
         time: param.time as number,
         price,

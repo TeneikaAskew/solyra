@@ -167,7 +167,13 @@ function fmtStrike(s: number): string {
 }
 
 function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Every other time on these surfaces is ET — render the snapshot in ET
+  // with an explicit label, not the viewer's local zone unlabeled.
+  return `${new Date(iso).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/New_York',
+  })} ET`;
 }
 
 // Aggregated real-data overlay derived from useGammaLevels. Any field that the
@@ -179,15 +185,20 @@ interface RealOverlay {
    *  never as mock next to a real grid. */
   isLevels: boolean;
   ticker: string;
-  spotPrice: number;
+  /** null when neither /levels nor the grid carries a usable spot — rendered
+   *  as "—", and no Spot node/row is drawn (Rule 4: never a $0 quote). */
+  spotPrice: number | null;
   spotMethod: string;
   spotNote: string;
-  kingStrike: number;
+  /** null when the server identified no King — the marker is dropped, never
+   *  fabricated at spot (a "King here" claim is a positioning read). */
+  kingStrike: number | null;
   /** null when the level is genuinely absent — rendered as "—", not $0. */
   kingGex: number | null;
   gateAbove?: { strike: number; gex: number };
   gateBelow?: { strike: number; gex: number };
-  flipStrike: number;
+  /** null when no zero-gamma level was identified — same discipline. */
+  flipStrike: number | null;
   flipGex: number | null;
   regime: string;
   totalGex: number;
@@ -202,10 +213,14 @@ function SourcePill({ source, asOf }: { source: DataSource; asOf: string }) {
       eod_fallback: { cls: 'eod-fallback', label: 'EOD', hint: 'Realtime missed · using yesterday close' },
       stale_fallback: { cls: 'stale', label: 'STALE', hint: 'EOD > 2 sessions behind' },
       unavailable: { cls: 'stale', label: 'UNAVAILABLE', hint: 'No snapshot available' },
-    }[source] ?? { cls: 'realtime', label: 'LIVE', hint: 'Live' };
+      // Rule 4: an UNRECOGNIZED source must not default to the most
+      // reassuring state — the value arrives untyped over the wire (Rule 6)
+      // and a renamed enum member would otherwise render a green LIVE pill.
+    }[source] ?? { cls: 'stale', label: 'UNAVAILABLE', hint: 'Unrecognized data source' };
   return (
     <span className={`hs-pill ${meta.cls}`} title={meta.hint}>
-      <span className="dot pulse" />
+      {/* the pulse animation is the live-streaming affordance — only LIVE gets it */}
+      <span className={meta.cls === 'realtime' ? 'dot pulse' : 'dot'} />
       <span>{meta.label}</span>
       {asOf ? (
         <span style={{ opacity: 0.7, fontWeight: 500, letterSpacing: 0, textTransform: 'none' }}>
@@ -311,7 +326,7 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
           <div className="label">
             <Term k="spot">Spot</Term>
           </div>
-          <div className="val">{overlay.spotPrice.toFixed(2)}</div>
+          <div className="val">{overlay.spotPrice != null ? overlay.spotPrice.toFixed(2) : '—'}</div>
         </div>
       </span>
       <span className="chip" title={overlay.spotNote || glossary[overlay.spotMethod]?.short}>
@@ -341,7 +356,7 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
           <div className="label">
             <Term k="king">King</Term>
           </div>
-          <div className="val">{fmtStrike(overlay.kingStrike)}</div>
+          <div className="val">{overlay.kingStrike != null ? fmtStrike(overlay.kingStrike) : '—'}</div>
         </div>
       </span>
       {gateAbove && (
@@ -378,7 +393,7 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
           <div className="label">
             <Term k="flip">Flip</Term>
           </div>
-          <div className="val">{overlay.flipStrike.toFixed(2)}</div>
+          <div className="val">{overlay.flipStrike != null ? overlay.flipStrike.toFixed(2) : '—'}</div>
         </div>
       </span>
       {overlay.isLevels && (
@@ -486,15 +501,19 @@ interface NodeItem {
 }
 
 function NodeList({ overlay }: { overlay: RealOverlay }) {
-  const items: NodeItem[] = [
-    { role: 'king', strike: overlay.kingStrike, extra: fmtBigGex(overlay.kingGex), name: 'King' },
-  ];
+  // Rule 4: a node renders only when its level really exists — a missing
+  // King/Spot/Flip is dropped, never fabricated at another level's price.
+  const items: NodeItem[] = [];
+  if (overlay.kingStrike != null)
+    items.push({ role: 'king', strike: overlay.kingStrike, extra: fmtBigGex(overlay.kingGex), name: 'King' });
   if (overlay.gateAbove)
     items.push({ role: 'gate', strike: overlay.gateAbove.strike, extra: fmtBigGex(overlay.gateAbove.gex), name: 'Gate ↑' });
   if (overlay.gateBelow)
     items.push({ role: 'gate', strike: overlay.gateBelow.strike, extra: fmtBigGex(overlay.gateBelow.gex), name: 'Gate ↓' });
-  items.push({ role: 'spot', strike: overlay.spotPrice, extra: 'current', name: 'Spot' });
-  items.push({ role: 'flip', strike: overlay.flipStrike, extra: 'zero-gamma', name: 'Flip' });
+  if (overlay.spotPrice != null)
+    items.push({ role: 'spot', strike: overlay.spotPrice, extra: 'current', name: 'Spot' });
+  if (overlay.flipStrike != null)
+    items.push({ role: 'flip', strike: overlay.flipStrike, extra: 'zero-gamma', name: 'Flip' });
   // Midpoint / Hedge nodes have no backend source — show them only alongside the
   // real /levels taxonomy, never as mock next to a grid-derived overlay.
   if (overlay.isLevels) {
@@ -802,13 +821,19 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
     // 1. Real /levels — full King/Gate taxonomy (lib.gamma is the source of math).
     if (levels && levels.levels.length > 0) {
       const king = levels.kings?.[0];
-      const spotPrice = levels.spot.price > 0 ? levels.spot.price : (grid?.spot.price ?? 0);
-      const above = levels.gates
-        .filter((g) => g.strike >= spotPrice)
-        .sort((a, b) => a.strike - b.strike)[0];
-      const below = levels.gates
-        .filter((g) => g.strike < spotPrice)
-        .sort((a, b) => b.strike - a.strike)[0];
+      // Honest spot cascade (Rule 4): a 0/absent spot stays null — it is
+      // never presented as a $0 quote, and gates can't be classified as
+      // above/below a price that doesn't exist.
+      const spotPrice =
+        levels.spot.price > 0 ? levels.spot.price
+        : grid && grid.spot.price > 0 ? grid.spot.price
+        : null;
+      const above = spotPrice != null
+        ? levels.gates.filter((g) => g.strike >= spotPrice).sort((a, b) => a.strike - b.strike)[0]
+        : undefined;
+      const below = spotPrice != null
+        ? levels.gates.filter((g) => g.strike < spotPrice).sort((a, b) => b.strike - a.strike)[0]
+        : undefined;
       const flipLvl = levels.gamma_balance_levels?.[0];
       return {
         isReal: true,
@@ -817,11 +842,11 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         spotPrice,
         spotMethod: levels.spot.method,
         spotNote: levels.spot.note,
-        kingStrike: king?.strike ?? spotPrice,
+        kingStrike: king?.strike ?? null, // no King → no marker, not "King at spot"
         kingGex: king?.gex ?? null,
         gateAbove: above ? { strike: above.strike, gex: above.gex } : undefined,
         gateBelow: below ? { strike: below.strike, gex: below.gex } : undefined,
-        flipStrike: levels.gamma_balance ?? grid?.gamma_flip ?? spotPrice,
+        flipStrike: levels.gamma_balance ?? grid?.gamma_flip ?? null,
         flipGex: flipLvl?.gex ?? null,
         regime: levels.regime,
         totalGex: levels.total_gex,
@@ -835,8 +860,8 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
     if (grid && grid.cells.length > 0 && grid.data_source !== 'unavailable') {
       const byStrike = new Map<number, number>();
       for (const c of grid.cells) byStrike.set(c.strike, (byStrike.get(c.strike) ?? 0) + c.gex);
-      let kingStrike = grid.spot.price;
-      let kingGex = 0;
+      let kingStrike: number | null = null; // cells.length > 0 guarantees the loop sets it
+      let kingGex: number | null = null;
       let kingAbs = -1;
       for (const [s, g] of byStrike) {
         if (Math.abs(g) > kingAbs) {
@@ -849,14 +874,14 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         isReal: true,
         isLevels: false,
         ticker: grid.ticker,
-        spotPrice: grid.spot.price,
+        spotPrice: grid.spot.price > 0 ? grid.spot.price : null,
         spotMethod: grid.spot.method,
         spotNote: grid.spot.note,
         kingStrike,
         kingGex,
         gateAbove: undefined,
         gateBelow: undefined,
-        flipStrike: grid.gamma_flip ?? grid.spot.price,
+        flipStrike: grid.gamma_flip ?? null,
         // The grid path has no per-level flip GEX (only the flip strike from
         // gamma_flip); null renders "—" rather than a fabricated $0.
         flipGex: null,
@@ -934,8 +959,8 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
           isError={gridQuery.isError}
           metric={metric}
           ticker={sym}
-          kingStrike={overlay.isReal ? overlay.kingStrike : undefined}
-          flipStrike={overlay.isReal ? overlay.flipStrike : undefined}
+          kingStrike={overlay.isReal && overlay.kingStrike != null ? overlay.kingStrike : undefined}
+          flipStrike={overlay.isReal && overlay.flipStrike != null ? overlay.flipStrike : undefined}
         />
         <div className="col" style={{ gap: 14 }}>
           {overlay.isReal && <NodeList overlay={overlay} />}

@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useTickerStore } from '@/stores/tickerStore';
 import { useReviewDateStore } from '@/stores/reviewDateStore';
 import { useLiveStatus } from '@/hooks/useLiveStatus';
+import { sessionLabel } from '@/lib/marketSession';
+import { reviewCutoffTs } from '@/hooks/useReviewQuote';
 import { useLiveQuote, type LiveQuote } from '@/hooks/useLiveQuote';
 import { useLiveHistory, useAvgVolume } from '@/hooks/useLiveHistory';
 import { useLiveIndicators } from '@/hooks/useLiveIndicators';
@@ -135,10 +137,10 @@ function SignalCard({ direction, strength, conditions, fired }: {
 
 function reviewTimestamp(date: string, time: string | null): number | null {
   if (!date) return null;
-  const t = time ?? '23:59';
-  const [y, m, d] = date.split('-').map(Number);
-  const [hh, mm] = t.split(':').map(Number);
-  return Math.floor(Date.UTC(y, m - 1, d, hh, mm) / 1000);
+  // One shared default cutoff (16:00 market close, reviewCutoffTs) —
+  // Dashboard, Charts and this page previously disagreed (16:00 vs 23:59)
+  // and showed different as-of prices for the same review moment.
+  return reviewCutoffTs(date, time);
 }
 
 export default function LiveMarketPage() {
@@ -239,25 +241,27 @@ export default function LiveMarketPage() {
 
   const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '--';
 
-  const sessionLabel =
-    status?.session === 'regular' ? 'Market Open' :
-    status?.session === 'pre' ? 'Pre-Market' :
-    status?.session === 'after' ? 'After Hours' : 'Market Closed';
-
-  const sessionColor =
+  // The API sends 'pre-market' / 'after-hours' (useLiveStatus.MarketSession).
+  // The old local map compared against 'pre'/'after' — dead literals that
+  // showed "Market Closed" through both extended sessions while quotes were
+  // still streaming. sessionLabel() carries the correct keys and is
+  // unit-tested in marketSession.test.ts.
+  const sessionText = sessionLabel(status?.session);
+  const sessionTextColor =
     status?.session === 'regular' ? 'text-[var(--bull)]' :
-    status?.session === 'pre' || status?.session === 'after' ? 'text-[var(--warn)]' : 'text-[var(--bear)]';
+    status?.session === 'pre-market' || status?.session === 'after-hours' ? 'text-[var(--warn)]' :
+    'text-[var(--bear)]';
 
   return (
     <div className="space-y-4">
       {/* Top bar (the replay control lives in the top nav row) */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5">
-          <Circle size={8} className={`fill-current ${isReview ? 'text-[var(--warn)]' : sessionColor}`} />
+          <Circle size={8} className={`fill-current ${isReview ? 'text-[var(--warn)]' : sessionTextColor}`} />
           <span className="text-xs text-[var(--color-text-secondary)]">
             {isReview
               ? `Historical: ${reviewDate}${reviewTime ? ` @ ${reviewTime} ET` : ''}`
-              : sessionLabel}
+              : sessionText}
           </span>
           {status && !isReview && (
             <span className="text-xs text-[var(--color-text-muted)]">{to12h(status.current_time_et)} ET</span>
@@ -305,7 +309,7 @@ export default function LiveMarketPage() {
               <div className="text-3xl font-bold font-mono text-[var(--color-text-primary)]">
                 ${quote.price.toFixed(2)}
               </div>
-              <div className={`text-sm font-mono ${(quote.change ?? 0) >= 0 ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}`}>
+              <div className={`text-sm font-mono ${quote.change == null ? 'text-[var(--on-surface-muted)]' : quote.change >= 0 ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}`}>
                 {quote.change != null && quote.change_pct != null ? (
                   <>
                     {quote.change >= 0 ? '+' : ''}{quote.change.toFixed(2)}

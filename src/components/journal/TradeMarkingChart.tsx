@@ -81,7 +81,7 @@ export interface TradeMarkingChartProps {
   extraPriceLines?: PriceLineConfig[];
   showVolume?: boolean;
   rthOnly?: boolean;
-  onCrosshairMove?: (data: { time: number; price: number; ohlc?: CandlestickBar } | null) => void;
+  onCrosshairMove?: (data: { time: number; price: number | null; ohlc?: CandlestickBar } | null) => void;
   minHeight?: number;
   appendMode?: boolean;
   /** Forces the underlying CandlestickChart (only) to remount — e.g. on

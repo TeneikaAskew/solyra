@@ -23,7 +23,7 @@ import { useTickerStore } from '@/stores/tickerStore';
 import { useReviewDateStore } from '@/stores/reviewDateStore';
 import { useLiveStatus } from '@/hooks/useLiveStatus';
 import { useLiveQuote } from '@/hooks/useLiveQuote';
-import { useReviewQuote } from '@/hooks/useReviewQuote';
+import { useReviewQuote, reviewCutoffTs } from '@/hooks/useReviewQuote';
 import { useInsightReport } from '@/hooks/useInsights';
 import { todayET, addDaysToISO } from '@/lib/dates';
 import {
@@ -265,9 +265,9 @@ export default function DashboardPage() {
   // pricePoints). Defaults to the 16:00 ET close when no review time is set.
   const reviewCutoff = useMemo(() => {
     if (!isReview || !reviewDate) return null;
-    const [y, m, d] = reviewDate.split('-').map(Number);
-    const [hh, mm] = (reviewTime ?? '16:00').split(':').map(Number);
-    return Math.floor(Date.UTC(y, m - 1, d, hh, mm) / 1000);
+    // Shared helper (same 16:00 default) so every review surface uses one
+    // as-of cutoff — Charts/LiveMarket previously defaulted to 23:59.
+    return reviewCutoffTs(reviewDate, reviewTime);
   }, [isReview, reviewDate, reviewTime]);
 
   // Hero price: live quote normally; in review mode a synthetic quote rebuilt
