@@ -34,7 +34,11 @@ import { getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
 
-// Reachable pre-auth — must match api/auth._OPEN_API_PREFIXES.
+// Paths the backend answers WITHOUT auth (api/auth._OPEN_API_PREFIXES — keep
+// in sync), so the sign-in screen and shell can boot. Open ≠ anonymous: the
+// ID token still attaches when present, because /api/me resolves a presented
+// bearer token server-side (auth.current_user_email) to the real email +
+// is_admin. This list only decides which 401s mean "signed out".
 const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase'];
 
 /**
@@ -120,11 +124,16 @@ export function installAuthFetch(): void {
     // Base rewrite happens for EVERY mode — a static host serving the SPA has
     // no /api route regardless of how auth is configured.
     const target = withApiBase(input);
+    const path = pathOf(input);
 
-    if (getAuthMode() !== 'firebase' || !isGatedApiPath(pathOf(input))) {
+    if (getAuthMode() !== 'firebase' || !path.startsWith('/api/')) {
       return nativeFetch(target, init);
     }
 
+    // Attach the identity to EVERY /api request when signed in, the
+    // OPEN_PREFIXES paths included — see the note on OPEN_PREFIXES. Skipping
+    // the header on /api/me left the role-based admin gate reading an
+    // anonymous identity forever.
     const token = await getIdToken().catch(() => null);
     let nextInit = init;
     if (token) {
@@ -137,7 +146,9 @@ export function installAuthFetch(): void {
     }
 
     const resp = await nativeFetch(target, nextInit);
-    if (resp.status === 401 && _onUnauthorized) _onUnauthorized();
+    // Only gated paths signal "signed out": an open path answers without auth
+    // by design, so a 401 from one is a server bug, not an expired session.
+    if (resp.status === 401 && isGatedApiPath(path) && _onUnauthorized) _onUnauthorized();
     return resp;
   };
 }
