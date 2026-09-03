@@ -297,3 +297,109 @@ Everything this audit left open is tracked; nothing lives only in this file.
 | `a7476c8` | `mockAllPages()` composer; fixes for the three real E2E failures (`auth-gate`, `gamma-levels`, `navigation`) |
 | `df0f633` | Final audit document: E2E section, infra findings, open-items → issues index |
 | *(this)* | Clean re-verification numbers for the three fixed specs |
+
+---
+
+## 9. 2026-09-03 re-audit — full page/component/control inventory, per-page spec layout
+
+**Date:** 2026-09-03 · **Branch:** `claude/lovable-commits-review-7gjnal` · Follows the
+Lovable commit batch through `ac3efae` (tabbed Admin, rebuilt Reports layout,
+`usePreferences` sync, new Playwright specs) and PR #37's commit index.
+
+### 9.1 The tests/ directory is now grouped by page
+
+Every Playwright spec lives in a folder named for the page it drives; anything
+that spans pages or the shell lives in the single `tests/shared/` folder.
+
+| Folder | Specs |
+| --- | --- |
+| `tests/admin/` | `admin.spec.ts`, `admin-auth.spec.ts`, `admin-tabs.spec.ts` (new) |
+| `tests/catalysts/` | `catalysts.spec.ts` |
+| `tests/charts/` | `charts-cards.spec.ts`, `replay-trainer.spec.ts` |
+| `tests/dashboard/` | `dashboard.spec.ts`, `dashboard-chart-fit.spec.ts`, `data-pipeline-widget.spec.ts`, `movement-read.spec.ts`, `ticker-combobox.spec.ts` |
+| `tests/help/` | `help.spec.ts` |
+| `tests/insights/` | `insights.spec.ts` |
+| `tests/journal/` | `journal.spec.ts`, `journal-import.spec.ts`, `journal-onestop.spec.ts` |
+| `tests/landing/` | `landing.spec.ts` |
+| `tests/live-market/` | `live-market.spec.ts` |
+| `tests/options/` | `options-flow.spec.ts`, `options-mobile-fit.spec.ts`, `demo-banners.spec.ts` |
+| `tests/playbook/` | `playbook.spec.ts` |
+| `tests/reports/` | `reports.spec.ts` (rewritten for the picker layout) |
+| `tests/settings/` | `settings.spec.ts` (new — closed the last page with zero E2E) |
+| `tests/signals/` | `signals.spec.ts` |
+| `tests/shared/` | `navigation.spec.ts`, `auth-gate.spec.ts`, `gamma-levels.spec.ts` (spans options+charts+help), `most-active-bar.spec.ts` (spans dashboard+journal+live) |
+| `tests/` root | infrastructure only: `routes.warmup.ts` (warmup project), `auth.setup.ts` (cloud IAP), `helpers/`, `fixtures/` (binary fixtures) |
+
+`playwright.config.ts` needed no change: `testDir` recurses and both special
+`testMatch` patterns are suffix regexes. Classification rule: a spec whose
+`goto()`s all target one page sits in that page's folder; multi-page and
+shell-level suites sit in `tests/shared/`.
+
+### 9.2 What this change set closed
+
+1. **Admin, tabbed** — the 7 specs broken by the users|data|models restructure
+   now switch tabs; `admin-tabs.spec.ts` covers the two new panels end-to-end
+   (role/status PUTs, search, category filter, refresh POST, em-dash null
+   rendering, visible load-failure). `fixtures/admin.ts` grew typed payloads
+   for all five new `/api/admin` endpoints.
+2. **Settings** — was the only page with no E2E at all. `settings.spec.ts` now
+   drives all four control groups, asserts the PUT write-through payload, and
+   pins the Rule-4 sync banner (error state announced, never swallowed).
+3. **`usePreferences` StrictMode fix** — the sync ownership claim moved from
+   render to an effect; a render-phase claim left dev builds (incl. the E2E
+   server) with no live owner, so preferences never loaded or saved. The
+   Settings spec's "Synced to your account." assertion is the regression fence.
+4. **`src/lib/format.ts`** — the canonical Rule-4 formatter file finally has
+   `format.test.ts`: every formatter's missing-input → `—` path pinned,
+   plus zero-vs-missing disambiguation.
+5. **Reports, rebuilt** — the spec was asserting list text that the new picker
+   `<select>` layout no longer renders visibly; rewritten against the picker,
+   and the previously-untested interactions (select switch, prev/next bounds,
+   error banner, empty state) are now covered.
+6. **`/api/me/preferences` mock** in `mocks.ts` is pinned with
+   `satisfies UserPreferences` (was `unknown` — contract drift passed tsc).
+
+### 9.3 Outstanding gaps (ranked; the single to-do list)
+
+Verified by a full-repo sweep (34 unit files, 30 specs) — each item names the
+untested surface, not a guess:
+
+1. **Review mode (global)** — `ReplayControl.tsx` testids `replay-toggle` /
+   `replay-clear` / `replay-apply` appear nowhere in `tests/`; every page's
+   `isReview` branch is exercised only via pure-function unit tests. Highest
+   value: one `tests/shared/review-mode.spec.ts` driving the picker and
+   asserting review UI on Live + Charts.
+2. **SignalsPage filters** — direction ALL/CALL/PUT, min-score select, date
+   from/to, clear button, column sorting: five interactive surfaces, zero
+   click-driven assertions.
+3. **Options inner modes** — Heatseeker→"Trinity Mode" and
+   Flowseeker→"Contract Drilldown" toggles are never clicked;
+   `TrinityTab.tsx` (real-data, contains a Rule-4-shaped `?? 0` on spot at
+   line 56) and `ContractDrilldown.tsx` have no coverage of any kind.
+4. **InsightsPage tabs** — agents/history/watchlist/chat are never clicked
+   into; `AgentsPanel.tsx`/`WatchlistPanel.tsx` fully untested. Latent trap:
+   `AgentsPanel` calls `GET /api/admin/routes`, which `mockInsightsApi` does
+   not register — the first tab-click spec will hang unless it's added.
+5. **CatalystsPage** — event-type filter pills, row expand/collapse, date
+   range (`DateRangePicker.tsx`, sole consumer), and Refresh are untested;
+   min-impact filter and ticker-click navigation are covered.
+6. **CommandPalette.tsx** — global ⌘K search/navigate, mounted on every page,
+   zero coverage.
+7. **Admin models-tab panels** — `PredictForm.tsx` and
+   `ModelStateSnapshot.tsx` have no tests of any kind (predates the tab work;
+   `StructureBrief.tsx` has a unit test).
+8. **usePreferences hydration overwrite** (Codex P2, open) — edits made while
+   the initial GET is pending are replaced by older server values when it
+   resolves; needs dirty-field tracking or disabled controls during
+   hydration, plus a test.
+9. Smaller: LiveMarketPage Live/Paused + sound toggles and quote-error
+   banner; ChartsPage Vol/RTH/Ref toggles; Dashboard card-click navigation;
+   Help glossary entry expand/collapse; Journal `examples-unavailable` error
+   state; `useTradeMarking.ts` drawing state machine (213 lines, indirect
+   coverage only); `RouteErrorBoundary.tsx` never forced to fire.
+
+### 9.4 Correction to §3
+
+§3's orphan list is a 2026-09-01 snapshot: `useMineMyStyle` / the "My style"
+panel is no longer an orphan — `MyStylePanel` is mounted at
+`JournalPage.tsx` and thoroughly covered by `tests/journal/journal-onestop.spec.ts`.
