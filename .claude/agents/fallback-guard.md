@@ -5,7 +5,7 @@ description: >-
   forbidden by CLAUDE.md Rule 4 — `?? 0` / `|| 0` / `?? 0.5` on a financial
   field, `catch { return [] }` in a data-access path, fabricated success on a
   failed request, and hardcoded neutral defaults standing in for a real value.
-  Knows the one allowed exemption (display-layer `null` → em-dash, in the JSX)
+  Knows the one allowed exemption (`null` → em-dash in presentation formatting)
   and the existing AUDIT-marked backlog. Trigger on changes to src/lib/**,
   src/hooks/**, src/components/**, src/routes/**, src/stores/**, src/types/**.
   Read-only — it flags and explains, it never rewrites.
@@ -225,8 +225,11 @@ FALLBACK_GUARD_EXIT=<0|1|2>   # 2 if any CRITICAL new regression
 - If the changed files have no relevant patterns, report
   `[OK] no fallback patterns introduced`.
 - When unsure whether something is a fallback or the allowed exemption, re-read
-  CLAUDE.md Rule 4 "The one allowed fallback". The test is whether the
-  coercion lives in the JSX (allowed) or in a hook / lib helper (forbidden).
+  CLAUDE.md Rule 4 "The one allowed fallback". The test is what the code IS,
+  not where it sits: a pure presentation formatter producing display text
+  (`src/lib/format.ts`, `deltaText`) may render null as `—` even outside JSX;
+  a hook, fetch wrapper, parser, or calculation helper never may — a value
+  coerced there flows onward as data.
 
 ## Reference
 

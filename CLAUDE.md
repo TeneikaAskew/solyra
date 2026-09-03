@@ -182,11 +182,16 @@ case," ask which bucket it is. Either answer leads away from the fallback.
 
 #### The one allowed fallback
 
-**Display-layer rendering of `null` / `NaN` as an em-dash `—`**, ideally with
-an "unavailable" badge. This is the *only* exemption, and it exists because
-the DOM cannot render `null`. Solyra is the display layer, so this exemption
-lives here — which makes it especially important that the fallback stays in
-the JSX and never migrates down into a hook or a lib helper.
+**Rendering `null` / `NaN` as an em-dash `—` at the presentation boundary**,
+ideally with an "unavailable" badge. This is the *only* exemption, and it
+exists because the DOM cannot render `null`. The boundary is presentation
+formatting, not JSX syntax: a pure formatter whose only job is producing
+display text (`src/lib/format.ts`, `deltaText`) may return `—` for a missing
+value even though it lives outside JSX — that is exactly what the canonical
+helpers below do. What the exemption never covers is data access or
+calculation: a hook, a fetch wrapper, a parser, or a math helper
+(`src/lib/risk.ts`) must keep returning `null`, because a value coerced there
+flows onward as data rather than pixels.
 
 Canonical implementations to copy:
 

@@ -32,7 +32,11 @@ Read it before reporting — a "gap" already catalogued there is known, not news
 ## Phase 1: Collect changes
 
 ```bash
-RANGE="${1:-HEAD~5..HEAD}"
+# Default to the branch diff (merge base with main → HEAD), not HEAD~5 — a
+# fixed count includes unrelated base-branch commits and misses older branch
+# commits, producing false coverage gaps either way.
+BASE="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD)"
+RANGE="${1:-$BASE..HEAD}"
 git diff "$RANGE" --name-only
 git diff "$RANGE" --stat | tail -20
 ```
