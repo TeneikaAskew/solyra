@@ -35,6 +35,39 @@ export function SignInEmptyState({ compact = false }: { compact?: boolean }) {
 }
 
 /**
+ * Prominent page-level call-to-action shown above the data area when gated
+ * API calls are answering 401. Renders nothing while auth is healthy, so it
+ * can sit permanently above sections like charts and options.
+ */
+export function SignInBanner({ label }: { label: string }) {
+  const blocked = useAuthBlocked();
+  if (!blocked) return null;
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-2)] px-4 py-3"
+    >
+      <Lock size={18} className="shrink-0 text-[var(--brand)]" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-[var(--on-surface)]">
+          Sign in to load {label}
+        </p>
+        <p className="text-[12px] text-[var(--on-surface-muted)]">
+          Your session has expired or you are signed out. Authenticate to stream live data here.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="shrink-0 rounded-md bg-[var(--brand)] px-4 py-2 text-[13px] font-semibold text-[var(--on-brand)] hover:opacity-90"
+      >
+        Sign in
+      </button>
+    </div>
+  );
+}
+
+/**
  * Wraps a data card's body: while gated API calls are answering 401, renders
  * the sign-in empty state instead of the (blank) content. Self-heals — the
  * flag clears on the next successful gated response, e.g. after sign-in.

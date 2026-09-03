@@ -1,4 +1,4 @@
-import { DataGate } from '@/components/shared/SignInEmptyState';
+import { DataGate, SignInBanner } from '@/components/shared/SignInEmptyState';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTickerStore } from '@/stores/tickerStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -496,6 +496,7 @@ export default function ChartsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <SignInBanner label="chart data" />
       {/* Chart area, Task 6 (journal-one-stop) removed the Trades/Analytics
           side panel that used to sit beside this at w-72; the chart now
           takes the full row width. */}
