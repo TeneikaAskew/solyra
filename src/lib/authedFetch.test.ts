@@ -20,7 +20,9 @@ import type { Mock } from 'vitest';
 const getIdToken = vi.fn();
 const getAuthMode = vi.fn();
 
-vi.mock('./firebase', () => ({ getIdToken: () => getIdToken() }));
+vi.mock('./firebase', () => ({
+  getIdToken: (forceRefresh?: boolean) => getIdToken(forceRefresh),
+}));
 vi.mock('./runtimeConfig', () => ({ getAuthMode: () => getAuthMode() }));
 
 interface Installed {
@@ -85,6 +87,28 @@ describe('installAuthFetch — firebase mode', () => {
     await fetch('/api/me');
 
     expect(sentAuthHeader(native)).toBeNull();
+  });
+
+  it('retries token acquisition with forceRefresh on a transient failure', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getIdToken
+      .mockRejectedValueOnce(new Error('refresh blip'))
+      .mockResolvedValueOnce('tok-fresh');
+    const { native, fetch } = await install();
+
+    await fetch('/api/me');
+
+    expect(getIdToken).toHaveBeenNthCalledWith(2, true);
+    expect(sentAuthHeader(native)).toBe('Bearer tok-fresh');
+  });
+
+  it('propagates a persistent token failure instead of going anonymous', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getIdToken.mockRejectedValue(new Error('refresh down'));
+    const { native, fetch } = await install();
+
+    await expect(fetch('/api/me')).rejects.toThrow('refresh down');
+    expect(native).not.toHaveBeenCalled();
   });
 
   it('a 401 from an OPEN path does not fire onUnauthorized', async () => {

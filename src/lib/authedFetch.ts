@@ -134,7 +134,15 @@ export function installAuthFetch(): void {
     // OPEN_PREFIXES paths included — see the note on OPEN_PREFIXES. Skipping
     // the header on /api/me left the role-based admin gate reading an
     // anonymous identity forever.
-    const token = await getIdToken().catch(() => null);
+    //
+    // Resolving null means genuinely signed out: open paths proceed
+    // anonymously, gated paths will 401 into the sign-in flow. A REJECTED
+    // lookup is neither — retry once with a forced refresh (the SDK remedy
+    // for a stale cached token) and otherwise let the fetch reject:
+    // laundering the failure into an anonymous request would turn a
+    // transient refresh blip into /api/me answering `is_admin: false`, which
+    // useUser then caches for its whole staleTime.
+    const token = await getIdToken().catch(() => getIdToken(true));
     let nextInit = init;
     if (token) {
       // Merge onto existing headers (preserve Content-Type and friends).

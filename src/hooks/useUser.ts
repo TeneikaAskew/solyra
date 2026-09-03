@@ -23,10 +23,14 @@ export function useUser() {
   // In non-firebase modes there's no client auth state: "ready" + "signed in".
   const [fbReady, setFbReady] = useState(!firebaseMode);
   const [signedIn, setSignedIn] = useState(!firebaseMode);
+  // The Firebase uid of the signed-in account, null when signed out and in
+  // every non-firebase mode. Part of the /api/me query key below.
+  const [uid, setUid] = useState<string | null>(null);
 
   useEffect(() => {
     if (!firebaseMode) return;
     const unsub = subscribeAuth((user) => {
+      setUid(user?.uid ?? null);
       setSignedIn(!!user);
       setFbReady(true);
     });
@@ -37,7 +41,12 @@ export function useUser() {
   // firebase mode only once signed in (the token attaches via authedFetch).
   const meEnabled = !firebaseMode || signedIn;
   const query = useQuery<MeResponse>({
-    queryKey: ['me', signedIn],
+    // Keyed by uid, not by a signed-in boolean: auth state is shared across
+    // tabs, so account A signing out elsewhere and account B signing in here
+    // must NOT reuse A's cached is_admin within the staleTime window. A
+    // different uid is a different cache entry and forces a fresh, verified
+    // /api/me for the new identity.
+    queryKey: ['me', uid],
     enabled: meEnabled,
     queryFn: async () => {
       const r = await fetch('/api/me');
