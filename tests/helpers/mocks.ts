@@ -52,7 +52,11 @@ export async function mockCommon(page: Page) {
   // every route). 404 = "no stored preferences" — the app keeps its local
   // choice. Unmocked, this hits the proxy and logs a 500 console error that
   // trips the "renders without console errors" assertions on every page.
-  await page.route('**/api/me/preferences', (r) => r.fulfill(notFound()));
+  // 200 with all-null fields = "nothing stored yet" without the 404 that
+  // browsers log as a console error (several specs assert a clean console).
+  await page.route('**/api/me/preferences', (r) =>
+    r.fulfill(ok({ theme: null, nav_pattern: null, density: null, accent: null }))
+  );
 
   await page.route('**/api/live/status', (r) =>
     r.fulfill(ok({ session: 'closed', is_open: false, ts: '2026-04-25T20:00:00Z' }))
