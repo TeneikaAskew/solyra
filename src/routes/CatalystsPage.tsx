@@ -11,6 +11,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import { useTickerStore } from '@/stores/tickerStore';
 import type { Ticker } from '@/types';
 import { addDaysToISO, todayET } from '@/lib/dates';
+import { DateRangePicker } from '@/components/shared/DateRangePicker';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -464,26 +465,14 @@ export default function CatalystsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-1.5 text-[11px] text-[var(--on-surface-variant)]">
-            From
-            <input
-              type="date"
-              value={dateFrom}
-              max={dateTo}
-              onChange={e => setDateFrom(e.target.value)}
-              className="rounded-md bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--on-surface)] outline-none ring-1 ring-transparent focus:ring-[var(--brand)]"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 text-[11px] text-[var(--on-surface-variant)]">
-            To
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom}
-              onChange={e => setDateTo(e.target.value)}
-              className="rounded-md bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--on-surface)] outline-none ring-1 ring-transparent focus:ring-[var(--brand)]"
-            />
-          </label>
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={(from, to) => {
+              setDateFrom(from);
+              setDateTo(to);
+            }}
+          />
           <button
             onClick={resetDates}
             className="rounded-md bg-[var(--surface-2)] px-2 py-1 text-[11px] font-medium text-[var(--on-surface-variant)] hover:bg-[var(--surface-3)] hover:text-[var(--on-surface)] transition-colors"
