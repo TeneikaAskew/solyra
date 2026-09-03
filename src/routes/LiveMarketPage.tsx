@@ -299,7 +299,7 @@ export default function LiveMarketPage() {
       {/* Quote card */}
       {quoteError ? (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]">
-          Live data unavailable — API key not configured or rate limited. Indicators will populate once history loads.
+          Live data unavailable, API key not configured or rate limited. Indicators will populate once history loads.
         </div>
       ) : quote ? (
         <div className="rounded-xl bg-[var(--surface-2)] p-4">

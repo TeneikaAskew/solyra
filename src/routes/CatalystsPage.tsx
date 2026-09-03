@@ -203,7 +203,7 @@ function CatalystBadge({ type }: { type: string }) {
   const Icon = config.icon;
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+      className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
       style={{ backgroundColor: color + '22', color, border: `1px solid ${color}44` }}
     >
       <Icon size={11} />
@@ -233,7 +233,7 @@ function SentimentIndicator({ event }: { event: CatalystEvent }) {
   const symbol = s > 0 ? '▲' : '▼';
   return (
     <span
-      className={`text-[10px] font-bold ${cls} tabular-nums`}
+      className={`shrink-0 whitespace-nowrap text-[10px] font-bold ${cls} tabular-nums`}
       title={`Sentiment ${s.toFixed(2)} (${event.sentiment_label || ''})`}
     >
       {symbol} {Math.abs(s).toFixed(2)}
@@ -313,17 +313,17 @@ function DateGroup({ date, events, onOpenTicker }: {
     return (a.ticker || '').localeCompare(b.ticker || '');
   });
   return (
-    <div className={`rounded-xl p-6 ${isToday ? 'bg-[var(--surface-2)] ring-1 ring-[var(--brand)]' : 'bg-[var(--surface-1)]'}`}>
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+    <div className={`rounded-xl p-4 sm:p-6 ${isToday ? 'bg-[var(--surface-2)] ring-1 ring-[var(--brand)]' : 'bg-[var(--surface-1)]'}`}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-sm font-semibold text-[var(--on-surface)]">{formatDate(date)}</span>
           {isToday && (
-            <span className="rounded-lg bg-[var(--brand)] px-2 py-0.5 text-[10px] font-bold text-[var(--on-brand)]">
+            <span className="shrink-0 rounded-lg bg-[var(--brand)] px-2 py-0.5 text-[10px] font-bold text-[var(--on-brand)]">
               TODAY
             </span>
           )}
         </div>
-        <span className="text-xs text-[var(--on-surface-variant)]">
+        <span className="shrink-0 text-xs text-[var(--on-surface-variant)]">
           {relative} &middot; {events.length} events
         </span>
       </div>
@@ -504,7 +504,7 @@ export default function CatalystsPage() {
         </div>
       </div>
 
-      {/* Hot Now — high-impact catalysts in today/tomorrow window */}
+      {/* Hot Now, high-impact catalysts in today/tomorrow window */}
       {hotEvents.length > 0 && (
         <div className="rounded-xl bg-[var(--surface-1)] p-3 ring-1 ring-[var(--warn)]/30">
           <div className="flex items-center gap-2 mb-2">

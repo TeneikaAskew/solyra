@@ -78,7 +78,7 @@ export function useGammaLevels(
       return r.json();
     },
     enabled: enabled && !!ticker && !!date,
-    staleTime: 3_600_000, // 1 hour — EOD snapshots are immutable once written
+    staleTime: 3_600_000, // 1 hour, EOD snapshots are immutable once written
     retry: false,
   });
 }
@@ -108,13 +108,13 @@ export function regimeLabel(regime: GammaRegime): {
     case 'positive_gamma':
       return {
         label: 'Positive gamma',
-        description: 'Above gamma flip — pinning / range-bound',
+        description: 'Above gamma flip, pinning / range-bound',
         tone: 'positive',
       };
     case 'negative_gamma':
       return {
         label: 'Negative gamma',
-        description: 'Below gamma flip — trending / vol-amplifying',
+        description: 'Below gamma flip, trending / vol-amplifying',
         tone: 'negative',
       };
     case 'unknown':

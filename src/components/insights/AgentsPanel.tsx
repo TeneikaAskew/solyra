@@ -52,7 +52,7 @@ export function AgentsPanel({ envelope, ticker }: { envelope: InsightReportEnvel
         />
         {roleCosts.length === 0 ? (
           <div className="py-4 text-[12px] text-[var(--on-surface-muted)]">
-            No per-agent breakdown yet — generate an insight report for this ticker.
+            No per-agent breakdown yet, generate an insight report for this ticker.
           </div>
         ) : (
           <div className="flex flex-col gap-2">
@@ -112,7 +112,7 @@ export function AgentsPanel({ envelope, ticker }: { envelope: InsightReportEnvel
         )}
       </Card>
 
-      {/* Recent runs (insight_reports history — each report is one pipeline run) */}
+      {/* Recent runs (insight_reports history: each report is one pipeline run) */}
       <Card>
         <CardHeader
           title={<><Clock size={13} className="mr-1.5 inline align-middle" />Recent runs</>}

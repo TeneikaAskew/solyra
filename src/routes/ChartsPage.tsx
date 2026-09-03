@@ -240,7 +240,7 @@ export default function ChartsPage() {
       (t) => t.sessionId === summary.sessionId && t.status !== 'active',
     ).length;
     if (sessionClosedCount === 0) {
-      setSessionEndNote('Session ended — no closed trades to score');
+      setSessionEndNote('Session ended: no closed trades to score');
       return;
     }
     setSessionEndNote(null);
@@ -495,13 +495,13 @@ export default function ChartsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Chart area — Task 6 (journal-one-stop) removed the Trades/Analytics
+      {/* Chart area, Task 6 (journal-one-stop) removed the Trades/Analytics
           side panel that used to sit beside this at w-72; the chart now
           takes the full row width. */}
       <div className="flex flex-1 flex-col">
         {/* Toolbar */}
         <div className="mb-3 flex flex-wrap items-center gap-3 xl:flex-nowrap">
-          {/* Date picker — disabled when in historical review mode */}
+          {/* Date picker, disabled when in historical review mode */}
           <input
             type="date"
             value={toInputFormat(selectedDate)}
@@ -513,7 +513,7 @@ export default function ChartsPage() {
               if (picked) setLocalSelectedDate(picked);
             }}
             className="rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isReview ? 'Controlled by global historical mode — clear review mode to edit' : undefined}
+            title={isReview ? 'Controlled by global historical mode, clear review mode to edit' : undefined}
           />
           {snappedFromReview && (
             <span className="text-xs text-[var(--warn)]" title={`${reviewDate} was not a trading day`}>
@@ -624,11 +624,11 @@ export default function ChartsPage() {
           <div className="flex-1" />
 
           {/* Task 6 (journal-one-stop): Mark Entry + the CALL/PUT/skip
-              drawing chrome is no longer general-purpose Charts UI — the
+              drawing chrome is no longer general-purpose Charts UI, the
               trade-journal marking flow lives on /journal now. The ONE
               carve-out is the bar-replay trainer (design spec's flagged
               decision: "the replay trainer writes source='replay' practice
-              rows via its own path — that stays"), so this block only
+              rows via its own path, that stays"), so this block only
               renders while a replay session is active; outside a session
               there is no way to trigger tradeMarkingRef.current?.startDrawing()
               and drawingStep never leaves 'idle'. */}
@@ -771,14 +771,14 @@ export default function ChartsPage() {
         </div>
       </div>
 
-    {/* Live strategy conditions — server-computed chart teaching voter
+    {/* Live strategy conditions, server-computed chart teaching voter
         (POST /api/live/indicators -> chart_voter, lib/chart_voter.py),
         the July-6 5-condition presentation restored per Task 3. */}
     {chartBars.length >= 14 && (
       <StrategyConditionsCard voter={chartVoter} />
     )}
 
-    {/* Like-this-bar similar past setups — only meaningful once the
+    {/* Like-this-bar similar past setups, only meaningful once the
         production voter (POST /api/live/signal-series, lib/signals.py)
         has fired on the LATEST bar; the card itself renders a "waits for
         setup" state when direction is null so the slot stays in the layout. */}
@@ -804,7 +804,7 @@ export default function ChartsPage() {
     {/* Backtester section (merged from former /backtest page) */}
     <BacktesterSection ticker={activeTicker} />
 
-    {/* Task 5.3 post-replay-session scorecard — the only remaining trigger
+    {/* Task 5.3 post-replay-session scorecard, the only remaining trigger
         for this modal after Task 6 removed the Task 3.3 on-demand
         "Backtest my trades" button (it lived in the now-removed side
         panel). Rendered at the page's top level so it survives independent
@@ -812,7 +812,7 @@ export default function ChartsPage() {
     <Modal
       open={scorecardOpen}
       onClose={() => setScorecardOpen(false)}
-      title={`Backtest my trades — ${activeTicker}`}
+      title={`Backtest my trades, ${activeTicker}`}
     >
       <div data-testid="replay-scorecard">
         {replayTrades.isPending && (
@@ -871,7 +871,7 @@ function ScorecardRow({
         data-testid={`scorecard-row-${card.id}`}
         className="rounded border border-dashed border-[var(--color-border)] p-2 text-xs text-[var(--color-text-muted)]"
       >
-        <span className="font-mono">{card.id}</span> — {card.reason ?? 'unavailable'}
+        <span className="font-mono">{card.id}</span>: {card.reason ?? 'unavailable'}
       </div>
     );
   }
@@ -980,7 +980,7 @@ function ScorecardFooter({ aggregate }: { aggregate: ReplayAggregate }) {
         · Avg edge: {formatEdgeBps(aggregate.avg_exit_edge_bps)}
       </div>
       <div>
-        Agreement: {agreementPct} — system had a setup on {aggregate.system_resolved_n} of {aggregate.scored_n}{' '}
+        Agreement: {agreementPct}: system had a setup on {aggregate.system_resolved_n} of {aggregate.scored_n}{' '}
         entries{noSetupClause}
       </div>
     </div>

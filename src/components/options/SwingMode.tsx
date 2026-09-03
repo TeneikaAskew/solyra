@@ -130,7 +130,7 @@ function Term({ k, children }: { k: string; children?: React.ReactNode }) {
   const term = glossary[k];
   if (!term) return <>{children}</>;
   return (
-    <span className="hs-term" title={`${term.name} — ${term.short}`}>
+    <span className="hs-term" title={`${term.name}: ${term.short}`}>
       {children ?? term.name}
     </span>
   );
@@ -219,7 +219,7 @@ function SourcePill({ source, asOf }: { source: DataSource; asOf: string }) {
     }[source] ?? { cls: 'stale', label: 'UNAVAILABLE', hint: 'Unrecognized data source' };
   return (
     <span className={`hs-pill ${meta.cls}`} title={meta.hint}>
-      {/* the pulse animation is the live-streaming affordance — only LIVE gets it */}
+      {/* the pulse animation is the live-streaming affordance, only LIVE gets it */}
       <span className={meta.cls === 'realtime' ? 'dot pulse' : 'dot'} />
       <span>{meta.label}</span>
       {asOf ? (
@@ -612,7 +612,7 @@ function RealHeatmapGrid({
       <div className="card-i hs-grid-card">
         {Header}
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--on-surface-muted)', fontSize: 12 }}>
-          Data unavailable — {reason}
+          Data unavailable: {reason}
         </div>
       </div>
     );
@@ -708,7 +708,7 @@ function RealHeatmapGrid({
                     title={
                       cell
                         ? `${ticker} ${k} · ${exp} (${cell.dte}d)\n${metric.toUpperCase()}: ${formatGex(val)}\nOI ${cell.call_oi}c / ${cell.put_oi}p${pct != null ? `\nIntraday Δ: ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%` : ''}`
-                        : `${k} · ${exp} — no contracts`
+                        : `${k} · ${exp}, no contracts`
                     }
                   >
                     {cell && intensity >= 0.04 ? formatGex(val) : ''}
@@ -931,7 +931,7 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
             </>
           ) : (
             <>
-              Live {sym} grid unavailable — <strong>tactical read is illustrative.</strong>
+              Live {sym} grid unavailable, <strong>tactical read is illustrative.</strong>
             </>
           )}
         </span>
