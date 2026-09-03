@@ -28,6 +28,29 @@ import {
 const ENDPOINT = '/api/me/preferences';
 const QUERY_KEY = ['me', 'preferences'] as const;
 
+export interface PreferencesSyncStatus {
+  /** True while the initial server read is in flight. */
+  loading: boolean;
+  /** True while a change is being written back. */
+  saving: boolean;
+  /** Non-null when the last read or write failed — render it, don't hide it. */
+  error: Error | null;
+}
+
+/**
+ * Only one mounted syncer may drive the server round-trip; see
+ * `usePreferencesSync`. Module-level because the guard has to outlive any
+ * single component instance.
+ */
+let syncOwnerClaimed = false;
+
+/** Owner-published sync status, so passive readers re-render on change. */
+const useSyncStatusStore = create<PreferencesSyncStatus>(() => ({
+  loading: true,
+  saving: false,
+  error: null,
+}));
+
 const THEMES: Theme[] = ['dark', 'light'];
 const DENSITIES: Density[] = ['comfy', 'default', 'dense'];
 const NAV_PATTERNS: NavPattern[] = ['top-tabs', 'sidebar'];
