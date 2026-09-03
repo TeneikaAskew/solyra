@@ -109,7 +109,7 @@ after that cutoff are not listed here.
 | 95 | `4e45950` | 2026-09-03 11:58 | gpt-engineer-app[bot] | Changes | 1 file changed, 11 insertions(+) | `src/routes/AdminPage.tsx` |
 | 96 | `ad29ef3` | 2026-09-03 11:59 | gpt-engineer-app[bot] | Changes | 1 file changed, 1 insertion(+) | `src/routes/AdminPage.tsx` |
 | 97 | `e0a3013` | 2026-09-03 11:59 | gpt-engineer-app[bot] | Changes | 2 files changed, 32 insertions(+), 3 deletions(-) | `src/components/admin/DataSourcesPanel.test.ts` `src/components/admin/DataSourcesPanel.tsx` |
-| 98 | `b8a666e` | 2026-09-03 12:00 | gpt-engineer-app[bot] | Changes | 3 files changed, 29 insertions(+), 25 deletions(-) | `src/components/admin/DataSourcesPanel.tsx` `src/components/admin/dataSourceFormat.test.ts` `src/components/admin/dataSourceFormat.ts` |
+| 98 | `b8a666e` | 2026-09-03 12:00 | gpt-engineer-app[bot] | Changes | 3 files changed, 29 insertions(+), 25 deletions(-) | `src/components/admin/DataSourcesPanel.tsx` `src/components/admin/DataSourcesPanel.test.ts` → `src/components/admin/dataSourceFormat.test.ts` (renamed + repurposed) `src/components/admin/dataSourceFormat.ts` (new) |
 | 99 | `dd6b6da` | 2026-09-03 12:00 | gpt-engineer-app[bot] | Changes | 2 files changed, 3 insertions(+), 4 deletions(-) | `src/components/admin/DataSourcesPanel.tsx` `src/components/admin/dataSourceFormat.ts` |
 | 100 | `265f246` | 2026-09-03 12:01 | gpt-engineer-app[bot] | Added admin data management | merge | (merge commit - see parent commits) |
 | 101 | `4c86b75` | 2026-09-03 12:28 | gpt-engineer-app[bot] | Changes | 1 file changed, 145 insertions(+), 41 deletions(-) | `src/routes/ReportsPage.tsx` |
