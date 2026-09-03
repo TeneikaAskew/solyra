@@ -102,13 +102,34 @@ describe('installAuthFetch — firebase mode', () => {
     expect(sentAuthHeader(native)).toBe('Bearer tok-fresh');
   });
 
-  it('propagates a persistent token failure instead of going anonymous', async () => {
+  it('propagates a persistent token failure on the identity path instead of going anonymous', async () => {
     getAuthMode.mockReturnValue('firebase');
     getIdToken.mockRejectedValue(new Error('refresh down'));
     const { native, fetch } = await install();
 
     await expect(fetch('/api/me')).rejects.toThrow('refresh down');
     expect(native).not.toHaveBeenCalled();
+  });
+
+  it('propagates a persistent token failure on gated paths (no guaranteed-401 send)', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getIdToken.mockRejectedValue(new Error('refresh down'));
+    const { native, fetch } = await install();
+
+    await expect(fetch('/api/admin/routes')).rejects.toThrow('refresh down');
+    expect(native).not.toHaveBeenCalled();
+  });
+
+  it('lets public open paths proceed anonymously when token acquisition fails', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getIdToken.mockRejectedValue(new Error('refresh down'));
+    const { native, fetch } = await install();
+
+    await fetch('/api/waitlist');
+    await fetch('/api/health');
+
+    expect(native).toHaveBeenCalledTimes(2);
+    expect(sentAuthHeader(native)).toBeNull();
   });
 
   it('a 401 from an OPEN path does not fire onUnauthorized', async () => {

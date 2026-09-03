@@ -35,11 +35,13 @@ import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
 
 // Paths the backend answers WITHOUT auth (api/auth._OPEN_API_PREFIXES — keep
-// in sync), so the sign-in screen and shell can boot. Open ≠ anonymous: the
-// ID token still attaches when present, because /api/me resolves a presented
-// bearer token server-side (auth.current_user_email) to the real email +
-// is_admin. This list only decides which 401s mean "signed out".
-const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase'];
+// in sync), so the sign-in screen, shell, and public landing page can work.
+// Open ≠ anonymous: the ID token still attaches when present, because
+// /api/me resolves a presented bearer token server-side
+// (auth.current_user_email) to the real email + is_admin. This list decides
+// which 401s mean "signed out", and (with isIdentityPath) which requests may
+// still go out anonymously when token acquisition fails.
+const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase', '/api/waitlist'];
 
 /**
  * Absolute origin for `/api/*`, or '' to keep requests same-origin.
@@ -86,6 +88,16 @@ function pathOf(input: RequestInfo | URL): string {
 function isGatedApiPath(path: string): boolean {
   if (!path.startsWith('/api/')) return false;
   return !OPEN_PREFIXES.some((p) => path === p || path.startsWith(p));
+}
+
+/**
+ * Paths whose RESPONSE is the identity (or data keyed to it): /api/me and
+ * everything under it. Open in the auth sense, but never safe to downgrade
+ * to anonymous — an anonymous answer here is fabricated data, not a public
+ * resource.
+ */
+function isIdentityPath(path: string): boolean {
+  return path === '/api/me' || path.startsWith('/api/me/');
 }
 
 /**
@@ -138,11 +150,22 @@ export function installAuthFetch(): void {
     // Resolving null means genuinely signed out: open paths proceed
     // anonymously, gated paths will 401 into the sign-in flow. A REJECTED
     // lookup is neither — retry once with a forced refresh (the SDK remedy
-    // for a stale cached token) and otherwise let the fetch reject:
-    // laundering the failure into an anonymous request would turn a
-    // transient refresh blip into /api/me answering `is_admin: false`, which
-    // useUser then caches for its whole staleTime.
-    const token = await getIdToken().catch(() => getIdToken(true));
+    // for a stale cached token). If that also fails, what happens depends on
+    // whether anonymity changes the request's meaning:
+    //  - identity paths (/api/me…): reject — an anonymous answer is
+    //    fabricated data that useUser would cache for its whole staleTime;
+    //  - gated paths: reject — sending without the header guarantees a 401
+    //    that would bounce the user to sign-in over a transient blip;
+    //  - public open paths (health, config, waitlist): proceed anonymously —
+    //    the backend serves them identically without identity, and failing
+    //    them would misreport a reachable server as down.
+    let token: string | null;
+    try {
+      token = await getIdToken().catch(() => getIdToken(true));
+    } catch (err) {
+      if (isIdentityPath(path) || isGatedApiPath(path)) throw err;
+      token = null;
+    }
     let nextInit = init;
     if (token) {
       // Merge onto existing headers (preserve Content-Type and friends).
