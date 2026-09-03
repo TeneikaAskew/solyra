@@ -248,7 +248,7 @@ Currently rendered as plain text rows. Opportunity to convert into a cleaner ops
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Plus a status banner at the top: `9 cells · 9 models trained · 0 muted · last refresh: never live` and a link to `docs/STRAT_ENGINE_OPERATIONS.md`.
+Plus a status banner at the top: `9 cells · 9 models trained · 0 muted · last refresh: never live` and a link to [`docs/STRAT_ENGINE_OPERATIONS.md`](https://github.com/TeneikaAskew/stocks/blob/main/docs/STRAT_ENGINE_OPERATIONS.md).
 
 Designer should treat this as the **operator** view (vs. the brief which is the **consumer/dev** view).
 
@@ -335,8 +335,8 @@ The designer doesn't need to enforce this — but should be aware that **what yo
 | `src/components/structure_brief/StructureBrief.test.tsx` | The language audit + mute logic tests — any new copy must pass these |
 | `platform/api/routers/admin.py` (lines 173+) | API contracts for both `/structure-brief` and `/strat-engine/predict` |
 | `platform/api/main.py` (the `/dev` section) | The current /dev model-state rendering |
-| `docs/STRUCTURE_BRIEF_DESIGN.md` | Track A's design rationale and deploy gate definition |
-| `docs/STRAT_ENGINE_OPERATIONS.md` | The full operations doc — designer should skim §1–§3 and §8 |
+| [`docs/STRUCTURE_BRIEF_DESIGN.md`](https://github.com/TeneikaAskew/stocks/blob/main/docs/STRUCTURE_BRIEF_DESIGN.md) | Track A's design rationale and deploy gate definition |
+| [`docs/STRAT_ENGINE_OPERATIONS.md`](https://github.com/TeneikaAskew/stocks/blob/main/docs/STRAT_ENGINE_OPERATIONS.md) | The full operations doc — designer should skim §1–§3 and §8 |
 
 ---
 

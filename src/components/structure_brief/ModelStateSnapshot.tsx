@@ -87,7 +87,14 @@ export function ModelStateSnapshot({ enabled }: { enabled: boolean }) {
       </div>
       <div className="border-t border-[var(--color-border-subtle)] px-3 py-2 text-[10px] italic text-[var(--color-text-muted)]">
         On the shelf, no scheduler. Activation gated by{' '}
-        <code className="rounded bg-[var(--color-bg-secondary)] px-1">docs/STRAT_ENGINE_OPERATIONS.md</code>{' '}
+        <a
+          href="https://github.com/TeneikaAskew/stocks/blob/main/docs/STRAT_ENGINE_OPERATIONS.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:opacity-80"
+        >
+          <code className="rounded bg-[var(--color-bg-secondary)] px-1">stocks: docs/STRAT_ENGINE_OPERATIONS.md</code>
+        </a>{' '}
         §8.
       </div>
     </div>
