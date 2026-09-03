@@ -8,7 +8,13 @@ import { useAuthBlocked } from '@/lib/authGate';
  * routes through AuthGate, which shows the sign-in screen when no valid
  * session exists.
  */
-export function SignInEmptyState({ compact = false }: { compact?: boolean }) {
+export function SignInEmptyState({
+  compact = false,
+  onRetry,
+}: {
+  compact?: boolean;
+  onRetry?: () => void;
+}) {
   return (
     <div
       role="status"
@@ -30,6 +36,15 @@ export function SignInEmptyState({ compact = false }: { compact?: boolean }) {
       >
         Sign in
       </button>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="text-[12px] font-medium text-[var(--on-surface-muted)] underline underline-offset-2 hover:text-[var(--on-surface)]"
+        >
+          Retry
+        </button>
+      )}
     </div>
   );
 }
