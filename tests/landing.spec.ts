@@ -41,6 +41,29 @@ test.describe('Solyra landing page', () => {
     await expect(page.getByTestId('waitlist-error')).toContainText(/valid email/i);
   });
 
+  // Regression: a mobile-overflow fix once hid `.sl-nav-signin` with
+  // `display: none` below 720px, which removed the ONLY route to /dashboard
+  // on a phone. Sign in must stay visible and inside the viewport at
+  // phone widths, and the nav must not scroll sideways.
+  for (const width of [360, 390, 411]) {
+    test(`Sign in stays reachable and in-bounds at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/');
+      const signIn = page.getByRole('link', { name: 'Sign in' });
+      await expect(signIn).toBeVisible();
+      await expect(signIn).toHaveAttribute('href', '/dashboard');
+      const box = await signIn.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+      const cta = page.locator('.sl-nav-cta');
+      const ctaBox = await cta.boundingBox();
+      expect(ctaBox!.x + ctaBox!.width).toBeLessThanOrEqual(width);
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(width);
+    });
+  }
+
   test('landing renders at / even in firebase auth mode (signed out)', async ({ page }) => {
     // Route contract: `/` is the public LandingPage route (not wrapped by
     // AuthGate — see platform/src/App.tsx), so it must render regardless of
