@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { useAuthBlocked } from '@/lib/authGate';
 import { SignInEmptyState } from '@/components/shared/SignInEmptyState';
 
 /**
@@ -102,12 +101,11 @@ export function WidgetState({
   compact?: boolean;
   skeletonRows?: number;
 }) {
-  const authBlocked = useAuthBlocked();
   const loading = query.isLoading ?? query.isPending ?? false;
   const retry = query.refetch ? () => void query.refetch?.() : undefined;
 
   if (loading) return <WidgetSkeleton rows={skeletonRows} compact={compact} />;
-  if (authBlocked || (query.isError && isAuthError(query.error))) {
+  if (query.isError && isAuthError(query.error)) {
     return <SignInEmptyState compact={compact} onRetry={retry} />;
   }
   if (query.isError) {
