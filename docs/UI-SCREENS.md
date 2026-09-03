@@ -26,7 +26,7 @@ statement that the screen is broken.
 **VERIFIED — DEPLOYMENT** (probed 2026-08-30). Production is IAP-gated: an unauthenticated
 request to any path below redirects to Google SSO for audience `bictech.org`. Full environment
 inventory, including the staging and Discord services whose URLs are not committed anywhere, is
-in [05](05-INFRASTRUCTURE.md#environments-and-urls).
+in [05](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/05-INFRASTRUCTURE.md#environments-and-urls).
 
 | Screen | Route | Production URL | Local dev |
 |---|---|---|---|
@@ -47,7 +47,7 @@ in [05](05-INFRASTRUCTURE.md#environments-and-urls).
 | Settings | `/settings` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/settings` | `http://localhost:5173/settings` |
 
 Operational endpoints outside the SPA router: `https://trading-platform-5sjtb3yl7a-ue.a.run.app/dev` (the unauthenticated-on-staging
-page — see [09](09-SECURITY-AUTH.md)), `https://trading-platform-5sjtb3yl7a-ue.a.run.app/api/health`, `https://trading-platform-5sjtb3yl7a-ue.a.run.app/api/health/freshness`.
+page — see [09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/09-SECURITY-AUTH.md)), `https://trading-platform-5sjtb3yl7a-ue.a.run.app/api/health`, `https://trading-platform-5sjtb3yl7a-ue.a.run.app/api/health/freshness`.
 In local development the Vite server proxies `/api` to `http://localhost:8000`
 (`vite.config.ts:21,27`), so the API is reachable at both ports.
 
@@ -89,7 +89,7 @@ In local development the Vite server proxies `/api` to `http://localhost:8000`
 Five specs cover behavior spanning screens rather than one route:
 `auth-gate.spec.ts`, `navigation.spec.ts`, `api-smoke.spec.ts`, `data-pipeline-status.spec.ts`,
 `dev.spec.ts`. Note `dev.spec.ts` does **not** exercise the public-staging configuration in which
-`/dev` is unauthenticated — see [09](09-SECURITY-AUTH.md).
+`/dev` is unauthenticated — see [09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/09-SECURITY-AUTH.md).
 Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs in CI
 ([#868](https://github.com/TeneikaAskew/stocks/issues/868)).
 
@@ -98,7 +98,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-LANDING — `/`
 
 - **Purpose:** Public marketing entry and waitlist capture — the only route reachable signed-out in every auth mode.
-- **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/LandingPage.tsx` (40 lines)
 - **Child components:** `BentoGrid`, `ChartShowcase`, `DailyRhythm`, `Hero`, `LandingFAQ`, `LandingNav`, `ModuleDives`, `WaitlistSection`
 - **API calls (from source):** none found in the page component — issued by child components or hooks
@@ -111,7 +111,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-NAVIGATE — `/welcome`
 
 - **Purpose:** Legacy alias; permanently redirects to `/`.
-- **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/App.tsx (inline)` (0 lines)
 - **API calls (from source):** none found in the page component — issued by child components or hooks
 - **States present:** none detected
@@ -123,7 +123,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-DASHBOARD — `/dashboard`
 
 - **Purpose:** Daily starting point: market brief, movement read, expected move, most-active marquee, sector rotation.
-- **Status:** Production but needs remediation · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/DashboardPage.tsx` (843 lines)
 - **Child components:** `CandlestickChart`, `Card`, `CardHeader`, `Delta`, `DirTag`, `KpiTile`, `Metric`, `MicroLabel`, `MovementRead`, `Pill`, `PriceAreaChart`, `ScoreStars`, `SetupCardDetails`, `TickerCombobox`
 - **API calls (from source):** `/api/catalysts/events`, `/api/dashboard/brief/`, `/api/market/data/`, `/api/market/reference/`, `/api/market/sectors`, `/api/playbook/`, `/api/signals/`
@@ -137,7 +137,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-LIVEMARKET — `/live`
 
 - **Purpose:** Intraday monitoring of quotes, indicators and STRAT state for the watchlist.
-- **Status:** Production but needs remediation · **Blocking issue:** [#928](https://github.com/TeneikaAskew/stocks/issues/928) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#928](https://github.com/TeneikaAskew/stocks/issues/928) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/LiveMarketPage.tsx` (411 lines)
 - **Child components:** `MetricCard`
 - **API calls (from source):** `/api/market/data/`
@@ -151,7 +151,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-CHARTS — `/charts`
 
 - **Purpose:** Instrument and timeframe chart analysis with strategy conditions and level overlays.
-- **Status:** Production but needs remediation · **Blocking issue:** [#912](https://github.com/TeneikaAskew/stocks/issues/912) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#912](https://github.com/TeneikaAskew/stocks/issues/912) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/ChartsPage.tsx` (967 lines)
 - **Child components:** `LoadingSpinner`, `Modal`, `ReplaySessionControls`, `SimilarSetupsCard`, `StrategyConditionsCard`, `TradeMarkingChart`, `type PriceLineConfig`, `type TradeMarkingChartHandle`
 - **API calls (from source):** none found in the page component — issued by child components or hooks
@@ -165,7 +165,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-OPTIONSFLOW — `/options`
 
 - **Purpose:** Options flow, Greeks and the 2-D strike x expiration gamma grid.
-- **Status:** Production but needs remediation · **Blocking issue:** [#826](https://github.com/TeneikaAskew/stocks/issues/826) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#826](https://github.com/TeneikaAskew/stocks/issues/826) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/OptionsFlowPage.tsx` (68 lines)
 - **Child components:** `TickerCombobox`
 - **API calls (from source):** none found in the page component — issued by child components or hooks
@@ -179,7 +179,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-PLAYBOOK — `/playbook`
 
 - **Purpose:** The day’s structured setups — trigger, invalidation, targets — with as-of review mode.
-- **Status:** Broken · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Broken · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/PlaybookPage.tsx` (355 lines)
 - **Child components:** `SetupCardDetails`, `type SetupHorizon`
 - **API calls (from source):** `/api/market/reference/`, `/api/playbook/`
@@ -193,7 +193,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-REPORTS — `/reports`
 
 - **Purpose:** Backtest, walk-forward and replay-trainer results; analytics summaries.
-- **Status:** Production but needs remediation · **Blocking issue:** [#813](https://github.com/TeneikaAskew/stocks/issues/813) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#813](https://github.com/TeneikaAskew/stocks/issues/813) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/ReportsPage.tsx` (153 lines)
 - **API calls (from source):** `/api/reports/`, `/api/reports/list/`
 - **Stores:** `useTickerStore`
@@ -206,7 +206,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-SIGNALS — `/signals`
 
 - **Purpose:** Signal discovery and live alert monitoring.
-- **Status:** Production but needs remediation · **Blocking issue:** [#905](https://github.com/TeneikaAskew/stocks/issues/905) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#905](https://github.com/TeneikaAskew/stocks/issues/905) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SignalsPage.tsx` (341 lines)
 - **Child components:** `KpiTile`, `MicroLabel`, `TickerCombobox`
 - **API calls (from source):** `/api/signals/`
@@ -220,7 +220,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-JOURNAL — `/journal`
 
 - **Purpose:** One-stop trade cockpit: interactive chart marking, examples, broker CSV import, per-user trades.
-- **Status:** Production but needs remediation · **Blocking issue:** [#717](https://github.com/TeneikaAskew/stocks/issues/717) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#717](https://github.com/TeneikaAskew/stocks/issues/717) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/JournalPage.tsx` (945 lines)
 - **Child components:** `Card`, `CardHeader`, `ImportTradesModal`, `KpiTile`, `LoadingSpinner`, `PriceAreaChart`, `TickerCombobox`, `TradeMarkingChart`, `TradeRailCard`, `type TradeMarkingChartHandle`
 - **API calls (from source):** `/api/journal/export/`, `/api/journal/trades`
@@ -234,7 +234,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-INSIGHTS — `/insights`
 
 - **Purpose:** AI-generated per-ticker insight reports, history and chat.
-- **Status:** Experimental · **Blocking issue:** [#916](https://github.com/TeneikaAskew/stocks/issues/916) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Experimental · **Blocking issue:** [#916](https://github.com/TeneikaAskew/stocks/issues/916) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/InsightsPage.tsx` (587 lines)
 - **Child components:** `AgentsPanel`, `BriefVsInsightsCard`, `CatalystsCard`, `DebateCard`, `DegradationBanner`, `HeaderCard`, `KeyLevelsCard`, `MicroLabel`, `PersonaPlansCard`, `RiskFlagsCard`, `SignalsCard`, `SimilarTradesCard`, `StratCard`, `TickerCombobox`
 - **API calls (from source):** `/api/insights/chat`
@@ -248,7 +248,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-CATALYSTS — `/catalysts`
 
 - **Purpose:** Earnings, economic events, news and SEC filings as trade context.
-- **Status:** Production but needs remediation · **Blocking issue:** [#863](https://github.com/TeneikaAskew/stocks/issues/863) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#863](https://github.com/TeneikaAskew/stocks/issues/863) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/CatalystsPage.tsx` (625 lines)
 - **API calls (from source):** `/api/catalysts/events`, `/api/catalysts/types`
 - **Stores:** `useThemeStore`, `useTickerStore`
@@ -261,7 +261,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-ADMIN — `/admin`
 
 - **Purpose:** Operator surface: model routing, strat-engine state, structure brief, route config.
-- **Status:** Production but needs remediation · **Blocking issue:** [#838](https://github.com/TeneikaAskew/stocks/issues/838) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#838](https://github.com/TeneikaAskew/stocks/issues/838) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/AdminPage.tsx` (369 lines)
 - **Child components:** `ModelStateSnapshot`, `PredictForm`, `StructureBrief`
 - **API calls (from source):** `/api/admin/routes`
@@ -274,7 +274,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-HELP — `/help`
 
 - **Purpose:** Glossary and cross-framework term reference.
-- **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/HelpPage.tsx` (296 lines)
 - **API calls (from source):** none found in the page component — issued by child components or hooks
 - **States present:** empty · **absent:** load, err, stale
@@ -286,7 +286,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-SETTINGS — `/settings`
 
 - **Purpose:** Device-local appearance and layout preferences.
-- **Status:** Incomplete · **Blocking issue:** [#685](https://github.com/TeneikaAskew/stocks/issues/685) · **Owner:** TBD · **Target phase:** see [13](13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Incomplete · **Blocking issue:** [#685](https://github.com/TeneikaAskew/stocks/issues/685) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SettingsPage.tsx` (131 lines)
 - **API calls (from source):** none found in the page component — device-local state only
 - **Stores:** `useSettingsStore`, `useThemeStore`
