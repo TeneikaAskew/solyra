@@ -192,20 +192,52 @@ export function installAuthFetch(): void {
         token = null; // public path: proceed, but never with the other account's token
       }
     }
-    let nextInit = init;
-    if (token) {
+    const withToken = (t: string): RequestInit => {
       // Merge onto existing headers (preserve Content-Type and friends).
       const headers = new Headers(
         init?.headers ?? (target instanceof Request ? target.headers : undefined),
       );
-      headers.set('Authorization', `Bearer ${token}`);
-      nextInit = { ...init, headers };
+      headers.set('Authorization', `Bearer ${t}`);
+      return { ...init, headers };
+    };
+
+    const nextInit = token ? withToken(token) : init;
+
+    let resp = await nativeFetch(target, nextInit);
+
+    // A gated 401 while a user IS signed in usually means the cached ID token
+    // went stale (hour-long expiry, a sleeping tab, clock skew) rather than a
+    // real sign-out. Mint a fresh token and retry ONCE before declaring the
+    // session dead: without this the user gets bounced to the sign-in screen
+    // repeatedly despite a perfectly valid Firebase session.
+    //
+    // Only retried when a token was actually sent (so it isn't a plain
+    // anonymous 401) and the body is replayable (a streamed body cannot be
+    // re-sent).
+    if (resp.status === 401 && gated && token && isReplayable(init, target)) {
+      let fresh: string | null = null;
+      try {
+        fresh = await getIdToken(true);
+      } catch {
+        fresh = null;
+      }
+      if (fresh && fresh !== token && (await getCurrentUid()) === uidAtStart) {
+        resp = await nativeFetch(target, withToken(fresh));
+      }
     }
 
-    const resp = await nativeFetch(target, nextInit);
     // Only gated paths signal "signed out": an open path answers without auth
     // by design, so a 401 from one is a server bug, not an expired session.
     if (resp.status === 401 && gated && _onUnauthorized) _onUnauthorized();
     return gated ? track(resp) : resp;
   };
 }
+
+/** A request can only be re-sent when its body isn't a one-shot stream. */
+function isReplayable(init: RequestInit | undefined, target: RequestInfo | URL): boolean {
+  if (target instanceof Request) return !target.bodyUsed && !(target.body instanceof ReadableStream);
+  const body = init?.body;
+  if (body == null) return true;
+  return !(typeof ReadableStream !== 'undefined' && body instanceof ReadableStream);
+}
+
