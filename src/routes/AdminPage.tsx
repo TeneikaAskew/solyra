@@ -35,6 +35,7 @@ const ADMIN_TABS: { id: AdminTab; label: string }[] = [
 export default function AdminPage() {
   const { isAdmin, isLoading: userLoading } = useUser();
   const [token, setToken] = useState<string | null>(getAdminToken());
+  const [tab, setTab] = useState<AdminTab>('users');
 
   // #702 follow-ups Task 4 item 5: stable identity across renders so
   // RoutingPanel's `useEffect([routesQuery.error, onLogout])` doesn't
