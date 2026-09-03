@@ -15,12 +15,12 @@ import {
  * renders as an em-dash rather than a fabricated 0 or "just now".
  */
 
-function fmtCount(n: number | null): string {
+export function fmtCount(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return '—';
   return n.toLocaleString();
 }
 
-function fmtWhen(iso: string | null): string {
+export function fmtWhen(iso: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
@@ -33,7 +33,7 @@ function statusClass(status: DataSourceStatus): string {
   return 'border-[var(--color-border)] text-[var(--color-text-muted)]';
 }
 
-function coverage(row: AdminDataSourceRow): string {
+export function coverage(row: AdminDataSourceRow): string {
   if (!row.coverage_start && !row.coverage_end) return '—';
   return `${row.coverage_start ?? '—'} → ${row.coverage_end ?? '—'}`;
 }
