@@ -482,7 +482,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
         <div
           data-testid="ticker-ingest-notice"
           role={ingestNotice.kind === 'error' ? 'alert' : 'status'}
-          className={`absolute left-0 top-full z-40 mt-2 w-72 rounded-lg border px-3 py-2 text-xs ${
+          className={`absolute right-0 top-full z-40 mt-2 w-[min(18rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] rounded-lg border px-3 py-2 text-xs md:left-0 md:right-auto md:w-72 ${
             ingestNotice.kind === 'error'
               ? 'border-[var(--bear)]/40 bg-[var(--bear)]/10 text-[var(--bear)]'
               : 'border-[var(--bull)]/40 bg-[var(--bull)]/10 text-[var(--bull)]'
