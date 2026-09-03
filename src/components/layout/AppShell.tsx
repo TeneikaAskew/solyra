@@ -6,6 +6,7 @@ import { Header } from './Header';
 import { CommandPalette } from './CommandPalette';
 import { MostActiveBar } from '@/components/shared/MostActiveBar';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { usePreferencesSync } from '@/hooks/usePreferences';
 
 // Routes the most-active marquee mounts on: the MARKET nav group
 // (/live, /charts, /options, /signals — see navConfig.ts) plus /journal,
