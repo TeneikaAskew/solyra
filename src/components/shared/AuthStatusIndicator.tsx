@@ -1,6 +1,8 @@
-import { Lock, ShieldCheck } from 'lucide-react';
+import { LogIn, LogOut, Lock, ShieldCheck } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthBlocked } from '@/lib/authGate';
 import { useUser } from '@/hooks/useUser';
+import { firebaseSignOut } from '@/lib/firebase';
 
 /**
  * Global auth status.
@@ -59,6 +61,90 @@ export function AuthStatusIndicator() {
           className="rounded-md border border-[var(--outline-variant)] px-2 py-0.5 text-[11px] font-semibold text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
         >
           Sign in
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Account block for the bottom of the nav menu: the auth status row plus a
+ * sign-out action (exit icon). Sign-out renders only in `firebase` mode for a
+ * signed-in user — iap/open sessions have no client-side sign-out, matching
+ * SignOutButton. `onAction` lets the hosting menu close itself.
+ */
+export function AccountMenuSection({ onAction }: { onAction?: () => void }) {
+  const qc = useQueryClient();
+  const { authMode, isSignedIn } = useUser();
+  const { status, email } = useAuthStatus();
+  if (status === 'loading') return null;
+
+  const signedIn = status === 'signed-in';
+  const label = signedIn
+    ? (email ?? 'Signed in')
+    : status === 'blocked'
+      ? 'Session expired'
+      : 'Signed out';
+
+  // Sign-out keys off the ACTUAL Firebase session (useUser), not the display
+  // status: a `blocked` session is still a live Firebase account that a
+  // reload would restore, so signing out must stay available as the escape
+  // hatch — same basis as SignOutButton.
+  const canSignOut = authMode === 'firebase' && isSignedIn;
+
+  const onSignOut = async () => {
+    try {
+      await firebaseSignOut();
+    } finally {
+      qc.clear(); // drop cached data tied to the previous identity
+      onAction?.();
+    }
+  };
+
+  const actionCls =
+    'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--on-surface-variant)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--on-surface)]';
+
+  return (
+    <div className="mt-1 border-t border-[var(--surface-3)] pt-1" data-testid="account-menu-section">
+      <div className="nav-group-label">Account</div>
+      <div
+        className="flex items-center gap-3 px-3 py-2 text-sm text-[var(--on-surface-variant)]"
+        data-testid="account-menu-status"
+        data-status={status}
+      >
+        {signedIn ? (
+          <ShieldCheck
+            size={18}
+            className="shrink-0 text-[var(--success, var(--on-surface-variant))]"
+            aria-hidden
+          />
+        ) : (
+          <Lock
+            size={18}
+            className="shrink-0 text-[var(--warning, var(--on-surface-variant))]"
+            aria-hidden
+          />
+        )}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      </div>
+      {canSignOut && (
+        <button type="button" onClick={onSignOut} data-testid="account-menu-sign-out" className={actionCls}>
+          <LogOut size={18} className="shrink-0" aria-hidden />
+          <span className="flex-1 text-left">Sign out</span>
+        </button>
+      )}
+      {!signedIn && !canSignOut && (
+        <button
+          type="button"
+          onClick={() => {
+            onAction?.();
+            goToSignIn();
+          }}
+          data-testid="account-menu-sign-in"
+          className={actionCls}
+        >
+          <LogIn size={18} className="shrink-0" aria-hidden />
+          <span className="flex-1 text-left">Sign in</span>
         </button>
       )}
     </div>
