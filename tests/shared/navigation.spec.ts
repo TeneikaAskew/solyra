@@ -170,3 +170,31 @@ test.describe('SwingMode toolbar', () => {
     await page.waitForURL('**/help');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Mobile hamburger menu — account section
+// ---------------------------------------------------------------------------
+
+test.describe('Mobile menu — account section', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('auth status lives at the menu bottom, not the bar', async ({ page }) => {
+    await mockCommon(page); // open auth mode: session counts as signed in
+    await page.goto('/dashboard');
+
+    // The bar keeps only utilities on mobile; the status pill is hidden
+    await expect(page.getByTestId('auth-status')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await expect(page.getByTestId('account-menu-section')).toBeVisible();
+    await expect(page.getByTestId('account-menu-status')).toHaveAttribute(
+      'data-status',
+      'signed-in',
+    );
+    // The sign-out (exit) action renders only for a signed-in FIREBASE
+    // session — open/iap modes have no client-side sign-out (SignOutButton
+    // semantics) — and the sign-in action only when not signed in.
+    await expect(page.getByTestId('account-menu-sign-out')).toHaveCount(0);
+    await expect(page.getByTestId('account-menu-sign-in')).toHaveCount(0);
+  });
+});
