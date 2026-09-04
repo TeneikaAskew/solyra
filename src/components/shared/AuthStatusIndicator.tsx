@@ -75,7 +75,7 @@ export function AuthStatusIndicator() {
  */
 export function AccountMenuSection({ onAction }: { onAction?: () => void }) {
   const qc = useQueryClient();
-  const { authMode } = useUser();
+  const { authMode, isSignedIn } = useUser();
   const { status, email } = useAuthStatus();
   if (status === 'loading') return null;
 
@@ -85,6 +85,12 @@ export function AccountMenuSection({ onAction }: { onAction?: () => void }) {
     : status === 'blocked'
       ? 'Session expired'
       : 'Signed out';
+
+  // Sign-out keys off the ACTUAL Firebase session (useUser), not the display
+  // status: a `blocked` session is still a live Firebase account that a
+  // reload would restore, so signing out must stay available as the escape
+  // hatch — same basis as SignOutButton.
+  const canSignOut = authMode === 'firebase' && isSignedIn;
 
   const onSignOut = async () => {
     try {
@@ -121,13 +127,13 @@ export function AccountMenuSection({ onAction }: { onAction?: () => void }) {
         )}
         <span className="min-w-0 flex-1 truncate">{label}</span>
       </div>
-      {signedIn && authMode === 'firebase' && (
+      {canSignOut && (
         <button type="button" onClick={onSignOut} data-testid="account-menu-sign-out" className={actionCls}>
           <LogOut size={18} className="shrink-0" aria-hidden />
           <span className="flex-1 text-left">Sign out</span>
         </button>
       )}
-      {!signedIn && (
+      {!signedIn && !canSignOut && (
         <button
           type="button"
           onClick={() => {
