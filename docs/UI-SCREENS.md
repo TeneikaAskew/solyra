@@ -30,24 +30,24 @@ in [05](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/05-INFRAST
 
 | Screen | Route | Production URL | Local dev |
 |---|---|---|---|
-| Landing | `/` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/` | `http://localhost:5173/` |
-| Welcome redirect | `/welcome` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/welcome` | `http://localhost:5173/welcome` |
-| Dashboard | `/dashboard` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/dashboard` | `http://localhost:5173/dashboard` |
-| Live Market | `/live` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/live` | `http://localhost:5173/live` |
-| Charts | `/charts` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/charts` | `http://localhost:5173/charts` |
-| Options Flow | `/options` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/options` | `http://localhost:5173/options` |
-| Playbook | `/playbook` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/playbook` | `http://localhost:5173/playbook` |
-| Reports | `/reports` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/reports` | `http://localhost:5173/reports` |
-| Signals | `/signals` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/signals` | `http://localhost:5173/signals` |
-| Journal | `/journal` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/journal` | `http://localhost:5173/journal` |
-| AI Insights | `/insights` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/insights` | `http://localhost:5173/insights` |
-| Catalysts | `/catalysts` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/catalysts` | `http://localhost:5173/catalysts` |
-| Admin | `/admin` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/admin` | `http://localhost:5173/admin` |
-| Help & Glossary | `/help` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/help` | `http://localhost:5173/help` |
-| Settings | `/settings` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/settings` | `http://localhost:5173/settings` |
+| Landing | `/` | `https://solyra-api-prod-28960574877.us-east1.run.app/` | `http://localhost:5173/` |
+| Welcome redirect | `/welcome` | `https://solyra-api-prod-28960574877.us-east1.run.app/welcome` | `http://localhost:5173/welcome` |
+| Dashboard | `/dashboard` | `https://solyra-api-prod-28960574877.us-east1.run.app/dashboard` | `http://localhost:5173/dashboard` |
+| Live Market | `/live` | `https://solyra-api-prod-28960574877.us-east1.run.app/live` | `http://localhost:5173/live` |
+| Charts | `/charts` | `https://solyra-api-prod-28960574877.us-east1.run.app/charts` | `http://localhost:5173/charts` |
+| Options Flow | `/options` | `https://solyra-api-prod-28960574877.us-east1.run.app/options` | `http://localhost:5173/options` |
+| Playbook | `/playbook` | `https://solyra-api-prod-28960574877.us-east1.run.app/playbook` | `http://localhost:5173/playbook` |
+| Reports | `/reports` | `https://solyra-api-prod-28960574877.us-east1.run.app/reports` | `http://localhost:5173/reports` |
+| Signals | `/signals` | `https://solyra-api-prod-28960574877.us-east1.run.app/signals` | `http://localhost:5173/signals` |
+| Journal | `/journal` | `https://solyra-api-prod-28960574877.us-east1.run.app/journal` | `http://localhost:5173/journal` |
+| AI Insights | `/insights` | `https://solyra-api-prod-28960574877.us-east1.run.app/insights` | `http://localhost:5173/insights` |
+| Catalysts | `/catalysts` | `https://solyra-api-prod-28960574877.us-east1.run.app/catalysts` | `http://localhost:5173/catalysts` |
+| Admin | `/admin` | `https://solyra-api-prod-28960574877.us-east1.run.app/admin` | `http://localhost:5173/admin` |
+| Help & Glossary | `/help` | `https://solyra-api-prod-28960574877.us-east1.run.app/help` | `http://localhost:5173/help` |
+| Settings | `/settings` | `https://solyra-api-prod-28960574877.us-east1.run.app/settings` | `http://localhost:5173/settings` |
 
-Operational endpoints outside the SPA router: `https://trading-platform-5sjtb3yl7a-ue.a.run.app/dev` (the unauthenticated-on-staging
-page — see [09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/09-SECURITY-AUTH.md)), `https://trading-platform-5sjtb3yl7a-ue.a.run.app/api/health`, `https://trading-platform-5sjtb3yl7a-ue.a.run.app/api/health/freshness`.
+Operational endpoints outside the SPA router: `https://solyra-api-prod-28960574877.us-east1.run.app/dev` (the unauthenticated-on-staging
+page — see [09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/09-SECURITY-AUTH.md)), `https://solyra-api-prod-28960574877.us-east1.run.app/api/health`, `https://solyra-api-prod-28960574877.us-east1.run.app/api/health/freshness`.
 In local development the Vite server proxies `/api` to `http://localhost:8000`
 (`vite.config.ts:21,27`), so the API is reachable at both ports.
 

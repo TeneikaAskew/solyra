@@ -6,7 +6,7 @@ signals, the trade journal, AI insights, and catalysts.
 
 **This repo holds the frontend only.** The FastAPI backend, the research
 pipeline, and the GCP jobs live in the **stocks** repo and are deployed
-together as the `trading-platform` Cloud Run service. Solyra's dev server
+together as the `solyra-api-prod` Cloud Run service. Solyra's dev server
 proxies `/api/*` to that backend, so the browser still sees same-origin
 requests and none of the ~73 bare `fetch('/api/...')` call sites need to know
 where the API actually is.
@@ -34,7 +34,7 @@ Codespaces, or CI happen to set:
 | Situation | `/api/*` is proxied to |
 | --- | --- |
 | Something is listening on `localhost:8000` | that local backend |
-| Nothing is (Lovable's cloud preview, a plain checkout) | `trading-platform-staging` on Cloud Run |
+| Nothing is (Lovable's cloud preview, a plain checkout) | `solyra-api-staging` on Cloud Run |
 | `VITE_API_PROXY_TARGET` is set | that URL, unconditionally |
 
 So a fresh clone gets **real data with no setup**. To run against a local

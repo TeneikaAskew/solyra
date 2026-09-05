@@ -7,7 +7,9 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import { LOCAL_API, STAGING_API } from './src/lib/apiTargets'
 
 // Where /api/* goes. This repo holds the frontend only — the FastAPI backend
-// lives in the stocks repo, deployed as the trading-platform Cloud Run service.
+// lives in the stocks repo, deployed as two Cloud Run services: solyra-api-staging
+// (public, Firebase-gated — what this proxy falls back to) and solyra-api-prod
+// (behind IAP). Merging to main auto-deploys staging only; prod is manual.
 // The proxy is server-side, so the browser still sees same-origin /api/* calls:
 // neither the ~73 bare fetch('/api/...') call sites nor the API's CORS
 // allow-list need to change. The origins themselves live in src/lib/apiTargets.ts,

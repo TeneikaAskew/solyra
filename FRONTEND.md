@@ -8,7 +8,7 @@
 
 # FRONTEND ARCHITECTURE
 
-> **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app that ships inside the `trading-platform` Cloud Run service.
+> **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app that ships inside the `solyra-api-prod` Cloud Run service.
 > **Last refreshed:** 2026-05-22.
 > **Companion diagram:** [`Frontend.drawio`](Frontend.drawio).
 
@@ -17,8 +17,8 @@
 - **Stack:** React 19 + TypeScript 5.9 + Vite 7 + Tailwind 4, Zustand for client state, TanStack Query for server state, TanStack Table for tables, Recharts + lightweight-charts for visualisations, react-router-dom v7 with a single nested layout route.
 - **Layout:** one root `BrowserRouter` with an `AppShell` (sidebar + header) wrapping **12 route-level pages**, each lazy-loaded with `React.lazy` + `Suspense` and isolated by a per-route `RouteErrorBoundary` so a single page crash doesn't take down the chrome.
 - **API surface:** ~30 endpoints all under `/api/*`, served by the same FastAPI process that serves the static SPA (single-port Cloud Run service on port 8080 in production; dev uses Vite on 5173 proxied to FastAPI on 8000).
-- **Build/deploy:** `npm run build` → `platform/dist/` → bundled into the `trading-platform` Docker image (multi-stage, frontend stage = node:20-slim, runtime = python:3.11-slim) → Cloud Build → Cloud Run service at `stocks.insightscollective.org` (IAP-gated, Google-managed TLS, `--no-cpu-throttling`).
-- **Two-stage deploy:** push to `main` triggers `deploy-platform-staging.yml` → revision tagged `staging` at 0% traffic → manual `promote-platform-prod.yml` shifts 100% traffic to the staging tag.
+- **Build/deploy:** `npm run build` → `platform/dist/` → bundled into the `solyra-api-prod` Docker image (multi-stage, frontend stage = node:20-slim, runtime = python:3.11-slim) → Cloud Build → Cloud Run service at `stocks.insightscollective.org` (IAP-gated, Google-managed TLS, `--no-cpu-throttling`).
+- **Two-stage deploy:** push to `main` triggers `deploy-solyra-api-staging.yml` → revision tagged `staging` at 0% traffic → manual `deploy-solyra-api-prod.yml` shifts 100% traffic to the staging tag.
 
 ## Directory map
 
@@ -31,7 +31,7 @@ platform/
 ├─ eslint.config.js
 ├─ playwright.config.ts         # E2E
 ├─ Dockerfile                   # multi-stage: node builds dist/, python serves it
-├─ cloudbuild.yaml              # Cloud Build for trading-platform image
+├─ cloudbuild.yaml              # Cloud Build for solyra-api-prod image
 ├─ deploy.sh                    # build + deploy (STAGING=1 for staging revision)
 ├─ screenshot_pages.mjs         # Playwright util for capturing each page
 ├─ src/
@@ -203,13 +203,13 @@ This means **one Cloud Run service, one port, one TLS cert** — no separate CDN
 | Mode               | Cmd                                  | Behaviour                                                                 |
 |--------------------|--------------------------------------|---------------------------------------------------------------------------|
 | Production         | `./platform/deploy.sh`               | builds image, deploys revision tagged `latest` with 100% traffic           |
-| Staging            | `STAGING=1 ./platform/deploy.sh`     | builds image, deploys revision tagged `staging` with `--no-traffic` (0%) — reachable at `https://staging---trading-platform-…run.app`, prod untouched |
-| Promote staging → prod | `gcloud run services update-traffic trading-platform --to-tags=staging=100` | shifts 100% to the staging-tagged revision                              |
+| Staging            | `STAGING=1 ./platform/deploy.sh`     | builds image, deploys revision tagged `staging` with `--no-traffic` (0%) — reachable at `https://staging---solyra-api-prod-…run.app`, prod untouched |
+| Promote staging → prod | `gcloud run services update-traffic solyra-api-prod --to-tags=staging=100` | shifts 100% to the staging-tagged revision                              |
 
 CI wiring:
 
-- `.github/workflows/deploy-platform-staging.yml` — triggers on push to `main` touching `platform/**`, `lib/**`, `requirements.txt`, or `gcp/database.py`. Runs `STAGING=1 ./platform/deploy.sh`.
-- `.github/workflows/promote-platform-prod.yml` — manual `workflow_dispatch`, promotes the staging revision. Shares the staging workflow's concurrency group so deploy + promote can't interleave.
+- `.github/workflows/deploy-solyra-api-staging.yml` — triggers on push to `main` touching `platform/**`, `lib/**`, `requirements.txt`, or `gcp/database.py`. Runs `STAGING=1 ./platform/deploy.sh`.
+- `.github/workflows/deploy-solyra-api-prod.yml` — manual `workflow_dispatch`, promotes the staging revision. Shares the staging workflow's concurrency group so deploy + promote can't interleave.
 
 Both authenticate via the `CLAUDE_CODE_WEB_GCP_SA_KEY` repo secret (the same `claude-web@` SA used by every other GCP-touching workflow).
 
@@ -246,5 +246,5 @@ Both authenticate via the `CLAUDE_CODE_WEB_GCP_SA_KEY` repo secret (the same `cl
 
 1. **Component test bed.** Set up `@testing-library/react` and write tests for at least `DataTable`, `MetricCard`, `Sidebar` route gating, `RouteErrorBoundary`.
 2. **Coverage gate.** Wire Vitest `--coverage` into the staging-deploy workflow as an advisory check.
-3. **Cloud Logging alert policy** for the `trading-platform` service (5xx rate, p95 latency).
+3. **Cloud Logging alert policy** for the `solyra-api-prod` service (5xx rate, p95 latency).
 4. **Component documentation surface** (Storybook or Ladle) — the Tailwind 4 token system is undocumented outside of `chartTheme.ts`.

@@ -16,14 +16,14 @@
 > small backend addition), or **MOCK** (no data source — requires a new vendor
 > or substantial engineering).
 >
-> Audited 2026-06-05. Branch base: `feature/trading-platform`
+> Audited 2026-06-05. Branch base: `feature/solyra-api-prod`
 > (commit `a2077eb` — Phase-1 shell already merged).
 
 ---
 
 ## 0. Where the redesign stands
 
-The **app shell is already built** on `feature/trading-platform`
+The **app shell is already built** on `feature/solyra-api-prod`
 (`a2077eb`): HeroUI v3 + Tailwind v4, the Obsidian Analyst token system in
 `src/index.css` (surfaces, density, accent swatches, brand mark, top-tabs,
 command palette, settings popover), and the shell components
@@ -172,7 +172,7 @@ not a blocker.
 
 ## 4. Phased implementation plan
 
-Each phase is a shippable PR onto `feature/trading-platform`. Ordering
+Each phase is a shippable PR onto `feature/solyra-api-prod`. Ordering
 favors (a) the user's stated #1 goal — an actionable Overview — and
 (b) the "headline" Heatseeker view, while front-loading the shared
 primitives every later phase reuses.

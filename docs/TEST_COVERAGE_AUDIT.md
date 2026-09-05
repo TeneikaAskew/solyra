@@ -4,7 +4,7 @@
 
 This document is the durable record of the test-data audit that ran alongside the
 repo split (Solyra → frontend-only SPA; `api/` + `lib/` + `gcp/` + `scripts/` →
-the **stocks** repo, deployed as the `trading-platform` Cloud Run service). It
+the **stocks** repo, deployed as the `solyra-api-prod` Cloud Run service). It
 answers three questions the migration raised:
 
 1. Does every page, and every view/chart within every page, have typed mock data?

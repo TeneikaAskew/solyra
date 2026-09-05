@@ -98,7 +98,7 @@ bash scripts/db_query_cr.sh -q "SELECT 'intraday' t, COUNT(*) n, MAX(ts)::text F
 
 # Service + freshness endpoint:
 gcloud run services list --project=adept-mountain-474619-d4 --format='table(metadata.name,status.url)'
-curl -s https://trading-platform-…run.app/api/health/freshness   # (behind IAP)
+curl -s https://solyra-api-prod-…run.app/api/health/freshness   # (behind IAP)
 ```
 Per-page table/job/service/secret mapping: **`platform/GCP_DATA_DICTIONARY.md`**.
 Known prod caveats validated there: AV-on-request endpoints require the
@@ -120,7 +120,7 @@ sign-in (`npm run e2e:cloud:auth`). To test against a deployed app **without**
 that, deploy the separate public staging service and use the shared passcode.
 
 **Architecture:** IAP on Cloud Run is service-level and can't be dropped per
-revision, so staging is its own service (`trading-platform-staging`) deployed
+revision, so staging is its own service (`solyra-api-staging`) deployed
 `--allow-unauthenticated`. An app-level passcode gate re-protects the API:
 - `api/auth_bypass.py` — middleware + `POST /api/auth/bypass` + `/api/auth/logout`. Inert unless `ALLOW_AUTH_BYPASS=1` (set only on the staging service), so prod/local are untouched.
 - `/api/me` returns `auth_bypass_allowed: true` on staging → the React `<AuthGate>` shows the sign-in screen (`src/components/auth/`). A correct passcode sets an HttpOnly cookie and the app renders as a guest.
@@ -140,7 +140,7 @@ DB_USER=trading_user DB_NAME=trading STAGING_SERVICE=1 ./platform/deploy.sh
 **Test against it (no Google sign-in):** point Playwright's `cloud` project at
 the staging URL and mint the bypass cookie via the passcode instead of IAP:
 ```bash
-STAGING_URL="https://trading-platform-staging-….run.app"
+STAGING_URL="https://solyra-api-staging-….run.app"
 # Grab the HttpOnly bypass cookie with one POST, save it as Playwright storage state:
 curl -sS -c - -X POST "$STAGING_URL/api/auth/bypass" \
   -H 'Content-Type: application/json' -d '{"passcode":"YOUR_PASSCODE"}' >/dev/null

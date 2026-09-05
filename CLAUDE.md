@@ -8,7 +8,7 @@ options/gamma analysis, signals, the trade journal, AI insights, and catalysts.
 
 **This repo holds the frontend only.** The FastAPI backend, the research
 pipeline (`lib/`), and the GCP jobs live in the **stocks** repo
-(`TeneikaAskew/stocks`) and deploy together as the `trading-platform` Cloud Run
+(`TeneikaAskew/stocks`) and deploy together as the `solyra-api-prod` Cloud Run
 service. Solyra's dev server proxies `/api/*` to that backend, so the browser
 sees same-origin requests and none of the ~73 bare `fetch('/api/...')` call
 sites need to know where the API actually is.
@@ -18,7 +18,7 @@ sites need to know where the API actually is.
 | Stack | React 19, Vite 7, TypeScript 5.9, Tailwind 4, HeroUI 3, TanStack Query/Table, Recharts, d3, lightweight-charts, Zustand, Firebase Auth |
 | Tests | Vitest (unit, colocated in `src/`), Playwright (E2E, in `tests/`) |
 | Editor sync | [Lovable](https://lovable.dev) — commits on the connected branch sync into the editor |
-| Backend | stocks repo → `trading-platform` (prod) / `trading-platform-staging` (Cloud Run) |
+| Backend | stocks repo → `solyra-api-prod` (prod) / `solyra-api-staging` (Cloud Run) |
 
 ---
 
@@ -383,7 +383,7 @@ sniffing env vars:
 | Situation | `/api/*` proxied to |
 |---|---|
 | Something listening on `localhost:8000` | that local backend |
-| Nothing is (Lovable preview, fresh clone) | `trading-platform-staging` on Cloud Run |
+| Nothing is (Lovable preview, fresh clone) | `solyra-api-staging` on Cloud Run |
 | `VITE_API_PROXY_TARGET` is set | that URL, unconditionally |
 
 `VITE_NO_BACKEND=1 npm run dev` stubs `/api/config/firebase` with open auth for
