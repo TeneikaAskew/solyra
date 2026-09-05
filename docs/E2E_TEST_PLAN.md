@@ -137,13 +137,27 @@ gcloud secrets add-iam-policy-binding staging-passcode \
 DB_USER=trading_user DB_NAME=trading STAGING_SERVICE=1 ./platform/deploy.sh
 ```
 
-**Test against it (no Google sign-in):** point Playwright's `cloud` project at
-the staging URL and mint the bypass cookie via the passcode instead of IAP:
-```bash
-STAGING_URL="https://solyra-api-staging-….run.app"
-# Grab the HttpOnly bypass cookie with one POST, save it as Playwright storage state:
-curl -sS -c - -X POST "$STAGING_URL/api/auth/bypass" \
-  -H 'Content-Type: application/json' -d '{"passcode":"YOUR_PASSCODE"}' >/dev/null
-CLOUD_RUN_URL="$STAGING_URL" npm run e2e:cloud   # specs run as the staging guest
-```
-(or just open `$STAGING_URL` in a browser and type the passcode once.)
+**This flow no longer works, on three counts (corrected 2026-09-05).** It is
+kept here described rather than deleted, because the passcode secret above may
+still exist and someone will otherwise try to use it.
+
+1. `POST /api/auth/bypass` is gone. `platform/api/auth.py` opens with
+   "Replaces the staging passcode bypass (the former `auth_bypass.py`)" — one
+   middleware with `AUTH_MODE` superseded it. Staging is gated by a Firebase ID
+   token now, not a passcode cookie.
+2. `CLOUD_RUN_URL` is not read by `playwright.config.ts` any more, and could not
+   have helped: the deployed SPA resolves `/api/*` through the `STAGING_API`
+   value compiled into its bundle, so no environment variable at test time can
+   redirect it.
+3. Pointing the `cloud` project at an API URL would break it regardless. Since
+   #957 the API services serve no SPA, so `/dashboard` there answers
+   `404 {"detail":"Not Found"}`. That project's `baseURL` is the published
+   frontend.
+
+**What works today:** `npm run e2e:cloud` runs against
+`https://solyra-stocks.lovable.app`, which calls whichever API its published
+bundle was built against. That covers signed-out views. Gated views need a
+Firebase sign-in strategy, which does not exist yet — see the note at the top of
+`tests/auth.setup.ts`. To aim a run at a different backend, rebuild the frontend
+with `VITE_API_BASE_URL` and serve that build; there is deliberately no runtime
+origin override.

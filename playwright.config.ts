@@ -15,12 +15,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_URL =
   process.env.E2E_CLOUD_URL ?? 'https://solyra-stocks.lovable.app';
 
-// The API origin, kept separate from the frontend on purpose. Not a baseURL:
-// the SPA calls it cross-origin via authedFetch. Override when pointing cloud
-// runs at a different backend.
-const CLOUD_API_URL =
-  process.env.CLOUD_RUN_URL ?? 'https://solyra-api-prod-5sjtb3yl7a-ue.a.run.app';
-void CLOUD_API_URL; // referenced by docs/runbooks; kept as the single API-origin literal
+// NOTE ON THE API ORIGIN: cloud runs cannot choose one from here, and a
+// CLOUD_RUN_URL env var is NOT honoured. A previous revision of this file kept
+// such a constant and discarded it with `void`, which read as support for an
+// override that never existed (Codex, solyra#44).
+//
+// The reason is structural. The deployed SPA resolves /api/* in the browser via
+// src/lib/authedFetch.ts, which for a static host returns the STAGING_API value
+// COMPILED INTO THAT BUNDLE. Nothing Playwright sets can reach it. So a cloud
+// run against solyra-stocks.lovable.app exercises whichever API that published
+// bundle was built against — today solyra-api-staging — regardless of anything
+// here, and a run "against prod" is not available this way.
+//
+// To point a run at a different backend, rebuild the frontend with
+// VITE_API_BASE_URL (authedFetch.ts:57) and serve that build. Deliberately not
+// adding a runtime origin override: it would let any deployed page be aimed at
+// an arbitrary API, which is a worse trade than a test-only inconvenience.
 
 const IAP_STATE = path.join(__dirname, 'tests', '.auth', 'iap-state.json');
 

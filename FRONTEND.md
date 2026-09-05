@@ -219,12 +219,16 @@ deploy lands in is now the service name, not a traffic percentage.
 use, marked legacy in the script. `.github/workflows/deploy-staging.yml` is a
 manual one-click staging redeploy with an optional schema apply.
 
-Both authenticate via the `CLAUDE_CODE_WEB_GCP_SA_KEY` repo secret (the same `claude-web@` SA used by every other GCP-touching workflow).
+The Cloud Build triggers run as `trading-runner@`. The separate
+`deploy-staging.yml` GitHub Actions workflow authenticates via Workload
+Identity Federation as `arch-refresh-bot@`, clamped to `main`.
 
-> These were stocks workflow files, and as of 2026-09-03 neither exists on
-> stocks `main` any more — `platform/deploy.sh` there is the surviving deploy
-> entry point, so the CI wiring above describes the setup as of this doc's
-> last refresh, not the current one.
+> Superseding an earlier note here: that note said two GitHub Actions workflows
+> (`deploy-platform-staging.yml` / `promote-platform-prod.yml`) had been removed
+> from stocks `main` leaving `platform/deploy.sh` as the only entry point. The
+> first half was right and the conclusion no longer holds — deployment moved to
+> the two Cloud Build triggers above, which is what fires on a merge. Use the
+> triggers; `platform/deploy.sh` is the manual operator path.
 
 ## Testing
 
