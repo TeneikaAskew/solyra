@@ -22,17 +22,19 @@
 
 ## Directory map
 
+This is the solyra repo root. The backend deployment files it used to list
+(`Dockerfile`, `cloudbuild.yaml`, `deploy.sh`) are NOT here — they live in
+stocks under [`platform/`](https://github.com/TeneikaAskew/stocks/tree/main/platform),
+and the tree below was still showing the pre-#957 layout.
+
 ```
-platform/
+solyra/
 ├─ index.html                   # Vite HTML entry (dark mode default)
 ├─ package.json                 # React 19, Vite 7, Tailwind 4, Zustand, TanStack Query/Table, Recharts
 ├─ vite.config.ts               # @ → src alias, proxies /api + /dev to FastAPI :8000
 ├─ tsconfig.json + tsconfig.{app,node}.json
 ├─ eslint.config.js
 ├─ playwright.config.ts         # E2E
-├─ Dockerfile                   # multi-stage: node builds dist/, python serves it
-├─ cloudbuild.yaml              # Cloud Build for solyra-api-prod image
-├─ deploy.sh                    # build + deploy (STAGING=1 for staging revision)
 ├─ screenshot_pages.mjs         # Playwright util for capturing each page
 ├─ src/
 │  ├─ main.tsx                  # ReactDOM.createRoot(...).render(<App />)
@@ -236,14 +238,26 @@ Identity Federation as `arch-refresh-bot@`, clamped to `main`.
 - **Component:** none currently — Vitest is config'd for component tests via `@testing-library/react`, but the suite is empty. Filed as a coverage gap.
 - **E2E (`npm run e2e` → Playwright):** `tests/*.spec.ts` runs the full app under `chromium`. Two project profiles:
   - `chromium` (default) — local dev against `npm run dev`;
-  - `cloud` — runs against the production Cloud Run URL behind IAP. Requires a one-time `e2e:cloud:auth` to capture an IAP cookie, then `e2e:cloud` re-uses it.
+  - `cloud` — runs against the PUBLISHED FRONTEND, `https://solyra-stocks.lovable.app`, not a Cloud Run URL and not behind IAP. IAP left this path at the #957 split: the SPA is published separately and the API is gated per-request by a Firebase ID token. `e2e:cloud:auth` opens a browser for an interactive Firebase sign-in and refuses to save state if that sign-in does not complete. Signed-out specs work; gated ones still need a Firebase sign-in strategy that does not exist yet (see the header of `tests/auth.setup.ts`), so a green `e2e:cloud` is not evidence that gated routes work.
 - **Lint:** `npm run lint` → ESLint 9 with `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`.
 
 ## Production runtime
 
-- **URL:** `https://stocks.insightscollective.org` (Cloud Run domain mapping, Google-managed TLS).
-- **Auth:** Identity-Aware Proxy gates the service. The browser handshakes with Google's IAP IdP, IAP injects the `X-Goog-Iap-Jwt-Assertion` header into the FastAPI request, `/api/me` validates it and returns `{ email, isAdmin }`. The `useUser` hook reads this once per session and gates the `/admin` route.
-- **Cloud Run config:** `min-instances=1` (to avoid cold-start hitting Discord's 3-sec interaction-ack budget when the same image happens to be invoked for back-channel work), `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), 1 vCPU / 1 GiB.
+This section describes the API services in stocks. **It is not where this SPA is
+served** — that is Lovable, at `https://solyra-stocks.lovable.app`.
+
+- **Frontend URL:** `https://solyra-stocks.lovable.app`. It calls the API
+  cross-origin; `authedFetch` re-points `/api/*` at `STAGING_API` for static hosts.
+- **API URLs:** `solyra-api-staging-5sjtb3yl7a-ue.a.run.app` (public edge,
+  Firebase-gated, what the SPA calls) and `solyra-api-prod-5sjtb3yl7a-ue.a.run.app`
+  (behind IAP). `stocks.insightscollective.org` maps to **staging** since
+  2026-09-05, not to prod and not to this SPA.
+- **Auth:** two modes, one per service. `solyra-api-prod` runs `AUTH_MODE=iap`:
+  IAP injects `X-Goog-Iap-Jwt-Assertion`, `/api/me` validates it, `useUser` gates
+  `/admin`. `solyra-api-staging` runs `AUTH_MODE=firebase`: the browser signs in
+  with Firebase and `authedFetch` attaches the ID token per request. The SPA
+  talks to staging, so **Firebase is the path that actually runs today**.
+- **Cloud Run config:** `min-instances=1` (to avoid cold-start hitting Discord's 3-sec interaction-ack budget when the same image happens to be invoked for back-channel work), `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), 1 vCPU / 2 GiB (1 GiB OOM-killed full-chain GEX on /api/options/*/levels).
 - **Logging:** stdout → Cloud Logging; the failure-notifier sink does NOT cover the service (its filter is `resource.type=cloud_run_job`), so service errors don't auto-create GitHub issues. Pager-style monitoring is via Cloud Logging alert policies (not yet wired — open todo).
 
 ## Known limitations
