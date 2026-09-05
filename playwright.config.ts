@@ -4,8 +4,24 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const CLOUD_RUN_URL =
+// Cloud E2E navigates SPA routes (/dashboard, /charts, …), so its baseURL must
+// be the host that SERVES THE SPA — not the API. Since the #957 split the API
+// image contains no dist/ (platform/Dockerfile copies none, and main.py mounts
+// the SPA only when platform/dist exists), so solyra-api-prod answers /dashboard
+// with 404 {"detail":"Not Found"}. Verified 2026-09-05 against solyra-api-staging,
+// which runs the same image without IAP in front. This default previously pointed
+// at the API service, which is why `npm run e2e:cloud` could not have worked since
+// #957 (Codex, solyra#44).
+const FRONTEND_URL =
+  process.env.E2E_CLOUD_URL ?? 'https://solyra-stocks.lovable.app';
+
+// The API origin, kept separate from the frontend on purpose. Not a baseURL:
+// the SPA calls it cross-origin via authedFetch. Override when pointing cloud
+// runs at a different backend.
+const CLOUD_API_URL =
   process.env.CLOUD_RUN_URL ?? 'https://solyra-api-prod-5sjtb3yl7a-ue.a.run.app';
+void CLOUD_API_URL; // referenced by docs/runbooks; kept as the single API-origin literal
+
 const IAP_STATE = path.join(__dirname, 'tests', '.auth', 'iap-state.json');
 
 // ── E2E dev server ────────────────────────────────────────────────────────
@@ -113,7 +129,7 @@ export default defineConfig({
         // The headless shell lacks system root CAs, so the Montserrat
         // Google-Fonts CDN load throws ERR_CERT and trips the "no console
         // errors" assertions. Accept certs in this mocked local project
-        // (does not affect the cloud project, which uses real IAP).
+        // (does not affect the cloud project).
         ignoreHTTPSErrors: true,
       },
     },
@@ -124,7 +140,7 @@ export default defineConfig({
       testMatch: /\.setup\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: CLOUD_RUN_URL,
+        baseURL: FRONTEND_URL,
         headless: false,
       },
     },
@@ -135,7 +151,7 @@ export default defineConfig({
       testIgnore: /\.setup\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: CLOUD_RUN_URL,
+        baseURL: FRONTEND_URL,
         headless: true,
         storageState: IAP_STATE,
       },
