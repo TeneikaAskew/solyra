@@ -59,7 +59,7 @@ grep -rn "BEGIN PRIVATE KEY\|BEGIN RSA PRIVATE KEY" src tests public index.html 
 ```
 
 `.gitignore` already excludes `.env`, `*.har`, `har.json`, `docs/har.json`, and
-`tests/.auth/` (the IAP cookie store). A hit here means something bypassed it —
+`tests/.auth/` (the saved signed-in browser state — Firebase session, despite the legacy `iap-state.json` filename). A hit here means something bypassed it —
 check `git log --diff-filter=A` for when it landed, because history matters for
 a real credential.
 

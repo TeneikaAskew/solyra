@@ -329,7 +329,7 @@ that spans pages or the shell lives in the single `tests/shared/` folder.
 | `tests/settings/` | `settings.spec.ts` (new — closed the last page with zero E2E) |
 | `tests/signals/` | `signals.spec.ts` |
 | `tests/shared/` | `navigation.spec.ts`, `auth-gate.spec.ts`, `gamma-levels.spec.ts` (spans options+charts+help), `most-active-bar.spec.ts` (spans dashboard+journal+live) |
-| `tests/` root | infrastructure only: `routes.warmup.ts` (warmup project), `auth.setup.ts` (cloud IAP), `helpers/`, `fixtures/` (binary fixtures) |
+| `tests/` root | infrastructure only: `routes.warmup.ts` (warmup project), `auth.setup.ts` (interactive Firebase sign-in for the cloud project; its `iap-setup` project name and `.auth/iap-state.json` output are legacy names, no IAP is involved since #957), `helpers/`, `fixtures/` (binary fixtures) |
 
 `playwright.config.ts` needed no change: `testDir` recurses and both special
 `testMatch` patterns are suffix regexes. Classification rule: a spec whose

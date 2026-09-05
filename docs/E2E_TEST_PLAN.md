@@ -87,7 +87,8 @@ production smoke tests are documented in §4).
 
 ## 4. GCP data / pipeline validation
 
-Run before trusting the live app (the deployed UI behind IAP):
+Run before trusting the live app. The deployed UI is NOT behind IAP — it is
+published on Lovable and its API is gated per request by a Firebase ID token:
 
 ```bash
 # Data freshness for the tables behind each page (over 443, CR-native):
@@ -96,9 +97,11 @@ bash scripts/db_query_cr.sh -q "SELECT 'intraday' t, COUNT(*) n, MAX(ts)::text F
   SELECT 'options', COUNT(*), MAX(snapshot_ts)::text FROM etf_options_snapshots;
   SELECT 'news', COUNT(*), MAX(published_ts)::text FROM news_sentiment"
 
-# Service + freshness endpoint:
+# Service + freshness endpoint (routers/health.py). Aim it at STAGING: that is
+# the service the SPA calls and the one carrying traffic. The prod URL is
+# IAP-gated, so a bare curl gets the Google SSO redirect, not JSON.
 gcloud run services list --project=adept-mountain-474619-d4 --format='table(metadata.name,status.url)'
-curl -s https://solyra-api-prod-…run.app/api/health/freshness   # (behind IAP)
+curl -s https://solyra-api-staging-5sjtb3yl7a-ue.a.run.app/api/health/freshness
 ```
 Per-page table/job/service/secret mapping: **`platform/GCP_DATA_DICTIONARY.md`**.
 Known prod caveats validated there: AV-on-request endpoints require the

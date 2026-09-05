@@ -129,7 +129,7 @@ Three concentric loops:
 
 | Hook                       | Endpoint(s) hit                                            | Reads                              |
 |----------------------------|------------------------------------------------------------|------------------------------------|
-| `useUser`                  | `/api/me`                                                  | Identity + admin flag (IAP header) |
+| `useUser`                  | `/api/me`                                                  | Identity + server-computed `is_admin`. Source depends on the service: a verified Firebase token on staging (what the SPA calls), the trusted IAP header on prod |
 | `useTickerSearch`          | (client-side filter over `availableTickers`)               | Zustand `tickerStore`              |
 | `useLiveQuote`             | `/api/live/quote/{ticker}`                                 | Latest 1-min bar                   |
 | `useLiveIndicators`        | `/api/live/indicators`                                     | Wilder RSI/EMA/ATR/VWAP            |
