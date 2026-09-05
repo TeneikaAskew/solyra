@@ -257,7 +257,7 @@ served** — that is Lovable, at `https://solyra-stocks.lovable.app`.
   `/admin`. `solyra-api-staging` runs `AUTH_MODE=firebase`: the browser signs in
   with Firebase and `authedFetch` attaches the ID token per request. The SPA
   talks to staging, so **Firebase is the path that actually runs today**.
-- **Cloud Run config:** `min-instances=1` (to avoid cold-start hitting Discord's 3-sec interaction-ack budget when the same image happens to be invoked for back-channel work), `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), 1 vCPU / 2 GiB (1 GiB OOM-killed full-chain GEX on /api/options/*/levels).
+- **Cloud Run config:** `min-instances=0` on BOTH services — `minScale` is unset, verified live 2026-09-05. An earlier revision said `min-instances=1` and credited it with avoiding cold starts against Discord's 3-second interaction-ack budget; no such warm instance is configured, so do not rely on one. `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), `max-instances=5`, 1 vCPU / 2 GiB (1 GiB OOM-killed full-chain GEX on `/api/options/*/levels`).
 - **Logging:** stdout → Cloud Logging; the failure-notifier sink does NOT cover the service (its filter is `resource.type=cloud_run_job`), so service errors don't auto-create GitHub issues. Pager-style monitoring is via Cloud Logging alert policies (not yet wired — open todo).
 
 ## Known limitations

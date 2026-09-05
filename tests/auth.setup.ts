@@ -31,35 +31,43 @@ setup('capture signed-in browser state', async ({ page }) => {
 
   await page.goto('/dashboard');
 
-  // Wait for the SIGN-IN SCREEN TO GO AWAY, which is the only signal that the
-  // interactive sign-in actually completed.
+  // Wait for a POSITIVE signed-in signal: an element that exists only once the
+  // app shell renders. `nav-menu-support` is already this repo's marker for
+  // exactly that distinction — tests/shared/auth-gate.spec.ts asserts it is
+  // visible when signed in and has count 0 when the gate is up.
   //
-  // Two earlier predicates were both wrong, in opposite directions. The
-  // original waited for `url.host.endsWith('.run.app')`, which the SPA host can
-  // never match, so this step hung for its whole timeout. Replacing it with a
-  // baseURL-origin check overcorrected: on a signed-out Firebase deployment
-  // <AuthGate> renders <SignInScreen> at the app's own origin, so that
-  // predicate is TRUE on arrival and the setup saved signed-out storage state
-  // immediately, reporting success while producing a file that authorizes
-  // nothing (Codex, solyra#44).
+  // Three predicates were wrong here before, each in a different way, and all
+  // three came from asking a question that cannot separate the two states:
   //
-  // Firebase sign-in is same-origin, so URL alone cannot distinguish
-  // signed-out from signed-in here. The rendered gate can:
-  // SignInScreen carries data-testid="signin-screen", and AuthGate swaps it for
-  // the app shell once `useUser` reports a session.
+  //   1. `url.host.endsWith('.run.app')` — the SPA host can never match it, so
+  //      the step hung for its full timeout.
+  //   2. baseURL origin — true on arrival, since Firebase sign-in is
+  //      same-origin. Saved signed-out state instantly.
+  //   3. `signin-screen` detached — also true on arrival: <AuthGate> renders a
+  //      LoadingSpinner while `isLoading`, so SignInScreen has not mounted yet
+  //      and Playwright counts an absent element as detached (Codex, solyra#44).
+  //
+  // The lesson those share: absence is not evidence. Only a positive marker of
+  // the signed-in shell settles it, which is what this waits for.
   await page
-    .getByTestId('signin-screen')
-    .waitFor({ state: 'detached', timeout: 5 * 60 * 1000 })
+    .getByTestId('nav-menu-support')
+    .waitFor({ state: 'visible', timeout: 5 * 60 * 1000 })
     .catch(() => {
       throw new Error(
-        'Sign-in did not complete within 5 minutes: the sign-in screen is still ' +
-        'rendered, so any storage state saved now would be signed-out and would ' +
-        'not authorize a single gated request. Complete the sign-in in the ' +
-        'browser this opened, then re-run. Refusing to save.'
+        'Sign-in did not complete within 5 minutes: the app shell never rendered, ' +
+        'so any storage state saved now would be signed-out and would not ' +
+        'authorize a single gated request. Complete the sign-in in the browser ' +
+        'this opened, then re-run. Refusing to save.'
       );
     });
 
-  await page.context().storageState({ path: authFile });
+  // indexedDB: true is REQUIRED, not a precaution. src/lib/firebaseImpl.ts
+  // selects `indexedDBLocalPersistence`, so the signed-in user record lives in
+  // IndexedDB; Playwright's default storageState captures cookies and
+  // localStorage only. Without this flag the file would be written after a
+  // genuinely successful sign-in and still restore a signed-out context
+  // (Codex, solyra#44).
+  await page.context().storageState({ path: authFile, indexedDB: true });
   // eslint-disable-next-line no-console
-  console.log(`[iap-setup] saved SIGNED-IN browser state → ${authFile}`);
+  console.log(`[iap-setup] saved SIGNED-IN browser state (incl. IndexedDB) → ${authFile}`);
 });

@@ -419,10 +419,10 @@
                 <mxCell id="au_title" value="Auth &amp; Entry — what actually happens when a user opens the app" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1f2933;" parent="1" vertex="1">
                     <mxGeometry x="40" y="16" width="1520" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_sub" value="Google Cloud IAP terminates auth in front of Cloud Run — the SPA has no login screen; identity arrives as a trusted header" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" vertex="1">
+                <mxCell id="au_sub" value="Two auth paths. The SPA (Lovable) HAS a Firebase login screen and calls solyra-api-staging with an ID token per request. IAP still fronts solyra-api-prod, where identity arrives as a trusted header — but that is not the path the SPA uses." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" vertex="1">
                     <mxGeometry x="40" y="48" width="1520" height="20" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_l1" value="Lane 1 · Login — Google IAP SSO (no Firebase, no login screen)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#fdf1e3;strokeColor=#e0913f;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
+                <mxCell id="au_l1" value="Lane 1 · Login — Firebase sign-in on the SPA (staging); Google IAP SSO on solyra-api-prod" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#fdf1e3;strokeColor=#e0913f;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
                     <mxGeometry x="40" y="92" width="1520" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="au_l2" value="Lane 2 · App boot" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
@@ -431,7 +431,7 @@
                 <mxCell id="au_l3" value="Lane 3 · Admin access" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#7cae7a;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
                     <mxGeometry x="40" y="400" width="1520" height="140" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_l4" value="Lane 4 · Local dev fallback (no IAP)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#f1f3f4;strokeColor=#5f6368;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
+                <mxCell id="au_l4" value="Lane 4 · Local dev fallback (AUTH_MODE unset → open; no IAP, no Firebase)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#f1f3f4;strokeColor=#5f6368;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
                     <mxGeometry x="40" y="554" width="1520" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="au_s1" value="User → stocks.insightscollective.org&#xa;(managed TLS)" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
@@ -443,10 +443,10 @@
                 <mxCell id="au_idp" value="Google IdP&#xa;OAuth SSO consent" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
                     <mxGeometry x="520" y="132" width="220" height="54" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_hdr" value="redirect back with header&#xa;X-Goog-Authenticated-User-Email" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                <mxCell id="au_hdr" value="prod only: redirect back with header&#xa;X-Goog-Authenticated-User-Email" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
                     <mxGeometry x="800" y="132" width="300" height="54" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_run" value="Cloud Run&#xa;solyra-api-prod serves SPA" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" vertex="1">
+                <mxCell id="au_run" value="Lovable serves the SPA&#xa;solyra-api-* serve /api only" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" vertex="1">
                     <mxGeometry x="1180" y="126" width="56" height="56" as="geometry"/>
                 </mxCell>
                 <mxCell id="au_e_au_s1_au_iap" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" source="au_s1" target="au_iap" edge="1">
