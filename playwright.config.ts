@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CLOUD_RUN_URL =
-  process.env.CLOUD_RUN_URL ?? 'https://solyra-api-prod-28960574877.us-east1.run.app';
+  process.env.CLOUD_RUN_URL ?? 'https://solyra-api-prod-5sjtb3yl7a-ue.a.run.app';
 const IAP_STATE = path.join(__dirname, 'tests', '.auth', 'iap-state.json');
 
 // ── E2E dev server ────────────────────────────────────────────────────────
