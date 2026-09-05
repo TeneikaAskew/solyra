@@ -8,7 +8,7 @@
 
 # FRONTEND ARCHITECTURE
 
-> **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app that ships inside the `solyra-api-prod` Cloud Run service.
+> **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app. Since the #957 split it no longer ships inside the API image: `platform/Dockerfile` in stocks copies no `dist/`, so the API serves `/api/*` only.
 > **Last refreshed:** 2026-05-22.
 > **Companion diagram:** [`Frontend.drawio`](Frontend.drawio).
 
@@ -16,9 +16,9 @@
 
 - **Stack:** React 19 + TypeScript 5.9 + Vite 7 + Tailwind 4, Zustand for client state, TanStack Query for server state, TanStack Table for tables, Recharts + lightweight-charts for visualisations, react-router-dom v7 with a single nested layout route.
 - **Layout:** one root `BrowserRouter` with an `AppShell` (sidebar + header) wrapping **12 route-level pages**, each lazy-loaded with `React.lazy` + `Suspense` and isolated by a per-route `RouteErrorBoundary` so a single page crash doesn't take down the chrome.
-- **API surface:** ~30 endpoints all under `/api/*`, served by the same FastAPI process that serves the static SPA (single-port Cloud Run service on port 8080 in production; dev uses Vite on 5173 proxied to FastAPI on 8000).
-- **Build/deploy:** `npm run build` → `platform/dist/` → bundled into the `solyra-api-prod` Docker image (multi-stage, frontend stage = node:20-slim, runtime = python:3.11-slim) → Cloud Build → Cloud Run service at `stocks.insightscollective.org` (IAP-gated, Google-managed TLS, `--no-cpu-throttling`).
-- **Two-stage deploy:** push to `main` triggers `deploy-solyra-api-staging.yml` → revision tagged `staging` at 0% traffic → manual `deploy-solyra-api-prod.yml` shifts 100% traffic to the staging tag.
+- **API surface:** ~30 endpoints all under `/api/*`, served by the FastAPI services in the stocks repo (`solyra-api-prod`, `solyra-api-staging`). Dev uses Vite on 5173 proxying to FastAPI on 8000, falling back to `solyra-api-staging` when nothing is listening locally.
+- **Build/deploy:** `npm run build` → `dist/`, deployed as a static frontend (Lovable-published today). It is NOT bundled into the API image any more. `stocks.insightscollective.org` now maps to `solyra-api-staging`, not to a service serving this SPA.
+- **Backend deploy (stocks repo):** merging to `main` auto-deploys `solyra-api-staging` only; `solyra-api-prod` moves solely via the manual `deploy-solyra-api-prod` Cloud Build trigger.
 
 ## Directory map
 
@@ -194,22 +194,30 @@ npm run build                       # tsc -b && vite build → platform/dist/
 1. **`frontend` stage** (`node:20-slim`) — runs `npm ci` + `npm run build`, outputs `/build/platform/dist/`.
 2. **`runtime` stage** (`python:3.11-slim`) — installs FastAPI deps, copies `lib/` + `gcp/` + `platform/api/`, then `COPY --from=frontend /build/platform/dist /app/platform/dist` so the same Python process serves the SPA + `/api/*`. `main.py` mounts `dist/` as a `StaticFiles` at `/`.
 
-This means **one Cloud Run service, one port, one TLS cert** — no separate CDN, no separate static host. Cold-start budget is dominated by the Python import graph (`lib/`, `gcp/database.py` Cloud-SQL connector), not by the frontend assets, which are pre-built at image-build time.
+**Superseded by the #957 split.** The two-stage image above is how it worked when the SPA lived in the stocks repo. `platform/Dockerfile` now copies no `dist/`, and `main.py` mounts the SPA only when `platform/dist` exists, so that mount never activates — the header of that Dockerfile says so explicitly. Cold-start budget is still dominated by the Python import graph (`lib/`, `gcp/database.py` Cloud-SQL connector); the frontend simply is not in the image.
 
-### Cloud Run deploy — staging → production
+### Backend deploy — staging and production are separate services
 
-`platform/deploy.sh` drives both modes:
+Rebuilt 2026-09-05. Two Cloud Build triggers in the stocks repo, one per service:
 
-| Mode               | Cmd                                  | Behaviour                                                                 |
-|--------------------|--------------------------------------|---------------------------------------------------------------------------|
-| Production         | `./platform/deploy.sh`               | builds image, deploys revision tagged `latest` with 100% traffic           |
-| Staging            | `STAGING=1 ./platform/deploy.sh`     | builds image, deploys revision tagged `staging` with `--no-traffic` (0%) — reachable at `https://staging---solyra-api-prod-…run.app`, prod untouched |
-| Promote staging → prod | `gcloud run services update-traffic solyra-api-prod --to-tags=staging=100` | shifts 100% to the staging-tagged revision                              |
+| Trigger | Fires | Deploys |
+|---|---|---|
+| `deploy-solyra-api-staging` | push to `main` touching `platform/**`, `lib/**`, `requirements.txt`, `gcp/database.py` | `solyra-api-staging` |
+| `deploy-solyra-api-prod` | **manual only** | `solyra-api-prod` |
 
-CI wiring:
+Merging to `main` cannot reach production. The prod trigger promotes the image
+digest currently serving staging rather than rebuilding, so prod ships the bits
+staging validated.
 
-- `.github/workflows/deploy-solyra-api-staging.yml` — triggers on push to `main` touching `platform/**`, `lib/**`, `requirements.txt`, or `gcp/database.py`. Runs `STAGING=1 ./platform/deploy.sh`.
-- `.github/workflows/deploy-solyra-api-prod.yml` — manual `workflow_dispatch`, promotes the staging revision. Shares the staging workflow's concurrency group so deploy + promote can't interleave.
+This replaced a tag-based blue/green on a single service, where a `staging` tag
+at 0% traffic was promoted by shifting traffic. `--no-traffic` was dropped on
+2026-08-25 and a tag carries no traffic guarantee of its own, so the
+"staging"-tagged revision was serving 100% of production. The environment a
+deploy lands in is now the service name, not a traffic percentage.
+
+`platform/deploy.sh` keeps a `STAGING=1` revision-tag mode for one-off operator
+use, marked legacy in the script. `.github/workflows/deploy-staging.yml` is a
+manual one-click staging redeploy with an optional schema apply.
 
 Both authenticate via the `CLAUDE_CODE_WEB_GCP_SA_KEY` repo secret (the same `claude-web@` SA used by every other GCP-touching workflow).
 

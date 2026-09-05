@@ -263,10 +263,10 @@
                 <mxCell id="b_cb" value="Cloud Build&#xa;→ gcr.io/PROJECT/solyra-api-prod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="2000" y="1105" width="240" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="b_stg" value="Staging deploy (GH Actions)&#xa;deploy-solyra-api-staging.yml on push to main&#xa;STAGING=1 ./platform/deploy.sh → revision tagged 'staging', 0% traffic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
+                <mxCell id="b_stg" value="Staging deploy (Cloud Build)&#xa;deploy-solyra-api-staging on push to main&#xa;builds + deploys the solyra-api-staging service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="1220" y="1180" width="480" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="b_prom" value="Promote (GH Actions manual)&#xa;deploy-solyra-api-prod.yml workflow_dispatch&#xa;gcloud run services update-traffic --to-tags=staging=100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                <mxCell id="b_prom" value="Promote to prod (Cloud Build, MANUAL ONLY)&#xa;deploy-solyra-api-prod&#xa;deploys staging's image digest to solyra-api-prod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;fontStyle=1;" parent="1" vertex="1">
                     <mxGeometry x="1720" y="1180" width="520" height="50" as="geometry"/>
                 </mxCell>
 
