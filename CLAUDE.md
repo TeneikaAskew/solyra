@@ -285,8 +285,8 @@ silently. Keep it that way — never loosen a type to make a fixture compile.
 | `npm test` | Vitest unit tests (`src/**/*.test.ts{,x}`) |
 | `npm run test:watch` | Vitest watch mode |
 | `npm run e2e` | Playwright E2E (boots its own Vite on :5199) |
-| `npm run e2e:cloud:auth` | Interactive Google/IAP sign-in, saves cookies |
-| `npm run e2e:cloud` | Headless run against the deployed Cloud Run URL |
+| `npm run e2e:cloud:auth` | Interactive **Firebase** sign-in against the deployed frontend; saves state incl. IndexedDB (not IAP — that left this path at #957) |
+| `npm run e2e:cloud` | Headless run against the deployed frontend. **No specs yet** — matches `*.cloud.spec.ts`, none exist, so it exits `No tests found` |
 
 ### Unit — Vitest
 

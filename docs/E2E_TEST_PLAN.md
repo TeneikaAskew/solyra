@@ -22,7 +22,7 @@
 | Layer | What it proves | Tooling | Where | Run command |
 |---|---|---|---|---|
 | **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `tests/*.spec.ts` | `npm run e2e` |
-| **Frontend E2E (live)** | The deployed Cloud Run app behind IAP serves real data | Playwright (`cloud` project) | same specs, `baseURL` = Cloud Run URL | `npm run e2e:cloud:auth` then `npm run e2e:cloud` |
+| **Frontend E2E (live)** | **NOT IMPLEMENTED.** Would prove the deployed app serves real data | Playwright (`cloud` project) | `*.cloud.spec.ts` — **none exist**, so `e2e:cloud` exits `No tests found` | `npm run e2e:cloud:auth` (interactive Firebase sign-in) then `npm run e2e:cloud` |
 | **Backend unit** | `lib/` math (indicators, strat, gamma, backtest), API contracts | pytest | `tests/test_*.py` | `make test` |
 | **Backend E2E / scripts** | Pipeline scripts, fetchers, signal monitor | pytest | `tests/test_e2e.py`, `tests/test_scripts_*.py` | `make test-e2e` · `make test-scripts` |
 | **GCP data/pipeline** | Real Cloud SQL data exists + is fresh; jobs/services healthy | `db_query_cr.sh`, `gcloud`, `/api/health/freshness` | `scripts/`, GCP | see §4 |
@@ -33,7 +33,7 @@
 
 **Config:** `playwright.config.ts` — `testDir: ./tests`, 3 projects:
 - **`chromium`** (default): boots its **own** Vite on the dedicated E2E port (`:5199`, never your `:5173` dev server), all `/api/**` **mocked** per-spec → no backend needed, hermetic, fast.
-- **`iap-setup`** / **`cloud`**: run against the live Cloud Run URL behind IAP — skipped by the default command. For the **no-IAP staging service** you can skip the interactive Google sign-in entirely — see §6.
+- **`iap-setup`** / **`cloud`**: run against the deployed FRONTEND (`solyra-stocks.lovable.app`), not a Cloud Run URL, and **not** behind IAP — the SPA is published separately since #957 and its API is gated per request by a Firebase ID token. `iap-setup` captures a real signed-in session interactively (including Firebase's IndexedDB persistence). `cloud` matches `*.cloud.spec.ts` and **none exist yet**, so it exits `No tests found` rather than running the hermetic specs against production, which would have forced `authMode: 'open'` and measured the mocks. Writing that suite is outstanding work. Both are skipped by the default command.
 
 **Mock strategy:** `tests/helpers/mocks.ts` `mockCommon(page)` stubs the cross-cutting endpoints (`/api/health`, `/api/live/status`, brief, watchlist); each spec adds its own `page.route('**/api/<endpoint>', …)` with realistic fixtures. **Fixtures must match the production response shape** (CLAUDE.md Rule 0.3) — e.g. the dashboard brief mock carries `daily_indicators.close`, the signals mock carries `analytics/summary`.
 
