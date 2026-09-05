@@ -154,11 +154,29 @@ export default defineConfig({
         headless: false,
       },
     },
-    // Headless tests against the deployed Cloud Run URL using saved IAP cookies.
-    // Run via `npm run e2e:cloud`. Requires `iap-setup` to have run first.
+    // Headless tests against the DEPLOYED frontend, reusing the signed-in state
+    // captured by `iap-setup`. Run via `npm run e2e:cloud`.
+    //
+    // testMatch is `*.cloud.spec.ts`, and no such file exists yet, so this
+    // project currently finds no tests and Playwright exits non-zero. That is
+    // deliberate and better than what it did before, which was
+    // `testIgnore: /\.setup\.ts$/` — i.e. run all 29 hermetic specs against the
+    // deployment.
+    //
+    // Those specs cannot test a deployment. Every one reaches `mockCommon` via
+    // its page fixture (tests/helpers/mocks.ts), which intercepts `/api/*` and
+    // fulfils `/api/config/firebase` with `authMode: 'open'`. That makes
+    // <AuthGate> inert, so the restored Firebase session is never consulted and
+    // every response is canned. A green run proved only that mocks still match
+    // the UI — the same thing the `chromium` project already proves, faster
+    // (Codex, solyra#44).
+    //
+    // Deployment specs have to be written deliberately: no `mockCommon`, real
+    // responses, assertions that tolerate live data. Until they exist, failing
+    // loudly is the honest state.
     {
       name: 'cloud',
-      testIgnore: /\.setup\.ts$/,
+      testMatch: /\.cloud\.spec\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: FRONTEND_URL,

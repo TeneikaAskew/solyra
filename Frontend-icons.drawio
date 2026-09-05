@@ -237,7 +237,7 @@
                 <mxCell id="br" value="Browser (React SPA)" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#e9f3ec;strokeColor=#3a9d5d;strokeWidth=1.5;fontSize=11;fontStyle=1;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
                     <mxGeometry x="62" y="128" width="190" height="44" as="geometry"/>
                 </mxCell>
-                <mxCell id="iap" value="Identity-Aware Proxy" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=10;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.identity_aware_proxy;" parent="1" vertex="1">
+                <mxCell id="iap" value="SignInScreen (Firebase)&#xa;same-origin, no redirect" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=10;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.identity_aware_proxy;" parent="1" vertex="1">
                     <mxGeometry x="300" y="124" width="52" height="52" as="geometry"/>
                 </mxCell>
                 <mxCell id="iap_s" value="injects X-Goog-Iap-Jwt-Assertion → /api/me validates → { email, isAdmin }" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=8;fontColor=#7b8794;" parent="1" vertex="1">
@@ -434,19 +434,19 @@
                 <mxCell id="au_l4" value="Lane 4 · Local dev fallback (AUTH_MODE unset → open; no IAP, no Firebase)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#f1f3f4;strokeColor=#5f6368;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
                     <mxGeometry x="40" y="554" width="1520" height="140" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_s1" value="User → stocks.insightscollective.org&#xa;(managed TLS)" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                <mxCell id="au_s1" value="User → solyra-stocks.lovable.app&#xa;(SPA; static host)" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
                     <mxGeometry x="76" y="132" width="250" height="54" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_iap" value="Identity-Aware Proxy" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.identity_aware_proxy;" parent="1" vertex="1">
+                <mxCell id="au_iap" value="SignInScreen (Firebase)&#xa;same-origin, no redirect" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.identity_aware_proxy;" parent="1" vertex="1">
                     <mxGeometry x="380" y="126" width="56" height="56" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_idp" value="Google IdP&#xa;OAuth SSO consent" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                <mxCell id="au_idp" value="Firebase Auth&#xa;Google or email/password" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
                     <mxGeometry x="520" y="132" width="220" height="54" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_hdr" value="prod only: redirect back with header&#xa;X-Goog-Authenticated-User-Email" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                <mxCell id="au_hdr" value="authedFetch attaches the ID token&#xa;Authorization: Bearer &lt;firebase&gt;&#xa;→ solyra-api-staging /api/*" style="rounded=1;arcSize=18;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=10;fontColor=#1f2933;align=center;verticalAlign=middle;" parent="1" vertex="1">
                     <mxGeometry x="800" y="132" width="300" height="54" as="geometry"/>
                 </mxCell>
-                <mxCell id="au_run" value="Lovable serves the SPA&#xa;solyra-api-* serve /api only" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" vertex="1">
+                <mxCell id="au_run" value="solyra-api-staging&#xa;verifies the token per request&#xa;(prod path is IAP + X-Goog-Authenticated-User-Email)" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" vertex="1">
                     <mxGeometry x="1180" y="126" width="56" height="56" as="geometry"/>
                 </mxCell>
                 <mxCell id="au_e_au_s1_au_iap" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" source="au_s1" target="au_iap" edge="1">

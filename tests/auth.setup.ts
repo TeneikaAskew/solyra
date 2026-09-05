@@ -14,11 +14,19 @@
  * separately (Lovable) and is NOT IAP-gated, while the API is gated per-request
  * by a Firebase ID token that authedFetch attaches from browser auth state.
  *
- * So this setup no longer captures anything that authorizes an API call. Cloud
- * specs covering signed-out views work; anything gated needs a Firebase sign-in
- * strategy that does not exist yet. Deciding that (real credentials vs. the
- * Firebase Auth emulator vs. a minted custom token) is an open question — see
- * solyra#44. Do not read a green `e2e:cloud` as proof that gated routes work.
+ * This setup now DOES capture a usable session: it waits for the signed-in shell
+ * and saves Firebase's IndexedDB persistence, and the `cloud` project restores
+ * it. What still blocks gated cloud runs is one layer further out, and it is
+ * worth being precise because the earlier caveat here named the wrong cause:
+ * the `cloud` project had no deployment specs to run. It ran the hermetic ones,
+ * every one of which reaches `mockCommon` and fulfils `/api/config/firebase`
+ * with `authMode: 'open'` — which makes <AuthGate> inert and discards this
+ * session entirely (Codex, solyra#44).
+ *
+ * `cloud` is now scoped to `*.cloud.spec.ts`, and none exist, so `e2e:cloud`
+ * fails with "No tests found" instead of passing vacuously. Writing those specs
+ * (no `mockCommon`, live responses, assertions that tolerate real data) is the
+ * remaining work. This file is no longer the blocker; the missing suite is.
  */
 import { test as setup } from '@playwright/test';
 import * as fs from 'node:fs';

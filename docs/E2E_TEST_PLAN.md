@@ -154,10 +154,18 @@ still exist and someone will otherwise try to use it.
    `404 {"detail":"Not Found"}`. That project's `baseURL` is the published
    frontend.
 
-**What works today:** `npm run e2e:cloud` runs against
-`https://solyra-stocks.lovable.app`, which calls whichever API its published
-bundle was built against. That covers signed-out views. Gated views need a
-Firebase sign-in strategy, which does not exist yet — see the note at the top of
-`tests/auth.setup.ts`. To aim a run at a different backend, rebuild the frontend
-with `VITE_API_BASE_URL` and serve that build; there is deliberately no runtime
-origin override.
+**What works today:** `e2e:cloud:auth` captures a real signed-in Firebase
+session, including the IndexedDB persistence the SDK uses, and the `cloud`
+project restores it against `https://solyra-stocks.lovable.app`.
+
+**What does not:** `cloud` has no specs. It matches `*.cloud.spec.ts` and none
+exist, so `npm run e2e:cloud` exits with "No tests found". It previously ran the
+29 hermetic specs, which is worse than nothing: each reaches `mockCommon`, which
+intercepts `/api/*` and fulfils `/api/config/firebase` with `authMode: 'open'`,
+making the auth gate inert and discarding the restored session. A green run
+measured the mocks, not the deployment.
+
+Writing deployment specs — no `mockCommon`, live responses, assertions that
+tolerate real data — is the outstanding work. To aim a run at a different
+backend, rebuild the frontend with `VITE_API_BASE_URL` and serve that build;
+there is deliberately no runtime origin override.
