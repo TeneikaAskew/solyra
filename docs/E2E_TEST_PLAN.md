@@ -113,33 +113,17 @@ Known prod caveats validated there: AV-on-request endpoints require the
 
 ---
 
-## 6. Staging without IAP (passcode gate)
+## 6. Staging without IAP (passcode gate) — RETIRED, DO NOT RUN
 
-Prod is locked behind IAP, so live E2E against it needs the interactive Google
-sign-in (`npm run e2e:cloud:auth`). To test against a deployed app **without**
-that, deploy the separate public staging service and use the shared passcode.
+> **This whole section describes a flow that no longer exists.** The passcode
+> middleware and its endpoint were deleted; staging is gated by a Firebase ID
+> token now. The commands under "Historical record" below are kept for
+> archaeology only and **must not be run** — they create a secret and an IAM
+> binding for a gate nothing reads, and invoke a deploy path that has been
+> replaced. It is described rather than deleted because the `staging-passcode`
+> secret may still exist and someone will otherwise try to use it.
 
-**Architecture:** IAP on Cloud Run is service-level and can't be dropped per
-revision, so staging is its own service (`solyra-api-staging`) deployed
-`--allow-unauthenticated`. An app-level passcode gate re-protects the API:
-- `api/auth_bypass.py` — middleware + `POST /api/auth/bypass` + `/api/auth/logout`. Inert unless `ALLOW_AUTH_BYPASS=1` (set only on the staging service), so prod/local are untouched.
-- `/api/me` returns `auth_bypass_allowed: true` on staging → the React `<AuthGate>` shows the sign-in screen (`src/components/auth/`). A correct passcode sets an HttpOnly cookie and the app renders as a guest.
-
-**Deploy it (operator, run.admin):**
-```bash
-# 1. Create the passcode secret + let the runtime SA read it (one-time)
-printf '%s' 'YOUR_PASSCODE' | gcloud secrets create staging-passcode \
-  --data-file=- --project=adept-mountain-474619-d4
-gcloud secrets add-iam-policy-binding staging-passcode \
-  --member="serviceAccount:trading-platform-svc@adept-mountain-474619-d4.iam.gserviceaccount.com" \
-  --role=roles/secretmanager.secretAccessor --project=adept-mountain-474619-d4
-# 2. Deploy the public, passcode-gated staging service (prod untouched)
-DB_USER=trading_user DB_NAME=trading STAGING_SERVICE=1 ./platform/deploy.sh
-```
-
-**This flow no longer works, on three counts (corrected 2026-09-05).** It is
-kept here described rather than deleted, because the passcode secret above may
-still exist and someone will otherwise try to use it.
+Why it stopped working, on three counts (corrected 2026-09-05):
 
 1. `POST /api/auth/bypass` is gone. `platform/api/auth.py` opens with
    "Replaces the staging passcode bypass (the former `auth_bypass.py`)" — one
@@ -169,3 +153,28 @@ Writing deployment specs — no `mockCommon`, live responses, assertions that
 tolerate real data — is the outstanding work. To aim a run at a different
 backend, rebuild the frontend with `VITE_API_BASE_URL` and serve that build;
 there is deliberately no runtime origin override.
+
+### Historical record (not runnable)
+
+How it was meant to work, before `AUTH_MODE` replaced it. IAP on Cloud Run is
+service-level and can't be dropped per revision, so staging was its own service
+(`solyra-api-staging`) deployed `--allow-unauthenticated`, with an app-level
+passcode gate re-protecting the API:
+
+- `api/auth_bypass.py` — middleware + `POST /api/auth/bypass` + `/api/auth/logout`. Inert unless `ALLOW_AUTH_BYPASS=1` (set only on the staging service), so prod/local were untouched. **This file no longer exists.**
+- `/api/me` returned `auth_bypass_allowed: true` on staging → the React `<AuthGate>` showed a passcode screen. A correct passcode set an HttpOnly cookie and the app rendered as a guest. **`/api/me` no longer returns that field**; `<AuthGate>` now renders `SignInScreen` (Firebase).
+
+The operator steps, commented out so a copy-paste cannot execute them:
+
+```bash
+# RETIRED — these commands provision a gate that no longer exists. Do not run.
+#
+# 1. Create the passcode secret + let the runtime SA read it (one-time)
+# printf '%s' 'YOUR_PASSCODE' | gcloud secrets create staging-passcode \
+#   --data-file=- --project=adept-mountain-474619-d4
+# gcloud secrets add-iam-policy-binding staging-passcode \
+#   --member="serviceAccount:trading-platform-svc@adept-mountain-474619-d4.iam.gserviceaccount.com" \
+#   --role=roles/secretmanager.secretAccessor --project=adept-mountain-474619-d4
+# 2. Deploy the public, passcode-gated staging service (prod untouched)
+# DB_USER=trading_user DB_NAME=trading STAGING_SERVICE=1 ./platform/deploy.sh
+```

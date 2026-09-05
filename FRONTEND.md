@@ -252,11 +252,19 @@ served** — that is Lovable, at `https://solyra-stocks.lovable.app`.
   Firebase-gated, what the SPA calls) and `solyra-api-prod-5sjtb3yl7a-ue.a.run.app`
   (behind IAP). `stocks.insightscollective.org` maps to **staging** since
   2026-09-05, not to prod and not to this SPA.
-- **Auth:** two modes, one per service. `solyra-api-prod` runs `AUTH_MODE=iap`:
-  IAP injects `X-Goog-Iap-Jwt-Assertion`, `/api/me` validates it, `useUser` gates
-  `/admin`. `solyra-api-staging` runs `AUTH_MODE=firebase`: the browser signs in
-  with Firebase and `authedFetch` attaches the ID token per request. The SPA
-  talks to staging, so **Firebase is the path that actually runs today**.
+- **Auth:** two modes, one per service. `solyra-api-prod` runs `AUTH_MODE=iap`,
+  which is **pass-through, not a check**: `api/auth.py` states "the middleware
+  does NOT enforce here — IAP already gated the request", and `/api/me` takes
+  identity from the plaintext `X-Goog-Authenticated-User-Email` header IAP
+  injects at the edge (`main.py._iap_user_email`). No JWT assertion is parsed
+  anywhere in the API — `grep -r Iap-Jwt-Assertion --include=*.py` in stocks
+  returns zero hits. The security boundary is IAP itself, so that service must
+  never get an `allUsers` invoker binding; without IAP in front, any caller
+  could set the header and pick their own identity. `solyra-api-staging` runs
+  `AUTH_MODE=firebase`: the browser signs in with Firebase and `authedFetch`
+  attaches the ID token per request, which the middleware **does** verify. The
+  SPA talks to staging, so **Firebase is the path that actually runs today**.
+  `useUser` gates `/admin` off the server-computed `is_admin` in either mode.
 - **Cloud Run config:** `min-instances=0` on BOTH services — `minScale` is unset, verified live 2026-09-05. An earlier revision said `min-instances=1` and credited it with avoiding cold starts against Discord's 3-second interaction-ack budget; no such warm instance is configured, so do not rely on one. `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), `max-instances=5`, 1 vCPU / 2 GiB (1 GiB OOM-killed full-chain GEX on `/api/options/*/levels`).
 - **Logging:** stdout → Cloud Logging; the failure-notifier sink does NOT cover the service (its filter is `resource.type=cloud_run_job`), so service errors don't auto-create GitHub issues. Pager-style monitoring is via Cloud Logging alert policies (not yet wired — open todo).
 
