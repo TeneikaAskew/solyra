@@ -5,6 +5,7 @@ import { Calendar as CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, Histo
 import { Calendar, TimeField } from '@heroui/react';
 import { CalendarDate, Time, getDayOfWeek, parseDate, today } from '@internationalized/date';
 import { useReviewDateStore } from '@/stores/reviewDateStore';
+import { usePopoverPosition } from '@/components/shared/popoverPosition';
 
 /** Routes where historical replay is functional. */
 const REPLAY_ROUTES = ['/dashboard', '/live', '/charts', '/signals'];
@@ -70,6 +71,8 @@ export function ReplayControl() {
   const { reviewDate, reviewTime, setReviewDate, setReviewTime, clearReviewDate } = useReviewDateStore();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // Viewport-clamped positioning (shared helper — never bleed off-screen).
+  const popover = usePopoverPosition<HTMLDivElement>(open, 320);
   const holidays = useMarketHolidays();
   const isLive = reviewDate === null;
 
@@ -143,7 +146,13 @@ export function ReplayControl() {
   };
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div
+      ref={(el) => {
+        ref.current = el;
+        popover.triggerRef.current = el;
+      }}
+      className="relative shrink-0"
+    >
       <div
         className={`flex items-center gap-1 rounded-lg border px-1 py-0.5 ${
           isLive ? 'border-transparent' : 'border-amber-500/40 bg-amber-500/10'
@@ -182,8 +191,11 @@ export function ReplayControl() {
         )}
       </div>
 
-      {open && (
-        <div className="fixed left-1/2 top-20 z-50 w-[calc(100vw-1.5rem)] max-w-80 -translate-x-1/2 overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 sm:translate-x-0">
+      {open && popover.panelStyle && (
+        <div
+          style={popover.panelStyle}
+          className="overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl"
+        >
           {/* Selected-moment header (TradingView style) */}
           <div className="bg-[var(--brand)] px-4 py-3 text-[var(--on-brand)]">
             <div className="text-[11px] font-medium opacity-80">{draftDate ? draftDate.year : 'Replay'}</div>
