@@ -136,6 +136,7 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
               </button>
               {open && menuPos && (
                 <nav
+                  data-testid="nav-group-menu"
                   style={menuPos}
                   className="rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-1.5 shadow-2xl"
                 >

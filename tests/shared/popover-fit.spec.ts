@@ -99,7 +99,7 @@ test.describe('Popovers fit desktop', () => {
     test.skip(count === 0, 'no dropdown nav groups configured');
     // Right-most trigger is the worst case for right-edge bleed.
     await triggers.last().click();
-    const panel = page.locator('nav.fixed').first();
+    const panel = page.getByTestId('nav-group-menu');
     await expectInViewport(panel, page, 'nav group dropdown');
   });
 
