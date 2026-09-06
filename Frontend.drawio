@@ -280,7 +280,7 @@
                 <mxCell id="cr_cfg" value="Cloud Run config&#xa;• --no-cpu-throttling (PR #507)&#xa;• prod: allUsers blocked, IAP gates&#xa;• staging: allUsers + Firebase per request" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#0e8088;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="300" y="1295" width="280" height="100" as="geometry"/>
                 </mxCell>
-                <mxCell id="cr_tls" value="Domain mapping&#xa;stocks.insightscollective.org → solyra-api-staging&#xa;(remapped off prod 2026-09-05)&#xa;Google-managed TLS (auto-renew)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#0e8088;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="cr_tls" value="Domain mapping&#xa;api.stocks.insightscollective.org → solyra-api-staging&#xa;(moved off stocks.* 2026-09-06)&#xa;Google-managed TLS (auto-renew)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#0e8088;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="600" y="1295" width="280" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="cr_iap" value="PROD ONLY: Identity-Aware Proxy&#xa;handshakes with Google IdP&#xa;app reads the plaintext&#xa;X-Goog-Authenticated-User-Email&#xa;(no JWT validation) — not in the SPA&#39;s path" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#0e8088;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
