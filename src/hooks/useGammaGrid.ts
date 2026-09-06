@@ -4,10 +4,16 @@ import type { SpotEstimate, GammaRegime } from './useGammaLevels';
 // ── Shapes returned by GET /api/options/{ticker}/grid (and /{date}/grid) ─────
 //
 // Server-side 2-D strike × expiration gamma grid: Cloud SQL chain →
-// lib.gamma.build_grid_summary[_with_change](). One source of truth for the
-// GEX/VEX math — the frontend only renders. `pct_change`/`abs_change` are the
-// intraday rate-of-change vs the prior snapshot (realtime path only; null on
-// EOD/historical, just-opened sessions, or near-zero open).
+// lib.gamma.build_grid_summary(). One source of truth for the GEX/VEX math —
+// the frontend only renders.
+//
+// `pct_change`/`abs_change`: OPTIONAL because the backend does not emit them
+// (fixture audit 2026-09-06: zero matches in lib/gamma.py and the grid
+// router; the previously-referenced build_grid_summary_with_change does not
+// exist). They were speculative intraday rate-of-change fields; consumers
+// must treat absence as "unavailable" (SwingMode already renders the em-dash
+// path). If stocks ever adds them, flip these back to required in the same
+// change set (CLAUDE.md Rule 6).
 
 export interface GammaGridCell {
   strike: number;
@@ -30,8 +36,8 @@ export interface GammaGridCell {
   call_volume: number;
   put_volume: number;
   distance_pct: number;
-  pct_change: number | null;
-  abs_change: number | null;
+  pct_change?: number | null;
+  abs_change?: number | null;
 }
 
 export type GridDataSource =
@@ -45,7 +51,9 @@ export interface GammaGridSummary {
   snapshot_date: string | null;
   snapshot_ts: string | null;
   data_source: GridDataSource;
-  spot: SpotEstimate;
+  /** null on the unavailable envelope (routers/grid.py returns spot: None
+   *  there) — a fabricated $0 spot would read as a real quote (Rule 4). */
+  spot: SpotEstimate | null;
   gamma_balance: number | null;
   gamma_flip: number | null;
   regime: GammaRegime;

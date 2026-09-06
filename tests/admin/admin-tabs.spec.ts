@@ -51,7 +51,7 @@ test.describe('Admin — Users & roles tab', () => {
 
     // Scoped to the table: the shell's auth-status pill shows the same email
     const table = page.getByTestId('admin-users-table');
-    await expect(table.getByText('teneika@bictech.org')).toBeVisible();
+    await expect(table.getByText('admin@mock.solyra')).toBeVisible();
     // uid-member keeps display_name and last_sign_in_at null → em-dash cells
     const memberRow = page.locator('tr', { hasText: 'uid-member' });
     await expect(memberRow).toContainText('—');
@@ -62,8 +62,8 @@ test.describe('Admin — Users & roles tab', () => {
     await mockAndOpen(page);
     await expect(page.getByTestId('admin-users-table')).toBeVisible();
 
-    await page.getByTestId('admin-users-search').fill('teneika');
-    await expect(page.getByTestId('admin-users-table').getByText('teneika@bictech.org')).toBeVisible();
+    await page.getByTestId('admin-users-search').fill('admin@mock');
+    await expect(page.getByTestId('admin-users-table').getByText('admin@mock.solyra')).toBeVisible();
     await expect(page.getByText('blocked@example.com')).not.toBeVisible();
 
     await page.getByTestId('admin-users-search').fill('no-such-user');

@@ -24,12 +24,21 @@ export function useBriefDirection(ticker: string) {
       if (r.status === 404) return null;
       if (!r.ok) throw new Error(`brief ${r.status}`);
       const json = await r.json();
+      // The backend never 404s this endpoint: its no-data/DB-down state is a
+      // 200 `source: 'unavailable'` envelope carrying no bias (dashboard.py).
+      // That is "no brief", not a neutral one — coercing the missing bias to
+      // 'neutral' fabricated a house view and rendered a fake Agree/DIVERGE
+      // verdict against it (Rule 4).
+      if (json.source === 'unavailable' || json.bias == null) return null;
+      // The wire spreads the premarket block FLAT (`**premarket`) and names
+      // the daily block `daily_indicators` (dashboard.py) — there is no
+      // `premarket` or `daily` key, so reads through those were always null.
       return {
         ticker,
-        bias: json.bias ?? 'neutral',
-        signal_status: json.premarket?.signal_status ?? null,
+        bias: json.bias,
+        signal_status: json.signal_status ?? null,
         ftfc_direction:
-          json.premarket?.ftfc_direction ?? json.daily?.ftfc_direction ?? null,
+          json.ftfc_direction ?? json.daily_indicators?.ftfc_direction ?? null,
       };
     },
     enabled: !!ticker,

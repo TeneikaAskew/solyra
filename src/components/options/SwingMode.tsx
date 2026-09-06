@@ -826,7 +826,7 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
       // above/below a price that doesn't exist.
       const spotPrice =
         levels.spot.price > 0 ? levels.spot.price
-        : grid && grid.spot.price > 0 ? grid.spot.price
+        : grid?.spot && grid.spot.price > 0 ? grid.spot.price
         : null;
       const above = spotPrice != null
         ? levels.gates.filter((g) => g.strike >= spotPrice).sort((a, b) => a.strike - b.strike)[0]
@@ -857,7 +857,9 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
     //    Use the grid's own backend-computed fields; King = the grid's largest
     //    |net GEX| strike (same selection as the gold King cell / pivot rail).
     //    Gates need the /levels taxonomy, so they're omitted (not faked).
-    if (grid && grid.cells.length > 0 && grid.data_source !== 'unavailable') {
+    // grid.spot is null only on the unavailable envelope, but the guard is
+    // explicit so the narrowing (and the honesty) survives refactors.
+    if (grid && grid.spot && grid.cells.length > 0 && grid.data_source !== 'unavailable') {
       const byStrike = new Map<number, number>();
       for (const c of grid.cells) byStrike.set(c.strike, (byStrike.get(c.strike) ?? 0) + c.gex);
       let kingStrike: number | null = null; // cells.length > 0 guarantees the loop sets it
