@@ -48,7 +48,7 @@ export function buildCatalystEvents(): CatalystsResponse {
     status: 'ok',
     // Real envelope names its providers (catalysts.py joins them).
     source: 'Benzinga + DB (news + sec, 1)',
-    date_range: { from: '2026-04-24', to: '2026-05-09' },
+    date_range: { from: todayET(), to: addDaysToISO(todayET(), 7) },
     total: 4,
     events_by_date: {
       [today]: [
@@ -64,9 +64,9 @@ export function buildCatalystEvents(): CatalystsResponse {
           relevance_score: 1.0,
         },
       ],
-      '2026-04-28': [
+      [addDaysToISO(todayET(), 4)]: [
         {
-          date: '2026-04-28',
+          date: addDaysToISO(todayET(), 4),
           ticker: 'AAPL',
           company_name: 'Apple Inc.',
           catalyst_type: 'EARNINGS',
@@ -76,9 +76,9 @@ export function buildCatalystEvents(): CatalystsResponse {
           source: 'Benzinga',
         },
       ],
-      '2026-04-30': [
+      [addDaysToISO(todayET(), 6)]: [
         {
-          date: '2026-04-30',
+          date: addDaysToISO(todayET(), 6),
           ticker: 'MSFT',
           company_name: 'Microsoft Corp.',
           catalyst_type: 'CONFERENCE_CALL',
@@ -110,7 +110,7 @@ export function buildCatalystEventsEmpty(): CatalystsResponse {
   return {
     status: 'ok',
     source: 'Benzinga',
-    date_range: { from: '2026-04-24', to: '2026-05-09' },
+    date_range: { from: todayET(), to: addDaysToISO(todayET(), 7) },
     total: 0,
     events_by_date: {},
   };

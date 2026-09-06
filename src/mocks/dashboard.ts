@@ -271,7 +271,7 @@ export const MOCK_DASHBOARD_MARKET_DATA = (() => {
   const bars = buildDashboardBars();
   return {
     ticker: 'IWM',
-    date: '2026-04',
+    date: '202604',
     // Always present on the wire (main.py): the echoed bar timeframe in
     // minutes, and a per-bar rgba volume color.
     timeframe: 60,
@@ -321,11 +321,12 @@ export const dashboardRoutes: MockRoute[] = [
     reply: () => ({ body: MOCK_DASHBOARD_REFERENCE }),
   },
   { pattern: /^\/api\/market\/sectors$/, reply: () => ({ body: MOCK_SECTORS }) },
-  // The Overview intraday chart requests a MONTH code (/IWM/2026-04), not a
-  // session date — scoping the pattern to it lets the generic session-date
-  // route in ./live own every other market-data request.
+  // The Overview intraday chart requests a COMPACT month code — DashboardPage
+  // derives it as anchorDate.slice(0, 6), i.e. /IWM/202604 — not a session
+  // date. Scoping the pattern to exactly six digits lets the generic
+  // session-date route in ./live own every other market-data request.
   {
-    pattern: /^\/api\/market\/data\/IWM\/\d{4}-\d{2}$/,
+    pattern: /^\/api\/market\/data\/IWM\/\d{6}$/,
     reply: () => ({ body: MOCK_DASHBOARD_MARKET_DATA }),
   },
   { pattern: /^\/api\/backtest\/results\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_RESULTS }) },

@@ -305,7 +305,7 @@ export const MOCK_GRID_WIDE = {
       gridCell(
         strike,
         expiration,
-        [0, 6, 13, 21, 55, 146][i],
+        [0, 7, 14, 21, 56, 147][i],
         // Deterministic, sign-alternating magnitudes — wide digit strings are
         // what actually stress the cell track width.
         (strike % 2 === 0 ? 1 : -1) * (120_000 + strike * 37_000 + i * 11_000),

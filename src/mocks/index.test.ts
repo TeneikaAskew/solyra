@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { ROUTES, resolveMock } from './index';
 import { MOCK_SIGNALS } from './signals';
-import { MOCK_LIVE_HISTORY } from './live';
+import { MOCK_LIVE_HISTORY_EOD } from './live';
 import { MOCK_ADMIN_ROUTES } from './admin';
 import { MOCK_GRID_POPULATED } from './options';
 import { MOCK_PROFILE } from './common';
@@ -34,9 +34,9 @@ describe('canonical payload resolution', () => {
     expect(JSON.parse(hit!.payload)).toEqual(MOCK_SIGNALS);
   });
 
-  it('serves the 30-bar live history, not an empty variant', () => {
+  it('serves the 30-bar after-close history — full data, session flags agreeing with the closed MOCK_LIVE_STATUS', () => {
     const hit = get('/api/live/history/IWM');
-    expect(JSON.parse(hit!.payload)).toEqual(MOCK_LIVE_HISTORY);
+    expect(JSON.parse(hit!.payload)).toEqual(MOCK_LIVE_HISTORY_EOD);
   });
 
   it('serves the full 7-role admin routing table', () => {
@@ -45,7 +45,8 @@ describe('canonical payload resolution', () => {
   });
 
   it('month-code market data goes to the dashboard payload, session dates to live', () => {
-    const month = get('/api/market/data/IWM/2026-04');
+    // DashboardPage requests the COMPACT month code: anchorDate.slice(0, 6).
+    const month = get('/api/market/data/IWM/202604');
     const day = get('/api/market/data/IWM/20260424');
     expect(JSON.parse(month!.payload).timeframe).toBe(60);
     expect(JSON.parse(day!.payload).timeframe).toBe(1);

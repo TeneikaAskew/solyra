@@ -93,6 +93,15 @@ export const MOCK_LIVE_HISTORY = {
   bars: buildBars(30),
 } satisfies LiveHistory;
 
+/** The canonical mock world is Friday AFTER the close (matching
+ *  MOCK_LIVE_STATUS in ./common): the day's full bars with the session
+ *  flags reporting closed. */
+export const MOCK_LIVE_HISTORY_EOD = {
+  ...MOCK_LIVE_HISTORY,
+  market_session: 'closed',
+  market_open: false,
+} satisfies LiveHistory;
+
 /** No bars yet — pre-open, or a symbol with no intraday coverage. */
 export const MOCK_LIVE_HISTORY_EMPTY = {
   ticker: 'IWM',
@@ -114,12 +123,13 @@ export const MOCK_AVG_VOLUME = {
 
 // ── Market data / reference ────────────────────────────────────────────────
 
-/** The declared session's opening bell (Fri 2026-04-24 09:30 ET = 13:30
- *  UTC), so candle epochs match the `date` the payload advertises — a
- *  detached epoch (the old 1_700_000_000 was a 2023 timestamp) breaks every
- *  date-sensitive consumer: review-mode cutoffs, trade markers, fire
- *  matching. */
-const SESSION_OPEN_UTC = Date.UTC(2026, 3, 24, 13, 30, 0) / 1000;
+/** The declared session's opening bell in the app's UTC-labeled-ET epoch
+ *  convention: the backend (and every consumer — isoNaiveToEpoch, the
+ *  review cutoff) encodes the ET WALL CLOCK via Date.UTC, so 09:30 ET is
+ *  Date.UTC(..., 9, 30), NOT the real 13:30 UTC instant. A detached epoch
+ *  (the old 1_700_000_000 was a 2023 timestamp) broke every date-sensitive
+ *  consumer: review-mode cutoffs, trade markers, fire matching. */
+const SESSION_OPEN_UTC = Date.UTC(2026, 3, 24, 9, 30, 0) / 1000;
 
 /** Candles keyed by unix seconds (lightweight-charts' `time`), matching the
  *  1-minute cadence `useReviewQuote` slices for its synthetic review quote. */
@@ -271,8 +281,11 @@ export const MOCK_LIVE_INDICATORS = {
  * fixture. Patterns match the pathname only; queries pass through.
  */
 export const liveRoutes: MockRoute[] = [
-  { pattern: /^\/api\/live\/quote\/IWM$/, reply: () => ({ body: MOCK_LIVE_QUOTE }) },
-  { pattern: /^\/api\/live\/history\/IWM$/, reply: () => ({ body: MOCK_LIVE_HISTORY }) },
+  // Closed variants: the canonical world is Friday after the close, so the
+  // session flags here must agree with MOCK_LIVE_STATUS (is_open: false) —
+  // a regular-session quote under a CLOSED status pill is a contradiction.
+  { pattern: /^\/api\/live\/quote\/IWM$/, reply: () => ({ body: MOCK_LIVE_QUOTE_CLOSED }) },
+  { pattern: /^\/api\/live\/history\/IWM$/, reply: () => ({ body: MOCK_LIVE_HISTORY_EOD }) },
   { pattern: /^\/api\/live\/avg-volume\/IWM$/, reply: () => ({ body: MOCK_AVG_VOLUME }) },
   {
     method: 'POST',

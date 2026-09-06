@@ -36,6 +36,8 @@ export const MOCK_SIGNALS = {
       ema20: 220.0,
       close: 220.4,
       volume: 1_200_000,
+      conditions_met: '4/5',
+      return_pct: 0.0125,
     },
     {
       time: '2026-04-24 17:30:00',
@@ -47,6 +49,8 @@ export const MOCK_SIGNALS = {
       ema20: 220.1,
       close: 219.9,
       volume: 950_000,
+      conditions_met: '3/5',
+      return_pct: -0.004,
     },
     {
       time: '2026-04-24 17:00:00',
@@ -58,9 +62,16 @@ export const MOCK_SIGNALS = {
       ema20: 219.8,
       close: 219.5,
       volume: 800_000,
+      conditions_met: '2/5',
+      return_pct: 0.008,
     },
   ],
-} satisfies SignalsResponse;
+  // The wire adds conditions_met + return_pct per row (signals.py);
+  // SignalsPage's type omits them but DashboardPage's signal card reads
+  // BOTH, and this payload is canonical for both pages in mock mode.
+} satisfies SignalsResponse & {
+  signals: { conditions_met: string; return_pct: number }[];
+};
 
 /** Honest empty response — drives the page's "no signals" state. */
 export const MOCK_SIGNALS_EMPTY = {
