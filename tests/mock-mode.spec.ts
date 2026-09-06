@@ -27,8 +27,15 @@ function trackApiRequests(page: Page): { count: () => number } {
 
 test.describe('Mock mode ON (preference seeded)', () => {
   test.beforeEach(async ({ page }) => {
+    // Seed only when unset: the init script runs again on every reload, and
+    // the exit flows persist 'off' + reload — unconditional seeding would
+    // overwrite that and re-enter the mode forever.
     await page.addInitScript(
-      ([k]) => window.localStorage.setItem(k, 'on'),
+      ([k]) => {
+        if (window.localStorage.getItem(k) === null) {
+          window.localStorage.setItem(k, 'on');
+        }
+      },
       [PREF_KEY],
     );
     // Only the FONT requests are stubbed (non-/api, they'd stall networkidle
@@ -55,7 +62,31 @@ test.describe('Mock mode ON (preference seeded)', () => {
     expect(api.count()).toBe(0);
   });
 
+  /**
+   * Exiting reloads into the REAL world, where requests do leave the page
+   * again — so the exit flows register a catch-all route to keep the suite
+   * hermetic once the in-page engine stops answering.
+   */
+  const mockPostExitWorld = async (page: Page) => {
+    await page.route('**/api/**', (r) => {
+      const p = new URL(r.request().url()).pathname;
+      if (p === '/api/config/firebase') {
+        return r.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ authMode: 'open', firebase: null }),
+        });
+      }
+      return r.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: '{"detail":"not mocked"}',
+      });
+    });
+  };
+
   test('Support menu shows the toggle ON (mocked identity is admin) and it exits', async ({ page }) => {
+    await mockPostExitWorld(page);
     await page.goto('/dashboard');
     await expect(page.getByTestId('mock-mode-banner')).toBeVisible();
 
@@ -71,6 +102,7 @@ test.describe('Mock mode ON (preference seeded)', () => {
   });
 
   test('the banner Exit button leaves the mode even without the menu', async ({ page }) => {
+    await mockPostExitWorld(page);
     await page.goto('/dashboard');
     await page.getByTestId('mock-mode-exit').click();
     await expect(page.getByTestId('mock-mode-banner')).not.toBeVisible();

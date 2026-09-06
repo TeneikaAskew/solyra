@@ -24,9 +24,15 @@ export function useBriefDirection(ticker: string) {
       if (r.status === 404) return null;
       if (!r.ok) throw new Error(`brief ${r.status}`);
       const json = await r.json();
+      // The backend never 404s this endpoint: its no-data/DB-down state is a
+      // 200 `source: 'unavailable'` envelope carrying no bias (dashboard.py).
+      // That is "no brief", not a neutral one — coercing the missing bias to
+      // 'neutral' fabricated a house view and rendered a fake Agree/DIVERGE
+      // verdict against it (Rule 4).
+      if (json.source === 'unavailable' || json.bias == null) return null;
       return {
         ticker,
-        bias: json.bias ?? 'neutral',
+        bias: json.bias,
         signal_status: json.premarket?.signal_status ?? null,
         ftfc_direction:
           json.premarket?.ftfc_direction ?? json.daily?.ftfc_direction ?? null,
