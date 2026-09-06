@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Clock, Search } from 'lucide-react';
 import { useTickerStore } from '@/stores/tickerStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { usePopoverPosition } from '@/components/shared/popoverPosition';
 import {
   useTickerSearch,
   useTickerCoverage,
@@ -159,6 +160,12 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const addToWatchlist = useAddToWatchlist();
 
+  // Viewport-clamped positioning (shared helper — never bleed off-screen).
+  // The dropdown and the ingest notice share the same trigger button, hence
+  // the callback ref fan-out below. 288px = w-72, the old desktop width.
+  const dropdown = usePopoverPosition<HTMLButtonElement>(open, 288);
+  const notice = usePopoverPosition<HTMLButtonElement>(!!ingestNotice, 288);
+
   const debounced = useDebouncedValue(query.trim(), 300);
   const searchEnabled = debounced.length >= 1;
   const search = useTickerSearch(debounced, searchEnabled);
@@ -301,6 +308,10 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
   return (
     <div ref={ref} className={`relative shrink-0 ${className ?? ''}`}>
       <button
+        ref={(el) => {
+          dropdown.triggerRef.current = el;
+          notice.triggerRef.current = el;
+        }}
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
         aria-expanded={open}
@@ -313,8 +324,11 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
         <ChevronDown size={12} className={`transition-transform${open ? ' rotate-180' : ''}`} />
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(18rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl md:left-0 md:right-auto md:w-72">
+      {open && dropdown.panelStyle && (
+        <div
+          style={dropdown.panelStyle}
+          className="overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl"
+        >
           <div className="border-b border-[var(--outline-variant)] p-2">
             <div className="flex items-center gap-2 rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-lowest)] px-2.5 py-1.5">
               <Search size={13} className="shrink-0 text-[var(--on-surface-muted)]" />
@@ -478,11 +492,12 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
           from `choose()` above. Renders below the trigger (popover is
           already closed by the time this can appear) and self-clears after
           INGEST_NOTICE_MS, mirroring JournalPage's exportStatus toast. */}
-      {ingestNotice && (
+      {ingestNotice && notice.panelStyle && (
         <div
           data-testid="ticker-ingest-notice"
           role={ingestNotice.kind === 'error' ? 'alert' : 'status'}
-          className={`absolute right-0 top-full z-40 mt-2 w-[min(18rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] rounded-lg border px-3 py-2 text-xs md:left-0 md:right-auto md:w-72 ${
+          style={notice.panelStyle}
+          className={`rounded-lg border px-3 py-2 text-xs ${
             ingestNotice.kind === 'error'
               ? 'border-[var(--bear)]/40 bg-[var(--bear)]/10 text-[var(--bear)]'
               : 'border-[var(--bull)]/40 bg-[var(--bull)]/10 text-[var(--bull)]'
