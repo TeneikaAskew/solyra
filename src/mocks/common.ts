@@ -12,6 +12,7 @@
  * menu keeps showing the toggle to exit the mode.
  */
 import type { MarketHours } from '@/hooks/useConfig';
+import type { LiveStatus } from '@/hooks/useLiveStatus';
 import type { WatchlistResponse } from '@/types/watchlist';
 import type { MockRoute } from './types';
 
@@ -35,11 +36,17 @@ export const MOCK_PREFERENCES_EMPTY = {
   accent: null,
 };
 
+/**
+ * Wire shape per routers/live.py:169-174 — no `ts` field exists there; the
+ * old mock invented one and omitted the required next_open/current_time_et
+ * (fixture audit 2026-09-06, B1).
+ */
 export const MOCK_LIVE_STATUS = {
-  session: 'closed',
   is_open: false,
-  ts: '2026-04-25T20:00:00Z',
-};
+  session: 'closed',
+  next_open: '2026-04-27 09:30:00',
+  current_time_et: '20:00:00',
+} satisfies LiveStatus;
 
 /** Honest empty ranking — the panel renders its empty state for the right
  *  reason; pages wanting rows override with MOCK_WATCHLIST (insights). */
