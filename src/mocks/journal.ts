@@ -24,7 +24,6 @@
  */
 import type { JournalRow, MineStyleSuccess, MineStyleUnavailable } from '@/hooks/useJournalChartTrades';
 import type { MockRoute } from './types';
-import { MOCK_MARKET_HOURS } from './common';
 
 /** `JournalTradesResponse` is internal to useJournalChartTrades.ts. */
 export interface JournalTradesResponse {
@@ -50,8 +49,8 @@ export const CLOSED_TRADE = {
   direction: 'CALL',
   // Wire timestamps are never Z-suffixed: Cloud SQL rows arrive as
   // 'YYYY-MM-DDTHH:MM:SS+00:00' (or naive) — journal.py AT TIME ZONE 'UTC'.
-  entry_ts: '2026-04-24T14:00:00+00:00',
-  exit_ts: '2026-04-24T15:30:00+00:00',
+  entry_ts: '2026-04-23T14:00:00+00:00',
+  exit_ts: '2026-04-23T15:30:00+00:00',
   entry_price: 220.0,
   exit_price: 222.5,
   return_pct: 1.14,
@@ -67,7 +66,7 @@ export const ACTIVE_TRADE = {
   id: '00000000-0000-0000-0000-000000000002',
   ticker: 'IWM',
   direction: 'PUT',
-  entry_ts: '2026-04-25T09:31:00+00:00',
+  entry_ts: '2026-04-24T09:31:00+00:00',
   exit_ts: null,
   entry_price: 218.0,
   exit_price: null,
@@ -85,8 +84,8 @@ export const MANUAL_TRADE = {
   id: '00000000-0000-0000-0000-0000000000a1',
   ticker: 'IWM',
   direction: 'CALL',
-  entry_ts: '2026-04-24T14:00:00+00:00',
-  exit_ts: '2026-04-24T15:30:00+00:00',
+  entry_ts: '2026-04-23T14:00:00+00:00',
+  exit_ts: '2026-04-23T15:30:00+00:00',
   entry_price: 220.0,
   exit_price: 242.0,
   return_pct: 10.0,
@@ -102,8 +101,8 @@ export const REPLAY_TRADE = {
   id: '00000000-0000-0000-0000-0000000000a2',
   ticker: 'IWM',
   direction: 'PUT',
-  entry_ts: '2026-04-25T09:36:00',
-  exit_ts: '2026-04-25T09:40:00',
+  entry_ts: '2026-04-24T09:36:00',
+  exit_ts: '2026-04-24T09:40:00',
   entry_price: 220.25,
   exit_price: 330.375,
   return_pct: -50.0,
@@ -136,8 +135,8 @@ export const MOCK_EXAMPLES_UNION = wrap([
     id: 'admin-union-1',
     ticker: 'IWM',
     direction: 'CALL',
-    entry_ts: '2026-04-25T09:35:00',
-    exit_ts: '2026-04-25T10:15:00',
+    entry_ts: '2026-04-24T09:35:00',
+    exit_ts: '2026-04-24T10:15:00',
     entry_price: 220.0,
     exit_price: 222.5,
     return_pct: 1.14,
@@ -152,8 +151,8 @@ export const MOCK_EXAMPLES_UNION = wrap([
     id: 'pipe-9001',
     ticker: 'IWM',
     direction: 'PUT',
-    entry_ts: '2026-04-25T10:30:00',
-    exit_ts: '2026-04-25T11:00:00',
+    entry_ts: '2026-04-24T10:30:00',
+    exit_ts: '2026-04-24T11:00:00',
     entry_price: 221.0,
     exit_price: 219.5,
     return_pct: 0.68,
@@ -176,7 +175,7 @@ export const MOCK_EXAMPLES_UNION = wrap([
 export const MOCK_JOURNAL_DATES = {
   ticker: 'IWM',
   source: 'cloud_sql',
-  dates: ['20260425'],
+  dates: ['20260424'],
   months: ['202604'],
 };
 
@@ -190,7 +189,7 @@ export const MOCK_JOURNAL_DATES_EMPTY = {
 
 export const MOCK_JOURNAL_MARKET_DATA = {
   ticker: 'IWM',
-  date: '2026-04-25',
+  date: '2026-04-24',
   timeframe: 1,
   count: 0,
   candlestick: [],
@@ -322,21 +321,14 @@ export const MOCK_MINE_STYLE_UNAVAILABLE = {
 } satisfies MineStyleUnavailable;
 
 /**
- * Mock-mode route table for `/journal` — the happy-path translation of
- * `mockJournalApi` (tests/helpers/fixtures/journal.ts) with its default
- * options: empty own journal, empty Examples, no chart-card dates.
- *
- * Import mutations (POST /api/journal/trades, /import/preview,
- * /import/commit) are not wired, mirroring the fixture — a miss is answered
- * 501 loudly by the engine, so the gap stays visible.
+ * Mock-mode routes OWNED by the journal domain: the journal reads plus the
+ * export mutation. The chart card's market dates/candles and the RTH window
+ * are served by ./charts, ./live and ./common — one canonical route per
+ * endpoint across the whole engine (see src/mocks/index.ts). Import
+ * mutations (POST /api/journal/trades, /import/preview, /import/commit)
+ * stay unwired on purpose — a miss is answered 501 loudly by the engine.
  */
 export const journalRoutes: MockRoute[] = [
-  { pattern: /^\/api\/market\/dates\/IWM$/, reply: () => ({ body: MOCK_JOURNAL_DATES_EMPTY }) },
-  {
-    pattern: /^\/api\/market\/data\/IWM\/([^/]+)$/,
-    reply: () => ({ body: MOCK_JOURNAL_MARKET_DATA }),
-  },
-  { pattern: /^\/api\/config\/market-hours$/, reply: () => ({ body: MOCK_MARKET_HOURS }) },
   { pattern: /^\/api\/journal\/examples\/IWM$/, reply: () => ({ body: MOCK_JOURNAL_EMPTY }) },
   { pattern: /^\/api\/journal\/trades\/IWM$/, reply: () => ({ body: MOCK_JOURNAL_EMPTY }) },
   {

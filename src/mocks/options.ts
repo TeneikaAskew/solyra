@@ -31,9 +31,9 @@ import type { MockRoute } from './types';
 
 export const MOCK_LEVELS = {
   ticker: 'IWM',
-  snapshot_date: '2026-04-25',
+  snapshot_date: '2026-04-24',
   // Always present on the wire (options.py attaches it to every response).
-  snapshot_timestamp: '2026-04-25T20:00:00+00:00',
+  snapshot_timestamp: '2026-04-24T20:00:00+00:00',
   spot: { price: 220, method: 'parity', note: '' },
   gamma_balance: 220,
   gamma_flip: 220,
@@ -50,7 +50,7 @@ export const MOCK_LEVELS = {
 
 export const MOCK_GRID = {
   ticker: 'IWM',
-  snapshot_date: '2026-04-25',
+  snapshot_date: '2026-04-24',
   snapshot_ts: null,
   data_source: 'realtime',
   spot: { price: 220, method: 'parity', note: '' },
@@ -75,7 +75,7 @@ interface OptionsDatesResponse {
 
 export const MOCK_OPTIONS_DATES = {
   ticker: 'IWM',
-  dates: ['2026-04-25', '2026-04-24'],
+  dates: ['2026-04-24', '2026-04-23'],
 } satisfies OptionsDatesResponse;
 
 interface OptionsChainResponse {
@@ -87,7 +87,7 @@ interface OptionsChainResponse {
 
 export const MOCK_OPTIONS_CHAIN = {
   ticker: 'IWM',
-  date: '2026-04-25',
+  date: '2026-04-24',
   options: [
     { type: 'call', strike: 218, open_interest: 4000, gamma: 0.03, vega: 0.04, delta: 0.7, volume: 800 },
     { type: 'call', strike: 219, open_interest: 5000, gamma: 0.04, vega: 0.05, delta: 0.6, volume: 900 },
@@ -173,8 +173,8 @@ const level = (
 /** Populated taxonomy so the King/Gate/regime UI actually renders. */
 export const MOCK_LEVELS_POPULATED = {
   ticker: 'IWM',
-  snapshot_date: '2026-04-25',
-  spot: { price: 220, method: 'parity', note: 'K=220.0 C=1.20 P=1.15 exp=2026-04-25' },
+  snapshot_date: '2026-04-24',
+  spot: { price: 220, method: 'parity', note: 'K=220.0 C=1.20 P=1.15 exp=2026-04-24' },
   gamma_balance: 219.5,
   gamma_flip: 219.75,
   regime: 'positive_gamma',
@@ -191,7 +191,7 @@ export const MOCK_LEVELS_POPULATED = {
   gamma_balance_levels: [level(219, -180_000, 'gamma_balance', ['gamma_balance'])],
   window_pct: 6,
   warnings: [],
-  snapshot_timestamp: '2026-04-25T20:00:00+00:00',
+  snapshot_timestamp: '2026-04-24T20:00:00+00:00',
   chain_size: 10,
 } satisfies GammaLevelsResponse;
 
@@ -228,28 +228,28 @@ const gridCell = (
 
 export const MOCK_GRID_POPULATED = {
   ticker: 'IWM',
-  snapshot_date: '2026-04-25',
-  snapshot_ts: '2026-04-25T20:00:00+00:00',
+  snapshot_date: '2026-04-24',
+  snapshot_ts: '2026-04-24T20:00:00+00:00',
   data_source: 'eod_fallback',
-  spot: { price: 220, method: 'parity', note: 'K=220.0 C=1.20 P=1.15 exp=2026-04-25' },
+  spot: { price: 220, method: 'parity', note: 'K=220.0 C=1.20 P=1.15 exp=2026-04-24' },
   gamma_balance: 219.5,
   gamma_flip: 219.75,
   regime: 'positive_gamma',
   total_gex: 1_250_000,
   total_vex: -350_000,
   cells: [
-    gridCell(218, '2026-04-25', 0, 420_000, -60_000),
-    gridCell(219, '2026-04-25', 0, -120_000, -40_000),
-    gridCell(220, '2026-04-25', 0, 1_310_000, -90_000), // King cell (largest |net GEX|)
-    gridCell(221, '2026-04-25', 0, 480_000, -55_000),
-    gridCell(222, '2026-04-25', 0, 160_000, -30_000),
-    gridCell(218, '2026-05-16', 21, 200_000, -25_000),
-    gridCell(219, '2026-05-16', 21, -60_000, -15_000),
-    gridCell(220, '2026-05-16', 21, 640_000, -45_000),
-    gridCell(221, '2026-05-16', 21, 230_000, -20_000),
-    gridCell(222, '2026-05-16', 21, 80_000, -10_000),
+    gridCell(218, '2026-04-24', 0, 420_000, -60_000),
+    gridCell(219, '2026-04-24', 0, -120_000, -40_000),
+    gridCell(220, '2026-04-24', 0, 1_310_000, -90_000), // King cell (largest |net GEX|)
+    gridCell(221, '2026-04-24', 0, 480_000, -55_000),
+    gridCell(222, '2026-04-24', 0, 160_000, -30_000),
+    gridCell(218, '2026-05-15', 21, 200_000, -25_000),
+    gridCell(219, '2026-05-15', 21, -60_000, -15_000),
+    gridCell(220, '2026-05-15', 21, 640_000, -45_000),
+    gridCell(221, '2026-05-15', 21, 230_000, -20_000),
+    gridCell(222, '2026-05-15', 21, 80_000, -10_000),
   ],
-  expirations: ['2026-04-25', '2026-05-16'],
+  expirations: ['2026-04-24', '2026-05-15'],
   strikes: [218, 219, 220, 221, 222],
   window_pct: 6,
   warnings: [],
@@ -288,10 +288,10 @@ export const MOCK_GRID_UNAVAILABLE = {
 // options-mobile-fit.spec.ts exercises the real containment path.
 
 const WIDE_EXPIRATIONS = [
-  '2026-04-25',
+  '2026-04-24',
   '2026-05-01',
   '2026-05-08',
-  '2026-05-16',
+  '2026-05-15',
   '2026-06-19',
   '2026-09-18',
 ];
@@ -305,7 +305,7 @@ export const MOCK_GRID_WIDE = {
       gridCell(
         strike,
         expiration,
-        [0, 6, 13, 21, 55, 146][i],
+        [0, 7, 14, 21, 56, 147][i],
         // Deterministic, sign-alternating magnitudes — wide digit strings are
         // what actually stress the cell track width.
         (strike % 2 === 0 ? 1 : -1) * (120_000 + strike * 37_000 + i * 11_000),
@@ -328,6 +328,12 @@ export const MOCK_GRID_WIDE = {
 export const optionsRoutes: MockRoute[] = [
   { pattern: /^\/api\/options\/dates\/IWM$/, reply: () => ({ body: MOCK_OPTIONS_DATES }) },
   { pattern: /^\/api\/options\/IWM\/grid$/, reply: () => ({ body: MOCK_GRID_POPULATED }) },
+  // Historical mode requests /{date}/grid (useGammaGrid) — same populated
+  // payload; without this route a normal Heatseeker workflow 501s.
+  {
+    pattern: /^\/api\/options\/IWM\/([^/]+)\/grid$/,
+    reply: () => ({ body: MOCK_GRID_POPULATED }),
+  },
   {
     pattern: /^\/api\/options\/IWM\/([^/]+)\/levels$/,
     reply: () => ({ body: MOCK_LEVELS_POPULATED }),

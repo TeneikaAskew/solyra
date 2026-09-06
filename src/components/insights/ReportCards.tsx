@@ -501,13 +501,29 @@ function biasToDirection(bias: BriefBias): Direction {
 
 export function BriefVsInsightsCard({
   brief,
+  briefError = false,
   insightDirection,
   ticker,
 }: {
   brief: BriefDirectionLite | null;
+  briefError?: boolean;
   insightDirection: Direction;
   ticker: string;
 }) {
+  // A failed/malformed brief lookup is an ERROR, not the no-brief state —
+  // render it visibly instead of the benign "shipping standalone" copy
+  // (Rule 4: the useBriefDirection throw must reach pixels, not vanish
+  // into the same null branch it exists to distinguish from).
+  if (briefError) {
+    return (
+      <Card title="House Views" className="border-[var(--bear)]/40">
+        <p className="text-xs text-[var(--bear)]" data-testid="brief-error">
+          Brief lookup failed for {ticker}: the response was malformed or the
+          request errored. Comparison withheld rather than fabricated.
+        </p>
+      </Card>
+    );
+  }
   if (!brief) {
     return (
       <Card title="House Views" className="border-[var(--outline-variant)]">
