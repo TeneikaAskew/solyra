@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useLatestOptionsDate } from '@/hooks/useOptionsDates';
 import { useGammaLevels, type GammaLevel } from '@/hooks/useGammaLevels';
 
 // TrinityTab — 3 synced index-proxy panels (SPX · SPY · QQQ). Each panel
@@ -11,27 +11,6 @@ import { useGammaLevels, type GammaLevel } from '@/hooks/useGammaLevels';
 // api/routers/options.py) — not '^SPX'.
 
 const TRINITY_SYMBOLS = ['SPX', 'SPY', 'QQQ'] as const;
-
-interface DatesResponse {
-  ticker: string;
-  dates: string[];
-}
-
-function useLatestOptionsDate(ticker: string) {
-  return useQuery<DatesResponse>({
-    // limit=1: this hook only ever reads dates[0]. The unbounded call walks
-    // the whole snapshot history for a date picker neither of these views has.
-    // Distinct query key so it cannot collide with ProfilesTab's full list.
-    queryKey: ['options-dates', ticker, 'latest'],
-    queryFn: async () => {
-      const r = await fetch(`/api/options/dates/${ticker}?limit=1`);
-      if (!r.ok) throw new Error(`dates ${r.status}`);
-      return r.json();
-    },
-    staleTime: 300_000,
-    retry: false,
-  });
-}
 
 function formatGEX(val: number): string {
   const abs = Math.abs(val);

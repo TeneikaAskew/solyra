@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useAllOptionsDates } from '@/hooks/useOptionsDates';
 import { MetricCard } from '@/components/shared/MetricCard';
 import {
   useOptionsGreeks,
@@ -31,10 +32,6 @@ interface OptionsResponse {
   metadata?: { source?: string; data_source?: string; row_count?: number };
 }
 
-interface AvailableDatesResponse {
-  ticker: string;
-  dates: string[];
-}
 
 async function parseApiError(r: Response, fallback: string): Promise<string> {
   try {
@@ -45,21 +42,6 @@ async function parseApiError(r: Response, fallback: string): Promise<string> {
     // body wasn't JSON
   }
   return `${fallback} (HTTP ${r.status})`;
-}
-
-function useOptionsDates(ticker: string) {
-  return useQuery<AvailableDatesResponse>({
-    // Full history — this view renders a date picker. Key is distinct from
-    // the 'latest' key used by views that only need dates[0].
-    queryKey: ['options-dates', ticker, 'all'],
-    queryFn: async () => {
-      const r = await fetch(`/api/options/dates/${ticker}`);
-      if (!r.ok) throw new Error(await parseApiError(r, 'Failed to fetch options dates'));
-      return r.json();
-    },
-    staleTime: 300_000,
-    retry: false,
-  });
 }
 
 function useOptionsData(ticker: string, date: string, enabled: boolean) {
@@ -299,7 +281,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     isError: datesError,
     error: datesErrorObj,
     refetch: refetchDates,
-  } = useOptionsDates(activeTicker);
+  } = useAllOptionsDates(activeTicker);
   const dates = datesData?.dates ?? [];
   const selectedDate = dates[dateIdx] ?? '';
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { useLatestOptionsDate } from '@/hooks/useOptionsDates';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -779,22 +780,6 @@ function RealPivotBuild({ summary }: { summary?: GammaGridSummary }) {
 interface SwingModeProps {
   /** Focus symbol from the page toolbar (TickerCombobox). */
   focusSymbol: string;
-}
-
-function useLatestOptionsDate(ticker: string) {
-  return useQuery<{ ticker: string; dates: string[] }>({
-    // limit=1: this hook only ever reads dates[0]. The unbounded call walks
-    // the whole snapshot history for a date picker neither of these views has.
-    // Distinct query key so it cannot collide with ProfilesTab's full list.
-    queryKey: ['options-dates', ticker, 'latest'],
-    queryFn: async () => {
-      const r = await fetch(`/api/options/dates/${ticker}?limit=1`);
-      if (!r.ok) throw new Error(`dates ${r.status}`);
-      return r.json();
-    },
-    staleTime: 300_000,
-    retry: false,
-  });
 }
 
 export default function SwingMode({ focusSymbol }: SwingModeProps) {

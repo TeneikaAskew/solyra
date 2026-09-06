@@ -123,3 +123,80 @@ test.describe('Options Flow — live AV fallback', () => {
     await expect(page.getByText(/AlphaVantage Live/).first()).toBeVisible();
   });
 });
+
+/**
+ * The `?limit=1` contract, pinned.
+ *
+ * `mockOptionsApi` routes the dates endpoint with a trailing wildcard, and
+ * that wildcard matches the limited and the unbounded request identically. So
+ * the whole suite stays green if someone drops `?limit=1` from SwingMode —
+ * silently reverting a 9,870 ms page load back onto a query that reads
+ * 10,373,012 index rows to return 43 — or "unifies" ProfilesTab onto
+ * `limit=1`, which collapses its date picker to a single option.
+ *
+ * A perf regression that no test can see is one that comes back. These assert
+ * the request URLs each view actually issues.
+ */
+test.describe('options dates: the limit contract', () => {
+  test('the Swing view asks for one date; the Profiles picker asks for all', async ({ page }) => {
+    const datesRequests: string[] = [];
+    page.on('request', (req) => {
+      const url = new URL(req.url());
+      if (url.pathname.startsWith('/api/options/dates/')) {
+        datesRequests.push(url.pathname + url.search);
+      }
+    });
+
+    await mockOptionsApi(page);
+    await page.goto('/options');
+    await page.waitForLoadState('networkidle');
+
+    // Heatseeker/Swing is the landing tab and reads dates[0] only.
+    expect(
+      datesRequests.some((u) => u.startsWith('/api/options/dates/IWM') && u.includes('limit=1')),
+      `no limited dates request; saw ${JSON.stringify(datesRequests)}`,
+    ).toBe(true);
+
+    await openProfilesTab(page);
+    await page.waitForLoadState('networkidle');
+
+    // The picker needs the history, so its request must NOT carry limit=1.
+    expect(
+      datesRequests.some((u) => u.startsWith('/api/options/dates/IWM') && !u.includes('limit=')),
+      `no unbounded dates request for the picker; saw ${JSON.stringify(datesRequests)}`,
+    ).toBe(true);
+  });
+
+  test('Trinity Mode is intercepted too — none of SPX/SPY/QQQ reaches a real backend', async ({ page }) => {
+    // `mockOptionsApi` was scoped to IWM, and TrinityTab renders SPX/SPY/QQQ
+    // panels that each fetch their own dates and levels. Six unrouted requests
+    // went to this Vite's proxy, which falls through to `solyra-api-staging`
+    // when nothing answers on :8000 — outside the hermetic boundary, and
+    // silently, because the spec still passed.
+    //
+    // Trinity is behind an inner toggle and the page opens on Swing, so a
+    // spec that only loads /options never renders it. This one clicks in,
+    // which is what makes the assertion mean anything.
+    const outcomes: string[] = [];
+    page.on('response', (res) => {
+      const url = new URL(res.url());
+      if (url.pathname.startsWith('/api/options/')) {
+        outcomes.push(`${res.status()} ${url.pathname}`);
+      }
+    });
+
+    await mockOptionsApi(page);
+    await page.goto('/options');
+    // HeroUI's single-selection ToggleButtonGroup renders as a radiogroup, so
+    // the mode buttons are radios rather than buttons (same as Settings).
+    await page.getByRole('radio', { name: /Trinity Mode/i }).click();
+    await page.waitForLoadState('networkidle');
+
+    const trinity = outcomes.filter((o) => /\/(SPX|SPY|QQQ)\b/.test(o));
+    expect(trinity.length, 'Trinity never issued its requests — did the toggle move?')
+      .toBeGreaterThan(0);
+    const notOk = trinity.filter((o) => !o.startsWith('2'));
+    expect(notOk, `unmocked Trinity requests reached the proxy: ${JSON.stringify(notOk)}`)
+      .toEqual([]);
+  });
+});
