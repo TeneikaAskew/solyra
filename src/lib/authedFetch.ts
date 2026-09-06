@@ -34,6 +34,7 @@ import { getCurrentUid, getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
 import { markAuthBlocked, clearAuthBlocked } from './authGate';
+import { isMockModeActive } from './mockMode';
 
 // Paths the backend answers WITHOUT auth (api/auth._OPEN_API_PREFIXES — keep
 // in sync), so the sign-in screen, shell, and public landing page can work.
@@ -134,10 +135,22 @@ export function installAuthFetch(): void {
   const nativeFetch = window.fetch.bind(window);
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const path = pathOf(input);
+
+    // Mock-data mode (dev/admin only — src/lib/mockMode.ts): every /api
+    // request is answered from the bundled fixtures and never leaves the
+    // browser. Checked before base rewrite and token attachment because
+    // neither applies to a request that will not hit the network. The
+    // engine is dynamically imported so its payloads stay out of the main
+    // bundle for everyone not in the mode.
+    if (path.startsWith('/api/') && isMockModeActive()) {
+      const { mockApiResponse } = await import('@/mocks');
+      return mockApiResponse(input, init);
+    }
+
     // Base rewrite happens for EVERY mode — a static host serving the SPA has
     // no /api route regardless of how auth is configured.
     const target = withApiBase(input);
-    const path = pathOf(input);
     const gated = isGatedApiPath(path);
 
     // Track gated-call outcomes in every auth mode so data cards can show a

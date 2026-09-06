@@ -219,6 +219,7 @@ export default function InsightsPage() {
             onBackToLatest={() => setViewingHistoricalId(null)}
             ticker={activeTicker}
             brief={briefQuery.data ?? null}
+            briefError={briefQuery.isError}
           />
         ) : tab === 'history' ? (
           <HistoryView
@@ -289,6 +290,7 @@ function ReportView({
   onBackToLatest,
   ticker,
   brief,
+  briefError,
 }: {
   loading: boolean;
   envelope: import('@/types/insights').InsightReportEnvelope | null;
@@ -299,6 +301,7 @@ function ReportView({
   onBackToLatest: () => void;
   ticker: string;
   brief: import('@/hooks/useInsights').BriefDirection | null;
+  briefError: boolean;
 }) {
   if (loading) {
     return (
@@ -359,6 +362,7 @@ function ReportView({
       <BriefVsInsightsCard
         ticker={ticker}
         brief={brief}
+        briefError={briefError}
         insightDirection={report.direction}
       />
       <div className="grid gap-4 md:grid-cols-2">
