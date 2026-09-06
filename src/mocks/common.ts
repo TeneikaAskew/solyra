@@ -12,6 +12,7 @@
  * menu keeps showing the toggle to exit the mode.
  */
 import type { MarketHours } from '@/hooks/useConfig';
+import type { UserProfile } from '@/types/profile';
 import type { LiveStatus } from '@/hooks/useLiveStatus';
 import type { WatchlistResponse } from '@/types/watchlist';
 import type { MockRoute } from './types';
@@ -27,6 +28,27 @@ export const MOCK_ME_DEV = {
   is_admin: true,
   is_dev: true,
 };
+
+/**
+ * GET /api/me/profile — the Settings profile form (useProfile). A populated
+ * profile (rather than the backend's 404-when-unset) so the form renders
+ * real-looking data in mock mode; values satisfy UserProfile so drift from
+ * the contract fails tsc.
+ */
+export const MOCK_PROFILE = {
+  display_name: 'Solyra Dev',
+  timezone: 'America/New_York',
+  default_ticker: 'IWM',
+  default_timeframe: '1D',
+  account_size: 25_000,
+  risk_per_trade_pct: 1.0,
+  notify_daily_digest: true,
+  notify_catalyst_alerts: true,
+  notify_signal_alerts: false,
+  number_format: 'abbreviated',
+  date_format: 'iso',
+  show_extended_hours: false,
+} satisfies UserProfile;
 
 /** 200 with all-null fields = "nothing stored yet" without a console 404. */
 export const MOCK_PREFERENCES_EMPTY = {
@@ -52,7 +74,7 @@ export const MOCK_LIVE_STATUS = {
  *  reason; pages wanting rows override with MOCK_WATCHLIST (insights). */
 export const MOCK_WATCHLIST_EMPTY = {
   run_id: 'bbbbbbbb-0000-0000-0000-000000000000',
-  as_of: '2026-04-25T20:00:00Z',
+  as_of: '2026-04-24T20:00:00Z',
   candidate_count: 0,
   excluded_count: 0,
   ranked: [],
@@ -94,11 +116,16 @@ export const commonRoutes: MockRoute[] = [
     pattern: /^\/api\/me\/preferences$/,
     reply: (req) => ({ body: { ...MOCK_PREFERENCES_EMPTY, ...(req.body as object) } }),
   },
-  { pattern: /^\/api\/live\/status$/, reply: () => ({ body: MOCK_LIVE_STATUS }) },
+  { pattern: /^\/api\/me\/profile$/, reply: () => ({ body: MOCK_PROFILE }) },
   {
-    pattern: /^\/api\/insights\/watchlist$/,
-    reply: () => ({ body: MOCK_WATCHLIST_EMPTY }),
+    // Same stateless-write convention as preferences above.
+    method: 'PUT',
+    pattern: /^\/api\/me\/profile$/,
+    reply: (req) => ({ body: { ...MOCK_PROFILE, ...(req.body as object) } }),
   },
+  { pattern: /^\/api\/live\/status$/, reply: () => ({ body: MOCK_LIVE_STATUS }) },
+  // /api/insights/watchlist is owned by ./insights (populated ranking);
+  // MOCK_WATCHLIST_EMPTY stays exported for the Playwright mockCommon.
   {
     pattern: /^\/api\/market\/most-active$/,
     reply: () => ({ body: MOCK_MOST_ACTIVE_EMPTY }),

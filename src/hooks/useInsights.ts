@@ -29,7 +29,13 @@ export function useBriefDirection(ticker: string) {
       // That is "no brief", not a neutral one — coercing the missing bias to
       // 'neutral' fabricated a house view and rendered a fake Agree/DIVERGE
       // verdict against it (Rule 4).
-      if (json.source === 'unavailable' || json.bias == null) return null;
+      if (json.source === 'unavailable') return null;
+      // An AVAILABLE envelope without a bias is contract drift, not a
+      // legitimate no-brief state — fail loud instead of quietly removing
+      // the comparison card (Rule 4).
+      if (json.bias == null) {
+        throw new Error(`brief: available envelope (source=${json.source}) is missing bias`);
+      }
       // The wire spreads the premarket block FLAT (`**premarket`) and names
       // the daily block `daily_indicators` (dashboard.py) — there is no
       // `premarket` or `daily` key, so reads through those were always null.

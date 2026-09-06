@@ -25,6 +25,7 @@ import type { AvgVolume, LiveHistory } from '@/hooks/useLiveHistory';
 import type { LiveQuote } from '@/hooks/useLiveQuote';
 import type { MockRoute } from './types';
 import { MOCK_MARKET_HOURS } from './common';
+import { addDaysToISO, todayET } from '@/lib/dates';
 
 /**
  * NOTE the key names of `MOCK_MARKET_HOURS`: the contract is `pre_market` /
@@ -49,7 +50,7 @@ export const MOCK_DASHBOARD_BRIEF = {
   ftfc_direction: 'bullish',
   signal_status: '0DTE call flow leading',
   daily_indicators: {
-    date: '2026-04-25',
+    date: '2026-04-24',
     close: 220.5,
     rsi_14: 58.4,
     rvol: 1.4,
@@ -80,7 +81,7 @@ export const MOCK_DASHBOARD_QUOTE = {
   change_pct: 0.296,
   prev_close: 219.8,
   // Bare trading-day date on the wire, not an ISO datetime (live.py).
-  last_updated: '2026-04-25',
+  last_updated: '2026-04-24',
   market_session: 'closed',
   market_open: false,
 } satisfies LiveQuote;
@@ -99,7 +100,7 @@ export const MOCK_DASHBOARD_AVG_VOLUME = {
   ticker: 'IWM',
   avg_volume_20d: 25_000_000,
   sample_size: 20,
-  last_date: '2026-04-24',
+  last_date: '2026-04-23',
   // Real enum is 'cloud_sql' | 'alphavantage' — never 'mock' (live.py).
   source: 'cloud_sql',
 } satisfies AvgVolume;
@@ -116,7 +117,7 @@ export const MOCK_DASHBOARD_REFERENCE = {
   ticker: 'IWM',
   // YYYYMMDD of the PREVIOUS trading day — every backend path formats it
   // this way (main.py strips the dashes before returning).
-  date: '20260424',
+  date: '20260423',
   source: 'cloud_sql',
   stale_days: 0,
   open: 220.0,
@@ -128,8 +129,8 @@ export const MOCK_DASHBOARD_REFERENCE = {
     low: 216.0,
     avg_close: 220.0,
     avg_rsi_14: 55.0,
-    start_date: '2026-04-21',
-    end_date: '2026-04-25',
+    start_date: '2026-04-20',
+    end_date: '2026-04-24',
     sessions: 5,
   },
 } satisfies ReferenceResponse & {
@@ -161,7 +162,7 @@ export interface SectorsResponse {
  *  one `unavailable` row, which must sink to the bottom and render an em-dash
  *  rather than a fabricated 0.00%. */
 export const MOCK_SECTORS = {
-  as_of: '2026-04-25',
+  as_of: '2026-04-24',
   status: 'ok',
   sectors: [
     { symbol: 'XLK', name: 'Technology', close: 250.1, chg_1d_pct: 1.25, chg_5d_pct: 3.4, status: 'ok' },
@@ -175,7 +176,7 @@ export const MOCK_SECTORS = {
  *  rows are unavailable the backend flips the top-level status to
  *  'unavailable' and attaches a top-level `reason` (main.py). */
 export const MOCK_SECTORS_UNAVAILABLE = {
-  as_of: '2026-04-25',
+  as_of: '2026-04-24',
   status: 'unavailable',
   reason: 'sector ETFs not ingested yet — run the SPDR backfill',
   sectors: [
@@ -190,13 +191,11 @@ export const MOCK_SECTORS_UNAVAILABLE = {
  *  articles do, so the fixture pins the match condition rather than passing
  *  by accident. */
 export function buildDashboardNews() {
-  const today = new Date().toISOString().slice(0, 10);
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  const yesterday = d.toISOString().slice(0, 10);
-  const t = new Date();
-  t.setDate(t.getDate() + 1);
-  const tomorrow = t.toISOString().slice(0, 10);
+  // ET clock, matching the consumers' own date classification (see
+  // ./catalysts for why UTC here drifts a day every evening).
+  const today = todayET();
+  const yesterday = addDaysToISO(today, -1);
+  const tomorrow = addDaysToISO(today, 1);
   return {
     status: 'ok',
     // Real envelope names its providers, e.g. "Benzinga + DB (news + sec, 5)".
@@ -272,7 +271,7 @@ export const MOCK_DASHBOARD_MARKET_DATA = (() => {
   const bars = buildDashboardBars();
   return {
     ticker: 'IWM',
-    date: '2026-04',
+    date: '202604',
     // Always present on the wire (main.py): the echoed bar timeframe in
     // minutes, and a per-bar rgba volume color.
     timeframe: 60,
@@ -316,28 +315,29 @@ export const MOCK_BACKTEST_ALL = { ticker: 'IWM', total_runs: 0, runs: [] };
  */
 export const dashboardRoutes: MockRoute[] = [
   { pattern: /^\/api\/dashboard\/brief\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_BRIEF }) },
-  {
-    pattern: /^\/api\/signals\/IWM$/,
-    reply: () => ({ body: { ticker: 'IWM', count: 0, signals: [] } }),
-  },
   { pattern: /^\/api\/playbook\/IWM$/, reply: () => ({ body: MOCK_PLAYBOOK_EMPTY }) },
-  { pattern: /^\/api\/live\/quote\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_QUOTE }) },
-  { pattern: /^\/api\/live\/history\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_HISTORY }) },
-  { pattern: /^\/api\/live\/avg-volume\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_AVG_VOLUME }) },
   {
     pattern: /^\/api\/market\/reference\/IWM\/([^/]+)$/,
     reply: () => ({ body: MOCK_DASHBOARD_REFERENCE }),
   },
-  // Candlestick chart reads market-hours for its RTH window.
-  { pattern: /^\/api\/config\/market-hours$/, reply: () => ({ body: MOCK_MARKET_HOURS }) },
-  // Card / chart endpoints (mockDashboardCards).
   { pattern: /^\/api\/market\/sectors$/, reply: () => ({ body: MOCK_SECTORS }) },
-  { pattern: /^\/api\/catalysts\/events$/, reply: () => ({ body: buildDashboardNews() }) },
+  // The Overview intraday chart requests a COMPACT month code — DashboardPage
+  // derives it as anchorDate.slice(0, 6), i.e. /IWM/202604 — not a session
+  // date. Scoping the pattern to exactly six digits lets the generic
+  // session-date route in ./live own every other market-data request.
   {
-    pattern: /^\/api\/market\/data\/IWM\/([^/]+)$/,
+    pattern: /^\/api\/market\/data\/IWM\/\d{6}$/,
     reply: () => ({ body: MOCK_DASHBOARD_MARKET_DATA }),
   },
   { pattern: /^\/api\/backtest\/results\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_RESULTS }) },
   { pattern: /^\/api\/backtest\/equity\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_EQUITY }) },
   { pattern: /^\/api\/backtest\/all\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_ALL }) },
+  // MovementRead mounts on the default page; useMovementStatement treats a
+  // 404 as the documented "feature flag off" state (no retries, card hides),
+  // so answering 404 here is the honest representative response — a 501
+  // loud-miss would spray console errors on mock mode's landing page.
+  {
+    pattern: /^\/api\/movement-statement$/,
+    reply: () => ({ status: 404, body: { detail: 'movement statement flag off' } }),
+  },
 ];

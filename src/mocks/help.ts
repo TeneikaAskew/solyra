@@ -52,7 +52,7 @@ export const MOCK_INDICATOR_CONFIG = {
 /** Ranker output for the watchlist panel this page also mounts. */
 export const MOCK_HELP_WATCHLIST = {
   run_id: 'cccccccc-0000-0000-0000-000000000001',
-  as_of: '2026-04-25T20:00:00Z',
+  as_of: '2026-04-24T20:00:00Z',
   candidate_count: 0,
   excluded_count: 0,
   ranked: [],

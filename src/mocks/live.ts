@@ -42,7 +42,7 @@ export const MOCK_LIVE_QUOTE = {
   change: 0.65,
   change_pct: 0.296,
   prev_close: 219.8,
-  last_updated: '2026-04-25',
+  last_updated: '2026-04-24',
   market_session: 'regular',
   market_open: true,
 } satisfies LiveQuote;
@@ -74,7 +74,7 @@ function buildBars(n = 30, base = 220, step = 0.05): LiveHistory['bars'] {
   return Array.from({ length: n }, (_, i) => {
     const close = base + i * step;
     return {
-      time: `2026-04-25 13:${String(i % 60).padStart(2, '0')}:00`,
+      time: `2026-04-24 13:${String(i % 60).padStart(2, '0')}:00`,
       open: close - step,
       high: close + 0.2,
       low: close - step - 0.1,
@@ -93,6 +93,15 @@ export const MOCK_LIVE_HISTORY = {
   bars: buildBars(30),
 } satisfies LiveHistory;
 
+/** The canonical mock world is Friday AFTER the close (matching
+ *  MOCK_LIVE_STATUS in ./common): the day's full bars with the session
+ *  flags reporting closed. */
+export const MOCK_LIVE_HISTORY_EOD = {
+  ...MOCK_LIVE_HISTORY,
+  market_session: 'closed',
+  market_open: false,
+} satisfies LiveHistory;
+
 /** No bars yet — pre-open, or a symbol with no intraday coverage. */
 export const MOCK_LIVE_HISTORY_EMPTY = {
   ticker: 'IWM',
@@ -107,12 +116,20 @@ export const MOCK_AVG_VOLUME = {
   ticker: 'IWM',
   avg_volume_20d: 25_000_000,
   sample_size: 20,
-  last_date: '2026-04-24',
+  last_date: '2026-04-23',
   // Real enum is 'cloud_sql' | 'alphavantage' — never 'mock' (live.py).
   source: 'cloud_sql',
 } satisfies AvgVolume;
 
 // ── Market data / reference ────────────────────────────────────────────────
+
+/** The declared session's opening bell in the app's UTC-labeled-ET epoch
+ *  convention: the backend (and every consumer — isoNaiveToEpoch, the
+ *  review cutoff) encodes the ET WALL CLOCK via Date.UTC, so 09:30 ET is
+ *  Date.UTC(..., 9, 30), NOT the real 13:30 UTC instant. A detached epoch
+ *  (the old 1_700_000_000 was a 2023 timestamp) broke every date-sensitive
+ *  consumer: review-mode cutoffs, trade markers, fire matching. */
+const SESSION_OPEN_UTC = Date.UTC(2026, 3, 24, 9, 30, 0) / 1000;
 
 /** Candles keyed by unix seconds (lightweight-charts' `time`), matching the
  *  1-minute cadence `useReviewQuote` slices for its synthetic review quote. */
@@ -120,7 +137,7 @@ function buildCandles(n = 30, base = 220, step = 0.05) {
   return Array.from({ length: n }, (_, i) => {
     const close = base + i * step;
     return {
-      time: 1_700_000_000 + i * 60,
+      time: SESSION_OPEN_UTC + i * 60,
       open: close - step,
       high: close + 0.01,
       low: close - step - 0.01,
@@ -133,7 +150,7 @@ export const MOCK_CANDLES = buildCandles(30);
 
 export const MOCK_MARKET_DATA = {
   ticker: 'IWM',
-  date: '2026-04-25',
+  date: '2026-04-24',
   timeframe: 1,
   count: MOCK_CANDLES.length,
   candlestick: MOCK_CANDLES,
@@ -145,7 +162,7 @@ export const MOCK_MARKET_DATA = {
  *  so the caller renders "no intraday for <date>" rather than a fake price. */
 export const MOCK_MARKET_DATA_EMPTY = {
   ticker: 'IWM',
-  date: '2026-04-25',
+  date: '2026-04-24',
   timeframe: 1,
   count: 0,
   candlestick: [],
@@ -160,7 +177,7 @@ export const MOCK_MARKET_DATA_EMPTY = {
  *  nullable (main.py). */
 export const MOCK_REFERENCE_LEVELS = {
   ticker: 'IWM',
-  date: '20260424',
+  date: '20260423',
   open: 219.8,
   high: 222.0,
   low: 218.0,
@@ -264,8 +281,11 @@ export const MOCK_LIVE_INDICATORS = {
  * fixture. Patterns match the pathname only; queries pass through.
  */
 export const liveRoutes: MockRoute[] = [
-  { pattern: /^\/api\/live\/quote\/IWM$/, reply: () => ({ body: MOCK_LIVE_QUOTE }) },
-  { pattern: /^\/api\/live\/history\/IWM$/, reply: () => ({ body: MOCK_LIVE_HISTORY }) },
+  // Closed variants: the canonical world is Friday after the close, so the
+  // session flags here must agree with MOCK_LIVE_STATUS (is_open: false) —
+  // a regular-session quote under a CLOSED status pill is a contradiction.
+  { pattern: /^\/api\/live\/quote\/IWM$/, reply: () => ({ body: MOCK_LIVE_QUOTE_CLOSED }) },
+  { pattern: /^\/api\/live\/history\/IWM$/, reply: () => ({ body: MOCK_LIVE_HISTORY_EOD }) },
   { pattern: /^\/api\/live\/avg-volume\/IWM$/, reply: () => ({ body: MOCK_AVG_VOLUME }) },
   {
     method: 'POST',
@@ -276,8 +296,7 @@ export const liveRoutes: MockRoute[] = [
     pattern: /^\/api\/market\/data\/IWM\/([^/]+)$/,
     reply: () => ({ body: MOCK_MARKET_DATA }),
   },
-  {
-    pattern: /^\/api\/market\/reference\/IWM\/([^/]+)$/,
-    reply: () => ({ body: MOCK_REFERENCE_LEVELS }),
-  },
+  // /api/market/reference is owned by ./dashboard (its payload carries the
+  // populated `week` block); MOCK_REFERENCE_LEVELS stays exported for the
+  // Playwright fixtures.
 ];
