@@ -27,7 +27,7 @@ export const MOCK_SIGNALS = {
   count: 3,
   signals: [
     {
-      time: '2026-04-25 18:00:00',
+      time: '2026-04-24 18:00:00',
       ticker: 'IWM',
       direction: 'CALL',
       score: 4.5,
@@ -38,7 +38,7 @@ export const MOCK_SIGNALS = {
       volume: 1_200_000,
     },
     {
-      time: '2026-04-25 17:30:00',
+      time: '2026-04-24 17:30:00',
       ticker: 'IWM',
       direction: 'PUT',
       score: 3.0,
@@ -49,7 +49,7 @@ export const MOCK_SIGNALS = {
       volume: 950_000,
     },
     {
-      time: '2026-04-25 17:00:00',
+      time: '2026-04-24 17:00:00',
       ticker: 'IWM',
       direction: 'CALL',
       score: 2.0,

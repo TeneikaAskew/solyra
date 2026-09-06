@@ -72,3 +72,22 @@ export function autoEnableMockModeForDev(): boolean {
   if (mockModePreference() !== null) return false;
   return setMockMode(true);
 }
+
+/**
+ * Cross-tab convergence: `authedFetch` re-reads the preference on every
+ * request, so when one tab toggles the mode, a sibling tab would otherwise
+ * silently start answering from the OTHER world while keeping this world's
+ * runtime config, caches, and banner. The `storage` event fires only in
+ * those sibling tabs (never in the writer, which reloads itself in
+ * setMockMode), so reloading here re-derives every open tab from the new
+ * preference the moment it changes.
+ */
+// Guarded on the function, not just `window`: unit-test environments stub a
+// partial window without an event target.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY && e.oldValue !== e.newValue) {
+      window.location.reload();
+    }
+  });
+}

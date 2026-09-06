@@ -183,7 +183,7 @@ export function runStatus(status: RunStatus['status']): RunStatus {
 /** Deterministic ranker output — two ranked tickers with score breakdowns. */
 export const MOCK_WATCHLIST = {
   run_id: 'bbbbbbbb-0000-0000-0000-000000000001',
-  as_of: '2026-04-25T20:00:00Z',
+  as_of: '2026-04-24T20:00:00Z',
   candidate_count: 42,
   excluded_count: 12,
   ranked: [
@@ -249,7 +249,7 @@ export const MOCK_WATCHLIST = {
 /** Ranker ran but nothing cleared the bar — the panel's honest empty state. */
 export const MOCK_WATCHLIST_EMPTY = {
   run_id: 'bbbbbbbb-0000-0000-0000-000000000002',
-  as_of: '2026-04-25T20:00:00Z',
+  as_of: '2026-04-24T20:00:00Z',
   candidate_count: 0,
   excluded_count: 0,
   ranked: [],
@@ -299,10 +299,13 @@ export const insightsRoutes: MockRoute[] = [
     pattern: /^\/api\/insights\/reports\/([^/]+)$/,
     reply: () => ({ body: MOCK_INSIGHT_REPORT }),
   },
-  { pattern: /^\/api\/insights\/watchlist$/, reply: () => ({ body: MOCK_WATCHLIST_EMPTY }) },
+  // Owns the endpoint app-wide (the panel mounts on /insights AND /help):
+  // the POPULATED ranking, so mock mode shows real-looking rows.
+  { pattern: /^\/api\/insights\/watchlist$/, reply: () => ({ body: MOCK_WATCHLIST }) },
   // AgentsPanel (rendered on this page) reads the model-routing table. It is
   // NOT admin-gated in the UI here, so it needs an answer on /insights too.
-  { pattern: /^\/api\/admin\/routes$/, reply: () => ({ body: MOCK_AGENT_ROUTES }) },
+  // GET /api/admin/routes is owned by ./admin (its table is the superset
+  // of these agent roles); MOCK_AGENT_ROUTES stays exported for Playwright.
   {
     method: 'POST',
     pattern: /^\/api\/insights\/chat$/,

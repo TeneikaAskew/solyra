@@ -32,10 +32,12 @@ import { adminRoutes } from './admin';
 
 export type { MockReply, MockRequest, MockRoute } from './types';
 
-// Earlier entries win. Domain routes come before common so a page's own
-// mock of a cross-cutting endpoint (mirroring Playwright's newest-first
-// re-registration) takes precedence over the shared default.
-const ROUTES: MockRoute[] = [
+// Every endpoint is OWNED by exactly one domain module — no two entries may
+// match the same method+path (index.test.ts asserts pattern uniqueness).
+// The first-match rule therefore never decides between two payloads for the
+// same endpoint; it only orders more-specific patterns (e.g. the dashboard's
+// month-code market-data route) before generic ones. Exported for the test.
+export const ROUTES: MockRoute[] = [
   ...dashboardRoutes,
   ...liveRoutes,
   ...chartsRoutes,
