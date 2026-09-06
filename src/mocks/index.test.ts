@@ -71,4 +71,20 @@ describe('canonical payload resolution', () => {
   it('an unmatched path stays a loud 501-shaped miss (null here)', () => {
     expect(get('/api/definitely/not/mocked')).toBeNull();
   });
+
+  // Pattern-source uniqueness cannot see two DIFFERENT patterns matching
+  // the same path, so the ordering-dependent overlaps are pinned here by
+  // resolution outcome: if a reorder ever flips an owner, these fail.
+  it('the options chain and grid patterns disambiguate by outcome', () => {
+    const chain = get('/api/options/IWM/2026-04-24');
+    const grid = get('/api/options/IWM/grid');
+    expect(JSON.parse(chain!.payload).options).toBeDefined();
+    expect(JSON.parse(grid!.payload).cells).toBeDefined();
+  });
+
+  it('movement-statement answers the documented 404 feature-off state, not a loud miss', () => {
+    const hit = get('/api/movement-statement');
+    expect(hit).not.toBeNull();
+    expect(hit!.status).toBe(404);
+  });
 });

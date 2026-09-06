@@ -148,7 +148,7 @@ export const MOCK_ADMIN_DATA_SOURCES = {
       row_count: 4_812,
       last_refreshed_at: '2026-04-20T06:00:00Z',
       coverage_start: '2025-06-01',
-      coverage_end: '2026-04-19',
+      coverage_end: '2026-04-17',
       message: 'last fetch skipped: vendor quota',
       refreshable: true,
     },

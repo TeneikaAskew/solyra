@@ -332,4 +332,12 @@ export const dashboardRoutes: MockRoute[] = [
   { pattern: /^\/api\/backtest\/results\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_RESULTS }) },
   { pattern: /^\/api\/backtest\/equity\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_EQUITY }) },
   { pattern: /^\/api\/backtest\/all\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_ALL }) },
+  // MovementRead mounts on the default page; useMovementStatement treats a
+  // 404 as the documented "feature flag off" state (no retries, card hides),
+  // so answering 404 here is the honest representative response — a 501
+  // loud-miss would spray console errors on mock mode's landing page.
+  {
+    pattern: /^\/api\/movement-statement$/,
+    reply: () => ({ status: 404, body: { detail: 'movement statement flag off' } }),
+  },
 ];

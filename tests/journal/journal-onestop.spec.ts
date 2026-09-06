@@ -27,7 +27,7 @@ function buildUpRunCandlestick(n = 30, base = 220, step = 0.05) {
   for (let i = 0; i < n; i += 1) {
     const close = base + i * step;
     bars.push({
-      time: 1_700_000_000 + i * 60,
+      time: Date.UTC(2026, 3, 24, 9, 30) / 1000 + i * 60,
       open: close - step,
       high: close + 0.01,
       low: close - step - 0.01,

@@ -1,6 +1,7 @@
 /**
  * Mock-data mode ("dev mode"): the app serves every `/api/*` request from
- * the bundled fixtures in `src/mocks/` and NOTHING leaves the browser.
+ * the bundled fixtures in `src/mocks/` and no `/api` request leaves the
+ * browser (non-API assets like fonts still load normally).
  *
  * Who gets it:
  *  - an account with the `dev` role (server-verified via /api/me `is_dev`)
@@ -86,7 +87,9 @@ export function autoEnableMockModeForDev(): boolean {
 // partial window without an event target.
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('storage', (e) => {
-    if (e.key === STORAGE_KEY && e.oldValue !== e.newValue) {
+    // key === null means localStorage.clear() in another tab — the
+    // preference is gone there too, so this tab must also re-derive.
+    if (e.key === null || (e.key === STORAGE_KEY && e.oldValue !== e.newValue)) {
       window.location.reload();
     }
   });
