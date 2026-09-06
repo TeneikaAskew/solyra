@@ -10,6 +10,7 @@ import { SignOutButton } from '@/components/auth/SignOutButton';
 import { AccountMenuSection, AuthStatusIndicator } from '@/components/shared/AuthStatusIndicator';
 import { useUser } from '@/hooks/useUser';
 import { useThemeStore } from '@/stores/themeStore';
+import { popoverStyleFor, type PopoverStyle } from '@/components/shared/popoverPosition';
 
 interface TopTabsProps {
   onOpenSearch: () => void;
@@ -45,7 +46,7 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<PopoverStyle | null>(null);
   const menusRef = useRef<HTMLElement>(null);
 
   // Close the open dropdown on outside click / Escape. A listener (rather
@@ -81,10 +82,8 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
-    setMenuPos({
-      top: rect.bottom + 6,
-      left: Math.min(rect.left, window.innerWidth - MENU_WIDTH - 12),
-    });
+    // Shared helper clamps BOTH viewport edges, not just the right one.
+    setMenuPos(popoverStyleFor(rect, MENU_WIDTH));
     setOpenGroup(g.group);
   };
 
@@ -137,8 +136,8 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
               </button>
               {open && menuPos && (
                 <nav
-                  style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: MENU_WIDTH }}
-                  className="z-50 rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-1.5 shadow-2xl"
+                  style={menuPos}
+                  className="rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-1.5 shadow-2xl"
                 >
                   {groupItems.map(({ path, label, icon: Icon, badge, liveBadge }) => (
                     <NavLink
@@ -224,7 +223,7 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
             aria-hidden="true"
             onClick={() => setMenuOpen(false)}
           />
-          <nav className="fixed right-2 top-[52px] z-50 max-h-[80vh] w-60 overflow-y-auto rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-2 shadow-2xl sm:hidden">
+          <nav className="fixed right-2 top-[52px] z-50 max-h-[80vh] w-60 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-2 shadow-2xl sm:hidden">
             {NAV_GROUPS.map((g) => {
               const groupItems = g.items.filter(visible);
               if (groupItems.length === 0) return null;
