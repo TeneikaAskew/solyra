@@ -6,6 +6,7 @@ import { MOCK_LIVE_HISTORY_EOD } from './live';
 import { MOCK_ADMIN_ROUTES } from './admin';
 import { MOCK_GRID_POPULATED } from './options';
 import { MOCK_PROFILE } from './common';
+import { MOCK_PLAYBOOK } from './dashboard';
 
 const get = (path: string) =>
   resolveMock('GET', new URL(`http://mock.test${path}`), undefined);
@@ -86,5 +87,32 @@ describe('canonical payload resolution', () => {
     const hit = get('/api/movement-statement');
     expect(hit).not.toBeNull();
     expect(hit!.status).toBe(404);
+  });
+
+  it('serves the real 12-card playbook, not the empty variant', () => {
+    const hit = get('/api/playbook/IWM');
+    const body = JSON.parse(hit!.payload);
+    expect(body).toEqual(MOCK_PLAYBOOK);
+    expect(body.cards).toHaveLength(12);
+  });
+
+  it('playbook evaluate answers BOTH wire shapes (flat conditions and per-card batches)', () => {
+    const flat = resolveMock('POST', new URL('http://mock.test/api/playbook/evaluate'), {
+      snapshot: {},
+      conditions: ['a', 'b', 'c', 'd'],
+    });
+    const flatBody = JSON.parse(flat!.payload);
+    expect(flatBody.results).toHaveLength(4);
+    expect(flatBody.results.map((r: { status: string }) => r.status)).toEqual([
+      'met', 'unmet', 'unknown', 'met',
+    ]);
+
+    const batched = resolveMock('POST', new URL('http://mock.test/api/playbook/evaluate'), {
+      snapshot: {},
+      batches: { card_1: ['x'], card_2: ['y', 'z'] },
+    });
+    const b = JSON.parse(batched!.payload);
+    expect(Object.keys(b.results_by_key)).toEqual(['card_1', 'card_2']);
+    expect(b.results_by_key.card_2).toHaveLength(2);
   });
 });
