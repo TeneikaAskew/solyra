@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
+import { parseApiError } from '@/lib/apiError';
+
 /**
  * `/api/options/dates/{ticker}` has two callers with different needs, and
  * conflating them cost 9.9 seconds per page load.
@@ -42,7 +44,7 @@ export function useLatestOptionsDate(ticker: string) {
     queryKey: ['options-dates', ticker, 'latest'],
     queryFn: async () => {
       const r = await fetch(`/api/options/dates/${ticker}?limit=1`);
-      if (!r.ok) throw new Error(`dates ${r.status}`);
+      if (!r.ok) throw new Error(await parseApiError(r, 'Failed to fetch options dates'));
       return r.json();
     },
     staleTime: STALE_TIME_MS,
@@ -56,7 +58,7 @@ export function useAllOptionsDates(ticker: string) {
     queryKey: ['options-dates', ticker, 'all'],
     queryFn: async () => {
       const r = await fetch(`/api/options/dates/${ticker}`);
-      if (!r.ok) throw new Error(`dates ${r.status}`);
+      if (!r.ok) throw new Error(await parseApiError(r, 'Failed to fetch options dates'));
       return r.json();
     },
     staleTime: STALE_TIME_MS,

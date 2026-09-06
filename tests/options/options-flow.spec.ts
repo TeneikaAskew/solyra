@@ -152,17 +152,28 @@ test.describe('options dates: the limit contract', () => {
     await page.waitForLoadState('networkidle');
 
     // Heatseeker/Swing is the landing tab and reads dates[0] only.
+    //
+    // Parsed, not substring-matched. `includes('limit=1')` is also true of
+    // `limit=10` and `limit=1000`, so the assertion that exists to stop the
+    // 9,870 ms scan coming back would have accepted a change that brings it
+    // most of the way back.
+    const limited = datesRequests
+      .map((u) => new URL(u, 'http://x'))
+      .filter((u) => u.pathname === '/api/options/dates/IWM');
     expect(
-      datesRequests.some((u) => u.startsWith('/api/options/dates/IWM') && u.includes('limit=1')),
-      `no limited dates request; saw ${JSON.stringify(datesRequests)}`,
+      limited.some((u) => u.searchParams.get('limit') === '1'),
+      `no dates request with exactly limit=1; saw ${JSON.stringify(datesRequests)}`,
     ).toBe(true);
 
     await openProfilesTab(page);
     await page.waitForLoadState('networkidle');
 
-    // The picker needs the history, so its request must NOT carry limit=1.
+    // The picker needs the history, so its request must carry no limit at all.
+    const all = datesRequests
+      .map((u) => new URL(u, 'http://x'))
+      .filter((u) => u.pathname === '/api/options/dates/IWM');
     expect(
-      datesRequests.some((u) => u.startsWith('/api/options/dates/IWM') && !u.includes('limit=')),
+      all.some((u) => u.searchParams.get('limit') === null),
       `no unbounded dates request for the picker; saw ${JSON.stringify(datesRequests)}`,
     ).toBe(true);
   });
@@ -177,11 +188,25 @@ test.describe('options dates: the limit contract', () => {
     // Trinity is behind an inner toggle and the page opens on Swing, so a
     // spec that only loads /options never renders it. This one clicks in,
     // which is what makes the assertion mean anything.
-    const outcomes: string[] = [];
+    //
+    // Asserting a 2xx would NOT: `VITE_API_PROXY_TARGET` can point at a
+    // reachable backend, and then a request that escaped every fixture route
+    // still answers 200 and the spec still passes. What proves interception is
+    // a catch-all registered BEFORE `mockOptionsApi` — Playwright tries the
+    // most recently registered handler first, so the fixture routes win
+    // whatever they match and only an escapee reaches this one. It aborts,
+    // so an escaped request cannot reach the proxy even once.
+    const escaped: string[] = [];
+    await page.route('**/api/options/**', (r) => {
+      escaped.push(new URL(r.request().url()).pathname);
+      return r.abort('blockedbyclient');
+    });
+
+    const served: string[] = [];
     page.on('response', (res) => {
       const url = new URL(res.url());
       if (url.pathname.startsWith('/api/options/')) {
-        outcomes.push(`${res.status()} ${url.pathname}`);
+        served.push(`${res.status()} ${url.pathname}`);
       }
     });
 
@@ -192,11 +217,15 @@ test.describe('options dates: the limit contract', () => {
     await page.getByRole('radio', { name: /Trinity Mode/i }).click();
     await page.waitForLoadState('networkidle');
 
-    const trinity = outcomes.filter((o) => /\/(SPX|SPY|QQQ)\b/.test(o));
+    // The toggle still has to actually fire the requests, or the catch-all
+    // proves nothing by staying empty.
+    const trinity = served.filter((o) => /\/(SPX|SPY|QQQ)\b/.test(o));
     expect(trinity.length, 'Trinity never issued its requests — did the toggle move?')
       .toBeGreaterThan(0);
-    const notOk = trinity.filter((o) => !o.startsWith('2'));
-    expect(notOk, `unmocked Trinity requests reached the proxy: ${JSON.stringify(notOk)}`)
+
+    // Interception, not success: every options request was answered by a
+    // fixture route, so none of them could have reached the Vite proxy.
+    expect(escaped, `options requests escaped mockOptionsApi: ${JSON.stringify(escaped)}`)
       .toEqual([]);
   });
 });

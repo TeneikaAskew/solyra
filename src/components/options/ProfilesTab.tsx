@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { parseApiError } from '@/lib/apiError';
 import { useQuery } from '@tanstack/react-query';
 import { useAllOptionsDates } from '@/hooks/useOptionsDates';
 import { MetricCard } from '@/components/shared/MetricCard';
@@ -32,17 +33,6 @@ interface OptionsResponse {
   metadata?: { source?: string; data_source?: string; row_count?: number };
 }
 
-
-async function parseApiError(r: Response, fallback: string): Promise<string> {
-  try {
-    const body = await r.json();
-    if (typeof body?.detail === 'string') return body.detail;
-    if (Array.isArray(body?.detail)) return body.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ');
-  } catch {
-    // body wasn't JSON
-  }
-  return `${fallback} (HTTP ${r.status})`;
-}
 
 function useOptionsData(ticker: string, date: string, enabled: boolean) {
   return useQuery<OptionsResponse>({
