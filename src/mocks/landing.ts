@@ -25,11 +25,12 @@ export const MOCK_WAITLIST_RATE_LIMITED = {
 };
 
 /**
- * Mock-mode route table for `/` — the happy-path translation of
- * `mockLandingApi` (tests/helpers/fixtures/landing.ts) with its default
- * `waitlist: 'ok'` option: the signup is accepted with the backend's
- * literal success body.
+ * Mock-mode route table for `/` — deliberately EMPTY. The landing page
+ * renders outside AppShell, so it has no MockModeBanner: a mocked 200 on
+ * POST /api/waitlist would tell a real person "you're on the list" with no
+ * indicator that nothing was saved (Rule 4: fabricated success). Leaving
+ * the mutation unwired means the engine's 501 loud-miss flows through
+ * submitWaitlist's error branch and the form shows an honest failure —
+ * same convention as the unwired journal import mutations (./journal).
  */
-export const landingRoutes: MockRoute[] = [
-  { method: 'POST', pattern: /^\/api\/waitlist$/, reply: () => ({ body: { status: 'ok' } }) },
-];
+export const landingRoutes: MockRoute[] = [];

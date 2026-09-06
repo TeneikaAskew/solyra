@@ -45,6 +45,23 @@ describe('mock mode preference (tri-state)', () => {
     expect(mockModePreference()).toBeNull();
     expect(isMockModeActive()).toBe(false);
   });
+
+  it('reports failure and does NOT reload when the write does not persist', () => {
+    // A storage that accepts writes but reads back nothing (some privacy
+    // modes). Reloading here would loop: unset → auto-enable → reload → …
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {});
+    try {
+      expect(setMockMode(true)).toBe(false);
+      expect(reload).not.toHaveBeenCalled();
+      // And the auto-enable path reports the same honest failure.
+      expect(autoEnableMockModeForDev()).toBe(false);
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
 });
 
 describe('dev-role auto-enable', () => {

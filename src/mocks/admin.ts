@@ -92,7 +92,9 @@ export const MOCK_ADMIN_USERS = {
   users: [
     {
       uid: 'uid-admin',
-      email: 'teneika@bictech.org',
+      // Clearly-fake domain: src/mocks ships in the production bundle
+      // (unlike tests/), so no real address belongs in a fixture here.
+      email: 'admin@mock.solyra',
       display_name: 'Teneika',
       roles: ['admin'],
       disabled: false,

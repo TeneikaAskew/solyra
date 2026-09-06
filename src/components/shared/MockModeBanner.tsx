@@ -17,7 +17,10 @@ export function MockModeBanner() {
       className="flex items-center justify-center gap-3 border-b border-amber-500/40 bg-amber-500/15 px-4 py-1.5 text-xs text-amber-500"
     >
       <FlaskConical size={13} className="shrink-0" />
-      <span>Mock data mode: fixture data only, no live API calls.</span>
+      <span>
+        Mock data mode: IWM fixture data only, no live API calls. Other
+        tickers answer 501 by design.
+      </span>
       <button
         type="button"
         data-testid="mock-mode-exit"

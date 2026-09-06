@@ -30,12 +30,15 @@ export function useBriefDirection(ticker: string) {
       // 'neutral' fabricated a house view and rendered a fake Agree/DIVERGE
       // verdict against it (Rule 4).
       if (json.source === 'unavailable' || json.bias == null) return null;
+      // The wire spreads the premarket block FLAT (`**premarket`) and names
+      // the daily block `daily_indicators` (dashboard.py) — there is no
+      // `premarket` or `daily` key, so reads through those were always null.
       return {
         ticker,
         bias: json.bias,
-        signal_status: json.premarket?.signal_status ?? null,
+        signal_status: json.signal_status ?? null,
         ftfc_direction:
-          json.premarket?.ftfc_direction ?? json.daily?.ftfc_direction ?? null,
+          json.ftfc_direction ?? json.daily_indicators?.ftfc_direction ?? null,
       };
     },
     enabled: !!ticker,

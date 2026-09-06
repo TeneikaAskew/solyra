@@ -39,26 +39,36 @@ export function isMockModeActive(): boolean {
   return mockModePreference() === 'on';
 }
 
-/** Persist the preference and reload into the new world. */
-export function setMockMode(on: boolean): void {
+/**
+ * Persist the preference and reload into the new world. Returns whether the
+ * preference actually persisted; on failure nothing reloads — reloading
+ * would change nothing, and a write-accepting storage that reads back null
+ * would otherwise loop (write → reload → unset → auto-enable → write …).
+ */
+export function setMockMode(on: boolean): boolean {
+  const want: MockModePreference = on ? 'on' : 'off';
   try {
-    localStorage.setItem(STORAGE_KEY, on ? 'on' : 'off');
+    localStorage.setItem(STORAGE_KEY, want);
   } catch {
     // Storage unavailable: nothing persisted, so reloading would change
     // nothing. Fail visibly rather than pretending the mode flipped.
     console.error('mock mode: localStorage unavailable, cannot persist the toggle');
-    return;
+    return false;
+  }
+  if (mockModePreference() !== want) {
+    console.error('mock mode: preference did not persist, staying in the current world');
+    return false;
   }
   window.location.reload();
+  return true;
 }
 
 /**
  * Auto-enable for dev-role accounts: fires only while the preference is
  * UNSET, so an explicit exit ('off') is never overridden. Returns true when
- * it enabled (and is about to reload).
+ * it actually enabled (and is about to reload).
  */
 export function autoEnableMockModeForDev(): boolean {
   if (mockModePreference() !== null) return false;
-  setMockMode(true);
-  return true;
+  return setMockMode(true);
 }
