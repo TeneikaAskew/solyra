@@ -19,9 +19,12 @@ interface DatesResponse {
 
 function useLatestOptionsDate(ticker: string) {
   return useQuery<DatesResponse>({
-    queryKey: ['options-dates', ticker],
+    // limit=1: this hook only ever reads dates[0]. The unbounded call walks
+    // the whole snapshot history for a date picker neither of these views has.
+    // Distinct query key so it cannot collide with ProfilesTab's full list.
+    queryKey: ['options-dates', ticker, 'latest'],
     queryFn: async () => {
-      const r = await fetch(`/api/options/dates/${ticker}`);
+      const r = await fetch(`/api/options/dates/${ticker}?limit=1`);
       if (!r.ok) throw new Error(`dates ${r.status}`);
       return r.json();
     },

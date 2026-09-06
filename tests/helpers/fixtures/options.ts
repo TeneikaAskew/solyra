@@ -285,7 +285,10 @@ export const MOCK_GRID_UNAVAILABLE = {
  */
 export async function mockOptionsApi(page: Page) {
   await mockCommon(page);
-  await page.route('**/api/options/dates/IWM', (r) => r.fulfill(M.ok(MOCK_OPTIONS_DATES)));
+  // Trailing `*` so the route still matches once a caller appends `?limit=1`
+  // (TrinityTab / SwingMode only read dates[0]). Without it those views issue
+  // an unmocked request and the spec talks to a real backend.
+  await page.route('**/api/options/dates/IWM*', (r) => r.fulfill(M.ok(MOCK_OPTIONS_DATES)));
   // Chain (single-segment glob: does NOT match /grid?…, /…/levels or
   // /api/options/live/IWM/… — those are handled below / by the caller).
   await page.route('**/api/options/IWM/*', (r) => r.fulfill(M.ok(MOCK_OPTIONS_CHAIN)));

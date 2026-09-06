@@ -49,7 +49,9 @@ async function parseApiError(r: Response, fallback: string): Promise<string> {
 
 function useOptionsDates(ticker: string) {
   return useQuery<AvailableDatesResponse>({
-    queryKey: ['options-dates', ticker],
+    // Full history — this view renders a date picker. Key is distinct from
+    // the 'latest' key used by views that only need dates[0].
+    queryKey: ['options-dates', ticker, 'all'],
     queryFn: async () => {
       const r = await fetch(`/api/options/dates/${ticker}`);
       if (!r.ok) throw new Error(await parseApiError(r, 'Failed to fetch options dates'));

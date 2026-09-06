@@ -81,7 +81,7 @@ test.describe('Options Flow', () => {
 test.describe('Options Flow — live AV fallback', () => {
   test.beforeEach(async ({ page }) => {
     await mockCommon(page);
-    await page.route('**/api/options/dates/IWM', (r) => r.fulfill(M.ok(MOCK_OPTIONS_DATES)));
+    await page.route('**/api/options/dates/IWM*', (r) => r.fulfill(M.ok(MOCK_OPTIONS_DATES)));
     // Cloud SQL chain endpoint 404s — segment glob is single-level so it does
     // NOT capture /api/options/live/IWM/... (and the grid/levels routes
     // registered after it take precedence for their URLs).
