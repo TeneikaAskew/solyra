@@ -24,6 +24,13 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  checkActionCode,
+  applyActionCode,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
+  type ActionCodeInfo,
   type Auth,
   type User,
 } from 'firebase/auth';
@@ -70,9 +77,68 @@ export function signInWithEmail(email: string, password: string) {
   return signInWithEmailAndPassword(_auth, email, password);
 }
 
-export function signUpWithEmail(email: string, password: string) {
+export async function signUpWithEmail(email: string, password: string) {
   if (!_auth) throw new Error('Firebase not initialized');
-  return createUserWithEmailAndPassword(_auth, email, password);
+  const cred = await createUserWithEmailAndPassword(_auth, email, password);
+  // The verification email goes out the moment the account exists. Not
+  // caught on purpose: a failed send surfaces to the caller, and the
+  // unverified state stays visible in-app (EmailVerificationBanner) with a
+  // resend action, so nothing about the failure is hidden.
+  await sendEmailVerification(cred.user);
+  return cred;
+}
+
+/** Password-reset email for `email`. With email-enumeration protection on
+ *  (the project's setting) Firebase answers the same whether or not an
+ *  account exists, so callers must not promise "email sent". */
+export function sendPasswordReset(email: string): Promise<void> {
+  if (!_auth) throw new Error('Firebase not initialized');
+  return sendPasswordResetEmail(_auth, email);
+}
+
+/** Re-send the verification email to the signed-in user. */
+export async function resendVerificationEmail(): Promise<void> {
+  const user = _auth?.currentUser;
+  if (!user) throw new Error('No signed-in user');
+  await sendEmailVerification(user);
+}
+
+/**
+ * Re-read the signed-in user from the server and report `emailVerified`.
+ * `onAuthStateChanged` does not fire when the address is confirmed in another
+ * tab, so the banner calls this on "I've confirmed". null = nobody signed in.
+ */
+export async function refreshEmailVerified(): Promise<boolean | null> {
+  const user = _auth?.currentUser;
+  if (!user) return null;
+  await user.reload();
+  return _auth?.currentUser?.emailVerified ?? null;
+}
+
+// ── Email action links (/auth/action) ───────────────────────────────────────
+// The four one-time-code operations behind the emailed buttons. Each one
+// rejects with a Firebase error code (auth/expired-action-code,
+// auth/invalid-action-code, ...) that lib/authAction.ts turns into copy.
+
+export function checkAuthActionCode(code: string): Promise<ActionCodeInfo> {
+  if (!_auth) throw new Error('Firebase not initialized');
+  return checkActionCode(_auth, code);
+}
+
+export function applyAuthActionCode(code: string): Promise<void> {
+  if (!_auth) throw new Error('Firebase not initialized');
+  return applyActionCode(_auth, code);
+}
+
+/** Validates a password-reset code; resolves with the account's email. */
+export function verifyResetCode(code: string): Promise<string> {
+  if (!_auth) throw new Error('Firebase not initialized');
+  return verifyPasswordResetCode(_auth, code);
+}
+
+export function confirmReset(code: string, newPassword: string): Promise<void> {
+  if (!_auth) throw new Error('Firebase not initialized');
+  return confirmPasswordReset(_auth, code, newPassword);
 }
 
 export function firebaseSignOut(): Promise<void> {

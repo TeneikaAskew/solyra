@@ -84,9 +84,13 @@ solyra/
 
 ## Routing model
 
-`App.tsx` builds a single `createBrowserRouter` tree with three top-level
+`App.tsx` builds a single `createBrowserRouter` tree with four top-level
 entries: the public **`LandingPage` at `/`** (rendered in every auth mode),
-a **`/welcome` → `/` redirect**, and one **layout route**
+a **`/welcome` → `/` redirect**, the public **`AuthActionPage` at
+`/auth/action`** (where the Firebase auth emails' buttons land: password
+reset form, email confirmation, email recovery; the project's Identity
+Platform action URL points here, set from the stocks repo's
+`gcp/auth_email_templates.py`), and one **layout route**
 (`AuthGate` wrapping `AppShell`) with **13 child routes** — in firebase mode a
 signed-out visitor hitting any app route sees the sign-in screen, then the app.
 Each child:

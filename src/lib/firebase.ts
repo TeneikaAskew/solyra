@@ -27,7 +27,7 @@
  * Import types only from 'firebase/auth' here — `import type` is erased at
  * build time and adds nothing to the bundle.
  */
-import type { User } from 'firebase/auth';
+import type { ActionCodeInfo, User } from 'firebase/auth';
 import type { FirebaseWebConfig } from './runtimeConfig';
 
 type Impl = typeof import('./firebaseImpl');
@@ -109,6 +109,47 @@ export async function signUpWithEmail(email: string, password: string) {
 export async function firebaseSignOut(): Promise<void> {
   if (!_ready) return;
   return (await _ready).firebaseSignOut();
+}
+
+// ── Email flows ─────────────────────────────────────────────────────────────
+// Same contract as the sign-in wrappers: rejected promise when firebase mode
+// never engaged, so callers' existing try/catch handles it.
+
+export async function sendPasswordReset(email: string): Promise<void> {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).sendPasswordReset(email);
+}
+
+export async function resendVerificationEmail(): Promise<void> {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).resendVerificationEmail();
+}
+
+/** Server-fresh `emailVerified` for the signed-in user; null when signed out
+ *  or when firebase mode never engaged. */
+export async function refreshEmailVerified(): Promise<boolean | null> {
+  if (!_ready) return null;
+  return (await _ready).refreshEmailVerified();
+}
+
+export async function checkAuthActionCode(code: string): Promise<ActionCodeInfo> {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).checkAuthActionCode(code);
+}
+
+export async function applyAuthActionCode(code: string): Promise<void> {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).applyAuthActionCode(code);
+}
+
+export async function verifyResetCode(code: string): Promise<string> {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).verifyResetCode(code);
+}
+
+export async function confirmReset(code: string, newPassword: string): Promise<void> {
+  if (!_ready) throw new Error('Firebase not initialized');
+  return (await _ready).confirmReset(code, newPassword);
 }
 
 /**
