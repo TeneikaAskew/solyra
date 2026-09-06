@@ -23,31 +23,53 @@ statement that the screen is broken.
 
 ## Live URLs
 
-**VERIFIED — DEPLOYMENT** (probed 2026-08-30). Production is IAP-gated: an unauthenticated
-request to any path below redirects to Google SSO for audience `bictech.org`. Full environment
-inventory, including the staging and Discord services whose URLs are not committed anywhere, is
-in [05](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/05-INFRASTRUCTURE.md#environments-and-urls).
+**CORRECTED 2026-09-05.** This table previously listed every screen under
+`solyra-api-prod-…run.app` and carried a VERIFIED badge. That was wrong, and the badge
+covered less than the claim: the 2026-08-30 probe only established that an unauthenticated
+request redirects to Google SSO, which IAP answers at the edge before the app is reached. It
+never established that those URLs serve these screens.
 
-| Screen | Route | Production URL | Local dev |
+They do not. Since the #957 split the API image contains no `dist/` — `platform/Dockerfile`
+copies none and `main.py` mounts the SPA only when `platform/dist` exists — so the API
+services serve `/api/*` only. Probed 2026-09-05 against `solyra-api-staging`, which runs the
+same image without IAP in front:
+
+```
+/           HTTP 404  {"detail":"Not Found"}
+/dashboard  HTTP 404  {"detail":"Not Found"}
+/charts     HTTP 404  {"detail":"Not Found"}
+/api/health HTTP 200
+```
+
+The SPA is served by Lovable at `https://solyra-stocks.lovable.app` (HTTP 200, probed
+2026-09-05), which calls the API cross-origin at `STAGING_API` via `authedFetch`. Full
+environment inventory is in
+[05](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/05-INFRASTRUCTURE.md#environments-and-urls).
+
+| Screen | Route | Published URL (Lovable) | Local dev |
 |---|---|---|---|
-| Landing | `/` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/` | `http://localhost:5173/` |
-| Welcome redirect | `/welcome` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/welcome` | `http://localhost:5173/welcome` |
-| Dashboard | `/dashboard` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/dashboard` | `http://localhost:5173/dashboard` |
-| Live Market | `/live` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/live` | `http://localhost:5173/live` |
-| Charts | `/charts` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/charts` | `http://localhost:5173/charts` |
-| Options Flow | `/options` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/options` | `http://localhost:5173/options` |
-| Playbook | `/playbook` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/playbook` | `http://localhost:5173/playbook` |
-| Reports | `/reports` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/reports` | `http://localhost:5173/reports` |
-| Signals | `/signals` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/signals` | `http://localhost:5173/signals` |
-| Journal | `/journal` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/journal` | `http://localhost:5173/journal` |
-| AI Insights | `/insights` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/insights` | `http://localhost:5173/insights` |
-| Catalysts | `/catalysts` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/catalysts` | `http://localhost:5173/catalysts` |
-| Admin | `/admin` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/admin` | `http://localhost:5173/admin` |
-| Help & Glossary | `/help` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/help` | `http://localhost:5173/help` |
-| Settings | `/settings` | `https://trading-platform-5sjtb3yl7a-ue.a.run.app/settings` | `http://localhost:5173/settings` |
+| Landing | `/` | `https://solyra-stocks.lovable.app/` | `http://localhost:5173/` |
+| Welcome redirect | `/welcome` | `https://solyra-stocks.lovable.app/welcome` | `http://localhost:5173/welcome` |
+| Dashboard | `/dashboard` | `https://solyra-stocks.lovable.app/dashboard` | `http://localhost:5173/dashboard` |
+| Live Market | `/live` | `https://solyra-stocks.lovable.app/live` | `http://localhost:5173/live` |
+| Charts | `/charts` | `https://solyra-stocks.lovable.app/charts` | `http://localhost:5173/charts` |
+| Options Flow | `/options` | `https://solyra-stocks.lovable.app/options` | `http://localhost:5173/options` |
+| Playbook | `/playbook` | `https://solyra-stocks.lovable.app/playbook` | `http://localhost:5173/playbook` |
+| Reports | `/reports` | `https://solyra-stocks.lovable.app/reports` | `http://localhost:5173/reports` |
+| Signals | `/signals` | `https://solyra-stocks.lovable.app/signals` | `http://localhost:5173/signals` |
+| Journal | `/journal` | `https://solyra-stocks.lovable.app/journal` | `http://localhost:5173/journal` |
+| AI Insights | `/insights` | `https://solyra-stocks.lovable.app/insights` | `http://localhost:5173/insights` |
+| Catalysts | `/catalysts` | `https://solyra-stocks.lovable.app/catalysts` | `http://localhost:5173/catalysts` |
+| Admin | `/admin` | `https://solyra-stocks.lovable.app/admin` | `http://localhost:5173/admin` |
+| Help & Glossary | `/help` | `https://solyra-stocks.lovable.app/help` | `http://localhost:5173/help` |
+| Settings | `/settings` | `https://solyra-stocks.lovable.app/settings` | `http://localhost:5173/settings` |
 
-Operational endpoints outside the SPA router: `https://trading-platform-5sjtb3yl7a-ue.a.run.app/dev` (the unauthenticated-on-staging
-page — see [09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/09-SECURITY-AUTH.md)), `https://trading-platform-5sjtb3yl7a-ue.a.run.app/api/health`, `https://trading-platform-5sjtb3yl7a-ue.a.run.app/api/health/freshness`.
+Operational endpoints are served by the API, not the frontend host, so they live on the Cloud Run
+services: `/dev` (the unauthenticated-on-staging page — see
+[09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/09-SECURITY-AUTH.md)),
+`/api/health` and `/api/health/freshness`, on
+`https://solyra-api-staging-5sjtb3yl7a-ue.a.run.app` (public, Firebase-gated) or
+`https://solyra-api-prod-5sjtb3yl7a-ue.a.run.app` (behind IAP).
 In local development the Vite server proxies `/api` to `http://localhost:8000`
 (`vite.config.ts:21,27`), so the API is reachable at both ports.
 

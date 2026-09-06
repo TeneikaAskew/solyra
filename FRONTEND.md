@@ -8,7 +8,7 @@
 
 # FRONTEND ARCHITECTURE
 
-> **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app that ships inside the `trading-platform` Cloud Run service.
+> **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app. Since the #957 split it no longer ships inside the API image: `platform/Dockerfile` in stocks copies no `dist/`, so the API serves `/api/*` only.
 > **Last refreshed:** 2026-05-22.
 > **Companion diagram:** [`Frontend.drawio`](Frontend.drawio).
 
@@ -16,23 +16,25 @@
 
 - **Stack:** React 19 + TypeScript 5.9 + Vite 7 + Tailwind 4, Zustand for client state, TanStack Query for server state, TanStack Table for tables, Recharts + lightweight-charts for visualisations, react-router-dom v7 with a single nested layout route.
 - **Layout:** one root `BrowserRouter` with an `AppShell` (sidebar + header) wrapping **12 route-level pages**, each lazy-loaded with `React.lazy` + `Suspense` and isolated by a per-route `RouteErrorBoundary` so a single page crash doesn't take down the chrome.
-- **API surface:** ~30 endpoints all under `/api/*`, served by the same FastAPI process that serves the static SPA (single-port Cloud Run service on port 8080 in production; dev uses Vite on 5173 proxied to FastAPI on 8000).
-- **Build/deploy:** `npm run build` → `platform/dist/` → bundled into the `trading-platform` Docker image (multi-stage, frontend stage = node:20-slim, runtime = python:3.11-slim) → Cloud Build → Cloud Run service at `stocks.insightscollective.org` (IAP-gated, Google-managed TLS, `--no-cpu-throttling`).
-- **Two-stage deploy:** push to `main` triggers `deploy-platform-staging.yml` → revision tagged `staging` at 0% traffic → manual `promote-platform-prod.yml` shifts 100% traffic to the staging tag.
+- **API surface:** ~30 endpoints all under `/api/*`, served by the FastAPI services in the stocks repo (`solyra-api-prod`, `solyra-api-staging`). Dev uses Vite on 5173 proxying to FastAPI on 8000, falling back to `solyra-api-staging` when nothing is listening locally.
+- **Build/deploy:** `npm run build` → `dist/`, deployed as a static frontend (Lovable-published today). It is NOT bundled into the API image any more. `stocks.insightscollective.org` now maps to `solyra-api-staging`, not to a service serving this SPA.
+- **Backend deploy (stocks repo):** merging to `main` auto-deploys `solyra-api-staging` only; `solyra-api-prod` moves solely via the manual `deploy-solyra-api-prod` Cloud Build trigger.
 
 ## Directory map
 
+This is the solyra repo root. The backend deployment files it used to list
+(`Dockerfile`, `cloudbuild.yaml`, `deploy.sh`) are NOT here — they live in
+stocks under [`platform/`](https://github.com/TeneikaAskew/stocks/tree/main/platform),
+and the tree below was still showing the pre-#957 layout.
+
 ```
-platform/
+solyra/
 ├─ index.html                   # Vite HTML entry (dark mode default)
 ├─ package.json                 # React 19, Vite 7, Tailwind 4, Zustand, TanStack Query/Table, Recharts
 ├─ vite.config.ts               # @ → src alias, proxies /api + /dev to FastAPI :8000
 ├─ tsconfig.json + tsconfig.{app,node}.json
 ├─ eslint.config.js
 ├─ playwright.config.ts         # E2E
-├─ Dockerfile                   # multi-stage: node builds dist/, python serves it
-├─ cloudbuild.yaml              # Cloud Build for trading-platform image
-├─ deploy.sh                    # build + deploy (STAGING=1 for staging revision)
 ├─ screenshot_pages.mjs         # Playwright util for capturing each page
 ├─ src/
 │  ├─ main.tsx                  # ReactDOM.createRoot(...).render(<App />)
@@ -127,7 +129,7 @@ Three concentric loops:
 
 | Hook                       | Endpoint(s) hit                                            | Reads                              |
 |----------------------------|------------------------------------------------------------|------------------------------------|
-| `useUser`                  | `/api/me`                                                  | Identity + admin flag (IAP header) |
+| `useUser`                  | `/api/me`                                                  | Identity + server-computed `is_admin`. Source depends on the service: a verified Firebase token on staging (what the SPA calls), the trusted IAP header on prod |
 | `useTickerSearch`          | (client-side filter over `availableTickers`)               | Zustand `tickerStore`              |
 | `useLiveQuote`             | `/api/live/quote/{ticker}`                                 | Latest 1-min bar                   |
 | `useLiveIndicators`        | `/api/live/indicators`                                     | Wilder RSI/EMA/ATR/VWAP            |
@@ -194,29 +196,41 @@ npm run build                       # tsc -b && vite build → platform/dist/
 1. **`frontend` stage** (`node:20-slim`) — runs `npm ci` + `npm run build`, outputs `/build/platform/dist/`.
 2. **`runtime` stage** (`python:3.11-slim`) — installs FastAPI deps, copies `lib/` + `gcp/` + `platform/api/`, then `COPY --from=frontend /build/platform/dist /app/platform/dist` so the same Python process serves the SPA + `/api/*`. `main.py` mounts `dist/` as a `StaticFiles` at `/`.
 
-This means **one Cloud Run service, one port, one TLS cert** — no separate CDN, no separate static host. Cold-start budget is dominated by the Python import graph (`lib/`, `gcp/database.py` Cloud-SQL connector), not by the frontend assets, which are pre-built at image-build time.
+**Superseded by the #957 split.** The two-stage image above is how it worked when the SPA lived in the stocks repo. `platform/Dockerfile` now copies no `dist/`, and `main.py` mounts the SPA only when `platform/dist` exists, so that mount never activates — the header of that Dockerfile says so explicitly. Cold-start budget is still dominated by the Python import graph (`lib/`, `gcp/database.py` Cloud-SQL connector); the frontend simply is not in the image.
 
-### Cloud Run deploy — staging → production
+### Backend deploy — staging and production are separate services
 
-`platform/deploy.sh` drives both modes:
+Rebuilt 2026-09-05. Two Cloud Build triggers in the stocks repo, one per service:
 
-| Mode               | Cmd                                  | Behaviour                                                                 |
-|--------------------|--------------------------------------|---------------------------------------------------------------------------|
-| Production         | `./platform/deploy.sh`               | builds image, deploys revision tagged `latest` with 100% traffic           |
-| Staging            | `STAGING=1 ./platform/deploy.sh`     | builds image, deploys revision tagged `staging` with `--no-traffic` (0%) — reachable at `https://staging---trading-platform-…run.app`, prod untouched |
-| Promote staging → prod | `gcloud run services update-traffic trading-platform --to-tags=staging=100` | shifts 100% to the staging-tagged revision                              |
+| Trigger | Fires | Deploys |
+|---|---|---|
+| `deploy-solyra-api-staging` | push to `main` touching `platform/**`, `lib/**`, `requirements.txt`, `gcp/database.py` | `solyra-api-staging` |
+| `deploy-solyra-api-prod` | **manual only** | `solyra-api-prod` |
 
-CI wiring:
+Merging to `main` cannot reach production. The prod trigger promotes the image
+digest currently serving staging rather than rebuilding, so prod ships the bits
+staging validated.
 
-- `.github/workflows/deploy-platform-staging.yml` — triggers on push to `main` touching `platform/**`, `lib/**`, `requirements.txt`, or `gcp/database.py`. Runs `STAGING=1 ./platform/deploy.sh`.
-- `.github/workflows/promote-platform-prod.yml` — manual `workflow_dispatch`, promotes the staging revision. Shares the staging workflow's concurrency group so deploy + promote can't interleave.
+This replaced a tag-based blue/green on a single service, where a `staging` tag
+at 0% traffic was promoted by shifting traffic. `--no-traffic` was dropped on
+2026-08-25 and a tag carries no traffic guarantee of its own, so the
+"staging"-tagged revision was serving 100% of production. The environment a
+deploy lands in is now the service name, not a traffic percentage.
 
-Both authenticate via the `CLAUDE_CODE_WEB_GCP_SA_KEY` repo secret (the same `claude-web@` SA used by every other GCP-touching workflow).
+`platform/deploy.sh` keeps a `STAGING=1` revision-tag mode for one-off operator
+use, marked legacy in the script. `.github/workflows/deploy-staging.yml` is a
+manual one-click staging redeploy with an optional schema apply.
 
-> These were stocks workflow files, and as of 2026-09-03 neither exists on
-> stocks `main` any more — `platform/deploy.sh` there is the surviving deploy
-> entry point, so the CI wiring above describes the setup as of this doc's
-> last refresh, not the current one.
+The Cloud Build triggers run as `trading-runner@`. The separate
+`deploy-staging.yml` GitHub Actions workflow authenticates via Workload
+Identity Federation as `arch-refresh-bot@`, clamped to `main`.
+
+> Superseding an earlier note here: that note said two GitHub Actions workflows
+> (`deploy-platform-staging.yml` / `promote-platform-prod.yml`) had been removed
+> from stocks `main` leaving `platform/deploy.sh` as the only entry point. The
+> first half was right and the conclusion no longer holds — deployment moved to
+> the two Cloud Build triggers above, which is what fires on a merge. Use the
+> triggers; `platform/deploy.sh` is the manual operator path.
 
 ## Testing
 
@@ -224,14 +238,34 @@ Both authenticate via the `CLAUDE_CODE_WEB_GCP_SA_KEY` repo secret (the same `cl
 - **Component:** none currently — Vitest is config'd for component tests via `@testing-library/react`, but the suite is empty. Filed as a coverage gap.
 - **E2E (`npm run e2e` → Playwright):** `tests/*.spec.ts` runs the full app under `chromium`. Two project profiles:
   - `chromium` (default) — local dev against `npm run dev`;
-  - `cloud` — runs against the production Cloud Run URL behind IAP. Requires a one-time `e2e:cloud:auth` to capture an IAP cookie, then `e2e:cloud` re-uses it.
+  - `cloud` — targets the PUBLISHED FRONTEND, `https://solyra-stocks.lovable.app`, not a Cloud Run URL and not behind IAP. IAP left this path at the #957 split: the SPA is published separately and the API is gated per request by a Firebase ID token. `e2e:cloud:auth` opens a browser for an interactive Firebase sign-in, refuses to save unless the signed-in shell renders, and captures Firebase's IndexedDB persistence so the session actually restores. **It currently has no specs to run**: `cloud` matches `*.cloud.spec.ts` and none exist, so `npm run e2e:cloud` exits with "No tests found". That is deliberate — it previously ran the 29 hermetic specs, which intercept every `/api` call and force `authMode: 'open'`, so a green run said nothing about the deployment. Deployment specs (no `mockCommon`, live responses) are the outstanding work.
 - **Lint:** `npm run lint` → ESLint 9 with `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`.
 
 ## Production runtime
 
-- **URL:** `https://stocks.insightscollective.org` (Cloud Run domain mapping, Google-managed TLS).
-- **Auth:** Identity-Aware Proxy gates the service. The browser handshakes with Google's IAP IdP, IAP injects the `X-Goog-Iap-Jwt-Assertion` header into the FastAPI request, `/api/me` validates it and returns `{ email, isAdmin }`. The `useUser` hook reads this once per session and gates the `/admin` route.
-- **Cloud Run config:** `min-instances=1` (to avoid cold-start hitting Discord's 3-sec interaction-ack budget when the same image happens to be invoked for back-channel work), `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), 1 vCPU / 1 GiB.
+This section describes the API services in stocks. **It is not where this SPA is
+served** — that is Lovable, at `https://solyra-stocks.lovable.app`.
+
+- **Frontend URL:** `https://solyra-stocks.lovable.app`. It calls the API
+  cross-origin; `authedFetch` re-points `/api/*` at `STAGING_API` for static hosts.
+- **API URLs:** `solyra-api-staging-5sjtb3yl7a-ue.a.run.app` (public edge,
+  Firebase-gated, what the SPA calls) and `solyra-api-prod-5sjtb3yl7a-ue.a.run.app`
+  (behind IAP). `stocks.insightscollective.org` maps to **staging** since
+  2026-09-05, not to prod and not to this SPA.
+- **Auth:** two modes, one per service. `solyra-api-prod` runs `AUTH_MODE=iap`,
+  which is **pass-through, not a check**: `api/auth.py` states "the middleware
+  does NOT enforce here — IAP already gated the request", and `/api/me` takes
+  identity from the plaintext `X-Goog-Authenticated-User-Email` header IAP
+  injects at the edge (`main.py._iap_user_email`). No JWT assertion is parsed
+  anywhere in the API — `grep -r Iap-Jwt-Assertion --include=*.py` in stocks
+  returns zero hits. The security boundary is IAP itself, so that service must
+  never get an `allUsers` invoker binding; without IAP in front, any caller
+  could set the header and pick their own identity. `solyra-api-staging` runs
+  `AUTH_MODE=firebase`: the browser signs in with Firebase and `authedFetch`
+  attaches the ID token per request, which the middleware **does** verify. The
+  SPA talks to staging, so **Firebase is the path that actually runs today**.
+  `useUser` gates `/admin` off the server-computed `is_admin` in either mode.
+- **Cloud Run config:** `min-instances=0` on BOTH services — `minScale` is unset, verified live 2026-09-05. An earlier revision said `min-instances=1` and credited it with avoiding cold starts against Discord's 3-second interaction-ack budget; no such warm instance is configured, so do not rely on one. `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), `max-instances=5`, 1 vCPU / 2 GiB (1 GiB OOM-killed full-chain GEX on `/api/options/*/levels`).
 - **Logging:** stdout → Cloud Logging; the failure-notifier sink does NOT cover the service (its filter is `resource.type=cloud_run_job`), so service errors don't auto-create GitHub issues. Pager-style monitoring is via Cloud Logging alert policies (not yet wired — open todo).
 
 ## Known limitations
@@ -246,5 +280,5 @@ Both authenticate via the `CLAUDE_CODE_WEB_GCP_SA_KEY` repo secret (the same `cl
 
 1. **Component test bed.** Set up `@testing-library/react` and write tests for at least `DataTable`, `MetricCard`, `Sidebar` route gating, `RouteErrorBoundary`.
 2. **Coverage gate.** Wire Vitest `--coverage` into the staging-deploy workflow as an advisory check.
-3. **Cloud Logging alert policy** for the `trading-platform` service (5xx rate, p95 latency).
+3. **Cloud Logging alert policy** for the `solyra-api-prod` service (5xx rate, p95 latency).
 4. **Component documentation surface** (Storybook or Ladle) — the Tailwind 4 token system is undocumented outside of `chartTheme.ts`.

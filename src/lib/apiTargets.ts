@@ -26,7 +26,7 @@ export const LOCAL_API = 'http://localhost:8000'
  * unauthenticated at the edge and gated per-request by Firebase token
  * verification, and the bundle already ships the public Firebase web config.
  */
-export const STAGING_API = 'https://trading-platform-staging-5sjtb3yl7a-ue.a.run.app'
+export const STAGING_API = 'https://solyra-api-staging-5sjtb3yl7a-ue.a.run.app'
 
 /**
  * Hostname suffixes of static hosts that serve the SPA with history-fallback

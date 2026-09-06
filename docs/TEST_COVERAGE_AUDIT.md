@@ -4,7 +4,8 @@
 
 This document is the durable record of the test-data audit that ran alongside the
 repo split (Solyra → frontend-only SPA; `api/` + `lib/` + `gcp/` + `scripts/` →
-the **stocks** repo, deployed as the `trading-platform` Cloud Run service). It
+the **stocks** repo, deployed as the `solyra-api-prod` and `solyra-api-staging`
+Cloud Run services; this SPA calls `solyra-api-staging`). It
 answers three questions the migration raised:
 
 1. Does every page, and every view/chart within every page, have typed mock data?
@@ -328,7 +329,7 @@ that spans pages or the shell lives in the single `tests/shared/` folder.
 | `tests/settings/` | `settings.spec.ts` (new — closed the last page with zero E2E) |
 | `tests/signals/` | `signals.spec.ts` |
 | `tests/shared/` | `navigation.spec.ts`, `auth-gate.spec.ts`, `gamma-levels.spec.ts` (spans options+charts+help), `most-active-bar.spec.ts` (spans dashboard+journal+live) |
-| `tests/` root | infrastructure only: `routes.warmup.ts` (warmup project), `auth.setup.ts` (cloud IAP), `helpers/`, `fixtures/` (binary fixtures) |
+| `tests/` root | infrastructure only: `routes.warmup.ts` (warmup project), `auth.setup.ts` (interactive Firebase sign-in for the cloud project; its `iap-setup` project name and `.auth/iap-state.json` output are legacy names, no IAP is involved since #957), `helpers/`, `fixtures/` (binary fixtures) |
 
 `playwright.config.ts` needed no change: `testDir` recurses and both special
 `testMatch` patterns are suffix regexes. Classification rule: a spec whose

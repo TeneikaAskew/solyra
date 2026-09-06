@@ -4,8 +4,34 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const CLOUD_RUN_URL =
-  process.env.CLOUD_RUN_URL ?? 'https://trading-platform-5sjtb3yl7a-ue.a.run.app';
+// Cloud E2E navigates SPA routes (/dashboard, /charts, …), so its baseURL must
+// be the host that SERVES THE SPA — not the API. Since the #957 split the API
+// image contains no dist/ (platform/Dockerfile copies none, and main.py mounts
+// the SPA only when platform/dist exists), so solyra-api-prod answers /dashboard
+// with 404 {"detail":"Not Found"}. Verified 2026-09-05 against solyra-api-staging,
+// which runs the same image without IAP in front. This default previously pointed
+// at the API service, which is why `npm run e2e:cloud` could not have worked since
+// #957 (Codex, solyra#44).
+const FRONTEND_URL =
+  process.env.E2E_CLOUD_URL ?? 'https://solyra-stocks.lovable.app';
+
+// NOTE ON THE API ORIGIN: cloud runs cannot choose one from here, and a
+// CLOUD_RUN_URL env var is NOT honoured. A previous revision of this file kept
+// such a constant and discarded it with `void`, which read as support for an
+// override that never existed (Codex, solyra#44).
+//
+// The reason is structural. The deployed SPA resolves /api/* in the browser via
+// src/lib/authedFetch.ts, which for a static host returns the STAGING_API value
+// COMPILED INTO THAT BUNDLE. Nothing Playwright sets can reach it. So a cloud
+// run against solyra-stocks.lovable.app exercises whichever API that published
+// bundle was built against — today solyra-api-staging — regardless of anything
+// here, and a run "against prod" is not available this way.
+//
+// To point a run at a different backend, rebuild the frontend with
+// VITE_API_BASE_URL (authedFetch.ts:57) and serve that build. Deliberately not
+// adding a runtime origin override: it would let any deployed page be aimed at
+// an arbitrary API, which is a worse trade than a test-only inconvenience.
+
 const IAP_STATE = path.join(__dirname, 'tests', '.auth', 'iap-state.json');
 
 // ── E2E dev server ────────────────────────────────────────────────────────
@@ -113,7 +139,7 @@ export default defineConfig({
         // The headless shell lacks system root CAs, so the Montserrat
         // Google-Fonts CDN load throws ERR_CERT and trips the "no console
         // errors" assertions. Accept certs in this mocked local project
-        // (does not affect the cloud project, which uses real IAP).
+        // (does not affect the cloud project).
         ignoreHTTPSErrors: true,
       },
     },
@@ -124,18 +150,36 @@ export default defineConfig({
       testMatch: /\.setup\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: CLOUD_RUN_URL,
+        baseURL: FRONTEND_URL,
         headless: false,
       },
     },
-    // Headless tests against the deployed Cloud Run URL using saved IAP cookies.
-    // Run via `npm run e2e:cloud`. Requires `iap-setup` to have run first.
+    // Headless tests against the DEPLOYED frontend, reusing the signed-in state
+    // captured by `iap-setup`. Run via `npm run e2e:cloud`.
+    //
+    // testMatch is `*.cloud.spec.ts`, and no such file exists yet, so this
+    // project currently finds no tests and Playwright exits non-zero. That is
+    // deliberate and better than what it did before, which was
+    // `testIgnore: /\.setup\.ts$/` — i.e. run all 29 hermetic specs against the
+    // deployment.
+    //
+    // Those specs cannot test a deployment. Every one reaches `mockCommon` via
+    // its page fixture (tests/helpers/mocks.ts), which intercepts `/api/*` and
+    // fulfils `/api/config/firebase` with `authMode: 'open'`. That makes
+    // <AuthGate> inert, so the restored Firebase session is never consulted and
+    // every response is canned. A green run proved only that mocks still match
+    // the UI — the same thing the `chromium` project already proves, faster
+    // (Codex, solyra#44).
+    //
+    // Deployment specs have to be written deliberately: no `mockCommon`, real
+    // responses, assertions that tolerate live data. Until they exist, failing
+    // loudly is the honest state.
     {
       name: 'cloud',
-      testIgnore: /\.setup\.ts$/,
+      testMatch: /\.cloud\.spec\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: CLOUD_RUN_URL,
+        baseURL: FRONTEND_URL,
         headless: true,
         storageState: IAP_STATE,
       },

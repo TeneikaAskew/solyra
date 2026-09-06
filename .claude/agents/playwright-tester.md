@@ -28,7 +28,8 @@ npx playwright show-report                         # last HTML report
 ```
 
 `--project=chromium` matters: the config also defines `warmup` (a dependency),
-`iap-setup` (interactive sign-in), and `cloud` (against deployed Cloud Run).
+`iap-setup` (interactive Firebase sign-in — legacy name, no IAP), and `cloud`
+(against the deployed frontend on Lovable, not a Cloud Run URL).
 Bare `npx playwright test` will try to run them all.
 
 ## The suite is HERMETIC — this is the whole design
@@ -204,8 +205,11 @@ backgrounding one while starting another.
   "cloud operation was unsuccessful" errors, that's file dehydration, not a
   test bug. From PowerShell: `attrib +P -U /S /D "node_modules\*"`.
 - **Cloud projects** (`e2e:cloud:auth`, `e2e:cloud`) hit the real deployed
-  service with saved IAP cookies. They are NOT hermetic. Don't run them as
-  part of routine verification, and never add a mocked spec to those projects.
+  frontend with a restored Firebase session (cookies + IndexedDB), not IAP
+  cookies. They are NOT hermetic. Don't run them as part of routine
+  verification, and never add a mocked spec to those projects. `e2e:cloud`
+  currently matches `*.cloud.spec.ts` and none exist, so it exits
+  `No tests found`.
 
 ## Output format
 
