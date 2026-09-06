@@ -240,9 +240,11 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
     };
   }, [open]);
 
+  // Focus the search input once the panel is actually mounted — the panel
+  // waits on dropdown.panelStyle (positioning), so `open` alone is too early.
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
+    if (open && dropdown.panelStyle) inputRef.current?.focus();
+  }, [open, dropdown.panelStyle]);
 
   // Clear any pending auto-clear timer on unmount so it never fires setState
   // against an unmounted component.
