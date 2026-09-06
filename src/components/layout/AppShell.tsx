@@ -6,8 +6,11 @@ import { Header } from './Header';
 import { CommandPalette } from './CommandPalette';
 import { MostActiveBar } from '@/components/shared/MostActiveBar';
 import { AuthStatusBanner } from '@/components/shared/AuthStatusIndicator';
+import { MockModeBanner } from '@/components/shared/MockModeBanner';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { usePreferencesSync } from '@/hooks/usePreferences';
+import { useUser } from '@/hooks/useUser';
+import { autoEnableMockModeForDev } from '@/lib/mockMode';
 
 // Routes the most-active marquee mounts on: the MARKET nav group
 // (/live, /charts, /options, /signals — see navConfig.ts) plus /journal,
@@ -29,6 +32,14 @@ export function AppShell() {
   usePreferencesSync();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { pathname } = useLocation();
+  const { isDev } = useUser();
+
+  // Dev-role accounts auto-enter mock-data mode (server-verified is_dev).
+  // Fires only while the stored preference is unset, so an explicit exit
+  // sticks; enabling reloads the page into the mocked world.
+  useEffect(() => {
+    if (isDev) autoEnableMockModeForDev();
+  }, [isDev]);
 
   // Global ⌘K / Ctrl-K toggles the command palette.
   useEffect(() => {
@@ -53,6 +64,7 @@ export function AppShell() {
             theme) into the single nav row; only the sidebar pattern still
             needs the separate header strip. */}
         {isSidebar && <Header />}
+        <MockModeBanner />
         <AuthStatusBanner />
         {showMostActiveBar(pathname) && <MostActiveBar />}
         <main className="flex-1 overflow-x-hidden overflow-y-auto">

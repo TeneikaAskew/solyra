@@ -11,18 +11,22 @@
  * live endpoint (or the dead proxy). Both branches are wired here because the
  * failure path is the one with real behaviour: waitlist.ts throws a
  * user-readable Error and the form must SHOW it — never a fake success.
+ *
+ * The rejection payload lives in src/mocks/landing.ts, shared with the
+ * app's mock-data mode, and is re-exported here.
  */
 import type { Page } from '@playwright/test';
+import { MOCK_WAITLIST_RATE_LIMITED } from '@/mocks/landing';
 import { mockCommon } from '../mocks';
 
-/** Server's duplicate-signup rejection, in the `{ detail }` shape
- *  submitWaitlist() unwraps for its thrown Error message. */
-export const MOCK_WAITLIST_CONFLICT = { detail: 'That email is already on the list.' };
+export { MOCK_WAITLIST_RATE_LIMITED } from '@/mocks/landing';
 
 export interface LandingMockOpts {
-  /** 'ok' accepts the signup; 'conflict' returns a 409 the form must show;
-   *  'error' returns a 500 with a non-JSON body (status-code message path). */
-  waitlist?: 'ok' | 'conflict' | 'error';
+  /** 'ok' accepts the signup; 'rate-limited' returns the backend's real
+   *  429 rejection the form must show; 'error' returns a 500 with a
+   *  non-JSON body (status-code message path). There is no 409 mode —
+   *  duplicates return 200 via ON CONFLICT DO UPDATE (waitlist.py). */
+  waitlist?: 'ok' | 'rate-limited' | 'error';
   /** Called with the parsed POST body, for asserting email/source/website. */
   onSubmit?: (body: unknown) => void;
 }
@@ -41,11 +45,11 @@ export async function mockLandingApi(page: Page, opts: LandingMockOpts = {}) {
     } catch {
       opts.onSubmit?.(null);
     }
-    if (mode === 'conflict') {
+    if (mode === 'rate-limited') {
       return r.fulfill({
-        status: 409,
+        status: 429,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_WAITLIST_CONFLICT),
+        body: JSON.stringify(MOCK_WAITLIST_RATE_LIMITED),
       });
     }
     if (mode === 'error') {
@@ -53,6 +57,10 @@ export async function mockLandingApi(page: Page, opts: LandingMockOpts = {}) {
       // status-code message when the error body doesn't parse.
       return r.fulfill({ status: 500, contentType: 'text/plain', body: 'upstream failure' });
     }
-    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    return r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ok' }),
+    });
   });
 }

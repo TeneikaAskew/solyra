@@ -93,7 +93,12 @@ describe('buildGrid — spot row honesty (Rule 4)', () => {
   });
   it('returns spotStrike null when the spot price is missing, never the lowest strike', () => {
     const s = summary([cell({ strike: 715 }), cell({ strike: 720 })]);
-    s.spot = { ...s.spot, price: 0 };
+    s.spot = s.spot && { ...s.spot, price: 0 };
+    expect(buildGrid(s, 'gex', 'net').spotStrike).toBeNull();
+  });
+  it('returns spotStrike null on the unavailable envelope (spot: null on the wire)', () => {
+    const s = summary([cell({ strike: 715 })]);
+    s.spot = null;
     expect(buildGrid(s, 'gex', 'net').spotStrike).toBeNull();
   });
 });

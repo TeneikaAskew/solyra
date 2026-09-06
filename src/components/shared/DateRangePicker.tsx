@@ -3,6 +3,7 @@ import { Calendar as CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, X } f
 import { RangeCalendar } from '@heroui/react';
 import { parseDate } from '@internationalized/date';
 import type { CalendarDate } from '@internationalized/date';
+import { usePopoverPosition } from '@/components/shared/popoverPosition';
 
 type DateRange = { start: CalendarDate; end: CalendarDate };
 
@@ -29,6 +30,8 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DateRange | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Viewport-clamped positioning (shared helper — never bleed off-screen).
+  const popover = usePopoverPosition<HTMLDivElement>(open, 320);
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +63,14 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
   const toDate = parseDate(to);
 
   return (
-    <div ref={rootRef} className="relative" data-testid="date-range-picker">
+    <div
+      ref={(el) => {
+        rootRef.current = el;
+        popover.triggerRef.current = el;
+      }}
+      className="relative"
+      data-testid="date-range-picker"
+    >
       <button
         type="button"
         onClick={() => (open ? setOpen(false) : openDraft())}
@@ -75,11 +85,12 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
         <ChevronDown size={11} className={`text-[var(--on-surface-variant)] transition-transform${open ? ' rotate-180' : ''}`} />
       </button>
 
-      {open && (
+      {open && popover.panelStyle && (
         <div
           role="dialog"
           aria-label="Select date range"
-          className="fixed left-1/2 top-24 z-50 w-[calc(100vw-1.5rem)] max-w-80 -translate-x-1/2 overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 sm:translate-x-0"
+          style={popover.panelStyle}
+          className="overflow-hidden rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] shadow-2xl"
         >
           <div className="bg-[var(--brand)] px-4 py-3 text-[var(--on-brand)]">
             <div className="text-[11px] font-medium opacity-80">Date range</div>

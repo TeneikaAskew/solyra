@@ -6,6 +6,8 @@ import { subscribeAuth } from '@/lib/firebase';
 interface MeResponse {
   email: string | null;
   is_admin?: boolean;
+  /** Server-verified 'dev' role: the account auto-loads mock-data mode. */
+  is_dev?: boolean;
 }
 
 /**
@@ -70,8 +72,9 @@ export function useUser() {
 
   const email = query.data?.email ?? null;
   const isAdmin = query.data?.is_admin === true;
+  const isDev = query.data?.is_dev === true;
   const isSignedIn = firebaseMode ? signedIn : true;
   const isLoading = !fbReady || (meEnabled && query.isLoading);
 
-  return { email, isAdmin, isSignedIn, isLoading, authMode };
+  return { email, isAdmin, isDev, isSignedIn, isLoading, authMode };
 }

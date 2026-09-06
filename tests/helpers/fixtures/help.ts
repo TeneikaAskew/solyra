@@ -1,59 +1,19 @@
 /**
- * Typed fixtures + route wiring for the Help / glossary page (`/help`).
+ * Route wiring for the Help / glossary page (`/help`).
  *
- * Endpoint fan-out, read off HelpPage.tsx:
- *   GET /api/config/indicators   useIndicatorConfig → IndicatorConfig
- *   GET /api/insights/watchlist  <WatchlistPanel>   → WatchlistResponse
- *
- * The page renders live indicator thresholds inside its glossary entries
- * (RSI bands, EMA periods, ATR/RVOL thresholds) rather than hardcoding them,
- * so without this the numbers render as blanks. help.spec.ts previously
- * called only `mockCommon`, leaving /api/config/indicators to fall through.
+ * Payloads live in src/mocks/help.ts — shared verbatim with the app's
+ * mock-data mode — and are re-exported here so specs keep importing from
+ * the fixture layer. See that module for the endpoint fan-out and the
+ * per-payload contract notes. help.spec.ts previously called only
+ * `mockCommon`, leaving /api/config/indicators to fall through.
  */
 import type { Page } from '@playwright/test';
 import type { IndicatorConfig } from '@/hooks/useConfig';
 import type { WatchlistResponse } from '@/types/watchlist';
+import { MOCK_INDICATOR_CONFIG } from '@/mocks/help';
 import { M, mockCommon } from '../mocks';
 
-/**
- * Values mirror the production indicator config: RSI 14 with a fast 7,
- * 30/70 bands, the four labelled zones the glossary renders, and the
- * CALL/PUT entry ranges the signal voter uses.
- */
-export const MOCK_INDICATOR_CONFIG = {
-  rsi: {
-    period: 14,
-    fast_period: 7,
-    oversold: 30,
-    overbought: 70,
-    zones: [
-      { max: 30, label: 'Oversold' },
-      { max: 50, label: 'Weak' },
-      { max: 70, label: 'Strong' },
-      { max: 100, label: 'Overbought' },
-    ],
-    call_range: [25, 50],
-    put_range: [50, 75],
-    call_exit: 70,
-    put_exit: 30,
-  },
-  ema: { periods: [9, 20, 50] },
-  atr: { period: 14, high_threshold: 2.0 },
-  rvol: { period: 20, signal_threshold: 1.0 },
-  stoch_rsi: { period: 14, k_period: 3, d_period: 3, oversold: 20, overbought: 80 },
-  signal: { min_conditions: 7, consecutive_periods: 3, premarket_threshold: 0.5 },
-} satisfies IndicatorConfig;
-
-/** Ranker output for the watchlist panel this page also mounts. */
-export const MOCK_HELP_WATCHLIST = {
-  run_id: 'cccccccc-0000-0000-0000-000000000001',
-  as_of: '2026-04-25T20:00:00Z',
-  candidate_count: 0,
-  excluded_count: 0,
-  ranked: [],
-  weights_used: { catalyst_proximity: 4.0, relative_volume: 6.0 },
-  duration_ms: 900,
-} satisfies WatchlistResponse;
+export { MOCK_HELP_WATCHLIST, MOCK_INDICATOR_CONFIG } from '@/mocks/help';
 
 export interface HelpMockOpts {
   indicators?: IndicatorConfig;

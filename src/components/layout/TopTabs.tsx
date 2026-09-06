@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Search, Menu, X, Moon, Sun, ChevronDown } from 'lucide-react';
+import { FlaskConical, Search, Menu, X, Moon, Sun, ChevronDown } from 'lucide-react';
 import { Button } from '@heroui/react';
 import { Brand } from './Brand';
 import { MarketSessionBadge } from './MarketSessionBadge';
@@ -10,6 +10,33 @@ import { SignOutButton } from '@/components/auth/SignOutButton';
 import { AccountMenuSection, AuthStatusIndicator } from '@/components/shared/AuthStatusIndicator';
 import { useUser } from '@/hooks/useUser';
 import { useThemeStore } from '@/stores/themeStore';
+import { popoverStyleFor, type PopoverStyle } from '@/components/shared/popoverPosition';
+import { isMockModeActive, setMockMode } from '@/lib/mockMode';
+
+/**
+ * Support-menu row toggling mock-data mode (fixture data, no live API
+ * calls — src/lib/mockMode.ts). Rendered for admins and dev-role accounts;
+ * also whenever the mode is already ON, so the way out never disappears
+ * (in mock mode the mocked /api/me reports an admin anyway).
+ */
+function MockModeMenuRow({ onAction }: { onAction: () => void }) {
+  const active = isMockModeActive();
+  return (
+    <button
+      type="button"
+      data-testid="mock-mode-toggle"
+      onClick={() => {
+        onAction();
+        setMockMode(!active);
+      }}
+      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] text-[var(--on-surface-variant)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--on-surface)]"
+    >
+      <FlaskConical size={15} className="shrink-0" />
+      <span className="flex-1 text-left">Mock data</span>
+      <span className={`nav-badge${active ? ' live' : ''}`}>{active ? 'ON' : 'OFF'}</span>
+    </button>
+  );
+}
 
 interface TopTabsProps {
   onOpenSearch: () => void;
@@ -40,12 +67,13 @@ const MENU_WIDTH = 208; // w-52
  * or an outside tap.
  */
 export function TopTabs({ onOpenSearch }: TopTabsProps) {
-  const { isAdmin } = useUser();
+  const { isAdmin, isDev } = useUser();
+  const showMockToggle = isAdmin || isDev || isMockModeActive();
   const { theme, toggleTheme } = useThemeStore();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<PopoverStyle | null>(null);
   const menusRef = useRef<HTMLElement>(null);
 
   // Close the open dropdown on outside click / Escape. A listener (rather
@@ -81,10 +109,8 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
-    setMenuPos({
-      top: rect.bottom + 6,
-      left: Math.min(rect.left, window.innerWidth - MENU_WIDTH - 12),
-    });
+    // Shared helper clamps BOTH viewport edges, not just the right one.
+    setMenuPos(popoverStyleFor(rect, MENU_WIDTH));
     setOpenGroup(g.group);
   };
 
@@ -137,8 +163,9 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
               </button>
               {open && menuPos && (
                 <nav
-                  style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: MENU_WIDTH }}
-                  className="z-50 rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-1.5 shadow-2xl"
+                  data-testid="nav-group-menu"
+                  style={menuPos}
+                  className="rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-1.5 shadow-2xl"
                 >
                   {groupItems.map(({ path, label, icon: Icon, badge, liveBadge }) => (
                     <NavLink
@@ -159,6 +186,9 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
                       {badge && <span className={`nav-badge${badge.tone === 'live' ? ' live' : ''}`}>{badge.text}</span>}
                     </NavLink>
                   ))}
+                  {g.group === 'SUPPORT' && showMockToggle && (
+                    <MockModeMenuRow onAction={() => setOpenGroup(null)} />
+                  )}
                 </nav>
               )}
             </div>
@@ -224,7 +254,7 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
             aria-hidden="true"
             onClick={() => setMenuOpen(false)}
           />
-          <nav className="fixed right-2 top-[52px] z-50 max-h-[80vh] w-60 overflow-y-auto rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-2 shadow-2xl sm:hidden">
+          <nav className="fixed right-2 top-[52px] z-50 max-h-[80vh] w-60 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-[var(--surface-3)] bg-[var(--surface-1)] p-2 shadow-2xl sm:hidden">
             {NAV_GROUPS.map((g) => {
               const groupItems = g.items.filter(visible);
               if (groupItems.length === 0) return null;
@@ -251,6 +281,9 @@ export function TopTabs({ onOpenSearch }: TopTabsProps) {
                       {badge && <span className={`nav-badge${badge.tone === 'live' ? ' live' : ''}`}>{badge.text}</span>}
                     </NavLink>
                   ))}
+                  {g.group === 'SUPPORT' && showMockToggle && (
+                    <MockModeMenuRow onAction={() => setMenuOpen(false)} />
+                  )}
                 </div>
               );
             })}

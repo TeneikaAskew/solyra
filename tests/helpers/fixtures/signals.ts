@@ -1,10 +1,10 @@
 /**
- * Typed fixtures + route wiring for the Signal Explorer page (`/signals`).
+ * Route wiring for the Signal Explorer page (`/signals`).
  *
- * Endpoint fan-out, read off SignalsPage.tsx rather than off what the spec
- * happened to mock before:
- *   GET /api/signals/{ticker}?limit=…      useSignals      → SignalsResponse
- *   GET /api/analytics/summary/{ticker}    useTradeSummary → TradeStats
+ * Payloads live in src/mocks/signals.ts — shared verbatim with the app's
+ * mock-data mode — and are re-exported here so specs keep importing from
+ * the fixture layer. See that module for the endpoint fan-out and the
+ * per-payload contract notes.
  *
  * The page also mounts <TickerCombobox>, whose two endpoints are gated on
  * the user typing (`enabled: keywords.length >= 1`) so they never fire on
@@ -12,105 +12,19 @@
  * an unmocked /api request falls through to the Vite proxy and 500s with
  * ECONNREFUSED when no backend is up. They're wired here with empty results
  * so interaction tests stay hermetic without re-declaring them.
- *
- * Fixtures use `satisfies` against the real contracts, so a backend schema
- * change breaks `tsc -b` (tsconfig.test.json covers tests/) instead of
- * silently drifting past a hand-written literal.
  */
 import type { Page } from '@playwright/test';
 import type { SignalsResponse } from '@/routes/SignalsPage';
 import type { TradeStats } from '@/hooks/useTradeAnalytics';
+import { MOCK_SIGNALS, MOCK_TRADE_SUMMARY } from '@/mocks/signals';
 import { M, mockCommon } from '../mocks';
 
-/** Three alerts spanning both directions and a wide score range, so
- *  direction filters and score-threshold styling both have something to
- *  bite on (>=7 bull, >=5 warn, else muted — see SignalsPage columns). */
-export const MOCK_SIGNALS = {
-  ticker: 'IWM',
-  count: 3,
-  signals: [
-    {
-      time: '2026-04-25 18:00:00',
-      ticker: 'IWM',
-      direction: 'CALL',
-      score: 4.5,
-      rsi: 62.0,
-      ema9: 220.5,
-      ema20: 220.0,
-      close: 220.4,
-      volume: 1_200_000,
-    },
-    {
-      time: '2026-04-25 17:30:00',
-      ticker: 'IWM',
-      direction: 'PUT',
-      score: 3.0,
-      rsi: 38.0,
-      ema9: 219.7,
-      ema20: 220.1,
-      close: 219.9,
-      volume: 950_000,
-    },
-    {
-      time: '2026-04-25 17:00:00',
-      ticker: 'IWM',
-      direction: 'CALL',
-      score: 2.0,
-      rsi: 55.0,
-      ema9: 219.6,
-      ema20: 219.8,
-      close: 219.5,
-      volume: 800_000,
-    },
-  ],
-} satisfies SignalsResponse;
-
-/** Honest empty response — drives the page's "no signals" state. */
-export const MOCK_SIGNALS_EMPTY = {
-  ticker: 'IWM',
-  count: 0,
-  signals: [],
-} satisfies SignalsResponse;
-
-/** 90-day backtest summary behind the Performance P&L card. */
-export const MOCK_TRADE_SUMMARY = {
-  totalTrades: 312,
-  closedTrades: 300,
-  activeTrades: 12,
-  winCount: 186,
-  lossCount: 114,
-  // 0-100 percent, matching analytics.py _compute_stats (wins/closed × 100).
-  // This fixture previously said 0.62 — the fraction drift (Rule 6) that
-  // motivated the page's unit-sniffing heuristic.
-  winRate: 62,
-  // Summed / mean `return_pct` (percent) — the trades table stores no
-  // dollar P&L; GET /summary uses return_pct as the per-trade pnl proxy.
-  totalPnL: 41.8,
-  avgPnL: 0.139,
-  maxWin: 3.4,
-  maxLoss: -1.9,
-  profitFactor: 1.74,
-  callCount: 168,
-  putCount: 132,
-} satisfies TradeStats;
-
-/** Zero-trade summary. `profitFactor: null` is deliberate — the contract
- *  makes it nullable precisely so an undefined ratio isn't faked as 0. */
-export const MOCK_TRADE_SUMMARY_EMPTY = {
-  totalTrades: 0,
-  closedTrades: 0,
-  activeTrades: 0,
-  winCount: 0,
-  lossCount: 0,
-  winRate: 0,
-  totalPnL: 0,
-  avgPnL: 0,
-  maxWin: 0,
-  maxLoss: 0,
-  profitFactor: null,
-  callCount: 0,
-  putCount: 0,
-} satisfies TradeStats;
+export {
+  MOCK_SIGNALS,
+  MOCK_SIGNALS_EMPTY,
+  MOCK_TRADE_SUMMARY,
+  MOCK_TRADE_SUMMARY_EMPTY,
+} from '@/mocks/signals';
 
 export interface SignalsMockOpts {
   signals?: SignalsResponse;
