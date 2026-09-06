@@ -18,6 +18,7 @@ import {
   fmtRatioPct,
   fmtSigned,
   toneOf,
+  responseErrorMessage,
 } from './format';
 
 const MISSING = [null, undefined, NaN, Infinity, -Infinity] as const;
@@ -115,5 +116,21 @@ describe('toneOf', () => {
   it('maps sign to tone', () => {
     expect(toneOf(0.01)).toBe('bull');
     expect(toneOf(-0.01)).toBe('bear');
+  });
+});
+
+describe('responseErrorMessage', () => {
+  const mk = (status: number, body: string, contentType = 'application/json') =>
+    new Response(body, { status, headers: { 'content-type': contentType } });
+
+  it('surfaces the FastAPI {detail} string so a stale-data 503 says why', async () => {
+    const detail = 'playbook_cards for IWM is stale: latest analysis_date 2026-06-13 is 85 days old';
+    expect(await responseErrorMessage(mk(503, JSON.stringify({ detail })))).toBe(detail);
+  });
+
+  it('falls back to the bare status for non-string detail or non-JSON bodies', async () => {
+    expect(await responseErrorMessage(mk(422, JSON.stringify({ detail: [{ loc: ['q'] }] })))).toBe('422');
+    expect(await responseErrorMessage(mk(502, '<html>bad gateway</html>', 'text/html'))).toBe('502');
+    expect(await responseErrorMessage(mk(500, ''))).toBe('500');
   });
 });

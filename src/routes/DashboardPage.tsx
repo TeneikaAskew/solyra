@@ -25,18 +25,18 @@ import { useLiveStatus } from '@/hooks/useLiveStatus';
 import { useLiveQuote } from '@/hooks/useLiveQuote';
 import { useReviewQuote, reviewCutoffTs } from '@/hooks/useReviewQuote';
 import { useInsightReport } from '@/hooks/useInsights';
-import { todayET, addDaysToISO } from '@/lib/dates';
+import { todayET, addDaysToISO, snapshotAgeLabel } from '@/lib/dates';
 import {
   Pill, Metric, MicroLabel, Delta, ScoreStars, DirTag, Card, CardHeader, KpiTile,
 } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
-import { WidgetState } from '@/components/shared/WidgetState';
+import { WidgetState, errorMessage } from '@/components/shared/WidgetState';
 import { useAuthBlocked } from '@/lib/authGate';
 import { MovementRead } from '@/components/dashboard/MovementRead';
 import { SetupCardDetails, type SetupHorizon } from '@/components/playbook/SetupCardDetails';
 import { PriceAreaChart, type PricePoint } from '@/components/charts/PriceAreaChart';
 import { CandlestickChart } from '@/components/charts/CandlestickChart';
-import { fmtPrice, fmtPct, fmtNum, NA } from '@/lib/format';
+import { fmtPrice, fmtPct, fmtNum, NA, responseErrorMessage } from '@/lib/format';
 import type { Tone } from '@/components/primitives';
 
 // ── Response shapes (mirror the existing API contracts) ──────────────────────
@@ -61,7 +61,20 @@ interface PlaybookCard {
   horizons?: SetupHorizon[];
   best_horizon_min?: number | null; best_horizon_win_rate?: number | null; best_horizon_avg_bps?: number | null;
 }
-export interface PlaybookResponse { ticker: string; cards: PlaybookCard[] }
+/** /api/playbook/{ticker}. `analysis_date` / `age_days` are the card set's
+ *  own date and its age in days as judged by the server (against today, or
+ *  the reviewed date in review mode). The server refuses (503) a set older
+ *  than `max_age_days`, so a 200 is always a set it considers current — the
+ *  UI still shows the date so the user can see how current (#861). */
+export interface PlaybookResponse {
+  ticker: string;
+  cards: PlaybookCard[];
+  analysis_date?: string;
+  generated_at?: string | null;
+  age_days?: number;
+  max_age_days?: number;
+  as_of?: string;
+}
 interface SignalEntry {
   time: string; direction: string; score: number;
   conditions_met: string; return_pct: number;
@@ -103,7 +116,7 @@ function useFetch<T>(key: unknown[], url: string, enabled = true, refetchInterva
     queryKey: key,
     queryFn: async () => {
       const r = await fetch(url);
-      if (!r.ok) throw new Error(`${r.status}`);
+      if (!r.ok) throw new Error(await responseErrorMessage(r));
       return r.json();
     },
     enabled,
@@ -288,10 +301,14 @@ export default function DashboardPage() {
     isOpen && !isReview ? 15_000 : false,
   );
   const brief = briefQ.data;
-  const { data: playbook } = useFetch<PlaybookResponse>(
+  const playbookQ = useFetch<PlaybookResponse>(
     ['playbook', activeTicker, reviewDate ?? 'live'],
     isReview ? `/api/playbook/${activeTicker}?date=${reviewDate}` : `/api/playbook/${activeTicker}`,
   );
+  const playbook = playbookQ.data;
+  // Shown under the top setup so an old card set is visibly old. Null when
+  // the server sent no date — nothing is rendered rather than a guess.
+  const playbookAge = snapshotAgeLabel(playbook?.analysis_date, playbook?.age_days);
   const signalsQ = useFetch<SignalsResponse>(
     ['signals', activeTicker, reviewDate ?? 'live', reviewTime ?? 'eod'],
     `/api/signals/${activeTicker}?limit=20${reviewSuffix}`,
@@ -560,6 +577,14 @@ export default function DashboardPage() {
                   <div>
                     <MicroLabel>Top setup</MicroLabel>
                     <div className="mt-1 text-[16px] font-bold">{topCard.name}</div>
+                    {playbookAge && (
+                      <div
+                        className="mt-0.5 text-[11px] text-[var(--on-surface-muted)]"
+                        data-testid="playbook-age"
+                      >
+                        Cards {playbookAge}
+                      </div>
+                    )}
                   </div>
                   <DirTag dir={topCard.direction} />
                 </div>
@@ -597,7 +622,15 @@ export default function DashboardPage() {
             ) : (
               <div>
                 <MicroLabel>Top setup</MicroLabel>
-                <Unavailable msg="No playbook setups yet, run the pipeline to populate." />
+                {/* A failed fetch carries the server's reason (e.g. the #861
+                    stale-cards 503) — show it, never a generic "no setups". */}
+                <Unavailable
+                  msg={
+                    playbookQ.isError
+                      ? `Playbook unavailable: ${errorMessage(playbookQ.error) ?? 'request failed'}`
+                      : 'No playbook setups yet, run the pipeline to populate.'
+                  }
+                />
               </div>
             )}
           </div>

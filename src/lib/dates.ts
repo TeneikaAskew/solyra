@@ -25,3 +25,29 @@ export function addDaysToISO(iso: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * "as of Jun 13, 2026 (85d old)" for a dated server snapshot such as the
+ * playbook card set (`/api/playbook` returns `analysis_date` + `age_days`).
+ * Returns null when the server sent no date: the label is then omitted
+ * rather than fabricated (CLAUDE.md Rule 4). `ageDays` comes from the
+ * server so the client never re-derives freshness against its own clock.
+ */
+export function snapshotAgeLabel(
+  analysisDate: string | null | undefined,
+  ageDays: number | null | undefined,
+): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(analysisDate ?? '');
+  if (!m) return null;
+  const pretty = new Date(`${analysisDate}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+  if (ageDays === null || ageDays === undefined || !Number.isFinite(ageDays)) {
+    return `as of ${pretty}`;
+  }
+  const age = ageDays === 0 ? 'today' : ageDays === 1 ? '1d old' : `${ageDays}d old`;
+  return `as of ${pretty} (${age})`;
+}
