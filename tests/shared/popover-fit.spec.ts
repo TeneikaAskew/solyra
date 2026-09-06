@@ -46,7 +46,7 @@ for (const phone of PHONES) {
 
       await page.getByTestId('ticker-combobox').first().click();
       // The panel is the combobox's dropdown container: it holds the search input.
-      const panel = page.getByTestId('ticker-combobox-input').locator('xpath=ancestor::div[1]');
+      const panel = page.getByTestId('ticker-combobox-input').locator('xpath=ancestor::div[3]');
       await expectInViewport(panel, page, 'ticker dropdown');
     });
 
@@ -105,7 +105,7 @@ test.describe('Popovers fit desktop', () => {
 
   test('ticker combobox dropdown stays on screen at desktop width', async ({ page }) => {
     await page.getByTestId('ticker-combobox').first().click();
-    const panel = page.getByTestId('ticker-combobox-input').locator('xpath=ancestor::div[1]');
+    const panel = page.getByTestId('ticker-combobox-input').locator('xpath=ancestor::div[3]');
     await expectInViewport(panel, page, 'ticker dropdown');
   });
 });
