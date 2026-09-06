@@ -42,7 +42,7 @@ const VOLUME = CALL_BARS.map((c) => ({ time: c.time, value: 100_000 }));
 
 const MOCK_MARKET_DATA = {
   ticker: 'IWM',
-  date: '2026-04-25',
+  date: '2026-04-24',
   count: CALL_BARS.length,
   candlestick: CALL_BARS,
   volume: VOLUME,
@@ -61,8 +61,8 @@ const EXAMPLE_TRADES = {
       id: 'ex-1',
       ticker: 'IWM',
       direction: 'CALL',
-      entry_ts: '2026-04-25T09:35:00',
-      exit_ts: '2026-04-25T10:15:00',
+      entry_ts: '2026-04-24T09:35:00',
+      exit_ts: '2026-04-24T10:15:00',
       entry_price: 220.0,
       exit_price: 222.5,
       return_pct: 1.14,
@@ -77,8 +77,8 @@ const EXAMPLE_TRADES = {
       id: 'ex-2',
       ticker: 'IWM',
       direction: 'PUT',
-      entry_ts: '2026-04-25T10:30:00',
-      exit_ts: '2026-04-25T11:00:00',
+      entry_ts: '2026-04-24T10:30:00',
+      exit_ts: '2026-04-24T11:00:00',
       entry_price: 221.0,
       exit_price: 221.66,
       return_pct: -0.3,
@@ -101,8 +101,8 @@ const OWN_TRADES = {
       id: 'own-1',
       ticker: 'IWM',
       direction: 'CALL',
-      entry_ts: '2026-04-25T09:31:00',
-      exit_ts: '2026-04-25T10:15:00',
+      entry_ts: '2026-04-24T09:31:00',
+      exit_ts: '2026-04-24T10:15:00',
       entry_price: 220.0,
       exit_price: 222.5,
       return_pct: 1.14,
@@ -112,7 +112,7 @@ const OWN_TRADES = {
       status: 'win',
       source: 'chart',
       session_id: null,
-      created_at: '2026-04-25T09:31:01',
+      created_at: '2026-04-24T09:31:01',
     },
   ],
 } satisfies JournalTradesResponse;
@@ -122,7 +122,7 @@ const EMPTY_TRADES = { ticker: 'IWM', source: 'cloud_sql', count: 0, trades: [] 
 // task-examples-union: the Examples union response contains BOTH an
 // admin-authored journal_entries row (source:'chart', same as EXAMPLE_TRADES
 // above) and an automated-pipeline `trades` row (id 'pipe-<n>',
-// source:'pipeline') — both dated on the mocked chart session (2026-04-25)
+// source:'pipeline') — both dated on the mocked chart session (2026-04-24)
 // so both land in the rail. Both are wins so the aggregate tile assertion
 // (2W / 0L) is unambiguous evidence the pipeline row's return_pct is folded
 // into the stats layer exactly like any other example row (brief: "the
@@ -136,8 +136,8 @@ const UNION_EXAMPLE_TRADES = {
       id: 'admin-union-1',
       ticker: 'IWM',
       direction: 'CALL',
-      entry_ts: '2026-04-25T09:35:00',
-      exit_ts: '2026-04-25T10:15:00',
+      entry_ts: '2026-04-24T09:35:00',
+      exit_ts: '2026-04-24T10:15:00',
       entry_price: 220.0,
       exit_price: 222.5,
       return_pct: 1.14,
@@ -152,8 +152,8 @@ const UNION_EXAMPLE_TRADES = {
       id: 'pipe-9001',
       ticker: 'IWM',
       direction: 'PUT',
-      entry_ts: '2026-04-25T10:30:00',
-      exit_ts: '2026-04-25T11:00:00',
+      entry_ts: '2026-04-24T10:30:00',
+      exit_ts: '2026-04-24T11:00:00',
       entry_price: 221.0,
       exit_price: 219.5,
       return_pct: 0.68,
@@ -395,8 +395,8 @@ test.describe('Journal one-stop cockpit — My journal view', () => {
     const label = page.getByTestId('scope-label');
     await expect(label).toHaveText(/overview: all dates/i);
 
-    await page.locator('input[type="date"]').first().fill('2026-04-25');
-    await expect(label).toHaveText(/session: 04\/25\/2026/i);
+    await page.locator('input[type="date"]').first().fill('2026-04-24');
+    await expect(label).toHaveText(/session: 04\/24\/2026/i);
 
     await page.getByTestId('clear-date').click();
     await expect(label).toHaveText(/overview: all dates/i);
@@ -436,7 +436,7 @@ test.describe('Journal one-stop cockpit — My journal view', () => {
 // returns for a Cloud SQL journal_entries row: space-separated, no offset
 // ("YYYY-MM-DD HH:MM:SS", from the `entry_ts AT TIME ZONE 'UTC'` SELECT
 // cast) — under a non-UTC browser timezone, so the assertion only passes
-// if the fix is genuinely host-timezone-independent. Dated 2026-04-25 (not
+// if the fix is genuinely host-timezone-independent. Dated 2026-04-24 (not
 // the real bug's 2026-07-08) to match `mockJournalOneStop`'s single mocked
 // market-data session date, so both the chart rail (date-filtered) and the
 // table (session-scoped when only one date exists) render this row.
@@ -452,7 +452,7 @@ test.describe('Journal one-stop cockpit — table/rail-card time parity (regress
         id: 'tz-bug-1',
         ticker: 'IWM',
         direction: 'CALL',
-        entry_ts: '2026-04-25 10:05:00', // exact _rows_to_trades wire shape
+        entry_ts: '2026-04-24 10:05:00', // exact _rows_to_trades wire shape
         exit_ts: null,
         entry_price: 291.86,
         exit_price: null,
@@ -579,8 +579,8 @@ const ALERT_ENRICHED_TRADES = {
       id: 'pipe-alert-1',
       ticker: 'IWM',
       direction: 'CALL',
-      entry_ts: '2026-04-25T09:35:00',
-      exit_ts: '2026-04-25T10:15:00',
+      entry_ts: '2026-04-24T09:35:00',
+      exit_ts: '2026-04-24T10:15:00',
       entry_price: 220.0,
       exit_price: 222.5,
       return_pct: 1.14,
@@ -596,7 +596,7 @@ const ALERT_ENRICHED_TRADES = {
       id: 'pipe-alert-2',
       ticker: 'IWM',
       direction: 'PUT',
-      entry_ts: '2026-04-25T10:30:00',
+      entry_ts: '2026-04-24T10:30:00',
       exit_ts: null,
       entry_price: 221.0,
       exit_price: null,
