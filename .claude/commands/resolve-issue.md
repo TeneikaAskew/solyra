@@ -102,7 +102,10 @@ fi
 
 # CASE B — no existing PR. Create one branch and remember its name; every
 # later phase refers back to it rather than reconstructing a prefix.
-git checkout -b fix/<short-description>    # or feature/ chore/ docs/ test/
+# Name the base explicitly: without it the branch forks from whatever is
+# checked out, so an unrelated feature branch's commits ride into the PR, or
+# the branch starts behind main. `git fetch` above does not move HEAD.
+git checkout -b fix/<short-description> origin/main   # or feature/ chore/ docs/ test/
 ```
 
 Whichever case you took, capture the branch name now:
@@ -236,8 +239,23 @@ Standing gates while writing:
 - **Rule 6** — if `src/types/` changes, confirm the stocks router actually
   returns that shape; never reshape a type to make a fixture compile. If the
   shape changed on the stocks side: regenerate its OpenAPI snapshot there, then
-  here run `npm run contract:sync` and update `src/types/` and the affected
-  fixture in the same change set, and say so in **both** PR descriptions.
+  here update `src/types/` and the affected fixture in the same change set, and
+  say so in **both** PR descriptions.
+
+  **A bare `npm run contract:sync` fetches stocks `main`.** `STOCKS_OPENAPI_REF`
+  defaults to `'main'` in `scripts/sync-api-contract.mjs`, and regenerating the
+  snapshot in a stocks checkout does not change what this fetch sees. So while
+  the backend half is still on a branch, a plain sync pulls the *old* contract
+  and you develop and test against the shape you are replacing. Point it at the
+  paired work instead:
+
+  ```bash
+  STOCKS_OPENAPI_REF=<the stocks branch or PR head> npm run contract:sync
+  STOCKS_OPENAPI_FILE=../stocks/platform/api/openapi.json npm run contract:sync
+  ```
+
+  Re-run the bare `npm run contract:sync` once the stocks PR merges, so the
+  committed snapshot is the one CI will compare against `main`.
 - Never re-introduce a hardcoded backend origin. `src/lib/apiTargets.ts` is the
   one place origins and static-host detection live, imported from both
   `vite.config.ts` and `src/lib/authedFetch.ts`.
@@ -340,9 +358,17 @@ that window.** An empty review list at 60 seconds means "wait", not "clean".
 In order:
 
 1. Read the review comments — **before** checking CI, not after.
-2. Confirm a review exists for the **current head SHA**. All threads outdated
-   means the head is unreviewed regardless of how many show resolved. Review
-   listings return oldest first, so the current review is on the last page.
+2. Confirm the current head SHA **has been reviewed**, which is not the same as
+   "a review object exists for it". A clean run posts no review at all, only a
+   reaction, so requiring a review object would deadlock every PR that has
+   nothing wrong with it. Either of these satisfies this step:
+   - a review whose `commit_id` is the head SHA (listings return oldest first,
+     so it is on the last page); or
+   - the review summary comment showing **Completed** against the head SHA.
+
+   What fails the step is neither of those: a summary still showing Running, or
+   naming an older commit, with all threads outdated. That head is genuinely
+   unreviewed — comment `@codex review` and wait.
 3. Every thread fixed-and-resolved, naming what changed and the covering test
    and commit, or replied to with why not. Zero unresolved is the bar.
 4. Verify each finding against the code before fixing it: reproduce, write the

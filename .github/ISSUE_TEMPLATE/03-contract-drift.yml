@@ -57,11 +57,22 @@ body:
       description: A real response, or the vendored snapshot checked against stocks main. Command and output together.
       render: shell
       placeholder: |
+        # contract:check names the operation but never prints the field diff:
         $ npm run contract:check
-        vendored tests/fixtures/stocks-openapi.json is stale
-        - /api/journal/stats  win_rate: {"type":"number"}
-        + /api/journal/stats  win_rate: {"anyOf":[{"type":"number"},{"type":"null"}]}
+        [api-contract] vendored snapshot is STALE against stocks. Run: npm run contract:sync
+          operations changed: GET /api/journal/stats
+          components.schemas changed (a response or request model)
 
+        # So get the field-level evidence yourself. Either diff the two
+        # documents directly:
+        $ curl -s https://raw.githubusercontent.com/TeneikaAskew/stocks/main/platform/api/openapi.json \
+            | jq '.paths."/api/journal/stats".get.responses."200"' > /tmp/up.json
+        $ jq '.paths."/api/journal/stats".get.responses."200"' tests/fixtures/stocks-openapi.json \
+            | diff - /tmp/up.json
+        < "win_rate": {"type": "number"}
+        > "win_rate": {"anyOf": [{"type": "number"}, {"type": "null"}]}
+
+        # ...or, for a missing route, show it does not exist at all:
         $ grep -rn "me/preferences" ../stocks/platform/api/
         (no route)
     validations:
@@ -103,10 +114,16 @@ body:
       label: Acceptance criteria
       placeholder: |
         - `npm run contract:check` clean against stocks main.
-        - `npx tsc -b` fails before the type is widened, given the regenerated snapshot.
-        - A fixture carrying the null case, and an E2E assertion that the tile renders `—`
-          rather than `—%`.
+        - A fixture or mock carrying the NEW shape — for a widening, one whose field is
+          actually `null` — added FIRST, and failing before the type is widened.
+        - An E2E or unit assertion that the surface renders `—` rather than `—%`.
         - Both PR descriptions name the other side's PR number.
+
+        Do NOT write "tsc -b fails once the snapshot is regenerated". It will not:
+        TypeScript never imports tests/fixtures/stocks-openapi.json, which is read at
+        runtime by src/mocks/contract.test.ts, and under a widened schema the old
+        fixture stays valid — that blind spot is the whole reason this form exists.
+        Only a null-bearing fixture, or a schema-to-type check, can fail on widening.
     validations:
       required: true
 
