@@ -130,6 +130,24 @@ fi
 git checkout -b fix/<short-description> origin/main   # or feature/ chore/ docs/ test/
 ```
 
+**CASE A has taken your baseline away.** Phase 1 requires reproducing the
+finding against the current tree, and the tree you are now on carries the
+existing PR's proposed fix. A working fix therefore reproduces as "no longer
+reproduces", which is the outcome that sends you to close that PR as
+superseded — with the PR's own correctness as the evidence for closing it.
+
+For anything that reproduces in code — a render, a unit case, `tsc -b` — keep
+an unfixed tree to measure against and say which one you used:
+
+```bash
+git worktree add /tmp/base-tree \
+  "$(git merge-base origin/main <headRefName>)"   # the PR's own base
+```
+
+A finding about what the API returns is unaffected: the PR head does not
+change what stocks answers. It is the in-repo case where the checkout is the
+thing under test.
+
 Whichever case you took, capture the branch name now:
 
 ```bash
@@ -263,7 +281,7 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 | Resolution | The before/after check |
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
-| A surface is deleted | `grep -rq "<Component>\|<useThing>" src/; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
+| A surface is deleted | `git grep -q "<Component>\|<useThing>" -- src tests scripts .github; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Not `src/` alone** — a Playwright spec importing the component is a caller that `src/`-only misses, and so is a CI reference. `docs/` and `.claude/` mentions are prose: worth tidying, not a broken caller. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
 | A response field this app READS is being dropped (the consumer-first PR) | the same `rc -eq 1` form on `"<field>"`, but **scoped away from the declarations this row tells you to keep**: `grep -rq "<field>" src/ --exclude-dir=types --exclude-dir=mocks`. Across all of `src/` it can never pass — `src/types/` and `src/mocks/` are inside it, and the field stays there until the sync PR, so the check would fail after every read is gone. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
 | The final sync PR for that removal | after stocks merges, `npm run contract:sync`, then `src/mocks/contract.test.ts` failing — measured, the mock's field is now undeclared and `additionalProperties` is forced `false` at `src/mocks/contract.test.ts:587`. It passes once the field leaves `src/types/`, the canonical mock and `tests/helpers/fixtures/`. `tsc -b` is not the instrument: it is clean before the sync because the old type still declares the field |
 | A type is widened, and call sites stop compiling | `npx tsc -b` failing on the unguarded call site, clean after |
