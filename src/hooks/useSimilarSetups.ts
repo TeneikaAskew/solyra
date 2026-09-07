@@ -22,11 +22,11 @@ export interface SimilarStats {
 
 export interface SimilarMatch {
   time: string;
-  direction: 'CALL' | 'PUT';
-  price: number;
-  score: number;
-  rsi: number;
-  return_pct: number;
+  direction: string | null;
+  price: number | null;
+  score: number | null;
+  rsi: number | null;
+  return_pct: number | null;
   return_5min: number | null;
   return_20min: number | null;
 }

@@ -21,9 +21,18 @@ import type { LiveStatus } from '@/hooks/useLiveStatus';
 import type { WatchlistResponse } from '@/types/watchlist';
 import type { MockRoute } from './types';
 
-/** Nothing in the SPA reads this body (authedFetch only names the path as
- *  an open prefix), so there is no frontend contract for it to satisfy. */
-export const MOCK_HEALTH = { status: 'ok', cloud_sql: false };
+/** The full body HealthResponse declares. This branch once carried a
+ *  minimal `{status, cloud_sql}` with a note that nothing in the SPA reads
+ *  it, so it had no contract to satisfy; the contract check (#54) made that
+ *  false — the schema names project_root, gcs_bucket and lib_dir_exists as
+ *  always present, and a mock missing them fails the payload check. */
+export const MOCK_HEALTH = {
+  status: 'ok',
+  project_root: '/app',
+  cloud_sql: false,
+  gcs_bucket: 'adept-mountain-474619-d4-trading-data',
+  lib_dir_exists: true,
+};
 
 /** Open auth keeps the gate inert — matching iap/local behaviour. */
 export const MOCK_FIREBASE_CONFIG_OPEN = { authMode: 'open', firebase: null } satisfies RuntimeConfig;

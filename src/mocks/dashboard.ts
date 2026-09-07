@@ -61,7 +61,7 @@ export const MOCK_DASHBOARD_BRIEF = {
     ftfc_score: 0.72,
     ftfc_direction: 'bullish',
   },
-  live: { price: 220.45, session: 'closed' },
+  live: { price: 220.45, session: 'closed', updated_at: '2026-04-24', source: 'alphavantage_global_quote' },
 } satisfies BriefResponse;
 
 /** `source` ('cloud_sql') is always present on the wire (playbook.py)
@@ -72,7 +72,7 @@ export const MOCK_PLAYBOOK_EMPTY = {
   ticker: 'IWM',
   source: 'cloud_sql',
   cards: [],
-} satisfies PlaybookResponse & { source: string };
+} satisfies PlaybookResponse;
 
 /**
  * The REAL production playbook, copied verbatim: all 12 IWM setup cards from
@@ -403,7 +403,7 @@ export const MOCK_PLAYBOOK = {
     best_horizon_avg_bps: -0.38,
   }
   ],
-} satisfies PlaybookResponse & { source: string };
+} satisfies PlaybookResponse;
 
 /** A small one-card set with a NON-zero age, for specs that assert the
  *  "as of <date> (Nd old)" label explicitly; mock mode serves the real set
@@ -435,7 +435,7 @@ export const MOCK_PLAYBOOK_FRESH = {
       best_horizon_avg_bps: 3.1,
     },
   ],
-} satisfies PlaybookResponse & { source: string };
+} satisfies PlaybookResponse;
 
 /** The 503 body playbook.py returns for a card set older than
  *  MAX_PLAYBOOK_AGE_DAYS (#861). The UI must surface this reason. */

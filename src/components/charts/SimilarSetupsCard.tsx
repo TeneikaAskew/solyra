@@ -8,6 +8,7 @@
  */
 import { TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { useSimilarSetups, type SimilarMatch } from '@/hooks/useSimilarSetups';
+import { fmtNum } from '@/lib/format';
 
 interface Props {
   ticker: string;
@@ -147,7 +148,7 @@ function RecentMatches({ matches }: { matches: SimilarMatch[] }) {
                   {m.time.slice(0, 16)}
                 </td>
                 <td className="py-1 text-right font-mono text-[var(--color-text-secondary)]">
-                  {m.rsi.toFixed(1)}
+                  {fmtNum(m.rsi, 1)}
                 </td>
                 <td className="py-1 text-right font-mono">
                   <ReturnCell v={m.return_pct} />

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { useLatestOptionsDate } from '@/hooks/useOptionsDates';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -779,19 +780,6 @@ function RealPivotBuild({ summary }: { summary?: GammaGridSummary }) {
 interface SwingModeProps {
   /** Focus symbol from the page toolbar (TickerCombobox). */
   focusSymbol: string;
-}
-
-function useLatestOptionsDate(ticker: string) {
-  return useQuery<{ ticker: string; dates: string[] }>({
-    queryKey: ['options-dates', ticker],
-    queryFn: async () => {
-      const r = await fetch(`/api/options/dates/${ticker}`);
-      if (!r.ok) throw new Error(`dates ${r.status}`);
-      return r.json();
-    },
-    staleTime: 300_000,
-    retry: false,
-  });
 }
 
 export default function SwingMode({ focusSymbol }: SwingModeProps) {

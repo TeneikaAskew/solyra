@@ -28,6 +28,7 @@ const CATALYST_TYPES: CatalystType[] = [
   'insider',
   'top_mover',
   'economic_event',
+  'watchlist',
   'manual',
 ];
 
@@ -37,7 +38,8 @@ const CATALYST_LABEL: Record<CatalystType, string> = {
   insider: 'Insider',
   top_mover: 'Top mover',
   economic_event: 'Macro',
-  manual: 'Watchlist',
+  watchlist: 'Watchlist',
+  manual: 'Manual',
 };
 
 const CATALYST_BADGE_CLASS: Record<CatalystType, string> = {
@@ -46,6 +48,7 @@ const CATALYST_BADGE_CLASS: Record<CatalystType, string> = {
   insider: 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300',
   top_mover: 'border-pink-500/40 bg-pink-500/15 text-pink-300',
   economic_event: 'border-blue-500/40 bg-blue-500/15 text-blue-300',
+  watchlist: 'border-zinc-500/40 bg-zinc-500/15 text-zinc-300',
   manual: 'border-zinc-500/40 bg-zinc-500/15 text-zinc-300',
 };
 
