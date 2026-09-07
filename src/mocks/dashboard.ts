@@ -357,7 +357,9 @@ export const MOCK_BACKTEST_ALL = { ticker: 'IWM', total_runs: 0, runs: [] };
  */
 export const dashboardRoutes: MockRoute[] = [
   { pattern: /^\/api\/dashboard\/brief\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_BRIEF }) },
-  { pattern: /^\/api\/playbook\/IWM$/, reply: () => ({ body: MOCK_PLAYBOOK_EMPTY }) },
+  // The populated set, so mock mode renders the top-setup happy path (age
+  // label included); MOCK_PLAYBOOK_EMPTY stays for specs that want that branch.
+  { pattern: /^\/api\/playbook\/IWM$/, reply: () => ({ body: MOCK_PLAYBOOK_FRESH }) },
   {
     pattern: /^\/api\/market\/reference\/IWM\/([^/]+)$/,
     reply: () => ({ body: MOCK_DASHBOARD_REFERENCE }),

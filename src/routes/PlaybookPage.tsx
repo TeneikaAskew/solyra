@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { todayET, snapshotAgeLabel } from '@/lib/dates';
 import { responseErrorMessage } from '@/lib/format';
+import { dataUnlessError } from '@/lib/queryData';
 import { useTickerStore } from '@/stores/tickerStore';
 import { useLiveStatus } from '@/hooks/useLiveStatus';
 import { useLiveQuote } from '@/hooks/useLiveQuote';
@@ -61,6 +62,9 @@ function usePlaybook(ticker: string) {
       return r.json();
     },
     staleTime: 3_600_000,
+    // Re-ask while mounted so the server's age (and its 503 past max age)
+    // reaches a page left open across the date boundary.
+    refetchInterval: 15 * 60_000,
   });
 }
 
@@ -291,8 +295,11 @@ export default function PlaybookPage() {
     [history, quote, avgVol, reference, indicatorsQuery.data],
   );
 
-  const cards = data?.cards ?? [];
-  const playbookAge = snapshotAgeLabel(data?.analysis_date, data?.age_days);
+  // A refused refetch (stale-cards 503) leaves the last good payload cached
+  // with isError set; the rejected set must not stay on the grid.
+  const playbook = dataUnlessError(data, isError);
+  const cards = playbook?.cards ?? [];
+  const playbookAge = snapshotAgeLabel(playbook?.analysis_date, playbook?.age_days);
   const hasLiveData = snapshot !== null;
 
   // Server-side evaluation (platform/api/routers/playbook.py). One batched
@@ -319,7 +326,7 @@ export default function PlaybookPage() {
               : 'No live data, evaluation paused'}
           </p>
         </div>
-        {data && (
+        {playbook && (
           <span className="text-xs text-[var(--color-text-muted)]" data-testid="playbook-age">
             {cards.length} setups
             {playbookAge ? ` · ${playbookAge}` : ''}

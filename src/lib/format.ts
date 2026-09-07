@@ -92,7 +92,10 @@ export function toneOf(v: number | null | undefined): 'bull' | 'bear' | 'neutral
 export async function responseErrorMessage(r: Response): Promise<string> {
   try {
     const body = (await r.json()) as { detail?: unknown };
-    if (typeof body?.detail === 'string' && body.detail) return body.detail;
+    // The status rides along so consumers keyed on it keep working:
+    // WidgetState.isAuthError looks for "401" to show the sign-in state,
+    // and a FastAPI 401 body is just {"detail": "Not authenticated"}.
+    if (typeof body?.detail === 'string' && body.detail) return `${body.detail} (HTTP ${r.status})`;
   } catch {
     // non-JSON body: fall through to the status code
   }

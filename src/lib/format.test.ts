@@ -7,6 +7,7 @@
  * which already fence their own canonical helpers.
  */
 import { describe, expect, it } from 'vitest';
+import { isAuthError } from '@/components/shared/WidgetState';
 import {
   NA,
   fmtCompact,
@@ -123,9 +124,15 @@ describe('responseErrorMessage', () => {
   const mk = (status: number, body: string, contentType = 'application/json') =>
     new Response(body, { status, headers: { 'content-type': contentType } });
 
-  it('surfaces the FastAPI {detail} string so a stale-data 503 says why', async () => {
+  it('surfaces the FastAPI {detail} string so a stale-data 503 says why, keeping the status', async () => {
     const detail = 'playbook_cards for IWM is stale: latest analysis_date 2026-06-13 is 85 days old';
-    expect(await responseErrorMessage(mk(503, JSON.stringify({ detail })))).toBe(detail);
+    expect(await responseErrorMessage(mk(503, JSON.stringify({ detail })))).toBe(`${detail} (HTTP 503)`);
+  });
+
+  it('keeps a 401 recognisable as an auth failure after detail extraction', async () => {
+    const msg = await responseErrorMessage(mk(401, JSON.stringify({ detail: 'Not authenticated' })));
+    expect(msg).toBe('Not authenticated (HTTP 401)');
+    expect(isAuthError(new Error(msg))).toBe(true);
   });
 
   it('falls back to the bare status for non-string detail or non-JSON bodies', async () => {

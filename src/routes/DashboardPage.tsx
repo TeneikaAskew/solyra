@@ -26,6 +26,7 @@ import { useLiveQuote } from '@/hooks/useLiveQuote';
 import { useReviewQuote, reviewCutoffTs } from '@/hooks/useReviewQuote';
 import { useInsightReport } from '@/hooks/useInsights';
 import { todayET, addDaysToISO, snapshotAgeLabel } from '@/lib/dates';
+import { dataUnlessError } from '@/lib/queryData';
 import {
   Pill, Metric, MicroLabel, Delta, ScoreStars, DirTag, Card, CardHeader, KpiTile,
 } from '@/components/primitives';
@@ -111,6 +112,11 @@ interface SectorsResponse {
 }
 
 // ── Small fetch helper ───────────────────────────────────────────────────────
+/** Playbook re-check cadence in live mode: the server re-evaluates the card
+ *  set's age on every request, so this bounds how long an open dashboard can
+ *  show a set past its max age (7 days) to 15 minutes. */
+const PLAYBOOK_REFETCH_MS = 15 * 60_000;
+
 function useFetch<T>(key: unknown[], url: string, enabled = true, refetchInterval: number | false = false) {
   return useQuery<T>({
     queryKey: key,
@@ -304,8 +310,17 @@ export default function DashboardPage() {
   const playbookQ = useFetch<PlaybookResponse>(
     ['playbook', activeTicker, reviewDate ?? 'live'],
     isReview ? `/api/playbook/${activeTicker}?date=${reviewDate}` : `/api/playbook/${activeTicker}`,
+    true,
+    // Live mode re-asks the server periodically so a dashboard left open
+    // across the date boundary gets a fresh age (and the server's 503 once
+    // the set crosses max_age_days) instead of the original age forever.
+    // Review mode is pinned to a past date and never changes.
+    isReview ? false : PLAYBOOK_REFETCH_MS,
   );
-  const playbook = playbookQ.data;
+  // A refused refetch (the stale-cards 503) leaves the last good payload in
+  // the query cache with isError set; reading through dataUnlessError means
+  // the rejected set is not rendered as actionable.
+  const playbook = dataUnlessError(playbookQ.data, playbookQ.isError);
   // Shown under the top setup so an old card set is visibly old. Null when
   // the server sent no date — nothing is rendered rather than a guess.
   const playbookAge = snapshotAgeLabel(playbook?.analysis_date, playbook?.age_days);
