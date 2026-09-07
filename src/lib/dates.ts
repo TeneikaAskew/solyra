@@ -29,6 +29,9 @@ export function addDaysToISO(iso: string, days: number): string {
 /**
  * "as of Jun 13, 2026 (85d old)" for a dated server snapshot such as the
  * playbook card set (`/api/playbook` returns `analysis_date` + `age_days`).
+ * Zero age reads "same day", never "today": in review mode the server judges
+ * the age against the reviewed date, and a June set reviewed in September is
+ * the same day as June 13, not today.
  * Returns null when the server sent no date: the label is then omitted
  * rather than fabricated (CLAUDE.md Rule 4). `ageDays` comes from the
  * server so the client never re-derives freshness against its own clock.
@@ -48,6 +51,8 @@ export function snapshotAgeLabel(
   if (ageDays === null || ageDays === undefined || !Number.isFinite(ageDays)) {
     return `as of ${pretty}`;
   }
-  const age = ageDays === 0 ? 'today' : ageDays === 1 ? '1d old' : `${ageDays}d old`;
+  // ageDays is judged by the server against the reviewed date in review
+  // mode, so a zero age means "same day as the date shown", not "today".
+  const age = ageDays === 0 ? 'same day' : ageDays === 1 ? '1d old' : `${ageDays}d old`;
   return `as of ${pretty} (${age})`;
 }

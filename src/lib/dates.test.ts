@@ -34,7 +34,9 @@ describe('addDaysToISO', () => {
 describe('snapshotAgeLabel', () => {
   it('renders the server date and age', () => {
     expect(snapshotAgeLabel('2026-06-13', 85)).toBe('as of Jun 13, 2026 (85d old)');
-    expect(snapshotAgeLabel('2026-09-06', 0)).toBe('as of Sep 6, 2026 (today)');
+    // Zero age is relative to the date shown (review mode judges against
+    // the reviewed date), so it must not claim "today".
+    expect(snapshotAgeLabel('2026-09-06', 0)).toBe('as of Sep 6, 2026 (same day)');
     expect(snapshotAgeLabel('2026-09-05', 1)).toBe('as of Sep 5, 2026 (1d old)');
   });
 
