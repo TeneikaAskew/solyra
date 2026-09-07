@@ -493,10 +493,10 @@ rest of the Dashboard rows (`sectors`, `catalysts/events`, `reference`,
   freshness route only.
 - `tests/routes.warmup.ts` — visits all 14 routes with `mockCommon` only and
   swallows every failure by design (its header explains why).
-- `/api/backtest/*` is deliberately left out of the shared dashboard fixture
-  (`tests/helpers/fixtures/dashboard.ts` header) so the two dashboard specs can
-  supply different payloads; a spec that loads the page without registering
-  it misses.
+- `/api/backtest/*` is registered by `mockDashboardCards`, not by
+  `mockDashboard` (the cards layer is opt-in, see the fixture header), so the
+  shell-only specs above and any spec that calls only `mockDashboard`
+  (`movement-read`, `most-active-bar`) miss it.
 
 **The AAPL rows are a glob bug, not a missing route.**
 `tests/dashboard/ticker-combobox.spec.ts` switches ticker and registers
@@ -589,7 +589,8 @@ None started. Listed for review before any work begins.
    live backend, and turns the PR-template attestation into a check. Highest
    value; the open design question is where the schema lives and which side
    owns the diff.
-2. **Close the leaking specs and the typing holes.** In order of misses
+2. **Close the leaking specs and the typing holes.** *Landed 2026-09-07,
+   see §10.7.* In order of misses
    removed: register `/api/movement-statement` and
    `/api/insights/report/IWM` in `mockDashboard` (every dashboard load
    misses both today); switch `auth-gate.spec.ts`, the `admin-auth.spec.ts`
@@ -627,3 +628,76 @@ Questions for review:
 - Is the ECONNREFUSED noise worth suppressing at the *log* level (Playwright
   `webServer.stderr: 'ignore'`) once item 2 lands, or should it stay visible
   as a standing signal?
+
+### 10.7 2026-09-07 — item 2 landed: 440 → 25 proxy misses, all teardown races
+
+**Branch:** `claude/e2e-ci-behavior-1cr1g6-fixtures`. Measured locally with
+the same `--project=chromium` run CI uses (216 tests on this tree; CI's 220
+on PR #52 is the merge ref, which carries four specs `main` gained since this
+branch forked).
+
+| Run | Proxy misses | Result |
+|---|---|---|
+| Baseline, CI job on `d7dd947` (PR #52 head, no fixture changes) | 440 | 220 passed |
+| After round 1 (dashboard routes, globs, shell-only specs, typing) | 90 | 216 passed |
+| After round 2 (charts/playbook/help/admin gaps, profile in `mockCommon`) | 30 | 216 passed |
+| After round 3 (statement served 200, see below) | **25** | 216 passed |
+
+What changed, by miss count removed:
+
+- `mockDashboard` now registers `/api/movement-statement` and
+  `/api/insights/report/IWM`, and includes the card layer
+  (`mockDashboardCards`) by default; the opt-in rationale in its header was
+  checked and did not hold (neither `movement-read` nor `most-active-bar`
+  asserts on the unmocked state).
+- `ticker-combobox.spec.ts` builds on `mockDashboard` and registers its
+  AAPL fan-out with `*/*`-depth globs and typed payloads; the inline
+  literals are gone.
+- `auth-gate`, the `admin-auth` sidebar block, `Mock mode OFF`,
+  `data-pipeline-widget` and the warm-up use `mockAllPages`; the
+  `admin-auth` non-admin block calls `mockCommon`.
+- `mockChartsApi` and `replay-trainer` register `/api/backtest/*`
+  (`ChartsPage` mounts `BacktesterSection`); `playbook.spec` registers
+  `/api/live/avg-volume/IWM`; `help.spec` uses `mockHelpApi`; `mockCommon`
+  serves `/api/me/profile` as mock mode already did.
+- Typing: `MOCK_FIREBASE_CONFIG_OPEN`, `MOCK_ME_DEV`,
+  `MOCK_PREFERENCES_EMPTY` and `MOCK_MOST_ACTIVE_EMPTY` now `satisfies`
+  their contracts (`MeResponse` exported from `useUser.ts` for the purpose);
+  `MOCK_HEALTH` has no frontend consumer and says so. The `/api/me` literal
+  in `mockCommon` is typed.
+
+**The residual 25 are teardown races, not fixture gaps.** Every remaining
+miss is on an endpoint the test *has* registered, and every one lands in a
+test that either ends immediately after a mutation whose success triggers a
+refetch (`admin-tabs` role/status PUTs → `/api/admin/users`; `admin`,
+`admin-auth` route PUT → `/api/admin/routes`; the three `insights` replay
+tests → run poll + history invalidation; `replay-trainer` Mark Entry →
+`/api/journal/trades/IWM`) or asserts on the shell straight after a
+`domcontentloaded` navigation while the page's fan-out is still in flight
+(the `navigation` route loop, the `admin-auth` sidebar tests,
+`data-pipeline-widget`, all on `/api/me/preferences` or
+`/api/config/market-hours`). Playwright stops intercepting when the context
+tears down, so a request issued in that window reaches Vite's proxy.
+Verified by experiment: adding `await page.waitForLoadState('networkidle')`
+before the `navigation` route tests end took that spec's misses from 9 to 0
+(reverted; it is not a change worth shipping for log hygiene alone).
+
+**What the experiment also found.** With the fan-out allowed to settle, the
+`/dashboard` smoke test *failed* on a 404 console error: the
+movement-statement route this branch had first added as the flag-OFF 404.
+Chrome logs every 404 response as a console error, so that test's
+clean-console assertion had only been passing because the response arrived
+after the assertion ran, with the ECONNREFUSED 500 before this branch just
+as with the 404 after it. Resolution: the statement is now served as a 200
+from a typed `MOCK_MOVEMENT_STATEMENT` in `src/mocks/dashboard.ts` (the
+payload `movement-read.spec.ts` carried inline, now `satisfies
+MovementStatement`), by both the fixture and mock mode — the same reasoning
+`mockCommon` already applied to `/api/me/preferences`. **This is the one
+product-visible change in the branch:** mock mode's landing page now shows
+the Movement Read card instead of hiding it. `src/mocks/index.test.ts`
+asserts the new behaviour.
+
+**What this does and does not prove.** The suite now answers its own
+fan-out with typed fixtures, so a new ECONNREFUSED line in the CI log
+outside the residual pattern above is a real gap. It says nothing new about
+the cross-repo contract (§10.6 item 1), which is unchanged.

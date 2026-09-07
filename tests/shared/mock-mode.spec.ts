@@ -13,6 +13,7 @@
  * auto-enable driven by /api/me's server-verified is_dev flag.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { mockAllPages } from '../helpers/fixtures/all';
 
 const PREF_KEY = 'solyra-mock-mode';
 
@@ -113,9 +114,10 @@ test.describe('Mock mode ON (preference seeded)', () => {
 
 test.describe('Mock mode OFF (real world, mocked via page.route)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/config/firebase', (r) =>
-      r.fulfill({ status: 200, body: JSON.stringify({ authMode: 'open', firebase: null }) }),
-    );
+    // Full typed fan-out (includes the open-auth config), so /dashboard does
+    // not spray ECONNREFUSED at the dead E2E proxy (audit §10.2). Each test
+    // re-registers /api/me afterwards and wins.
+    await mockAllPages(page);
   });
 
   test('admin sees the toggle OFF in the Support menu', async ({ page }) => {

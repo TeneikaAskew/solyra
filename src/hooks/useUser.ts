@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getAuthMode } from '@/lib/runtimeConfig';
 import { subscribeAuth } from '@/lib/firebase';
 
-interface MeResponse {
+export interface MeResponse {
   email: string | null;
   is_admin?: boolean;
   /** Server-verified 'dev' role: the account auto-loads mock-data mode. */
