@@ -51,9 +51,15 @@ body:
       placeholder: |
         # Search for every name the surface exports, not just the filename —
         # a default export re-exported under another name still has an importer.
-        # src/ ALONE is not enough: a Playwright spec, a script or a workflow
-        # helper importing it is a caller the resolver's own check now looks for.
-        $ git grep -n "<Component>\|<useThing>" -- src tests scripts .github
+        # Repo-wide over TRACKED files, minus prose. `src tests scripts .github`
+        # is not enough twice over: it misses root config (measured —
+        # @tailwindcss/vite is imported at vite.config.ts:3 and that pathspec
+        # returns rc=1, "no consumers"), and it INCLUDES this form, so a surface
+        # named in a placeholder here matches itself and the check can never
+        # reach rc=1. Exclude the prose, do not discount it while reading — the
+        # resolver asserts on rc.
+        $ git grep -n "<Component>\|<useThing>" -- . ':!docs/' ':!.claude/' \
+            ':!.github/ISSUE_TEMPLATE/' ':!*.md' ':!*.drawio'
         src/components/<area>/<Component>.tsx:12:export function <Component>(
         src/hooks/<useThing>.ts:8:export function <useThing>(
         (definitions only; no importer)
@@ -164,7 +170,17 @@ body:
         package.json. Paste the check.
       render: shell
       placeholder: |
-        $ git grep -n "@tanstack/react-table" -- src tests scripts .github
+        # Same scope as the importer field above, plus the lockfiles: each one
+        # names every package, so leaving one in makes every package look used.
+        # `git ls-files | grep -i lock` — there are two here.
+        # The diagrams and the vendored OpenAPI doc go too: measured,
+        # Frontend.drawio matches @tanstack/react-table, Frontend-icons.drawio
+        # matches @eslint/js, stocks-openapi.json matches firebase — none of
+        # them an importer. Re-derive that list rather than adding to it one
+        # report at a time; the resolver's dependency row carries the recipe.
+        $ git grep -n "@tanstack/react-table" -- . ':!package-lock.json' ':!bun.lock' \
+            ':!package.json' ':!tests/fixtures/stocks-openapi.json' ':!docs/' ':!.claude/' \
+            ':!.github/ISSUE_TEMPLATE/' ':!*.md' ':!*.drawio'
         src/components/backtest/BacktesterSection.tsx:22
         src/routes/SignalsPage.tsx:15
         Live consumers remain; no dependency cleanup follows.

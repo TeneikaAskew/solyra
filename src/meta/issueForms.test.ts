@@ -135,12 +135,23 @@ describe('issue forms', () => {
     // deleting a form's whole attestation used to pass CI — the body-budget
     // test stays green because the body only gets SHORTER. Measured on the
     // stocks mirror with the element removed: 14 passed.
+    //
+    // By ID and by POSITION, not "some checkboxes element exists". The sentence
+    // this defends is "every form ENDS in an evidence attestation", and a
+    // length check is neither half of it: a form that grew an unrelated
+    // checkbox group could lose `id: attestation` and still pass, and one that
+    // appends fields after the attestation asks the filer to swear to evidence
+    // they have not written yet. Measured on 01-defect.yml with `attestation`
+    // renamed to `evidence-attestation` AND swapped with `acceptance` — element
+    // count unchanged, so the body-budget test stayed green too — 14 passed.
     const boxes = body.filter((el) => el.type === 'checkboxes')
+    const last = body[body.length - 1]
     expect(
-      boxes.length,
-      `${file}: no checkboxes element. Every form ends in an evidence attestation; ` +
-        'a form without one collects no claim about how the evidence was produced.',
-    ).toBeGreaterThan(0)
+      { type: last?.type, id: last?.id },
+      `${file}: the LAST body element is not the id: attestation checkboxes group. ` +
+        'Every form ends in an evidence attestation, and presence alone is not that. ' +
+        `Checkboxes found: ${JSON.stringify(boxes.map((el) => el.id))}`,
+    ).toEqual({ type: 'checkboxes', id: 'attestation' })
 
     for (const el of boxes) {
       const options = el.attributes?.options ?? []

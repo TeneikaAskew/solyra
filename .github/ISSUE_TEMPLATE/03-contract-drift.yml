@@ -197,19 +197,24 @@ body:
         - `npm run contract:check` clean against stocks main.
         - A case matching the widening you selected above, added FIRST and failing
           before the type is widened. **Nullable -> a null-bearing payload.
-          Optional-but-still-non-nullable -> the key OMITTED**, and a `field?: T`
-          type — NOT `field: T | undefined`, which still REQUIRES the key and only
-          lets its value be undefined. Measured: against `{ a: 'x' }` with `b`
+          Optional-but-still-non-nullable -> the key OMITTED. BOTH at once -> one
+          payload of EACH**, `field?: T | null`; a single payload leaves the other
+          newly-valid production shape untested, and "or" is not the bar here (the
+          resolver's widening table says "one of each" for that row). The type is
+          `field?: T` — NOT `field: T | undefined`, which still REQUIRES the key and
+          only lets its value be undefined. Measured: against `{ a: 'x' }` with `b`
           omitted, `b: number | undefined` fails TS2741 "Property 'b' is missing
           ... but required", while `b?: number` compiles. Use `?:`, adding
-          `| null` only when the field is nullable too. That schema REJECTS null,
-          so a null payload there
+          `| null` only when the field is nullable too. An optional-only schema
+          REJECTS null, so a null payload there
           exercises a shape the API cannot emit while the missing-key path — the one
-          that actually changed — goes untested. In step 1 it has to be a TEST-ONLY
-          payload either way; the canonical mocks `satisfies` the types and are
-          Ajv-validated against the still-old vendored schema, so it would fail both
-          `tsc -b` and `src/mocks/contract.test.ts` before the widening it is meant to
-          prove. The canonical mock carries the null, or the omission, in step 3.
+          that actually changed — goes untested. In step 1 they have to be TEST-ONLY
+          payloads either way; the canonical mocks `satisfies` the types and are
+          Ajv-validated against the still-old vendored schema, so they would fail both
+          `tsc -b` and `src/mocks/contract.test.ts` before the widening they are meant to
+          prove. The canonical mock carries the null, or the omission, in step 3 — and
+          for a combined widening one canonical mock cannot show both, so the shape it
+          does not carry keeps a test-only payload.
         - An E2E or unit assertion that the surface renders `—` rather than `—%`.
         - Both PR descriptions name the other side's PR number.
 
