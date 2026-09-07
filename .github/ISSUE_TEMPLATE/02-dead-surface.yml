@@ -65,12 +65,15 @@ body:
     id: forensics
     attributes:
       label: How it got here
-      description: Git forensics with dated commits, using the pickaxe over the full lineage including pre-split history.
+      description: "Git forensics with dated commits over the full lineage including pre-split history. Use -G --no-renames, not -S: see the placeholder."
       render: shell
       placeholder: |
         # The shape of a conclusive answer, taken from the closed #16. Those
         # files no longer exist; run the pickaxe on YOUR surface.
-        $ git log --oneline --all -S "TermHover" -- src platform/src
+        # -G --no-renames, NOT -S. Measured: -S counts occurrences per blob, so a
+        # rewritten import line inside ONE file leaves the count equal and -S skips
+        # that commit; and a pure rename is invisible to BOTH until --no-renames.
+        $ git log --oneline --all -G "TermHover" --no-renames -- src platform/src
         a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
         e1ce147 (May 31, Phase C1) shipped it "not yet wired into any page — C2-C5 will
                 consume it as the heatmap UI lands"
