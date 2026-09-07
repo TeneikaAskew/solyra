@@ -114,6 +114,25 @@ function methodAfter(source: string, from: number): string {
   return 'GET';
 }
 
+/**
+ * When the literal at `quoteStart` initialises a `const`/`let` binding, the
+ * verbs of every `fetch(<binding>, ...)` in the source (GET when a call sets
+ * no method), or null when the literal is not such a binding or the binding
+ * is never fetched — then only path existence can be checked.
+ */
+function verbsOfBinding(source: string, quoteStart: number): string[] | null {
+  const decl = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*$/.exec(
+    source.slice(Math.max(0, quoteStart - 80), quoteStart),
+  );
+  if (!decl) return null;
+  const name = decl[1];
+  const re = new RegExp(String.raw`fetch\(\s*${name.replace(/\$/g, '\\$')}\s*[,)]`, 'g');
+  const verbs = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) verbs.add(methodAfter(source, m.index + m[0].length - 1));
+  return verbs.size ? [...verbs] : null;
+}
+
 export function extractApiLiterals(source: string): ApiLiteral[] {
   const out: ApiLiteral[] = [];
   const n = source.length;
@@ -133,6 +152,7 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
     }
     if (c === "'" || c === '"' || c === '`') {
       const quote = c;
+      const quoteStart = i;
       const inFetch = /fetch\(\s*$/.test(source.slice(Math.max(0, i - 40), i));
       let lit = '';
       let depth = 0;
@@ -161,7 +181,16 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
       }
       i++;
       if (lit.startsWith('/api/')) {
-        out.push({ literal: lit, method: inFetch ? methodAfter(source, i) : null });
+        if (inFetch) {
+          out.push({ literal: lit, method: methodAfter(source, i) });
+        } else {
+          // `const ENDPOINT = '/api/...'` used by fetch(ENDPOINT, ...) later:
+          // every fetch of that binding contributes its verb, so a route
+          // removed for one verb but kept for another is still reported.
+          const verbs = verbsOfBinding(source, quoteStart);
+          if (verbs === null) out.push({ literal: lit, method: null });
+          else for (const method of verbs) out.push({ literal: lit, method });
+        }
       }
       continue;
     }
@@ -285,6 +314,38 @@ function jsonSchemaFor(op: Operation): unknown {
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
+
+describe('extractApiLiterals', () => {
+  it('reads the verb of a literal used directly inside fetch()', () => {
+    expect(
+      extractApiLiterals("await fetch('/api/journal/trades', { method: 'POST' });"),
+    ).toEqual([{ literal: '/api/journal/trades', method: 'POST' }]);
+  });
+
+  it('defaults a fetch with no method option to GET', () => {
+    expect(extractApiLiterals("await fetch('/api/me/profile');")).toEqual([
+      { literal: '/api/me/profile', method: 'GET' },
+    ]);
+  });
+
+  it('collects every verb a `const ENDPOINT = ...` binding is fetched under', () => {
+    // The usePreferences.ts / useProfile.ts shape: one literal, two requests.
+    const src = [
+      "const ENDPOINT = '/api/me/preferences';",
+      'async function read() { const res = await fetch(ENDPOINT); return res.json(); }',
+      "async function write(b) { return fetch(ENDPOINT, { method: 'PUT', body: b }); }",
+    ].join('\n');
+    const found = extractApiLiterals(src);
+    expect(found.map((f) => f.method).sort()).toEqual(['GET', 'PUT']);
+    expect(new Set(found.map((f) => f.literal))).toEqual(new Set(['/api/me/preferences']));
+  });
+
+  it('leaves the verb unknown when a literal is never fetched through its binding', () => {
+    expect(extractApiLiterals("const OPEN_PREFIXES = ['/api/health'];")).toEqual([
+      { literal: '/api/health', method: null },
+    ]);
+  });
+});
 
 describe('API contract (stocks OpenAPI snapshot)', () => {
   it('every /api request the app makes (verb + path) is a declared operation', () => {
