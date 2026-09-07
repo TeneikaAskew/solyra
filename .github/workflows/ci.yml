@@ -58,6 +58,18 @@ jobs:
 
       - run: npm ci
 
+      # Cross-repo contract (CLAUDE.md Rule 6). tests/fixtures/stocks-openapi.json
+      # is a vendored copy of the OpenAPI document stocks commits on `main`;
+      # src/mocks/contract.test.ts (run by `npm test` below) checks the app's
+      # request paths and the mock payloads against it. This step is what
+      # keeps that copy honest: it fetches stocks `main` and fails with a
+      # diff when the copy is stale, so a contract change on the API side
+      # turns the next PR here red instead of breaking the app at runtime.
+      # The fix is `npm run contract:sync` plus whatever src/types or fixture
+      # change the diff implies. Deliberately NOT continue-on-error.
+      - name: API contract snapshot in sync with stocks main
+        run: npm run contract:check
+
       # Type-check the `app`, `node` AND `test` projects. Run before the build
       # so a type error reports as a type error rather than a build failure.
       # This is the check that catches E2E fixtures drifting from src/types.
