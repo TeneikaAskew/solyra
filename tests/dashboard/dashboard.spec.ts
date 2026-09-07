@@ -74,7 +74,7 @@ test.describe('Dashboard', () => {
     await expect(card).toBeVisible({ timeout: 10_000 });
 
     // as-of caption in the header meta.
-    await expect(card).toContainText('as of 2026-04-25');
+    await expect(card).toContainText(`as of ${MOCK_SECTORS.as_of}`);
 
     // 1D (default): ranked desc by chg_1d_pct — XLF (2.5) > XLK (1.25) > XLE (-0.75),
     // unavailable XLY sinks to the bottom.

@@ -28,7 +28,6 @@
 import type { SignalSeriesResponse } from '@/hooks/useLiveIndicators';
 import type { SimilarResponse } from '@/hooks/useSimilarSetups';
 import type { MockRoute } from './types';
-import { MOCK_LEVELS_POPULATED } from './options';
 import type { JournalTradesResponse } from './journal';
 import {
   MOCK_CANDLES,
@@ -63,7 +62,7 @@ interface DatesResponse {
 export const MOCK_MARKET_DATES = {
   ticker: 'IWM',
   source: 'cloud_sql',
-  dates: ['20260425', '20260424', '20260423'],
+  dates: ['20260424', '20260423', '20260422'],
   months: ['202604'],
 } satisfies DatesResponse;
 
@@ -151,8 +150,8 @@ export const MOCK_JOURNAL_TRADES_ONE_CLOSED = {
       id: 'closed-trade-1',
       ticker: 'IWM',
       direction: 'CALL',
-      entry_ts: '2026-04-25T09:31:00',
-      exit_ts: '2026-04-25T10:15:00',
+      entry_ts: '2026-04-24T09:31:00',
+      exit_ts: '2026-04-24T10:15:00',
       entry_price: 220.0,
       exit_price: 222.5,
       return_pct: 1.1364,
@@ -162,46 +161,25 @@ export const MOCK_JOURNAL_TRADES_ONE_CLOSED = {
       status: 'win',
       source: 'chart',
       session_id: null,
-      created_at: '2026-04-25T09:31:01',
+      created_at: '2026-04-24T09:31:01',
     },
   ],
 } satisfies JournalTradesResponse;
 
 /**
- * Mock-mode route table for `/charts` — the happy-path translation of
- * `mockChartsApi` (tests/helpers/fixtures/charts.ts), scoped to IWM.
- * The mock engine takes the FIRST match, so the specific `/similar`
- * pattern comes before the bare signals one (both are anchored, so this is
- * for readability more than necessity).
+ * Mock-mode routes OWNED by the charts domain. Every endpoint appears in
+ * exactly ONE domain's table (the engine asserts this): the market-data
+ * candles, indicators, quote and reference this page also consumes are
+ * owned by ./live and ./dashboard, and the journal/options reads by their
+ * own modules — one canonical payload per endpoint, so no page's fixture
+ * can shadow a richer one (Codex P2 on PR #46).
  */
 export const chartsRoutes: MockRoute[] = [
   { pattern: /^\/api\/market\/dates\/IWM$/, reply: () => ({ body: MOCK_MARKET_DATES }) },
-  { pattern: /^\/api\/market\/data\/IWM\/([^/]+)$/, reply: () => ({ body: MOCK_MARKET_DATA }) },
-  {
-    pattern: /^\/api\/market\/reference\/IWM\/([^/]+)$/,
-    reply: () => ({ body: MOCK_REFERENCE_LEVELS }),
-  },
-  {
-    pattern: /^\/api\/options\/IWM\/([^/]+)\/levels$/,
-    reply: () => ({ body: MOCK_LEVELS_POPULATED }),
-  },
-  {
-    method: 'POST',
-    pattern: /^\/api\/live\/indicators$/,
-    reply: () => ({ body: MOCK_LIVE_INDICATORS }),
-  },
   {
     method: 'POST',
     pattern: /^\/api\/live\/signal-series$/,
     reply: () => ({ body: MOCK_SIGNAL_SERIES }),
   },
-  {
-    pattern: /^\/api\/journal\/trades\/IWM$/,
-    reply: () => ({ body: MOCK_JOURNAL_TRADES_EMPTY }),
-  },
   { pattern: /^\/api\/signals\/IWM\/similar$/, reply: () => ({ body: MOCK_SIMILAR_SETUPS }) },
-  {
-    pattern: /^\/api\/signals\/IWM$/,
-    reply: () => ({ body: { ticker: 'IWM', count: 0, signals: [] } }),
-  },
 ];

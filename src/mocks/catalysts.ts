@@ -17,16 +17,20 @@
  */
 import type { CatalystsResponse, CatalystTypesResponse } from '@/routes/CatalystsPage';
 import type { MockRoute } from './types';
+import { addDaysToISO, todayET } from '@/lib/dates';
 
-/** Today / tomorrow in ISO (YYYY-MM-DD), matching the page's own date keys. */
+/**
+ * Today / tomorrow on the ET clock — the SAME clock CatalystsPage uses to
+ * classify Hot Now rows (todayET). UTC-derived dates drifted a day ahead
+ * between 20:00 ET and midnight, so the fixture's "today" row rendered as
+ * tomorrow for four hours every evening.
+ */
 export function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayET();
 }
 
 export function tomorrowIso(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return addDaysToISO(todayET(), 1);
 }
 
 /**
@@ -44,7 +48,7 @@ export function buildCatalystEvents(): CatalystsResponse {
     status: 'ok',
     // Real envelope names its providers (catalysts.py joins them).
     source: 'Benzinga + DB (news + sec, 1)',
-    date_range: { from: '2026-04-25', to: '2026-05-09' },
+    date_range: { from: todayET(), to: addDaysToISO(todayET(), 7) },
     total: 4,
     events_by_date: {
       [today]: [
@@ -60,9 +64,9 @@ export function buildCatalystEvents(): CatalystsResponse {
           relevance_score: 1.0,
         },
       ],
-      '2026-04-28': [
+      [addDaysToISO(todayET(), 4)]: [
         {
-          date: '2026-04-28',
+          date: addDaysToISO(todayET(), 4),
           ticker: 'AAPL',
           company_name: 'Apple Inc.',
           catalyst_type: 'EARNINGS',
@@ -72,9 +76,9 @@ export function buildCatalystEvents(): CatalystsResponse {
           source: 'Benzinga',
         },
       ],
-      '2026-04-30': [
+      [addDaysToISO(todayET(), 6)]: [
         {
-          date: '2026-04-30',
+          date: addDaysToISO(todayET(), 6),
           ticker: 'MSFT',
           company_name: 'Microsoft Corp.',
           catalyst_type: 'CONFERENCE_CALL',
@@ -106,7 +110,7 @@ export function buildCatalystEventsEmpty(): CatalystsResponse {
   return {
     status: 'ok',
     source: 'Benzinga',
-    date_range: { from: '2026-04-25', to: '2026-05-09' },
+    date_range: { from: todayET(), to: addDaysToISO(todayET(), 7) },
     total: 0,
     events_by_date: {},
   };

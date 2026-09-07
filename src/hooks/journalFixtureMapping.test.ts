@@ -33,8 +33,8 @@ describe('journalRowToTradeEntry on the shared fixtures', () => {
     expect(t.optionType).toBe('CALL');
     expect(t.status).toBe('win');
     // Naive wall-clock → Date.UTC, never a host-local `new Date()` parse.
-    expect(t.entryTime).toBe(Math.floor(Date.UTC(2026, 3, 24, 14, 0, 0) / 1000));
-    expect(t.exitTime).toBe(Math.floor(Date.UTC(2026, 3, 24, 15, 30, 0) / 1000));
+    expect(t.entryTime).toBe(Math.floor(Date.UTC(2026, 3, 23, 14, 0, 0) / 1000));
+    expect(t.exitTime).toBe(Math.floor(Date.UTC(2026, 3, 23, 15, 30, 0) / 1000));
     // pnl derives from the server's sign-corrected return_pct — no client
     // re-derivation of direction math.
     expect(t.pnlPercent).toBe(1.14);

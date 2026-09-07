@@ -298,7 +298,15 @@ standalone exports.
 ### E2E — Playwright
 
 In `tests/`, and **hermetic**: every `/api` call is intercepted with
-`page.route`, so they need no backend and no network. Test data lives in
+`page.route`, so they need no backend and no network.
+
+**Layout — one folder per page/area.** Every spec lives under
+`tests/<page>/` (`tests/dashboard/`, `tests/charts/`, `tests/admin/`, …),
+with cross-cutting specs in `tests/shared/`; no spec sits at the `tests/`
+root. Only infrastructure stays at the root: `auth.setup.ts`,
+`routes.warmup.ts`, `helpers/`, and `fixtures/` (raw data files). The
+stocks repo mirrors this with per-area folders (`tests/api/`, `tests/lib/`,
+`tests/gcp/`, …) — keep the two conventions aligned. Test data lives in
 `tests/helpers/`:
 
 - `mocks.ts` — `mockCommon` (cross-cutting endpoints every page hits) plus the
