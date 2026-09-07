@@ -498,6 +498,12 @@ let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
   console.log(o.sort().join('\n'));});" | sort -u; }
 
 FILES="<the files this issue's fix touches>"
+# CASE A: that is NOT enough. Moving $LINT_BASE to the merge base only changes
+# what each file is compared against; it does not add the existing PR's other
+# files. An earlier commit can carry a lint error in file A while this session
+# edits only file B, and a gate scoped to B never lints A. So under CASE A,
+# derive the set from the whole PR and add anything new on top:
+#   FILES="$(git diff --name-only --diff-filter=d "$LINT_BASE" HEAD) <yours>"
 git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
                       # emits no hunk for it, so every line of it would count
                       # as unchanged and its errors would pass this gate
@@ -565,10 +571,28 @@ rule_sig() { local out=$1; shift
 # The changed-line half takes the same ref, for the same reason.
 LINT_BASE=HEAD                       # override to the merge base under CASE A
 
-head_sig() { local out=$1 f rc=0; shift; : > "$out"
+# Rename-aware. `git show "$LINT_BASE:$f"` fails for a file the PR RENAMED —
+# measured, `fatal: path '<new>' exists on disk, but not in <base>` — so the
+# plain form gives it no baseline and every pre-existing diagnostic in it reads
+# as newly added, blocking the gate on a pure rename. `-M` recovers the old
+# path: `git diff --name-status -M` reports `R100 src/old.ts src/new.ts`.
+_base_path() {   # echo the path $1 had at $LINT_BASE, or $1 itself
+  local old
+  # NO pathspec. Restricting the diff to the NEW path filters the old one out
+  # and rename detection then has nothing to pair it with — measured, the
+  # `-- "$1"` form reports `A src/new.ts`, an ADDITION, and this helper hands
+  # back the new path unchanged, which is the bug it exists to fix. Diff the
+  # whole tree and match the destination column instead.
+  old=$(git diff --name-status -M "$LINT_BASE" HEAD 2>/dev/null \
+        | awk -v new="$1" '$1 ~ /^R/ && $3 == new {print $2; exit}')
+  printf '%s' "${old:-$1}"; }
+
+head_sig() { local out=$1 f b rc=0; shift; : > "$out"
   for f in "$@"; do
-    git show "$LINT_BASE:$f" >/dev/null 2>&1 || continue  # new file: no baseline
-    git show "$LINT_BASE:$f" | npx eslint --stdin --stdin-filename "$f" -f json \
+    b=$(_base_path "$f")
+    git show "$LINT_BASE:$b" >/dev/null 2>&1 || continue  # new file: no baseline
+    # --stdin-filename stays $f: eslint config is matched on the CURRENT path.
+    git show "$LINT_BASE:$b" | npx eslint --stdin --stdin-filename "$f" -f json \
       --no-warn-ignored | _sig >> "$out" || rc=1
   done
   sort -o "$out" "$out"; return $rc; }
@@ -964,13 +988,18 @@ In order:
      field required. So the final PR here is **the snapshot sync alone**.
      Telling it to remove the type again points it at artifacts that are
      already gone, and telling the sender PR to wait for the final one leaves
-     it unable to stop sending a still-required property. The moment stocks' removal
-   is on its `main`, this repo's vendored snapshot declares a field the API no
-   longer has, and `contract:check` runs on every PR here
+     it unable to stop sending a still-required property.
+
+   **Why the final PR is not optional in either direction.** The moment stocks'
+   removal is on its `main`, this repo's vendored snapshot declares a field the
+   API no longer has, and `contract:check` runs on every PR here
    (`.github/workflows/ci.yml:91`), so one unfinished narrowing turns every
-   unrelated frontend PR red. That PR runs `npm run contract:sync` and takes
-   the field out of `src/types/`, the canonical mock and
-   `tests/helpers/fixtures/`.
+   unrelated frontend PR red. **What that PR does still differs**: for a
+   RESPONSE field it runs `npm run contract:sync` and takes the field out of
+   the type, the canonical mock and `tests/helpers/fixtures/`; for a REQUEST
+   field it is `contract:sync` **alone**, because the type and its typed sample
+   left in the sender PR. Do not go looking for artifacts the sender already
+   removed.
 
    It cannot be folded into the consumer-first PR, and this is measured rather
    than cautious: while stocks `main` still declares the field as required,
