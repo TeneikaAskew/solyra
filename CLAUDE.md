@@ -254,16 +254,43 @@ instead of computing it twice.
 Solyra's response types (`src/types/`) and its E2E fixtures
 (`tests/helpers/fixtures/`) are hand-maintained **here**, while the API that
 produces those shapes lives in **stocks**. The fixtures use `satisfies`
-against the real types, so a fixture can't drift from a type — but **nothing
-mechanically ties either one to the actual FastAPI response.**
+against the real types, so a fixture can't drift from a type. Until
+2026-09-07 nothing mechanically tied either one to the actual FastAPI
+response. Two checks now do, both hermetic and both in `npm test` / CI:
 
-That means: a renamed or removed field in a stocks router passes CI in both
-repos and breaks solyra at runtime.
+- `tests/fixtures/stocks-openapi.json` is a vendored copy of the OpenAPI
+  document stocks commits at `platform/api/openapi.json` (its
+  `scripts/export_openapi.py`; its snapshot test fails any stocks PR that
+  changes a route or response model without regenerating it). CI runs
+  `npm run contract:check`, which fetches stocks `main` and fails with a
+  diff when the vendored copy is stale; `npm run contract:sync` refreshes it.
+- `src/mocks/contract.test.ts` checks every `/api/...` literal the app
+  requests (with the verb of the `fetch` or request wrapper it belongs to)
+  against the declared operations, validates each mock-mode payload for a
+  typed 200 response against its JSON schema, validates a representative
+  sample of every JSON request body the app sends against its `requestBody`
+  schema, and checks the query-parameter names each request sends against
+  the operation's declared `parameters`. Because the mocks and the request
+  samples `satisfies` the TS types, a schema violation there is a type that
+  drifted from the API.
+
+What they do not cover: an operation without a `response_model` in stocks
+has an empty schema and validates trivially (66 of 98 operations on
+2026-09-07 — the test prints the count). Adding response models on the
+stocks side is how the covered set grows; a renamed field in an *untyped*
+response still passes CI in both repos and breaks solyra at runtime. And
+validating one sample per operation proves the sample is permitted, not
+that the TS type accepts every response the server may now emit: widening a
+field from required `string` to nullable leaves both the old mock and the
+old type valid. The narrowing direction (a field we read or send that the
+API no longer declares) is caught; the widening direction needs a
+schema-to-type comparison the test does not do.
 
 So, when a change touches an API contract:
 
-- Changing a shape in stocks → update `src/types/` and the affected fixture in
-  the same change set, and say so in both PR descriptions.
+- Changing a shape in stocks → regenerate its OpenAPI snapshot there, then
+  here run `npm run contract:sync` and update `src/types/` and the affected
+  fixture in the same change set, and say so in both PR descriptions.
 - Changing `src/types/` here → confirm the stocks router actually returns
   that shape; don't reshape the type to match a fixture.
 - Adding a new endpoint consumer → add its fixture to

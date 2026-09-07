@@ -46,7 +46,7 @@ export const MOCK_INDICATOR_CONFIG = {
   atr: { period: 14, high_threshold: 2.0 },
   rvol: { period: 20, signal_threshold: 1.0 },
   stoch_rsi: { period: 14, k_period: 3, d_period: 3, oversold: 20, overbought: 80 },
-  signal: { min_conditions: 7, consecutive_periods: 3, premarket_threshold: 0.5 },
+  signal: { min_conditions: 7, consecutive_periods: 3, premarket_threshold: 3 },
 } satisfies IndicatorConfig;
 
 /** Ranker output for the watchlist panel this page also mounts. */

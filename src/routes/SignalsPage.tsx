@@ -37,7 +37,12 @@ export interface SignalRow {
 
 export interface SignalsResponse {
   ticker: string;
+  /** Rows matching the window before `limit`; `returned` is `signals.length`. */
   count: number;
+  returned: number;
+  source: string;
+  /** Parquet fallback only. */
+  file?: string;
   signals: SignalRow[];
 }
 
