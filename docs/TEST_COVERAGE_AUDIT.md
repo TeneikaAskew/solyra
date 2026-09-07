@@ -459,8 +459,27 @@ Breakdown of the 438 misses in that run, by endpoint (query strings stripped):
 | `/api/backtest/results/IWM` | 6 |
 | 16 other endpoints | 1–4 each |
 
-The top block is the Dashboard page's fan-out. It misses whenever a spec loads
-`/dashboard` for the *shell* and registers only the cross-cutting mocks:
+The top block is the Dashboard page's fan-out. Two different things produce
+it, and the first is the larger one (corrected after Codex review on #52):
+
+**No shared fixture registers two of the Dashboard's endpoints.**
+`DashboardPage.tsx` calls `/api/movement-statement` (via `MovementRead`) and
+`/api/insights/report/<ticker>` (via `useInsightReport`) on every mount, but
+`mockDashboard` / `mockDashboardCards` in `tests/helpers/fixtures/dashboard.ts`
+register neither, and `mockAllPages` inherits that gap. The only spec that
+mocks `/api/movement-statement` is `tests/dashboard/movement-read.spec.ts`;
+the only fixture that mocks the IWM insight report is `fixtures/insights.ts`,
+which the dashboard helpers do not call. So **every** `/dashboard` load in the
+suite misses both, including the fully-fixtured ones:
+`tests/dashboard/dashboard.spec.ts` (7 navigations), `popover-fit.spec.ts`
+(4), `mock-mode.spec.ts` (7), `dashboard-chart-fit.spec.ts`,
+`most-active-bar.spec.ts` and `ticker-combobox.spec.ts` (1 each). That is
+where the 69 and 62 in the table come from, not from the shell-only specs
+alone.
+
+**Shell-only specs that skip the page fixtures entirely.** These add the
+rest of the Dashboard rows (`sectors`, `catalysts/events`, `reference`,
+`market/data`, `backtest/*`):
 
 - `tests/shared/auth-gate.spec.ts` — `mockCommon` only, asserts nav / sign-in
   screen / config-error screen.
@@ -468,33 +487,53 @@ The top block is the Dashboard page's fan-out. It misses whenever a spec loads
   `/api/config/firebase` and `/api/me`, not even `mockCommon`. These also
   explain the `live/status`, `market-hours` and `me/preferences` rows: those
   three are in `mockCommon`, so only a spec that skips `mockCommon` can miss
-  them.
+  them. The `Mock mode OFF` block in `tests/shared/mock-mode.spec.ts` does
+  the same (config + `/api/me` only).
+- `tests/dashboard/data-pipeline-widget.spec.ts` — `mockCommon` plus the
+  freshness route only.
 - `tests/routes.warmup.ts` — visits all 14 routes with `mockCommon` only and
   swallows every failure by design (its header explains why).
 - `/api/backtest/*` is deliberately left out of the shared dashboard fixture
   (`tests/helpers/fixtures/dashboard.ts` header) so the two dashboard specs can
   supply different payloads; a spec that loads the page without registering
   it misses.
-- The AAPL rows come from `tests/dashboard/ticker-combobox.spec.ts`, which
-  switches ticker and mocks `**/api/market/reference/*` and
-  `**/api/market/data/*` but not the insight report.
+
+**The AAPL rows are a glob bug, not a missing route.**
+`tests/dashboard/ticker-combobox.spec.ts` switches ticker and registers
+`**/api/market/reference/*` and `**/api/market/data/*`. In Playwright's URL
+globs a single `*` compiles to `([^/]*)` and does not span `/`
+(`playwright-core` `globToRegexPattern`), so those patterns match
+`/api/market/reference/AAPL` but not `/api/market/reference/AAPL/20260906`
+or `/api/market/data/AAPL/202609?timeframe=60`. The 20 AAPL reference/data
+misses fall through because of the globs; the 10 AAPL insight-report misses
+fall through because no route exists. The IWM fixtures use
+`**/api/market/reference/IWM/*`, which has the right depth.
 
 None of these misses reach an assertion. The specs that *do* assert a clean
-console (`tests/shared/navigation.spec.ts`) already use `mockAllPages` for
-exactly this reason.
+console (`tests/shared/navigation.spec.ts`) already use `mockAllPages`, which
+covers everything except the two Dashboard endpoints above.
 
 ### 10.3 What the mocked suite proves, and what it cannot
 
 This is the honest answer to "is it a real test".
 
-**It proves:**
+**It proves** (narrowed after Codex review on #52):
 
-- Given a response of the shape declared in `src/types/`, each page renders,
-  its interactions work, and the display layer handles `null` the way Rule 4
-  requires.
-- The fixtures cannot drift from `src/types/`: every payload is written with
-  `satisfies` against the real type, and `npx tsc -b` type-checks the `tests`
-  project in the `types · unit · build` job.
+- For the interactions and missing-value branches that a spec actually
+  asserts on, the page renders correctly given a response of the shape the
+  fixture was written to. That is not "each page's interactions work": §9.3
+  lists the unexercised surfaces (Signals filters, Options inner modes,
+  Insights tabs, Catalysts controls, the command palette, and more), and a
+  regression confined to any of them leaves the 220 tests green.
+- Payloads in `src/mocks/*.ts` are mostly written with `satisfies` against
+  the `src/types/` contracts (11 in `dashboard.ts`, 12 in `live.ts`, 10 in
+  `insights.ts`, …), and `npx tsc -b` type-checks the `tests` project, so
+  *those* fixtures cannot drift from the types. The guarantee is not
+  universal: `M.ok` takes `unknown`, inline object literals in specs
+  (`ticker-combobox.spec.ts`, the `/api/me` overrides) carry no contract, and
+  `MOCK_HEALTH`, `MOCK_FIREBASE_CONFIG_OPEN`, `MOCK_PREFERENCES_EMPTY` and
+  `MOCK_MOST_ACTIVE_EMPTY` in `src/mocks/common.ts` have no `satisfies`. A
+  contract change on any of those passes `tsc -b` while the mock drifts.
 
 **It cannot prove:**
 
@@ -550,12 +589,20 @@ None started. Listed for review before any work begins.
    live backend, and turns the PR-template attestation into a check. Highest
    value; the open design question is where the schema lives and which side
    owns the diff.
-2. **Close the leaking specs.** Switch `auth-gate.spec.ts` and the
-   `admin-auth.spec.ts` sidebar tests to `mockAllPages`, register
-   `/api/backtest/*` where a spec loads the dashboard without it, and add the
-   insight-report route to the ticker-combobox spec's AAPL branch. Removes
-   most of the 438 misses without hiding anything, because every endpoint is
-   then answered with a typed fixture. Small, mechanical.
+2. **Close the leaking specs and the typing holes.** In order of misses
+   removed: register `/api/movement-statement` and
+   `/api/insights/report/IWM` in `mockDashboard` (every dashboard load
+   misses both today); switch `auth-gate.spec.ts`, the `admin-auth.spec.ts`
+   sidebar tests, the `Mock mode OFF` block and `data-pipeline-widget.spec.ts`
+   to `mockAllPages`; fix the ticker-combobox globs to
+   `**/api/market/reference/*/*` and `**/api/market/data/*/*` and add its
+   AAPL insight-report route; register `/api/backtest/*` where a spec loads
+   the dashboard without it. Separately, add `satisfies` to the four untyped
+   `src/mocks/common.ts` constants and lift the inline spec literals into
+   typed fixtures, so the §10.3 typing claim becomes true rather than mostly
+   true. Removes nearly all of the 438 misses without hiding anything,
+   because every endpoint is then answered with a typed fixture. Small,
+   mechanical.
 3. **Real backend in CI.** One job that checks out stocks, boots the API
    against its mock-data mode or a seeded ephemeral Postgres, and runs the
    Solyra suite with `VITE_API_PROXY_TARGET` pointed at it. The only option
