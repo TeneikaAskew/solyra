@@ -265,12 +265,14 @@ response. Two checks now do, both hermetic and both in `npm test` / CI:
   `npm run contract:check`, which fetches stocks `main` and fails with a
   diff when the vendored copy is stale; `npm run contract:sync` refreshes it.
 - `src/mocks/contract.test.ts` checks every `/api/...` literal the app
-  requests (with the verb of the fetch it belongs to) against the declared
-  operations, validates each mock-mode payload for a typed 200 response
-  against its JSON schema, and validates a representative sample of every
-  JSON request body the app sends against its `requestBody` schema. Because
-  the mocks and the request samples `satisfies` the TS types, a schema
-  violation there is a type that drifted from the API.
+  requests (with the verb of the `fetch` or request wrapper it belongs to)
+  against the declared operations, validates each mock-mode payload for a
+  typed 200 response against its JSON schema, validates a representative
+  sample of every JSON request body the app sends against its `requestBody`
+  schema, and checks the query-parameter names each request sends against
+  the operation's declared `parameters`. Because the mocks and the request
+  samples `satisfies` the TS types, a schema violation there is a type that
+  drifted from the API.
 
 What they do not cover: an operation without a `response_model` in stocks
 has an empty schema and validates trivially (66 of 98 operations on

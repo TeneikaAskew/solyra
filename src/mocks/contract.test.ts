@@ -24,7 +24,18 @@
  *     `requestBody` schema. A new required input field, or a renamed one,
  *     fails here rather than becoming a 422 in production (Codex, #54); an
  *     operation with a body and no sample fails too, so the map cannot fall
- *     behind the app.
+ *     behind the app. An operation several call sites post different shapes
+ *     to lists every shape, so a change to one is not hidden by another.
+ *  4. QUERY PARAMETERS — the names each request sends, read from the literal
+ *     and from any `URLSearchParams` it interpolates, are checked against the
+ *     operation's declared `parameters`: an undeclared name and a missing
+ *     required one both fail. A call whose names cannot be read statically is
+ *     counted and skipped rather than treated as sending none.
+ *
+ * Requests reach the API through `fetch` and through this repo's own wrappers
+ * (`REQUEST_WRAPPERS`). A wrapper missing from that set would hide every
+ * request routed through it, so a test asserts the set names every function
+ * that fetches its URL argument.
  *
  * What it does NOT prove: an operation without a `response_model` in stocks
  * has an empty schema and validates trivially. The summary printed at the
@@ -58,6 +69,7 @@ const SNAPSHOT = path.join(REPO, 'tests', 'fixtures', 'stocks-openapi.json');
 interface Operation {
   responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
   requestBody?: { content?: Record<string, { schema?: unknown }> };
+  parameters?: { name: string; in: string; required?: boolean }[];
 }
 interface OpenApi {
   paths: Record<string, Record<string, Operation>>;
@@ -108,6 +120,42 @@ export interface ApiLiteral {
    * any verb, since the verb is not knowable from the literal.
    */
   method: string | null;
+  /** Offset of the literal's opening quote, for resolving nearby bindings. */
+  quoteStart: number;
+}
+
+/**
+ * Functions that take a request URL as their first argument and issue the
+ * request. `fetch` plus this repo's own wrappers: a literal passed to one of
+ * these is a request URL, and the call's `method:` option is its verb.
+ *
+ * `adminJson` was invisible before (Codex, #54): the admin role/status PUTs
+ * pass their literal to it, not to `fetch`, so they reported no verb and were
+ * checked under any verb — and their request-body samples never ran, because
+ * the body check skips verb-less literals. `requestWrapperNames` below fails
+ * the suite when a new wrapper appears, so this set cannot silently rot.
+ */
+const REQUEST_WRAPPERS = ['fetch', 'adminJson'] as const;
+// An optional generic argument list sits between the name and the paren at
+// several call sites (`adminJson<AdminUserRow>(...)`), so allow one.
+const WRAPPER_CALL = new RegExp(`\\b(?:${REQUEST_WRAPPERS.join('|')})\\s*(?:<[^<>]*>)?\\(\\s*$`);
+
+/**
+ * Names of functions that pass their first parameter straight to `fetch(` —
+ * i.e. request wrappers. Used to assert REQUEST_WRAPPERS is complete.
+ */
+export function requestWrapperNames(source: string): string[] {
+  const out: string[] = [];
+  const decl = /(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(\s*([A-Za-z_$][\w$]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = decl.exec(source))) {
+    const [, fnName, param] = m;
+    // Body is bounded by the next top-level `function` declaration at worst;
+    // a wrapper fetches its URL parameter within a few lines regardless.
+    const body = source.slice(m.index, m.index + 1200);
+    if (new RegExp(`fetch\\(\\s*${param}\\b`).test(body)) out.push(fnName);
+  }
+  return out;
 }
 
 /**
@@ -145,7 +193,10 @@ function verbsOfBinding(source: string, quoteStart: number): string[] | null {
   );
   if (!decl) return null;
   const name = decl[1];
-  const re = new RegExp(String.raw`fetch\(\s*${name.replace(/\$/g, '\\$')}\s*[,)]`, 'g');
+  const re = new RegExp(
+    String.raw`(?:${REQUEST_WRAPPERS.join('|')})\s*(?:<[^<>]*>)?\(\s*${name.replace(/\$/g, '\\$')}\s*[,)]`,
+    'g',
+  );
   const verbs = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = re.exec(source))) verbs.add(methodAfter(source, m.index + m[0].length - 1));
@@ -172,7 +223,7 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
     if (c === "'" || c === '"' || c === '`') {
       const quote = c;
       const quoteStart = i;
-      const inFetch = /fetch\(\s*$/.test(source.slice(Math.max(0, i - 40), i));
+      const inFetch = WRAPPER_CALL.test(source.slice(Math.max(0, i - 40), i));
       let lit = '';
       let depth = 0;
       i++;
@@ -201,14 +252,14 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
       i++;
       if (lit.startsWith('/api/')) {
         if (inFetch) {
-          out.push({ literal: lit, method: methodAfter(source, i) });
+          out.push({ literal: lit, method: methodAfter(source, i), quoteStart });
         } else {
           // `const ENDPOINT = '/api/...'` used by fetch(ENDPOINT, ...) later:
           // every fetch of that binding contributes its verb, so a route
           // removed for one verb but kept for another is still reported.
           const verbs = verbsOfBinding(source, quoteStart);
-          if (verbs === null) out.push({ literal: lit, method: null });
-          else for (const method of verbs) out.push({ literal: lit, method });
+          if (verbs === null) out.push({ literal: lit, method: null, quoteStart });
+          else for (const method of verbs) out.push({ literal: lit, method, quoteStart });
         }
       }
       continue;
@@ -255,6 +306,55 @@ export function matchedDeclaredPath(literal: string, apiPaths: string[]): string
 
 export function matchesDeclaredPath(literal: string, apiPaths: string[]): boolean {
   return matchedDeclaredPath(literal, apiPaths) !== null;
+}
+
+
+/**
+ * The query-parameter names a request literal sends, or null when they cannot
+ * be determined from the source.
+ *
+ * Three forms appear in this app:
+ *   `?limit=5&x=${v}`                 names are in the literal
+ *   `?${params}` + `new URLSearchParams({ a: .., b: .. })`   names are keys
+ *   `?${qs}` + `const qs = params.toString()` + `params.set('a', ..)`
+ *
+ * The literal alone is not enough — `useSimilarSetups` builds its three
+ * REQUIRED parameters through URLSearchParams, so a literal-only reader saw
+ * none of them (Codex, #54). Returns null when the tail interpolates an
+ * identifier this cannot resolve, so an unreadable call is reported as
+ * unknown rather than as sending nothing.
+ */
+export function queryNames(source: string, literal: string, quoteStart: number): string[] | null {
+  const q = literal.indexOf('?');
+  if (q === -1) return [];
+  const tail = literal.slice(q + 1);
+  const names = new Set<string>();
+  for (const m of tail.matchAll(/(?:^|&)([A-Za-z_][\w.-]*)=/g)) names.add(m[1]);
+
+  // Every `${...}` in the tail that is a bare identifier: resolve it.
+  const holes = [...tail.matchAll(/\{p\}/g)];
+  if (!holes.length) return [...names];
+  const before = source.slice(Math.max(0, quoteStart - 4000), quoteStart);
+  const idents = [...before.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:new\s+URLSearchParams|([A-Za-z_$][\w$]*)\.toString\(\))/g)];
+  if (!idents.length) return null;
+
+  let resolved = false;
+  for (const [, name, aliasOf] of idents) {
+    const target = aliasOf ?? name;
+    // Keys of `new URLSearchParams({ a: .., b: .. })`.
+    const ctor = new RegExp(String.raw`(?:const|let|var)\s+${target}\s*=\s*new\s+URLSearchParams\(\s*\{([\s\S]*?)\}\s*\)`).exec(before);
+    if (ctor) {
+      for (const m of ctor[1].matchAll(/(?:^|,)\s*['"`]?([A-Za-z_][\w.-]*)['"`]?\s*:/g)) names.add(m[1]);
+      resolved = true;
+    }
+    // `params.set('a', ..)` / `.append('a', ..)` anywhere in the function.
+    const setter = new RegExp(String.raw`\b${target}\.(?:set|append)\(\s*['"\x60]([A-Za-z_][\w.-]*)['"\x60]`, 'g');
+    for (const m of before.matchAll(setter)) {
+      names.add(m[1]);
+      resolved = true;
+    }
+  }
+  return resolved ? [...names] : null;
 }
 
 // ── 2. Payload shape ───────────────────────────────────────────────────────
@@ -378,7 +478,9 @@ const SAMPLE_SNAPSHOT = {
  * kind of no-op this check exists to surface.
  *
  * A new call site with a body and no entry here FAILS the test rather than
- * being skipped, so the map cannot quietly fall behind the app.
+ * being skipped, so the map cannot quietly fall behind the app. An operation
+ * that several call sites post structurally different bodies to takes an
+ * ARRAY, and every entry is validated.
  */
 const REQUEST_SAMPLES: Record<string, unknown> = {
   // src/hooks/useLiveIndicators.ts:39 / :85
@@ -395,8 +497,13 @@ const REQUEST_SAMPLES: Record<string, unknown> = {
     spot_price: 218.2,
     strike_range_pct: null,
   },
-  // src/hooks/usePlaybookEvaluation.ts:27 (conditions) and :54 (batches)
-  'POST /api/playbook/evaluate': { snapshot: SAMPLE_SNAPSHOT, conditions: ['rsi > 50'] },
+  // src/hooks/usePlaybookEvaluation.ts:27 (conditions) and :54 (batches).
+  // Two structurally different bodies reach this one operation, so both are
+  // listed: validating only the first left `batches` unchecked (Codex, #54).
+  'POST /api/playbook/evaluate': [
+    { snapshot: SAMPLE_SNAPSHOT, conditions: ['rsi > 50'] },
+    { snapshot: SAMPLE_SNAPSHOT, batches: { orb: ['rsi > 50'] } },
+  ],
   // src/components/landing/waitlist.ts:13
   'POST /api/waitlist': { email: 'trader@example.com', source: 'landing-hero', website: '' },
   // src/hooks/useTickerSearch.ts:93
@@ -508,16 +615,27 @@ function requestedOperations(): Set<string> {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('extractApiLiterals', () => {
+  /** Drop the source offset; these cases are about the literal and the verb. */
+  const verbs = (src: string) =>
+    extractApiLiterals(src).map(({ literal, method }) => ({ literal, method }));
+
   it('reads the verb of a literal used directly inside fetch()', () => {
-    expect(
-      extractApiLiterals("await fetch('/api/journal/trades', { method: 'POST' });"),
-    ).toEqual([{ literal: '/api/journal/trades', method: 'POST' }]);
+    expect(verbs("await fetch('/api/journal/trades', { method: 'POST' });")).toEqual([
+      { literal: '/api/journal/trades', method: 'POST' },
+    ]);
   });
 
   it('defaults a fetch with no method option to GET', () => {
-    expect(extractApiLiterals("await fetch('/api/me/profile');")).toEqual([
+    expect(verbs("await fetch('/api/me/profile');")).toEqual([
       { literal: '/api/me/profile', method: 'GET' },
     ]);
+  });
+
+  it('reads the verb through a request wrapper with a generic argument', () => {
+    // useAdmin.ts routes its mutations through adminJson, not fetch.
+    expect(
+      verbs("adminJson<Row>(`/api/admin/users/${uid}/roles`, { method: 'PUT', body: b })"),
+    ).toEqual([{ literal: '/api/admin/users/{p}/roles', method: 'PUT' }]);
   });
 
   it('collects every verb a `const ENDPOINT = ...` binding is fetched under', () => {
@@ -533,7 +651,7 @@ describe('extractApiLiterals', () => {
   });
 
   it('leaves the verb unknown when a literal is never fetched through its binding', () => {
-    expect(extractApiLiterals("const OPEN_PREFIXES = ['/api/health'];")).toEqual([
+    expect(verbs("const OPEN_PREFIXES = ['/api/health'];")).toEqual([
       { literal: '/api/health', method: null },
     ]);
   });
@@ -614,6 +732,52 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
     expect(violations, 'mock payloads that violate the API response schema').toEqual([]);
   });
 
+  it('every query parameter the app sends is declared, and every required one is sent', () => {
+    const violations: string[] = [];
+    let checked = 0;
+    let unreadable = 0;
+    for (const file of sourceFiles(SRC)) {
+      const source = readFileSync(file, 'utf8');
+      for (const { literal: lit, method, quoteStart } of extractApiLiterals(source)) {
+        if (method === null || /\s|\*|\.\.\./.test(lit)) continue;
+        const declaredPath = matchedDeclaredPath(lit, API_PATHS_BY_METHOD[method] ?? []);
+        if (!declaredPath) continue; // the route test owns that failure
+        const op = spec.paths[declaredPath]?.[method.toLowerCase()];
+        const params = (op?.parameters ?? []).filter((prm) => prm.in === 'query');
+        const sent = queryNames(source, lit, quoteStart);
+        if (sent === null) {
+          unreadable++;
+          continue;
+        }
+        checked++;
+        const where = `${path.relative(REPO, file)}: ${method} ${declaredPath}`;
+        const declaredNames = new Set(params.map((prm) => prm.name));
+        for (const name of sent) {
+          if (!declaredNames.has(name)) violations.push(`${where}: sends undeclared query \`${name}\``);
+        }
+        for (const prm of params) {
+          if (prm.required && !sent.includes(prm.name)) {
+            violations.push(`${where}: omits required query \`${prm.name}\``);
+          }
+        }
+      }
+    }
+    console.info(`[contract] query params: ${checked} requests checked, ${unreadable} not statically readable`);
+    expect(violations, 'query parameters that disagree with the declared operation').toEqual([]);
+  });
+
+  it('REQUEST_WRAPPERS names every function that fetches its URL argument', () => {
+    const found = new Set<string>();
+    for (const file of sourceFiles(SRC)) {
+      for (const name of requestWrapperNames(readFileSync(file, 'utf8'))) found.add(name);
+    }
+    // A wrapper the set does not name hides every request routed through it:
+    // its literals report no verb, so the body check skips them and the route
+    // check accepts the path under any verb.
+    const undeclared = [...found].filter((n) => !(REQUEST_WRAPPERS as readonly string[]).includes(n));
+    expect(undeclared, 'request wrappers missing from REQUEST_WRAPPERS').toEqual([]);
+  });
+
   it('every request body the app sends matches its operation request schema', () => {
     const violations: string[] = [];
     const covered: string[] = [];
@@ -627,9 +791,16 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
         violations.push(`${key}: declares a request body but REQUEST_SAMPLES has no entry`);
         continue;
       }
-      const errs = schemaErrors(schema, sample);
-      if (errs.length) violations.push(`${key}: ${errs.join('; ')}`);
-      else covered.push(key);
+      const variants = Array.isArray(sample) ? sample : [sample];
+      let ok = true;
+      variants.forEach((variant, n) => {
+        const errs = schemaErrors(schema, variant);
+        if (!errs.length) return;
+        ok = false;
+        const which = variants.length > 1 ? ` (variant ${n + 1}/${variants.length})` : '';
+        violations.push(`${key}${which}: ${errs.join('; ')}`);
+      });
+      if (ok) covered.push(key);
     }
     console.info(`[contract] request bodies: ${covered.length} operations validated`);
     expect(violations, 'request bodies that do not match the declared schema').toEqual([]);
