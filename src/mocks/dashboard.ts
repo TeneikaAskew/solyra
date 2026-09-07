@@ -24,6 +24,7 @@ import type {
 } from '@/routes/DashboardPage';
 import type { AvgVolume, LiveHistory } from '@/hooks/useLiveHistory';
 import type { LiveQuote } from '@/hooks/useLiveQuote';
+import type { MovementStatement } from '@/types';
 import type { MockRoute } from './types';
 import { MOCK_MARKET_HOURS } from './common';
 import { addDaysToISO, todayET } from '@/lib/dates';
@@ -638,6 +639,106 @@ export const MOCK_BACKTEST_ALL = { ticker: 'IWM', total_runs: 0, runs: [] };
  * scoped to IWM (the app's default ticker). The card routes are included
  * unconditionally: in mock mode the cards should render, not error.
  */
+/**
+ * GET /api/movement-statement with the feature flag ON: a realistic assembled
+ * statement, shape verified live against the production assembler
+ * (lib/movement_statement.py) — validated 15m model, context-only expected
+ * move and regime, and a levels ladder as _build_movement_level_map emits it.
+ * Served by mock mode AND the Playwright `mockDashboard` fixture so the two
+ * cannot drift; movement-read.spec.ts derives its variants from it.
+ */
+export const MOCK_MOVEMENT_STATEMENT = {
+  status: 'OK',
+  ticker: 'IWM',
+  timeframe: '15m',
+  scope_statement:
+    'Structure read, not a directional or P&L edge. The headline probability ' +
+    'is the calibrated chance the current candle type continues.',
+  headline: {
+    status: 'OK',
+    probability: 0.087,
+    current_type: '1',
+    statement: 'IWM 15m: current structure is a 1 candle; continuation 9%.',
+  },
+  continuation: { status: 'OK', current_type: '1', continuation_prob: 0.087 },
+  confidence_modifiers: {
+    note:
+      'Context only. These DO NOT change the headline probability — the ' +
+      'headline is the calibrated continuation probability alone.',
+    expected_move: {
+      status: 'OK',
+      role: 'context',
+      size_class: 'TIGHT',
+      pred_bucket: 0,
+      probabilities: {
+        p_tight: 0.69,
+        p_normal: 0.24,
+        p_expanded: 0.05,
+        p_explosive: 0.01,
+      },
+      max_proba: 0.69,
+      model_version: 'magnitude-recal-48njf',
+      ts: '2026-07-10T19:45:00+00:00',
+      usage_guidance:
+        'How BIG the next move is likely to be — not which way. Sizing / ' +
+        'filtering / strike-selection context only: it is NOT a directional ' +
+        'signal and does not move the headline probability.',
+    },
+    regime: {
+      status: 'OK',
+      role: 'context',
+      regime: 'negative_gamma',
+      mood: 'trending',
+      gamma_flip: null,
+      total_gex: -22226013.0,
+    },
+  },
+  // In production the endpoint builds this via _build_movement_level_map; a
+  // realistic ladder (levels-to-go each way, per-tier population reach-rates).
+  levels: {
+    status: 'OK',
+    current_price: 218.4,
+    reach_rate_note:
+      'Reach-rates are population statistics per tier, not per-instance predictions.',
+    calls: [
+      {
+        price: 219.1,
+        name: 'ORB 15m High',
+        period: 'intraday',
+        level_type: 'ORB',
+        distance_pct: 0.32,
+        reach_rate: { status: 'OK', reach_rate: 0.61, hits: 92, sample_n: 151, low_sample: false },
+      },
+      {
+        price: 220.05,
+        name: 'Prev Day High',
+        period: 'daily',
+        level_type: 'PDH',
+        distance_pct: 0.76,
+        reach_rate: { status: 'OK', reach_rate: 0.38, hits: 57, sample_n: 151, low_sample: false },
+      },
+    ],
+    puts: [
+      {
+        price: 217.8,
+        name: 'ORB 15m Low',
+        period: 'intraday',
+        level_type: 'ORB',
+        distance_pct: -0.27,
+        reach_rate: { status: 'OK', reach_rate: 0.58, hits: 88, sample_n: 151, low_sample: false },
+      },
+      {
+        price: 216.9,
+        name: 'Prev Day Low',
+        period: 'daily',
+        level_type: 'PDL',
+        distance_pct: -0.69,
+        reach_rate: { status: 'OK', reach_rate: 0.31, hits: 12, sample_n: 40, low_sample: true },
+      },
+    ],
+  },
+} satisfies MovementStatement;
+
 export const dashboardRoutes: MockRoute[] = [
   { pattern: /^\/api\/dashboard\/brief\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_BRIEF }) },
   { pattern: /^\/api\/playbook\/IWM$/, reply: () => ({ body: MOCK_PLAYBOOK }) },
@@ -704,12 +805,14 @@ export const dashboardRoutes: MockRoute[] = [
   { pattern: /^\/api\/backtest\/results\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_RESULTS }) },
   { pattern: /^\/api\/backtest\/equity\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_EQUITY }) },
   { pattern: /^\/api\/backtest\/all\/IWM$/, reply: () => ({ body: MOCK_BACKTEST_ALL }) },
-  // MovementRead mounts on the default page; useMovementStatement treats a
-  // 404 as the documented "feature flag off" state (no retries, card hides),
-  // so answering 404 here is the honest representative response — a 501
-  // loud-miss would spray console errors on mock mode's landing page.
+  // MovementRead mounts on the default page. Until 2026-09-07 this answered
+  // the flag-OFF 404 (card hides); it now serves the assembled statement so
+  // the demo landing page shows the card, matching every other populated
+  // fixture here, and so the Playwright fixture that shares this payload
+  // does not put a 404 — which Chrome logs as a console error — under the
+  // navigation smoke's clean-console assertion.
   {
     pattern: /^\/api\/movement-statement$/,
-    reply: () => ({ status: 404, body: { detail: 'movement statement flag off' } }),
+    reply: () => ({ body: MOCK_MOVEMENT_STATEMENT }),
   },
 ];

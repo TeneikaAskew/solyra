@@ -4,6 +4,7 @@
 import { test, expect } from '@playwright/test';
 import { perfBudgetMs } from '../helpers/perfBudget';
 import { mockCommon, M } from '../helpers/mocks';
+import { MOCK_AVG_VOLUME } from '@/mocks/live';
 
 const SPEC_LOCAL_PLAYBOOK = {
   ticker: 'IWM',
@@ -33,7 +34,8 @@ test.describe('Playbook', () => {
     await page.route('**/api/market/reference/IWM/*', (r) => r.fulfill(M.ok(MOCK_REFERENCE)));
     await page.route('**/api/signals/IWM*', (r) =>
       r.fulfill(M.ok({ ticker: 'IWM', count: 0, signals: [] }))
-    );
+    );    // PlaybookPage reads the 20-day average volume (useLiveHistory).
+    await page.route('**/api/live/avg-volume/IWM*', (r) => r.fulfill(M.ok(MOCK_AVG_VOLUME)));
   });
 
   test('renders ticker playbook heading', async ({ page }) => {

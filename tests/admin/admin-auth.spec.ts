@@ -15,6 +15,8 @@
  */
 import { test, expect } from '@playwright/test';
 import { mockAdminApi } from '../helpers/fixtures/admin';
+import { mockAllPages } from '../helpers/fixtures/all';
+import { mockCommon } from '../helpers/mocks';
 
 const ADMIN_EMAIL = 'teneika@bictech.org';
 
@@ -100,6 +102,9 @@ test.describe('Admin — role-based access', () => {
 
 test.describe('Admin — non-admin users', () => {
   test('anonymous user sees the access-denied card', async ({ page }) => {
+    // Shell fan-out (status pill, market hours, preferences) — the /api/me
+    // override below is registered after and wins.
+    await mockCommon(page);
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: null, is_admin: false }) }),
     );
@@ -112,6 +117,9 @@ test.describe('Admin — non-admin users', () => {
   });
 
   test('non-admin email sees the access-denied card', async ({ page }) => {
+    // Shell fan-out (status pill, market hours, preferences) — the /api/me
+    // override below is registered after and wins.
+    await mockCommon(page);
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: 'someone@example.com', is_admin: false }) }),
     );
@@ -124,6 +132,9 @@ test.describe('Admin — non-admin users', () => {
   });
 
   test('/api/me failure denies rather than granting', async ({ page }) => {
+    // Shell fan-out (status pill, market hours, preferences) — the /api/me
+    // override below is registered after and wins.
+    await mockCommon(page);
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 500, body: 'Internal Server Error' }),
     );
@@ -148,6 +159,10 @@ test.describe('Sidebar — Admin link visibility', () => {
   // setting before the app boots — same mechanism a user pinning the sidebar
   // in Settings would produce.
   test.beforeEach(async ({ page }) => {
+    // These specs read only the nav, but /dashboard fires its whole fan-out;
+    // answer it with the typed fixtures instead of the dead E2E proxy
+    // (audit §10.2). Each test re-registers /api/me afterwards and wins.
+    await mockAllPages(page);
     await page.addInitScript(() => {
       window.localStorage.setItem(
         'platform-shell-settings',

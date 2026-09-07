@@ -24,10 +24,12 @@ import {
   MOCK_DASHBOARD_QUOTE,
   MOCK_DASHBOARD_REFERENCE,
   MOCK_MARKET_HOURS,
+  MOCK_MOVEMENT_STATEMENT,
   MOCK_PLAYBOOK_EMPTY,
   MOCK_SECTORS,
   buildDashboardNews,
 } from '@/mocks/dashboard';
+import { MOCK_INSIGHT_REPORT } from '@/mocks/insights';
 import { M, mockCommon } from '../mocks';
 
 export {
@@ -41,6 +43,7 @@ export {
   MOCK_DASHBOARD_QUOTE,
   MOCK_DASHBOARD_REFERENCE,
   MOCK_MARKET_HOURS,
+  MOCK_MOVEMENT_STATEMENT,
   MOCK_PLAYBOOK,
   MOCK_PLAYBOOK_EMPTY,
   MOCK_SECTORS,
@@ -71,6 +74,25 @@ export async function mockDashboard(page: Page) {
   );
   // Candlestick chart reads market-hours for its RTH window.
   await page.route('**/api/config/market-hours', (r) => r.fulfill(M.ok(MOCK_MARKET_HOURS)));
+  // Two endpoints DashboardPage requests on EVERY mount that no fixture used
+  // to register, so every /dashboard load in the suite fell through to the
+  // dead E2E proxy (docs/TEST_COVERAGE_AUDIT.md §10.2). Both answer with the
+  // payload mock mode serves (src/mocks/dashboard.ts, src/mocks/insights.ts)
+  // so the two surfaces cannot drift. The statement is served as a 200, not
+  // the flag-OFF 404: Chrome logs every 404 as a console error, and the
+  // navigation smoke asserts a clean console on /dashboard (the same reason
+  // mockCommon answers /api/me/preferences with 200-nulls). movement-read
+  // .spec.ts re-registers the statement per test and wins.
+  await page.route('**/api/movement-statement*', (r) =>
+    r.fulfill(M.ok(MOCK_MOVEMENT_STATEMENT))
+  );
+  await page.route('**/api/insights/report/IWM', (r) => r.fulfill(M.ok(MOCK_INSIGHT_REPORT)));
+  // The Overview's card/chart endpoints with their default payloads, so a
+  // spec that only needs the page to mount (movement-read, most-active-bar,
+  // dashboard-chart-fit) no longer leaves sectors / news / intraday bars /
+  // backtest to the dead proxy. Specs wanting other payloads call
+  // `mockDashboardCards(page, opts)` afterwards; the later registration wins.
+  await mockDashboardCards(page);
 }
 
 export interface DashboardCardOpts {
@@ -79,13 +101,14 @@ export interface DashboardCardOpts {
 }
 
 /**
- * Layer the Overview's card/chart endpoints on top of `mockDashboard`.
- *
- * Kept OPT-IN rather than folded into `mockDashboard` because
- * movement-read.spec.ts and most-active-bar.spec.ts also call
- * `mockDashboard`, and silently adding routes there would change what those
- * cards render underneath assertions that were written against the
- * unmocked (error) state.
+ * The Overview's card/chart endpoints. `mockDashboard` registers these with
+ * their defaults; call this again with `opts` to swap the sectors or news
+ * payload for one spec (Playwright matches newest-first, so the later call
+ * wins). Until 2026-09-07 this layer was opt-in, on the theory that
+ * movement-read.spec.ts and most-active-bar.spec.ts had assertions written
+ * against the unmocked error state; neither does — they assert on the
+ * movement card and the marquee only — and the opt-in left every one of
+ * their dashboard loads spraying ECONNREFUSED at the dead proxy (audit §10.2).
  */
 export async function mockDashboardCards(page: Page, opts: DashboardCardOpts = {}) {
   await page.route('**/api/market/sectors', (r) => r.fulfill(M.ok(opts.sectors ?? MOCK_SECTORS)));

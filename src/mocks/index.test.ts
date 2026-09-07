@@ -6,7 +6,7 @@ import { MOCK_LIVE_HISTORY_EOD } from './live';
 import { MOCK_ADMIN_ROUTES } from './admin';
 import { MOCK_GRID_POPULATED } from './options';
 import { MOCK_PROFILE } from './common';
-import { MOCK_PLAYBOOK } from './dashboard';
+import { MOCK_MOVEMENT_STATEMENT, MOCK_PLAYBOOK } from './dashboard';
 
 const get = (path: string) =>
   resolveMock('GET', new URL(`http://mock.test${path}`), undefined);
@@ -83,10 +83,11 @@ describe('canonical payload resolution', () => {
     expect(JSON.parse(grid!.payload).cells).toBeDefined();
   });
 
-  it('movement-statement answers the documented 404 feature-off state, not a loud miss', () => {
+  it('movement-statement serves the assembled statement (flag ON), not a 404 or a loud miss', () => {
     const hit = get('/api/movement-statement');
     expect(hit).not.toBeNull();
-    expect(hit!.status).toBe(404);
+    expect(hit!.status ?? 200).toBe(200);
+    expect(JSON.parse(hit!.payload)).toEqual(MOCK_MOVEMENT_STATEMENT);
   });
 
   it('serves the real 12-card playbook, not the empty variant', () => {

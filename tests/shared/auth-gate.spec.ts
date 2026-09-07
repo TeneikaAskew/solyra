@@ -8,9 +8,14 @@
  * Real Google/email sign-in needs a live Firebase project, so that path is
  * covered by the staging manual verification, not here. These specs assert the
  * gate's render decision + that the login UI is present in firebase mode.
+ *
+ * `mockAllPages` (not just `mockCommon`): these specs only look at the shell,
+ * but /dashboard still fires its full fan-out, and with the E2E proxy pinned
+ * to a dead backend every unmocked call was a logged ECONNREFUSED (audit
+ * §10.2). The config override each test registers afterwards still wins.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon } from '../helpers/mocks';
+import { mockAllPages } from '../helpers/fixtures/all';
 
 // A well-formed (but fake) Firebase web config — enough for initializeApp() to
 // construct without throwing; no network is needed to render the signed-out UI.
@@ -27,7 +32,7 @@ test.describe('Auth gate', () => {
   });
 
   test('open mode → app renders, no login screen', async ({ page }) => {
-    await mockCommon(page); // config → { authMode: 'open' }
+    await mockAllPages(page); // config → { authMode: 'open' }
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
 
     // The app shell mounted: /help now lives inside the Support dropdown
@@ -39,7 +44,7 @@ test.describe('Auth gate', () => {
   });
 
   test('firebase mode, signed out → login screen blocks the app', async ({ page }) => {
-    await mockCommon(page);
+    await mockAllPages(page);
     // Registered after mockCommon so it wins (Playwright: last route matches first).
     await page.route('**/api/config/firebase', (r) =>
       r.fulfill({
@@ -65,7 +70,7 @@ test.describe('Auth gate', () => {
   // main.tsx's header comment forbids that; these make the posture executable.
 
   test('config fetch failure → config-error screen, app never renders', async ({ page }) => {
-    await mockCommon(page);
+    await mockAllPages(page);
     await page.route('**/api/config/firebase', (r) =>
       r.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"boom"}' }),
     );
@@ -81,7 +86,7 @@ test.describe('Auth gate', () => {
   test('config endpoint answering HTML (static-host fallback) → config-error screen', async ({
     page,
   }) => {
-    await mockCommon(page);
+    await mockAllPages(page);
     // A static host with SPA history-fallback answers /api/* with index.html
     // and a 200 — the shape guard must treat that as a failed boot, not as
     // open mode (confirmed real via HAR, see src/main.tsx).
@@ -96,7 +101,7 @@ test.describe('Auth gate', () => {
   });
 
   test('login screen toggles between sign-in and sign-up', async ({ page }) => {
-    await mockCommon(page);
+    await mockAllPages(page);
     await page.route('**/api/config/firebase', (r) =>
       r.fulfill({
         status: 200,
