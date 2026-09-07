@@ -1,0 +1,147 @@
+name: Follow-up — deferred work from a PR, review, or move
+description: Work knowingly left out of something that shipped, or carried across from the stocks repo
+title: "<area>: <the remainder, stated as work not as regret>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For the remainder: a finding whose fix exceeded a PR's scope, a coverage
+        gap a review surfaced, a check that only covers one direction, or an
+        issue moved here after the frontend split (stocks#957).
+
+        This form exists so a review thread can resolve against a tracked item
+        instead of being left open. #32 records exactly which items from a
+        four-agent review did **not** ride in the PR that shipped the rest, and
+        why each one was held back.
+
+        **If this is a move, re-verify on arrival.** Every moved issue here
+        carries a "Verified <date> that the defect still exists in this repo"
+        line with the paths rewritten from `platform/src/` to `src/`. A moved
+        issue that no longer reproduces gets closed on that evidence rather than
+        re-filed.
+
+  - type: input
+    id: parent
+    attributes:
+      label: Parent
+      description: The PR, review, issue, or source repo this comes out of.
+      placeholder: "Follow-up from #54 | Deferred from the 2026-09-03 four-agent review of main @ 1cdb9bd | Moved from TeneikaAskew/stocks#868"
+    validations:
+      required: true
+
+  - type: textarea
+    id: why-deferred
+    attributes:
+      label: Why it was not done there
+      description: >-
+        Say it plainly, with the context that kept it out. "It is a deliberate,
+        documented, tab-scoped design, the page is unlinked from user nav, and
+        no XSS sink exists in the app today, so exploiting it requires a second
+        vulnerability that does not exist" is a reason. A deferral without one
+        reads as an oversight.
+      placeholder: |
+        These are pre-existing gaps rather than regressions: mock mode has never had routes for
+        them, and they are mostly mutations, which is presumably why. Adding a check that every
+        typed operation must have a mock route is what surfaced them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence from the running system or the current tree
+      description: >-
+        Show the remainder is real and still open, now. For a move, this is the
+        "still reproduces here" check with the updated paths. Paste command and
+        output together, not a fixture and not a recollection.
+      render: shell
+      placeholder: |
+        $ npm test -- src/mocks/contract.test.ts
+        12 requested operations have no mock route (UNMOCKED_REQUESTED floor)
+
+        $ ls .github/workflows/
+        ls: cannot access '.github/workflows/': No such file or directory
+        Verified 2026-09-03: vitest and Playwright suites exist, nothing runs them in CI.
+    validations:
+      required: true
+
+  - type: textarea
+    id: holds-the-line
+    attributes:
+      label: What holds the line today
+      description: >-
+        What stops this getting worse while it is open, and what that mechanism
+        does not cover. A floor that can only shrink is a real control and
+        deserves saying; so does its blind spot.
+      placeholder: |
+        `UNMOCKED_REQUESTED` records them as a floor that can only shrink: a requested operation
+        with no mock and no entry fails the suite, and an entry that gains a mock must be
+        deleted, which the test enforces. Both directions are covered by injection tests. What
+        it does not do is make the mutation paths exercisable offline.
+
+  - type: textarea
+    id: why-it-matters
+    attributes:
+      label: Why it matters
+      description: >-
+        The concrete consequence, ideally one that has already happened rather
+        than one you expect.
+      placeholder: |
+        Mock mode is what the hermetic E2E suite and offline UI work run against. An unmocked
+        mutation means those paths cannot be exercised without a backend, and mock mode answers
+        its loud 501 instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: doing-the-work
+    attributes:
+      label: Doing the work
+      description: >-
+        Concrete enough that someone else could pick it up: the files, the
+        pattern to follow, and the check that tells them when they are done.
+      placeholder: |
+        Add a route per operation to the matching table under `src/mocks/` (journal.ts,
+        insights.ts, landing.ts, options.ts, charts.ts), each with a realistic payload typed
+        against its response model, then delete its entry from `UNMOCKED_REQUESTED`. The test
+        will tell you if you forget.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope-cost
+    attributes:
+      label: Scope and cost
+      description: >-
+        What this pulls in, and what it will surface on first run. Expect a batch
+        of existing mismatches and budget for it rather than assuming a clean bill.
+      placeholder: |
+        - New devDependency plus a codegen step.
+        - Covers only the typed operations; 17 of 98 are still untyped on the stocks side, so a
+          renamed field in an untyped response stays invisible either way.
+        - Expect a batch of existing mismatches on first run, the way the mock alignment did.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - A deliberate failing Vitest assertion and a deliberate failing Playwright assertion
+          each fail CI; reports upload; both are required checks on pull requests.
+        - The `e2e:cloud` projects stay explicitly excluded from the hermetic gate.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: attestation
+    attributes:
+      label: Evidence attestation
+      options:
+        - label: >-
+            The evidence above was produced by running against the running app,
+            the real API, or the current tree while filing this issue. It is not
+            recalled from the parent PR's description or a previous session.
+          required: true
+        - label: >-
+            If this is a move from stocks, I re-verified the defect still
+            reproduces here and rewrote the paths from `platform/src/` to `src/`.

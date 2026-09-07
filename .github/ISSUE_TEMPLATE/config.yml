@@ -1,0 +1,34 @@
+# Blank issues stay enabled deliberately. The forms encode the standard; they
+# are not a gate. A finding that does not fit one of them is better filed
+# freehand than squeezed into the wrong shape.
+#
+# These forms apply to the GitHub web UI only. Issues opened through the API
+# bypass them entirely, which includes anything an agent files.
+blank_issues_enabled: true
+
+contact_links:
+  - name: The backend, the API, and the research pipeline live in stocks
+    url: https://github.com/TeneikaAskew/stocks/issues/new/choose
+    about: >-
+      This repo is the frontend only. If the API returns the wrong shape or the
+      wrong value, if a route is missing, or if the math is wrong, file it there
+      instead. A frontend workaround for a backend defect is how a fabricated
+      value gets a second home. If the fix needs both sides, file here with the
+      contract-drift form and link the stocks issue.
+
+  - name: The rules these forms are enforcing
+    url: https://github.com/TeneikaAskew/solyra/blob/main/CLAUDE.md
+    about: >-
+      Rule 0 (never rewrite published git history — Lovable), Rule 4 (no silent
+      fallbacks; a missing value stays null and only the presentation boundary
+      renders an em-dash), Rule 5 (one source of truth for math), Rule 6
+      (cross-repo API contract drift), Rule 2.5 (read reviews before merging).
+
+  - name: How to get real evidence instead of a fixture
+    url: https://github.com/TeneikaAskew/solyra/blob/main/CLAUDE.md
+    about: >-
+      `npm run dev` proxies /api to a local backend when one is listening on
+      :8000 and to solyra-api-staging otherwise, so you can see real responses.
+      `npm run contract:check` fetches stocks main and diffs the vendored
+      OpenAPI snapshot. The fixtures satisfies the types, so they only prove the
+      app agrees with itself; they are never evidence about the server.

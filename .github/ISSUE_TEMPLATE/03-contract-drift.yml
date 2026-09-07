@@ -1,0 +1,134 @@
+name: Cross-repo contract drift (Rule 6)
+description: The API shape this app expects and the one stocks actually serves have diverged
+title: "contract: <endpoint or type> — <how it diverged>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `src/types/` and `tests/helpers/fixtures/` are hand-maintained **here**
+        while the API that produces those shapes lives in **TeneikaAskew/stocks**.
+        The fixtures `satisfies` the types, so a fixture cannot drift from a
+        type. Neither one is evidence about the server.
+
+        **So the evidence for this issue has to come from the API, not from this
+        repo.** Either a real response, or the vendored OpenAPI snapshot checked
+        against stocks `main`. Confirm the stocks router actually returns the
+        shape; never reshape a type to make a fixture compile.
+
+        Two directions, and only one is mechanically caught today:
+
+        - **Narrowing is caught.** A field the app reads or sends that the API
+          no longer declares fails the contract test.
+        - **Widening is not.** A field going from required `string` to nullable
+          leaves both the old mock and the old type valid, so the suite passes
+          while production returns a null the app does not handle. This caused
+          two real UI bugs after #54, found by review rather than by the suite.
+
+        And an operation with no `response_model` in stocks emits an empty
+        schema that validates anything, so a renamed field there passes CI in
+        both repos and breaks this app at runtime.
+
+  - type: input
+    id: surface
+    attributes:
+      label: Endpoint and type
+      description: The route, and the type or fixture on this side that describes it.
+      placeholder: "GET /api/journal/stats — src/types/journal.ts:UserJournalStats, tests/helpers/fixtures/journal.ts"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: direction
+    attributes:
+      label: Direction of the drift
+      options:
+        - Narrowing — the app reads or sends a field the API no longer declares
+        - Widening — a field became nullable or optional and the type does not admit it
+        - Missing endpoint — the app calls a route that does not exist
+        - Untyped operation — no response_model in stocks, so nothing validates
+        - Frontend-first — the app documents a contract that was never built
+    validations:
+      required: true
+
+  - type: textarea
+    id: api-evidence
+    attributes:
+      label: Evidence from the API
+      description: >-
+        A real response, or the snapshot checked against stocks main. Paste
+        command and output. `npm run contract:check` fetches stocks `main` and
+        fails with a diff when the vendored copy is stale; a search of the
+        stocks tree settles whether a route exists at all.
+      render: shell
+      placeholder: |
+        $ npm run contract:check
+        vendored tests/fixtures/stocks-openapi.json is stale
+        - /api/journal/stats  win_rate: {"type":"number"}
+        + /api/journal/stats  win_rate: {"anyOf":[{"type":"number"},{"type":"null"}]}
+
+        $ grep -rn "me/preferences" ../stocks/platform/api/
+        (no route)
+    validations:
+      required: true
+
+  - type: textarea
+    id: app-evidence
+    attributes:
+      label: What this app does with it today
+      description: >-
+        The consuming code and the user-visible result. A bare `·` badge or a
+        `—%` on a dashboard tile is the concrete consequence, and it is worth
+        more than "type mismatch".
+      render: shell
+      placeholder: |
+        $ grep -rn "win_rate" src/
+        src/routes/DashboardPage.tsx:212  {stats.win_rate.toFixed(0)}%
+        Renders `—%` when the field arrives null, because toFixed runs before any null check.
+    validations:
+      required: true
+
+  - type: textarea
+    id: paired-change
+    attributes:
+      label: The paired change set
+      description: >-
+        Rule 6: a shape change means regenerate the OpenAPI snapshot in stocks,
+        then here run `npm run contract:sync` and update `src/types/` and the
+        affected fixture, in the same change set, recorded in both PR
+        descriptions. Say which side moves first and why.
+      placeholder: |
+        stocks first: widen `_Bar.volume` to `float | None` in platform/api/routers/live.py and
+        handle a null-volume bar explicitly in lib/indicators VWAP, then regenerate
+        platform/api/openapi.json. Here: `npm run contract:sync`, admit null in
+        src/types/charts.ts, add the null case to tests/helpers/fixtures/charts.ts, and drop the
+        AUDIT-marked `?? 0` in ChartsPage.tsx.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - `npm run contract:check` clean against stocks main.
+        - `npx tsc -b` fails before the type is widened, given the regenerated snapshot.
+        - A fixture carrying the null case, and an E2E assertion that the tile renders `—`
+          rather than `—%`.
+        - Both PR descriptions name the other side's PR number.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: attestation
+    attributes:
+      label: Evidence attestation
+      options:
+        - label: >-
+            The API-side evidence came from a real response or from the snapshot
+            checked against stocks `main` while filing this issue. It is not
+            read off `src/types/`, a fixture, a mock, or a hook's doc comment.
+          required: true
+        - label: >-
+            I confirmed what the stocks router actually returns rather than
+            assuming the type here was right.
+          required: true

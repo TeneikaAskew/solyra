@@ -1,0 +1,150 @@
+name: Dead surface — delete or revive
+description: A component, hook, or route with no importers. Decide its fate on git evidence, not on how it looks.
+title: "<file>: <zero importers since <when>> — delete or revive?"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For code that still compiles and nothing uses. This repo has four closed
+        examples of the shape (#14, #15, #16, #17), and they resolved differently
+        because the forensics differed:
+
+        - **Never had a consumer.** `DataTable.tsx` and `Tabs.tsx` arrived in the
+          initial squash as prototype scaffolding, and the pickaxe over every
+          commit in the lineage finds no importer at any point. Delete.
+        - **Built ahead for a design that never shipped.** `TermHover.tsx` was
+          landed explicitly "not yet wired into any page"; the heatmap that
+          actually shipped took a different design. A later rename refactor kept
+          it compiling, which is why it survived. Delete.
+        - **Accidental rewrite debris.** `DataPipelineStatus.tsx` was wired to
+          the Dashboard in April and silently unmounted by a June rewrite whose
+          message says "all other pages are untouched" and never mentions it.
+          That one is a product call, not a cleanup.
+
+        **Run the pickaxe before you conclude.** "It looks unused" is not the
+        finding; "no importer at any point in the repo's history, across all N
+        commits plus the pre-split lineage" is.
+
+  - type: input
+    id: files
+    attributes:
+      label: Files
+      description: Every file involved, including anything transitively dead.
+      placeholder: "src/components/shared/TermHover.tsx, src/hooks/useGammaGlossary.ts (only importer is TermHover)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: importer-evidence
+    attributes:
+      label: Importer search, run now
+      description: >-
+        Paste the searches and their output. Include the negative result
+        verbatim: a grep that returns nothing is the evidence, and it only means
+        something if the reader can see the pattern you searched for.
+      render: shell
+      placeholder: |
+        $ grep -rn "TermHover\|useGammaGlossary" src/
+        src/components/shared/TermHover.tsx:12:export function TermHover(
+        src/hooks/useGammaGlossary.ts:8:export function useGammaGlossary(
+        (definitions only; no importer)
+
+        $ npx tsc -b
+        clean
+    validations:
+      required: true
+
+  - type: textarea
+    id: forensics
+    attributes:
+      label: How it got here
+      description: >-
+        Git forensics with dated commits, using the pickaxe over the full
+        lineage including the pre-split history. What the commit message said
+        matters: a rewrite that claims "all other pages are untouched" while
+        dropping a mount is telling you this was accidental.
+      render: shell
+      placeholder: |
+        $ git log --oneline --all -S "TermHover" -- src platform/src
+        a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
+        e1ce147 (May 31, Phase C1) shipped it "not yet wired into any page — C2-C5 will
+                consume it as the heatmap UI lands"
+
+        The heatmap that landed (8ba5731 Swing Mode, wired by 7526031 "supersedes #642") took a
+        different design and never used it. So: never had a consumer, and the design that was
+        going to consume it was superseded.
+    validations:
+      required: true
+
+  - type: textarea
+    id: backend
+    attributes:
+      label: Backend state
+      description: >-
+        If the surface calls an endpoint, say whether that endpoint is alive in
+        stocks and whether it is covered there. Deleting a frontend consumer
+        does not retire the route, and the route may be worth keeping.
+      placeholder: |
+        `GET /api/glossary/gamma` is alive and pytest-covered
+        (platform/api/routers/glossary.py:30 in stocks). It stays available if a future surface
+        wants a hover glossary; nothing in this app reads it today.
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Options, with a recommendation
+      description: >-
+        Give the reader a decision and say which one you would take. Where the
+        answer is "revive", the question is *where it mounts*, and that is a
+        product call, not a refactor.
+      placeholder: |
+        - **Delete** — nobody noticed its absence for three months; the briefing-first dashboard
+          has no slot for an ops widget. Recommended unless the next option is actually wanted.
+        - **Revive** — if operators want pipeline-freshness visibility back, decide where
+          (Dashboard footer? Admin page?) and add a `health/freshness` fixture to
+          `tests/helpers/fixtures/`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: cleanup
+    attributes:
+      label: Dependency cleanup that does or does not follow
+      description: >-
+        Check before claiming a dependency can go. `DataTable` was not the only
+        `@tanstack/react-table` consumer, so deleting it removed nothing from
+        package.json. Paste the check.
+      render: shell
+      placeholder: |
+        $ grep -rn "@tanstack/react-table" src/
+        src/components/backtest/BacktesterSection.tsx:4
+        src/routes/SignalsPage.tsx:9
+        Live consumers remain; no dependency cleanup follows.
+
+  - type: textarea
+    id: verify
+    attributes:
+      label: Verify
+      description: The exact commands that prove the change is safe, including the greps that must return nothing.
+      placeholder: |
+        `npx tsc -b`, `npm test`; `grep -r "TermHover\|useGammaGlossary" src` returns nothing.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: attestation
+    attributes:
+      label: Evidence attestation
+      options:
+        - label: >-
+            The importer search and the git forensics above were run against
+            this tree while filing this issue, not recalled and not read off an
+            audit doc.
+          required: true
+        - label: >-
+            I used the pickaxe over the full history including the pre-split
+            lineage, rather than concluding from the current tree alone.
+          required: true
+        - label: >-
+            I have said explicitly whether I checked source only, or also the
+            deployed build.

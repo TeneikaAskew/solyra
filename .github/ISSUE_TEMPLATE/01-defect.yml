@@ -1,0 +1,163 @@
+name: Defect
+description: Something renders, fetches, or computes wrong, and you can show it from the running app
+title: "<area>: <what is wrong, stated as the defect not the symptom>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Evidence comes from the running system, not from memory and not from
+        the fixtures.** The fixtures `satisfies` the TypeScript types, so they
+        can only tell you the app agrees with itself. They cannot tell you the
+        server still sends that shape.
+
+        Not evidence: a fixture, a mock payload, a type definition, a code
+        comment, a number from an older issue, or a recollection of a previous
+        session. #36 was filed on the real thing: `GET` 404s benignly, `PUT`
+        404s and every Settings save surfaces "Could not save preferences
+        (HTTP 404)" against the deployed API today.
+
+        "I have not measured this" is a complete and acceptable answer. Write it
+        where it applies rather than filling a section with a guess.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is wrong. One or two sentences, stating the defect rather than the symptom.
+      placeholder: |
+        `usePreferences.ts` documents and calls `PUT /api/me/preferences`, which does not exist
+        in the stocks backend. The write path is dead until the endpoint ships.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence from the running system
+      description: >-
+        Paste the command or request AND its output, together. The real API
+        response from the network tab or a direct call, `npm test` output,
+        `npx tsc -b`, a Playwright run, `npm run contract:check`, or a grep over
+        the actual tree. Screenshots count for a render defect. Say which
+        backend you hit: local :8000, staging, or prod.
+      render: shell
+      placeholder: |
+        $ curl -s -o /dev/null -w '%{http_code}\n' -X PUT https://<deployed>/api/me/preferences -d '{}'
+        404
+
+        $ grep -rn "me/preferences" ../stocks/platform/api/
+        (no route; only a doc note in docs/HARDCODED_VALUES_REMEDIATION.md planning
+         /api/user/preferences someday)
+
+        $ npx tsc -b
+        (clean, which is the point: the type compiles against a route that does not exist)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Which repo owns the fix
+      description: >-
+        Decide before writing code. A 0% where the server sent null is a Rule 4
+        violation here. A 0% the server actually sent is a stocks issue, and a
+        frontend workaround for a backend defect is how a fabricated value gets
+        a second home.
+      options:
+        - solyra — render, state, or a value coerced on this side
+        - stocks — the API returns the wrong shape or value
+        - both — a paired change set under Rule 6
+        - not yet established
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-expected
+    attributes:
+      label: Current vs expected behaviour
+      description: >-
+        State both. If the expected behaviour is an em-dash and an unavailable
+        badge rather than a number, say so: that is the only Rule 4 exemption
+        and it lives at the presentation boundary.
+      placeholder: |
+        **Current:** the dashboard win rate renders `—%` because a nullable field arrives null
+        and the formatter concatenates before checking.
+        **Expected:** a missing value renders `—` with an unavailable badge, and never coerces
+        to 0 anywhere above the presentation boundary.
+    validations:
+      required: true
+
+  - type: textarea
+    id: consumers
+    attributes:
+      label: Consumers and blast radius
+      description: >-
+        A shared hook or a `src/lib/` helper has more callers than the page that
+        filed this. Paste the search.
+      render: shell
+      placeholder: |
+        $ grep -rn "useLatestOptionsDate" src/
+        src/hooks/useOptionsDates.ts:41
+        src/routes/OptionsFlowPage.tsx:88
+        src/components/options/SwingMode.tsx:56
+        Three consumers sharing one cache key, and one of them only reads [0].
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0 — the user is shown something false, or a core path is broken
+        - P1 — correctness, contained to one surface
+        - P2 — architecture, parity, or coverage
+        - P3 — cleanup, polish, cost
+    validations:
+      required: true
+
+  - type: textarea
+    id: remediation
+    attributes:
+      label: Proposed remediation direction
+      description: >-
+        Direction, not a patch. The order that keeps working: fix the render
+        boundary first so the user stops seeing something false, then the
+        source, then extract a pure helper and unit-test it so the class cannot
+        come back. If the answer is "do not fix", say so and put the reasoning
+        under Evidence.
+      placeholder: |
+        1. Render `—` with the unavailable badge at the boundary; keep null through the hook.
+        2. Widen `_Bar.volume` to `float | None` on the stocks side so the honest null survives
+           the round trip, rather than being sent as 0 from here.
+        3. Extract the formatter as a pure helper with a null case pinned by a test, the way
+           `deltaText` and `MovementRead.test.tsx` do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: A bar a run can clear. A test that fails against the unfixed code is the minimum.
+      placeholder: |
+        - A unit test asserting null does not coerce to `0%`, failing before the fix.
+        - `npx tsc -b` clean and `npm run e2e` green.
+        - Visiting the page with the null fixture shows `—` and the unavailable badge.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: attestation
+    attributes:
+      label: Evidence attestation
+      options:
+        - label: >-
+            The output pasted above came from running against the real app or
+            the real API while filing this issue. It is not a fixture, not a
+            mock payload, not read off a type, and not recalled from memory.
+          required: true
+        - label: >-
+            If this concerns a value the API returns, I looked at an actual
+            response rather than at `src/types/` or `tests/helpers/fixtures/`.
+          required: true
