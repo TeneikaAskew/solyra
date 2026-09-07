@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 import { perfBudgetMs } from '../helpers/perfBudget';
 import { mockCommon, M } from '../helpers/mocks';
 
-const MOCK_PLAYBOOK = {
+const SPEC_LOCAL_PLAYBOOK = {
   ticker: 'IWM',
   source: 'cloud_sql',
   // Card-set date + server-judged age (#861) — rendered next to the count.
@@ -35,7 +35,7 @@ const MOCK_REFERENCE = {
 test.describe('Playbook', () => {
   test.beforeEach(async ({ page }) => {
     await mockCommon(page);
-    await page.route('**/api/playbook/IWM', (r) => r.fulfill(M.ok(MOCK_PLAYBOOK)));
+    await page.route('**/api/playbook/IWM', (r) => r.fulfill(M.ok(SPEC_LOCAL_PLAYBOOK)));
     await page.route('**/api/market/reference/IWM/*', (r) => r.fulfill(M.ok(MOCK_REFERENCE)));
     await page.route('**/api/signals/IWM*', (r) =>
       r.fulfill(M.ok({ ticker: 'IWM', count: 0, signals: [] }))

@@ -9,6 +9,7 @@
  *   GET /api/dashboard/brief/{ticker}       → BriefResponse
  *   GET /api/signals/{ticker}               → the page's own SignalsResponse
  *   GET /api/playbook/{ticker}              → PlaybookResponse
+ *   POST /api/playbook/evaluate             → EvalResult wire shapes
  *   GET /api/live/quote|history|avg-volume  → LiveQuote / LiveHistory / AvgVolume
  *   GET /api/market/reference/{t}/{date}    → ReferenceResponse
  *   GET /api/config/market-hours            → MarketHours
@@ -72,9 +73,340 @@ export const MOCK_PLAYBOOK_EMPTY = {
   cards: [],
 } satisfies PlaybookResponse & { source: string };
 
-/** A current card set as playbook.py serves it after #861: the set's
- *  `analysis_date` and server-judged `age_days` ride along so the UI can
- *  show how old the cards are. */
+/**
+ * The REAL production playbook, copied verbatim: all 12 IWM setup cards from
+ * the `playbook_cards` Cloud SQL table (analysis_date 2026-09-06), passed
+ * through the exact response transforms in playbook.py::_cards_from_db
+ * (win_rate fraction→%, avg_return bps→% at 2dp — which is why several read
+ * -0.0 — target/stop display strings→move magnitudes, horizon sweep with
+ * fraction→% win rates; the bps→% roundings that Python serializes as -0.0
+ * are written as 0 here — numerically identical, and JS JSON keeps the
+ * sign out of the payload). Nothing here is invented; refresh by re-running the
+ * SELECT in the module history against the latest analysis_date.
+ */
+export const MOCK_PLAYBOOK = {
+  ticker: 'IWM',
+  source: 'cloud_sql',
+  // Card-set date + server-judged age, as playbook.py serves them after
+  // stocks #861 (the set below IS the 2026-09-06 run; generated_at is its
+  // IWM upsert time). age_days is static here: the real server re-judges it.
+  analysis_date: '2026-09-06',
+  generated_at: '2026-09-06T20:21:19.472074+00:00',
+  age_days: 0,
+  max_age_days: 7,
+  cards: [
+  {
+    id: 'card_1',
+    name: 'IWM CARD 1: Bullish Continuation (2U-2U-2U)',
+    description: 'Daily bar is 2U (higher high, higher low); 15m bar is 2U; 1m shows: 2U -> 2U -> 2U (three consecutive bullish bars)',
+    direction: 'CALL',
+    conditions: [
+      'RSI between 40-65 (not overbought yet)',
+      'Price above VWAP',
+      'Price above EMA9',
+      'ORB 30m trend is bullish',
+      'EMA9 > EMA20 (bullish cross)',
+    ],
+    win_rate: 39.2,
+    avg_return: 0,
+    target_pct: 0.3,
+    stop_pct: 0.15,
+    horizons: [
+      { minutes: 5, win_rate: 46.5, avg_return_bps: -0.22, sample_n: 58792 },
+      { minutes: 15, win_rate: 42.9, avg_return_bps: -0.3, sample_n: 58792 },
+      { minutes: 30, win_rate: 39.2, avg_return_bps: -0.49, sample_n: 58792 },
+      { minutes: 60, win_rate: 35.9, avg_return_bps: -0.73, sample_n: 58792 },
+    ],
+    best_horizon_min: 5,
+    best_horizon_win_rate: 46.5,
+    best_horizon_avg_bps: -0.22,
+  },
+  {
+    id: 'card_2',
+    name: 'IWM CARD 2: Bearish Continuation (2D-2D-2D)',
+    description: 'Daily bar is 2D (lower high, lower low); 15m bar is 2D; 1m shows: 2D -> 2D -> 2D (three consecutive bearish bars)',
+    direction: 'PUT',
+    conditions: [
+      'RSI between 35-60 (not oversold yet)',
+      'Price below VWAP',
+      'Price below EMA9',
+      'ORB 30m trend is bearish',
+      'EMA9 < EMA20 (bearish cross)',
+    ],
+    win_rate: 41.1,
+    avg_return: 0,
+    target_pct: 0.38,
+    stop_pct: 0.2,
+    horizons: [
+      { minutes: 5, win_rate: 46.6, avg_return_bps: -0.22, sample_n: 57062 },
+      { minutes: 15, win_rate: 44.0, avg_return_bps: -0.28, sample_n: 57062 },
+      { minutes: 30, win_rate: 41.1, avg_return_bps: -0.33, sample_n: 57062 },
+      { minutes: 60, win_rate: 38.4, avg_return_bps: -0.37, sample_n: 57062 },
+    ],
+    best_horizon_min: 5,
+    best_horizon_win_rate: 46.6,
+    best_horizon_avg_bps: -0.22,
+  },
+  {
+    id: 'card_3',
+    name: 'IWM CARD 3: Bullish Reversal (2D-1-2U)',
+    description: 'Previous bars: 2D (bearish) -> 1 (inside bar compression); Current bar: Breaking above the inside bar\'s high (2U)',
+    direction: 'CALL',
+    conditions: [
+      'RSI < 45 (was oversold from the 2D move)',
+      'Price at or near support level (prev day low, VWAP, order block)',
+      'StochRSI was oversold (< 20), now turning up',
+      'Volume confirming (RVOL > 1.0)',
+    ],
+    win_rate: 40.4,
+    avg_return: 0,
+    target_pct: 0.3,
+    stop_pct: 0.15,
+    horizons: [
+      { minutes: 5, win_rate: 47.0, avg_return_bps: 0.01, sample_n: 20734 },
+      { minutes: 15, win_rate: 44.1, avg_return_bps: -0.06, sample_n: 20734 },
+      { minutes: 30, win_rate: 40.4, avg_return_bps: -0.3, sample_n: 20734 },
+      { minutes: 60, win_rate: 36.4, avg_return_bps: -0.58, sample_n: 20734 },
+    ],
+    best_horizon_min: 5,
+    best_horizon_win_rate: 47.0,
+    best_horizon_avg_bps: 0.01,
+  },
+  {
+    id: 'card_4',
+    name: 'IWM CARD 4: Bearish Reversal (2U-1-2D)',
+    description: 'Previous bars: 2U (bullish) -> 1 (inside bar compression); Current bar: Breaking below the inside bar\'s low (2D)',
+    direction: 'PUT',
+    conditions: [
+      'RSI > 55 (was overbought from the 2U move)',
+      'Price at or near resistance (prev day high, upper BB)',
+      'StochRSI was overbought (> 80), now turning down',
+      'Volume confirming (RVOL > 1.0)',
+    ],
+    win_rate: 43.2,
+    avg_return: 0,
+    target_pct: 0.38,
+    stop_pct: 0.2,
+    horizons: [
+      { minutes: 5, win_rate: 46.7, avg_return_bps: -0.08, sample_n: 20410 },
+      { minutes: 15, win_rate: 45.9, avg_return_bps: 0.13, sample_n: 20410 },
+      { minutes: 30, win_rate: 43.2, avg_return_bps: 0.26, sample_n: 20410 },
+      { minutes: 60, win_rate: 40.2, avg_return_bps: 0.32, sample_n: 20410 },
+    ],
+    best_horizon_min: 60,
+    best_horizon_win_rate: 40.2,
+    best_horizon_avg_bps: 0.32,
+  },
+  {
+    id: 'card_5',
+    name: 'IWM CARD 5: Outside Bar Breakout (Type 3 Bullish)',
+    description: 'Current bar is Type 3 (higher high AND lower low than prev bar); Close is above previous bar\'s close (bullish resolution)',
+    direction: 'CALL',
+    conditions: [
+      'RSI between 40-60 (room to run)',
+      'Close in upper half of the bar\'s range',
+      'Volume above average (RVOL > 1.2)',
+      'Higher timeframe supports the direction',
+    ],
+    win_rate: 38.4,
+    avg_return: -0.01,
+    target_pct: 0.3,
+    stop_pct: 0.15,
+    horizons: [
+      { minutes: 5, win_rate: 45.1, avg_return_bps: -0.24, sample_n: 29146 },
+      { minutes: 15, win_rate: 41.9, avg_return_bps: -0.34, sample_n: 29146 },
+      { minutes: 30, win_rate: 38.4, avg_return_bps: -0.52, sample_n: 29146 },
+      { minutes: 60, win_rate: 35.1, avg_return_bps: -0.89, sample_n: 29146 },
+    ],
+    best_horizon_min: 5,
+    best_horizon_win_rate: 45.1,
+    best_horizon_avg_bps: -0.24,
+  },
+  {
+    id: 'card_6',
+    name: 'IWM CARD 6: ORB Breakout — Bullish',
+    description: 'Price has broken above 30m Opening Range High; Current Strat bar confirms: 2U or 3',
+    direction: 'CALL',
+    conditions: [
+      'RSI not overbought (< 70)',
+      'Price above VWAP',
+      'EMA9 > EMA20',
+      'RVOL > 1.0 (volume confirming breakout)',
+      'At least 30 min after market open',
+    ],
+    win_rate: 37.6,
+    avg_return: -0.01,
+    target_pct: 0.3,
+    stop_pct: 0.15,
+    horizons: [
+      { minutes: 5, win_rate: 46.0, avg_return_bps: -0.37, sample_n: 138567 },
+      { minutes: 15, win_rate: 41.9, avg_return_bps: -0.7, sample_n: 138567 },
+      { minutes: 30, win_rate: 37.6, avg_return_bps: -1.1, sample_n: 138567 },
+      { minutes: 60, win_rate: 33.6, avg_return_bps: -1.6, sample_n: 138567 },
+    ],
+    best_horizon_min: 5,
+    best_horizon_win_rate: 46.0,
+    best_horizon_avg_bps: -0.37,
+  },
+  {
+    id: 'card_7',
+    name: 'IWM CARD 7: ORB Breakout — Bearish',
+    description: 'Price has broken below 30m Opening Range Low; Current Strat bar confirms: 2D or 3',
+    direction: 'PUT',
+    conditions: [
+      'RSI not oversold (> 30)',
+      'Price below VWAP',
+      'EMA9 < EMA20',
+      'RVOL > 1.0',
+      'At least 30 min after market open',
+    ],
+    win_rate: 39.0,
+    avg_return: -0.01,
+    target_pct: 0.38,
+    stop_pct: 0.2,
+    horizons: [
+      { minutes: 5, win_rate: 45.7, avg_return_bps: -0.54, sample_n: 126877 },
+      { minutes: 15, win_rate: 42.4, avg_return_bps: -0.86, sample_n: 126877 },
+      { minutes: 30, win_rate: 39.0, avg_return_bps: -1.2, sample_n: 126877 },
+      { minutes: 60, win_rate: 35.9, avg_return_bps: -1.47, sample_n: 126877 },
+    ],
+    best_horizon_min: 5,
+    best_horizon_win_rate: 45.7,
+    best_horizon_avg_bps: -0.54,
+  },
+  {
+    id: 'card_8',
+    name: 'IWM CARD 8: ORB Failure / Mean Reversion',
+    description: 'Price broke above ORB high, then FAILED and returned inside range; Current Strat shows 2D (confirming the failure)',
+    direction: 'PUT',
+    conditions: [
+      'RSI was elevated (> 60) at breakout',
+      'Volume declining on the failed breakout',
+      'Strat shows reversal (2D after 2U or 3)',
+      'VWAP is nearby (target)',
+    ],
+    win_rate: 47.6,
+    avg_return: -0.01,
+    target_pct: 0.2,
+    stop_pct: 0.2,
+    horizons: [
+      { minutes: 5, win_rate: 46.9, avg_return_bps: -0.6, sample_n: 8600 },
+      { minutes: 15, win_rate: 47.5, avg_return_bps: -0.56, sample_n: 8600 },
+      { minutes: 30, win_rate: 47.6, avg_return_bps: -0.64, sample_n: 8600 },
+      { minutes: 60, win_rate: 48.5, avg_return_bps: -0.47, sample_n: 8600 },
+    ],
+    best_horizon_min: 60,
+    best_horizon_win_rate: 48.5,
+    best_horizon_avg_bps: -0.47,
+  },
+  {
+    id: 'card_9',
+    name: 'IWM CARD 9: Support Bounce (at Historical Level)',
+    description: 'Price is at previous day\'s low (support level); Current bar is 2U (bouncing off support)',
+    direction: 'CALL',
+    conditions: [
+      'RSI < 40 (oversold at support)',
+      'StochRSI crossed above 20 (turning up)',
+      'Order block nearby (institutional interest)',
+      'Volume increasing on bounce',
+    ],
+    win_rate: 41.6,
+    avg_return: 0,
+    target_pct: 0.3,
+    stop_pct: 0.15,
+    horizons: [
+      { minutes: 5, win_rate: 47.2, avg_return_bps: -0.03, sample_n: 15642 },
+      { minutes: 15, win_rate: 44.6, avg_return_bps: 0.14, sample_n: 15642 },
+      { minutes: 30, win_rate: 41.6, avg_return_bps: 0.26, sample_n: 15642 },
+      { minutes: 60, win_rate: 38.5, avg_return_bps: 0.31, sample_n: 15642 },
+    ],
+    best_horizon_min: 60,
+    best_horizon_win_rate: 38.5,
+    best_horizon_avg_bps: 0.31,
+  },
+  {
+    id: 'card_10',
+    name: 'IWM CARD 10: Resistance Rejection (at Historical Level)',
+    description: 'Price is at previous day\'s high (resistance level); Current bar is 2D (rejecting off resistance)',
+    direction: 'PUT',
+    conditions: [
+      'RSI > 60 (overbought at resistance)',
+      'StochRSI crossed below 80 (turning down)',
+      'Volume declining on approach to resistance',
+      'Bearish divergence (price higher, RSI lower)',
+    ],
+    win_rate: 45.3,
+    avg_return: 0.01,
+    target_pct: 0.38,
+    stop_pct: 0.2,
+    horizons: [
+      { minutes: 5, win_rate: 47.2, avg_return_bps: 0.19, sample_n: 20766 },
+      { minutes: 15, win_rate: 46.9, avg_return_bps: 0.39, sample_n: 20766 },
+      { minutes: 30, win_rate: 45.3, avg_return_bps: 0.85, sample_n: 20766 },
+      { minutes: 60, win_rate: 42.7, avg_return_bps: 1.24, sample_n: 20766 },
+    ],
+    best_horizon_min: 60,
+    best_horizon_win_rate: 42.7,
+    best_horizon_avg_bps: 1.24,
+  },
+  {
+    id: 'card_11',
+    name: 'IWM CARD 11: Order Block Test (Institutional Zone)',
+    description: 'Price is testing an identified order block zone; Current bar is 2U (bouncing off the institutional zone)',
+    direction: 'CALL',
+    conditions: [
+      'Price is at order block high or low boundary',
+      'RSI between 35-55 (not extreme)',
+      'Volume increasing at the zone',
+      'Strat shows reversal or continuation with direction',
+    ],
+    win_rate: 40.6,
+    avg_return: 0,
+    target_pct: 0.3,
+    stop_pct: 0.15,
+    horizons: [
+      { minutes: 5, win_rate: 45.3, avg_return_bps: -0.06, sample_n: 7551 },
+      { minutes: 15, win_rate: 44.1, avg_return_bps: -0.05, sample_n: 7551 },
+      { minutes: 30, win_rate: 40.6, avg_return_bps: -0.29, sample_n: 7551 },
+      { minutes: 60, win_rate: 35.5, avg_return_bps: -0.91, sample_n: 7551 },
+    ],
+    best_horizon_min: 15,
+    best_horizon_win_rate: 44.1,
+    best_horizon_avg_bps: -0.05,
+  },
+  {
+    id: 'card_12',
+    name: 'IWM CARD 12: FTFC Maximum Conviction (All Aligned)',
+    description: 'ALL timeframes showing the same direction; EMAs bullish, ORB bullish, Strat 2U, RSI healthy; This is the STRONGEST possible setup',
+    direction: 'CALL',
+    conditions: [
+      'EMA9 > EMA20 (bullish cross)',
+      'ORB 30m trend is bullish',
+      'Current Strat bar is 2U',
+      'RSI between 40-65 (healthy, not overbought)',
+      'Price above VWAP',
+      'RVOL > 1.0 (volume confirms)',
+    ],
+    win_rate: 37.5,
+    avg_return: -0.01,
+    target_pct: 0.3,
+    stop_pct: 0.15,
+    horizons: [
+      { minutes: 5, win_rate: 46.2, avg_return_bps: -0.38, sample_n: 52250 },
+      { minutes: 15, win_rate: 42.1, avg_return_bps: -0.8, sample_n: 52250 },
+      { minutes: 30, win_rate: 37.5, avg_return_bps: -1.23, sample_n: 52250 },
+      { minutes: 60, win_rate: 33.5, avg_return_bps: -1.73, sample_n: 52250 },
+    ],
+    best_horizon_min: 5,
+    best_horizon_win_rate: 46.2,
+    best_horizon_avg_bps: -0.38,
+  }
+  ],
+} satisfies PlaybookResponse & { source: string };
+
+/** A small one-card set with a NON-zero age, for specs that assert the
+ *  "as of <date> (Nd old)" label explicitly; mock mode serves the real set
+ *  above. */
 export const MOCK_PLAYBOOK_FRESH = {
   ticker: 'IWM',
   source: 'cloud_sql',
@@ -357,9 +689,56 @@ export const MOCK_BACKTEST_ALL = { ticker: 'IWM', total_runs: 0, runs: [] };
  */
 export const dashboardRoutes: MockRoute[] = [
   { pattern: /^\/api\/dashboard\/brief\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_BRIEF }) },
-  // The populated set, so mock mode renders the top-setup happy path (age
-  // label included); MOCK_PLAYBOOK_EMPTY stays for specs that want that branch.
-  { pattern: /^\/api\/playbook\/IWM$/, reply: () => ({ body: MOCK_PLAYBOOK_FRESH }) },
+  // The real populated set, so mock mode renders the top-setup happy path
+  // (age label included); MOCK_PLAYBOOK_EMPTY stays for specs wanting that branch.
+  { pattern: /^\/api\/playbook\/IWM$/, reply: () => ({ body: MOCK_PLAYBOOK }) },
+  {
+    // POST /api/playbook/evaluate — contract-complete but currently DORMANT
+    // in mock mode: the canonical world is a closed session, PlaybookPage
+    // gates snapshot-building on isMarketOpenish, and usePlaybookBatch never
+    // fires without a snapshot (the page renders its honest "evaluation
+    // paused" state instead). The route exists so the day the mock session
+    // opens, the POST resolves instead of 501ing. Only usePlaybookBatch
+    // (PlaybookPage) consumes the endpoint today; the flat `conditions`
+    // shape is served for wire completeness. The real evaluator stays
+    // server-side (playbook.py — Rule 5); this fixture answers a
+    // deterministic met/unmet/unknown cycle with self-labelled details.
+    // Note: like every route here, the pattern is pathname-only, so a
+    // historical `?date=` playbook request gets today's cards too.
+    method: 'POST',
+    pattern: /^\/api\/playbook\/evaluate$/,
+    reply: (req) => {
+      const body = (req.body ?? {}) as {
+        conditions?: string[];
+        batches?: Record<string, string[]>;
+      };
+      // The wire always carries BOTH keys per result (_EvalResult.model_dump
+      // with detail/reason defaulting to null) — mirror that exactly so
+      // consumers distinguishing absent-vs-null see production shapes.
+      const clip = (c: string) => (c.length > 40 ? `${c.slice(0, 40)}…` : c);
+      const evalOne = (c: string, i: number) =>
+        i % 3 === 0
+          ? { status: 'met' as const, detail: `fixture: "${clip(c)}" holds in the mock snapshot`, reason: null }
+          : i % 3 === 1
+            ? { status: 'unmet' as const, detail: `fixture: "${clip(c)}" does not hold in the mock snapshot`, reason: null }
+            : { status: 'unknown' as const, detail: null, reason: 'fixture: input not in the mock snapshot' };
+      if (!body.conditions && !body.batches) {
+        // Mirrors the real 400 — a bodyless POST must not fabricate success.
+        return {
+          status: 400,
+          body: { detail: 'Supply either `conditions` (flat) or `batches` (per-key).' },
+        };
+      }
+      const payload: Record<string, unknown> = {};
+      if (body.conditions) payload.results = body.conditions.map(evalOne);
+      if (body.batches) {
+        payload.results_by_key = Object.fromEntries(
+          Object.entries(body.batches).map(([k, conds]) => [k, conds.map(evalOne)]),
+        );
+      }
+      return { body: payload };
+    },
+  },
   {
     pattern: /^\/api\/market\/reference\/IWM\/([^/]+)$/,
     reply: () => ({ body: MOCK_DASHBOARD_REFERENCE }),
