@@ -4338,12 +4338,26 @@
         "additionalProperties": true,
         "properties": {
           "change": {
-            "title": "Change",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
           },
           "change_pct": {
-            "title": "Change Pct",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
           },
           "high": {
             "title": "High",
@@ -4370,8 +4384,15 @@
             "type": "number"
           },
           "prev_close": {
-            "title": "Prev Close",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Close"
           },
           "price": {
             "title": "Price",
@@ -13582,9 +13603,9 @@
             "name": "strike_window_pct",
             "required": false,
             "schema": {
-              "default": 8.0,
+              "default": 8,
               "description": "Display window around spot in PERCENT",
-              "maximum": 50.0,
+              "maximum": 50,
               "minimum": 0.5,
               "title": "Strike Window Pct",
               "type": "number"
@@ -13702,7 +13723,7 @@
             "name": "lookback_hours",
             "required": false,
             "schema": {
-              "default": 1.0,
+              "default": 1,
               "description": "How far back to fetch snapshots (max 6.5h = one RTH session).",
               "maximum": 6.5,
               "minimum": 0.0833,
@@ -13755,8 +13776,8 @@
             "name": "strike_window_pct",
             "required": false,
             "schema": {
-              "default": 8.0,
-              "maximum": 50.0,
+              "default": 8,
+              "maximum": 50,
               "minimum": 0.5,
               "title": "Strike Window Pct",
               "type": "number"
@@ -13866,9 +13887,9 @@
             "name": "strike_window_pct",
             "required": false,
             "schema": {
-              "default": 8.0,
+              "default": 8,
               "description": "Display window around spot in PERCENT",
-              "maximum": 50.0,
+              "maximum": 50,
               "minimum": 0.5,
               "title": "Strike Window Pct",
               "type": "number"
@@ -13946,7 +13967,7 @@
             "name": "window_pct",
             "required": false,
             "schema": {
-              "default": 8.0,
+              "default": 8,
               "title": "Window Pct",
               "type": "number"
             }
@@ -14021,8 +14042,8 @@
             "name": "strike_window_pct",
             "required": false,
             "schema": {
-              "default": 8.0,
-              "maximum": 50.0,
+              "default": 8,
+              "maximum": 50,
               "minimum": 0.5,
               "title": "Strike Window Pct",
               "type": "number"
@@ -14403,9 +14424,9 @@
             "name": "rsi_band",
             "required": false,
             "schema": {
-              "default": 5.0,
+              "default": 5,
               "description": "±RSI tolerance",
-              "maximum": 20.0,
+              "maximum": 20,
               "minimum": 0.5,
               "title": "Rsi Band",
               "type": "number"
