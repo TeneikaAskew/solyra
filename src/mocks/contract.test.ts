@@ -33,9 +33,10 @@
  *     counted and skipped rather than treated as sending none.
  *
  * Requests reach the API through `fetch` and through this repo's own wrappers
- * (`REQUEST_WRAPPERS`). A wrapper missing from that set would hide every
- * request routed through it, so a test asserts the set names every function
- * that fetches its URL argument.
+ * (`adminJson`, `useFetch`). Wrappers are DISCOVERED from each source — a
+ * function that passes one of its parameters to `fetch` is one, and the
+ * parameter's index is where its URL lives — so a new wrapper is covered the
+ * day it is written rather than when someone remembers an allowlist.
  *
  * What it does NOT prove: an operation without a `response_model` in stocks
  * has an empty schema and validates trivially. The summary printed at the
@@ -51,6 +52,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
 import { resolveMock } from './index';
@@ -104,168 +106,192 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 }
 
 /**
- * Every `/api/...` string or template literal in a source, with each `${…}`
- * collapsed to `{p}`. A small scanner rather than a regex: comments are
- * skipped (JSDoc quotes paths as prose), and template expressions are
- * skipped by brace depth so a nested template inside `${}` cannot end the
- * literal early.
+ * Every `/api/...` request URL in a source, with the verb of the call it is
+ * an argument of.
+ *
+ * This walks the TypeScript AST rather than scanning text. It began as a
+ * character scanner, and Codex found four separate syntactic forms it could
+ * not see (#54): a wrapper call with a generic argument list, a wrapper whose
+ * URL is not the first parameter, a URL held in a const, and a query fragment
+ * nested inside a conditional template expression. Each was a real hole, and
+ * each patch invited the next — the root cause was parsing TypeScript with
+ * regexes. The compiler is already a devDependency, so it does the parsing.
+ *
+ * What the walk gives for free: comments are not code, template spans keep
+ * their structure, an argument is found at any position, and a call's options
+ * object is a node rather than a forward text search.
  */
 export interface ApiLiteral {
   literal: string;
   /**
-   * Uppercase verb of the fetch call the literal is the URL argument of (GET
-   * when the call sets no `method`), or null when the literal is not a fetch
-   * argument — a const passed to fetch later, or a prefix list such as
-   * authedFetch's OPEN_PREFIXES. Those are checked for path existence under
-   * any verb, since the verb is not knowable from the literal.
+   * Uppercase verb of the request call the literal is the URL argument of
+   * (GET when the call sets no `method`), or null when the literal is not
+   * such an argument — a prefix list such as authedFetch's OPEN_PREFIXES.
+   * Those are checked for path existence under any verb.
    */
   method: string | null;
-  /** Offset of the literal's opening quote, for resolving nearby bindings. */
+  /** Offset of the literal's start, for resolving nearby bindings. */
   quoteStart: number;
 }
 
-/**
- * Functions that take a request URL as their first argument and issue the
- * request. `fetch` plus this repo's own wrappers: a literal passed to one of
- * these is a request URL, and the call's `method:` option is its verb.
- *
- * `adminJson` was invisible before (Codex, #54): the admin role/status PUTs
- * pass their literal to it, not to `fetch`, so they reported no verb and were
- * checked under any verb — and their request-body samples never ran, because
- * the body check skips verb-less literals. `requestWrapperNames` below fails
- * the suite when a new wrapper appears, so this set cannot silently rot.
- */
-const REQUEST_WRAPPERS = ['fetch', 'adminJson'] as const;
-// An optional generic argument list sits between the name and the paren at
-// several call sites (`adminJson<AdminUserRow>(...)`), so allow one.
-const WRAPPER_CALL = new RegExp(`\\b(?:${REQUEST_WRAPPERS.join('|')})\\s*(?:<[^<>]*>)?\\(\\s*$`);
+const parse = (source: string) =>
+  ts.createSourceFile('f.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
-/**
- * Names of functions that pass their first parameter straight to `fetch(` —
- * i.e. request wrappers. Used to assert REQUEST_WRAPPERS is complete.
- */
-export function requestWrapperNames(source: string): string[] {
-  const out: string[] = [];
-  const decl = /(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(\s*([A-Za-z_$][\w$]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = decl.exec(source))) {
-    const [, fnName, param] = m;
-    // Body is bounded by the next top-level `function` declaration at worst;
-    // a wrapper fetches its URL parameter within a few lines regardless.
-    const body = source.slice(m.index, m.index + 1200);
-    if (new RegExp(`fetch\\(\\s*${param}\\b`).test(body)) out.push(fnName);
-  }
-  return out;
+function eachNode(node: ts.Node, visit: (n: ts.Node) => void): void {
+  visit(node);
+  node.forEachChild((c) => eachNode(c, visit));
+}
+
+/** The called name, for `f()`, `f<T>()` and `obj.f()`. */
+function calleeName(call: ts.CallExpression): string | null {
+  const e = call.expression;
+  if (ts.isIdentifier(e)) return e.text;
+  if (ts.isPropertyAccessExpression(e)) return e.name.text;
+  return null;
 }
 
 /**
- * The verb of the fetch call a literal is the URL of. Looks forward from the
- * literal through its enclosing call's arguments for a `method: 'X'` option,
- * stopping at the call's closing paren. A literal that is not a fetch argument
- * (a const later passed to fetch) reports GET, the same default fetch uses.
+ * Render a node to a URL pattern: literal text is kept, a dynamic expression
+ * becomes `{p}`.
+ *
+ * A conditional renders its truthy branch, which is what keeps query text
+ * inside `${run ? `?run=${run}` : ''}` visible (Codex, #54). Collapsing the
+ * whole span hid the `?` and reported the request as sending no query at all.
  */
-function methodAfter(source: string, from: number): string {
-  let depth = 0;
-  for (let i = from; i < source.length; i++) {
-    const c = source[i];
-    if (c === '(' || c === '{' || c === '[') depth++;
-    else if (c === ')' || c === '}' || c === ']') {
-      if (depth === 0) break;
-      depth--;
-    } else if (c === ';' && depth === 0) break;
-    if (c === 'm' && source.startsWith('method', i)) {
-      const m = /^method\s*:\s*['"`](get|post|put|patch|delete)['"`]/i.exec(source.slice(i, i + 40));
-      if (m) return m[1].toUpperCase();
+function renderUrl(node: ts.Node): string {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (ts.isTemplateExpression(node)) {
+    let out = node.head.text;
+    for (const span of node.templateSpans) out += renderUrl(span.expression) + span.literal.text;
+    return out;
+  }
+  if (ts.isConditionalExpression(node)) {
+    const whenTrue = renderUrl(node.whenTrue);
+    return whenTrue || renderUrl(node.whenFalse);
+  }
+  if (ts.isParenthesizedExpression(node)) return renderUrl(node.expression);
+  return '{p}';
+}
+
+const isUrlish = (n: ts.Node) =>
+  ts.isStringLiteral(n) || ts.isTemplateExpression(n) || ts.isNoSubstitutionTemplateLiteral(n) ||
+  ts.isConditionalExpression(n);
+
+/** The `method:` of a call's options object, uppercased; GET when unset. */
+function methodOfCall(call: ts.CallExpression): string {
+  for (const arg of call.arguments) {
+    if (!ts.isObjectLiteralExpression(arg)) continue;
+    for (const prop of arg.properties) {
+      if (!ts.isPropertyAssignment(prop)) continue;
+      const key = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) ? prop.name.text : null;
+      if (key !== 'method') continue;
+      if (ts.isStringLiteral(prop.initializer) || ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
+        return prop.initializer.text.toUpperCase();
+      }
     }
   }
   return 'GET';
 }
 
 /**
- * When the literal at `quoteStart` initialises a `const`/`let` binding, the
- * verbs of every `fetch(<binding>, ...)` in the source (GET when a call sets
- * no method), or null when the literal is not such a binding or the binding
- * is never fetched — then only path existence can be checked.
+ * Request wrappers declared in this source: a function that passes one of its
+ * own parameters to `fetch` as the URL. Maps name → that parameter's index.
+ *
+ * Discovered, not allowlisted. `adminJson(url, init)` takes it at 0 and
+ * `useFetch(key, url, ...)` at 1, and a hand-maintained set missed both in
+ * turn; deriving it means a new wrapper is covered the day it is written.
  */
-function verbsOfBinding(source: string, quoteStart: number): string[] | null {
-  const decl = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*$/.exec(
-    source.slice(Math.max(0, quoteStart - 80), quoteStart),
-  );
-  if (!decl) return null;
-  const name = decl[1];
-  const re = new RegExp(
-    String.raw`(?:${REQUEST_WRAPPERS.join('|')})\s*(?:<[^<>]*>)?\(\s*${name.replace(/\$/g, '\\$')}\s*[,)]`,
-    'g',
-  );
-  const verbs = new Set<string>();
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(source))) verbs.add(methodAfter(source, m.index + m[0].length - 1));
-  return verbs.size ? [...verbs] : null;
+export function requestWrappers(source: string): Map<string, number> {
+  const out = new Map<string, number>();
+  eachNode(parse(source), (n) => {
+    if (!ts.isFunctionDeclaration(n) && !ts.isFunctionExpression(n) && !ts.isArrowFunction(n)) return;
+    const name = ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)
+      ? n.name?.text
+      : ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name)
+        ? n.parent.name.text
+        : undefined;
+    if (!name || !n.body) return;
+    const params = n.parameters.map((p) => (ts.isIdentifier(p.name) ? p.name.text : null));
+    eachNode(n.body, (inner) => {
+      if (!ts.isCallExpression(inner) || calleeName(inner) !== 'fetch') return;
+      const first = inner.arguments[0];
+      if (!first || !ts.isIdentifier(first)) return;
+      const idx = params.indexOf(first.text);
+      if (idx >= 0) out.set(name, idx);
+    });
+  });
+  return out;
 }
 
+/** Names of request wrappers in a source. */
+export const requestWrapperNames = (source: string): string[] => [...requestWrappers(source).keys()];
+
 export function extractApiLiterals(source: string): ApiLiteral[] {
+  const file = parse(source);
+  const wrappers = requestWrappers(source);
+  wrappers.set('fetch', 0);
+
   const out: ApiLiteral[] = [];
-  const n = source.length;
-  let i = 0;
-  while (i < n) {
-    const c = source[i];
-    const next = source[i + 1];
-    if (c === '/' && next === '/') {
-      i = source.indexOf('\n', i);
-      if (i < 0) break;
-      continue;
-    }
-    if (c === '/' && next === '*') {
-      const close = source.indexOf('*/', i + 2);
-      i = close < 0 ? n : close + 2;
-      continue;
-    }
-    if (c === "'" || c === '"' || c === '`') {
-      const quote = c;
-      const quoteStart = i;
-      const inFetch = WRAPPER_CALL.test(source.slice(Math.max(0, i - 40), i));
-      let lit = '';
-      let depth = 0;
-      i++;
-      for (; i < n; i++) {
-        const ch = source[i];
-        if (depth > 0) {
-          if (ch === '{') depth++;
-          else if (ch === '}') depth--;
-          continue;
-        }
-        if (ch === '\\') {
-          lit += source[i + 1] ?? '';
-          i++;
-          continue;
-        }
-        if (ch === quote) break;
-        if (ch === '\n' && quote !== '`') break; // unterminated
-        if (quote === '`' && ch === '$' && source[i + 1] === '{') {
-          depth = 1;
-          i++;
-          lit += '{p}';
-          continue;
-        }
-        lit += ch;
+  /** Identifier → the URL patterns assigned to it, for `const U = ...; fetch(U)`. */
+  const bindings = new Map<string, { literal: string; quoteStart: number }[]>();
+
+  eachNode(file, (n) => {
+    if (!ts.isVariableDeclaration(n) || !ts.isIdentifier(n.name) || !n.initializer) return;
+    if (!isUrlish(n.initializer)) return;
+    const literal = renderUrl(n.initializer);
+    if (!literal.startsWith('/api/')) return;
+    const list = bindings.get(n.name.text) ?? [];
+    list.push({ literal, quoteStart: n.initializer.getStart(file) });
+    bindings.set(n.name.text, list);
+  });
+
+  const seenBinding = new Set<string>();
+
+  eachNode(file, (n) => {
+    if (!ts.isCallExpression(n)) return;
+    const name = calleeName(n);
+    if (name === null) return;
+    const urlIndex = wrappers.get(name);
+    if (urlIndex === undefined) return;
+    const arg = n.arguments[urlIndex];
+    if (!arg) return;
+    const method = methodOfCall(n);
+
+    if (isUrlish(arg)) {
+      const literal = renderUrl(arg);
+      if (literal.startsWith('/api/')) {
+        out.push({ literal, method, quoteStart: arg.getStart(file) });
       }
-      i++;
-      if (lit.startsWith('/api/')) {
-        if (inFetch) {
-          out.push({ literal: lit, method: methodAfter(source, i), quoteStart });
-        } else {
-          // `const ENDPOINT = '/api/...'` used by fetch(ENDPOINT, ...) later:
-          // every fetch of that binding contributes its verb, so a route
-          // removed for one verb but kept for another is still reported.
-          const verbs = verbsOfBinding(source, quoteStart);
-          if (verbs === null) out.push({ literal: lit, method: null, quoteStart });
-          else for (const method of verbs) out.push({ literal: lit, method, quoteStart });
-        }
-      }
-      continue;
+      return;
     }
-    i++;
-  }
+    // `const ENDPOINT = '/api/…'` used as the URL later: every call of that
+    // binding contributes its verb, so a route removed for one verb but kept
+    // for another is still reported.
+    if (ts.isIdentifier(arg)) {
+      for (const b of bindings.get(arg.text) ?? []) {
+        out.push({ ...b, method });
+        seenBinding.add(`${arg.text}\u0000${b.literal}`);
+      }
+    }
+  });
+
+  // Literals never used as a request URL — authedFetch's OPEN_PREFIXES and
+  // the like. Reported with an unknown verb and checked on path alone.
+  eachNode(file, (n) => {
+    if (!isUrlish(n)) return;
+    if (ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name)) {
+      const key = `${n.parent.name.text}\u0000${renderUrl(n)}`;
+      if (seenBinding.has(key)) return;
+    }
+    const literal = renderUrl(n);
+    if (!literal.startsWith('/api/')) return;
+    const quoteStart = n.getStart(file);
+    if (out.some((o) => o.quoteStart === quoteStart)) return;
+    // Inside a call we already handled as a request URL? Then it is covered.
+    if (ts.isCallExpression(n.parent) && wrappers.has(calleeName(n.parent) ?? '')) return;
+    out.push({ literal, method: null, quoteStart });
+  });
+
   return out;
 }
 
@@ -331,9 +357,13 @@ export function queryNames(source: string, literal: string, quoteStart: number):
   const names = new Set<string>();
   for (const m of tail.matchAll(/(?:^|&)([A-Za-z_][\w.-]*)=/g)) names.add(m[1]);
 
-  // Every `${...}` in the tail that is a bare identifier: resolve it.
-  const holes = [...tail.matchAll(/\{p\}/g)];
-  if (!holes.length) return [...names];
+  // A `{p}` directly after `=` is a VALUE — the name beside it is known and
+  // nothing needs resolving. Only a hole standing where a NAME would be
+  // (`?${params}`, or text appended after a value that could carry `&x=y`)
+  // hides names, and only that case falls back to resolving the identifier.
+  const nameHoles = [...tail.matchAll(/\{p\}/g)].filter((m) => tail[m.index! - 1] !== '=');
+  if (!nameHoles.length) return [...names];
+
   const before = source.slice(Math.max(0, quoteStart - 4000), quoteStart);
   const idents = [...before.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:new\s+URLSearchParams|([A-Za-z_$][\w$]*)\.toString\(\))/g)];
   if (!idents.length) return null;
@@ -341,13 +371,11 @@ export function queryNames(source: string, literal: string, quoteStart: number):
   let resolved = false;
   for (const [, name, aliasOf] of idents) {
     const target = aliasOf ?? name;
-    // Keys of `new URLSearchParams({ a: .., b: .. })`.
     const ctor = new RegExp(String.raw`(?:const|let|var)\s+${target}\s*=\s*new\s+URLSearchParams\(\s*\{([\s\S]*?)\}\s*\)`).exec(before);
     if (ctor) {
       for (const m of ctor[1].matchAll(/(?:^|,)\s*['"`]?([A-Za-z_][\w.-]*)['"`]?\s*:/g)) names.add(m[1]);
       resolved = true;
     }
-    // `params.set('a', ..)` / `.append('a', ..)` anywhere in the function.
     const setter = new RegExp(String.raw`\b${target}\.(?:set|append)\(\s*['"\x60]([A-Za-z_][\w.-]*)['"\x60]`, 'g');
     for (const m of before.matchAll(setter)) {
       names.add(m[1]);
@@ -515,18 +543,34 @@ const REQUEST_SAMPLES: Record<string, unknown> = {
     ticker: 'IWM',
     history: [{ role: 'user', content: 'hello' }],
   },
-  // src/routes/JournalPage.tsx:162
-  'POST /api/journal/trades': {
-    ticker: 'IWM',
-    direction: 'CALL',
-    entry_date: '2026-04-25',
-    entry_time: '09:45',
-    entry_price: 1.42,
-    exit_date: '2026-04-25',
-    exit_time: '11:15',
-    exit_price: 2.05,
-    notes: '',
-  },
+  // Two call sites post different shapes: the manual form in
+  // src/routes/JournalPage.tsx:162, and the chart/replay form in
+  // src/hooks/useJournalChartTrades.ts:316, which adds stop_loss,
+  // take_profits, source and session_id (Codex, #54).
+  'POST /api/journal/trades': [
+    {
+      ticker: 'IWM',
+      direction: 'CALL',
+      entry_date: '2026-04-25',
+      entry_time: '09:45',
+      entry_price: 1.42,
+      exit_date: '2026-04-25',
+      exit_time: '11:15',
+      exit_price: 2.05,
+      notes: '',
+    },
+    {
+      ticker: 'IWM',
+      direction: 'CALL',
+      entry_date: '2026-04-25',
+      entry_time: '09:45',
+      entry_price: 1.42,
+      stop_loss: 1.1,
+      take_profits: [1.8, 2.2],
+      source: 'chart',
+      session_id: 'sess-1',
+    },
+  ],
   // src/hooks/useJournalChartTrades.ts:353
   'PATCH /api/journal/trades/{trade_id}': {
     exit_date: '2026-04-25',
@@ -631,11 +675,31 @@ describe('extractApiLiterals', () => {
     ]);
   });
 
-  it('reads the verb through a request wrapper with a generic argument', () => {
-    // useAdmin.ts routes its mutations through adminJson, not fetch.
-    expect(
-      verbs("adminJson<Row>(`/api/admin/users/${uid}/roles`, { method: 'PUT', body: b })"),
-    ).toEqual([{ literal: '/api/admin/users/{p}/roles', method: 'PUT' }]);
+  it('discovers a wrapper and reads the verb through it', () => {
+    // useAdmin.ts routes its mutations through adminJson, not fetch. The
+    // wrapper is found from its own body, not from an allowlist.
+    const src = [
+      'async function adminJson(url, init) { const r = await fetch(url, init); return r.json(); }',
+      "adminJson(`/api/admin/users/${uid}/roles`, { method: 'PUT', body: b })",
+    ].join('\n');
+    expect(verbs(src)).toEqual([{ literal: '/api/admin/users/{p}/roles', method: 'PUT' }]);
+  });
+
+  it('finds a wrapper URL that is not the first parameter', () => {
+    // DashboardPage.tsx: useFetch(key, url, ...) takes it second.
+    const src = [
+      'function useFetch(key, url) { return useQuery({ queryFn: async () => fetch(url) }); }',
+      "useFetch(['k'], '/api/market/sectors')",
+    ].join('\n');
+    expect(verbs(src)).toEqual([{ literal: '/api/market/sectors', method: 'GET' }]);
+  });
+
+  it('keeps query text nested inside a conditional template expression', () => {
+    // BacktesterSection.tsx: `...${ticker}${run ? `?run=${run}` : ''}`
+    const src = "fetch(`/api/backtest/results/${ticker}${run ? `?run=${run}` : ''}`)";
+    expect(verbs(src)).toEqual([
+      { literal: '/api/backtest/results/{p}?run={p}', method: 'GET' },
+    ]);
   });
 
   it('collects every verb a `const ENDPOINT = ...` binding is fetched under', () => {
@@ -699,9 +763,16 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
           skipped.push(`${key} (allowlisted: cannot be sampled without a real request body)`);
           continue;
         }
+        // Invoke a body-bearing operation with the real request sample. The
+        // playbook mock answers 400 to `{}` on purpose, so sampling with an
+        // empty body recorded it as "skipped" and never validated its 200
+        // fixture, while a valid body sat unused in REQUEST_SAMPLES
+        // (Codex, #54). First variant, since one 200 shape is being checked.
+        const sample = REQUEST_SAMPLES[key];
+        const body = (Array.isArray(sample) ? sample[0] : sample) ?? {};
         let hit: ReturnType<typeof resolveMock>;
         try {
-          hit = resolveMock(method.toUpperCase(), new URL(sampleUrl(p), 'http://mock.local'), {});
+          hit = resolveMock(method.toUpperCase(), new URL(sampleUrl(p), 'http://mock.local'), body);
         } catch (err) {
           // A mock that throws for the sample request validated nothing; that
           // is a broken mock, not a skip (Codex, #54). Allowlist above if a
@@ -714,7 +785,13 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
           continue;
         }
         if (hit.status !== 200 || !hit.contentType.includes('json')) {
-          skipped.push(`${key} (mock answers ${hit.status} ${hit.contentType})`);
+          // With a valid sample in hand, a non-200 means the mock rejects a
+          // body the app really sends — a violation, not something to skip.
+          if (sample !== undefined) {
+            violations.push(`${key}\n    mock answered ${hit.status} to its REQUEST_SAMPLES body`);
+          } else {
+            skipped.push(`${key} (mock answers ${hit.status} ${hit.contentType})`);
+          }
           continue;
         }
         const errors = schemaErrors(schema, JSON.parse(hit.payload));
@@ -764,18 +841,6 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
     }
     console.info(`[contract] query params: ${checked} requests checked, ${unreadable} not statically readable`);
     expect(violations, 'query parameters that disagree with the declared operation').toEqual([]);
-  });
-
-  it('REQUEST_WRAPPERS names every function that fetches its URL argument', () => {
-    const found = new Set<string>();
-    for (const file of sourceFiles(SRC)) {
-      for (const name of requestWrapperNames(readFileSync(file, 'utf8'))) found.add(name);
-    }
-    // A wrapper the set does not name hides every request routed through it:
-    // its literals report no verb, so the body check skips them and the route
-    // check accepts the path under any verb.
-    const undeclared = [...found].filter((n) => !(REQUEST_WRAPPERS as readonly string[]).includes(n));
-    expect(undeclared, 'request wrappers missing from REQUEST_WRAPPERS').toEqual([]);
   });
 
   it('every request body the app sends matches its operation request schema', () => {
