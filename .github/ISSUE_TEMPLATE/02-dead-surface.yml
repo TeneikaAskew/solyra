@@ -163,3 +163,4 @@ body:
         - label: >-
             I have said explicitly whether I checked source only, or also the
             deployed build.
+          required: true

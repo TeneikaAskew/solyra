@@ -153,3 +153,4 @@ body:
             If this is a move from stocks, I re-verified the defect still
             reproduces here and rewrote the paths from `platform/src/` to
             `src/`.
+          required: true
