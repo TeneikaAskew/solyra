@@ -757,8 +757,14 @@ const REQUEST_SAMPLES: Record<string, unknown> = {
       status: 'CLOSED',
     }],
   },
-  // src/hooks/useJournalChartTrades.ts:496
-  'POST /api/backtest/replay-trades': { ticker: 'IWM', trade_ids: ['1'], session_id: 'sess-1' },
+  // src/hooks/useJournalChartTrades.ts:496. The only live caller
+  // (ChartsPage.tsx:251) passes sessionId alone and JSON.stringify drops the
+  // undefined trade_ids, so the session-only shape is what the API actually
+  // receives; the both-selectors form is kept as the second variant.
+  'POST /api/backtest/replay-trades': [
+    { ticker: 'IWM', session_id: 'sess-1' },
+    { ticker: 'IWM', trade_ids: ['1'], session_id: 'sess-1' },
+  ],
   // src/hooks/useJournalChartTrades.ts:670
   'POST /api/style/mine-and-validate': { ticker: 'IWM' },
   // src/hooks/usePreferences.ts:101
@@ -770,7 +776,7 @@ const REQUEST_SAMPLES: Record<string, unknown> = {
   // rename of one of the other nine pass (Codex, #54). Every field is listed,
   // and a test below asserts this covers PROFILE_FIELDS so the type cannot
   // grow past it.
-  'PUT /api/me/profile': {
+  'PUT /api/me/profile': [{
     display_name: 'Trader',
     timezone: 'America/New_York',
     default_ticker: 'IWM',
@@ -784,6 +790,13 @@ const REQUEST_SAMPLES: Record<string, unknown> = {
     date_format: 'iso',
     show_extended_hours: false,
   } satisfies UserProfileUpdate,
+    // ...plus the sparse forms profileDiff actually produces. The dense
+    // variant catches a field REMOVAL; only a sparse one catches a field
+    // becoming REQUIRED, which would 422 every unrelated save (Codex, #54).
+    { display_name: 'Trader' } satisfies UserProfileUpdate,
+    { notify_daily_digest: false } satisfies UserProfileUpdate,
+    {} satisfies UserProfileUpdate,
+  ],
   // src/hooks/useAdmin.ts:172. PredictForm adds as_of_timestamp only when the
   // operator supplies one, so both shapes reach the API (Codex, #54).
   'POST /api/admin/strat-engine/predict': [
@@ -1076,7 +1089,8 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
   it('the profile sample covers every field a partial update can send', () => {
     // SettingsPage posts profileDiff(...), which can carry any profile field.
     // A sample missing one would validate while that field's rename 422s.
-    const sample = REQUEST_SAMPLES['PUT /api/me/profile'] as Record<string, unknown>;
+    // The first variant is the dense one; the rest are deliberately sparse.
+    const sample = (REQUEST_SAMPLES['PUT /api/me/profile'] as Record<string, unknown>[])[0];
     const missing = PROFILE_FIELDS.filter((f) => !(f in sample));
     expect(missing, 'profile fields absent from the request sample').toEqual([]);
   });
@@ -1088,7 +1102,16 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
       const [method, declared] = key.split(' ');
       const op = spec.paths[declared]?.[method.toLowerCase()];
       const schema = op ? requestSchemaFor(op) : null;
-      if (!schema) continue; // no JSON body declared — nothing to check
+      if (!schema) {
+        // The app posts a JSON body here (it has a sample), but the operation
+        // declares no JSON request schema. Skipping would let the backend drop
+        // or change the accepted body while the suite stayed green, since the
+        // route check compares only verb and path (Codex, #54).
+        if (REQUEST_SAMPLES[key] !== undefined) {
+          violations.push(`${key}: the app sends a JSON body but the operation declares no JSON requestBody`);
+        }
+        continue;
+      }
       const sample = REQUEST_SAMPLES[key];
       if (sample === undefined) {
         violations.push(`${key}: declares a request body but REQUEST_SAMPLES has no entry`);

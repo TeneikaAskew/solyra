@@ -621,12 +621,26 @@ export default function DashboardPage() {
                     <MicroLabel>Win rate</MicroLabel>
                     <div className="mt-1.5 flex items-center gap-2">
                       {topCard.win_rate != null && <ScoreStars value={Math.round(topCard.win_rate / 20)} />}
-                      <span className="tabular-nums text-[12px] text-[var(--on-surface-muted)]">{fmtNum(topCard.win_rate, 0)}%</span>
+                      {/* No `%` on the unavailable marker: fmtNum returns
+                          `—` for a null win rate, and `—%` reads as a
+                          measurement of zero rather than an absent one. */}
+                      <span className="tabular-nums text-[12px] text-[var(--on-surface-muted)]">
+                        {topCard.win_rate == null ? NA : `${fmtNum(topCard.win_rate, 0)}%`}
+                      </span>
                     </div>
                   </div>
                   <div>
                     <MicroLabel>Avg return</MicroLabel>
-                    <Metric value={topSetupAvgReturn(topCard.avg_return)} tone={(topCard.avg_return ?? 0) >= 0 ? 'bull' : 'bear'} />
+                    {/* toneOf, not `?? 0`: a null avg_return coerced to 0
+                        painted an absent value bullish (Rule 4). */}
+                    <Metric
+                      value={topSetupAvgReturn(topCard.avg_return)}
+                      tone={
+                        topCard.avg_return == null
+                          ? 'default'
+                          : topCard.avg_return >= 0 ? 'bull' : 'bear'
+                      }
+                    />
                   </div>
                 </div>
                 <div className="flex flex-1 flex-col gap-1.5">
