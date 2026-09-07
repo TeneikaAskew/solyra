@@ -1,0 +1,178 @@
+name: Defect
+description: Something renders, fetches, or computes wrong, and you can show it from the running app
+title: "<area>: <what is wrong, stated as the defect not the symptom>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Evidence comes from the running system, not from memory and not from
+        the fixtures.** The fixtures `satisfies` the TypeScript types, so they
+        can only tell you the app agrees with itself. They cannot tell you the
+        server still sends that shape.
+
+        Not evidence: a fixture, a mock payload, a type definition, a code
+        comment, a number from an older issue, or a recollection of a previous
+        session.
+
+        **An example goes stale too.** This form used to open with #36 —
+        `PUT /api/me/preferences` 404s, so every Settings save fails — filed on
+        a real response at the time. That endpoint now exists: the vendored
+        contract declares both `GET` and `PUT`. An example that was measured
+        and is now false is exactly the failure this form exists to catch, so
+        check the current system rather than reusing a past finding.
+
+        **Two things every evidence field wants, and the second gets forgotten.**
+        First the response or command output itself, from the running system and
+        never a fixture — say which backend you hit, local `:8000`, staging or
+        prod. Then the blast radius: a shared hook or a `src/lib/` helper has
+        more callers than the page that filed the issue, and a fix scoped to
+        that one page misses the rest. Paste both, and paste YOUR output — every
+        example in this form is dated because the call sites move.
+
+        **Most `/api` routes need the bearer token.** `authedFetch`'s
+        `OPEN_PREFIXES` is only `/api/health`, `/api/me`, `/api/config/firebase`
+        and `/api/waitlist`; everything else 401s to a bare `curl` against a
+        deployed host. Either send an `Authorization: Bearer <id token>` header,
+        or paste the browser DevTools network response, which is already
+        authenticated — and say which you did.
+
+        "I have not measured this" is a complete and acceptable answer. Write it
+        where it applies rather than filling a section with a guess.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is wrong. One or two sentences, stating the defect rather than the symptom.
+      placeholder: |
+        HYPOTHETICAL, and say so if you reuse it — the dashboard win rate is guarded
+        today at DashboardPage.tsx:623 and :628, which is why the evidence field below
+        shows those guards rather than a defect. The SHAPE of the finding: an unguarded
+        call site formats a null `win_rate` before checking it, so the tile renders `—%`,
+        which reads as a measured zero rather than an absent value. State the defect
+        (the missing guard), not the symptom (the odd-looking tile).
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence, and who else consumes it
+      description: "Command or request AND its output, plus the consumer search. Say which backend you hit: local :8000, staging, or prod."
+      render: shell
+      placeholder: |
+        # A real response, never a fixture. Say which backend, and note that a
+        # gated route needs the token (see above) — a bare curl 401s.
+        $ curl -s -H "Authorization: Bearer $ID_TOKEN" \
+            "https://<deployed>/api/playbook/IWM" | jq '.cards[0].win_rate'
+        null
+
+        # Then what the app does with it. The null is legitimate; the defect
+        # would be a call site that does not guard it.
+        $ grep -rn "win_rate" src/routes/DashboardPage.tsx
+        623:  {topCard.win_rate != null && <ScoreStars .../>}
+        628:  {topCard.win_rate == null ? NA : `${fmtNum(topCard.win_rate, 0)}%`}
+        (both guarded — an unguarded one renders "—%" instead of "—")
+
+        # Blast radius (see above). Dated 2026-09-07; the call sites move.
+        $ grep -rn "useLatestOptionsDate" src/
+        src/components/options/TrinityTab.tsx:1,26
+        src/components/options/SwingMode.tsx:3,794
+        src/hooks/useOptionsDates.ts:42        (the definition)
+        Two consumers, one cache key — a fix scoped to the filing page misses one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot, for a render defect
+      description: >-
+        Drag the image in here. The evidence field above sets `render`, which
+        turns off file uploads, so a visual defect needs its own field. Before
+        and after, or the wrong value in place.
+
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Which repo owns the fix
+      description: Decide before writing code. A frontend workaround for a backend defect is how a fabricated value gets a second home.
+      options:
+        - solyra — render, state, or a value coerced on this side
+        - stocks — the API returns the wrong shape or value
+        - both — a paired change set under Rule 6
+        - not yet established
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-expected
+    attributes:
+      label: Current vs expected behaviour
+      description: >-
+        State both. If the expected behaviour is an em-dash and an unavailable
+        badge rather than a number, say so: that is the only Rule 4 exemption
+        and it lives at the presentation boundary.
+      placeholder: |
+        **Current:** the dashboard win rate renders `—%` because a nullable field arrives null
+        and the formatter concatenates before checking.
+        **Expected:** a missing value renders `—` with an unavailable badge, and never coerces
+        to 0 anywhere above the presentation boundary.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0 — the user is shown something false, or a core path is broken
+        - P1 — correctness, contained to one surface
+        - P2 — architecture, parity, or coverage
+        - P3 — cleanup, polish, cost
+    validations:
+      required: true
+
+  - type: textarea
+    id: remediation
+    attributes:
+      label: Proposed remediation direction
+      description: Direction, not a patch. Render boundary first, then the source, then a pure helper with a test so the class cannot return.
+      placeholder: |
+        1. Render `—` with the unavailable badge at the boundary; keep null through the hook.
+        2. Widen `_Bar.volume` to `float | None` on the stocks side so the honest null survives
+           the round trip, rather than being sent as 0 from here.
+        3. Extract the formatter as a pure helper with a null case pinned by a test, the way
+           `deltaText` and `MovementRead.test.tsx` do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: A bar a run can clear. A test that fails against the unfixed code is the minimum.
+      placeholder: |
+        - A unit test asserting null does not coerce to `0%`, failing before the fix.
+        - `npx tsc -b` clean and `npm run e2e` green.
+        - Visiting the page with the null fixture shows `—` and the unavailable badge.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: attestation
+    attributes:
+      label: Evidence attestation
+      description: >-
+        "Measured" is defined at the top of this form. An honestly unverified
+        report is fine; an unmarked guess is not.
+      options:
+        - label: >-
+            Everything presented above **as measured** came from the real app
+            or the real API now, and anything unverified is labelled as such.
+          required: true
+        - label: >-
+            Where this concerns a value the API returns **and I checked it**, I
+            looked at an actual response, not a type or a fixture. If I did not,
+            I said so.
+          required: true

@@ -1,0 +1,192 @@
+name: Dead surface — delete or revive
+description: A component, hook, or route with no importers. Decide its fate on git evidence, not on how it looks.
+title: "<file>: <zero importers since <when>> — delete or revive?"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For code that still compiles and nothing uses. This repo has four closed
+        examples of the shape (#14, #15, #16, #17), and they resolved differently
+        because the forensics differed.
+
+        **All four are CLOSED and every file named below is already deleted.**
+        They are history, kept because the reasoning is what transfers — not a
+        measurement of this tree. Grepping for them today returns nothing, so
+        run your own searches rather than reusing these:
+
+        - **Never had a consumer.** `DataTable.tsx` and `Tabs.tsx` arrived in the
+          initial squash as prototype scaffolding, and the pickaxe over every
+          commit in the lineage finds no importer at any point. Delete.
+        - **Built ahead for a design that never shipped.** `TermHover.tsx` was
+          landed explicitly "not yet wired into any page"; the heatmap that
+          actually shipped took a different design. A later rename refactor kept
+          it compiling, which is why it survived. Delete.
+        - **Accidental rewrite debris.** `DataPipelineStatus.tsx` was wired to
+          the Dashboard in April and silently unmounted by a June rewrite whose
+          message says "all other pages are untouched" and never mentions it.
+          That one is a product call, not a cleanup.
+
+        **Run the pickaxe before you conclude.** "It looks unused" is not the
+        finding; "no importer at any point in the repo's history, across all N
+        commits plus the pre-split lineage" is.
+
+  - type: input
+    id: files
+    attributes:
+      label: Files
+      description: Every file involved, including anything transitively dead.
+      placeholder: "src/components/<area>/<Component>.tsx, src/hooks/<useThing>.ts (only importer is <Component>)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: importer-evidence
+    attributes:
+      label: Importer search, run now
+      description: >-
+        Paste the searches and their output. Include the negative result
+        verbatim: a grep returning nothing is the evidence only if the reader
+        can see what you searched for.
+      render: shell
+      placeholder: |
+        # Search for every name the surface exports, not just the filename —
+        # a default export re-exported under another name still has an importer.
+        # src/ ALONE is not enough: a Playwright spec, a script or a workflow
+        # helper importing it is a caller the resolver's own check now looks for.
+        $ git grep -n "<Component>\|<useThing>" -- src tests scripts .github
+        src/components/<area>/<Component>.tsx:12:export function <Component>(
+        src/hooks/<useThing>.ts:8:export function <useThing>(
+        (definitions only; no importer)
+
+        $ npx tsc -b
+        clean  # which proves nothing about liveness — dead code compiles fine
+    validations:
+      required: true
+
+  - type: textarea
+    id: forensics
+    attributes:
+      label: How it got here
+      description: "Git forensics with dated commits over the full lineage including pre-split history. Use -G --no-renames, not -S: see the placeholder."
+      render: shell
+      placeholder: |
+        # The shape of a conclusive answer, taken from the closed #16. Those
+        # files no longer exist; run the pickaxe on YOUR surface.
+        # FIRST: is this clone shallow? If so every answer below is truncated at the
+        # graft and there is NO warning — an empty result means "not in the window",
+        # which is indistinguishable from "never had a consumer", the exact conclusion
+        # this field exists to support. Measured here: the pickaxe stopped at
+        # 33c309a (2026-08-31), and an unknown symbol returned empty with rc=0.
+        $ git rev-parse --is-shallow-repository     # must print false
+        $ git fetch --unshallow                     # if it printed true
+        #
+        # -G --no-renames --full-history, NOT -S. Measured: -S counts per blob, so a
+        # rewritten import line inside ONE file leaves the count equal and -S skips
+        # that commit; a pure rename is invisible to BOTH until --no-renames; and
+        # default history simplification prunes side branches, so an importer that
+        # lived only on a merged-and-deleted branch returns NOTHING until
+        # --full-history (reproduced on git 2.43).
+        $ git log --oneline --all --full-history -G "TermHover" --no-renames \
+            -- src tests scripts .github platform/src
+        a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
+        e1ce147 (May 31, Phase C1) shipped it "not yet wired into any page — C2-C5 will
+                consume it as the heatmap UI lands"
+
+        The heatmap that landed (8ba5731 Swing Mode, wired by 7526031 "supersedes #642") took a
+        different design and never used it. So: never had a consumer, and the design that was
+        going to consume it was superseded.
+
+        The pathspec matters in BOTH directions. `platform/src` because this app was split
+        out of stocks, so a surface older than the split has its formative history there
+        only. And `tests scripts .github` because those are the same executable paths the
+        importer search above covers: a surface consumed only by a Playwright spec, a
+        script or a workflow helper, whose caller was later deleted, has its entire
+        history outside `src/`. Measured on this repo — `-G e2e-server` returns 0 commits
+        under `-- src platform/src` and 4 under the widened pathspec; `mockCommon` returns
+        2 versus 15. A narrow pickaxe does not report "unknown" there, it reports nothing,
+        which reads as "never had a consumer" — the exact conclusion this field is used to
+        support, and the one that separates deliberate scaffolding from a surface whose
+        caller was accidentally disconnected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: backend
+    attributes:
+      label: Backend state
+      description: If the surface calls an endpoint, say whether that endpoint is alive and covered in stocks.
+      placeholder: |
+        $ jq -r '.paths | keys[] | select(test("glossary"))' tests/fixtures/stocks-openapi.json
+        /api/glossary/gamma
+        $ grep -rn "glossary/gamma" src/ tests/helpers/
+        (no hit — declared by the API, read by nothing here)
+
+        So the endpoint is alive in stocks (platform/api/routers/glossary.py) and stays
+        available if a future surface wants a hover glossary. Deleting a dead consumer here
+        does not make the endpoint dead; say which side you are calling dead, and why.
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Options, with a recommendation
+      description: >-
+        Give the reader a decision and say which one you would take. Where the
+        answer is "revive", the question is *where it mounts*, and that is a
+        product call, not a refactor.
+      placeholder: |
+        - **Delete** — nobody noticed its absence for three months; the briefing-first dashboard
+          has no slot for an ops widget. Recommended unless the next option is actually wanted.
+        - **Revive** — if operators want pipeline-freshness visibility back, decide where
+          (Dashboard footer? Admin page?) and add a `health/freshness` fixture to
+          `tests/helpers/fixtures/`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: cleanup
+    attributes:
+      label: Dependency cleanup that does or does not follow
+      description: >-
+        Check before claiming a dependency can go. `DataTable` was not the only
+        `@tanstack/react-table` consumer, so deleting it removed nothing from
+        package.json. Paste the check.
+      render: shell
+      placeholder: |
+        $ git grep -n "@tanstack/react-table" -- src tests scripts .github
+        src/components/backtest/BacktesterSection.tsx:22
+        src/routes/SignalsPage.tsx:15
+        Live consumers remain; no dependency cleanup follows.
+
+  - type: textarea
+    id: verify
+    attributes:
+      label: Verify
+      description: "The exact commands that prove the change is safe. What counts as proof flips with the option you chose."
+      placeholder: |
+        DELETE — `npx tsc -b`, `npm test`, `npm run e2e`; and the same grep you ran
+        above now returns NOTHING. Paste the pattern, not just the word "clean".
+
+        REVIVE — the opposite: that grep must now return the new importer, and a test
+        exercising the surface where it mounts. A revived component with still zero
+        importers is the original finding, unchanged.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: attestation
+    attributes:
+      label: Evidence attestation
+      options:
+        - label: >-
+            The importer search and the git forensics above were run against
+            this tree while filing this issue, not recalled and not read off an
+            audit doc.
+          required: true
+        - label: >-
+            I used the pickaxe over the full history including the pre-split
+            lineage, rather than concluding from the current tree alone.
+          required: true
+        - label: >-
+            I have said explicitly whether I checked source only, or also the
+            deployed build.
+          required: true
