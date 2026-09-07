@@ -86,7 +86,14 @@ body:
         # default history simplification prunes side branches, so an importer that
         # lived only on a merged-and-deleted branch returns NOTHING until
         # --full-history (reproduced on git 2.43).
-        $ git log --oneline --all --full-history -G "TermHover" --no-renames \
+        # --diff-merges=separate as well: --full-history controls TRAVERSAL, not
+        # whether merge diffs are SEARCHED. An importer introduced only by a
+        # manual conflict resolution in a merge commit is invisible without it.
+        # Reproduced on git 2.43.0: the invocation without it returned only the
+        # commit that REMOVED the importer; with it, the merge that added it
+        # appears too. "Added by nobody, removed by someone" is the tell.
+        $ git log --oneline --all --full-history --diff-merges=separate \
+            -G "TermHover" --no-renames \
             -- src tests scripts .github platform/src
         a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
         e1ce147 (May 31, Phase C1) shipped it "not yet wired into any page — C2-C5 will

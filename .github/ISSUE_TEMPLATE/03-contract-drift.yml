@@ -195,11 +195,16 @@ body:
       label: Acceptance criteria
       placeholder: |
         - `npm run contract:check` clean against stocks main.
-        - A null-bearing case added FIRST and failing before the type is widened. In
-          step 1 that has to be a TEST-ONLY payload; the canonical mocks `satisfies` the
-          types and are Ajv-validated against the still-old vendored schema, so a null
-          in one fails both `tsc -b` and `src/mocks/contract.test.ts` before the widening
-          it is meant to prove. The canonical mock carries the null in step 3.
+        - A case matching the widening you selected above, added FIRST and failing
+          before the type is widened. **Nullable -> a null-bearing payload.
+          Optional-but-still-non-nullable -> the key OMITTED**, and a `?:` /
+          `| undefined` type, because that schema REJECTS null: a null payload there
+          exercises a shape the API cannot emit while the missing-key path — the one
+          that actually changed — goes untested. In step 1 it has to be a TEST-ONLY
+          payload either way; the canonical mocks `satisfies` the types and are
+          Ajv-validated against the still-old vendored schema, so it would fail both
+          `tsc -b` and `src/mocks/contract.test.ts` before the widening it is meant to
+          prove. The canonical mock carries the null, or the omission, in step 3.
         - An E2E or unit assertion that the surface renders `—` rather than `—%`.
         - Both PR descriptions name the other side's PR number.
 
@@ -207,7 +212,8 @@ body:
         TypeScript never imports tests/fixtures/stocks-openapi.json, which is read at
         runtime by src/mocks/contract.test.ts, and under a widened schema the old
         fixture stays valid — that blind spot is the whole reason this form exists.
-        Only a null-bearing fixture, or a schema-to-type check, can fail on widening.
+        Only a fixture carrying the new shape — a null, or an omitted key — or a
+        schema-to-type check, can fail on widening.
     validations:
       required: true
 

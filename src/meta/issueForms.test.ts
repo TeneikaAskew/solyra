@@ -128,8 +128,21 @@ describe('issue forms', () => {
   // their own evidence; an option without `required: true` can be left
   // unticked and the issue still submits, which makes it decoration.
   it.each(formFiles)('%s requires every checkbox option', (file) => {
-    for (const el of read<Form>(file).body ?? []) {
-      if (el.type !== 'checkboxes') continue
+    const body = read<Form>(file).body ?? []
+
+    // Guard the guard, as test_there_are_forms_to_check does for the glob. The
+    // loop below is a no-op for a form with no checkboxes element at all, so
+    // deleting a form's whole attestation used to pass CI — the body-budget
+    // test stays green because the body only gets SHORTER. Measured on the
+    // stocks mirror with the element removed: 14 passed.
+    const boxes = body.filter((el) => el.type === 'checkboxes')
+    expect(
+      boxes.length,
+      `${file}: no checkboxes element. Every form ends in an evidence attestation; ` +
+        'a form without one collects no claim about how the evidence was produced.',
+    ).toBeGreaterThan(0)
+
+    for (const el of boxes) {
       const options = el.attributes?.options ?? []
       expect(options.length, `${file}: checkboxes ${el.id} has no options`).toBeGreaterThan(0)
       for (const opt of options) {
