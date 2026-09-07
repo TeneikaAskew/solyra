@@ -85,9 +85,23 @@ export async function mockDashboard(page: Page) {
   // navigation smoke asserts a clean console on /dashboard (the same reason
   // mockCommon answers /api/me/preferences with 200-nulls). movement-read
   // .spec.ts re-registers the statement per test and wins.
-  await page.route('**/api/movement-statement*', (r) =>
-    r.fulfill(M.ok(MOCK_MOVEMENT_STATEMENT))
-  );
+  // Scoped to the requested ticker, not the pathname: the fixture IS an IWM
+  // statement (ticker and headline are rendered verbatim by MovementReadView),
+  // so answering an AAPL/SPY request with it would show one ticker's read
+  // under another's page and hide a cross-ticker regression. Non-IWM gets the
+  // same loud 501 mock mode gives (src/mocks/dashboard.ts), which no
+  // clean-console spec sees: navigation.spec.ts stays on the default IWM.
+  await page.route('**/api/movement-statement*', (r) => {
+    const ticker = (new URL(r.request().url()).searchParams.get('ticker') ?? 'IWM').toUpperCase();
+    if (ticker !== 'IWM') {
+      return r.fulfill({
+        status: 501,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: `no movement statement fixture for ${ticker}` }),
+      });
+    }
+    return r.fulfill(M.ok(MOCK_MOVEMENT_STATEMENT));
+  });
   await page.route('**/api/insights/report/IWM', (r) => r.fulfill(M.ok(MOCK_INSIGHT_REPORT)));
   // The Overview's card/chart endpoints with their default payloads, so a
   // spec that only needs the page to mount (movement-read, most-active-bar,

@@ -160,6 +160,20 @@ test.describe('TickerCombobox', () => {
     await expect(trigger).toContainText('AAPL');
   });
 
+  // The movement route in `mockDashboard` is registered pathname-wide, so
+  // without ticker scoping the AAPL dashboard would render IWM's statement
+  // verbatim and this regression would be invisible.
+  test('picking AAPL does not render the IWM movement statement', async ({ page }) => {
+    const trigger = page.getByTestId('ticker-combobox');
+    await trigger.click();
+    await page.getByTestId('ticker-combobox-input').fill('aa');
+    await page.getByTestId('ticker-option-AAPL').click();
+    await expect(trigger).toContainText('AAPL');
+
+    // The IWM headline the fixture carries must not appear under AAPL.
+    await expect(page.getByText('IWM 15m: current structure is a 1 candle')).toHaveCount(0);
+  });
+
   test('Escape closes the popover without changing the ticker', async ({ page }) => {
     const trigger = page.getByTestId('ticker-combobox');
     await trigger.click();
