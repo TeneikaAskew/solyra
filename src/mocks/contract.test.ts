@@ -61,7 +61,7 @@ import type { MarketSnapshot } from '@/lib/playbookEvaluator';
 import type { IndicatorsRequest } from '@/hooks/useLiveIndicators';
 import type { StratPredictRequest } from '@/hooks/useAdmin';
 import type { UserPreferencesUpdate } from '@/types/preferences';
-import type { UserProfileUpdate } from '@/types/profile';
+import { PROFILE_FIELDS, type UserProfileUpdate } from '@/types/profile';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -132,6 +132,12 @@ export interface ApiLiteral {
   method: string | null;
   /** Offset of the literal's start, for resolving nearby bindings. */
   quoteStart: number;
+  /**
+   * Query-parameter names this request sends, or null when they cannot be
+   * read statically. Resolved here, where the AST is in hand, rather than by
+   * re-scanning text around the literal.
+   */
+  queryNames: string[] | null;
 }
 
 const parse = (source: string) =>
@@ -151,27 +157,48 @@ function calleeName(call: ts.CallExpression): string | null {
 }
 
 /**
- * Render a node to a URL pattern: literal text is kept, a dynamic expression
- * becomes `{p}`.
+ * Render a node to URL patterns — plural, because a conditional URL is two
+ * requests, not one.
  *
- * A conditional renders its truthy branch, which is what keeps query text
- * inside `${run ? `?run=${run}` : ''}` visible (Codex, #54). Collapsing the
- * whole span hid the `?` and reported the request as sending no query at all.
+ * `useGammaGrid` picks between the live and historical grid endpoints in one
+ * ternary. Rendering only the truthy branch bound the live path to its verb
+ * and left the historical one to the unknown-verb fallback (Codex, #54), so
+ * both branches are emitted and each carries the call's method.
+ *
+ * An identifier renders as `{p:name}` so the query reader can resolve it;
+ * `normalizeUrl` flattens that to `{p}` for path matching. A conditional
+ * inside a template (`${qs ? `?${qs}` : ''}`) multiplies the alternatives,
+ * which is how the with-query and without-query forms both get checked.
  */
-function renderUrl(node: ts.Node): string {
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  if (ts.isTemplateExpression(node)) {
-    let out = node.head.text;
-    for (const span of node.templateSpans) out += renderUrl(span.expression) + span.literal.text;
-    return out;
+function renderUrlVariants(node: ts.Node): string[] {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
+  if (ts.isIdentifier(node)) return [`{p:${node.text}}`];
+  if (ts.isParenthesizedExpression(node)) return renderUrlVariants(node.expression);
+  // `${params.toString()}` refers to `params`; keep the marker so the query
+  // reader can resolve its keys.
+  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'toString' && ts.isIdentifier(node.expression.expression)) {
+    return [`{p:${node.expression.expression.text}}`];
   }
   if (ts.isConditionalExpression(node)) {
-    const whenTrue = renderUrl(node.whenTrue);
-    return whenTrue || renderUrl(node.whenFalse);
+    return [...renderUrlVariants(node.whenTrue), ...renderUrlVariants(node.whenFalse)];
   }
-  if (ts.isParenthesizedExpression(node)) return renderUrl(node.expression);
-  return '{p}';
+  if (ts.isTemplateExpression(node)) {
+    let acc = [node.head.text];
+    for (const span of node.templateSpans) {
+      const parts = renderUrlVariants(span.expression);
+      const next: string[] = [];
+      for (const a of acc) for (const part of parts) next.push(a + part + span.literal.text);
+      // A pathological nest could explode; 8 alternatives covers this app.
+      acc = next.slice(0, 8);
+    }
+    return acc;
+  }
+  return ['{p}'];
 }
+
+/** `{p:name}` markers flattened to `{p}` for path matching. */
+const normalizeUrl = (u: string) => u.replace(/\{p:[^}]*\}/g, '{p}');
 
 const isUrlish = (n: ts.Node) =>
   ts.isStringLiteral(n) || ts.isTemplateExpression(n) || ts.isNoSubstitutionTemplateLiteral(n) ||
@@ -226,26 +253,129 @@ export function requestWrappers(source: string): Map<string, number> {
 /** Names of request wrappers in a source. */
 export const requestWrapperNames = (source: string): string[] => [...requestWrappers(source).keys()];
 
+/**
+ * Identifier → the query names its `URLSearchParams` carries.
+ *
+ * Reads BOTH `{ a: x }` and shorthand `{ timeframe }` — the regex this
+ * replaced required a colon, so `useMarketData`'s only constructor key was
+ * dropped while a later `.set('end_time')` still marked the request
+ * "resolved", reporting it readable with a name missing (Codex, #54). That
+ * failed unsafely: a skip is visible in the count, a wrong answer is not.
+ * `const qs = params.toString()` aliases back to `params`.
+ */
+function searchParamNames(file: ts.SourceFile): Map<string, Set<string>> {
+  const direct = new Map<string, Set<string>>();
+  const alias = new Map<string, string>();
+  const add = (name: string, key: string) => {
+    const set = direct.get(name) ?? new Set<string>();
+    set.add(key);
+    direct.set(name, set);
+  };
+
+  eachNode(file, (n) => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
+      const init = n.initializer;
+      if (ts.isNewExpression(init) && ts.isIdentifier(init.expression) &&
+          init.expression.text === 'URLSearchParams') {
+        direct.set(n.name.text, direct.get(n.name.text) ?? new Set());
+        const obj = init.arguments?.[0];
+        if (obj && ts.isObjectLiteralExpression(obj)) {
+          for (const prop of obj.properties) {
+            if (ts.isShorthandPropertyAssignment(prop)) add(n.name.text, prop.name.text);
+            else if (ts.isPropertyAssignment(prop)) {
+              if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) {
+                add(n.name.text, prop.name.text);
+              }
+            }
+          }
+        }
+      }
+      if (ts.isCallExpression(init) && ts.isPropertyAccessExpression(init.expression) &&
+          init.expression.name.text === 'toString' && ts.isIdentifier(init.expression.expression)) {
+        alias.set(n.name.text, init.expression.expression.text);
+      }
+    }
+    // params.set('x', …) / params.append('x', …)
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) &&
+        (n.expression.name.text === 'set' || n.expression.name.text === 'append') &&
+        ts.isIdentifier(n.expression.expression)) {
+      const key = n.arguments[0];
+      if (key && (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key))) {
+        add(n.expression.expression.text, key.text);
+      }
+    }
+  });
+
+  for (const [from, to] of alias) {
+    const target = direct.get(to);
+    if (target) direct.set(from, target);
+  }
+  return direct;
+}
+
+/**
+ * Query names a rendered URL sends, or null when a name cannot be read.
+ *
+ * A `{p…}` hole directly after `=` is a VALUE — the name beside it is known.
+ * Only a hole standing where a NAME would be needs resolving, via its
+ * `{p:ident}` marker.
+ */
+function queryNamesOf(rendered: string, params: Map<string, Set<string>>): string[] | null {
+  const q = rendered.indexOf('?');
+  if (q === -1) return [];
+  const tail = rendered.slice(q + 1);
+  const names = new Set<string>();
+  for (const m of tail.matchAll(/(?:^|&)([A-Za-z_][\w.-]*)=/g)) names.add(m[1]);
+
+  for (const m of tail.matchAll(/\{p(?::([^}]*))?\}/g)) {
+    if (tail[m.index! - 1] === '=') continue; // a value, not a name
+    const ident = m[1];
+    const resolved = ident ? params.get(ident) : undefined;
+    if (!resolved || resolved.size === 0) return null;
+    for (const k of resolved) names.add(k);
+  }
+  return [...names];
+}
+
 export function extractApiLiterals(source: string): ApiLiteral[] {
   const file = parse(source);
   const wrappers = requestWrappers(source);
   wrappers.set('fetch', 0);
+  const params = searchParamNames(file);
+  const mk = (raw: string, method: string | null, quoteStart: number): ApiLiteral => ({
+    literal: normalizeUrl(raw),
+    method,
+    quoteStart,
+    queryNames: queryNamesOf(raw, params),
+  });
 
   const out: ApiLiteral[] = [];
   /** Identifier → the URL patterns assigned to it, for `const U = ...; fetch(U)`. */
-  const bindings = new Map<string, { literal: string; quoteStart: number }[]>();
+  const bindings = new Map<string, ApiLiteral[]>();
+  /** Where each binding's URL initializer sits, so a CONSUMED one is not re-emitted. */
+  const bindingRange = new Map<string, [number, number]>();
 
   eachNode(file, (n) => {
     if (!ts.isVariableDeclaration(n) || !ts.isIdentifier(n.name) || !n.initializer) return;
     if (!isUrlish(n.initializer)) return;
-    const literal = renderUrl(n.initializer);
-    if (!literal.startsWith('/api/')) return;
+    const variants = renderUrlVariants(n.initializer);
+    if (!variants.some((v) => v.startsWith('/api/'))) return;
+    bindingRange.set(n.name.text, [n.initializer.getStart(file), n.initializer.getEnd()]);
     const list = bindings.get(n.name.text) ?? [];
-    list.push({ literal, quoteStart: n.initializer.getStart(file) });
+    for (const v of variants) {
+      if (v.startsWith('/api/')) list.push(mk(v, null, n.initializer.getStart(file)));
+    }
     bindings.set(n.name.text, list);
   });
 
-  const seenBinding = new Set<string>();
+  /**
+   * Source ranges already emitted from. A conditional URL's branches are
+   * themselves template literals, so without this the fallback pass below
+   * re-emits each branch with an unknown verb alongside the real entry.
+   */
+  const covered: [number, number][] = [];
+  const isCovered = (n: ts.Node) =>
+    covered.some(([a, b]) => n.getStart(file) >= a && n.getEnd() <= b);
 
   eachNode(file, (n) => {
     if (!ts.isCallExpression(n)) return;
@@ -258,9 +388,9 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
     const method = methodOfCall(n);
 
     if (isUrlish(arg)) {
-      const literal = renderUrl(arg);
-      if (literal.startsWith('/api/')) {
-        out.push({ literal, method, quoteStart: arg.getStart(file) });
+      covered.push([arg.getStart(file), arg.getEnd()]);
+      for (const v of renderUrlVariants(arg)) {
+        if (v.startsWith('/api/')) out.push(mk(v, method, arg.getStart(file)));
       }
       return;
     }
@@ -268,10 +398,9 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
     // binding contributes its verb, so a route removed for one verb but kept
     // for another is still reported.
     if (ts.isIdentifier(arg)) {
-      for (const b of bindings.get(arg.text) ?? []) {
-        out.push({ ...b, method });
-        seenBinding.add(`${arg.text}\u0000${b.literal}`);
-      }
+      const range = bindingRange.get(arg.text);
+      if (range) covered.push(range);
+      for (const b of bindings.get(arg.text) ?? []) out.push({ ...b, method });
     }
   });
 
@@ -279,17 +408,14 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
   // the like. Reported with an unknown verb and checked on path alone.
   eachNode(file, (n) => {
     if (!isUrlish(n)) return;
-    if (ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name)) {
-      const key = `${n.parent.name.text}\u0000${renderUrl(n)}`;
-      if (seenBinding.has(key)) return;
-    }
-    const literal = renderUrl(n);
-    if (!literal.startsWith('/api/')) return;
+    if (isCovered(n)) return;
     const quoteStart = n.getStart(file);
     if (out.some((o) => o.quoteStart === quoteStart)) return;
     // Inside a call we already handled as a request URL? Then it is covered.
     if (ts.isCallExpression(n.parent) && wrappers.has(calleeName(n.parent) ?? '')) return;
-    out.push({ literal, method: null, quoteStart });
+    for (const v of renderUrlVariants(n)) {
+      if (v.startsWith('/api/')) out.push(mk(v, null, quoteStart));
+    }
   });
 
   return out;
@@ -334,56 +460,6 @@ export function matchesDeclaredPath(literal: string, apiPaths: string[]): boolea
   return matchedDeclaredPath(literal, apiPaths) !== null;
 }
 
-
-/**
- * The query-parameter names a request literal sends, or null when they cannot
- * be determined from the source.
- *
- * Three forms appear in this app:
- *   `?limit=5&x=${v}`                 names are in the literal
- *   `?${params}` + `new URLSearchParams({ a: .., b: .. })`   names are keys
- *   `?${qs}` + `const qs = params.toString()` + `params.set('a', ..)`
- *
- * The literal alone is not enough — `useSimilarSetups` builds its three
- * REQUIRED parameters through URLSearchParams, so a literal-only reader saw
- * none of them (Codex, #54). Returns null when the tail interpolates an
- * identifier this cannot resolve, so an unreadable call is reported as
- * unknown rather than as sending nothing.
- */
-export function queryNames(source: string, literal: string, quoteStart: number): string[] | null {
-  const q = literal.indexOf('?');
-  if (q === -1) return [];
-  const tail = literal.slice(q + 1);
-  const names = new Set<string>();
-  for (const m of tail.matchAll(/(?:^|&)([A-Za-z_][\w.-]*)=/g)) names.add(m[1]);
-
-  // A `{p}` directly after `=` is a VALUE — the name beside it is known and
-  // nothing needs resolving. Only a hole standing where a NAME would be
-  // (`?${params}`, or text appended after a value that could carry `&x=y`)
-  // hides names, and only that case falls back to resolving the identifier.
-  const nameHoles = [...tail.matchAll(/\{p\}/g)].filter((m) => tail[m.index! - 1] !== '=');
-  if (!nameHoles.length) return [...names];
-
-  const before = source.slice(Math.max(0, quoteStart - 4000), quoteStart);
-  const idents = [...before.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:new\s+URLSearchParams|([A-Za-z_$][\w$]*)\.toString\(\))/g)];
-  if (!idents.length) return null;
-
-  let resolved = false;
-  for (const [, name, aliasOf] of idents) {
-    const target = aliasOf ?? name;
-    const ctor = new RegExp(String.raw`(?:const|let|var)\s+${target}\s*=\s*new\s+URLSearchParams\(\s*\{([\s\S]*?)\}\s*\)`).exec(before);
-    if (ctor) {
-      for (const m of ctor[1].matchAll(/(?:^|,)\s*['"`]?([A-Za-z_][\w.-]*)['"`]?\s*:/g)) names.add(m[1]);
-      resolved = true;
-    }
-    const setter = new RegExp(String.raw`\b${target}\.(?:set|append)\(\s*['"\x60]([A-Za-z_][\w.-]*)['"\x60]`, 'g');
-    for (const m of before.matchAll(setter)) {
-      names.add(m[1]);
-      resolved = true;
-    }
-  }
-  return resolved ? [...names] : null;
-}
 
 // ── 2. Payload shape ───────────────────────────────────────────────────────
 
@@ -615,9 +691,24 @@ const REQUEST_SAMPLES: Record<string, unknown> = {
   'PUT /api/me/preferences': {
     theme: 'dark', nav_pattern: 'sidebar', density: 'default', accent: 'violet',
   } satisfies UserPreferencesUpdate,
-  // src/hooks/useProfile.ts:84
+  // src/hooks/useProfile.ts:84. SettingsPage sends profileDiff(...), so ANY
+  // subset of UserProfileUpdate can be the body — a three-field sample let a
+  // rename of one of the other nine pass (Codex, #54). Every field is listed,
+  // and a test below asserts this covers PROFILE_FIELDS so the type cannot
+  // grow past it.
   'PUT /api/me/profile': {
-    display_name: 'Trader', default_ticker: 'IWM', default_timeframe: '1D',
+    display_name: 'Trader',
+    timezone: 'America/New_York',
+    default_ticker: 'IWM',
+    default_timeframe: '1D',
+    account_size: 25000,
+    risk_per_trade_pct: 1.5,
+    notify_daily_digest: true,
+    notify_catalyst_alerts: false,
+    notify_signal_alerts: true,
+    number_format: 'abbreviated',
+    date_format: 'iso',
+    show_extended_hours: false,
   } satisfies UserProfileUpdate,
   // src/hooks/useAdmin.ts:172
   'POST /api/admin/strat-engine/predict': {
@@ -695,11 +786,38 @@ describe('extractApiLiterals', () => {
   });
 
   it('keeps query text nested inside a conditional template expression', () => {
-    // BacktesterSection.tsx: `...${ticker}${run ? `?run=${run}` : ''}`
+    // BacktesterSection.tsx: `...${ticker}${run ? `?run=${run}` : ''}`.
+    // Both branches are real requests, so both are emitted.
     const src = "fetch(`/api/backtest/results/${ticker}${run ? `?run=${run}` : ''}`)";
     expect(verbs(src)).toEqual([
       { literal: '/api/backtest/results/{p}?run={p}', method: 'GET' },
+      { literal: '/api/backtest/results/{p}', method: 'GET' },
     ]);
+  });
+
+  it('emits both branches of a conditional URL with the call verb', () => {
+    // useGammaGrid.ts picks between the live and historical grid endpoints.
+    const src = [
+      'const url = live',
+      '  ? `/api/options/${ticker}/grid`',
+      '  : `/api/options/${ticker}/${date}/grid`;',
+      'fetch(url);',
+    ].join('\n');
+    expect(verbs(src)).toEqual([
+      { literal: '/api/options/{p}/grid', method: 'GET' },
+      { literal: '/api/options/{p}/{p}/grid', method: 'GET' },
+    ]);
+  });
+
+  it('reads shorthand URLSearchParams keys', () => {
+    // useMarketData.ts: new URLSearchParams({ timeframe })
+    const src = [
+      'const params = new URLSearchParams({ timeframe });',
+      "if (endTime) params.set('end_time', endTime);",
+      'fetch(`/api/market/data/${t}/${d}?${params.toString()}`);',
+    ].join('\n');
+    const found = extractApiLiterals(src).filter((f) => f.method === 'GET');
+    expect(found[0].queryNames?.sort()).toEqual(['end_time', 'timeframe']);
   });
 
   it('collects every verb a `const ENDPOINT = ...` binding is fetched under', () => {
@@ -815,13 +933,12 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
     let unreadable = 0;
     for (const file of sourceFiles(SRC)) {
       const source = readFileSync(file, 'utf8');
-      for (const { literal: lit, method, quoteStart } of extractApiLiterals(source)) {
+      for (const { literal: lit, method, queryNames: sent } of extractApiLiterals(source)) {
         if (method === null || /\s|\*|\.\.\./.test(lit)) continue;
         const declaredPath = matchedDeclaredPath(lit, API_PATHS_BY_METHOD[method] ?? []);
         if (!declaredPath) continue; // the route test owns that failure
         const op = spec.paths[declaredPath]?.[method.toLowerCase()];
         const params = (op?.parameters ?? []).filter((prm) => prm.in === 'query');
-        const sent = queryNames(source, lit, quoteStart);
         if (sent === null) {
           unreadable++;
           continue;
@@ -841,6 +958,14 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
     }
     console.info(`[contract] query params: ${checked} requests checked, ${unreadable} not statically readable`);
     expect(violations, 'query parameters that disagree with the declared operation').toEqual([]);
+  });
+
+  it('the profile sample covers every field a partial update can send', () => {
+    // SettingsPage posts profileDiff(...), which can carry any profile field.
+    // A sample missing one would validate while that field's rename 422s.
+    const sample = REQUEST_SAMPLES['PUT /api/me/profile'] as Record<string, unknown>;
+    const missing = PROFILE_FIELDS.filter((f) => !(f in sample));
+    expect(missing, 'profile fields absent from the request sample').toEqual([]);
   });
 
   it('every request body the app sends matches its operation request schema', () => {
