@@ -33,12 +33,20 @@ body:
   - type: textarea
     id: evidence
     attributes:
-      label: Evidence from the running system
-      description: "Paste the command or request AND its output. Say which backend you hit: local :8000, staging, or prod."
+      label: Evidence, and who else consumes it
+      description: "Command or request AND its output, plus the consumer search. Say which backend you hit: local :8000, staging, or prod."
       render: shell
       placeholder: |
         $ curl -s -o /dev/null -w '%{http_code}\n' -X PUT https://<deployed>/api/me/preferences -d '{}'
         404
+
+        # Blast radius: a shared hook or src/lib/ helper has more callers than
+        # the page that filed this.
+        $ grep -rn "useLatestOptionsDate" src/
+        src/hooks/useOptionsDates.ts:41
+        src/routes/OptionsFlowPage.tsx:88
+        src/components/options/SwingMode.tsx:56
+        Three consumers sharing one cache key, and one only reads [0].
 
         $ grep -rn "me/preferences" ../stocks/platform/api/
         (no route; only a doc note in docs/HARDCODED_VALUES_REMEDIATION.md planning
@@ -84,23 +92,6 @@ body:
         and the formatter concatenates before checking.
         **Expected:** a missing value renders `—` with an unavailable badge, and never coerces
         to 0 anywhere above the presentation boundary.
-    validations:
-      required: true
-
-  - type: textarea
-    id: consumers
-    attributes:
-      label: Consumers and blast radius
-      description: >-
-        A shared hook or a `src/lib/` helper has more callers than the page that
-        filed this. Paste the search.
-      render: shell
-      placeholder: |
-        $ grep -rn "useLatestOptionsDate" src/
-        src/hooks/useOptionsDates.ts:41
-        src/routes/OptionsFlowPage.tsx:88
-        src/components/options/SwingMode.tsx:56
-        Three consumers sharing one cache key, and one of them only reads [0].
     validations:
       required: true
 

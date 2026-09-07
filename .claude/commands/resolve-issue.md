@@ -64,17 +64,29 @@ Check whether work already exists before starting more:
 ```bash
 git fetch origin
 git branch -r | grep -iE "<issue-keyword>"
-# and: mcp__github__search_pull_requests q="repo:TeneikaAskew/solyra <issue-number>"
+# and: mcp__github__search_pull_requests
+#        q="repo:TeneikaAskew/solyra is:open <issue-number>"
+# `is:open` matters: without it the search returns closed and merged PRs too,
+# and CASE A would check out a dead PR's retained branch and push commits that
+# can never reach the merge gate.
 ```
 
 **Branch before touching any file** (CLAUDE.md Rule 2). Never edit on the
 Lovable-connected branch:
 
 The two cases are exclusive. Check out the existing head, or create a branch,
-never both:
+never both.
+
+**A dirty worktree stops you here.** Ordinary `checkout` preserves
+non-conflicting local edits, so uncommitted work from another task follows you
+onto the issue branch: Phase 5 then tests a mixed candidate, and Phase 7's
+file-level `git add` can commit hunks unrelated to this issue. If
+`git status --porcelain` is not empty, stop and ask whether to stash or commit
+it. Never `checkout -f`, which discards it.
 
 ```bash
-git status && git rev-parse --abbrev-ref HEAD
+git status --porcelain           # must be empty before going further
+git rev-parse --abbrev-ref HEAD
 git fetch origin
 
 # CASE A — a PR already exists for this issue. Work on ITS head; do not open
@@ -345,6 +357,16 @@ In order:
    run". Read the review summary comment's status table alongside the review
    list to tell them apart.
 5. Only then CI green on the current head, and no merge conflict.
+6. **Merge it.** Steps 1-5 are the gate, not the destination; stopping here
+   leaves the fix on a branch while Phase 9 describes the issue as landed.
+   Merge once every step above passes, and record the merge commit in the
+   status comment.
+
+   Stop instead of merging, saying which: the PR is one this session did not
+   open and was not asked to drive; the user wants to merge it themselves; or
+   this is the frontend half of a Rule 6 pair whose **stocks PR has not merged
+   yet** — that one merges first, because the snapshot this repo vendors is
+   read from stocks `main`. Never merge to get past a step that has not passed.
 
 Resolving is part of the fix. A finding fixed in a later PR with the original
 thread left open reads as unaddressed to everyone but you; if the fix landed
