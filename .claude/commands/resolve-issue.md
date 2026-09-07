@@ -72,6 +72,12 @@ git branch -r | grep -iE "<issue-keyword>"
 # Confirm the relationship before treating any result as this issue's PR —
 # a closing keyword in its body, or the issue's own linked-PR entry — and
 # read the issue timeline when the search comes back empty.
+# But an issue awaiting a widening's STEP 3 has a merged step-1 PR and no
+# open one, and `is:open` hides it. If the issue is open and its newest
+# status comment says step 1 merged and only contract:sync plus the canonical
+# fixtures remain, that is step 3: a new branch and PR for the sync, not a
+# re-implementation of the guard work that already landed. Read the status
+# comment before branching.
 # `is:open` matters: without it the search returns closed and merged PRs too,
 # and CASE A would check out a dead PR's retained branch and push commits that
 # can never reach the merge gate.
@@ -449,8 +455,17 @@ In order:
    What fails the step: a summary showing Running, or naming an older commit
    with all threads outdated, or a head whose only reviews are yours. That head
    is unreviewed — comment `@codex review` and wait.
-3. Every thread fixed-and-resolved, naming what changed and the covering test
-   and commit, or replied to with why not. Zero unresolved is the bar.
+3. **Re-page `get_review_comments` now**, after step 2 established the review
+   is Completed — do not reuse step 1's snapshot. Step 1 runs deliberately
+   before CI and can therefore run while the current head's review is still
+   posting, so anything it lands in between is absent from what you hold. And
+   a review WITH findings satisfies step 2 perfectly well, since the bar there
+   is "not `CHANGES_REQUESTED`" — nothing else catches this.
+
+   Read and triage here; **fix at step 4, and zero-unresolved is enforced at
+   step 5.** Demanding it here would deadlock: a finding would have to be
+   resolved before step 4 has said to reproduce and fix it, and the only way
+   out is resolving a thread you never validated.
 4. Verify each finding against the code before fixing it: reproduce, write the
    failing test, fix, show it pass.
    **If this produced a commit, go back to step 1 on the new head.** A fix
@@ -462,7 +477,9 @@ In order:
    reaction, so an absent review for a SHA means either "clean" or "not yet
    run". Read the review summary comment's status table alongside the review
    list to tell them apart.
-5. Only then CI green on the current head, and no merge conflict.
+5. **Now zero unresolved**, across every page: each thread fixed-and-resolved
+   naming what changed and the covering test and commit, or replied to with
+   why not. Then CI green on the current head, and no merge conflict.
 6. **Merge it.** Steps 1-5 are the gate, not the destination; stopping here
    leaves the fix on a branch while Phase 9 describes the issue as landed.
    Merge once every step above passes, and record the merge commit in the
@@ -528,6 +545,14 @@ In order:
      If this app stops sending a still-required field first, every request to
      the deployed stocks fails validation immediately. Stocks makes it optional
      and deploys, THEN this app stops sending it, THEN stocks drops it.
+
+     **That last step waits for old clients, not for our deploy.** Stocks'
+     request models set `extra="forbid"` — `ProfileUpdate` and
+     `PreferencesUpdate` both do, so an unknown field 422s rather than being
+     silently dropped. A browser still running the previous bundle, or a
+     rollback, keeps sending the field; dropping it the moment we ship 422s
+     them. It stays optional until old sessions have aged out or telemetry
+     shows the field has stopped arriving.
 
    The invariant underneath both, and under the widening, is the same:
    **whichever side is receiving must tolerate the new shape before the sending
