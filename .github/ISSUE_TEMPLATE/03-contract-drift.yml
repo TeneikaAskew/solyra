@@ -17,8 +17,13 @@ body:
 
         Two directions, and only one is mechanically caught today:
 
-        - **Narrowing is caught.** A field the app reads or sends that the API
-          no longer declares fails the contract test.
+        - **Narrowing is caught where a payload exists.** A field the app
+          reads or sends that the API no longer declares fails the contract
+          test — but only for operations that have a mock. The twelve in
+          `UNMOCKED_REQUESTED` have no payload to validate, so
+          `GET /api/options/live/{ticker}/{date_str}` can lose a field while
+          `ProfilesTab.tsx`'s locally-declared `OptionsResponse` still reads
+          it and everything passes. For those, check the schema by hand.
         - **Widening is not.** A field going from required `string` to nullable
           leaves both the old mock and the old type valid, so the suite passes
           while production returns a null the app does not handle. This caused

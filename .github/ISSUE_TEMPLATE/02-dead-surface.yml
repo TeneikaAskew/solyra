@@ -70,10 +70,13 @@ body:
       placeholder: |
         # The shape of a conclusive answer, taken from the closed #16. Those
         # files no longer exist; run the pickaxe on YOUR surface.
-        # -G --no-renames, NOT -S. Measured: -S counts occurrences per blob, so a
+        # -G --no-renames --full-history, NOT -S. Measured: -S counts per blob, so a
         # rewritten import line inside ONE file leaves the count equal and -S skips
-        # that commit; and a pure rename is invisible to BOTH until --no-renames.
-        $ git log --oneline --all -G "TermHover" --no-renames -- src platform/src
+        # that commit; a pure rename is invisible to BOTH until --no-renames; and
+        # default history simplification prunes side branches, so an importer that
+        # lived only on a merged-and-deleted branch returns NOTHING until
+        # --full-history (reproduced on git 2.43).
+        $ git log --oneline --all --full-history -G "TermHover" --no-renames -- src platform/src
         a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
         e1ce147 (May 31, Phase C1) shipped it "not yet wired into any page — C2-C5 will
                 consume it as the heatmap UI lands"

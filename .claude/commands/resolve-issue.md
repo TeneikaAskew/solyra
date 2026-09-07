@@ -413,6 +413,9 @@ let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
   console.log(o.sort().join('\n'));});" | sort -u; }
 
 FILES="<the files this issue's fix touches>"
+git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
+                      # emits no hunk for it, so every line of it would count
+                      # as unchanged and its errors would pass this gate
 comm -12 <(changed_lines HEAD $FILES) <(diag_lines $FILES) > /tmp/lint-new.txt
 test ! -s /tmp/lint-new.txt \
   || { cat /tmp/lint-new.txt; echo "^ lint errors on lines you changed"; false; }
@@ -428,7 +431,11 @@ file has a new error in it. The line-anchored version flags it at 441.
 
 Both directions verified on this tree: with no edit it exits 0 against the
 8-error baseline, and with one exported helper appended it prints
-`MovementRead.tsx:440` and exits 1. A diagnostic on a line you did not touch is
+`MovementRead.tsx:440` and exits 1. The `git add -N` was verified the same
+way — a new file carrying an unused-variable error showed up in `diag_lines`
+and contributed nothing to `changed_lines` until it was intent-to-added, at
+which point the gate caught it. Phases 4 and 5 create new test files
+routinely, so this is the common path, not an edge. A diagnostic on a line you did not touch is
 the baseline and stays out of it; a diagnostic on a line you added or modified
 is yours, whatever the rule already fired for elsewhere in the file. `diag_lines`
 deliberately discards eslint's own status — a dirty baseline is the premise
@@ -536,7 +543,11 @@ In order:
    - a review **authored by the review bot**, not `CHANGES_REQUESTED`, whose
      `commit_id` is the head SHA (listings return oldest first, so it is on the
      last page); or
-   - the review summary comment showing **Completed** against the head SHA.
+   - the review summary comment showing **Completed** against the head SHA,
+     **and authored by the review bot**. Anyone who can comment on the PR can
+     post a comment that says Completed and names the head; the author check
+     below is about review objects and does not reach this path, so without
+     this clause the cheaper of the two conditions is the forgeable one.
 
    **Check the author, not just the SHA.** Every reply you post on a thread is
    itself recorded as a review on the current head, so a SHA-only test lets
@@ -624,6 +635,22 @@ In order:
       payloads, not types. Widening the type costs nothing there; moving a
       null into a payload costs everything. That is why the type goes first
       and the fixture cannot.
+
+      **First establish WHICH widening it is.** `03-contract-drift.yml:77`
+      counts "became nullable **or optional**" as one category, and they need
+      different payloads and different types:
+
+      | The API change | The type here | The payload that exercises it |
+      |---|---|---|
+      | required → **nullable** | `T \| null` | the field present, set to `null` |
+      | required → **optional**, still non-nullable | `field?: T` | the field **omitted** |
+      | both | `field?: T \| null` | one of each |
+
+      Getting this wrong is not cosmetic: for an optional-only widening the new
+      schema still **rejects** `null`, so a null payload tests a shape the API
+      cannot emit while the real missing-key path goes untested — and step 3's
+      "move the null into the canonical mock" would then fail validation
+      against the very schema that was supposed to admit it.
    2. **Then stocks.** Widen the response model, regenerate
       `platform/api/openapi.json`, merge, deploy.
 
@@ -657,11 +684,26 @@ In order:
    backwards:
 
    - **A field this app READS that stocks will drop** — consumer-first, as
-     above. This app stops reading it, then stocks removes it.
+     above. This app stops reading it, waits for old bundles, then stocks
+     removes it. The wait is the same one the widening needs and for the same
+     reason: a session open on the previous bundle is still reading that field
+     after the compatible frontend deploys, and removing it server-side hands
+     those tabs an absent value. Deploying the reader change is not the same
+     event as every reader having it.
    - **A field this app SENDS that stocks will stop requiring** — the reverse.
      If this app stops sending a still-required field first, every request to
      the deployed stocks fails validation immediately. Stocks makes it optional
      and deploys, THEN this app stops sending it, THEN stocks drops it.
+
+     **The request type moves in the sender PR, not the final sync.** Once
+     stocks has made the field optional, this app cannot stop sending it while
+     `src/types/` or the hook still declares it required — `tsc -b` fails at
+     the construction site. `StratPredictRequest.timeframe` is required at
+     `src/hooks/useAdmin.ts:115` and built at
+     `src/components/structure_brief/PredictForm.tsx:41`; the sample at
+     `src/mocks/contract.test.ts:803` `satisfies` that type, so it moves with
+     it. The final PR is then the snapshot sync alone, after stocks drops the
+     field for real.
 
      **That last step waits for old clients, not for our deploy.** Stocks'
      request models set `extra="forbid"` — `ProfileUpdate` and
