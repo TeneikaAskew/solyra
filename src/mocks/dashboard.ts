@@ -64,8 +64,10 @@ export const MOCK_DASHBOARD_BRIEF = {
   live: { price: 220.45, session: 'closed' },
 } satisfies BriefResponse;
 
-/** `source` ('cloud_sql' | 'markdown') is always present on the wire
- *  (playbook.py) even though the frontend type doesn't model it. */
+/** `source` ('cloud_sql') is always present on the wire (playbook.py)
+ *  even though the frontend type doesn't model it. The real endpoint never
+ *  returns an empty `cards` list (no rows is a 404); this shape exercises
+ *  the "no setups" branch of the top-setup tile. */
 export const MOCK_PLAYBOOK_EMPTY = {
   ticker: 'IWM',
   source: 'cloud_sql',
@@ -86,6 +88,13 @@ export const MOCK_PLAYBOOK_EMPTY = {
 export const MOCK_PLAYBOOK = {
   ticker: 'IWM',
   source: 'cloud_sql',
+  // Card-set date + server-judged age, as playbook.py serves them after
+  // stocks #861 (the set below IS the 2026-09-06 run; generated_at is its
+  // IWM upsert time). age_days is static here: the real server re-judges it.
+  analysis_date: '2026-09-06',
+  generated_at: '2026-09-06T20:21:19.472074+00:00',
+  age_days: 0,
+  max_age_days: 7,
   cards: [
   {
     id: 'card_1',
@@ -395,6 +404,46 @@ export const MOCK_PLAYBOOK = {
   }
   ],
 } satisfies PlaybookResponse & { source: string };
+
+/** A small one-card set with a NON-zero age, for specs that assert the
+ *  "as of <date> (Nd old)" label explicitly; mock mode serves the real set
+ *  above. */
+export const MOCK_PLAYBOOK_FRESH = {
+  ticker: 'IWM',
+  source: 'cloud_sql',
+  analysis_date: '2026-09-05',
+  generated_at: '2026-09-05T08:41:12+00:00',
+  age_days: 1,
+  max_age_days: 7,
+  cards: [
+    {
+      id: 'card_1',
+      name: 'IWM CARD 1: Bullish continuation',
+      direction: 'CALL',
+      win_rate: 54.0,
+      avg_return: 0.12,
+      conditions: ['RSI 40-65', 'Above VWAP', 'EMA9 > EMA20'],
+      description: 'Two-up continuation above VWAP',
+      target_pct: 0.3,
+      stop_pct: 0.15,
+      horizons: [
+        { minutes: 5, win_rate: 52.0, avg_return_bps: 1.4, sample_n: 120 },
+        { minutes: 15, win_rate: 54.0, avg_return_bps: 3.1, sample_n: 120 },
+      ],
+      best_horizon_min: 15,
+      best_horizon_win_rate: 54.0,
+      best_horizon_avg_bps: 3.1,
+    },
+  ],
+} satisfies PlaybookResponse & { source: string };
+
+/** The 503 body playbook.py returns for a card set older than
+ *  MAX_PLAYBOOK_AGE_DAYS (#861). The UI must surface this reason. */
+export const MOCK_PLAYBOOK_STALE_DETAIL = {
+  detail:
+    'playbook_cards for IWM is stale: latest analysis_date 2026-06-13 is 85 days old ' +
+    '(today; max 7). Refusing to render stale setups as current — run the phase6-playbook Cloud Run job.',
+};
 
 export const MOCK_DASHBOARD_QUOTE = {
   ticker: 'IWM',
@@ -741,6 +790,8 @@ export const MOCK_MOVEMENT_STATEMENT = {
 
 export const dashboardRoutes: MockRoute[] = [
   { pattern: /^\/api\/dashboard\/brief\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_BRIEF }) },
+  // The real populated set, so mock mode renders the top-setup happy path
+  // (age label included); MOCK_PLAYBOOK_EMPTY stays for specs wanting that branch.
   { pattern: /^\/api\/playbook\/IWM$/, reply: () => ({ body: MOCK_PLAYBOOK }) },
   {
     // POST /api/playbook/evaluate — contract-complete but currently DORMANT

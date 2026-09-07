@@ -7,6 +7,7 @@
  * which already fence their own canonical helpers.
  */
 import { describe, expect, it } from 'vitest';
+import { isAuthError } from '@/components/shared/WidgetState';
 import {
   NA,
   fmtCompact,
@@ -18,6 +19,7 @@ import {
   fmtRatioPct,
   fmtSigned,
   toneOf,
+  responseErrorMessage,
 } from './format';
 
 const MISSING = [null, undefined, NaN, Infinity, -Infinity] as const;
@@ -115,5 +117,27 @@ describe('toneOf', () => {
   it('maps sign to tone', () => {
     expect(toneOf(0.01)).toBe('bull');
     expect(toneOf(-0.01)).toBe('bear');
+  });
+});
+
+describe('responseErrorMessage', () => {
+  const mk = (status: number, body: string, contentType = 'application/json') =>
+    new Response(body, { status, headers: { 'content-type': contentType } });
+
+  it('surfaces the FastAPI {detail} string so a stale-data 503 says why, keeping the status', async () => {
+    const detail = 'playbook_cards for IWM is stale: latest analysis_date 2026-06-13 is 85 days old';
+    expect(await responseErrorMessage(mk(503, JSON.stringify({ detail })))).toBe(`${detail} (HTTP 503)`);
+  });
+
+  it('keeps a 401 recognisable as an auth failure after detail extraction', async () => {
+    const msg = await responseErrorMessage(mk(401, JSON.stringify({ detail: 'Not authenticated' })));
+    expect(msg).toBe('Not authenticated (HTTP 401)');
+    expect(isAuthError(new Error(msg))).toBe(true);
+  });
+
+  it('falls back to the bare status for non-string detail or non-JSON bodies', async () => {
+    expect(await responseErrorMessage(mk(422, JSON.stringify({ detail: [{ loc: ['q'] }] })))).toBe('422');
+    expect(await responseErrorMessage(mk(502, '<html>bad gateway</html>', 'text/html'))).toBe('502');
+    expect(await responseErrorMessage(mk(500, ''))).toBe('500');
   });
 });

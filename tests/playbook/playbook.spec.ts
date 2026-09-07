@@ -8,6 +8,12 @@ import { MOCK_AVG_VOLUME } from '@/mocks/live';
 
 const SPEC_LOCAL_PLAYBOOK = {
   ticker: 'IWM',
+  source: 'cloud_sql',
+  // Card-set date + server-judged age (#861) — rendered next to the count.
+  analysis_date: '2026-09-05',
+  generated_at: '2026-09-05T08:41:12+00:00',
+  age_days: 1,
+  max_age_days: 7,
   cards: [
     {
       id: 'long_breakout_pd',
@@ -66,5 +72,24 @@ test.describe('Playbook', () => {
     await page.goto('/playbook');
     await page.waitForLoadState('networkidle');
     expect(Date.now() - start).toBeLessThan(perfBudgetMs(7000));
+  });
+  test('shows the card set date and age next to the setup count', async ({ page }) => {
+    await page.goto('/playbook');
+    await expect(page.getByTestId('playbook-age')).toHaveText(/1 setups · as of Sep 5, 2026 \(1d old\)/, {
+      timeout: 10_000,
+    });
+  });
+
+  test('a stale card set (503) is reported with the server reason, not rendered', async ({ page }) => {
+    const detail =
+      'playbook_cards for IWM is stale: latest analysis_date 2026-06-13 is 85 days old ' +
+      '(today; max 7). Refusing to render stale setups as current — run the phase6-playbook Cloud Run job.';
+    await page.route('**/api/playbook/IWM', (r) =>
+      r.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail }) })
+    );
+    await page.goto('/playbook');
+    await expect(page.getByText(/playbook unavailable for IWM/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/2026-06-13 is 85 days old/)).toBeVisible();
+    await expect(page.getByText('Long breakout above PD high')).toHaveCount(0);
   });
 });
