@@ -86,6 +86,7 @@ export async function signUpWithEmail(email: string, password: string) {
   // so the caller's error line is gone; the outcome is recorded in the
   // authGate store, where EmailVerificationBanner reads it, and the error is
   // still rethrown (never swallowed).
+  recordVerificationEmail(cred.user.uid, { status: 'sending' });
   try {
     await sendEmailVerification(cred.user);
     recordVerificationEmail(cred.user.uid, { status: 'sent' });
@@ -109,19 +110,32 @@ export function sendPasswordReset(email: string): Promise<void> {
 export async function resendVerificationEmail(): Promise<void> {
   const user = _auth?.currentUser;
   if (!user) throw new Error('No signed-in user');
-  await sendEmailVerification(user);
-  recordVerificationEmail(user.uid, { status: 'sent' });
+  recordVerificationEmail(user.uid, { status: 'sending' });
+  try {
+    await sendEmailVerification(user);
+    recordVerificationEmail(user.uid, { status: 'sent' });
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    recordVerificationEmail(user.uid, { status: 'failed', message: e.code ?? e.message ?? 'unknown error' });
+    throw err;
+  }
 }
 
 /**
- * Re-read the signed-in user from the server and report `emailVerified`.
- * `onAuthStateChanged` does not fire when the address is confirmed in another
- * tab, so the banner calls this on "I've confirmed". null = nobody signed in.
+ * Re-read the signed-in user from the server, force a fresh ID token, and
+ * report `emailVerified`. `onAuthStateChanged` does not fire when the
+ * address is confirmed (or changed / restored) in another tab, so the banner
+ * calls this on "I've confirmed" and /auth/action calls it after applying a
+ * code. The forced token refresh matters: `reload()` only updates the profile,
+ * while the cached ID token keeps carrying the OLD email / email_verified
+ * claims until it expires, and authedFetch's non-forcing getIdToken() would
+ * hand that stale token to the next /api/me. null = nobody signed in.
  */
 export async function refreshEmailVerified(): Promise<boolean | null> {
   const user = _auth?.currentUser;
   if (!user) return null;
   await user.reload();
+  await user.getIdToken(true);
   return _auth?.currentUser?.emailVerified ?? null;
 }
 

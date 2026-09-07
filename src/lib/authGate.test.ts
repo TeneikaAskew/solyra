@@ -29,6 +29,13 @@ describe('verification-email delivery state', () => {
     expect(notified).toBe(2);
   });
 
+  it('reports the in-flight sign-up send so a resend cannot start concurrently', () => {
+    recordVerificationEmail('uid-s', { status: 'sending' });
+    expect(getVerificationEmailState('uid-s')).toEqual({ status: 'sending' });
+    recordVerificationEmail('uid-s', { status: 'sent' });
+    expect(getVerificationEmailState('uid-s')).toEqual({ status: 'sent' });
+  });
+
   it('never leaks one account\'s outcome to another or to a signed-out reader', () => {
     recordVerificationEmail('uid-a', { status: 'sent' });
     // Account B signs in in the same tab (or another tab) without a reload.

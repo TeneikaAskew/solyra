@@ -268,12 +268,27 @@ function EmailVerificationBannerFor() {
           ? email
             ? ` We sent a link to ${email}.`
             : ' We sent you a link.'
-          : delivery.status === 'failed'
-            ? ` The confirmation email could not be sent (${delivery.message}). Resend it below.`
-            : ' Use "Resend email" to get a fresh link.'}
+          : delivery.status === 'sending'
+            ? ' Sending the confirmation email…'
+            : delivery.status === 'failed'
+              ? ` The confirmation email could not be sent (${delivery.message}). Resend it below.`
+              : ' Use "Resend email" to get a fresh link.'}
       </span>
-      <button type="button" onClick={onResend} disabled={resend.state === 'sending'} data-testid="verification-resend" className={btnCls}>
-        {resend.state === 'sending' ? 'Sending…' : resend.state === 'sent' ? 'Sent, check your inbox' : 'Resend email'}
+      {/* Disabled while ANY send is in flight, including the sign-up send that
+          may still be settling when this banner first mounts, so two sends can
+          never race (and a later failure cannot overwrite a successful resend). */}
+      <button
+        type="button"
+        onClick={onResend}
+        disabled={resend.state === 'sending' || delivery.status === 'sending'}
+        data-testid="verification-resend"
+        className={btnCls}
+      >
+        {resend.state === 'sending' || delivery.status === 'sending'
+          ? 'Sending…'
+          : resend.state === 'sent'
+            ? 'Sent, check your inbox'
+            : 'Resend email'}
       </button>
       <button type="button" onClick={onConfirmed} disabled={checking} data-testid="verification-check" className={btnCls}>
         {checking ? 'Checking…' : "I've confirmed"}

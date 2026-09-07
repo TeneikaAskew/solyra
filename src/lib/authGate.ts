@@ -64,6 +64,7 @@ export function useAuthBlocked(): boolean {
 
 export type VerificationEmailState =
   | { status: 'unknown' }
+  | { status: 'sending' }
   | { status: 'sent' }
   | { status: 'failed'; message: string };
 
