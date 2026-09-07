@@ -265,16 +265,24 @@ response. Two checks now do, both hermetic and both in `npm test` / CI:
   `npm run contract:check`, which fetches stocks `main` and fails with a
   diff when the vendored copy is stale; `npm run contract:sync` refreshes it.
 - `src/mocks/contract.test.ts` checks every `/api/...` literal the app
-  requests against the declared paths, and validates each mock-mode payload
-  for a typed 200 response against its JSON schema. Because the mocks
-  `satisfies` the TS types, a schema violation there is a type that drifted
-  from the API.
+  requests (with the verb of the fetch it belongs to) against the declared
+  operations, validates each mock-mode payload for a typed 200 response
+  against its JSON schema, and validates a representative sample of every
+  JSON request body the app sends against its `requestBody` schema. Because
+  the mocks and the request samples `satisfies` the TS types, a schema
+  violation there is a type that drifted from the API.
 
 What they do not cover: an operation without a `response_model` in stocks
 has an empty schema and validates trivially (66 of 98 operations on
 2026-09-07 — the test prints the count). Adding response models on the
 stocks side is how the covered set grows; a renamed field in an *untyped*
-response still passes CI in both repos and breaks solyra at runtime.
+response still passes CI in both repos and breaks solyra at runtime. And
+validating one sample per operation proves the sample is permitted, not
+that the TS type accepts every response the server may now emit: widening a
+field from required `string` to nullable leaves both the old mock and the
+old type valid. The narrowing direction (a field we read or send that the
+API no longer declares) is caught; the widening direction needs a
+schema-to-type comparison the test does not do.
 
 So, when a change touches an API contract:
 

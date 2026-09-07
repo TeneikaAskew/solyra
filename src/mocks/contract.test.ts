@@ -19,11 +19,23 @@
  *     validated against that schema. A renamed or retyped field in a typed
  *     response fails here, because the mocks `satisfies` the TS types and
  *     the schema is what the API actually emits.
+ *  3. REQUEST BODIES — for every operation the app sends a JSON body to, a
+ *     representative sample of that body is validated against the operation's
+ *     `requestBody` schema. A new required input field, or a renamed one,
+ *     fails here rather than becoming a 422 in production (Codex, #54); an
+ *     operation with a body and no sample fails too, so the map cannot fall
+ *     behind the app.
  *
  * What it does NOT prove: an operation without a `response_model` in stocks
  * has an empty schema and validates trivially. The summary printed at the
  * end counts those; adding response models on the stocks side is how the
  * covered set grows. Non-200 mock replies (a documented 404) are skipped.
+ * Validating one sample per operation also proves only that the sample is
+ * permitted, not that the TS type accepts every response the server may now
+ * emit: widening a field from required `string` to nullable leaves both the
+ * old mock and the old type valid. Closing objects catches the narrowing
+ * direction (a field we read or send that the API no longer declares); the
+ * widening direction needs a schema-to-type comparison this does not do.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -31,6 +43,12 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
 import { resolveMock } from './index';
+import type { Bar } from '@/lib/indicators';
+import type { MarketSnapshot } from '@/lib/playbookEvaluator';
+import type { IndicatorsRequest } from '@/hooks/useLiveIndicators';
+import type { StratPredictRequest } from '@/hooks/useAdmin';
+import type { UserPreferencesUpdate } from '@/types/preferences';
+import type { UserProfileUpdate } from '@/types/profile';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -39,6 +57,7 @@ const SNAPSHOT = path.join(REPO, 'tests', 'fixtures', 'stocks-openapi.json');
 
 interface Operation {
   responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+  requestBody?: { content?: Record<string, { schema?: unknown }> };
 }
 interface OpenApi {
   paths: Record<string, Record<string, Operation>>;
@@ -223,12 +242,19 @@ function segmentMatches(call: string, api: string): boolean {
   return k > 0 ? call.slice(0, k) === api : call === api;
 }
 
-export function matchesDeclaredPath(literal: string, apiPaths: string[]): boolean {
+/** The declared path template a request literal resolves to, or null. */
+export function matchedDeclaredPath(literal: string, apiPaths: string[]): string | null {
   const call = segments(literal);
-  return apiPaths.some((p) => {
-    const api = segments(p);
-    return api.length === call.length && call.every((s, i) => segmentMatches(s, api[i]));
-  });
+  return (
+    apiPaths.find((p) => {
+      const api = segments(p);
+      return api.length === call.length && call.every((s, i) => segmentMatches(s, api[i]));
+    }) ?? null
+  );
+}
+
+export function matchesDeclaredPath(literal: string, apiPaths: string[]): boolean {
+  return matchedDeclaredPath(literal, apiPaths) !== null;
 }
 
 // ── 2. Payload shape ───────────────────────────────────────────────────────
@@ -311,6 +337,172 @@ function jsonSchemaFor(op: Operation): unknown {
   const bareDict =
     schema.type === 'object' && !('properties' in schema) && !('$ref' in schema) && !('allOf' in schema) && !('anyOf' in schema) && !('oneOf' in schema);
   return bareDict ? null : schema;
+}
+
+
+// ── 3. Request bodies ──────────────────────────────────────────────────────
+
+const SAMPLE_BARS = [
+  { time: '2026-04-25 09:30:00', open: 217.1, high: 217.9, low: 216.8, close: 217.6, volume: 1_240_000 },
+  { time: '2026-04-25 09:45:00', open: 217.6, high: 218.4, low: 217.4, close: 218.2, volume: 980_000 },
+] satisfies Bar[];
+
+const SAMPLE_SNAPSHOT = {
+  price: 218.2,
+  prevClose: 216.4,
+  prevHigh: 218.9,
+  prevLow: 215.7,
+  volumeToday: 2_220_000,
+  avgVolume20d: 31_400_000,
+  orbHigh: 217.9,
+  orbLow: 216.8,
+  lastBar: SAMPLE_BARS[1],
+  minutesSinceOpen: 15,
+  stochKPrev: 61.2,
+  indicators: {
+    ema9: 217.8, ema20: 217.2, ema50: 216.1, rsi: 57.4,
+    stochK: 64.8, stochD: 60.1, atr: 1.42, vwap: 217.7, stochKPrev: 61.2,
+  },
+} satisfies MarketSnapshot;
+
+/**
+ * One representative body per operation the app sends JSON to, mirroring what
+ * the named call site actually builds. Keyed by `VERB <declared path>`.
+ *
+ * Typed with `satisfies` wherever the app has a type for the body, so the two
+ * directions are both covered: a TS change that no longer describes what we
+ * send fails `tsc -b`, and a server-side change to the request model fails the
+ * test below. Undeclared keys are rejected the same way response payloads are
+ * (see `closeObjects`) — a field the client sends that the API does not
+ * declare is silently dropped by Pydantic in production, which is exactly the
+ * kind of no-op this check exists to surface.
+ *
+ * A new call site with a body and no entry here FAILS the test rather than
+ * being skipped, so the map cannot quietly fall behind the app.
+ */
+const REQUEST_SAMPLES: Record<string, unknown> = {
+  // src/hooks/useLiveIndicators.ts:39 / :85
+  'POST /api/live/indicators': {
+    bars: SAMPLE_BARS,
+    current_price: 218.2,
+    current_volume: 2_220_000,
+    avg_volume_20d: 31_400_000,
+  } satisfies IndicatorsRequest,
+  'POST /api/live/signal-series': { bars: SAMPLE_BARS },
+  // src/hooks/useOptionsGreeks.ts:87
+  'POST /api/options/greeks': {
+    options: [{ type: 'call', strike: 220, delta: 0.42, gamma: 0.031, vega: 0.11, volume: 1240, open_interest: 8800 }],
+    spot_price: 218.2,
+    strike_range_pct: null,
+  },
+  // src/hooks/usePlaybookEvaluation.ts:27 (conditions) and :54 (batches)
+  'POST /api/playbook/evaluate': { snapshot: SAMPLE_SNAPSHOT, conditions: ['rsi > 50'] },
+  // src/components/landing/waitlist.ts:13
+  'POST /api/waitlist': { email: 'trader@example.com', source: 'landing-hero', website: '' },
+  // src/hooks/useTickerSearch.ts:93
+  'POST /api/insights/watchlist/add': { ticker: 'AAPL' },
+  // src/routes/InsightsPage.tsx:484
+  'POST /api/insights/chat': {
+    message: 'what is the read on IWM?',
+    mode: 'chat',
+    ticker: 'IWM',
+    history: [{ role: 'user', content: 'hello' }],
+  },
+  // src/routes/JournalPage.tsx:162
+  'POST /api/journal/trades': {
+    ticker: 'IWM',
+    direction: 'CALL',
+    entry_date: '2026-04-25',
+    entry_time: '09:45',
+    entry_price: 1.42,
+    exit_date: '2026-04-25',
+    exit_time: '11:15',
+    exit_price: 2.05,
+    notes: '',
+  },
+  // src/hooks/useJournalChartTrades.ts:353
+  'PATCH /api/journal/trades/{trade_id}': {
+    exit_date: '2026-04-25',
+    exit_time: '11:15',
+    exit_price: 2.05,
+  },
+  // src/routes/JournalPage.tsx:308
+  'POST /api/journal/export/{ticker}': {
+    trades: [{
+      id: '1',
+      ticker: 'IWM',
+      direction: 'CALL',
+      entry_date: '2026-04-25',
+      entry_time: '09:45',
+      entry_price: 1.42,
+      exit_date: '2026-04-25',
+      exit_time: '11:15',
+      exit_price: 2.05,
+      notes: '',
+    }],
+  },
+  // src/hooks/useJournalChartTrades.ts:800
+  'POST /api/journal/import/commit': {
+    broker: 'robinhood',
+    trades: [{
+      ticker: 'IWM',
+      direction: 'CALL',
+      entry_ts: '2026-04-25T13:45:00Z',
+      entry_price: 1.42,
+      exit_ts: '2026-04-25T15:15:00Z',
+      exit_price: 2.05,
+      return_pct: 44.4,
+      quantity: 2,
+      status: 'CLOSED',
+    }],
+  },
+  // src/hooks/useJournalChartTrades.ts:496
+  'POST /api/backtest/replay-trades': { ticker: 'IWM', trade_ids: ['1'], session_id: 'sess-1' },
+  // src/hooks/useJournalChartTrades.ts:670
+  'POST /api/style/mine-and-validate': { ticker: 'IWM' },
+  // src/hooks/usePreferences.ts:101
+  'PUT /api/me/preferences': {
+    theme: 'dark', nav_pattern: 'sidebar', density: 'default', accent: 'violet',
+  } satisfies UserPreferencesUpdate,
+  // src/hooks/useProfile.ts:84
+  'PUT /api/me/profile': {
+    display_name: 'Trader', default_ticker: 'IWM', default_timeframe: '1D',
+  } satisfies UserProfileUpdate,
+  // src/hooks/useAdmin.ts:172
+  'POST /api/admin/strat-engine/predict': {
+    ticker: 'IWM', timeframe: '15m',
+  } satisfies StratPredictRequest,
+  // src/hooks/useAdmin.ts:196
+  'PUT /api/admin/routes/{role}': { provider: 'anthropic', model: 'claude-sonnet-5' },
+  // src/hooks/useAdmin.ts:270 / :282
+  'PUT /api/admin/users/{uid}/roles': { roles: ['analyst'] },
+  'PUT /api/admin/users/{uid}/status': { disabled: true },
+};
+
+/**
+ * The JSON request schema of an operation, or null when it constrains nothing:
+ * no `requestBody`, a non-JSON body (`POST /api/journal/import/preview` is
+ * multipart form-data), or an empty schema.
+ */
+function requestSchemaFor(op: Operation): unknown {
+  const schema = op.requestBody?.content?.['application/json']?.schema as
+    | Record<string, unknown>
+    | undefined;
+  return schema && Object.keys(schema).length > 0 ? schema : null;
+}
+
+/** `VERB <declared path>` for every operation the app requests. */
+function requestedOperations(): Set<string> {
+  const out = new Set<string>();
+  for (const file of sourceFiles(SRC)) {
+    for (const { literal: lit, method } of extractApiLiterals(readFileSync(file, 'utf8'))) {
+      if (method === null) continue; // verb unknowable — not a body-bearing call
+      if (/\s|\*|\.\.\./.test(lit)) continue;
+      const declared = matchedDeclaredPath(lit, API_PATHS_BY_METHOD[method] ?? []);
+      if (declared) out.add(`${method} ${declared}`);
+    }
+  }
+  return out;
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -421,4 +613,26 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
     if (skipped.length) console.info(`[contract] skipped:\n  ${skipped.join('\n  ')}`);
     expect(violations, 'mock payloads that violate the API response schema').toEqual([]);
   });
+
+  it('every request body the app sends matches its operation request schema', () => {
+    const violations: string[] = [];
+    const covered: string[] = [];
+    for (const key of [...requestedOperations()].sort()) {
+      const [method, declared] = key.split(' ');
+      const op = spec.paths[declared]?.[method.toLowerCase()];
+      const schema = op ? requestSchemaFor(op) : null;
+      if (!schema) continue; // no JSON body declared — nothing to check
+      const sample = REQUEST_SAMPLES[key];
+      if (sample === undefined) {
+        violations.push(`${key}: declares a request body but REQUEST_SAMPLES has no entry`);
+        continue;
+      }
+      const errs = schemaErrors(schema, sample);
+      if (errs.length) violations.push(`${key}: ${errs.join('; ')}`);
+      else covered.push(key);
+    }
+    console.info(`[contract] request bodies: ${covered.length} operations validated`);
+    expect(violations, 'request bodies that do not match the declared schema').toEqual([]);
+  });
+
 });
