@@ -46,8 +46,8 @@ body:
     attributes:
       label: Evidence from the app or the current tree
       description: >-
-        Show the remainder is real and still open, now. For a move, this is the
-        "still reproduces here" check with the updated paths. Paste command and
+        Show the remainder is real and still open, now. For a move, that is the
+        "still reproduces here" check with updated paths. Paste command and
         output together, not a fixture and not a recollection.
       render: shell
       placeholder: |
@@ -141,9 +141,9 @@ body:
     attributes:
       label: Evidence attestation
       description: >-
-        Run it now. A parent PR's description is a claim about the state of the
-        code when that PR was written, and a moved issue is a claim about
-        another repo — neither is evidence about this tree today.
+        Run it now. A parent PR's description is a claim about the code when
+        that PR was written, and a moved issue is a claim about another repo.
+        Neither is evidence about this tree today.
       options:
         - label: >-
             The evidence above was produced by running against the running app,

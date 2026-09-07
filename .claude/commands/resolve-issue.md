@@ -62,9 +62,27 @@ implemented half of it, a prior status comment naming what is still open.
 Check whether work already exists before starting more:
 
 ```bash
-git fetch origin \
-  || { echo "FETCH FAILED — refs are stale, so branch selection and the baseline would both run against yesterday's main"; false; }
-git branch -r | grep -iE "<issue-keyword>"
+# `return`, not a bare `false`. Measured: `git fetch` against an unreachable
+# remote, then `git branch -r` — the fetch prints its message and sets $?, and
+# the listing then runs anyway, prints the CACHED `origin/main`, and exits 0.
+# The survey looks normal while describing yesterday's refs, and the block as a
+# whole reports success. A `false` guard reads like a stop and is not one; only
+# leaving the function stops anything. So every stop in this phase is a
+# `return` inside a function, and every function is called BARE — `|| echo`
+# would exit 0 and swallow the very stop it is reporting.
+sync_refs() {
+  git fetch origin \
+    || { echo "FETCH FAILED — refs are stale, so branch selection and the baseline would both run against yesterday's main"; return 1; }
+}
+
+survey_existing_work() {
+  sync_refs || return 1
+  # `grep` exits 1 when nothing matches, and "no existing branch" is the
+  # NORMAL outcome here — it must not become this function's status.
+  git branch -r | grep -iE "<issue-keyword>"
+  return 0
+}
+survey_existing_work        # BARE
 # and: mcp__github__search_pull_requests
 #        q="repo:TeneikaAskew/solyra is:open <issue-number>"
 # This is a KEYWORD search, not a link lookup: a bare number matches any
@@ -100,8 +118,10 @@ it. Never `checkout -f`, which discards it.
 ```bash
 git status --porcelain           # must be empty before going further
 git rev-parse --abbrev-ref HEAD
-git fetch origin \
-  || { echo "FETCH FAILED — refs are stale, so branch selection and the baseline would both run against yesterday's main"; false; }
+
+# Same shape as the survey above: one function per case, `return` for every
+# stop, `sync_refs` reused rather than a second unguarded fetch. Run ONE of
+# them, BARE.
 
 # CASE A — a PR already exists for this issue. Work on ITS head; do not open
 # a second PR.
@@ -113,30 +133,39 @@ git fetch origin \
 # this is a guard, not a gap — building fork push-back would be speculative.
 # Never `checkout -B` here: -B RESETS an existing local branch to the start
 # point, silently discarding unpushed commits from an earlier run.
-if git show-ref --verify --quiet "refs/heads/<headRefName>"; then
-  # CHAINED, not two statements. An unchecked `checkout` that fails leaves you
-  # on the previous branch, and the merge then runs there — succeeding silently
-  # whenever that branch is an ancestor of the PR head, after which you commit
-  # and push somewhere else entirely. The likeliest cause is this command's own
-  # base worktree still holding the ref, so it is a real path.
-  git checkout "<headRefName>" \
-    && git merge --ff-only "origin/<headRefName>" \
-    || { echo "CHECKOUT OR MERGE FAILED for <headRefName> — stop, do not edit"; false; }
-  # A non-fast-forward is a STOP: a diverged branch would be implemented and
-  # tested against a head missing remote commits, and only fail at push.
-  # Rule 0 applies to whatever you do next: no force-push, no rebase.
-else
-  git checkout -b "<headRefName>" --track "origin/<headRefName>" \
-    || { echo "CANNOT CREATE <headRefName> — stop, do not edit"; false; }
-fi
+use_existing_pr_head() {
+  sync_refs || return 1
+  if git show-ref --verify --quiet "refs/heads/<headRefName>"; then
+    # CHAINED, not two statements. An unchecked `checkout` that fails leaves
+    # you on the previous branch, and the merge then runs there — succeeding
+    # silently whenever that branch is an ancestor of the PR head, after which
+    # you commit and push somewhere else entirely. The likeliest cause is this
+    # command's own base worktree still holding the ref, so it is a real path.
+    git checkout "<headRefName>" \
+      && git merge --ff-only "origin/<headRefName>" \
+      || { echo "CHECKOUT OR MERGE FAILED for <headRefName> — stop, do not edit"; return 1; }
+    # A non-fast-forward is a STOP: a diverged branch would be implemented and
+    # tested against a head missing remote commits, and only fail at push.
+    # Rule 0 applies to whatever you do next: no force-push, no rebase.
+  else
+    git checkout -b "<headRefName>" --track "origin/<headRefName>" \
+      || { echo "CANNOT CREATE <headRefName> — stop, do not edit"; return 1; }
+  fi
+}
 
 # CASE B — no existing PR. Create one branch and remember its name; every
 # later phase refers back to it rather than reconstructing a prefix.
 # Name the base explicitly: without it the branch forks from whatever is
 # checked out, so an unrelated feature branch's commits ride into the PR, or
 # the branch starts behind main. `git fetch` above does not move HEAD.
-git checkout -b fix/<short-description> origin/main \
-  || { echo "CANNOT CREATE the branch — stop, do not edit"; false; }
+start_new_branch() {
+  sync_refs || return 1
+  git checkout -b fix/<short-description> origin/main \
+    || { echo "CANNOT CREATE the branch — stop, do not edit"; return 1; }
+}
+
+use_existing_pr_head        # CASE A — run exactly one of these, BARE
+# start_new_branch          # CASE B
 ```
 
 **Every one of those checkouts is guarded, not just the first.** `checkout -b`
@@ -463,15 +492,10 @@ FILES="<the files this issue's fix touches>"
 git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
                       # emits no hunk for it, so every line of it would count
                       # as unchanged and its errors would pass this gate
-# mktemp for the same reason the replay log and the worktrees use it: two
-# sessions sharing a fixed /tmp name is one reading the other's answer.
-NEW=$(mktemp -t lint-new-XXXXXX)
-comm -12 <(changed_lines HEAD $FILES) <(diag_lines $FILES) > "$NEW"
-test ! -s "$NEW" || { cat "$NEW"; echo "^ lint errors on lines you changed"; false; }
 
-# ...and the second half: diagnostics your change caused on lines it did NOT
-# touch. `head_sig` lints HEAD's content of the same paths through --stdin, so
-# no worktree and no pre-edit snapshot is needed.
+# The second half: diagnostics your change caused on lines it did NOT touch.
+# `head_sig` lints HEAD's content of the same paths through --stdin, so no
+# worktree and no pre-edit snapshot is needed.
 _sig() { node -e '
   let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
     let r; try { r = JSON.parse(s); }
@@ -498,15 +522,31 @@ head_sig() { local out=$1 f rc=0; shift; : > "$out"
   done
   sort -o "$out" "$out"; return $rc; }
 
-# To FILES, not process substitution: a producer that dies inside <(...) leaves
-# comm with empty input and a zero exit, which is this gate passing BECAUSE it
-# broke. Materialise, check each status, then compare.
-HEADSIG=$(mktemp -t lint-head-XXXXXX); NOWSIG=$(mktemp -t lint-now-XXXXXX)
-ADDED=$(mktemp -t lint-added-XXXXXX)
-head_sig "$HEADSIG" $FILES || { echo "baseline signature failed"; false; }
-rule_sig "$NOWSIG"  $FILES || { echo "current signature failed"; false; }
-comm -13 "$HEADSIG" "$NOWSIG" > "$ADDED"
-test ! -s "$ADDED" || { cat "$ADDED"; echo "^ new diagnostics your change caused"; false; }
+# BOTH halves sit in ONE function, and every stop is a `return`, not a bare
+# `false`. `false` only sets $? and the next line still runs, so the first half
+# printing "lint errors on lines you changed" would be followed by the second
+# half running anyway and the block reporting whatever THAT returned — the gate
+# announcing its own failure and then passing. Measured: `false || { echo X;
+# false; }` followed by any command exits 0.
+lint_gate() {
+  local NEW HEADSIG NOWSIG ADDED
+  # mktemp for the same reason the replay log and the worktrees use it: two
+  # sessions sharing a fixed /tmp name is one reading the other's answer.
+  NEW=$(mktemp -t lint-new-XXXXXX)
+  comm -12 <(changed_lines HEAD $FILES) <(diag_lines $FILES) > "$NEW"
+  test ! -s "$NEW" || { cat "$NEW"; echo "^ lint errors on lines you changed"; return 1; }
+
+  # To FILES, not process substitution: a producer that dies inside <(...)
+  # leaves comm with empty input and a zero exit, which is this gate passing
+  # BECAUSE it broke. Materialise, check each status, then compare.
+  HEADSIG=$(mktemp -t lint-head-XXXXXX); NOWSIG=$(mktemp -t lint-now-XXXXXX)
+  ADDED=$(mktemp -t lint-added-XXXXXX)
+  head_sig "$HEADSIG" $FILES || { echo "baseline signature failed"; return 1; }
+  rule_sig "$NOWSIG"  $FILES || { echo "current signature failed"; return 1; }
+  comm -13 "$HEADSIG" "$NOWSIG" > "$ADDED"
+  test ! -s "$ADDED" || { cat "$ADDED"; echo "^ new diagnostics your change caused"; return 1; }
+}
+lint_gate           # BARE. `lint_gate || echo "lint failed"` exits 0.
 ```
 
 `_sig` exits 2 when its input is not JSON, which is what distinguishes "eslint
@@ -593,8 +633,15 @@ git status --short               # confirm the candidate is actually here
 git add <the files this issue's fix touches>   # never `git add -A` blindly
 git commit -F <message file>     # the body described above
 git log --oneline -1             # confirm the commit exists before pushing
-test -z "$(git status --porcelain)" \
-  || { git status --porcelain; echo "^ NOT in the commit"; false; }
+
+# A function, like every other stop in this file. `false` works here only
+# because nothing follows it; add one line below and it silently stops
+# stopping.
+nothing_left_behind() {
+  test -z "$(git status --porcelain)" \
+    || { git status --porcelain; echo "^ NOT in the commit"; return 1; }
+}
+nothing_left_behind              # BARE
 ```
 
 The last check is the price of naming files rather than `git add -A`. An

@@ -45,8 +45,8 @@ body:
       label: Importer search, run now
       description: >-
         Paste the searches and their output. Include the negative result
-        verbatim: a grep that returns nothing is the evidence, and it only means
-        something if the reader can see the pattern you searched for.
+        verbatim: a grep returning nothing is the evidence only if the reader
+        can see what you searched for.
       render: shell
       placeholder: |
         # Search for every name the surface exports, not just the filename —
