@@ -464,25 +464,54 @@ test ! -s /tmp/lint-new.txt \
 # ...and the second half: diagnostics your change caused on lines it did NOT
 # touch. `head_sig` lints HEAD's content of the same paths through --stdin, so
 # no worktree and no pre-edit snapshot is needed.
-rule_sig() { npx eslint -f json "$@" | node -e "<file TAB ruleId per message>"; }
-head_sig() { for f in "$@"; do
-    git show "HEAD:$f" 2>/dev/null \
-      | npx eslint --stdin --stdin-filename "$f" -f json | node -e "<same>"
-  done | sort; }
+_sig() { node -e '
+  let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+    let r; try { r = JSON.parse(s); }
+    catch { console.error("eslint produced no JSON"); process.exit(2); }
+    const o=[];
+    for (const f of r) for (const m of f.messages)
+      o.push(f.filePath.replace(process.cwd()+"/","")+"\t"+(m.ruleId||"(fatal)"));
+    if (o.length) process.stdout.write(o.sort().join("\n")+"\n");
+  });'; }
+# Each takes its OUTPUT FILE as $1 and sorts in place, so no `| sort` sits
+# between the producer and the status being read — that pipe would report
+# sort's success and hide the producer's failure.
+rule_sig() { local out=$1; shift
+  npx eslint -f json "$@" | _sig > "$out" || return 1
+  sort -o "$out" "$out"; }
+head_sig() { local out=$1 f rc=0; shift; : > "$out"
+  for f in "$@"; do
+    git show "HEAD:$f" >/dev/null 2>&1 || continue        # new file: no baseline
+    git show "HEAD:$f" | npx eslint --stdin --stdin-filename "$f" -f json \
+      | _sig >> "$out" || rc=1
+  done
+  sort -o "$out" "$out"; return $rc; }
 
-comm -13 <(head_sig $FILES) <(rule_sig $FILES) > /tmp/lint-added.txt
+# To FILES, not process substitution: a producer that dies inside <(...) leaves
+# comm with empty input and a zero exit, which is this gate passing BECAUSE it
+# broke. Materialise, check each status, then compare.
+head_sig /tmp/lint-head.txt $FILES \
+  || { echo "baseline signature failed"; false; }
+rule_sig /tmp/lint-now.txt $FILES \
+  || { echo "current signature failed"; false; }
+comm -13 /tmp/lint-head.txt /tmp/lint-now.txt > /tmp/lint-added.txt
 test ! -s /tmp/lint-added.txt \
   || { cat /tmp/lint-added.txt; echo "^ new diagnostics your change caused"; false; }
 ```
+
+`_sig` exits 2 when its input is not JSON, which is what distinguishes "eslint
+ran and found problems" (valid JSON, exit 1, expected here) from "eslint could
+not run" (no JSON) — the pipe would otherwise swallow both.
 
 **Both, because each misses what the other catches.** Deleting the last use of
 an import creates `no-unused-vars` on the **import line, which you did not
 touch** — measured: the diagnostic lands on line 1, the changed lines are 3 and
 4, and the intersection is empty. And the rule-count comparison alone misses a
 swap, where one violation replaces another of the same rule in the same file
-and the multiset does not move. Verified on this tree: the count check is clean
-with no edit, catches the deleted-import case, and prints nothing for the swap
-that the line check catches at 441.
+and the multiset does not move. Verified on this tree in four states: clean with
+no edit; catches the deleted import; treats a brand-new untracked file as
+having an empty baseline rather than erroring, and still catches its error;
+and prints nothing for the swap that the line check catches at 441.
 
 **Anchor to the lines, not to a count per rule.** The obvious version of this
 gate takes a `file + ruleId` signature before and after and diffs them, and it
