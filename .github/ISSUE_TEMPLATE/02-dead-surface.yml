@@ -92,7 +92,12 @@ body:
         # Reproduced on git 2.43.0: the invocation without it returned only the
         # commit that REMOVED the importer; with it, the merge that added it
         # appears too. "Added by nobody, removed by someone" is the tell.
-        $ git log --oneline --all --full-history --diff-merges=separate \
+        # --no-patch as well, or this dumps a full diff against every merge
+        # parent instead of the commit list shown below. Measured on this repo:
+        # 39,065 lines for `mockCommon` versus 23 with it, in a field that asks
+        # you to paste the output. -G selection and the parent-qualified
+        # summaries are unaffected.
+        $ git log --oneline --all --full-history --diff-merges=separate --no-patch \
             -G "TermHover" --no-renames \
             -- src tests scripts .github platform/src
         a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
