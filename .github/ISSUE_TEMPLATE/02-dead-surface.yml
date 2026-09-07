@@ -7,7 +7,12 @@ body:
       value: |
         For code that still compiles and nothing uses. This repo has four closed
         examples of the shape (#14, #15, #16, #17), and they resolved differently
-        because the forensics differed:
+        because the forensics differed.
+
+        **All four are CLOSED and every file named below is already deleted.**
+        They are history, kept because the reasoning is what transfers — not a
+        measurement of this tree. Grepping for them today returns nothing, so
+        run your own searches rather than reusing these:
 
         - **Never had a consumer.** `DataTable.tsx` and `Tabs.tsx` arrived in the
           initial squash as prototype scaffolding, and the pickaxe over every
@@ -30,7 +35,7 @@ body:
     attributes:
       label: Files
       description: Every file involved, including anything transitively dead.
-      placeholder: "src/components/shared/TermHover.tsx, src/hooks/useGammaGlossary.ts (only importer is TermHover)"
+      placeholder: "src/components/<area>/<Component>.tsx, src/hooks/<useThing>.ts (only importer is <Component>)"
     validations:
       required: true
 
@@ -44,13 +49,15 @@ body:
         something if the reader can see the pattern you searched for.
       render: shell
       placeholder: |
-        $ grep -rn "TermHover\|useGammaGlossary" src/
-        src/components/shared/TermHover.tsx:12:export function TermHover(
-        src/hooks/useGammaGlossary.ts:8:export function useGammaGlossary(
+        # Search for every name the surface exports, not just the filename —
+        # a default export re-exported under another name still has an importer.
+        $ grep -rn "<Component>\|<useThing>" src/
+        src/components/<area>/<Component>.tsx:12:export function <Component>(
+        src/hooks/<useThing>.ts:8:export function <useThing>(
         (definitions only; no importer)
 
         $ npx tsc -b
-        clean
+        clean  # which proves nothing about liveness — dead code compiles fine
     validations:
       required: true
 
@@ -61,6 +68,8 @@ body:
       description: Git forensics with dated commits, using the pickaxe over the full lineage including pre-split history.
       render: shell
       placeholder: |
+        # The shape of a conclusive answer, taken from the closed #16. Those
+        # files no longer exist; run the pickaxe on YOUR surface.
         $ git log --oneline --all -S "TermHover" -- src platform/src
         a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
         e1ce147 (May 31, Phase C1) shipped it "not yet wired into any page — C2-C5 will
@@ -69,6 +78,9 @@ body:
         The heatmap that landed (8ba5731 Swing Mode, wired by 7526031 "supersedes #642") took a
         different design and never used it. So: never had a consumer, and the design that was
         going to consume it was superseded.
+
+        The `-- src platform/src` pathspec matters: this app was split out of stocks, so a
+        surface older than the split has its formative history under `platform/src` only.
     validations:
       required: true
 
@@ -78,9 +90,14 @@ body:
       label: Backend state
       description: If the surface calls an endpoint, say whether that endpoint is alive and covered in stocks.
       placeholder: |
-        `GET /api/glossary/gamma` is alive and pytest-covered
-        (platform/api/routers/glossary.py:30 in stocks). It stays available if a future surface
-        wants a hover glossary; nothing in this app reads it today.
+        $ jq -r '.paths | keys[] | select(test("glossary"))' tests/fixtures/stocks-openapi.json
+        /api/glossary/gamma
+        $ grep -rn "glossary/gamma" src/ tests/helpers/
+        (no hit — declared by the API, read by nothing here)
+
+        So the endpoint is alive in stocks (platform/api/routers/glossary.py) and stays
+        available if a future surface wants a hover glossary. Deleting a dead consumer here
+        does not make the endpoint dead; say which side you are calling dead, and why.
 
   - type: textarea
     id: options
@@ -110,8 +127,8 @@ body:
       render: shell
       placeholder: |
         $ grep -rn "@tanstack/react-table" src/
-        src/components/backtest/BacktesterSection.tsx:4
-        src/routes/SignalsPage.tsx:9
+        src/components/backtest/BacktesterSection.tsx:22
+        src/routes/SignalsPage.tsx:15
         Live consumers remain; no dependency cleanup follows.
 
   - type: textarea
@@ -120,7 +137,8 @@ body:
       label: Verify
       description: The exact commands that prove the change is safe, including the greps that must return nothing.
       placeholder: |
-        `npx tsc -b`, `npm test`; `grep -r "TermHover\|useGammaGlossary" src` returns nothing.
+        `npx tsc -b`, `npm test`, `npm run e2e`; and the same grep you ran above now
+        returns nothing. Paste the pattern, not just the word "clean".
     validations:
       required: true
 

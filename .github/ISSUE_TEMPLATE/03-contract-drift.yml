@@ -33,7 +33,7 @@ body:
     attributes:
       label: Endpoint and type
       description: The route, and the type or fixture on this side that describes it.
-      placeholder: "GET /api/journal/stats — src/types/journal.ts:UserJournalStats, tests/helpers/fixtures/journal.ts"
+      placeholder: "GET /api/me/preferences — src/types/preferences.ts:UserPreferences, src/mocks/common.ts"
     validations:
       required: true
 
@@ -60,21 +60,25 @@ body:
         # contract:check names the operation but never prints the field diff:
         $ npm run contract:check
         [api-contract] vendored snapshot is STALE against stocks. Run: npm run contract:sync
-          operations changed: GET /api/journal/stats
+          operations changed: GET /api/me/preferences
           components.schemas changed (a response or request model)
 
-        # So get the field-level evidence yourself. Either diff the two
-        # documents directly:
+        # So get the field-level evidence yourself, by diffing the two
+        # documents. Paste YOUR output — the two diff lines below are the
+        # SHAPE of an answer, not a finding about this repo:
         $ curl -s https://raw.githubusercontent.com/TeneikaAskew/stocks/main/platform/api/openapi.json \
-            | jq '.paths."/api/journal/stats".get.responses."200"' > /tmp/up.json
-        $ jq '.paths."/api/journal/stats".get.responses."200"' tests/fixtures/stocks-openapi.json \
+            | jq '.paths."/api/me/preferences".get.responses."200"' > /tmp/up.json
+        $ jq '.paths."/api/me/preferences".get.responses."200"' tests/fixtures/stocks-openapi.json \
             | diff - /tmp/up.json
-        < "win_rate": {"type": "number"}
-        > "win_rate": {"anyOf": [{"type": "number"}, {"type": "null"}]}
+        < "accent": {"type": "string"}
+        > "accent": {"anyOf": [{"type": "string"}, {"type": "null"}]}
 
-        # ...or, for a missing route, show it does not exist at all:
-        $ grep -rn "me/preferences" ../stocks/platform/api/
-        (no route)
+        # For a MISSING route, prove absence against the contract itself rather
+        # than grepping a sibling checkout that may not be present. Re-run this,
+        # do not trust the line below — the point of the form is that an example
+        # goes stale:
+        $ jq -r '.paths | keys[] | select(test("journal/stats"))' tests/fixtures/stocks-openapi.json
+        (no output — the operation is not declared)
     validations:
       required: true
 
@@ -88,9 +92,11 @@ body:
         more than "type mismatch".
       render: shell
       placeholder: |
-        $ grep -rn "win_rate" src/
-        src/routes/DashboardPage.tsx:212  {stats.win_rate.toFixed(0)}%
-        Renders `—%` when the field arrives null, because toFixed runs before any null check.
+        $ grep -rn -A1 "export function topSetupAvgReturn" src/routes/DashboardPage.tsx
+        215:export function topSetupAvgReturn(v: number | null | undefined): string {
+        216-  if (v == null || Number.isNaN(v)) return '—';
+        Guarded here. Name the call site that is NOT — one that formats before it
+        null-checks renders `—%` instead of `—` the moment a field widens.
     validations:
       required: true
 
@@ -102,9 +108,9 @@ body:
       placeholder: |
         stocks first: widen `_Bar.volume` to `float | None` in platform/api/routers/live.py and
         handle a null-volume bar explicitly in lib/indicators VWAP, then regenerate
-        platform/api/openapi.json. Here: `npm run contract:sync`, admit null in
-        src/types/charts.ts, add the null case to tests/helpers/fixtures/charts.ts, and drop the
-        AUDIT-marked `?? 0` in ChartsPage.tsx.
+        platform/api/openapi.json. Here: `npm run contract:sync`, admit null on `VolumeBar`
+        in src/hooks/useMarketData.ts, add the null case to tests/helpers/fixtures/charts.ts,
+        and drop the AUDIT-marked fallback at src/routes/ChartsPage.tsx:364.
     validations:
       required: true
 

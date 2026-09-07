@@ -12,9 +12,14 @@ body:
 
         Not evidence: a fixture, a mock payload, a type definition, a code
         comment, a number from an older issue, or a recollection of a previous
-        session. #36 was filed on the real thing: `GET` 404s benignly, `PUT`
-        404s and every Settings save surfaces "Could not save preferences
-        (HTTP 404)" against the deployed API today.
+        session.
+
+        **An example goes stale too.** This form used to open with #36 —
+        `PUT /api/me/preferences` 404s, so every Settings save fails — filed on
+        a real response at the time. That endpoint now exists: the vendored
+        contract declares both `GET` and `PUT`. An example that was measured
+        and is now false is exactly the failure this form exists to catch, so
+        check the current system rather than reusing a past finding.
 
         "I have not measured this" is a complete and acceptable answer. Write it
         where it applies rather than filling a section with a guess.
@@ -25,8 +30,9 @@ body:
       label: Summary
       description: What is wrong. One or two sentences, stating the defect rather than the symptom.
       placeholder: |
-        `usePreferences.ts` documents and calls `PUT /api/me/preferences`, which does not exist
-        in the stocks backend. The write path is dead until the endpoint ships.
+        The dashboard top-setup tile renders a null `win_rate` as `—%` rather than `—`,
+        because the value is formatted before it is null-checked. The server is
+        right; the render is wrong.
     validations:
       required: true
 
@@ -37,8 +43,16 @@ body:
       description: "Command or request AND its output, plus the consumer search. Say which backend you hit: local :8000, staging, or prod."
       render: shell
       placeholder: |
-        $ curl -s -o /dev/null -w '%{http_code}\n' -X PUT https://<deployed>/api/me/preferences -d '{}'
-        404
+        # A real response, never a fixture. Say which backend you hit.
+        $ curl -s "https://<deployed>/api/playbook/IWM" | jq '.cards[0].win_rate'
+        null
+
+        # Then what the app does with it. The null is legitimate; the defect is
+        # the one call site that does not guard it.
+        $ grep -rn "win_rate" src/routes/DashboardPage.tsx
+        469:  ...filter((c): c is PlaybookCard & { win_rate: number } => c.win_rate != null)
+        623:  {topCard.win_rate != null && <ScoreStars value={Math.round(topCard.win_rate / 20)} />}
+        (both guarded — an unguarded one renders "—%" instead of "—")
 
         # Blast radius: a shared hook or src/lib/ helper has more callers than
         # the page that filed this.
@@ -47,13 +61,6 @@ body:
         src/routes/OptionsFlowPage.tsx:88
         src/components/options/SwingMode.tsx:56
         Three consumers sharing one cache key, and one only reads [0].
-
-        $ grep -rn "me/preferences" ../stocks/platform/api/
-        (no route; only a doc note in docs/HARDCODED_VALUES_REMEDIATION.md planning
-         /api/user/preferences someday)
-
-        $ npx tsc -b
-        (clean, which is the point: the type compiles against a route that does not exist)
     validations:
       required: true
 
