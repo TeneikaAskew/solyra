@@ -28,6 +28,7 @@ import { WatchlistPanel } from '@/components/insights/WatchlistPanel';
 import { AgentsPanel } from '@/components/insights/AgentsPanel';
 import { MicroLabel } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
+import { NA } from '@/lib/format';
 
 type Tab = 'report' | 'agents' | 'history' | 'chat' | 'watchlist';
 
@@ -436,7 +437,7 @@ function HistoryView({
                 {r.direction} · {r.conviction}
               </span>
               <span className="text-xs text-[var(--on-surface-muted)]">
-                {new Date(r.as_of).toLocaleString()}
+                {r.as_of ? new Date(r.as_of).toLocaleString() : NA}
               </span>
             </div>
             {r.cost_usd !== null && (

@@ -21,15 +21,20 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
+import { NA } from '@/lib/format';
 
 // ── Types (match actual API responses) ────────────────────────────────────────
 
 interface BacktestRun {
   filename: string;
+  path: string;
   timestamp: string;
-  modified: string;
-  row_count: number;
-  trade_count: number;
+  /** Always null today (backtest.py hardcodes it); typed so nothing formats it as a date. */
+  modified: string | null;
+  size_bytes: number | null;
+  /** null when the run's CSV could not be downloaded. */
+  row_count: number | null;
+  trade_count: number | null;
   win_rate: number | null;
   avg_return_pct: number | null;
   has_equity_curve: boolean;
@@ -66,11 +71,15 @@ interface BacktestSummary {
   total_return_pct: number;
 }
 
+/** The API's empty branches send `summary: {}`; the populated branch
+ *  carries every key. Narrow on `total_trades != null` before reading. */
+type EmptySummary = { total_trades?: undefined };
+
 interface BacktestResultsResponse {
   ticker: string;
   filename: string;
   trade_count: number;
-  summary: BacktestSummary;
+  summary: BacktestSummary | EmptySummary;
   trades: TradeRow[];
 }
 
@@ -83,10 +92,12 @@ interface EquitySummary {
   data_points: number;
 }
 
+type EmptyEquitySummary = { data_points?: undefined };
+
 interface EquityResponse {
   ticker: string;
   filename: string;
-  summary: EquitySummary;
+  summary: EquitySummary | EmptyEquitySummary;
   dates: string[];
   values: (number | null)[];
 }
@@ -159,18 +170,24 @@ function EquityCurve({ equity }: { equity: EquityResponse }) {
     ? Math.max(...nonNullValues) - Math.min(...nonNullValues)
     : 0;
 
-  const { total_return_pct, max_drawdown_pct, peak_value } = equity.summary;
+  // `summary` is {} when the CSV's value column was unusable (backtest.py);
+  // narrow on a key the populated branch always carries rather than reading
+  // undefined into toFixed.
+  const summary = equity.summary.data_points != null ? equity.summary : null;
+  const total_return_pct = summary?.total_return_pct ?? null;
+  const max_drawdown_pct = summary?.max_drawdown_pct ?? null;
+  const peak_value = summary?.peak_value ?? null;
 
   return (
     <div className="rounded-xl bg-[var(--surface-2)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Equity Curve</h3>
         <div className="flex gap-4 text-xs">
-          <span className={total_return_pct >= 0 ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}>
-            Total: {total_return_pct >= 0 ? '+' : ''}{total_return_pct.toFixed(1)}%
+          <span className={total_return_pct != null && total_return_pct >= 0 ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}>
+            Total: {total_return_pct == null ? NA : `${total_return_pct >= 0 ? '+' : ''}${total_return_pct.toFixed(1)}%`}
           </span>
           <span className="text-[var(--bear)]">
-            Max DD: -{Math.abs(max_drawdown_pct).toFixed(1)}%
+            Max DD: {max_drawdown_pct == null ? NA : `-${Math.abs(max_drawdown_pct).toFixed(1)}%`}
           </span>
         </div>
       </div>
@@ -199,7 +216,9 @@ function EquityCurve({ equity }: { equity: EquityResponse }) {
             itemStyle={{ color: theme.tooltipText }}
             formatter={(v) => [v == null ? '—' : `$${Number(v).toFixed(2)}`, 'Value' as const]}
           />
-          <ReferenceLine y={peak_value} stroke={theme.warn} strokeDasharray="4 2" strokeWidth={1} />
+          {peak_value != null && (
+            <ReferenceLine y={peak_value} stroke={theme.warn} strokeDasharray="4 2" strokeWidth={1} />
+          )}
           <Area
             type="monotone"
             dataKey="value"

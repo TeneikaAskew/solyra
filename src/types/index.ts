@@ -208,6 +208,17 @@ export interface MovementExpectedMove {
   atr_20?: number | null; // NEW: current ATR-20 for the Tier-3 sizing calculator
   current_price?: number | null; // NEW: latest close for context
   usage_guidance?: string | null;
+  /** Present on every OK expected_move and on the argmax-collapsed UNAVAILABLE. */
+  degeneracy?: {
+    status: MovementFieldStatus;
+    reason?: string | null;
+    degenerate?: boolean | null;
+    modal_bucket?: number | null;
+    modal_share?: number | null;
+    n_bars?: number | null;
+    distinct_buckets?: number | null;
+    lookback_days?: number | null;
+  } | null;
 }
 
 /** Gamma regime modifier — CONTEXT only (pinning vs trending). */
