@@ -139,11 +139,15 @@ body:
       label: Evidence attestation
       options:
         - label: >-
-            The output pasted above came from running against the real app or
-            the real API while filing this issue. It is not a fixture, not a
-            mock payload, not read off a type, and not recalled from memory.
+            Everything I have presented above **as measured** came from running
+            against the real app or the real API while filing this issue — not
+            a fixture, not a mock payload, not read off a type, not recalled.
+            Anything I did not verify is labelled "not measured" rather than
+            stated as fact. An honestly unverified report is fine; an
+            unmarked guess is not.
           required: true
         - label: >-
-            If this concerns a value the API returns, I looked at an actual
-            response rather than at `src/types/` or `tests/helpers/fixtures/`.
+            Where this concerns a value the API returns **and I checked it**, I
+            looked at an actual response rather than at `src/types/` or
+            `tests/helpers/fixtures/`. If I did not check, I said so above.
           required: true
