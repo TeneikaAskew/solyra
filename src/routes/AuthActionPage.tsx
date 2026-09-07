@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Loader2, Lock, CheckCircle2, AlertTriangle, MailWarning, KeyRound } from 'lucide-react';
 import { Brand } from '@/components/layout/Brand';
@@ -8,6 +8,7 @@ import {
   applyAuthActionCode,
   checkAuthActionCode,
   confirmReset,
+  firebaseSignOut,
   refreshEmailVerified,
   sendPasswordReset,
 } from '@/lib/firebase';
@@ -216,7 +217,15 @@ function Body({
           icon={<CheckCircle2 size={18} className="text-[var(--bull)]" />}
           title={copy.title}
           body={copy.body}
-          cta={{ label: view.mode === 'resetPassword' ? 'Sign in' : 'Continue to Solyra', to: '/dashboard' }}
+          cta={
+            view.mode === 'resetPassword'
+              ? // confirmPasswordReset signs nobody in and leaves any existing
+                // session (possibly a different account) untouched, so a plain
+                // link to the gated dashboard would land on that user's app
+                // instead of the sign-in screen the copy promises.
+                { label: 'Sign in', action: 'sign-out-then-sign-in' }
+              : { label: 'Continue to Solyra', to: '/dashboard' }
+          }
         >
           {offerReset && <ResetOffer email={offerReset} />}
         </Notice>
@@ -241,9 +250,11 @@ function Notice({
   icon: React.ReactNode;
   title: string;
   body: string;
-  cta?: { label: string; to: string };
+  cta?: { label: string; to: string } | { label: string; action: 'sign-out-then-sign-in' };
   children?: React.ReactNode;
 }) {
+  const ctaCls =
+    'mt-5 flex w-full items-center justify-center rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-[var(--on-brand)] transition hover:opacity-90 disabled:opacity-50';
   return (
     <div data-testid={testId}>
       <div className="mb-2 flex items-center gap-2">
@@ -252,14 +263,40 @@ function Notice({
       </div>
       <p className="text-[13px] leading-relaxed text-[var(--on-surface-variant)]">{body}</p>
       {children}
-      <Link
-        to={cta?.to ?? '/dashboard'}
-        data-testid="auth-action-cta"
-        className="mt-5 flex w-full items-center justify-center rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-[var(--on-brand)] transition hover:opacity-90"
-      >
-        {cta?.label ?? 'Go to sign in'}
-      </Link>
+      {cta && 'action' in cta ? (
+        <SignOutThenSignIn label={cta.label} className={ctaCls} />
+      ) : (
+        <Link to={cta?.to ?? '/dashboard'} data-testid="auth-action-cta" className={ctaCls}>
+          {cta?.label ?? 'Go to sign in'}
+        </Link>
+      )}
     </div>
+  );
+}
+
+/**
+ * Ends whatever Firebase session this browser holds (a no-op when signed
+ * out), drops its cached data, and goes to the gated app, which now renders
+ * the sign-in screen. Used after a password reset so "Sign in" always means
+ * the sign-in form, even when a different account was signed in here.
+ */
+function SignOutThenSignIn({ label, className }: { label: string; className: string }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const onClick = async () => {
+    setBusy(true);
+    try {
+      await firebaseSignOut();
+    } finally {
+      qc.clear();
+      navigate('/dashboard');
+    }
+  };
+  return (
+    <button type="button" onClick={onClick} disabled={busy} data-testid="auth-action-cta" className={className}>
+      {label}
+    </button>
   );
 }
 

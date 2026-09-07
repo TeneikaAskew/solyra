@@ -193,6 +193,15 @@ export function AuthStatusBanner() {
  * here. Resend failures are shown, not swallowed (Rule 4).
  */
 export function EmailVerificationBanner() {
+  const { uid } = useUser();
+  // Keyed by uid so the component-local state below (confirmed, resend,
+  // re-check) is discarded when the account changes without the shell
+  // unmounting, e.g. another tab replacing the persisted Firebase user:
+  // account A's "I've confirmed" must not hide the banner from account B.
+  return <EmailVerificationBannerFor key={uid ?? 'signed-out'} />;
+}
+
+function EmailVerificationBannerFor() {
   const { email, emailVerified, uid } = useUser();
   // What actually happened to the sign-up email: sign-up records it in the
   // authGate store because SignInScreen is unmounted by the time the send

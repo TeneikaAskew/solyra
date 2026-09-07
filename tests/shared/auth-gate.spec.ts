@@ -255,6 +255,12 @@ test.describe('/auth/action', () => {
     await expect(success).toContainText(/password updated/i);
     await expect(page.getByTestId('auth-action-cta')).toHaveText(/sign in/i);
 
+    // "Sign in" must end on the sign-in form, not on whatever session the
+    // browser held: it signs out (a no-op here) and routes into the gate.
+    await page.getByTestId('auth-action-cta').click();
+    await expect(page.getByTestId('signin-screen')).toBeVisible();
+    await expect(page.getByTestId('login-submit')).toHaveText(/sign in/i);
+
     const confirm = calls.find((c) => 'newPassword' in c.body);
     expect(confirm?.path.endsWith('accounts:resetPassword')).toBe(true);
     expect(confirm?.body).toMatchObject({ oobCode: 'good-code', newPassword: 'correct-horse-9' });
