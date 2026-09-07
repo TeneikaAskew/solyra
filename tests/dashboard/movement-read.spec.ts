@@ -42,10 +42,15 @@ test('movement-read card renders TYPE + validated SIZE + regime (flag ON)', asyn
   // The honesty guard is present (never implies a direction).
   await expect(page.getByText(/not a directional or P&L edge/i)).toBeVisible();
 
-  // Levels-to-go ladder renders each way, with reach-rates + a low-sample badge.
+  // Levels-to-go ladder renders each way with each rung's slot reach-rate and
+  // population size. The shared mock is IWM's real per-slot populations
+  // (stocks #1024), none of which is low-sample, so no badge may appear here;
+  // the badge branch is covered by the low-sample variant below.
   await expect(page.getByText('Call levels')).toBeVisible();
   await expect(page.getByText('Put levels')).toBeVisible();
-  await expect(page.getByTestId('low-sample-badge').first()).toBeVisible();
+  await expect(page.getByText('70% (n=115)')).toBeVisible();
+  await expect(page.getByText('45% (n=94)')).toBeVisible();
+  await expect(page.getByTestId('low-sample-badge')).toHaveCount(0);
 
   // Screenshots for visual verification: the card element + the full page.
   // Write to an explicit, stable dir (env override) so they survive Playwright's
@@ -56,6 +61,33 @@ test('movement-read card renders TYPE + validated SIZE + regime (flag ON)', asyn
   );
   await card.screenshot({ path: `${outDir}/movement-read-card.png` });
   await page.screenshot({ path: `${outDir}/movement-read-dashboard.png`, fullPage: true });
+});
+
+test('a low-sample slot carries the badge, and only that rung', async ({ page }) => {
+  await mockDashboard(page);
+  // A young slot population (n < 30) on the second put rung, everything else
+  // as the shared mock: the badge must appear exactly once, on that rung.
+  const puts = MOCK_STATEMENT.levels.puts;
+  const lowSample = {
+    ...MOCK_STATEMENT,
+    levels: {
+      ...MOCK_STATEMENT.levels,
+      puts: [
+        puts[0],
+        {
+          ...puts[1],
+          reach_rate: { ...puts[1].reach_rate, reach_rate: 0.375, hits: 9, sample_n: 24, low_sample: true },
+        },
+      ],
+    },
+  };
+  await page.route('**/api/movement-statement*', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(lowSample) }),
+  );
+  await page.goto('/dashboard');
+  await expect(page.getByText('Put levels')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('38% (n=24)')).toBeVisible();
+  await expect(page.getByTestId('low-sample-badge')).toHaveCount(1);
 });
 
 // --- Affordances (three tiers) -------------------------------------------

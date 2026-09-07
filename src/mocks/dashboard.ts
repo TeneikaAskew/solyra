@@ -742,47 +742,86 @@ export const MOCK_MOVEMENT_STATEMENT = {
       total_gex: -22226013.0,
     },
   },
-  // In production the endpoint builds this via _build_movement_level_map; a
-  // realistic ladder (levels-to-go each way, per-tier population reach-rates).
+  // In production the endpoint builds this via _build_movement_level_map:
+  // the next two structural highs/lows each way as select_nearest_levels
+  // emits them (name / period / level_type / distance_pct), each rung
+  // annotated with the population reach-rate of the premarket-playbook slot
+  // its price matched (stocks #1024). Counts are IWM's real per-slot
+  // populations as of 2026-09-07.
   levels: {
     status: 'OK',
     current_price: 218.4,
     reach_rate_note:
-      'Reach-rates are population statistics per tier, not per-instance predictions.',
+      'Reach-rates are POPULATION statistics for the playbook slot this line ' +
+      'occupies (fraction of resolved premarket sessions in which price reached ' +
+      'that slot during RTH), not per-instance predictions. A line the playbook ' +
+      'did not track carries no rate. low_sample=True flags n<30.',
     calls: [
       {
         price: 219.1,
-        name: 'ORB 15m High',
-        period: 'intraday',
-        level_type: 'ORB',
+        name: 'PDH',
+        period: 'day',
+        level_type: 'high',
         distance_pct: 0.32,
-        reach_rate: { status: 'OK', reach_rate: 0.61, hits: 92, sample_n: 151, low_sample: false },
+        reach_rate: {
+          status: 'OK',
+          reach_rate: 0.7043,
+          hits: 81,
+          sample_n: 115,
+          low_sample: false,
+          slot: 'trigger',
+          analysis_date: '2026-09-07',
+        },
       },
       {
         price: 220.05,
-        name: 'Prev Day High',
-        period: 'daily',
-        level_type: 'PDH',
+        name: 'PWH',
+        period: 'week',
+        level_type: 'high',
         distance_pct: 0.76,
-        reach_rate: { status: 'OK', reach_rate: 0.38, hits: 57, sample_n: 151, low_sample: false },
+        reach_rate: {
+          status: 'OK',
+          reach_rate: 0.5474,
+          hits: 52,
+          sample_n: 95,
+          low_sample: false,
+          slot: 't1',
+          analysis_date: '2026-09-07',
+        },
       },
     ],
     puts: [
       {
         price: 217.8,
-        name: 'ORB 15m Low',
-        period: 'intraday',
-        level_type: 'ORB',
+        name: 'PDL',
+        period: 'day',
+        level_type: 'low',
         distance_pct: -0.27,
-        reach_rate: { status: 'OK', reach_rate: 0.58, hits: 88, sample_n: 151, low_sample: false },
+        reach_rate: {
+          status: 'OK',
+          reach_rate: 0.6,
+          hits: 69,
+          sample_n: 115,
+          low_sample: false,
+          slot: 'trigger',
+          analysis_date: '2026-09-07',
+        },
       },
       {
         price: 216.9,
-        name: 'Prev Day Low',
-        period: 'daily',
-        level_type: 'PDL',
+        name: 'PWL',
+        period: 'week',
+        level_type: 'low',
         distance_pct: -0.69,
-        reach_rate: { status: 'OK', reach_rate: 0.31, hits: 12, sample_n: 40, low_sample: true },
+        reach_rate: {
+          status: 'OK',
+          reach_rate: 0.4468,
+          hits: 42,
+          sample_n: 94,
+          low_sample: false,
+          slot: 't1',
+          analysis_date: '2026-09-07',
+        },
       },
     ],
   },

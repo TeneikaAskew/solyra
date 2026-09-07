@@ -147,16 +147,25 @@ export interface MetricCardData {
 /** Generic per-field envelope discriminator. */
 export type MovementFieldStatus = 'OK' | 'UNAVAILABLE' | string;
 
-/** Population reach-rate for a single levels-to-go tier. */
+/** Population reach-rate for one levels-to-go rung.
+ *
+ *  A rung carries a rate only when its price matches a slot the premarket
+ *  playbook tracked (trigger / t1 / t2 / t3) on the latest premarket_analysis
+ *  row; the rate is that slot's unconditional population statistic. An
+ *  untracked rung is UNAVAILABLE with the reason (stocks #1024). */
 export interface ReachRate {
   status: MovementFieldStatus;
   reason?: string | null;
-  /** Fraction of triggered+resolved instances that reached this tier. */
+  /** Fraction of resolved premarket sessions in which price reached this slot. */
   reach_rate?: number | null;
   hits?: number | null;
   sample_n?: number | null;
   /** True when sample_n is below the low-sample threshold. */
   low_sample?: boolean | null;
+  /** Which playbook slot this rung's price matched. */
+  slot?: string | null;
+  /** analysis_date of the premarket row the rung was matched against. */
+  analysis_date?: string | null;
 }
 
 /** One rung of the levels-to-go ladder with its annotated reach-rate. */
