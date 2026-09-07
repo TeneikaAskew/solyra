@@ -28,12 +28,17 @@ export function useUser() {
   // The Firebase uid of the signed-in account, null when signed out and in
   // every non-firebase mode. Part of the /api/me query key below.
   const [uid, setUid] = useState<string | null>(null);
+  // Firebase's emailVerified for the signed-in account; null when signed out
+  // and in every non-firebase mode (there is no such state to report).
+  // Google sign-ins arrive verified; only email/password sign-ups start false.
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!firebaseMode) return;
     const unsub = subscribeAuth((user) => {
       setUid(user?.uid ?? null);
       setSignedIn(!!user);
+      setEmailVerified(user ? user.emailVerified : null);
       setFbReady(true);
     });
     return () => unsub();
@@ -76,5 +81,5 @@ export function useUser() {
   const isSignedIn = firebaseMode ? signedIn : true;
   const isLoading = !fbReady || (meEnabled && query.isLoading);
 
-  return { email, isAdmin, isDev, isSignedIn, isLoading, authMode };
+  return { email, isAdmin, isDev, isSignedIn, isLoading, authMode, emailVerified, uid };
 }

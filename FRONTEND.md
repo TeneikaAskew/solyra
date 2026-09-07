@@ -17,7 +17,7 @@
 - **Stack:** React 19 + TypeScript 5.9 + Vite 7 + Tailwind 4, Zustand for client state, TanStack Query for server state, TanStack Table for tables, Recharts + lightweight-charts for visualisations, react-router-dom v7 with a single nested layout route.
 - **Layout:** one root `BrowserRouter` with an `AppShell` (sidebar + header) wrapping **12 route-level pages**, each lazy-loaded with `React.lazy` + `Suspense` and isolated by a per-route `RouteErrorBoundary` so a single page crash doesn't take down the chrome.
 - **API surface:** ~30 endpoints all under `/api/*`, served by the FastAPI services in the stocks repo (`solyra-api-prod`, `solyra-api-staging`). Dev uses Vite on 5173 proxying to FastAPI on 8000, falling back to `solyra-api-staging` when nothing is listening locally.
-- **Build/deploy:** `npm run build` → `dist/`, deployed as a static frontend (Lovable-published today). It is NOT bundled into the API image any more. `stocks.insightscollective.org` now maps to `solyra-api-staging`, not to a service serving this SPA.
+- **Build/deploy:** `npm run build` → `dist/`, deployed as a static frontend (Lovable-published today). It is NOT bundled into the API image any more. `api.stocks.insightscollective.org` maps to `solyra-api-staging` (since 2026-09-06); `stocks.insightscollective.org` is the Firebase auth-email sending domain and is reserved for this SPA, which is not on Cloud Run.
 - **Backend deploy (stocks repo):** merging to `main` auto-deploys `solyra-api-staging` only; `solyra-api-prod` moves solely via the manual `deploy-solyra-api-prod` Cloud Build trigger.
 
 ## Directory map
@@ -84,9 +84,13 @@ solyra/
 
 ## Routing model
 
-`App.tsx` builds a single `createBrowserRouter` tree with three top-level
+`App.tsx` builds a single `createBrowserRouter` tree with four top-level
 entries: the public **`LandingPage` at `/`** (rendered in every auth mode),
-a **`/welcome` → `/` redirect**, and one **layout route**
+a **`/welcome` → `/` redirect**, the public **`AuthActionPage` at
+`/auth/action`** (where the Firebase auth emails' buttons land: password
+reset form, email confirmation, email recovery; the project's Identity
+Platform action URL points here, set from the stocks repo's
+`gcp/auth_email_templates.py`), and one **layout route**
 (`AuthGate` wrapping `AppShell`) with **13 child routes** — in firebase mode a
 signed-out visitor hitting any app route sees the sign-in screen, then the app.
 Each child:
@@ -250,8 +254,10 @@ served** — that is Lovable, at `https://solyra-stocks.lovable.app`.
   cross-origin; `authedFetch` re-points `/api/*` at `STAGING_API` for static hosts.
 - **API URLs:** `solyra-api-staging-5sjtb3yl7a-ue.a.run.app` (public edge,
   Firebase-gated, what the SPA calls) and `solyra-api-prod-5sjtb3yl7a-ue.a.run.app`
-  (behind IAP). `stocks.insightscollective.org` maps to **staging** since
-  2026-09-05, not to prod and not to this SPA.
+  (behind IAP). `api.stocks.insightscollective.org` maps to **staging** since
+  2026-09-06 (it was `stocks.insightscollective.org` from 2026-09-05, moved so
+  that hostname could carry the Firebase auth-email DNS records). Neither
+  points at prod or at this SPA.
 - **Auth:** two modes, one per service. `solyra-api-prod` runs `AUTH_MODE=iap`,
   which is **pass-through, not a check**: `api/auth.py` states "the middleware
   does NOT enforce here — IAP already gated the request", and `/api/me` takes

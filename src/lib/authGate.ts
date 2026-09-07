@@ -45,3 +45,52 @@ export function subscribeAuthGate(cb: () => void): () => void {
 export function useAuthBlocked(): boolean {
   return useSyncExternalStore(subscribeAuthGate, isAuthBlocked, () => false);
 }
+
+// ── Verification-email delivery state ───────────────────────────────────────
+//
+// Sign-up creates the account and Firebase flips onAuthStateChanged before
+// the verification email's send has resolved, so SignInScreen (the caller)
+// is already unmounted when a send failure comes back. This store carries
+// that outcome across the auth transition so EmailVerificationBanner can say
+// what actually happened instead of asserting "we sent a link" (Rule 4: no
+// fabricated success).
+//
+// The outcome is keyed by the uid it was recorded for. Auth state is shared
+// across tabs and a sign-out/sign-in never reloads the page, so an unkeyed
+// value would let account B inherit account A's "sent" (or "failed"). A
+// reader asking for a different uid gets 'unknown' = nothing was sent for
+// this account in this session; the banner then offers a resend without
+// claiming a prior send.
+
+export type VerificationEmailState =
+  | { status: 'unknown' }
+  | { status: 'sending' }
+  | { status: 'sent' }
+  | { status: 'failed'; message: string };
+
+const UNKNOWN: VerificationEmailState = { status: 'unknown' };
+
+let verificationEmail: { uid: string; state: VerificationEmailState } | null = null;
+const verificationListeners = new Set<() => void>();
+
+/** Record the outcome of a verification-email send for `uid`. */
+export function recordVerificationEmail(uid: string, state: VerificationEmailState): void {
+  verificationEmail = { uid, state };
+  for (const l of verificationListeners) l();
+}
+
+/** The recorded outcome for `uid`; 'unknown' for any other (or no) account. */
+export function getVerificationEmailState(uid: string | null): VerificationEmailState {
+  return uid && verificationEmail?.uid === uid ? verificationEmail.state : UNKNOWN;
+}
+
+export function subscribeVerificationEmail(cb: () => void): () => void {
+  verificationListeners.add(cb);
+  return () => verificationListeners.delete(cb);
+}
+
+/** React hook: the outcome of the most recent verification-email send for `uid`. */
+export function useVerificationEmailState(uid: string | null): VerificationEmailState {
+  const read = () => getVerificationEmailState(uid);
+  return useSyncExternalStore(subscribeVerificationEmail, read, read);
+}

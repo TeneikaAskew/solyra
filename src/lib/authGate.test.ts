@@ -1,44 +1,49 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
-  isAuthBlocked,
-  markAuthBlocked,
-  clearAuthBlocked,
-  subscribeAuthGate,
+  getVerificationEmailState,
+  recordVerificationEmail,
+  subscribeVerificationEmail,
 } from './authGate';
 
-describe('authGate', () => {
-  beforeEach(() => clearAuthBlocked());
-
-  it('starts unblocked', () => {
-    expect(isAuthBlocked()).toBe(false);
+describe('verification-email delivery state', () => {
+  it('starts unknown so nothing claims a send that never happened', () => {
+    expect(getVerificationEmailState('uid-a')).toEqual({ status: 'unknown' });
+    expect(getVerificationEmailState(null)).toEqual({ status: 'unknown' });
   });
 
-  it('marks blocked and notifies subscribers', () => {
-    let seen = 0;
-    const unsub = subscribeAuthGate(() => { seen += 1; });
-    markAuthBlocked();
-    expect(isAuthBlocked()).toBe(true);
-    expect(seen).toBe(1);
+  it('records an outcome for one account and notifies subscribers', () => {
+    let notified = 0;
+    const unsub = subscribeVerificationEmail(() => {
+      notified += 1;
+    });
+    recordVerificationEmail('uid-a', { status: 'failed', message: 'auth/network-request-failed' });
+    expect(getVerificationEmailState('uid-a')).toEqual({ status: 'failed', message: 'auth/network-request-failed' });
+    expect(notified).toBe(1);
+
+    recordVerificationEmail('uid-a', { status: 'sent' });
+    expect(getVerificationEmailState('uid-a')).toEqual({ status: 'sent' });
+    expect(notified).toBe(2);
+
     unsub();
+    recordVerificationEmail('uid-a', { status: 'unknown' });
+    expect(notified).toBe(2);
   });
 
-  it('clearAuthBlocked resets the flag and notifies', () => {
-    markAuthBlocked();
-    let seen = 0;
-    const unsub = subscribeAuthGate(() => { seen += 1; });
-    clearAuthBlocked();
-    expect(isAuthBlocked()).toBe(false);
-    expect(seen).toBe(1);
-    unsub();
+  it('reports the in-flight sign-up send so a resend cannot start concurrently', () => {
+    recordVerificationEmail('uid-s', { status: 'sending' });
+    expect(getVerificationEmailState('uid-s')).toEqual({ status: 'sending' });
+    recordVerificationEmail('uid-s', { status: 'sent' });
+    expect(getVerificationEmailState('uid-s')).toEqual({ status: 'sent' });
   });
 
-  it('markAuthBlocked is idempotent (no repeat notifications)', () => {
-    let seen = 0;
-    const unsub = subscribeAuthGate(() => { seen += 1; });
-    markAuthBlocked();
-    markAuthBlocked();
-    markAuthBlocked();
-    expect(seen).toBe(1);
-    unsub();
+  it('never leaks one account\'s outcome to another or to a signed-out reader', () => {
+    recordVerificationEmail('uid-a', { status: 'sent' });
+    // Account B signs in in the same tab (or another tab) without a reload.
+    expect(getVerificationEmailState('uid-b')).toEqual({ status: 'unknown' });
+    expect(getVerificationEmailState(null)).toEqual({ status: 'unknown' });
+    // B's own send is recorded for B only.
+    recordVerificationEmail('uid-b', { status: 'failed', message: 'auth/too-many-requests' });
+    expect(getVerificationEmailState('uid-b')).toEqual({ status: 'failed', message: 'auth/too-many-requests' });
+    expect(getVerificationEmailState('uid-a')).toEqual({ status: 'unknown' });
   });
 });

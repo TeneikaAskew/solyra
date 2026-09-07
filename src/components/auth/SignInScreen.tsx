@@ -1,42 +1,23 @@
 import { useState } from 'react';
-import { Loader2, Mail, Lock } from 'lucide-react';
+import { Loader2, Mail, Lock, MailCheck } from 'lucide-react';
 import { Brand } from '@/components/layout/Brand';
 import {
   isFramed,
   signInWithGoogle,
   signInWithEmail,
   signUpWithEmail,
+  sendPasswordReset,
 } from '@/lib/firebase';
+import { friendlyError, resetLooksSent } from '@/lib/authAction';
 
 /**
  * App login page — shown only in `firebase` auth mode when no user is signed
- * in. Offers Google SSO + email/password (sign-in or sign-up). On success,
- * Firebase's auth-state change flips `useUser`, and `<AuthGate>` renders the
- * app — which is otherwise unchanged ("looks exactly the same").
+ * in. Offers Google SSO + email/password (sign-in or sign-up) and a
+ * forgot-password flow. On success, Firebase's auth-state change flips
+ * `useUser`, and `<AuthGate>` renders the app — which is otherwise unchanged
+ * ("looks exactly the same").
  */
-function friendlyError(code: string | undefined, fallback: string): string {
-  switch (code) {
-    case 'auth/invalid-credential':
-    case 'auth/wrong-password':
-    case 'auth/user-not-found':
-      return 'Incorrect email or password.';
-    case 'auth/invalid-email':
-      return 'That email address is not valid.';
-    case 'auth/email-already-in-use':
-      return 'An account with that email already exists, try signing in.';
-    case 'auth/weak-password':
-      return 'Password must be at least 6 characters.';
-    case 'auth/popup-closed-by-user':
-    case 'auth/cancelled-popup-request':
-      return 'Sign-in was cancelled.';
-    case 'auth/popup-blocked':
-      return 'Popup blocked, allow popups and try again.';
-    case 'auth/too-many-requests':
-      return 'Too many attempts. Try again later.';
-    default:
-      return fallback;
-  }
-}
+type Mode = 'signin' | 'signup' | 'reset';
 
 export function SignInScreen() {
   // Computed once at mount: whether we can complete a Google popup at all.
@@ -45,11 +26,19 @@ export function SignInScreen() {
   // opening a popup that silently strands them here. Email/password is
   // unaffected (no popup, no cross-window handshake) and stays available.
   const [framed] = useState(isFramed);
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Address a reset link was requested for; non-null renders the confirmation.
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
+
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError(null);
+    setResetSentTo(null);
+  };
 
   // No manual navigation on success — onAuthStateChanged (useUser) flips the
   // gate to render the app.
@@ -76,6 +65,36 @@ export function SignInScreen() {
     );
   };
 
+  const onResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const address = email.trim();
+    if (!address || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await sendPasswordReset(address);
+      setResetSentTo(address);
+    } catch (err) {
+      const fb = err as { code?: string; message?: string };
+      if (resetLooksSent(fb.code)) {
+        setResetSentTo(address);
+      } else {
+        setError(friendlyError(fb.code, fb.message ?? 'Could not send the reset email.'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inputCls =
+    'w-full rounded-lg bg-[var(--surface-2)] px-3 py-2.5 text-sm text-[var(--on-surface)] outline-none ring-1 ring-transparent transition focus:ring-[var(--brand)] placeholder:text-[var(--on-surface-muted)]';
+  const labelCls =
+    'mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-[var(--on-surface)]';
+  const primaryBtnCls =
+    'mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-[var(--on-brand)] transition hover:opacity-90 disabled:opacity-50';
+  const linkBtnCls =
+    'text-[12px] text-[var(--on-surface-variant)] hover:text-[var(--on-surface)]';
+
   return (
     <div
       data-testid="signin-screen"
@@ -86,108 +105,185 @@ export function SignInScreen() {
           <Brand />
         </div>
 
-        <h1 className="text-[18px] font-bold tracking-[-0.02em] text-[var(--on-surface)]">
-          {mode === 'signin' ? 'Sign in' : 'Create your account'}
-        </h1>
-        <p className="mb-5 mt-1 text-[13px] leading-relaxed text-[var(--on-surface-variant)]">
-          {mode === 'signin'
-            ? 'Sign in to continue to the platform.'
-            : 'Sign up with your email, or continue with Google.'}
-        </p>
-
-        {/* Google SSO. Framed (preview iframe) → break out to a top-level tab,
-            where the popup handshake can actually complete. */}
-        {framed ? (
+        {mode === 'reset' ? (
           <>
-            <a
-              href={window.location.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="google-signin-newtab"
-              className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--on-surface)] ring-1 ring-[var(--outline,rgba(255,255,255,0.08))] transition hover:opacity-90"
+            <h1 className="text-[18px] font-bold tracking-[-0.02em] text-[var(--on-surface)]">
+              Reset your password
+            </h1>
+            {resetSentTo ? (
+              <div data-testid="reset-sent">
+                <p className="mb-5 mt-1 text-[13px] leading-relaxed text-[var(--on-surface-variant)]">
+                  If an account exists for <span className="font-medium text-[var(--on-surface)]">{resetSentTo}</span>,
+                  a link to choose a new password is on its way. Check your inbox and spam folder.
+                </p>
+                <div className="flex items-center gap-2 rounded-lg bg-[var(--surface-2)] px-3 py-2.5 text-[12px] text-[var(--on-surface-variant)]">
+                  <MailCheck size={14} className="shrink-0 text-[var(--brand)]" aria-hidden />
+                  The link can be used once and lands you back here to set the new password.
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="mb-5 mt-1 text-[13px] leading-relaxed text-[var(--on-surface-variant)]">
+                  Enter the email for your account and we&apos;ll send a link to choose a new password.
+                </p>
+                <form onSubmit={onResetSubmit}>
+                  <label htmlFor="reset-email" className={labelCls}>
+                    <Mail size={13} /> Email
+                  </label>
+                  <input
+                    id="reset-email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    data-testid="reset-email"
+                    placeholder="you@example.com"
+                    className={inputCls}
+                  />
+                  {error && (
+                    <div data-testid="login-error" className="mt-3 text-[12px] text-[var(--bear)]">
+                      {error}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={busy || !email.trim()}
+                    data-testid="reset-submit"
+                    className={primaryBtnCls}
+                  >
+                    {busy ? <Loader2 size={15} className="animate-spin" /> : null}
+                    Send reset link
+                  </button>
+                </form>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => switchMode('signin')}
+              data-testid="reset-back"
+              className={`mt-4 w-full text-center ${linkBtnCls}`}
             >
-              <GoogleGlyph /> Continue with Google, opens a new tab
-            </a>
-            <p className="mb-4 text-[11px] leading-relaxed text-[var(--on-surface-muted)]">
-              Google sign-in can&apos;t finish inside an embedded preview. Opening
-              the app in its own tab lets it complete; email sign-in below works
-              here either way.
-            </p>
+              Back to sign in
+            </button>
           </>
         ) : (
-          <button
-            type="button"
-            disabled={busy}
-            data-testid="google-signin"
-            onClick={() => run(signInWithGoogle)}
-            className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--on-surface)] ring-1 ring-[var(--outline,rgba(255,255,255,0.08))] transition hover:opacity-90 disabled:opacity-50"
-          >
-            <GoogleGlyph /> Continue with Google
-          </button>
-        )}
+          <>
+            <h1 className="text-[18px] font-bold tracking-[-0.02em] text-[var(--on-surface)]">
+              {mode === 'signin' ? 'Sign in' : 'Create your account'}
+            </h1>
+            <p className="mb-5 mt-1 text-[13px] leading-relaxed text-[var(--on-surface-variant)]">
+              {mode === 'signin'
+                ? 'Sign in to continue to the platform.'
+                : 'Sign up with your email, or continue with Google.'}
+            </p>
 
-        <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-[0.08em] text-[var(--on-surface-muted)]">
-          <span className="h-px flex-1 bg-[var(--outline,rgba(255,255,255,0.08))]" />
-          or
-          <span className="h-px flex-1 bg-[var(--outline,rgba(255,255,255,0.08))]" />
-        </div>
+            {/* Google SSO. Framed (preview iframe) → break out to a top-level tab,
+                where the popup handshake can actually complete. */}
+            {framed ? (
+              <>
+                <a
+                  href={window.location.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="google-signin-newtab"
+                  className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--on-surface)] ring-1 ring-[var(--outline,rgba(255,255,255,0.08))] transition hover:opacity-90"
+                >
+                  <GoogleGlyph /> Continue with Google, opens a new tab
+                </a>
+                <p className="mb-4 text-[11px] leading-relaxed text-[var(--on-surface-muted)]">
+                  Google sign-in can&apos;t finish inside an embedded preview. Opening
+                  the app in its own tab lets it complete; email sign-in below works
+                  here either way.
+                </p>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                data-testid="google-signin"
+                onClick={() => run(signInWithGoogle)}
+                className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--on-surface)] ring-1 ring-[var(--outline,rgba(255,255,255,0.08))] transition hover:opacity-90 disabled:opacity-50"
+              >
+                <GoogleGlyph /> Continue with Google
+              </button>
+            )}
 
-        {/* Email + password */}
-        <form onSubmit={onEmailSubmit}>
-          <label htmlFor="login-email" className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-[var(--on-surface)]">
-            <Mail size={13} /> Email
-          </label>
-          <input
-            id="login-email"
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            data-testid="login-email"
-            placeholder="you@example.com"
-            className="mb-3 w-full rounded-lg bg-[var(--surface-2)] px-3 py-2.5 text-sm text-[var(--on-surface)] outline-none ring-1 ring-transparent transition focus:ring-[var(--brand)] placeholder:text-[var(--on-surface-muted)]"
-          />
-          <label htmlFor="login-password" className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-[var(--on-surface)]">
-            <Lock size={13} /> Password
-          </label>
-          <input
-            id="login-password"
-            type="password"
-            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            data-testid="login-password"
-            placeholder="••••••••"
-            className="w-full rounded-lg bg-[var(--surface-2)] px-3 py-2.5 text-sm text-[var(--on-surface)] outline-none ring-1 ring-transparent transition focus:ring-[var(--brand)] placeholder:text-[var(--on-surface-muted)]"
-          />
-
-          {error && (
-            <div data-testid="login-error" className="mt-3 text-[12px] text-[var(--bear)]">
-              {error}
+            <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-[0.08em] text-[var(--on-surface-muted)]">
+              <span className="h-px flex-1 bg-[var(--outline,rgba(255,255,255,0.08))]" />
+              or
+              <span className="h-px flex-1 bg-[var(--outline,rgba(255,255,255,0.08))]" />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={busy || !email.trim() || !password}
-            data-testid="login-submit"
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-[var(--on-brand)] transition hover:opacity-90 disabled:opacity-50"
-          >
-            {busy ? <Loader2 size={15} className="animate-spin" /> : null}
-            {mode === 'signin' ? 'Sign in' : 'Create account'}
-          </button>
-        </form>
+            {/* Email + password */}
+            <form onSubmit={onEmailSubmit}>
+              <label htmlFor="login-email" className={labelCls}>
+                <Mail size={13} /> Email
+              </label>
+              <input
+                id="login-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                data-testid="login-email"
+                placeholder="you@example.com"
+                className={`mb-3 ${inputCls}`}
+              />
+              <div className="mb-1.5 flex items-center justify-between">
+                <label htmlFor="login-password" className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--on-surface)]">
+                  <Lock size={13} /> Password
+                </label>
+                {mode === 'signin' && (
+                  <button
+                    type="button"
+                    onClick={() => switchMode('reset')}
+                    data-testid="login-forgot"
+                    className={linkBtnCls}
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+              <input
+                id="login-password"
+                type="password"
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                data-testid="login-password"
+                placeholder="••••••••"
+                className={inputCls}
+              />
 
-        <button
-          type="button"
-          onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); }}
-          data-testid="login-toggle"
-          className="mt-4 w-full text-center text-[12px] text-[var(--on-surface-variant)] hover:text-[var(--on-surface)]"
-        >
-          {mode === 'signin'
-            ? "Don't have an account? Sign up"
-            : 'Already have an account? Sign in'}
-        </button>
+              {error && (
+                <div data-testid="login-error" className="mt-3 text-[12px] text-[var(--bear)]">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={busy || !email.trim() || !password}
+                data-testid="login-submit"
+                className={primaryBtnCls}
+              >
+                {busy ? <Loader2 size={15} className="animate-spin" /> : null}
+                {mode === 'signin' ? 'Sign in' : 'Create account'}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
+              data-testid="login-toggle"
+              className={`mt-4 w-full text-center ${linkBtnCls}`}
+            >
+              {mode === 'signin'
+                ? "Don't have an account? Sign up"
+                : 'Already have an account? Sign in'}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
