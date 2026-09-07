@@ -283,7 +283,6 @@ Run the gates and paste real output:
 ```bash
 npx tsc -b            # the check that catches fixture drift
 npm test
-npm run lint
 npm run build
 npm run e2e
 npm run contract:check    # fails if the vendored OpenAPI copy is stale
@@ -292,6 +291,27 @@ npm run contract:check    # fails if the vendored OpenAPI copy is stale
 `npm run build` runs `tsc -b` across `app`, `node` and `test` projects, so a
 type change that breaks a fixture fails the build. Keep it that way: never
 loosen a type to make a fixture compile.
+
+**`npm run lint` is deliberately NOT in that list, and adding it back would
+block every run of this command.** It exits 1 on `main`: 43 errors measured
+2026-09-07, against the 32 that `.github/workflows/ci.yml:14` records, so the
+baseline has grown since that comment was written. CI omits it for exactly
+this reason — gating on a failing baseline paints every PR red on arrival and
+pressures you into fixing dozens of unrelated violations before you can submit
+the fix the issue actually asked for. Most of them are
+`react-refresh/only-export-components` firing on the deliberate pattern here of
+exporting a pure helper beside its component so the Rule 4 behaviour can be
+unit-tested.
+
+Run it scoped to what you touched instead, and that must be clean:
+
+```bash
+npx eslint <the files this issue's fix touches>
+```
+
+A repo-wide lint count is a backlog item, not a gate. The drift from 32 to 43
+is what an ungated backlog looks like, and it is worth filing as a follow-up
+rather than silently absorbing into an unrelated PR.
 
 ---
 
@@ -412,10 +432,34 @@ In order:
    status comment.
 
    Stop instead of merging, saying which: the PR is one this session did not
-   open and was not asked to drive; the user wants to merge it themselves; or
-   this is the frontend half of a Rule 6 pair whose **stocks PR has not merged
-   yet** — that one merges first, because the snapshot this repo vendors is
-   read from stocks `main`. Never merge to get past a step that has not passed.
+   open and was not asked to drive; or the user wants to merge it themselves.
+   Never merge to get past a step that has not passed.
+
+   **Rule 6 ordering: the consumer changes first, in both directions.** An
+   earlier version of this step said the stocks PR merges first because the
+   snapshot this repo vendors is read from stocks `main`. That derives the
+   rollout order from what keeps `contract:check` green, which is a CI
+   question, not from what keeps the deployed app working, which is a
+   different one. For a widening it gets the order backwards: stocks merges,
+   staging deploys, the API starts emitting `null`, and the frontend in front
+   of it still assumes the old non-null shape — the exact runtime break the
+   pair exists to prevent.
+
+   So a widening is three steps, not two:
+
+   1. **Here first.** Make the reader tolerate BOTH shapes — the null guard at
+      the presentation boundary, plus a fixture or mock whose field is
+      actually `null`. This touches no type and no snapshot, so
+      `contract:check` still passes against the old stocks `main`. Merge and
+      let it deploy.
+   2. **Then stocks.** Widen the response model, regenerate
+      `platform/api/openapi.json`, merge, deploy.
+   3. **Then here again.** `npm run contract:sync`, widen the TS type, update
+      the fixtures.
+
+   A narrowing runs the same way for the same reason: this app stops reading
+   or sending the field first, and stocks drops it only once nothing consumes
+   it. Say in both PR descriptions which step this one is.
 
 Resolving is part of the fix. A finding fixed in a later PR with the original
 thread left open reads as unaddressed to everyone but you; if the fix landed

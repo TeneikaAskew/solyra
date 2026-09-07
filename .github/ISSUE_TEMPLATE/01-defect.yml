@@ -55,12 +55,14 @@ body:
         (both guarded — an unguarded one renders "—%" instead of "—")
 
         # Blast radius: a shared hook or src/lib/ helper has more callers than
-        # the page that filed this.
+        # the page that filed this. Paste YOUR output — this one is dated
+        # 2026-09-07 and the call sites move.
         $ grep -rn "useLatestOptionsDate" src/
-        src/hooks/useOptionsDates.ts:41
-        src/routes/OptionsFlowPage.tsx:88
-        src/components/options/SwingMode.tsx:56
-        Three consumers sharing one cache key, and one only reads [0].
+        src/components/options/TrinityTab.tsx:1,26
+        src/components/options/SwingMode.tsx:3,794
+        src/hooks/useOptionsDates.ts:42        (the definition)
+        Two consumers sharing one cache key, and the count is the point: a fix
+        scoped to the page that filed this would miss the other one.
     validations:
       required: true
 

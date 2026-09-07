@@ -51,12 +51,21 @@ body:
         output together, not a fixture and not a recollection.
       render: shell
       placeholder: |
-        $ npm test -- src/mocks/contract.test.ts
-        12 requested operations have no mock route (UNMOCKED_REQUESTED floor)
+        # What the parent left behind, measured now rather than restated from
+        # its description. Measured 2026-09-07 — re-run it, do not paste this.
+        $ npm run lint
+        ✖ 54 problems (43 errors, 11 warnings)
 
-        $ ls .github/workflows/
-        ls: cannot access '.github/workflows/': No such file or directory
-        Verified 2026-09-03: vitest and Playwright suites exist, nothing runs them in CI.
+        $ sed -n '14p' .github/workflows/ci.yml
+        #   * `npm run lint` is NOT gated yet — it exits 1 on `main` today with 32
+
+        32 when that comment was written, 43 today: the baseline is not merely
+        unfixed, it is growing, and nothing gates it. The drift IS the finding.
+
+        # A floor that can only shrink, read from the code — the suite passes
+        # silently and prints no such count, so do not invent one:
+        $ sed -n '/const UNMOCKED_REQUESTED/,/^]);/p' src/mocks/contract.test.ts | grep -c "  '"
+        12
     validations:
       required: true
 
