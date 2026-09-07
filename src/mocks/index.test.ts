@@ -106,6 +106,9 @@ describe('canonical payload resolution', () => {
     expect(flatBody.results.map((r: { status: string }) => r.status)).toEqual([
       'met', 'unmet', 'unknown', 'met',
     ]);
+    // The wire always carries BOTH keys (model_dump with null defaults).
+    expect(flatBody.results[0]).toHaveProperty('reason', null);
+    expect(flatBody.results[2]).toHaveProperty('detail', null);
 
     const batched = resolveMock('POST', new URL('http://mock.test/api/playbook/evaluate'), {
       snapshot: {},
@@ -114,5 +117,21 @@ describe('canonical payload resolution', () => {
     const b = JSON.parse(batched!.payload);
     expect(Object.keys(b.results_by_key)).toEqual(['card_1', 'card_2']);
     expect(b.results_by_key.card_2).toHaveLength(2);
+
+    // Both shapes in one request answer both keys, like the real endpoint.
+    const both = resolveMock('POST', new URL('http://mock.test/api/playbook/evaluate'), {
+      snapshot: {},
+      conditions: ['a'],
+      batches: { card_1: ['x'] },
+    });
+    const bb = JSON.parse(both!.payload);
+    expect(bb.results).toHaveLength(1);
+    expect(Object.keys(bb.results_by_key)).toEqual(['card_1']);
+
+    // Neither shape mirrors the real 400, never a fabricated success.
+    const neither = resolveMock('POST', new URL('http://mock.test/api/playbook/evaluate'), {
+      snapshot: {},
+    });
+    expect(neither!.status).toBe(400);
   });
 });

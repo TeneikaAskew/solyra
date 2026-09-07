@@ -9,6 +9,7 @@
  *   GET /api/dashboard/brief/{ticker}       → BriefResponse
  *   GET /api/signals/{ticker}               → the page's own SignalsResponse
  *   GET /api/playbook/{ticker}              → PlaybookResponse
+ *   POST /api/playbook/evaluate             → EvalResult wire shapes
  *   GET /api/live/quote|history|avg-volume  → LiveQuote / LiveHistory / AvgVolume
  *   GET /api/market/reference/{t}/{date}    → ReferenceResponse
  *   GET /api/config/market-hours            → MarketHours
@@ -641,13 +642,18 @@ export const dashboardRoutes: MockRoute[] = [
   { pattern: /^\/api\/dashboard\/brief\/IWM$/, reply: () => ({ body: MOCK_DASHBOARD_BRIEF }) },
   { pattern: /^\/api\/playbook\/IWM$/, reply: () => ({ body: MOCK_PLAYBOOK }) },
   {
-    // Populated cards make PlaybookPage/DashboardPage POST their condition
-    // strings here for live evaluation. The real evaluator is server-side
-    // (playbook.py — Rule 5, one source of truth for the threshold math);
-    // this fixture answers a deterministic met/unmet/unknown cycle with
-    // self-labelled details so all three chip states render. It mirrors the
-    // wire contract exactly: flat `conditions` → `results`, per-card
-    // `batches` → `results_by_key`.
+    // POST /api/playbook/evaluate — contract-complete but currently DORMANT
+    // in mock mode: the canonical world is a closed session, PlaybookPage
+    // gates snapshot-building on isMarketOpenish, and usePlaybookBatch never
+    // fires without a snapshot (the page renders its honest "evaluation
+    // paused" state instead). The route exists so the day the mock session
+    // opens, the POST resolves instead of 501ing. Only usePlaybookBatch
+    // (PlaybookPage) consumes the endpoint today; the flat `conditions`
+    // shape is served for wire completeness. The real evaluator stays
+    // server-side (playbook.py — Rule 5); this fixture answers a
+    // deterministic met/unmet/unknown cycle with self-labelled details.
+    // Note: like every route here, the pattern is pathname-only, so a
+    // historical `?date=` playbook request gets today's cards too.
     method: 'POST',
     pattern: /^\/api\/playbook\/evaluate$/,
     reply: (req) => {
@@ -655,22 +661,31 @@ export const dashboardRoutes: MockRoute[] = [
         conditions?: string[];
         batches?: Record<string, string[]>;
       };
+      // The wire always carries BOTH keys per result (_EvalResult.model_dump
+      // with detail/reason defaulting to null) — mirror that exactly so
+      // consumers distinguishing absent-vs-null see production shapes.
+      const clip = (c: string) => (c.length > 40 ? `${c.slice(0, 40)}…` : c);
       const evalOne = (c: string, i: number) =>
         i % 3 === 0
-          ? { status: 'met' as const, detail: `fixture: "${c.slice(0, 40)}" holds in the mock snapshot` }
+          ? { status: 'met' as const, detail: `fixture: "${clip(c)}" holds in the mock snapshot`, reason: null }
           : i % 3 === 1
-            ? { status: 'unmet' as const, detail: `fixture: "${c.slice(0, 40)}" does not hold in the mock snapshot` }
-            : { status: 'unknown' as const, reason: 'fixture: input not in the mock snapshot' };
-      if (body.batches) {
+            ? { status: 'unmet' as const, detail: `fixture: "${clip(c)}" does not hold in the mock snapshot`, reason: null }
+            : { status: 'unknown' as const, detail: null, reason: 'fixture: input not in the mock snapshot' };
+      if (!body.conditions && !body.batches) {
+        // Mirrors the real 400 — a bodyless POST must not fabricate success.
         return {
-          body: {
-            results_by_key: Object.fromEntries(
-              Object.entries(body.batches).map(([k, conds]) => [k, conds.map(evalOne)]),
-            ),
-          },
+          status: 400,
+          body: { detail: 'Supply either `conditions` (flat) or `batches` (per-key).' },
         };
       }
-      return { body: { results: (body.conditions ?? []).map(evalOne) } };
+      const payload: Record<string, unknown> = {};
+      if (body.conditions) payload.results = body.conditions.map(evalOne);
+      if (body.batches) {
+        payload.results_by_key = Object.fromEntries(
+          Object.entries(body.batches).map(([k, conds]) => [k, conds.map(evalOne)]),
+        );
+      }
+      return { body: payload };
     },
   },
   {
