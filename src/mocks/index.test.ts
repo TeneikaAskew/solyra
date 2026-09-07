@@ -84,10 +84,17 @@ describe('canonical payload resolution', () => {
   });
 
   it('movement-statement serves the assembled statement (flag ON), not a 404 or a loud miss', () => {
-    const hit = get('/api/movement-statement');
+    const hit = get('/api/movement-statement?ticker=IWM&timeframe=15m');
     expect(hit).not.toBeNull();
     expect(hit!.status ?? 200).toBe(200);
     expect(JSON.parse(hit!.payload)).toEqual(MOCK_MOVEMENT_STATEMENT);
+  });
+
+  it('movement-statement refuses a ticker the IWM fixture would misdescribe', () => {
+    const hit = get('/api/movement-statement?ticker=SPY&timeframe=15m');
+    expect(hit).not.toBeNull();
+    expect(hit!.status).toBe(501);
+    expect(JSON.parse(hit!.payload).detail).toMatch(/SPY/);
   });
 
   it('serves the real 12-card playbook, not the empty variant', () => {

@@ -864,6 +864,19 @@ export const dashboardRoutes: MockRoute[] = [
   // navigation smoke's clean-console assertion.
   {
     pattern: /^\/api\/movement-statement$/,
-    reply: () => ({ body: MOCK_MOVEMENT_STATEMENT }),
+    reply: (req) => {
+      // The fixture is an IWM statement; another ticker (a searched symbol,
+      // or SPY/QQQ from the combobox) must not be answered with it, since
+      // MovementReadView renders the ticker and headline verbatim. The 501
+      // is the loud miss every other non-IWM request gets in mock mode.
+      const ticker = (req.url.searchParams.get('ticker') ?? 'IWM').toUpperCase();
+      if (ticker !== 'IWM') {
+        return {
+          status: 501,
+          body: { detail: `mock mode: no movement statement fixture for ${ticker}` },
+        };
+      }
+      return { body: MOCK_MOVEMENT_STATEMENT };
+    },
   },
 ];
