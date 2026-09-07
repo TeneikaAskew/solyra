@@ -11,8 +11,9 @@
  * the copy is stale), and this file checks two things against it:
  *
  *  1. ROUTE INVENTORY — every `/api/...` string or template literal the app
- *     requests (under src/, with src/mocks and tests excluded) matches a
- *     path the API declares. A removed or renamed endpoint fails here.
+ *     requests (under src/, with src/mocks and tests excluded), together with
+ *     the verb of the fetch call it sits in, matches a declared operation.
+ *     A removed or renamed endpoint, or a verb change, fails here.
  *  2. PAYLOAD SHAPE — for every operation whose 200 response declares a JSON
  *     schema, the mock-mode payload that answers a sample request is
  *     validated against that schema. A renamed or retyped field in a typed
@@ -47,6 +48,14 @@ interface OpenApi {
 const spec: OpenApi = JSON.parse(readFileSync(SNAPSHOT, 'utf8'));
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete']);
 const API_PATHS = Object.keys(spec.paths);
+/** Declared paths per verb, so the inventory checks the operation, not just the path. */
+const API_PATHS_BY_METHOD: Record<string, string[]> = {};
+for (const [p, ops] of Object.entries(spec.paths)) {
+  for (const m of Object.keys(ops)) {
+    if (!HTTP_METHODS.has(m)) continue;
+    (API_PATHS_BY_METHOD[m.toUpperCase()] ??= []).push(p);
+  }
+}
 
 // ── 1. Route inventory ─────────────────────────────────────────────────────
 
@@ -70,8 +79,43 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
  * skipped by brace depth so a nested template inside `${}` cannot end the
  * literal early.
  */
-export function extractApiLiterals(source: string): string[] {
-  const out: string[] = [];
+export interface ApiLiteral {
+  literal: string;
+  /**
+   * Uppercase verb of the fetch call the literal is the URL argument of (GET
+   * when the call sets no `method`), or null when the literal is not a fetch
+   * argument — a const passed to fetch later, or a prefix list such as
+   * authedFetch's OPEN_PREFIXES. Those are checked for path existence under
+   * any verb, since the verb is not knowable from the literal.
+   */
+  method: string | null;
+}
+
+/**
+ * The verb of the fetch call a literal is the URL of. Looks forward from the
+ * literal through its enclosing call's arguments for a `method: 'X'` option,
+ * stopping at the call's closing paren. A literal that is not a fetch argument
+ * (a const later passed to fetch) reports GET, the same default fetch uses.
+ */
+function methodAfter(source: string, from: number): string {
+  let depth = 0;
+  for (let i = from; i < source.length; i++) {
+    const c = source[i];
+    if (c === '(' || c === '{' || c === '[') depth++;
+    else if (c === ')' || c === '}' || c === ']') {
+      if (depth === 0) break;
+      depth--;
+    } else if (c === ';' && depth === 0) break;
+    if (c === 'm' && source.startsWith('method', i)) {
+      const m = /^method\s*:\s*['"`](get|post|put|patch|delete)['"`]/i.exec(source.slice(i, i + 40));
+      if (m) return m[1].toUpperCase();
+    }
+  }
+  return 'GET';
+}
+
+export function extractApiLiterals(source: string): ApiLiteral[] {
+  const out: ApiLiteral[] = [];
   const n = source.length;
   let i = 0;
   while (i < n) {
@@ -89,6 +133,7 @@ export function extractApiLiterals(source: string): string[] {
     }
     if (c === "'" || c === '"' || c === '`') {
       const quote = c;
+      const inFetch = /fetch\(\s*$/.test(source.slice(Math.max(0, i - 40), i));
       let lit = '';
       let depth = 0;
       i++;
@@ -115,7 +160,9 @@ export function extractApiLiterals(source: string): string[] {
         lit += ch;
       }
       i++;
-      if (lit.startsWith('/api/')) out.push(lit);
+      if (lit.startsWith('/api/')) {
+        out.push({ literal: lit, method: inFetch ? methodAfter(source, i) : null });
+      }
       continue;
     }
     i++;
@@ -128,11 +175,23 @@ function segments(literal: string): string[] {
   return literal.split('?')[0].replace(/\/+$/, '').split('/').filter(Boolean);
 }
 
+/**
+ * A request segment and a declared segment align when both are static and
+ * equal, or when both are dynamic (`{p}` from a template expression on the
+ * request side, `{param}` on the API side). A static request segment never
+ * matches a declared parameter, and a dynamic request segment never matches a
+ * static declared segment — otherwise `/api/options/dates/${t}` would be
+ * satisfied by `/api/options/{ticker}/grid` and a removed route could hide
+ * behind an unrelated one (Codex, #54). A segment with a literal prefix and a
+ * trailing expression (`refresh${qs}`) is static for matching purposes.
+ */
 function segmentMatches(call: string, api: string): boolean {
-  if (api.startsWith('{')) return true; // API path parameter takes anything
-  if (call === api) return true;
+  const apiDynamic = api.startsWith('{');
   const k = call.indexOf('{p}');
-  return k >= 0 && api.startsWith(call.slice(0, k)); // literal prefix + expr
+  const callDynamic = k === 0;
+  if (apiDynamic !== callDynamic) return false;
+  if (apiDynamic) return true;
+  return k > 0 ? call.slice(0, k) === api : call === api;
 }
 
 export function matchesDeclaredPath(literal: string, apiPaths: string[]): boolean {
@@ -160,6 +219,13 @@ const PARAM_SAMPLES: Record<string, string> = {
   phase: 'phase1',
   event_date: '2026-04-25',
 };
+/**
+ * Typed operations whose mock cannot answer a body-less sample request.
+ * Empty on purpose: add an entry only with the reason, never to silence a
+ * failure.
+ */
+const UNSAMPLEABLE = new Set<string>([]);
+
 const sampleUrl = (p: string) =>
   p.replace(/\{([^}]+)\}/g, (_, name: string) => PARAM_SAMPLES[name] ?? 'sample');
 
@@ -169,10 +235,15 @@ const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: false
  * JSON Schema permits properties it does not mention, and Pydantic marks every
  * defaulted field optional — so out of the box a mock carrying `themes` where
  * the API emits `theme` validates. That is exactly the drift this test exists
- * to catch, so every object schema that declares `properties` and says
- * nothing about extras is closed: a field the mock has and the API does not
- * declare is a failure. Schemas that opt in to extras (`additionalProperties`
- * set, e.g. Pydantic `extra='allow'` or a `dict[str, X]`) are left alone.
+ * to catch, so every object schema that declares `properties` is closed: a
+ * field the mock has and the API does not declare is a failure.
+ *
+ * This deliberately overrides `additionalProperties: true`, which Pydantic
+ * emits for `extra='allow'` models. The API side uses that so an unexpected
+ * key passes through in production instead of becoming a 500; it does not
+ * mean the frontend may depend on undeclared keys. A mock that needs one is
+ * a field the API should declare. Map-like schemas (`dict[str, X]`, no
+ * `properties`) are untouched.
  */
 function closeObjects<T>(node: T): T {
   if (Array.isArray(node)) return node.map(closeObjects) as T;
@@ -180,7 +251,7 @@ function closeObjects<T>(node: T): T {
     const src = node as Record<string, unknown>;
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(src)) out[k] = closeObjects(v);
-    if ('properties' in src && !('additionalProperties' in src)) out.additionalProperties = false;
+    if ('properties' in src) out.additionalProperties = false;
     return out as T;
   }
   return node;
@@ -216,22 +287,25 @@ function jsonSchemaFor(op: Operation): unknown {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('API contract (stocks OpenAPI snapshot)', () => {
-  it('every /api path the app requests is declared by the API', () => {
+  it('every /api request the app makes (verb + path) is a declared operation', () => {
     const unmatched: string[] = [];
     let total = 0;
     for (const file of sourceFiles(SRC)) {
-      for (const lit of extractApiLiterals(readFileSync(file, 'utf8'))) {
+      for (const { literal: lit, method } of extractApiLiterals(readFileSync(file, 'utf8'))) {
         // A request URL never contains whitespace or a glob star; such literals
         // are error messages and prefix lists, not requests.
         if (/\s|\*|\.\.\./.test(lit)) continue;
         const segs = segments(lit);
         if (segs.length < 2 || segs[1].includes('{p}')) continue; // '/api/' alone or fully dynamic
         total++;
-        if (!matchesDeclaredPath(lit, API_PATHS)) unmatched.push(`${path.relative(REPO, file)}: ${lit}`);
+        const declared = method === null ? API_PATHS : (API_PATHS_BY_METHOD[method] ?? []);
+        if (!matchesDeclaredPath(lit, declared)) {
+          unmatched.push(`${path.relative(REPO, file)}: ${method ?? '(any verb)'} ${lit}`);
+        }
       }
     }
-    console.info(`[contract] route inventory: ${total} /api literals under src/, ${API_PATHS.length} declared paths`);
-    expect(unmatched, 'request literals with no declared API path').toEqual([]);
+    console.info(`[contract] route inventory: ${total} /api requests under src/, ${API_PATHS.length} declared paths`);
+    expect(unmatched, 'requests with no declared API operation (verb + path)').toEqual([]);
   });
 
   it('every mock payload for a typed 200 response matches its response schema (no undeclared fields)', () => {
@@ -250,11 +324,18 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
           untyped++;
           continue;
         }
+        if (UNSAMPLEABLE.has(key)) {
+          skipped.push(`${key} (allowlisted: cannot be sampled without a real request body)`);
+          continue;
+        }
         let hit: ReturnType<typeof resolveMock>;
         try {
           hit = resolveMock(method.toUpperCase(), new URL(sampleUrl(p), 'http://mock.local'), {});
         } catch (err) {
-          skipped.push(`${key} (mock threw for the sample request: ${(err as Error).message})`);
+          // A mock that throws for the sample request validated nothing; that
+          // is a broken mock, not a skip (Codex, #54). Allowlist above if a
+          // route genuinely cannot be sampled.
+          violations.push(`${key}\n    mock handler threw: ${(err as Error).message}`);
           continue;
         }
         if (!hit) {
