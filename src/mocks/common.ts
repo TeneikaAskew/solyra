@@ -17,7 +17,13 @@ import type { LiveStatus } from '@/hooks/useLiveStatus';
 import type { WatchlistResponse } from '@/types/watchlist';
 import type { MockRoute } from './types';
 
-export const MOCK_HEALTH = { status: 'ok', cloud_sql: false };
+export const MOCK_HEALTH = {
+  status: 'ok',
+  project_root: '/app',
+  cloud_sql: false,
+  gcs_bucket: 'adept-mountain-474619-d4-trading-data',
+  lib_dir_exists: true,
+};
 
 /** Open auth keeps the gate inert — matching iap/local behaviour. */
 export const MOCK_FIREBASE_CONFIG_OPEN = { authMode: 'open', firebase: null };

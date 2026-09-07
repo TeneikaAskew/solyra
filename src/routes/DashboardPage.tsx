@@ -53,11 +53,11 @@ export interface BriefResponse {
   rsi?: number; strat_candle?: string; strat_combo?: string;
   ftfc_score?: number; ftfc_direction?: string; signal_status?: string;
   daily_indicators: DailyIndicators;
-  live?: { price: number; session: string };
+  live?: { price: number; session: string; updated_at: string; source: string };
 }
 interface PlaybookCard {
-  id: string; name: string; direction: string; win_rate: number;
-  avg_return: number; conditions: string[]; description: string;
+  id: string; name: string; direction: string; win_rate: number | null;
+  avg_return: number | null; conditions: string[]; description: string;
   target_pct?: number | null; stop_pct?: number | null;
   horizons?: SetupHorizon[];
   best_horizon_min?: number | null; best_horizon_win_rate?: number | null; best_horizon_avg_bps?: number | null;
@@ -70,6 +70,7 @@ interface PlaybookCard {
 export interface PlaybookResponse {
   ticker: string;
   cards: PlaybookCard[];
+  source: string;
   analysis_date?: string;
   generated_at?: string | null;
   age_days?: number;
@@ -80,11 +81,18 @@ interface SignalEntry {
   time: string; direction: string; score: number;
   conditions_met: string; return_pct: number;
 }
-interface SignalsResponse { ticker: string; count: number; signals: SignalEntry[] }
+interface SignalsResponse {
+  ticker: string; count: number; returned: number; source: string; file?: string;
+  signals: SignalEntry[];
+}
 
 export interface ReferenceResponse {
-  ticker: string; date: string; close: number; high: number; low: number;
-  week?: { high: number; low: number; avg_close?: number } | null;
+  ticker: string; date: string; open: number; close: number; high: number; low: number;
+  source?: string; stale_days?: number;
+  week?: {
+    high: number; low: number; avg_close: number; avg_rsi_14: number | null;
+    start_date: string; end_date: string; sessions: number;
+  } | null;
 }
 interface MarketDataResponse {
   candlestick: Array<{ time: number; open: number; high: number; low: number; close: number }>;
@@ -455,7 +463,12 @@ export default function DashboardPage() {
     if (!cards.length) return null;
     const biasDir = brief?.bias === 'bullish' ? 'CALL' : brief?.bias === 'bearish' ? 'PUT' : null;
     const pool = biasDir ? cards.filter((c) => c.direction === biasDir) : cards;
-    return (pool.length ? pool : cards).reduce((best, c) => (c.win_rate > best.win_rate ? c : best));
+    const candidates = pool.length ? pool : cards;
+    // A card with no win rate (NULL in playbook_cards) cannot be ranked; it
+    // only wins when nothing rankable exists, and then reads as '—'.
+    const ranked = candidates.filter((c): c is PlaybookCard & { win_rate: number } => c.win_rate != null);
+    if (!ranked.length) return candidates[0];
+    return ranked.reduce((best, c) => (c.win_rate > best.win_rate ? c : best));
   }, [playbook, brief?.bias]);
 
   // Most-recent first.
@@ -607,7 +620,7 @@ export default function DashboardPage() {
                   <div>
                     <MicroLabel>Win rate</MicroLabel>
                     <div className="mt-1.5 flex items-center gap-2">
-                      <ScoreStars value={Math.round(topCard.win_rate / 20)} />
+                      {topCard.win_rate != null && <ScoreStars value={Math.round(topCard.win_rate / 20)} />}
                       <span className="tabular-nums text-[12px] text-[var(--on-surface-muted)]">{fmtNum(topCard.win_rate, 0)}%</span>
                     </div>
                   </div>

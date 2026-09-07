@@ -17,11 +17,31 @@ export interface OptionRecord {
   volume: number | null;
 }
 
+/**
+ * One row of GET /api/options/{ticker}/{date}: the greeks request shape plus
+ * the rest of the chain record the API always emits. `expiration` is
+ * load-bearing for the levels endpoint, which re-consumes this payload.
+ */
+export interface ChainOptionRecord extends OptionRecord {
+  contract_symbol?: string | null;
+  expiration: string;
+  bid?: number | null;
+  ask?: number | null;
+  mark?: number | null;
+  last?: number | null;
+  implied_volatility?: number | null;
+  theta?: number | null;
+  rho?: number | null;
+}
+
 export interface AggregatedStrike {
   strike: number;
   net_gamma: number;
   call_gamma: number;
   put_gamma: number;
+  net_vega: number;
+  call_vega: number;
+  put_vega: number;
   call_oi: number;
   put_oi: number;
   call_volume: number;

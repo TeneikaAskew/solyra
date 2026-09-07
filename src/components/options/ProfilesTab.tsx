@@ -4,6 +4,7 @@ import { MetricCard } from '@/components/shared/MetricCard';
 import {
   useOptionsGreeks,
   EMPTY_GREEKS,
+  type ChainOptionRecord,
   type OptionRecord,
   type GEXByStrike,
   type NodeResult,
@@ -26,9 +27,10 @@ type Filter = 'net' | 'calls' | 'puts';
 interface OptionsResponse {
   ticker: string;
   date: string;
-  options: OptionRecord[];
-  snapshot_timestamp?: string;
-  metadata?: { source?: string; data_source?: string; row_count?: number };
+  options: ChainOptionRecord[];
+  snapshot_timestamp: string;
+  metadata: { source: string; data_source: string; row_count: number };
+  cached: boolean;
 }
 
 interface AvailableDatesResponse {

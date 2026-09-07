@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, Phone, Target, DollarSign, Scissors, Rocket,
-  GitMerge, Shield, Star, Globe, Calendar, RefreshCw, Filter,
+  GitMerge, Shield, Star, Globe, Calendar, RefreshCw,
   Lock, ArrowUpRight, Users, Building, Presentation, Monitor,
   Video, Briefcase, Flame, ChevronRight, ChevronDown,
 } from 'lucide-react';
@@ -45,6 +45,13 @@ export interface CatalystEvent {
   // Insider-specific
   insiders?: number;
   total_value?: number;
+  // SEC 8-K
+  accession_number?: string;
+  // Economic (FRED/Calendar): strings on the wire, '' when unknown
+  country?: string;
+  actual?: string;
+  forecast?: string;
+  previous?: string;
 }
 
 const IMPACT_RANK: Record<string, number> = {
@@ -76,7 +83,6 @@ export interface CatalystsResponse {
   date_range: { from: string; to: string };
   total: number;
   events_by_date: Record<string, CatalystEvent[]>;
-  message?: string;
 }
 
 export interface CatalystTypesResponse {
@@ -602,12 +608,6 @@ export default function CatalystsPage() {
       {error && (
         <div className="rounded-xl border border-[var(--bear)]/40 bg-[var(--bear)]/10 px-4 py-2.5 text-sm text-[var(--bear)]">
           Failed to load catalysts: {(error as Error).message}
-        </div>
-      )}
-      {data?.status === 'no_data' && (
-        <div className="rounded-lg border border-[var(--warn)]/40 bg-[var(--warn)]/10 px-4 py-2.5 text-sm text-[var(--warn)]">
-          <Filter size={14} className="mr-1 inline" />
-          {data.message}
         </div>
       )}
 
