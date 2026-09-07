@@ -173,6 +173,6 @@ body:
           required: true
         - label: >-
             Where this concerns a value the API returns **and I checked it**, I
-            looked at an actual response, not `src/types/` or a fixture. If I
-            did not, I said so above.
+            looked at an actual response, not a type or a fixture. If I did not,
+            I said so.
           required: true

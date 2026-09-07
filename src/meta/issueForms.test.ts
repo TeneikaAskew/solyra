@@ -42,6 +42,13 @@ const MAX_LABEL = 50
 const MAX_BODY_ELEMENTS = 10
 const MAX_CONTACT_NAME = 30
 const MAX_CONTACT_ABOUT = 200
+// A checkbox OPTION label is not an element label and is not bound by the 50
+// above — these are full sentences. 160 is the figure Codex reported; like every
+// other number here it is unsourced and applied on asymmetric cost. When it was
+// added, two options across the two repos sat at 160 and 159 with no headroom at
+// all, which is the exact condition that produced the 244-character description
+// this file exists to prevent. Both were shortened; the longest is now 151.
+const MAX_OPTION_LABEL = 160
 
 // github-issue-forms.json's permitted element types.
 const ELEMENT_TYPES = ['markdown', 'textarea', 'input', 'dropdown', 'checkboxes'] as const
@@ -130,6 +137,12 @@ describe('issue forms', () => {
           opt.required,
           `${file}: checkboxes ${el.id} option "${opt.label}" is not required: true`,
         ).toBe(true)
+        const label = opt.label ?? ''
+        expect(
+          label.length,
+          `${file}: checkboxes ${el.id} option label is ${label.length} chars > ` +
+            `${MAX_OPTION_LABEL}. Measure the FOLDED value: ${label}`,
+        ).toBeLessThanOrEqual(MAX_OPTION_LABEL)
       }
     }
   })
