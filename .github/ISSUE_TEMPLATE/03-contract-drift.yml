@@ -37,6 +37,11 @@ body:
         body built inside a `page.route` handler. The canonical mock takes the null in
         step 3, once the synced schema admits it.
 
+        **Scope `jq` to the FIELD and pass `-Sc`.** Diffing whole
+        pretty-printed schemas gives you multiline blocks and `@@` ranges you
+        have to read around; one compact sorted line per side shows the change
+        itself.
+
         **`contract:check` names the operation and never the field.** It prints
         `components.schemas changed` and stops, so the field-level evidence this
         form asks for has to be produced by diffing the two documents yourself.
@@ -79,13 +84,14 @@ body:
         [api-contract] vendored snapshot is STALE against stocks.
           components.schemas changed (a response or request model)
 
-        # Get the field diff yourself. Real, measured 2026-09-07 — re-run it:
+        # Get the field diff yourself (see above on -Sc). Measured 2026-09-07:
+        $ F='.components.schemas.LiveQuoteResponse.properties.change_pct'
         $ curl -s https://raw.githubusercontent.com/TeneikaAskew/stocks/main/platform/api/openapi.json \
-            | jq '.components.schemas.LiveQuoteResponse' > /tmp/up.json
-        $ jq '.components.schemas.LiveQuoteResponse' tests/fixtures/stocks-openapi.json \
-            | diff - /tmp/up.json
-        < "change_pct": {"title": "Change Pct", "type": "number"}
-        > "change_pct": {"anyOf": [{"type":"number"},{"type":"null"}], "title": "Change Pct"}
+            | jq -Sc "$F" > /tmp/up.txt
+        $ jq -Sc "$F" tests/fixtures/stocks-openapi.json | diff - /tmp/up.txt
+        1c1
+        < {"title":"Change Pct","type":"number"}
+        > {"anyOf":[{"type":"number"},{"type":"null"}],"title":"Change Pct"}
 
         # For a MISSING route, prove absence against the contract, not a grep
         # of a sibling checkout that may not be present:
@@ -120,19 +126,21 @@ body:
       placeholder: |
         A widening, in order.
 
-        Step 1 HERE — widen the TYPE and guard the readers: `VolumeBar.value` to
-        `number | null` in src/hooks/useMarketData.ts, plus every call site tsc then
-        flags. Exercise the null with a TEST-ONLY payload, never the canonical mock
-        (see above). No snapshot change, so contract:check still passes against the
-        current stocks main. Merge, deploy.
+        Step 1 HERE — widen `VolumeBar.value` to `number | null` in
+        src/hooks/useMarketData.ts and guard every call site tsc flags, INCLUDING the
+        AUDIT-marked `?? 0` at src/routes/ChartsPage.tsx:364, which becomes a live
+        Rule 4 violation the moment step 2 emits null. Null exercised by a TEST-ONLY
+        payload (see above). No snapshot change, so contract:check still passes.
+        Merge, deploy.
 
         Step 2 STOCKS — widen `_Bar.volume` to `float | None` in
         platform/api/routers/live.py, handle a null-volume bar in lib/indicators VWAP,
         regenerate openapi.json, merge, deploy.
 
-        Step 3 HERE — `npm run contract:sync`, then move the null INTO the canonical
-        mock and tests/helpers/fixtures/charts.ts now that the schema admits it, and
-        drop the AUDIT-marked fallback at src/routes/ChartsPage.tsx:364.
+        Step 3 HERE, on a NEW branch and PR — the step-1 PR merged two steps ago, so
+        a commit to that head lands nowhere. `npm run contract:sync`, then move the
+        null INTO the canonical mock and tests/helpers/fixtures/charts.ts now that the
+        schema admits it. The type does not move again.
 
         Producer first breaks this: stocks deploys, the API emits null, and the frontend
         in front of it still assumes non-null.
@@ -174,6 +182,6 @@ body:
             snapshot checked against stocks `main`, while filing this issue.
           required: true
         - label: >-
-            I confirmed what the stocks router actually returns rather than
-            assuming the type here was right.
+            I confirmed what the stocks router returns, or that no such router
+            exists, rather than assuming the type here was right.
           required: true

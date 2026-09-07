@@ -191,6 +191,16 @@ If the root cause is in stocks, file or update the issue there and say so on
 this one. Do not add a frontend workaround that hides a backend defect; that is
 how a fabricated value gets a second home.
 
+**And if the WHOLE fix is in stocks, stop here — do not fall through.** Phases
+4 through 8 assume a change in this repo, and with nothing legitimate to
+change, following them means an invented workaround, an empty commit, or
+abandoning the run mid-gate. Instead: say on this issue that the fix is
+tracked at `TeneikaAskew/stocks#<n>`, leave this issue OPEN with that as its
+remaining work, and either hand off to `/resolve-issue <n>` in a stocks
+checkout or say plainly that it needs one. This issue closes when the backend
+fix has merged AND you have re-verified the symptom is gone here — which is
+Phase 1 again, not Phase 9 on faith.
+
 For an architecturally significant call, post the proposed resolution on the
 issue and have it challenged before building it: numbered questions about
 severity, about the order of operations, and about whether the guard
@@ -234,7 +244,8 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
 | A surface is deleted | `grep -rn "<Component>\|<useThing>" src/` — hits before, silent after — plus `npx tsc -b` and `npm run build` clean |
-| A type or contract narrows | `npx tsc -b` failing on the call site before the guard, clean after |
+| A response field is dropped by the API | `npm run contract:sync` then `src/mocks/contract.test.ts` failing — **not** `tsc -b`, which is clean before the sync because the old type still declares the field, and which fails after it for as long as the call site remains. `tsc -b` clean is the AFTER half, once the consumer is gone |
+| A type is widened or a guard added | `npx tsc -b` failing on the unguarded call site, clean after |
 | A dependency is dropped | the importer grep, plus the removal from `package.json` |
 
 What is NOT acceptable is skipping the before half. "It builds now" says
@@ -280,9 +291,9 @@ Standing gates while writing:
   proposed schema to satisfy it fails CI's `contract:check` against stocks
   `main` instead. The null belongs in a test-only payload until step 3.
 
-  Once stocks has merged and deployed, the snapshot sync, the fixture update
-  and the `src/types/` widening land together, and both PR descriptions say
-  which step they are.
+  Once stocks has merged and deployed, step 3 lands the snapshot sync and the
+  canonical fixtures — **not the type, which already widened and deployed in
+  step 1.** Both PR descriptions say which step they are.
 
   **A bare `npm run contract:sync` fetches stocks `main`.** `STOCKS_OPENAPI_REF`
   defaults to `'main'` in `scripts/sync-api-contract.mjs`, and regenerating the
@@ -490,9 +501,18 @@ In order:
       and the fixture cannot.
    2. **Then stocks.** Widen the response model, regenerate
       `platform/api/openapi.json`, merge, deploy.
-   3. **Then here again.** `npm run contract:sync`, then move the null INTO
-      the canonical mock and `tests/helpers/fixtures/` now that the schema
-      admits it.
+   3. **Then here again, on a NEW branch and a NEW PR.** `npm run
+      contract:sync`, then move the null into the canonical mock and
+      `tests/helpers/fixtures/` now that the schema admits it. The type does
+      not move again; it widened in step 1.
+
+      This step needs its own PR because the step-1 PR merged two steps ago,
+      and a commit pushed to a merged head lands in no pull request at all.
+      Phase 7 opens one PR per run, so a widening means going back to Phase 7
+      for the third step rather than falling through to Phase 9. Until it
+      merges, this repo's vendored snapshot is stale against stocks `main` and
+      **CI's `contract:check` fails on every unrelated PR** — so it is not
+      optional cleanup, and the issue does not close before it lands.
 
    A narrowing splits, and lumping the two together gets one of them
    backwards:
