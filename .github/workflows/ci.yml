@@ -67,8 +67,13 @@ jobs:
       # turns the next PR here red instead of breaking the app at runtime.
       # The fix is `npm run contract:sync` plus whatever src/types or fixture
       # change the diff implies. Deliberately NOT continue-on-error.
-      - name: API contract snapshot in sync with stocks main
-        run: npm run contract:check
+      #
+      # Runs LAST, after the local checks. It is the one step whose outcome
+      # depends on another repository, so putting it first meant a cross-repo
+      # block (stocks not having committed its snapshot yet) aborted the job
+      # before tsc, vitest or the build reported anything at all — the PR that
+      # added this step had no local signal on any of its heads. Ordering does
+      # not weaken it: the job still fails when the vendored copy is stale.
 
       # Type-check the `app`, `node` AND `test` projects. Run before the build
       # so a type error reports as a type error rather than a build failure.
@@ -81,6 +86,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: API contract snapshot in sync with stocks main
+        run: npm run contract:check
 
   e2e:
     name: e2e (chromium, mocked)
