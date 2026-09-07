@@ -28,6 +28,14 @@ body:
         schema that validates anything, so a renamed field there passes CI in
         both repos and breaks this app at runtime.
 
+        **`contract:check` names the operation and never the field.** It prints
+        `components.schemas changed` and stops, so the field-level evidence this
+        form asks for has to be produced by diffing the two documents yourself.
+        The placeholder below shows that recipe against a widening that really
+        happened — `LiveQuoteResponse.change_pct` went nullable on 2026-09-07 —
+        and it is dated for the same reason everything else here is: re-run it,
+        do not paste it.
+
   - type: input
     id: surface
     attributes:
@@ -57,26 +65,21 @@ body:
       description: A real response, or the vendored snapshot checked against stocks main. Command and output together.
       render: shell
       placeholder: |
-        # contract:check names the operation but never prints the field diff:
+        # contract:check names the operation, never the field:
         $ npm run contract:check
-        [api-contract] vendored snapshot is STALE against stocks. Run: npm run contract:sync
-          operations changed: GET /api/me/preferences
+        [api-contract] vendored snapshot is STALE against stocks.
           components.schemas changed (a response or request model)
 
-        # So get the field-level evidence yourself, by diffing the two
-        # documents. Paste YOUR output — the two diff lines below are the
-        # SHAPE of an answer, not a finding about this repo:
+        # Get the field diff yourself. Real, measured 2026-09-07 — re-run it:
         $ curl -s https://raw.githubusercontent.com/TeneikaAskew/stocks/main/platform/api/openapi.json \
-            | jq '.paths."/api/me/preferences".get.responses."200"' > /tmp/up.json
-        $ jq '.paths."/api/me/preferences".get.responses."200"' tests/fixtures/stocks-openapi.json \
+            | jq '.components.schemas.LiveQuoteResponse' > /tmp/up.json
+        $ jq '.components.schemas.LiveQuoteResponse' tests/fixtures/stocks-openapi.json \
             | diff - /tmp/up.json
-        < "accent": {"type": "string"}
-        > "accent": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+        < "change_pct": {"title": "Change Pct", "type": "number"}
+        > "change_pct": {"anyOf": [{"type":"number"},{"type":"null"}], "title": "Change Pct"}
 
-        # For a MISSING route, prove absence against the contract itself rather
-        # than grepping a sibling checkout that may not be present. Re-run this,
-        # do not trust the line below — the point of the form is that an example
-        # goes stale:
+        # For a MISSING route, prove absence against the contract, not a grep
+        # of a sibling checkout that may not be present:
         $ jq -r '.paths | keys[] | select(test("journal/stats"))' tests/fixtures/stocks-openapi.json
         (no output — the operation is not declared)
     validations:
@@ -104,13 +107,19 @@ body:
     id: paired-change
     attributes:
       label: The paired change set
-      description: "Rule 6: regenerate the snapshot in stocks, then contract:sync plus types plus fixture here, one change set. Say which side moves first."
+      description: "Rule 6: the consumer changes first, in both directions. A widening is three steps — say which one this is."
       placeholder: |
-        stocks first: widen `_Bar.volume` to `float | None` in platform/api/routers/live.py and
-        handle a null-volume bar explicitly in lib/indicators VWAP, then regenerate
-        platform/api/openapi.json. Here: `npm run contract:sync`, admit null on `VolumeBar`
-        in src/hooks/useMarketData.ts, add the null case to tests/helpers/fixtures/charts.ts,
-        and drop the AUDIT-marked fallback at src/routes/ChartsPage.tsx:364.
+        A widening, in order. Step 1 HERE: admit null on `VolumeBar` in
+        src/hooks/useMarketData.ts's reader path and add a null-volume case to
+        tests/helpers/fixtures/charts.ts, so the app tolerates both shapes. No snapshot
+        change, so contract:check still passes against the current stocks main. Merge, deploy.
+        Step 2 STOCKS: widen `_Bar.volume` to `float | None` in platform/api/routers/live.py,
+        handle a null-volume bar in lib/indicators VWAP, regenerate openapi.json, deploy.
+        Step 3 HERE: `npm run contract:sync`, widen the type, drop the AUDIT-marked fallback
+        at src/routes/ChartsPage.tsx:364.
+
+        Producer first breaks this: stocks deploys, the API emits null, and the frontend in
+        front of it still assumes non-null.
     validations:
       required: true
 

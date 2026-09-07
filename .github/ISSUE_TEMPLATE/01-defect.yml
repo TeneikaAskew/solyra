@@ -21,6 +21,14 @@ body:
         and is now false is exactly the failure this form exists to catch, so
         check the current system rather than reusing a past finding.
 
+        **Two things every evidence field wants, and the second gets forgotten.**
+        First the response or command output itself, from the running system and
+        never a fixture — say which backend you hit, local `:8000`, staging or
+        prod. Then the blast radius: a shared hook or a `src/lib/` helper has
+        more callers than the page that filed the issue, and a fix scoped to
+        that one page misses the rest. Paste both, and paste YOUR output — every
+        example in this form is dated because the call sites move.
+
         "I have not measured this" is a complete and acceptable answer. Write it
         where it applies rather than filling a section with a guess.
 
@@ -30,9 +38,12 @@ body:
       label: Summary
       description: What is wrong. One or two sentences, stating the defect rather than the symptom.
       placeholder: |
-        The dashboard top-setup tile renders a null `win_rate` as `—%` rather than `—`,
-        because the value is formatted before it is null-checked. The server is
-        right; the render is wrong.
+        HYPOTHETICAL, and say so if you reuse it — the dashboard win rate is guarded
+        today at DashboardPage.tsx:623 and :628, which is why the evidence field below
+        shows those guards rather than a defect. The SHAPE of the finding: an unguarded
+        call site formats a null `win_rate` before checking it, so the tile renders `—%`,
+        which reads as a measured zero rather than an absent value. State the defect
+        (the missing guard), not the symptom (the odd-looking tile).
     validations:
       required: true
 
@@ -54,9 +65,8 @@ body:
         623:  {topCard.win_rate != null && <ScoreStars value={Math.round(topCard.win_rate / 20)} />}
         (both guarded — an unguarded one renders "—%" instead of "—")
 
-        # Blast radius: a shared hook or src/lib/ helper has more callers than
-        # the page that filed this. Paste YOUR output — this one is dated
-        # 2026-09-07 and the call sites move.
+        # Blast radius: a shared hook has more callers than the page that
+        # filed this. Dated 2026-09-07; the call sites move.
         $ grep -rn "useLatestOptionsDate" src/
         src/components/options/TrinityTab.tsx:1,26
         src/components/options/SwingMode.tsx:3,794
