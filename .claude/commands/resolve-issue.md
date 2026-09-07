@@ -358,7 +358,10 @@ Standing gates while writing:
 Run the gates and paste real output:
 
 ```bash
-npx tsc -b            # the check that catches fixture drift
+npx tsc -b            # catches a FIXTURE drifting from src/types/ — not
+                      # src/types/ drifting from the API. The fixtures
+                      # `satisfies` the types, so this proves the app agrees
+                      # with itself; the two checks below are what reach stocks
 npm test
 npm run build
 npm run e2e
