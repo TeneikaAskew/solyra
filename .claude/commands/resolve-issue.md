@@ -124,7 +124,8 @@ if git show-ref --verify --quiet "refs/heads/<headRefName>"; then
   # tested against a head missing remote commits, and only fail at push.
   # Rule 0 applies to whatever you do next: no force-push, no rebase.
 else
-  git checkout -b "<headRefName>" --track "origin/<headRefName>"
+  git checkout -b "<headRefName>" --track "origin/<headRefName>" \
+    || { echo "CANNOT CREATE <headRefName> — stop, do not edit"; false; }
 fi
 
 # CASE B — no existing PR. Create one branch and remember its name; every
@@ -132,8 +133,16 @@ fi
 # Name the base explicitly: without it the branch forks from whatever is
 # checked out, so an unrelated feature branch's commits ride into the PR, or
 # the branch starts behind main. `git fetch` above does not move HEAD.
-git checkout -b fix/<short-description> origin/main   # or feature/ chore/ docs/ test/
+git checkout -b fix/<short-description> origin/main \
+  || { echo "CANNOT CREATE the branch — stop, do not edit"; false; }
 ```
+
+**Every one of those checkouts is guarded, not just the first.** `checkout -b`
+fails when the name is already taken — by an earlier attempt, or a closed PR's
+leftover branch — and a failed checkout leaves you **on the branch you were
+already on**, which in this repo may be the Lovable-connected one. The run then
+captures that name, edits, commits and pushes it. Rule 0 has no escape hatch
+and this is the likeliest way to need one.
 
 **CASE A has taken your baseline away.** Phase 1 requires reproducing the
 finding against the current tree, and the tree you are now on carries the
@@ -144,10 +153,19 @@ superseded — with the PR's own correctness as the evidence for closing it.
 For anything that reproduces in code — a render, a unit case, `tsc -b` — keep
 an unfixed tree to measure against and say which one you used:
 
+**Two different questions, two different baselines.** "Is this issue still
+real?" is about the world as it is now, so it is answered against current
+`origin/main` — an old merge base can still reproduce a defect `main` has since
+fixed, and continuing the PR then means finishing redundant work. "Does this
+PR's change do what it claims?" is the before/after, and that is the merge
+base. Use `origin/main` for validity and the merge base for the failing-before
+half:
+
 ```bash
 BASE_TREE=$(mktemp -d -t base-tree-XXXXXX) && rmdir "$BASE_TREE"
-git worktree add "$BASE_TREE" \
-  "$(git merge-base origin/main <headRefName>)"   # the PR's own base
+git worktree add "$BASE_TREE" origin/main          # validity: is it still real?
+# ...and for the PR's own before/after, the base it forked from:
+#   git worktree add "$BASE_TREE" "$(git merge-base origin/main <headRefName>)"
 ...
 git worktree remove "$BASE_TREE"    # when the before-half is captured
 ```
@@ -332,8 +350,15 @@ Standing gates while writing:
   `catch { return [] }` in a data-access path, no fabricated success. Missing
   values stay `null` end to end. Run the `fallback-guard` agent on the diff.
 - **Rule 5** — no new financial math here. If it should exist, add it to stocks.
-- **Rule 6** — if `src/types/` changes, confirm the stocks router actually
-  returns that shape; never reshape a type to make a fixture compile.
+- **Rule 6** — if an **API-facing type** changes, confirm the stocks router
+  actually returns that shape; never reshape a type to make a fixture compile.
+  **Not only `src/types/`**: plenty of request and response shapes are declared
+  where they are used — `LiveQuote` in `src/hooks/useLiveQuote.ts:3`,
+  `OptionsResponse` inside `ProfilesTab.tsx`, `StratPredictRequest` in
+  `useAdmin.ts`. Keying this on a directory means the ones declared in a hook
+  or a component change without the check ever firing, and for an operation in
+  `UNMOCKED_REQUESTED` there is no payload validation to catch it either. The
+  trigger is what the type describes, not where it sits.
 
   **For a widening, the type and the canonical fixture do NOT move together.**
   Phase 8 sets out the three steps; the part that matters here is that step 1
@@ -435,7 +460,29 @@ git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
 comm -12 <(changed_lines HEAD $FILES) <(diag_lines $FILES) > /tmp/lint-new.txt
 test ! -s /tmp/lint-new.txt \
   || { cat /tmp/lint-new.txt; echo "^ lint errors on lines you changed"; false; }
+
+# ...and the second half: diagnostics your change caused on lines it did NOT
+# touch. `head_sig` lints HEAD's content of the same paths through --stdin, so
+# no worktree and no pre-edit snapshot is needed.
+rule_sig() { npx eslint -f json "$@" | node -e "<file TAB ruleId per message>"; }
+head_sig() { for f in "$@"; do
+    git show "HEAD:$f" 2>/dev/null \
+      | npx eslint --stdin --stdin-filename "$f" -f json | node -e "<same>"
+  done | sort; }
+
+comm -13 <(head_sig $FILES) <(rule_sig $FILES) > /tmp/lint-added.txt
+test ! -s /tmp/lint-added.txt \
+  || { cat /tmp/lint-added.txt; echo "^ new diagnostics your change caused"; false; }
 ```
+
+**Both, because each misses what the other catches.** Deleting the last use of
+an import creates `no-unused-vars` on the **import line, which you did not
+touch** — measured: the diagnostic lands on line 1, the changed lines are 3 and
+4, and the intersection is empty. And the rule-count comparison alone misses a
+swap, where one violation replaces another of the same rule in the same file
+and the multiset does not move. Verified on this tree: the count check is clean
+with no edit, catches the deleted-import case, and prints nothing for the swap
+that the line check catches at 441.
 
 **Anchor to the lines, not to a count per rule.** The obvious version of this
 gate takes a `file + ruleId` signature before and after and diffs them, and it
@@ -684,9 +731,13 @@ In order:
       watch until the old bundle stops being requested, rather than promoting
       as soon as step 1's deploy is green.
    3. **Then here again, on a NEW branch and a NEW PR.** `npm run
-      contract:sync`, then move the null into the canonical mock and
-      `tests/helpers/fixtures/` now that the schema admits it. The type does
-      not move again; it widened in step 1.
+      contract:sync`, then move **the payload the table above calls for** into
+      the canonical mock and `tests/helpers/fixtures/` now that the schema
+      admits it — the `null` for a nullable widening, the **omitted key** for
+      an optional-only one. Saying "the null" unconditionally puts a value into
+      the fixture that an optional-but-non-nullable schema rejects, which is
+      the same conflation the table two paragraphs up exists to prevent. The
+      type does not move again; it widened in step 1.
 
       This step needs its own PR because the step-1 PR merged two steps ago,
       and a commit pushed to a merged head lands in no pull request at all.
@@ -710,6 +761,14 @@ In order:
      If this app stops sending a still-required field first, every request to
      the deployed stocks fails validation immediately. Stocks makes it optional
      and deploys, THEN this app stops sending it, THEN stocks drops it.
+
+     **And that PR syncs the intermediate schema too.** With the vendored
+     snapshot still marking the field required, dropping it from the typed
+     sample makes `contract.test.ts` reject the omission, and `contract:check`
+     reports the snapshot stale against a `main` that has already moved — so
+     the sender PR cannot pass Phase 5 without `npm run contract:sync` for the
+     now-optional shape. That is two syncs, not one: the optional schema here,
+     and the post-removal schema in the final PR.
 
      **The request type moves in the sender PR, not the final sync.** Once
      stocks has made the field optional, this app cannot stop sending it while
