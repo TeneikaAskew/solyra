@@ -33,12 +33,7 @@ body:
     id: why-deferred
     attributes:
       label: Why it was not done there
-      description: >-
-        Say it plainly, with the context that kept it out. "It is a deliberate,
-        documented, tab-scoped design, the page is unlinked from user nav, and
-        no XSS sink exists in the app today, so exploiting it requires a second
-        vulnerability that does not exist" is a reason. A deferral without one
-        reads as an oversight.
+      description: Say it plainly, with the context that kept it out. A deferral without a stated reason reads as an oversight.
       placeholder: |
         These are pre-existing gaps rather than regressions: mock mode has never had routes for
         them, and they are mostly mutations, which is presumably why. Adding a check that every
@@ -49,7 +44,7 @@ body:
   - type: textarea
     id: evidence
     attributes:
-      label: Evidence from the running system or the current tree
+      label: Evidence from the app or the current tree
       description: >-
         Show the remainder is real and still open, now. For a move, this is the
         "still reproduces here" check with the updated paths. Paste command and

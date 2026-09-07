@@ -34,12 +34,7 @@ body:
     id: evidence
     attributes:
       label: Evidence from the running system
-      description: >-
-        Paste the command or request AND its output, together. The real API
-        response from the network tab or a direct call, `npm test` output,
-        `npx tsc -b`, a Playwright run, `npm run contract:check`, or a grep over
-        the actual tree. Screenshots count for a render defect. Say which
-        backend you hit: local :8000, staging, or prod.
+      description: "Paste the command or request AND its output. Say which backend you hit: local :8000, staging, or prod."
       render: shell
       placeholder: |
         $ curl -s -o /dev/null -w '%{http_code}\n' -X PUT https://<deployed>/api/me/preferences -d '{}'
@@ -54,15 +49,20 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot, for a render defect
+      description: >-
+        Drag the image in here. The evidence field above sets `render`, which
+        turns off file uploads, so a visual defect needs its own field. Before
+        and after, or the wrong value in place.
+
   - type: dropdown
     id: owner
     attributes:
       label: Which repo owns the fix
-      description: >-
-        Decide before writing code. A 0% where the server sent null is a Rule 4
-        violation here. A 0% the server actually sent is a stocks issue, and a
-        frontend workaround for a backend defect is how a fabricated value gets
-        a second home.
+      description: Decide before writing code. A frontend workaround for a backend defect is how a fabricated value gets a second home.
       options:
         - solyra — render, state, or a value coerced on this side
         - stocks — the API returns the wrong shape or value
@@ -120,12 +120,7 @@ body:
     id: remediation
     attributes:
       label: Proposed remediation direction
-      description: >-
-        Direction, not a patch. The order that keeps working: fix the render
-        boundary first so the user stops seeing something false, then the
-        source, then extract a pure helper and unit-test it so the class cannot
-        come back. If the answer is "do not fix", say so and put the reasoning
-        under Evidence.
+      description: Direction, not a patch. Render boundary first, then the source, then a pure helper with a test so the class cannot return.
       placeholder: |
         1. Render `—` with the unavailable badge at the boundary; keep null through the hook.
         2. Widen `_Bar.volume` to `float | None` on the stocks side so the honest null survives

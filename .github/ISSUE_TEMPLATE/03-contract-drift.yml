@@ -54,11 +54,7 @@ body:
     id: api-evidence
     attributes:
       label: Evidence from the API
-      description: >-
-        A real response, or the snapshot checked against stocks main. Paste
-        command and output. `npm run contract:check` fetches stocks `main` and
-        fails with a diff when the vendored copy is stale; a search of the
-        stocks tree settles whether a route exists at all.
+      description: A real response, or the vendored snapshot checked against stocks main. Command and output together.
       render: shell
       placeholder: |
         $ npm run contract:check
@@ -91,11 +87,7 @@ body:
     id: paired-change
     attributes:
       label: The paired change set
-      description: >-
-        Rule 6: a shape change means regenerate the OpenAPI snapshot in stocks,
-        then here run `npm run contract:sync` and update `src/types/` and the
-        affected fixture, in the same change set, recorded in both PR
-        descriptions. Say which side moves first and why.
+      description: "Rule 6: regenerate the snapshot in stocks, then contract:sync plus types plus fixture here, one change set. Say which side moves first."
       placeholder: |
         stocks first: widen `_Bar.volume` to `float | None` in platform/api/routers/live.py and
         handle a null-volume bar explicitly in lib/indicators VWAP, then regenerate

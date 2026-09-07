@@ -38,6 +38,18 @@ With no argument, list what is open and stop for a decision:
 Report counts by label, then ask which to take. Do not pick one yourself unless
 the user named a label or a number.
 
+With a **label** (`/resolve-issue tech-debt`, `/resolve-issue question`), list
+the open issues carrying it and stop for a selection. Resolve to exactly one
+issue number before going further; never start work across a whole label:
+
+```bash
+# via MCP: mcp__github__list_issues owner=TeneikaAskew repo=solyra state=OPEN
+#          labels=["<label>"] orderBy=UPDATED_AT direction=DESC minimal_output=true
+```
+
+If exactly one matches, say so and proceed. If none do, say the label is empty
+rather than widening the search on your own.
+
 With an issue number, read the body **and every comment** first. Comments carry
 the correction history: a challenged severity, a review reply that already
 implemented half of it, a prior status comment naming what is still open.
@@ -53,9 +65,26 @@ git branch -r | grep -iE "<issue-keyword>"
 **Branch before touching any file** (CLAUDE.md Rule 2). Never edit on the
 Lovable-connected branch:
 
+The two cases are exclusive. Check out the existing head, or create a branch,
+never both:
+
 ```bash
 git status && git rev-parse --abbrev-ref HEAD
+git fetch origin
+
+# CASE A — a PR already exists for this issue. Work on ITS head; do not open
+# a second PR.
+git checkout -B "<the PR's headRefName>" "origin/<the PR's headRefName>"
+
+# CASE B — no existing PR. Create one branch and remember its name; every
+# later phase refers back to it rather than reconstructing a prefix.
 git checkout -b fix/<short-description>    # or feature/ chore/ docs/ test/
+```
+
+Whichever case you took, capture the branch name now:
+
+```bash
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
 ```
 
 Rule 0 has no escape hatch: no force-push, no rebase, no amend or squash of
@@ -236,13 +265,32 @@ Commit messages: conventional format, imperative mood, subject under 72 chars,
 body wrapped at 72, no AI attribution and no `Co-Authored-By` for an assistant.
 The body carries the mechanism, not just the change.
 
+Push the branch you are actually on. Do not reconstruct a `fix/` prefix here:
+Phase 0 may have created a `feature/`, `chore/`, `docs/` or `test/` branch, or
+checked out an existing PR's head, and pushing a name that does not exist fails
+with a refspec error.
+
 ```bash
-git push -u origin fix/<short-description>
+git push -u origin HEAD          # or "$BRANCH", captured in Phase 0
 ```
 
 Retry a network failure up to 4 times with backoff (2s, 4s, 8s, 16s). Never
-force-push (Rule 0). Then subscribe to the PR's activity so CI and review
-events wake this session.
+force-push (Rule 0).
+
+**A push is not a PR.** If Phase 0 took CASE B (a branch you created), open the
+pull request now and keep the number it returns; every step below refers to it:
+
+```
+mcp__github__create_pull_request
+  owner=TeneikaAskew repo=solyra base=main
+  head="<the branch you just pushed>"
+  title="<type(scope): description>"
+  body="<the filled template>"
+```
+
+If Phase 0 took CASE A, the PR already exists and the push updated it. Do not
+open a second one. Either way, confirm you have a PR number before Phase 8,
+then subscribe to its activity so CI and review events wake this session.
 
 Keep the Lovable-connected branch in a working state at all times: a broken
 build there is a broken editor, not just a red CI run.

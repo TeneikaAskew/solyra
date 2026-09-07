@@ -4,31 +4,30 @@
 #
 # These forms apply to the GitHub web UI only. Issues opened through the API
 # bypass them entirely, which includes anything an agent files.
+#
+# contact_links: `name` is kept under 50 characters and `about` under 200,
+# because over-length values make the whole file invalid and the links then
+# silently do not render.
 blank_issues_enabled: true
 
 contact_links:
-  - name: The backend, the API, and the research pipeline live in stocks
+  - name: Backend and API issues go to stocks
     url: https://github.com/TeneikaAskew/stocks/issues/new/choose
     about: >-
-      This repo is the frontend only. If the API returns the wrong shape or the
-      wrong value, if a route is missing, or if the math is wrong, file it there
-      instead. A frontend workaround for a backend defect is how a fabricated
-      value gets a second home. If the fix needs both sides, file here with the
+      This repo is the frontend only. Wrong shape, wrong value, or a missing
+      route belongs there. If the fix needs both sides, file here with the
       contract-drift form and link the stocks issue.
 
-  - name: The rules these forms are enforcing
+  - name: The rules these forms enforce
     url: https://github.com/TeneikaAskew/solyra/blob/main/CLAUDE.md
     about: >-
-      Rule 0 (never rewrite published git history — Lovable), Rule 4 (no silent
-      fallbacks; a missing value stays null and only the presentation boundary
-      renders an em-dash), Rule 5 (one source of truth for math), Rule 6
-      (cross-repo API contract drift), Rule 2.5 (read reviews before merging).
+      Rule 0 (never rewrite published history, Lovable), Rule 4 (no silent
+      fallbacks; null stays null and only the presentation boundary renders an
+      em-dash), Rule 5, Rule 6, Rule 2.5.
 
-  - name: How to get real evidence instead of a fixture
+  - name: Getting evidence instead of a fixture
     url: https://github.com/TeneikaAskew/solyra/blob/main/CLAUDE.md
     about: >-
-      `npm run dev` proxies /api to a local backend when one is listening on
-      :8000 and to solyra-api-staging otherwise, so you can see real responses.
-      `npm run contract:check` fetches stocks main and diffs the vendored
-      OpenAPI snapshot. The fixtures satisfies the types, so they only prove the
-      app agrees with itself; they are never evidence about the server.
+      npm run dev proxies /api to a real backend, so you can see real
+      responses. npm run contract:check diffs the vendored OpenAPI snapshot.
+      Fixtures only prove the app agrees with itself.

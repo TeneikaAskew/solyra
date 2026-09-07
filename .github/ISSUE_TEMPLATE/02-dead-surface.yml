@@ -58,11 +58,7 @@ body:
     id: forensics
     attributes:
       label: How it got here
-      description: >-
-        Git forensics with dated commits, using the pickaxe over the full
-        lineage including the pre-split history. What the commit message said
-        matters: a rewrite that claims "all other pages are untouched" while
-        dropping a mount is telling you this was accidental.
+      description: Git forensics with dated commits, using the pickaxe over the full lineage including pre-split history.
       render: shell
       placeholder: |
         $ git log --oneline --all -S "TermHover" -- src platform/src
@@ -80,10 +76,7 @@ body:
     id: backend
     attributes:
       label: Backend state
-      description: >-
-        If the surface calls an endpoint, say whether that endpoint is alive in
-        stocks and whether it is covered there. Deleting a frontend consumer
-        does not retire the route, and the route may be worth keeping.
+      description: If the surface calls an endpoint, say whether that endpoint is alive and covered in stocks.
       placeholder: |
         `GET /api/glossary/gamma` is alive and pytest-covered
         (platform/api/routers/glossary.py:30 in stocks). It stays available if a future surface
