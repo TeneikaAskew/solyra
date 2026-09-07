@@ -29,6 +29,13 @@ body:
         that one page misses the rest. Paste both, and paste YOUR output — every
         example in this form is dated because the call sites move.
 
+        **Most `/api` routes need the bearer token.** `authedFetch`'s
+        `OPEN_PREFIXES` is only `/api/health`, `/api/me`, `/api/config/firebase`
+        and `/api/waitlist`; everything else 401s to a bare `curl` against a
+        deployed host. Either send an `Authorization: Bearer <id token>` header,
+        or paste the browser DevTools network response, which is already
+        authenticated — and say which you did.
+
         "I have not measured this" is a complete and acceptable answer. Write it
         where it applies rather than filling a section with a guess.
 
@@ -54,25 +61,25 @@ body:
       description: "Command or request AND its output, plus the consumer search. Say which backend you hit: local :8000, staging, or prod."
       render: shell
       placeholder: |
-        # A real response, never a fixture. Say which backend you hit.
-        $ curl -s "https://<deployed>/api/playbook/IWM" | jq '.cards[0].win_rate'
+        # A real response, never a fixture. Say which backend, and note that a
+        # gated route needs the token (see above) — a bare curl 401s.
+        $ curl -s -H "Authorization: Bearer $ID_TOKEN" \
+            "https://<deployed>/api/playbook/IWM" | jq '.cards[0].win_rate'
         null
 
-        # Then what the app does with it. The null is legitimate; the defect is
-        # the one call site that does not guard it.
+        # Then what the app does with it. The null is legitimate; the defect
+        # would be a call site that does not guard it.
         $ grep -rn "win_rate" src/routes/DashboardPage.tsx
-        469:  ...filter((c): c is PlaybookCard & { win_rate: number } => c.win_rate != null)
-        623:  {topCard.win_rate != null && <ScoreStars value={Math.round(topCard.win_rate / 20)} />}
+        623:  {topCard.win_rate != null && <ScoreStars .../>}
+        628:  {topCard.win_rate == null ? NA : `${fmtNum(topCard.win_rate, 0)}%`}
         (both guarded — an unguarded one renders "—%" instead of "—")
 
-        # Blast radius: a shared hook has more callers than the page that
-        # filed this. Dated 2026-09-07; the call sites move.
+        # Blast radius (see above). Dated 2026-09-07; the call sites move.
         $ grep -rn "useLatestOptionsDate" src/
         src/components/options/TrinityTab.tsx:1,26
         src/components/options/SwingMode.tsx:3,794
         src/hooks/useOptionsDates.ts:42        (the definition)
-        Two consumers sharing one cache key, and the count is the point: a fix
-        scoped to the page that filed this would miss the other one.
+        Two consumers, one cache key — a fix scoped to the filing page misses one.
     validations:
       required: true
 

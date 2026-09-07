@@ -224,6 +224,22 @@ Do not extend an existing silent fallback you find on the way. Mark it
 Before the fix, not after. Run it against the **unfixed** code and paste the
 failure. A test that passes against pre-fix code is testing something else.
 
+**Where there is no behaviour, the same discipline takes a different form.**
+A dead-surface deletion has nothing to exercise — the point is that nothing
+calls it — and a permanent test naming a deleted file is worse than no test.
+The requirement is a check that FAILS before the change and PASSES after, run
+both ways and pasted; it does not have to be a Vitest or Playwright case:
+
+| Resolution | The before/after check |
+|---|---|
+| A behaviour changes | a unit or E2E test, as below |
+| A surface is deleted | `grep -rn "<Component>\|<useThing>" src/` — hits before, silent after — plus `npx tsc -b` and `npm run build` clean |
+| A type or contract narrows | `npx tsc -b` failing on the call site before the guard, clean after |
+| A dependency is dropped | the importer grep, plus the removal from `package.json` |
+
+What is NOT acceptable is skipping the before half. "It builds now" says
+nothing; "it did not build before and builds now" is the evidence.
+
 - **Unit (Vitest)**: colocated in `src/` as `*.test.ts{,x}`. Prefer extracting a
   pure helper and testing that over mounting a component.
 - **E2E (Playwright)**: `tests/<page>/`, one folder per page or area, never at
@@ -253,10 +269,20 @@ Standing gates while writing:
   values stay `null` end to end. Run the `fallback-guard` agent on the diff.
 - **Rule 5** — no new financial math here. If it should exist, add it to stocks.
 - **Rule 6** — if `src/types/` changes, confirm the stocks router actually
-  returns that shape; never reshape a type to make a fixture compile. If the
-  shape changed on the stocks side: regenerate its OpenAPI snapshot there, then
-  here update `src/types/` and the affected fixture in the same change set, and
-  say so in **both** PR descriptions.
+  returns that shape; never reshape a type to make a fixture compile.
+
+  **For a widening, the type and the canonical fixture do NOT move together.**
+  Phase 8 sets out the three steps; the part that matters here is that step 1
+  changes the type and the readers only, and leaves the canonical mocks and
+  `tests/helpers/fixtures/` alone. They `satisfies` the types and are
+  Ajv-validated against the vendored schema, so a null in one fails
+  `src/mocks/contract.test.ts` against the still-old schema — and syncing the
+  proposed schema to satisfy it fails CI's `contract:check` against stocks
+  `main` instead. The null belongs in a test-only payload until step 3.
+
+  Once stocks has merged and deployed, the snapshot sync, the fixture update
+  and the `src/types/` widening land together, and both PR descriptions say
+  which step they are.
 
   **A bare `npm run contract:sync` fetches stocks `main`.** `STOCKS_OPENAPI_REF`
   defaults to `'main'` in `scripts/sync-api-contract.mjs`, and regenerating the
@@ -468,9 +494,23 @@ In order:
       the canonical mock and `tests/helpers/fixtures/` now that the schema
       admits it.
 
-   A narrowing runs the same way for the same reason: this app stops reading
-   or sending the field first, and stocks drops it only once nothing consumes
-   it. Say in both PR descriptions which step this one is.
+   A narrowing splits, and lumping the two together gets one of them
+   backwards:
+
+   - **A field this app READS that stocks will drop** — consumer-first, as
+     above. This app stops reading it, then stocks removes it.
+   - **A field this app SENDS that stocks will stop requiring** — the reverse.
+     If this app stops sending a still-required field first, every request to
+     the deployed stocks fails validation immediately. Stocks makes it optional
+     and deploys, THEN this app stops sending it, THEN stocks drops it.
+
+   The invariant underneath both, and under the widening, is the same:
+   **whichever side is receiving must tolerate the new shape before the sending
+   side produces it.** For a response that is the frontend; for a request body
+   it is the API. "Consumer-first" is shorthand for a response, not a rule about
+   repositories.
+
+   Say in both PR descriptions which case and which step this one is.
 
 Resolving is part of the fix. A finding fixed in a later PR with the original
 thread left open reads as unaddressed to everyone but you; if the fix landed

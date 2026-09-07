@@ -135,10 +135,14 @@ body:
     id: verify
     attributes:
       label: Verify
-      description: The exact commands that prove the change is safe, including the greps that must return nothing.
+      description: "The exact commands that prove the change is safe. What counts as proof flips with the option you chose."
       placeholder: |
-        `npx tsc -b`, `npm test`, `npm run e2e`; and the same grep you ran above now
-        returns nothing. Paste the pattern, not just the word "clean".
+        DELETE — `npx tsc -b`, `npm test`, `npm run e2e`; and the same grep you ran
+        above now returns NOTHING. Paste the pattern, not just the word "clean".
+
+        REVIVE — the opposite: that grep must now return the new importer, and a test
+        exercising the surface where it mounts. A revived component with still zero
+        importers is the original finding, unchanged.
     validations:
       required: true
 
