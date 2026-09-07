@@ -502,8 +502,19 @@ FILES="<the files this issue's fix touches>"
 # what each file is compared against; it does not add the existing PR's other
 # files. An earlier commit can carry a lint error in file A while this session
 # edits only file B, and a gate scoped to B never lints A. So under CASE A,
-# derive the set from the whole PR and add anything new on top:
-#   FILES="$(git diff --name-only --diff-filter=d "$LINT_BASE" HEAD) <yours>"
+# derive the set mechanically rather than listing it by hand:
+#   FILES="$(git diff --name-only --diff-filter=d "$LINT_BASE") \
+#          $(git ls-files --others --exclude-standard)"
+# ONE ref, for the same reason _base_path takes one: `"$LINT_BASE" HEAD` diffs
+# commit-to-commit and cannot see this session's UNCOMMITTED edits, so a file
+# the PR never touched but you just changed is left out of its own gate.
+# Measured on a probe — PR commit adds src/b.ts, this session edits src/a.ts and
+# creates untracked src/c.ts:
+#   two refs : src/b.ts
+#   one ref  : src/a.ts src/b.ts
+#   --others : src/c.ts
+# The one-ref form is a superset of the two-ref one, so it needs no manual
+# `<yours>` on top; --others adds the untracked files `git diff` cannot see.
 git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
                       # emits no hunk for it, so every line of it would count
                       # as unchanged and its errors would pass this gate
