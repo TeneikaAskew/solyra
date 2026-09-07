@@ -220,8 +220,50 @@ test.describe('/auth/action', () => {
     await page.goto('/auth/action?mode=resetPassword', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByTestId('auth-action-invalid')).toBeVisible();
-    await expect(page.getByTestId('auth-action-cta')).toHaveAttribute('href', '/dashboard');
     expect(calls).toHaveLength(0);
+
+    // "Go to sign in" ends on the sign-in form (signs out first, a no-op
+    // here), never on whatever account this browser might hold.
+    await page.getByTestId('auth-action-cta').click();
+    await expect(page.getByTestId('signin-screen')).toBeVisible();
+  });
+
+  test('second-factor removal requires an explicit confirmation before it is applied', async ({ page }) => {
+    await firebaseMode(page);
+    const calls = await mockIdentityToolkit(page, (call) => {
+      if (call.path.endsWith('accounts:resetPassword')) {
+        // The SDK requires mfaInfo on a REVERT_SECOND_FACTOR_ADDITION code
+        // (it builds MultiFactorInfo from it) and rejects the check otherwise.
+        return {
+          status: 200,
+          body: {
+            email: 'trader@example.test',
+            requestType: 'REVERT_SECOND_FACTOR_ADDITION',
+            mfaInfo: { mfaEnrollmentId: 'mfa-1', displayName: 'Phone', enrolledAt: '2026-09-07T00:00:00Z', phoneInfo: '+1******1234' },
+          },
+        };
+      }
+      if (call.path.endsWith('accounts:update')) {
+        return { status: 200, body: { email: 'trader@example.test' } };
+      }
+      return itkError('UNEXPECTED_CALL');
+    });
+
+    await page.goto('/auth/action?mode=revertSecondFactorAddition&oobCode=revert-code', {
+      waitUntil: 'domcontentloaded',
+    });
+
+    // Loading the page must not strip the factor: confirmation first.
+    await expect(page.getByTestId('auth-action-revert')).toBeVisible();
+    expect(calls.filter((c) => c.path.endsWith('accounts:update'))).toHaveLength(0);
+
+    await page.getByTestId('auth-action-submit').click();
+    const success = page.getByTestId('auth-action-success');
+    await expect(success).toBeVisible();
+    await expect(success).toContainText(/two-step verification removed/i);
+    expect(calls.filter((c) => c.path.endsWith('accounts:update') && c.body.oobCode === 'revert-code')).toHaveLength(1);
+    // The password may be compromised too, so the reset offer is present.
+    await expect(page.getByTestId('auth-action-reset-send')).toBeVisible();
   });
 
   test('password reset: verifies the code, validates the form, confirms, succeeds', async ({ page }) => {

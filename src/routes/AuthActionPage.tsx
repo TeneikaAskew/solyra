@@ -35,8 +35,9 @@ import {
  *
  * State machine per `mode` (see lib/authAction.ts for the parsing):
  *   resetPassword  → verify code → new-password form → confirm → success
- *   recoverEmail   → check code (learn the restored address) → confirm → success
- *   verifyEmail / verifyAndChangeEmail / revertSecondFactorAddition
+ *   recoverEmail / revertSecondFactorAddition
+ *                  → check code → explicit confirmation → apply → success
+ *   verifyEmail / verifyAndChangeEmail
  *                  → apply code immediately → success
  * Any SDK rejection → the error card with copy from friendlyActionError.
  */
@@ -45,7 +46,7 @@ type View =
   | { kind: 'invalid-link' }
   | { kind: 'unavailable' }
   | { kind: 'reset-form'; email: string }
-  | { kind: 'confirm-recover'; email: string | null }
+  | { kind: 'confirm-apply'; mode: 'recoverEmail' | 'revertSecondFactorAddition'; email: string | null }
   | { kind: 'success'; mode: AuthActionMode; email: string | null }
   | { kind: 'error'; message: string };
 
@@ -129,8 +130,12 @@ async function runAction(params: AuthActionParams, qc: QueryClient): Promise<Vie
       if (!email) throw Object.assign(new Error('reset code carries no email'), { code: 'auth/invalid-action-code' });
       return { kind: 'reset-form', email };
     }
-    if (mode === 'recoverEmail') {
-      return { kind: 'confirm-recover', email };
+    if (mode === 'recoverEmail' || mode === 'revertSecondFactorAddition') {
+      // Destructive, so never applied on page load: an email security
+      // scanner following the link, or someone opening it just to see what
+      // the notification is about, must not undo an email change or strip a
+      // second factor without an explicit click.
+      return { kind: 'confirm-apply', mode, email };
     }
     await applyAuthActionCode(oobCode);
     await syncSignedInUser(qc);
@@ -182,6 +187,7 @@ function Body({
           icon={<AlertTriangle size={18} className="text-[var(--warning, var(--on-surface-variant))]" />}
           title="Email sign-in is not enabled here"
           body="This environment does not use email sign-in, so account links cannot be processed."
+          cta={{ label: 'Continue to Solyra', to: '/dashboard' }}
         />
       );
     case 'invalid-link':
@@ -231,8 +237,8 @@ function Body({
         </Notice>
       );
     }
-    case 'confirm-recover':
-      return <RecoverEmail email={view.email} code={params?.oobCode ?? ''} onView={onView} qc={qc} />;
+    case 'confirm-apply':
+      return <ConfirmApply mode={view.mode} email={view.email} code={params?.oobCode ?? ''} onView={onView} qc={qc} />;
     case 'reset-form':
       return <ResetPassword email={view.email} code={params?.oobCode ?? ''} onView={onView} />;
   }
@@ -263,12 +269,17 @@ function Notice({
       </div>
       <p className="text-[13px] leading-relaxed text-[var(--on-surface-variant)]">{body}</p>
       {children}
-      {cta && 'action' in cta ? (
-        <SignOutThenSignIn label={cta.label} className={ctaCls} />
-      ) : (
-        <Link to={cta?.to ?? '/dashboard'} data-testid="auth-action-cta" className={ctaCls}>
-          {cta?.label ?? 'Go to sign in'}
+      {/* No cta (the error states) or an explicit sign-out action → the
+          button ends any session this browser holds and lands on the sign-in
+          form, which is what "Go to sign in" / "Sign in" promise even when a
+          different account is signed in here. Only explicit `to` links go
+          straight into the gated app. */}
+      {cta && 'to' in cta ? (
+        <Link to={cta.to} data-testid="auth-action-cta" className={ctaCls}>
+          {cta.label}
         </Link>
+      ) : (
+        <SignOutThenSignIn label={cta?.label ?? 'Go to sign in'} className={ctaCls} />
       )}
     </div>
   );
@@ -443,17 +454,44 @@ function ResetOffer({ email }: { email: string }) {
   );
 }
 
-function RecoverEmail({
+const CONFIRM_COPY = {
+  recoverEmail: {
+    title: 'Restore your sign-in email?',
+    button: 'Restore my email',
+    body: (email: string | null) =>
+      email
+        ? `This will make ${email} your sign-in email again and undo the recent change.`
+        : 'This will make your previous address your sign-in email again and undo the recent change.',
+    testId: 'auth-action-recover',
+  },
+  revertSecondFactorAddition: {
+    title: 'Remove the added two-step verification?',
+    button: 'Remove this method',
+    body: () =>
+      'This will remove the two-step verification method that was recently added to your account. Only do this if you did not add it yourself.',
+    testId: 'auth-action-revert',
+  },
+} as const;
+
+/**
+ * Explicit confirmation before a destructive code is applied (email
+ * recovery, second-factor removal). Nothing is sent to Firebase until the
+ * button is clicked, so a link scanner or a curious open cannot trigger it.
+ */
+function ConfirmApply({
+  mode,
   email,
   code,
   onView,
   qc,
 }: {
+  mode: 'recoverEmail' | 'revertSecondFactorAddition';
   email: string | null;
   code: string;
   onView: (v: View) => void;
   qc: QueryClient;
 }) {
+  const copy = CONFIRM_COPY[mode];
   const [busy, setBusy] = useState(false);
 
   const onConfirm = async () => {
@@ -466,29 +504,21 @@ function RecoverEmail({
       setBusy(false);
       return;
     }
-    // Restored on the server; refresh a signed-in session so the app shows
-    // the restored address (best effort, cannot fail the completed action).
+    // Applied on the server; refresh a signed-in session so the app reflects
+    // it (best effort, cannot fail the completed action).
     await syncSignedInUser(qc);
-    onView({ kind: 'success', mode: 'recoverEmail', email });
+    onView({ kind: 'success', mode, email });
     setBusy(false);
   };
 
   return (
-    <div data-testid="auth-action-recover">
+    <div data-testid={copy.testId}>
       <div className="mb-2 flex items-center gap-2">
         <MailWarning size={18} className="text-[var(--warning, var(--on-surface-variant))]" />
-        <h1 className="text-[18px] font-bold tracking-[-0.02em] text-[var(--on-surface)]">Restore your sign-in email?</h1>
+        <h1 className="text-[18px] font-bold tracking-[-0.02em] text-[var(--on-surface)]">{copy.title}</h1>
       </div>
       <p className="text-[13px] leading-relaxed text-[var(--on-surface-variant)]">
-        {email ? (
-          <>
-            This will make <span className="font-medium text-[var(--on-surface)]">{email}</span> your sign-in email again
-            and undo the recent change.
-          </>
-        ) : (
-          'This will make your previous address your sign-in email again and undo the recent change.'
-        )}{' '}
-        If you did not make that change, reset your password afterwards.
+        {copy.body(email)} If you did not make the change this undoes, reset your password afterwards.
       </p>
       <button
         type="button"
@@ -498,7 +528,7 @@ function RecoverEmail({
         className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-[var(--on-brand)] transition hover:opacity-90 disabled:opacity-50"
       >
         {busy ? <Loader2 size={15} className="animate-spin" /> : null}
-        Restore my email
+        {copy.button}
       </button>
     </div>
   );
