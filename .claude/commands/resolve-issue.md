@@ -112,12 +112,17 @@ git fetch origin
 # Never `checkout -B` here: -B RESETS an existing local branch to the start
 # point, silently discarding unpushed commits from an earlier run.
 if git show-ref --verify --quiet "refs/heads/<headRefName>"; then
-  git checkout "<headRefName>"        # already local: keep what it carries
-  # `|| echo` would swallow the failure: a diverged branch would then be
-  # implemented and tested against a head missing remote commits, and only
-  # fail at push. A non-fast-forward here is a STOP.
-  git merge --ff-only "origin/<headRefName>" \
-    || { echo "DIVERGED from origin/<headRefName> — reconcile before any edit"; false; }
+  # CHAINED, not two statements. An unchecked `checkout` that fails leaves you
+  # on the previous branch, and the merge then runs there — succeeding silently
+  # whenever that branch is an ancestor of the PR head, after which you commit
+  # and push somewhere else entirely. The likeliest cause is this command's own
+  # base worktree still holding the ref, so it is a real path.
+  git checkout "<headRefName>" \
+    && git merge --ff-only "origin/<headRefName>" \
+    || { echo "CHECKOUT OR MERGE FAILED for <headRefName> — stop, do not edit"; false; }
+  # A non-fast-forward is a STOP: a diverged branch would be implemented and
+  # tested against a head missing remote commits, and only fail at push.
+  # Rule 0 applies to whatever you do next: no force-push, no rebase.
 else
   git checkout -b "<headRefName>" --track "origin/<headRefName>"
 fi
@@ -140,9 +145,17 @@ For anything that reproduces in code — a render, a unit case, `tsc -b` — kee
 an unfixed tree to measure against and say which one you used:
 
 ```bash
-git worktree add /tmp/base-tree \
+BASE_TREE=$(mktemp -d -t base-tree-XXXXXX) && rmdir "$BASE_TREE"
+git worktree add "$BASE_TREE" \
   "$(git merge-base origin/main <headRefName>)"   # the PR's own base
+...
+git worktree remove "$BASE_TREE"    # when the before-half is captured
 ```
+
+**Remove it, and use a fresh path.** A registered worktree at a fixed path
+makes the next run's `git worktree add` fail, and it holds the branch ref —
+which is the checkout failure the CASE A block above now chains against. One
+leftover breaks the next run twice.
 
 A finding about what the API returns is unaffected: the PR head does not
 change what stocks answers. It is the in-repo case where the checkout is the
