@@ -45,8 +45,8 @@ type View =
   | { kind: 'loading' }
   | { kind: 'invalid-link' }
   | { kind: 'unavailable' }
-  | { kind: 'reset-form'; email: string }
-  | { kind: 'confirm-apply'; mode: 'recoverEmail' | 'revertSecondFactorAddition'; email: string | null }
+  | { kind: 'reset-form'; email: string; code: string }
+  | { kind: 'confirm-apply'; mode: 'recoverEmail' | 'revertSecondFactorAddition'; email: string | null; code: string }
   | { kind: 'success'; mode: AuthActionMode; email: string | null }
   | { kind: 'error'; message: string };
 
@@ -58,15 +58,24 @@ function errorView(err: unknown): View {
 export default function AuthActionPage() {
   const { search } = useLocation();
   const params = parseAuthAction(search);
+  // One state machine per link. Keying on the parsed (mode, code) remounts
+  // the flow when the query string changes while this route stays mounted
+  // (browser navigation from one action link to another), so a form can
+  // never show the previous code's email while holding the next code, and
+  // an incomplete URL after a valid one cannot keep the old view around.
+  const key = params ? `${params.mode}:${params.oobCode}` : 'invalid';
+  return <AuthActionFlow key={key} params={params} />;
+}
+
+function AuthActionFlow({ params }: { params: AuthActionParams | null }) {
   const [view, setView] = useState<View>(() => {
     if (getAuthMode() !== 'firebase') return { kind: 'unavailable' };
     return params ? { kind: 'loading' } : { kind: 'invalid-link' };
   });
-
   const qc = useQueryClient();
 
-  // Kick off the code check for the current link. Action codes are single-use
-  // and React StrictMode double-invokes effects in dev, so the SDK call is
+  // Kick off the code check for this link. Action codes are single-use and
+  // React StrictMode double-invokes effects in dev, so the SDK call is
   // deduplicated per (mode, code) in a module-level map: both effect runs
   // await the SAME promise, and only the live run applies its result.
   useEffect(() => {
@@ -84,10 +93,10 @@ export default function AuthActionPage() {
     return () => {
       cancelled = true;
     };
-    // params is derived from `search`; keying on the primitives avoids a
-    // re-run for a new object with the same content.
+    // `params` is fixed for the lifetime of this instance (the parent keys
+    // on it), so the effect runs once per link.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params?.mode, params?.oobCode]);
+  }, []);
 
   return (
     <div
@@ -98,7 +107,7 @@ export default function AuthActionPage() {
         <div className="mb-6">
           <Brand />
         </div>
-        <Body view={view} params={params} onView={setView} qc={qc} />
+        <Body view={view} onView={setView} qc={qc} />
       </div>
     </div>
   );
@@ -128,14 +137,14 @@ async function runAction(params: AuthActionParams, qc: QueryClient): Promise<Vie
     const email = info.data.email ?? null;
     if (mode === 'resetPassword') {
       if (!email) throw Object.assign(new Error('reset code carries no email'), { code: 'auth/invalid-action-code' });
-      return { kind: 'reset-form', email };
+      return { kind: 'reset-form', email, code: oobCode };
     }
     if (mode === 'recoverEmail' || mode === 'revertSecondFactorAddition') {
       // Destructive, so never applied on page load: an email security
       // scanner following the link, or someone opening it just to see what
       // the notification is about, must not undo an email change or strip a
       // second factor without an explicit click.
-      return { kind: 'confirm-apply', mode, email };
+      return { kind: 'confirm-apply', mode, email, code: oobCode };
     }
     await applyAuthActionCode(oobCode);
     await syncSignedInUser(qc);
@@ -164,12 +173,10 @@ async function syncSignedInUser(qc: QueryClient): Promise<void> {
 
 function Body({
   view,
-  params,
   onView,
   qc,
 }: {
   view: View;
-  params: ReturnType<typeof parseAuthAction>;
   onView: (v: View) => void;
   qc: QueryClient;
 }) {
@@ -238,9 +245,9 @@ function Body({
       );
     }
     case 'confirm-apply':
-      return <ConfirmApply mode={view.mode} email={view.email} code={params?.oobCode ?? ''} onView={onView} qc={qc} />;
+      return <ConfirmApply mode={view.mode} email={view.email} code={view.code} onView={onView} qc={qc} />;
     case 'reset-form':
-      return <ResetPassword email={view.email} code={params?.oobCode ?? ''} onView={onView} />;
+      return <ResetPassword email={view.email} code={view.code} onView={onView} />;
   }
 }
 
