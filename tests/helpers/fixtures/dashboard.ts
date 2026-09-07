@@ -24,7 +24,7 @@ import {
   MOCK_DASHBOARD_QUOTE,
   MOCK_DASHBOARD_REFERENCE,
   MOCK_MARKET_HOURS,
-  MOCK_PLAYBOOK_EMPTY,
+  MOCK_PLAYBOOK,
   MOCK_SECTORS,
   buildDashboardNews,
 } from '@/mocks/dashboard';
@@ -43,6 +43,8 @@ export {
   MOCK_MARKET_HOURS,
   MOCK_PLAYBOOK,
   MOCK_PLAYBOOK_EMPTY,
+  MOCK_PLAYBOOK_FRESH,
+  MOCK_PLAYBOOK_STALE_DETAIL,
   MOCK_SECTORS,
   MOCK_SECTORS_UNAVAILABLE,
   buildDashboardBars,
@@ -60,7 +62,7 @@ export async function mockDashboard(page: Page) {
   await page.route('**/api/signals/IWM*', (r) =>
     r.fulfill(M.ok({ ticker: 'IWM', count: 0, signals: [] }))
   );
-  await page.route('**/api/playbook/IWM', (r) => r.fulfill(M.ok(MOCK_PLAYBOOK_EMPTY)));
+  await page.route('**/api/playbook/IWM', (r) => r.fulfill(M.ok(MOCK_PLAYBOOK)));
   await page.route('**/api/live/quote/IWM', (r) => r.fulfill(M.ok(MOCK_DASHBOARD_QUOTE)));
   await page.route('**/api/live/history/IWM', (r) => r.fulfill(M.ok(MOCK_DASHBOARD_HISTORY)));
   await page.route('**/api/live/avg-volume/IWM', (r) =>

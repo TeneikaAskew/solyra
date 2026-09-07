@@ -1,7 +1,10 @@
 import { DataGate } from '@/components/shared/SignInEmptyState';
+import { errorMessage } from '@/components/shared/WidgetState';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { todayET } from '@/lib/dates';
+import { todayET, snapshotAgeLabel } from '@/lib/dates';
+import { responseErrorMessage } from '@/lib/format';
+import { dataUnlessError } from '@/lib/queryData';
 import { useTickerStore } from '@/stores/tickerStore';
 import { useLiveStatus } from '@/hooks/useLiveStatus';
 import { useLiveQuote } from '@/hooks/useLiveQuote';
@@ -35,6 +38,9 @@ interface PlaybookCard {
 interface PlaybookResponse {
   ticker: string;
   cards: PlaybookCard[];
+  /** Card set date + server-judged age (#861); absent only on old payloads. */
+  analysis_date?: string;
+  age_days?: number;
 }
 
 interface ReferenceResponse {
@@ -51,10 +57,14 @@ function usePlaybook(ticker: string) {
     queryKey: ['playbook', ticker],
     queryFn: async () => {
       const r = await fetch(`/api/playbook/${ticker}`);
-      if (!r.ok) throw new Error('Failed to fetch playbook');
+      // Keep the server's reason: a 503 for a stale card set says so.
+      if (!r.ok) throw new Error(await responseErrorMessage(r));
       return r.json();
     },
     staleTime: 3_600_000,
+    // Re-ask while mounted so the server's age (and its 503 past max age)
+    // reaches a page left open across the date boundary.
+    refetchInterval: 15 * 60_000,
   });
 }
 
@@ -254,7 +264,7 @@ function PlaybookCardUI({ card, results, hasLiveData, price }: {
 export default function PlaybookPage() {
   const { activeTicker } = useTickerStore();
 
-  const { data, isLoading, isError } = usePlaybook(activeTicker);
+  const { data, isLoading, isError, error } = usePlaybook(activeTicker);
   const { data: status } = useLiveStatus();
   const isMarketOpenish = !!status?.is_open || status?.session === 'pre-market' || status?.session === 'after-hours';
 
@@ -285,7 +295,11 @@ export default function PlaybookPage() {
     [history, quote, avgVol, reference, indicatorsQuery.data],
   );
 
-  const cards = data?.cards ?? [];
+  // A refused refetch (stale-cards 503) leaves the last good payload cached
+  // with isError set; the rejected set must not stay on the grid.
+  const playbook = dataUnlessError(data, isError);
+  const cards = playbook?.cards ?? [];
+  const playbookAge = snapshotAgeLabel(playbook?.analysis_date, playbook?.age_days);
   const hasLiveData = snapshot !== null;
 
   // Server-side evaluation (platform/api/routers/playbook.py). One batched
@@ -312,9 +326,10 @@ export default function PlaybookPage() {
               : 'No live data, evaluation paused'}
           </p>
         </div>
-        {data && (
-          <span className="text-xs text-[var(--color-text-muted)]">
+        {playbook && (
+          <span className="text-xs text-[var(--color-text-muted)]" data-testid="playbook-age">
             {cards.length} setups
+            {playbookAge ? ` · ${playbookAge}` : ''}
           </span>
         )}
       </div>
@@ -323,7 +338,7 @@ export default function PlaybookPage() {
       {isError && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]">
           <AlertTriangle size={16} />
-          Playbook not found, run the phase 6 playbook generation for {activeTicker} first.
+          Playbook unavailable for {activeTicker}: {errorMessage(error) ?? 'request failed'}
         </div>
       )}
 

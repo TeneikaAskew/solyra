@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDaysToISO, todayET, toETDateString } from './dates';
+import { addDaysToISO, snapshotAgeLabel, todayET, toETDateString } from './dates';
 
 afterEach(() => vi.useRealTimers());
 
@@ -28,5 +28,26 @@ describe('addDaysToISO', () => {
     expect(addDaysToISO('2026-07-07', 1)).toBe('2026-07-08');
     expect(addDaysToISO('2026-07-07', -3)).toBe('2026-07-04');
     expect(addDaysToISO('2026-12-31', 1)).toBe('2027-01-01');
+  });
+});
+
+describe('snapshotAgeLabel', () => {
+  it('renders the server date and age', () => {
+    expect(snapshotAgeLabel('2026-06-13', 85)).toBe('as of Jun 13, 2026 (85d old)');
+    // Zero age is relative to the date shown (review mode judges against
+    // the reviewed date), so it must not claim "today".
+    expect(snapshotAgeLabel('2026-09-06', 0)).toBe('as of Sep 6, 2026 (same day)');
+    expect(snapshotAgeLabel('2026-09-05', 1)).toBe('as of Sep 5, 2026 (1d old)');
+  });
+
+  it('omits the age when the server did not send one, never fabricating it', () => {
+    expect(snapshotAgeLabel('2026-06-13', null)).toBe('as of Jun 13, 2026');
+    expect(snapshotAgeLabel('2026-06-13', undefined)).toBe('as of Jun 13, 2026');
+  });
+
+  it('returns null without a valid date so callers render nothing rather than a guess', () => {
+    expect(snapshotAgeLabel(null, 3)).toBeNull();
+    expect(snapshotAgeLabel('', 3)).toBeNull();
+    expect(snapshotAgeLabel('13/06/2026', 3)).toBeNull();
   });
 });
