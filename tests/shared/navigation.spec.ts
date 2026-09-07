@@ -145,7 +145,7 @@ test.describe('SwingMode toolbar', () => {
 
   test('Refresh refetches the grid and Glossary navigates to /help', async ({ page }) => {
     await mockCommon(page);
-    await page.route('**/api/options/dates/IWM', (r) => r.fulfill(M.ok(MOCK_DATES)));
+    await page.route('**/api/options/dates/IWM*', (r) => r.fulfill(M.ok(MOCK_DATES)));
     await page.route('**/api/options/IWM/*/levels', (r) => r.fulfill(M.ok(MOCK_LEVELS)));
 
     // Intercept BEFORE the first navigation so the counter sees both the
