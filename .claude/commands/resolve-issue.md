@@ -362,13 +362,20 @@ In order:
    "a review object exists for it". A clean run posts no review at all, only a
    reaction, so requiring a review object would deadlock every PR that has
    nothing wrong with it. Either of these satisfies this step:
-   - a review whose `commit_id` is the head SHA (listings return oldest first,
-     so it is on the last page); or
+   - a review **authored by the review bot**, not `CHANGES_REQUESTED`, whose
+     `commit_id` is the head SHA (listings return oldest first, so it is on the
+     last page); or
    - the review summary comment showing **Completed** against the head SHA.
 
-   What fails the step is neither of those: a summary still showing Running, or
-   naming an older commit, with all threads outdated. That head is genuinely
-   unreviewed — comment `@codex review` and wait.
+   **Check the author, not just the SHA.** Every reply you post on a thread is
+   itself recorded as a review on the current head, so a SHA-only test lets
+   your own replies satisfy the gate. Measured on the paired stocks PR:
+   `get_reviews` returned eight entries for one head, seven of them mine, while
+   the real review was still running.
+
+   What fails the step: a summary showing Running, or naming an older commit
+   with all threads outdated, or a head whose only reviews are yours. That head
+   is unreviewed — comment `@codex review` and wait.
 3. Every thread fixed-and-resolved, naming what changed and the covering test
    and commit, or replied to with why not. Zero unresolved is the bar.
 4. Verify each finding against the code before fixing it: reproduce, write the
