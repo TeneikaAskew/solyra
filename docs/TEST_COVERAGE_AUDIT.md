@@ -404,3 +404,179 @@ untested surface, not a guess:
 §3's orphan list is a 2026-09-01 snapshot: `useMineMyStyle` / the "My style"
 panel is no longer an orphan — `MyStylePanel` is mounted at
 `JournalPage.tsx` and thoroughly covered by `tests/journal/journal-onestop.spec.ts`.
+
+---
+
+## 10. 2026-09-07 — what the E2E CI job actually proves (and the `[WebServer]` ECONNREFUSED noise)
+
+**Date:** 2026-09-07 · **Branch:** `claude/e2e-ci-behavior-1cr1g6` · **Status:** findings
+only, no code changed. Written up for review before any of the §10.6 options
+is started. Prompted by the `[WebServer] http proxy error: ... ECONNREFUSED
+127.0.0.1:8000` wall in the `e2e (chromium, mocked)` job log, and the follow-up
+question "how do I know the suite is actually testing anything".
+
+### 10.1 The proxy errors are expected, and the job that logs them is green
+
+The run inspected (CI run 34073480519 on PR #49, job `e2e (chromium, mocked)`)
+ended `220 passed (6.4m)`. Its log contains **438** `http proxy error` lines.
+None failed a test.
+
+Mechanism, all of it deliberate and already documented in-file:
+
+- `playwright.config.ts` pins `VITE_API_PROXY_TARGET` to `http://127.0.0.1:8000`
+  for the E2E Vite. Nothing listens there on a GitHub runner (or on most dev
+  machines).
+- Every `/api/*` request that no `page.route` handler intercepts falls through
+  to Vite's proxy, which gets ECONNREFUSED, logs it to stderr, and answers the
+  browser with a 500.
+- `scripts/e2e-server.mjs` spawns Vite with `stdio: 'inherit'`, and Playwright
+  prefixes the webServer's stderr with `[WebServer]`. That is why the lines
+  appear in the job log at all.
+
+So each line is one unmocked request from one spec. The config chose a dead
+backend over the staging fallback precisely so that a miss is loud and fails
+fast rather than silently succeeding against real infrastructure.
+
+### 10.2 Which requests miss, and from where
+
+Breakdown of the 438 misses in that run, by endpoint (query strings stripped):
+
+| Endpoint | Misses |
+|---|---|
+| `/api/movement-statement` | 69 |
+| `/api/insights/report/IWM` | 62 |
+| `/api/catalysts/events` | 44 |
+| `/api/market/sectors` | 43 |
+| `/api/market/data/IWM/202604` | 39 |
+| `/api/market/reference/IWM/20260425` | 34 |
+| `/api/market/reference/IWM/20260906` | 22 |
+| `/api/backtest/all/IWM` | 17 |
+| `/api/live/status` | 13 |
+| `/api/config/market-hours` | 13 |
+| `/api/me/preferences` | 10 |
+| `/api/insights/report/AAPL`, `/api/market/reference/AAPL/20260906`, `/api/market/data/AAPL/202609` | 10 each |
+| `/api/live/avg-volume/IWM` | 9 |
+| `/api/backtest/results/IWM` | 6 |
+| 16 other endpoints | 1–4 each |
+
+The top block is the Dashboard page's fan-out. It misses whenever a spec loads
+`/dashboard` for the *shell* and registers only the cross-cutting mocks:
+
+- `tests/shared/auth-gate.spec.ts` — `mockCommon` only, asserts nav / sign-in
+  screen / config-error screen.
+- `tests/admin/admin-auth.spec.ts` sidebar tests — mock only
+  `/api/config/firebase` and `/api/me`, not even `mockCommon`. These also
+  explain the `live/status`, `market-hours` and `me/preferences` rows: those
+  three are in `mockCommon`, so only a spec that skips `mockCommon` can miss
+  them.
+- `tests/routes.warmup.ts` — visits all 14 routes with `mockCommon` only and
+  swallows every failure by design (its header explains why).
+- `/api/backtest/*` is deliberately left out of the shared dashboard fixture
+  (`tests/helpers/fixtures/dashboard.ts` header) so the two dashboard specs can
+  supply different payloads; a spec that loads the page without registering
+  it misses.
+- The AAPL rows come from `tests/dashboard/ticker-combobox.spec.ts`, which
+  switches ticker and mocks `**/api/market/reference/*` and
+  `**/api/market/data/*` but not the insight report.
+
+None of these misses reach an assertion. The specs that *do* assert a clean
+console (`tests/shared/navigation.spec.ts`) already use `mockAllPages` for
+exactly this reason.
+
+### 10.3 What the mocked suite proves, and what it cannot
+
+This is the honest answer to "is it a real test".
+
+**It proves:**
+
+- Given a response of the shape declared in `src/types/`, each page renders,
+  its interactions work, and the display layer handles `null` the way Rule 4
+  requires.
+- The fixtures cannot drift from `src/types/`: every payload is written with
+  `satisfies` against the real type, and `npx tsc -b` type-checks the `tests`
+  project in the `types · unit · build` job.
+
+**It cannot prove:**
+
+- That the FastAPI backend in `TeneikaAskew/stocks` returns those shapes.
+  Nothing mechanical ties `src/types/` to the Pydantic response models. This
+  is CLAUDE.md Rule 6 verbatim: a renamed or removed field in a stocks router
+  passes CI in both repos and breaks Solyra at runtime. The PR template asks
+  the author to attest to the pairing by hand; that is the only guard.
+- That the deployed frontend and backend work together. The `cloud`
+  Playwright project exists for this, matches `*.cloud.spec.ts`, and no such
+  spec exists, so `npm run e2e:cloud` exits "No tests found".
+
+So the job tests the frontend in isolation, against a contract the frontend
+wrote for itself. That is a real test of one component and not a test of the
+system. The job name `e2e (chromium, mocked)` is at least honest about which.
+
+### 10.4 Rejected: a catch-all `**/api/**` 404 in `mockCommon`
+
+Considered and rejected. It would make the log quiet by hiding exactly what
+the log is currently reporting: which specs leave endpoints unmocked. The
+ECONNREFUSED noise is the signal; a catch-all would be the cheat. If the noise
+is a problem, the fix is to close the misses (§10.6 item 2), not to route them
+to a silent 404.
+
+### 10.5 The stocks side, for comparison
+
+The stocks repo does not show this pattern because it has no Vite E2E job.
+Its only Playwright use is `tests/e2e/test_e2e.py`, which starts a plain
+`http.server` over two archived static sites under `archive/` and checks the
+pages load. The one `GET /data/sample-report.json` access-log line in that
+job is that file server. The backend is tested through the FastAPI TestClient
+suite in `tests/api/`, not through a browser.
+
+The `--ignore=tests/integration` on the `Run Tests` step is not a skip: the
+integration tests run in a separate job in the same workflow,
+`Integration Tests (ephemeral Postgres)`, which pulls `pgvector/pgvector:pg15`,
+applies `gcp/schema.sql` with `ON_ERROR_STOP=1`, and runs `pytest
+tests/integration/`. On the latest `main` push (run 34073775067) all three
+jobs were green. The caveat is thinness, not absence: `tests/integration/`
+holds four files (earnings-calibration persistence, journal timestamptz
+round-trip, param-sweep persistence, schema query contract) and the test step
+completes in 4 s, so most of the query surface in `gcp/database.py` and the
+routers is not exercised against a real schema.
+
+### 10.6 Options, ranked by value per cost — decision requested
+
+None started. Listed for review before any work begins.
+
+1. **Cross-repo contract check.** Have stocks CI publish the FastAPI OpenAPI
+   document as an artifact (or commit it), and have Solyra CI either validate
+   every fixture payload against it or generate TS types from it and diff
+   them against `src/types/`. Closes the Rule 6 gap mechanically, needs no
+   live backend, and turns the PR-template attestation into a check. Highest
+   value; the open design question is where the schema lives and which side
+   owns the diff.
+2. **Close the leaking specs.** Switch `auth-gate.spec.ts` and the
+   `admin-auth.spec.ts` sidebar tests to `mockAllPages`, register
+   `/api/backtest/*` where a spec loads the dashboard without it, and add the
+   insight-report route to the ticker-combobox spec's AAPL branch. Removes
+   most of the 438 misses without hiding anything, because every endpoint is
+   then answered with a typed fixture. Small, mechanical.
+3. **Real backend in CI.** One job that checks out stocks, boots the API
+   against its mock-data mode or a seeded ephemeral Postgres, and runs the
+   Solyra suite with `VITE_API_PROXY_TARGET` pointed at it. The only option
+   that tests the two repos together before deploy. Expensive to build and
+   to keep green; would run on a schedule or a label, not every PR.
+4. **Cloud specs against staging.** Write the first `*.cloud.spec.ts` files:
+   no `mockCommon`, real responses, assertions that tolerate live data.
+   Tests the deployment as users see it; slower and inherently flakier.
+5. **Integration coverage on stocks.** A coverage report scoped to
+   `gcp/database.py` and `lib/data_loader.py` from just the
+   `Integration Tests (ephemeral Postgres)` job, to size how much of the SQL
+   surface the four files touch. Read-only; informs whether to extend that
+   job.
+
+Questions for review:
+
+- Is item 1 the right first move, and which repo should own the schema
+  artifact?
+- Should item 2 land as part of item 1 or on its own, given it changes what
+  the shell-only specs are exercising (they would now render fully mocked
+  widgets rather than error states)?
+- Is the ECONNREFUSED noise worth suppressing at the *log* level (Playwright
+  `webServer.stderr: 'ignore'`) once item 2 lands, or should it stay visible
+  as a standing signal?
