@@ -108,7 +108,22 @@ export function useOptionsGreeks(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          options: options ?? [],
+          // Project to the seven fields _GreeksRequest declares. Callers pass
+          // whole ChainOptionRecords straight through (ProfilesTab types them
+          // as OptionRecord, but the chain rows carry expiration/bid/ask/iv/
+          // theta/rho too), and FastAPI drops undeclared keys silently — so
+          // the app was shipping nine unused fields per contract on every
+          // request. Sending what the contract declares keeps the payload
+          // honest and lets the contract test check the real shape (#54).
+          options: (options ?? []).map((o) => ({
+            type: o.type,
+            strike: o.strike,
+            open_interest: o.open_interest,
+            gamma: o.gamma,
+            vega: o.vega,
+            delta: o.delta,
+            volume: o.volume,
+          })),
           spot_price: spotPrice,
           strike_range_pct: strikeRangePct ?? null,
         }),

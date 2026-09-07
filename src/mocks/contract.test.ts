@@ -121,6 +121,11 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
  * their structure, an argument is found at any position, and a call's options
  * object is a node rather than a forward text search.
  */
+interface QuerySend {
+  all: string[];
+  always: string[];
+}
+
 export interface ApiLiteral {
   literal: string;
   /**
@@ -134,10 +139,11 @@ export interface ApiLiteral {
   quoteStart: number;
   /**
    * Query-parameter names this request sends, or null when they cannot be
-   * read statically. Resolved here, where the AST is in hand, rather than by
-   * re-scanning text around the literal.
+   * read statically. `all` is every name that may be sent; `always` excludes
+   * names added under a conditional, which cannot satisfy a REQUIRED
+   * parameter. Resolved here, where the AST is in hand.
    */
-  queryNames: string[] | null;
+  queryNames: QuerySend | null;
 }
 
 const parse = (source: string) =>
@@ -170,10 +176,20 @@ function calleeName(call: ts.CallExpression): string | null {
  * inside a template (`${qs ? `?${qs}` : ''}`) multiplies the alternatives,
  * which is how the with-query and without-query forms both get checked.
  */
-function renderUrlVariants(node: ts.Node): string[] {
+function renderUrlVariants(node: ts.Node, urlBindings?: Map<string, ts.Node>, depth = 0): string[] {
+  const rec = (n: ts.Node) => renderUrlVariants(n, urlBindings, depth + 1);
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
-  if (ts.isIdentifier(node)) return [`{p:${node.text}}`];
-  if (ts.isParenthesizedExpression(node)) return renderUrlVariants(node.expression);
+  if (ts.isIdentifier(node)) {
+    // A binding that holds URL TEXT is inlined, so a query suffix bound
+    // separately (`const qs = asOf ? `?as_of=${asOf}` : ''`) keeps its `?`
+    // instead of vanishing into a path wildcard (Codex, #54). A binding that
+    // holds something else (URLSearchParams) keeps its marker for the query
+    // reader to resolve.
+    const bound = depth < 4 ? urlBindings?.get(node.text) : undefined;
+    if (bound) return rec(bound);
+    return [`{p:${node.text}}`];
+  }
+  if (ts.isParenthesizedExpression(node)) return rec(node.expression);
   // `${params.toString()}` refers to `params`; keep the marker so the query
   // reader can resolve its keys.
   if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
@@ -181,12 +197,12 @@ function renderUrlVariants(node: ts.Node): string[] {
     return [`{p:${node.expression.expression.text}}`];
   }
   if (ts.isConditionalExpression(node)) {
-    return [...renderUrlVariants(node.whenTrue), ...renderUrlVariants(node.whenFalse)];
+    return [...rec(node.whenTrue), ...rec(node.whenFalse)];
   }
   if (ts.isTemplateExpression(node)) {
     let acc = [node.head.text];
     for (const span of node.templateSpans) {
-      const parts = renderUrlVariants(span.expression);
+      const parts = rec(span.expression);
       const next: string[] = [];
       for (const a of acc) for (const part of parts) next.push(a + part + span.literal.text);
       // A pathological nest could explode; 8 alternatives covers this app.
@@ -263,13 +279,28 @@ export const requestWrapperNames = (source: string): string[] => [...requestWrap
  * failed unsafely: a skip is visible in the count, a wrong answer is not.
  * `const qs = params.toString()` aliases back to `params`.
  */
-function searchParamNames(file: ts.SourceFile): Map<string, Set<string>> {
-  const direct = new Map<string, Set<string>>();
+function inConditional(n: ts.Node): boolean {
+  for (let p = n.parent; p; p = p.parent) {
+    if (ts.isIfStatement(p) || ts.isConditionalExpression(p)) return true;
+    if (ts.isFunctionDeclaration(p) || ts.isArrowFunction(p) || ts.isFunctionExpression(p)) break;
+  }
+  return false;
+}
+
+function searchParamNames(file: ts.SourceFile): Map<string, { all: Set<string>; always: Set<string> }> {
+  const direct = new Map<string, { all: Set<string>; always: Set<string> }>();
   const alias = new Map<string, string>();
-  const add = (name: string, key: string) => {
-    const set = direct.get(name) ?? new Set<string>();
-    set.add(key);
-    direct.set(name, set);
+  const entry = (name: string) => {
+    const e = direct.get(name) ?? { all: new Set<string>(), always: new Set<string>() };
+    direct.set(name, e);
+    return e;
+  };
+  // A name added under an `if` MAY be sent; it cannot satisfy a REQUIRED
+  // parameter, but sending it undeclared is still a violation (Codex, #54).
+  const add = (name: string, key: string, always: boolean) => {
+    const e = entry(name);
+    e.all.add(key);
+    if (always) e.always.add(key);
   };
 
   eachNode(file, (n) => {
@@ -277,14 +308,14 @@ function searchParamNames(file: ts.SourceFile): Map<string, Set<string>> {
       const init = n.initializer;
       if (ts.isNewExpression(init) && ts.isIdentifier(init.expression) &&
           init.expression.text === 'URLSearchParams') {
-        direct.set(n.name.text, direct.get(n.name.text) ?? new Set());
+        entry(n.name.text);
         const obj = init.arguments?.[0];
         if (obj && ts.isObjectLiteralExpression(obj)) {
           for (const prop of obj.properties) {
-            if (ts.isShorthandPropertyAssignment(prop)) add(n.name.text, prop.name.text);
+            if (ts.isShorthandPropertyAssignment(prop)) add(n.name.text, prop.name.text, true);
             else if (ts.isPropertyAssignment(prop)) {
               if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) {
-                add(n.name.text, prop.name.text);
+                add(n.name.text, prop.name.text, true);
               }
             }
           }
@@ -301,7 +332,7 @@ function searchParamNames(file: ts.SourceFile): Map<string, Set<string>> {
         ts.isIdentifier(n.expression.expression)) {
       const key = n.arguments[0];
       if (key && (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key))) {
-        add(n.expression.expression.text, key.text);
+        add(n.expression.expression.text, key.text, !inConditional(n));
       }
     }
   });
@@ -320,21 +351,29 @@ function searchParamNames(file: ts.SourceFile): Map<string, Set<string>> {
  * Only a hole standing where a NAME would be needs resolving, via its
  * `{p:ident}` marker.
  */
-function queryNamesOf(rendered: string, params: Map<string, Set<string>>): string[] | null {
+function queryNamesOf(
+  rendered: string,
+  params: Map<string, { all: Set<string>; always: Set<string> }>,
+): QuerySend | null {
   const q = rendered.indexOf('?');
-  if (q === -1) return [];
+  if (q === -1) return { all: [], always: [] };
   const tail = rendered.slice(q + 1);
-  const names = new Set<string>();
-  for (const m of tail.matchAll(/(?:^|&)([A-Za-z_][\w.-]*)=/g)) names.add(m[1]);
+  const all = new Set<string>();
+  const always = new Set<string>();
+  for (const m of tail.matchAll(/(?:^|&)([A-Za-z_][\w.-]*)=/g)) {
+    all.add(m[1]);
+    always.add(m[1]);
+  }
 
   for (const m of tail.matchAll(/\{p(?::([^}]*))?\}/g)) {
     if (tail[m.index! - 1] === '=') continue; // a value, not a name
     const ident = m[1];
     const resolved = ident ? params.get(ident) : undefined;
-    if (!resolved || resolved.size === 0) return null;
-    for (const k of resolved) names.add(k);
+    if (!resolved || resolved.all.size === 0) return null;
+    for (const k of resolved.all) all.add(k);
+    for (const k of resolved.always) always.add(k);
   }
-  return [...names];
+  return { all: [...all], always: [...always] };
 }
 
 export function extractApiLiterals(source: string): ApiLiteral[] {
@@ -342,6 +381,15 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
   const wrappers = requestWrappers(source);
   wrappers.set('fetch', 0);
   const params = searchParamNames(file);
+  /** Bindings whose value is URL text, for inlining at the interpolation. */
+  const urlBindings = new Map<string, ts.Node>();
+  eachNode(file, (n) => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer &&
+        isUrlish(n.initializer)) {
+      urlBindings.set(n.name.text, n.initializer);
+    }
+  });
+  const render = (n: ts.Node) => renderUrlVariants(n, urlBindings);
   const mk = (raw: string, method: string | null, quoteStart: number): ApiLiteral => ({
     literal: normalizeUrl(raw),
     method,
@@ -358,7 +406,7 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
   eachNode(file, (n) => {
     if (!ts.isVariableDeclaration(n) || !ts.isIdentifier(n.name) || !n.initializer) return;
     if (!isUrlish(n.initializer)) return;
-    const variants = renderUrlVariants(n.initializer);
+    const variants = render(n.initializer);
     if (!variants.some((v) => v.startsWith('/api/'))) return;
     bindingRange.set(n.name.text, [n.initializer.getStart(file), n.initializer.getEnd()]);
     const list = bindings.get(n.name.text) ?? [];
@@ -389,7 +437,7 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
 
     if (isUrlish(arg)) {
       covered.push([arg.getStart(file), arg.getEnd()]);
-      for (const v of renderUrlVariants(arg)) {
+      for (const v of render(arg)) {
         if (v.startsWith('/api/')) out.push(mk(v, method, arg.getStart(file)));
       }
       return;
@@ -413,7 +461,7 @@ export function extractApiLiterals(source: string): ApiLiteral[] {
     if (out.some((o) => o.quoteStart === quoteStart)) return;
     // Inside a call we already handled as a request URL? Then it is covered.
     if (ts.isCallExpression(n.parent) && wrappers.has(calleeName(n.parent) ?? '')) return;
-    for (const v of renderUrlVariants(n)) {
+    for (const v of render(n)) {
       if (v.startsWith('/api/')) out.push(mk(v, null, quoteStart));
     }
   });
@@ -484,6 +532,32 @@ const PARAM_SAMPLES: Record<string, string> = {
  * failure.
  */
 const UNSAMPLEABLE = new Set<string>([]);
+
+/**
+ * Typed operations the app requests that mock mode does not answer today.
+ *
+ * A mock route disappearing (deleted, or its regex stopping matching) leaves
+ * mock mode serving its loud 501 for a real request while this suite stays
+ * green, so an uncovered requested operation is a failure (Codex, #54).
+ * These twelve are PRE-EXISTING gaps — mock mode has never had routes for
+ * them, mostly mutations — and adding those mocks is its own change. The list
+ * is a floor, not a licence: an entry that gains a mock must be deleted from
+ * here, which the test enforces, so it can only shrink.
+ */
+const UNMOCKED_REQUESTED = new Set<string>([
+  'POST /api/backtest/replay-trades',
+  'POST /api/insights/watchlist/add',
+  'DELETE /api/insights/watchlist/{ticker}',
+  'POST /api/journal/import/commit',
+  'POST /api/journal/import/preview',
+  'GET /api/journal/seed/{ticker}',
+  'POST /api/journal/trades',
+  'DELETE /api/journal/trades/{trade_id}',
+  'PATCH /api/journal/trades/{trade_id}',
+  'GET /api/options/live/{ticker}/{date_str}',
+  'POST /api/style/mine-and-validate',
+  'POST /api/waitlist',
+]);
 
 const sampleUrl = (p: string) =>
   p.replace(/\{([^}]+)\}/g, (_, name: string) => PARAM_SAMPLES[name] ?? 'sample');
@@ -710,10 +784,14 @@ const REQUEST_SAMPLES: Record<string, unknown> = {
     date_format: 'iso',
     show_extended_hours: false,
   } satisfies UserProfileUpdate,
-  // src/hooks/useAdmin.ts:172
-  'POST /api/admin/strat-engine/predict': {
-    ticker: 'IWM', timeframe: '15m',
-  } satisfies StratPredictRequest,
+  // src/hooks/useAdmin.ts:172. PredictForm adds as_of_timestamp only when the
+  // operator supplies one, so both shapes reach the API (Codex, #54).
+  'POST /api/admin/strat-engine/predict': [
+    { ticker: 'IWM', timeframe: '15m' } satisfies StratPredictRequest,
+    {
+      ticker: 'IWM', timeframe: '15m', as_of_timestamp: '2026-04-25T15:00:00Z',
+    } satisfies StratPredictRequest,
+  ],
   // src/hooks/useAdmin.ts:196
   'PUT /api/admin/routes/{role}': { provider: 'anthropic', model: 'claude-sonnet-5' },
   // src/hooks/useAdmin.ts:270 / :282
@@ -817,7 +895,10 @@ describe('extractApiLiterals', () => {
       'fetch(`/api/market/data/${t}/${d}?${params.toString()}`);',
     ].join('\n');
     const found = extractApiLiterals(src).filter((f) => f.method === 'GET');
-    expect(found[0].queryNames?.sort()).toEqual(['end_time', 'timeframe']);
+    expect(found[0].queryNames?.all.sort()).toEqual(['end_time', 'timeframe']);
+    // `end_time` sits behind `if (endTime)`, so it cannot satisfy a required
+    // parameter even though it may be sent.
+    expect(found[0].queryNames?.always).toEqual(['timeframe']);
   });
 
   it('collects every verb a `const ENDPOINT = ...` binding is fetched under', () => {
@@ -886,35 +967,66 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
         // empty body recorded it as "skipped" and never validated its 200
         // fixture, while a valid body sat unused in REQUEST_SAMPLES
         // (Codex, #54). First variant, since one 200 shape is being checked.
+        // One 200 shape per operation is not a given: /api/playbook/evaluate
+        // answers `conditions` and `batches` with different branches, and the
+        // app consumes both, so every request variant is invoked and its
+        // response validated (Codex, #54).
         const sample = REQUEST_SAMPLES[key];
-        const body = (Array.isArray(sample) ? sample[0] : sample) ?? {};
-        let hit: ReturnType<typeof resolveMock>;
-        try {
-          hit = resolveMock(method.toUpperCase(), new URL(sampleUrl(p), 'http://mock.local'), body);
-        } catch (err) {
-          // A mock that throws for the sample request validated nothing; that
-          // is a broken mock, not a skip (Codex, #54). Allowlist above if a
-          // route genuinely cannot be sampled.
-          violations.push(`${key}\n    mock handler threw: ${(err as Error).message}`);
-          continue;
-        }
-        if (!hit) {
-          uncovered.push(key);
-          continue;
-        }
-        if (hit.status !== 200 || !hit.contentType.includes('json')) {
-          // With a valid sample in hand, a non-200 means the mock rejects a
-          // body the app really sends — a violation, not something to skip.
-          if (sample !== undefined) {
-            violations.push(`${key}\n    mock answered ${hit.status} to its REQUEST_SAMPLES body`);
-          } else {
-            skipped.push(`${key} (mock answers ${hit.status} ${hit.contentType})`);
+        const bodies = sample === undefined ? [{}] : Array.isArray(sample) ? sample : [sample];
+        let ok = true;
+        bodies.forEach((body, n) => {
+          const which = bodies.length > 1 ? ` (variant ${n + 1}/${bodies.length})` : '';
+          let hit: ReturnType<typeof resolveMock>;
+          try {
+            hit = resolveMock(method.toUpperCase(), new URL(sampleUrl(p), 'http://mock.local'), body);
+          } catch (err) {
+            // A mock that throws validated nothing: broken, not a skip.
+            violations.push(`${key}${which}\n    mock handler threw: ${(err as Error).message}`);
+            ok = false;
+            return;
           }
-          continue;
-        }
-        const errors = schemaErrors(schema, JSON.parse(hit.payload));
-        if (errors.length) violations.push(`${key}\n    ${errors.join('\n    ')}`);
-        else covered.push(key);
+          if (!hit) {
+            if (n === 0) uncovered.push(key);
+            ok = false;
+            return;
+          }
+          if (hit.status !== 200 || !hit.contentType.includes('json')) {
+            // With a valid sample in hand, a non-200 means the mock rejects a
+            // body the app really sends — a violation, not something to skip.
+            if (sample !== undefined) {
+              violations.push(`${key}${which}\n    mock answered ${hit.status} to its REQUEST_SAMPLES body`);
+            } else if (n === 0) {
+              skipped.push(`${key} (mock answers ${hit.status} ${hit.contentType})`);
+            }
+            ok = false;
+            return;
+          }
+          const errors = schemaErrors(schema, JSON.parse(hit.payload));
+          if (errors.length) {
+            violations.push(`${key}${which}\n    ${errors.join('\n    ')}`);
+            ok = false;
+          }
+        });
+        if (ok) covered.push(key);
+      }
+    }
+
+    // A typed operation the app actually requests losing its mock route is a
+    // failure, not an informational line: mock mode answers its loud 501 for
+    // a real request while this suite stays green (Codex, #54). Operations
+    // nothing requests stay informational.
+    const requested = requestedOperations();
+    const unmockedNow = new Set(uncovered.filter((k) => requested.has(k)));
+    for (const key of unmockedNow) {
+      if (!UNMOCKED_REQUESTED.has(key)) {
+        violations.push(`${key}: requested by the app but no mock route answers it`);
+      }
+    }
+    // The floor only moves down: once an operation gains a mock, its entry
+    // must go, or the list would quietly re-authorise losing that mock.
+    for (const key of UNMOCKED_REQUESTED) {
+      if (!unmockedNow.has(key)) {
+        violations.push(`${key}: now has a mock — remove it from UNMOCKED_REQUESTED`);
       }
     }
 
@@ -946,11 +1058,12 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
         checked++;
         const where = `${path.relative(REPO, file)}: ${method} ${declaredPath}`;
         const declaredNames = new Set(params.map((prm) => prm.name));
-        for (const name of sent) {
+        for (const name of sent.all) {
           if (!declaredNames.has(name)) violations.push(`${where}: sends undeclared query \`${name}\``);
         }
         for (const prm of params) {
-          if (prm.required && !sent.includes(prm.name)) {
+          // Only an unconditionally sent name satisfies a required parameter.
+          if (prm.required && !sent.always.includes(prm.name)) {
             violations.push(`${where}: omits required query \`${prm.name}\``);
           }
         }
