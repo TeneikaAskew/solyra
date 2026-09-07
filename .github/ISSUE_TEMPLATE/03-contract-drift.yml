@@ -10,6 +10,13 @@ body:
         The fixtures `satisfies` the types, so a fixture cannot drift from a
         type. Neither one is evidence about the server.
 
+        **API types are not all in `src/types/`.** `LiveQuote` is declared at
+        `src/hooks/useLiveQuote.ts:15`, `OptionsResponse` in its own hook. Name the
+        declaration wherever it actually is: a removal that cleans `src/types/` by
+        directory leaves a hook-declared one behind, and if that leftover is
+        **optional** nothing catches it — measured, `tsc -b` rc=0 and 45 files /
+        397 tests green while the hook still declared a field the API had dropped.
+
         **So the evidence for this issue has to come from the API, not from this
         repo.** Either a real response, or the vendored OpenAPI snapshot checked
         against stocks `main`. Confirm the stocks router actually returns the
@@ -56,6 +63,13 @@ body:
         emitting the null before then hits exactly the readers the ordering
         protects. A deploy and every client having it are different events.
 
+        Gate that wait on a conservative session length, NOT on "the old bundle
+        stopped being requested" — a bundle is fetched at page load, so requests for
+        it fall to zero once nobody is STARTING sessions on it, while the tabs still
+        running it poll on. Nothing this app sends carries a build id, so for a field
+        we READ there is no client-version signal to watch. (For a field we SEND
+        there is: the server watches it stop arriving.)
+
         **Whichever side RECEIVES must tolerate the new shape first**, and that is
         not always this app. For a response we read, it is us: our reader goes
         first. For a request body we send, it is stocks — it relaxes the field to
@@ -83,7 +97,7 @@ body:
     attributes:
       label: Endpoint and type
       description: The route, and the type or fixture on this side that describes it.
-      placeholder: "GET /api/me/preferences — src/types/preferences.ts:UserPreferences, src/mocks/common.ts"
+      placeholder: "GET /api/live/quote/{ticker} — src/hooks/useLiveQuote.ts:LiveQuote (NOT src/types/), src/mocks/live.ts"
     validations:
       required: true
 

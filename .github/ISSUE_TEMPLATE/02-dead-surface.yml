@@ -72,13 +72,22 @@ body:
       placeholder: |
         # The shape of a conclusive answer, taken from the closed #16. Those
         # files no longer exist; run the pickaxe on YOUR surface.
+        # FIRST: is this clone shallow? If so every answer below is truncated at the
+        # graft and there is NO warning — an empty result means "not in the window",
+        # which is indistinguishable from "never had a consumer", the exact conclusion
+        # this field exists to support. Measured here: the pickaxe stopped at
+        # 33c309a (2026-08-31), and an unknown symbol returned empty with rc=0.
+        $ git rev-parse --is-shallow-repository     # must print false
+        $ git fetch --unshallow                     # if it printed true
+        #
         # -G --no-renames --full-history, NOT -S. Measured: -S counts per blob, so a
         # rewritten import line inside ONE file leaves the count equal and -S skips
         # that commit; a pure rename is invisible to BOTH until --no-renames; and
         # default history simplification prunes side branches, so an importer that
         # lived only on a merged-and-deleted branch returns NOTHING until
         # --full-history (reproduced on git 2.43).
-        $ git log --oneline --all --full-history -G "TermHover" --no-renames -- src platform/src
+        $ git log --oneline --all --full-history -G "TermHover" --no-renames \
+            -- src tests scripts .github platform/src
         a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
         e1ce147 (May 31, Phase C1) shipped it "not yet wired into any page — C2-C5 will
                 consume it as the heatmap UI lands"
@@ -87,8 +96,17 @@ body:
         different design and never used it. So: never had a consumer, and the design that was
         going to consume it was superseded.
 
-        The `-- src platform/src` pathspec matters: this app was split out of stocks, so a
-        surface older than the split has its formative history under `platform/src` only.
+        The pathspec matters in BOTH directions. `platform/src` because this app was split
+        out of stocks, so a surface older than the split has its formative history there
+        only. And `tests scripts .github` because those are the same executable paths the
+        importer search above covers: a surface consumed only by a Playwright spec, a
+        script or a workflow helper, whose caller was later deleted, has its entire
+        history outside `src/`. Measured on this repo — `-G e2e-server` returns 0 commits
+        under `-- src platform/src` and 4 under the widened pathspec; `mockCommon` returns
+        2 versus 15. A narrow pickaxe does not report "unknown" there, it reports nothing,
+        which reads as "never had a consumer" — the exact conclusion this field is used to
+        support, and the one that separates deliberate scaffolding from a surface whose
+        caller was accidentally disconnected.
     validations:
       required: true
 

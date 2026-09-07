@@ -348,8 +348,8 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
 | A surface is deleted | `git grep -q "<Component>\|<useThing>" -- src tests scripts .github; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Not `src/` alone** — a Playwright spec importing the component is a caller that `src/`-only misses, and so is a CI reference. `docs/` and `.claude/` mentions are prose: worth tidying, not a broken caller. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
-| A response field this app READS is being dropped (the consumer-first PR) | the `rc -eq 1` form on the **property access**, not the name: `grep -rq "\.<field>\b" src/`. A bare `"<field>"` also matches the declaration this row tells you to keep, and excluding `src/types/` and `src/mocks/` does not help because plenty of API types are declared in hooks and components — measured, `LiveQuote.change_pct` is declared at `src/hooks/useLiveQuote.ts:15`, so the excluded-directory form still returns 0 after every reader is gone. `\.<field>\b` matches `q.change_pct` in the four reading files and not the declaration. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
-| The final sync PR for that removal | after stocks merges, `npm run contract:sync`, then `src/mocks/contract.test.ts` failing — measured, the mock's field is now undeclared and `additionalProperties` is forced `false` at `src/mocks/contract.test.ts:587`. It passes once the field leaves `src/types/`, the canonical mock and `tests/helpers/fixtures/`. `tsc -b` is not the instrument: it is clean before the sync because the old type still declares the field |
+| A response field this app READS is being dropped (the consumer-first PR) | **not a grep — delete the field from its TypeScript declaration and run `npx tsc -b`.** Every surviving reader becomes a `TS2339`/`TS2353`, and the list of errors IS the list of call sites; put the field back once you have it. Three greps were tried on this row and each was wrong in a different direction, because a regex cannot tell a read from a declaration or one type from another. Measured on this tree: `grep -rq "\.confidence_modifiers\b" src/` returns **rc=1, "no readers"**, for a field declared at `src/types/index.ts:264` and read four times in `MovementRead.tsx` — because `:147` destructures it (`const { confidence_modifiers } = statement`) and `:259` reads it as `MovementStatement['confidence_modifiers']`, and `\.<field>\b` sees neither. The same grep for `change_pct` reports `MostActiveBar.tsx`, which reads `MostActiveItem.change_pct` — a different type that happens to share the name — while missing `src/lib/reviewQuote.ts` and three mock files. Deleting the declaration finds all of them and nothing else, in both the `src/types/` case and the hook-declared `LiveQuote` case. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
+| The final sync PR for that removal | after stocks merges, `npm run contract:sync`, then `src/mocks/contract.test.ts` failing — measured, the mock's field is now undeclared and `additionalProperties` is forced `false` at `src/mocks/contract.test.ts:587`. It passes once the field leaves the canonical mock, `tests/helpers/fixtures/`, **and the type — wherever that type lives.** Not `src/types/` by name: `LiveQuote` is declared at `src/hooks/useLiveQuote.ts:15` and `OptionsResponse` in its own hook, and a directory-scoped cleanup leaves those behind. Whether anything catches the leftover depends on one thing — **is the stale property required or optional?** Measured, simulating stocks dropping `change_pct` from `LiveQuoteResponse`: a **required** leftover fails `tsc -b`, because every mock `satisfies` the type and dropping the field from the mock then breaks four call sites; an **optional** leftover (`change_pct?:`) passes **everything** — `tsc -b` rc=0, `contract.test.ts` 14/14, the whole suite 45 files / 397 tests green — while the hook still declares a field the API no longer has. That is the repo's own documented blind spot: per CLAUDE.md Rule 6, the narrowing direction is caught but "the widening direction needs a schema-to-type comparison the test does not do". So grep the field name across `src/` before calling the sync done, rather than trusting the gates. `tsc -b` is not the before-half instrument either: it is clean before the sync because the old type still declares the field |
 | A type is widened, and call sites stop compiling | `npx tsc -b` failing on the unguarded call site, clean after |
 | A guard is added and the type ALREADY admits null | a unit or render assertion — **`tsc -b` cannot fail here**. `fmtNum` takes `number \| null \| undefined` (`src/lib/format.ts:75`), so `` `${fmtNum(v)}%` `` compiles before and after while rendering `—%`. The compiler is silent on exactly the Rule 4 defect these forms are about |
 | A dependency is dropped | both halves, each on the `rc -eq 1` form: the importers in `src/ tests/`, and `'"<pkg>":'` in `package.json`. It must fail while either an import or the manifest entry survives — a `package.json` edit on its own is a diff, not a check — and it must not pass because `grep` errored on a bad path |
@@ -496,13 +496,30 @@ git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
 # The second half: diagnostics your change caused on lines it did NOT touch.
 # `head_sig` lints HEAD's content of the same paths through --stdin, so no
 # worktree and no pre-edit snapshot is needed.
+# The fourth field is the diagnostic's own SOURCE LINE TEXT, and it is what
+# makes a same-name-different-scope swap visible. Two `const value` in two
+# functions produce byte-identical file+rule+message
+# (`'value' is assigned a value but never used.`), on lines the edit did not
+# touch — so both halves of this gate were blind at once. Measured on a probe:
+# message-only MISSED it, line-text CAUGHT it.
+# Text, not `m.line`: a line NUMBER churns on every insertion above. Measured on
+# the three files this file names, one inserted comment produced 3 spurious
+# "new diagnostic" entries with a line/column anchor and 0 with the text anchor.
+# `f.source` rather than reading the file: in `head_sig` the lint runs on
+# `git show HEAD:$f` through --stdin, so the file on disk is the WORKING TREE
+# version and would anchor the baseline to the wrong content. Verified `source`
+# is present in both file mode and --stdin mode.
 _sig() { node -e '
   let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
     let r; try { r = JSON.parse(s); }
     catch { console.error("eslint produced no JSON"); process.exit(2); }
     const o=[];
-    for (const f of r) for (const m of f.messages)
-      o.push(f.filePath.replace(process.cwd()+"/","")+"\t"+(m.ruleId||"(fatal)")+"\t"+m.message);
+    for (const f of r) {
+      const src=(f.source||"").split("\n");
+      for (const m of f.messages)
+        o.push(f.filePath.replace(process.cwd()+"/","")+"\t"+(m.ruleId||"(fatal)")
+               +"\t"+m.message+"\t"+String(src[m.line-1]||"").trim());
+    }
     if (o.length) process.stdout.write(o.sort().join("\n")+"\n");
   });'; }
 # Each takes its OUTPUT FILE as $1 and sorts in place, so no `| sort` sits
@@ -813,9 +830,32 @@ In order:
       the ordering exists to protect.
 
       Same rollover the request narrowing waits for, and for the same reason
-      — an old client is old in both directions. Wait out a session length or
-      watch until the old bundle stops being requested, rather than promoting
-      as soon as step 1's deploy is green.
+      — an old client is old in both directions. But the two do NOT have the
+      same signal available, and this is the asymmetry to keep straight:
+
+      - For a field this app **sends**, the server sees it arriving in live
+        requests. "The field has stopped arriving" is direct evidence that no
+        old client is still active. That is the gate the narrowing uses below.
+      - For a field this app **reads**, the request carries nothing about the
+        client's version. There is no equivalent signal — measured, nothing in
+        `src/lib/authedFetch.ts` or anywhere under `src/` sends a client
+        version, build id or `X-Client-*` header today.
+
+      So do **not** gate on "the old bundle stopped being requested". A bundle
+      is fetched at page load; a tab already open never re-requests it, and
+      requests for the old asset fall to zero once nobody is *starting* new
+      sessions on it — while the surviving tabs keep polling the API with the
+      old code. It measures new page loads, which is the opposite population
+      from the one at risk. Route chunks are lazy (`src/App.tsx:9-13`), so an
+      old tab that navigates does fetch an old chunk, but a tab parked on one
+      page fetches nothing at all, which is precisely the long-lived session
+      this gate exists for.
+
+      That leaves a conservative lifetime wait — a session length, and longer
+      than feels necessary — as the only sound gate available today. A real
+      signal would mean sending a build id on every request and watching it
+      server-side; that does not exist yet, so do not write a plan that
+      assumes it.
    3. **Then here again, on a NEW branch and a NEW PR.** `npm run
       contract:sync`, then move **the payload the table above calls for** into
       the canonical mock and `tests/helpers/fixtures/` now that the schema
@@ -875,7 +915,10 @@ In order:
      shows the field has stopped arriving.
 
    **Both narrowings end back HERE, on a NEW branch and a NEW PR** — the same
-   final step the widening has, for the same reason. The moment stocks' removal
+   final step the widening has, for the same reason. And that step removes the
+   field from **the type wherever it is declared**, not from `src/types/`: an
+   optional leftover in a hook- or component-declared type passes every gate
+   this repo has (measured — see the Phase 4 row). The moment stocks' removal
    is on its `main`, this repo's vendored snapshot declares a field the API no
    longer has, and `contract:check` runs on every PR here
    (`.github/workflows/ci.yml:91`), so one unfinished narrowing turns every
