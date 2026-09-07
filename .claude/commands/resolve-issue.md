@@ -62,7 +62,8 @@ implemented half of it, a prior status comment naming what is still open.
 Check whether work already exists before starting more:
 
 ```bash
-git fetch origin
+git fetch origin \
+  || { echo "FETCH FAILED — refs are stale, so branch selection and the baseline would both run against yesterday's main"; false; }
 git branch -r | grep -iE "<issue-keyword>"
 # and: mcp__github__search_pull_requests
 #        q="repo:TeneikaAskew/solyra is:open <issue-number>"
@@ -99,7 +100,8 @@ it. Never `checkout -f`, which discards it.
 ```bash
 git status --porcelain           # must be empty before going further
 git rev-parse --abbrev-ref HEAD
-git fetch origin
+git fetch origin \
+  || { echo "FETCH FAILED — refs are stale, so branch selection and the baseline would both run against yesterday's main"; false; }
 
 # CASE A — a PR already exists for this issue. Work on ITS head; do not open
 # a second PR.
@@ -457,9 +459,11 @@ FILES="<the files this issue's fix touches>"
 git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
                       # emits no hunk for it, so every line of it would count
                       # as unchanged and its errors would pass this gate
-comm -12 <(changed_lines HEAD $FILES) <(diag_lines $FILES) > /tmp/lint-new.txt
-test ! -s /tmp/lint-new.txt \
-  || { cat /tmp/lint-new.txt; echo "^ lint errors on lines you changed"; false; }
+# mktemp for the same reason the replay log and the worktrees use it: two
+# sessions sharing a fixed /tmp name is one reading the other's answer.
+NEW=$(mktemp -t lint-new-XXXXXX)
+comm -12 <(changed_lines HEAD $FILES) <(diag_lines $FILES) > "$NEW"
+test ! -s "$NEW" || { cat "$NEW"; echo "^ lint errors on lines you changed"; false; }
 
 # ...and the second half: diagnostics your change caused on lines it did NOT
 # touch. `head_sig` lints HEAD's content of the same paths through --stdin, so
@@ -490,13 +494,12 @@ head_sig() { local out=$1 f rc=0; shift; : > "$out"
 # To FILES, not process substitution: a producer that dies inside <(...) leaves
 # comm with empty input and a zero exit, which is this gate passing BECAUSE it
 # broke. Materialise, check each status, then compare.
-head_sig /tmp/lint-head.txt $FILES \
-  || { echo "baseline signature failed"; false; }
-rule_sig /tmp/lint-now.txt $FILES \
-  || { echo "current signature failed"; false; }
-comm -13 /tmp/lint-head.txt /tmp/lint-now.txt > /tmp/lint-added.txt
-test ! -s /tmp/lint-added.txt \
-  || { cat /tmp/lint-added.txt; echo "^ new diagnostics your change caused"; false; }
+HEADSIG=$(mktemp -t lint-head-XXXXXX); NOWSIG=$(mktemp -t lint-now-XXXXXX)
+ADDED=$(mktemp -t lint-added-XXXXXX)
+head_sig "$HEADSIG" $FILES || { echo "baseline signature failed"; false; }
+rule_sig "$NOWSIG"  $FILES || { echo "current signature failed"; false; }
+comm -13 "$HEADSIG" "$NOWSIG" > "$ADDED"
+test ! -s "$ADDED" || { cat "$ADDED"; echo "^ new diagnostics your change caused"; false; }
 ```
 
 `_sig` exits 2 when its input is not JSON, which is what distinguishes "eslint
