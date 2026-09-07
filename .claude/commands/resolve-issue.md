@@ -485,7 +485,12 @@ In order:
    So a widening is three steps, not two:
 
    1. **Here first.** Widen the TS type and guard every call site `tsc` then
-      flags — that pair IS the compatibility change. Exercise the null with a
+      flags — that pair IS the compatibility change. **`tsc` is necessary and
+      not sufficient**: an existing `?? 0` on the widened field compiles fine
+      before and after, so the compiler never points at it, and it is exactly
+      the site that fabricates a value the moment the producer emits null.
+      Grep the field for `?? 0` / `|| 0` alongside the `tsc` pass, AUDIT-marked
+      ones included. Exercise the null with a
       **test-only payload** (a unit case on the pure helper, or a body built
       inside a `page.route` handler), never the canonical mock: the mocks
       `satisfies` the types AND are Ajv-validated by
