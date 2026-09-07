@@ -35,6 +35,7 @@ import {
   type User,
 } from 'firebase/auth';
 import type { FirebaseWebConfig } from './runtimeConfig';
+import { recordVerificationEmail } from './authGate';
 
 let _auth: Auth | null = null;
 
@@ -80,11 +81,19 @@ export function signInWithEmail(email: string, password: string) {
 export async function signUpWithEmail(email: string, password: string) {
   if (!_auth) throw new Error('Firebase not initialized');
   const cred = await createUserWithEmailAndPassword(_auth, email, password);
-  // The verification email goes out the moment the account exists. Not
-  // caught on purpose: a failed send surfaces to the caller, and the
-  // unverified state stays visible in-app (EmailVerificationBanner) with a
-  // resend action, so nothing about the failure is hidden.
-  await sendEmailVerification(cred.user);
+  // The verification email goes out the moment the account exists. By then
+  // onAuthStateChanged has already swapped SignInScreen for the app shell,
+  // so the caller's error line is gone; the outcome is recorded in the
+  // authGate store, where EmailVerificationBanner reads it, and the error is
+  // still rethrown (never swallowed).
+  try {
+    await sendEmailVerification(cred.user);
+    recordVerificationEmail({ status: 'sent' });
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    recordVerificationEmail({ status: 'failed', message: e.code ?? e.message ?? 'unknown error' });
+    throw err;
+  }
   return cred;
 }
 
@@ -101,6 +110,7 @@ export async function resendVerificationEmail(): Promise<void> {
   const user = _auth?.currentUser;
   if (!user) throw new Error('No signed-in user');
   await sendEmailVerification(user);
+  recordVerificationEmail({ status: 'sent' });
 }
 
 /**

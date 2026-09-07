@@ -280,7 +280,51 @@ test.describe('/auth/action', () => {
     await expect(success).toBeVisible();
     await expect(success).toContainText(/email confirmed/i);
     await expect(success).toContainText('trader@example.test');
-    expect(calls.some((c) => c.path.endsWith('accounts:update') && c.body.oobCode === 'verify-code')).toBe(true);
+    // Exactly one apply: the dev server renders under React StrictMode, which
+    // double-invokes the effect, and action codes are single-use. A second
+    // accounts:update here would mean the stale run consumed the code.
+    expect(calls.filter((c) => c.path.endsWith('accounts:update') && c.body.oobCode === 'verify-code')).toHaveLength(1);
+  });
+
+  test('email recovery: confirms, restores, then offers a password reset', async ({ page }) => {
+    await firebaseMode(page);
+    const calls = await mockIdentityToolkit(page, (call) => {
+      if (call.path.endsWith('accounts:resetPassword')) {
+        // checkActionCode for a recoverEmail link
+        return {
+          status: 200,
+          body: { email: 'old@example.test', newEmail: 'attacker@example.test', requestType: 'RECOVER_EMAIL' },
+        };
+      }
+      if (call.path.endsWith('accounts:update')) {
+        return { status: 200, body: { email: 'old@example.test' } };
+      }
+      if (call.path.endsWith('accounts:sendOobCode')) {
+        return { status: 200, body: { email: 'old@example.test' } };
+      }
+      return itkError('UNEXPECTED_CALL');
+    });
+
+    await page.goto('/auth/action?mode=recoverEmail&oobCode=recover-code', { waitUntil: 'domcontentloaded' });
+
+    // Nothing is applied until the user confirms.
+    const confirm = page.getByTestId('auth-action-recover');
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText('old@example.test');
+    expect(calls.filter((c) => c.path.endsWith('accounts:update'))).toHaveLength(0);
+
+    await page.getByTestId('auth-action-submit').click();
+
+    const success = page.getByTestId('auth-action-success');
+    await expect(success).toBeVisible();
+    await expect(success).toContainText(/email restored/i);
+    expect(calls.filter((c) => c.path.endsWith('accounts:update') && c.body.oobCode === 'recover-code')).toHaveLength(1);
+
+    // The unauthorized-change scenario: the reset is offered right here.
+    await page.getByTestId('auth-action-reset-send').click();
+    await expect(page.getByTestId('auth-action-reset-sent')).toContainText('old@example.test');
+    const reset = calls.find((c) => c.path.endsWith('accounts:sendOobCode'));
+    expect(reset?.body).toMatchObject({ requestType: 'PASSWORD_RESET', email: 'old@example.test' });
   });
 
   test('an expired link renders the error card with the SDK-mapped reason', async ({ page }) => {

@@ -45,3 +45,41 @@ export function subscribeAuthGate(cb: () => void): () => void {
 export function useAuthBlocked(): boolean {
   return useSyncExternalStore(subscribeAuthGate, isAuthBlocked, () => false);
 }
+
+// ── Verification-email delivery state ───────────────────────────────────────
+//
+// Sign-up creates the account and Firebase flips onAuthStateChanged before
+// the verification email's send has resolved, so SignInScreen (the caller)
+// is already unmounted when a send failure comes back. This store carries
+// that outcome across the auth transition so EmailVerificationBanner can say
+// what actually happened instead of asserting "we sent a link" (Rule 4: no
+// fabricated success). 'unknown' = nothing was sent in this session (e.g. an
+// older unverified account signing back in); the banner then offers a resend
+// without claiming a prior send.
+
+export type VerificationEmailState =
+  | { status: 'unknown' }
+  | { status: 'sent' }
+  | { status: 'failed'; message: string };
+
+let verificationEmail: VerificationEmailState = { status: 'unknown' };
+const verificationListeners = new Set<() => void>();
+
+export function recordVerificationEmail(state: VerificationEmailState): void {
+  verificationEmail = state;
+  for (const l of verificationListeners) l();
+}
+
+export function getVerificationEmailState(): VerificationEmailState {
+  return verificationEmail;
+}
+
+export function subscribeVerificationEmail(cb: () => void): () => void {
+  verificationListeners.add(cb);
+  return () => verificationListeners.delete(cb);
+}
+
+/** React hook: the outcome of the most recent verification-email send. */
+export function useVerificationEmailState(): VerificationEmailState {
+  return useSyncExternalStore(subscribeVerificationEmail, getVerificationEmailState, getVerificationEmailState);
+}

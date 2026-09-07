@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { LogIn, LogOut, Lock, ShieldCheck, MailWarning } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuthBlocked } from '@/lib/authGate';
+import { useAuthBlocked, useVerificationEmailState } from '@/lib/authGate';
 import { useUser } from '@/hooks/useUser';
 import { firebaseSignOut, refreshEmailVerified, resendVerificationEmail } from '@/lib/firebase';
 
@@ -194,6 +194,10 @@ export function AuthStatusBanner() {
  */
 export function EmailVerificationBanner() {
   const { email, emailVerified } = useUser();
+  // What actually happened to the sign-up email: sign-up records it in the
+  // authGate store because SignInScreen is unmounted by the time the send
+  // resolves. 'unknown' = no send this session, so no claim is made.
+  const delivery = useVerificationEmailState();
   // Local override once a refresh reports verified; the subscription value
   // only updates on the next auth-state event.
   const [confirmed, setConfirmed] = useState(false);
@@ -246,10 +250,16 @@ export function EmailVerificationBanner() {
       data-testid="email-verification-banner"
       className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-[var(--outline-variant)] bg-[var(--surface-2)] px-4 py-2 text-center text-[12px] text-[var(--on-surface)]"
     >
-      <span className="flex items-center gap-1.5">
+      <span className="flex items-center gap-1.5" data-delivery={delivery.status}>
         <MailWarning size={13} className="text-[var(--warning, var(--on-surface-variant))]" aria-hidden />
         Confirm your email address.
-        {email ? ` We sent a link to ${email}.` : ' We sent you a link.'}
+        {delivery.status === 'sent'
+          ? email
+            ? ` We sent a link to ${email}.`
+            : ' We sent you a link.'
+          : delivery.status === 'failed'
+            ? ` The confirmation email could not be sent (${delivery.message}). Resend it below.`
+            : ' Use "Resend email" to get a fresh link.'}
       </span>
       <button type="button" onClick={onResend} disabled={resend.state === 'sending'} data-testid="verification-resend" className={btnCls}>
         {resend.state === 'sending' ? 'Sending…' : resend.state === 'sent' ? 'Sent, check your inbox' : 'Resend email'}

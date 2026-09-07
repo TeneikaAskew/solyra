@@ -1,44 +1,30 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
-  isAuthBlocked,
-  markAuthBlocked,
-  clearAuthBlocked,
-  subscribeAuthGate,
+  getVerificationEmailState,
+  recordVerificationEmail,
+  subscribeVerificationEmail,
 } from './authGate';
 
-describe('authGate', () => {
-  beforeEach(() => clearAuthBlocked());
-
-  it('starts unblocked', () => {
-    expect(isAuthBlocked()).toBe(false);
+describe('verification-email delivery state', () => {
+  it('starts unknown so nothing claims a send that never happened', () => {
+    expect(getVerificationEmailState()).toEqual({ status: 'unknown' });
   });
 
-  it('marks blocked and notifies subscribers', () => {
-    let seen = 0;
-    const unsub = subscribeAuthGate(() => { seen += 1; });
-    markAuthBlocked();
-    expect(isAuthBlocked()).toBe(true);
-    expect(seen).toBe(1);
-    unsub();
-  });
+  it('records a failure with its reason and notifies subscribers', () => {
+    let notified = 0;
+    const unsub = subscribeVerificationEmail(() => {
+      notified += 1;
+    });
+    recordVerificationEmail({ status: 'failed', message: 'auth/network-request-failed' });
+    expect(getVerificationEmailState()).toEqual({ status: 'failed', message: 'auth/network-request-failed' });
+    expect(notified).toBe(1);
 
-  it('clearAuthBlocked resets the flag and notifies', () => {
-    markAuthBlocked();
-    let seen = 0;
-    const unsub = subscribeAuthGate(() => { seen += 1; });
-    clearAuthBlocked();
-    expect(isAuthBlocked()).toBe(false);
-    expect(seen).toBe(1);
-    unsub();
-  });
+    recordVerificationEmail({ status: 'sent' });
+    expect(getVerificationEmailState()).toEqual({ status: 'sent' });
+    expect(notified).toBe(2);
 
-  it('markAuthBlocked is idempotent (no repeat notifications)', () => {
-    let seen = 0;
-    const unsub = subscribeAuthGate(() => { seen += 1; });
-    markAuthBlocked();
-    markAuthBlocked();
-    markAuthBlocked();
-    expect(seen).toBe(1);
     unsub();
+    recordVerificationEmail({ status: 'unknown' });
+    expect(notified).toBe(2);
   });
 });

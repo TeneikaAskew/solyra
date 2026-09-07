@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Loader2, Lock, CheckCircle2, AlertTriangle, MailWarning } from 'lucide-react';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { Loader2, Lock, CheckCircle2, AlertTriangle, MailWarning, KeyRound } from 'lucide-react';
 import { Brand } from '@/components/layout/Brand';
 import { getAuthMode } from '@/lib/runtimeConfig';
 import {
@@ -8,6 +9,7 @@ import {
   checkAuthActionCode,
   confirmReset,
   refreshEmailVerified,
+  sendPasswordReset,
   verifyResetCode,
 } from '@/lib/firebase';
 import {
@@ -16,6 +18,7 @@ import {
   successCopy,
   validateNewPassword,
   type AuthActionMode,
+  type AuthActionParams,
 } from '@/lib/authAction';
 
 /**
@@ -57,35 +60,24 @@ export default function AuthActionPage() {
     return params ? { kind: 'loading' } : { kind: 'invalid-link' };
   });
 
-  // Kick off the code check for the current link. Runs once per (mode, code):
-  // React StrictMode double-invokes effects in dev, and a second applyActionCode
-  // with an already-consumed code would surface as a bogus "already used"
-  // error, so the guard below ignores the stale run's result.
+  const qc = useQueryClient();
+
+  // Kick off the code check for the current link. Action codes are single-use
+  // and React StrictMode double-invokes effects in dev, so the SDK call is
+  // deduplicated per (mode, code) in a module-level map: both effect runs
+  // await the SAME promise, and only the live run applies its result.
   useEffect(() => {
     if (!params || getAuthMode() !== 'firebase') return;
     let cancelled = false;
-    const { mode, oobCode } = params;
-    const settle = (next: View) => {
+    const key = `${params.mode}:${params.oobCode}`;
+    let pending = inflight.get(key);
+    if (!pending) {
+      pending = runAction(params, qc).finally(() => inflight.delete(key));
+      inflight.set(key, pending);
+    }
+    void pending.then((next) => {
       if (!cancelled) setView(next);
-    };
-    (async () => {
-      try {
-        if (mode === 'resetPassword') {
-          const email = await verifyResetCode(oobCode);
-          settle({ kind: 'reset-form', email });
-        } else if (mode === 'recoverEmail') {
-          const info = await checkAuthActionCode(oobCode);
-          settle({ kind: 'confirm-recover', email: info.data.email ?? null });
-        } else {
-          const info = await checkAuthActionCode(oobCode);
-          await applyAuthActionCode(oobCode);
-          await syncSignedInUser();
-          settle({ kind: 'success', mode, email: info.data.email ?? null });
-        }
-      } catch (err) {
-        settle(errorView(err));
-      }
-    })();
+    });
     return () => {
       cancelled = true;
     };
@@ -103,29 +95,68 @@ export default function AuthActionPage() {
         <div className="mb-6">
           <Brand />
         </div>
-        <Body view={view} params={params} onView={setView} />
+        <Body view={view} params={params} onView={setView} qc={qc} />
       </div>
     </div>
   );
 }
 
+/** In-flight SDK calls keyed by `${mode}:${oobCode}` (see the effect above). */
+const inflight = new Map<string, Promise<View>>();
+
 /**
- * If the account is signed in in this browser, pull the server copy so the
- * in-app "confirm your email" banner clears without a reload. A signed-out
- * visitor (the common case, the link opened from a mail client) is a no-op.
+ * Resolve the link's code with the SDK and return the view to render. Never
+ * rejects: SDK failures become the error card. The session sync after an
+ * applied action is best effort and cannot turn a completed action into a
+ * failure (the code is already consumed; a retry would only report "used").
  */
-async function syncSignedInUser(): Promise<void> {
-  await refreshEmailVerified();
+async function runAction(params: AuthActionParams, qc: QueryClient): Promise<View> {
+  const { mode, oobCode } = params;
+  try {
+    if (mode === 'resetPassword') {
+      const email = await verifyResetCode(oobCode);
+      return { kind: 'reset-form', email };
+    }
+    if (mode === 'recoverEmail') {
+      const info = await checkAuthActionCode(oobCode);
+      return { kind: 'confirm-recover', email: info.data.email ?? null };
+    }
+    const info = await checkAuthActionCode(oobCode);
+    await applyAuthActionCode(oobCode);
+    await syncSignedInUser(qc);
+    return { kind: 'success', mode, email: info.data.email ?? null };
+  } catch (err) {
+    return errorView(err);
+  }
+}
+
+/**
+ * If the account is signed in in this browser, pull the server copy of the
+ * user (so the in-app "confirm your email" banner clears, or a restored
+ * email shows) and drop the cached /api/me identity. A signed-out visitor
+ * (the common case, the link opened from a mail client) is a no-op. Best
+ * effort by design: the one-time action has already succeeded, so a failure
+ * here is logged, not shown as a failed link.
+ */
+async function syncSignedInUser(qc: QueryClient): Promise<void> {
+  try {
+    await refreshEmailVerified();
+    await qc.invalidateQueries({ queryKey: ['me'] });
+  } catch (err) {
+    console.warn('[auth/action] action applied; refreshing the signed-in session failed:', err);
+  }
 }
 
 function Body({
   view,
   params,
   onView,
+  qc,
 }: {
   view: View;
   params: ReturnType<typeof parseAuthAction>;
   onView: (v: View) => void;
+  qc: QueryClient;
 }) {
   switch (view.kind) {
     case 'loading':
@@ -163,6 +194,13 @@ function Body({
       );
     case 'success': {
       const copy = successCopy(view.mode, view.email);
+      // After an unauthorized-change recovery the password may be in the
+      // wrong hands too, so the card offers the reset directly instead of
+      // only advising it.
+      const offerReset =
+        (view.mode === 'recoverEmail' || view.mode === 'revertSecondFactorAddition') && view.email
+          ? view.email
+          : null;
       return (
         <Notice
           testId="auth-action-success"
@@ -170,11 +208,13 @@ function Body({
           title={copy.title}
           body={copy.body}
           cta={{ label: view.mode === 'resetPassword' ? 'Sign in' : 'Continue to Solyra', to: '/dashboard' }}
-        />
+        >
+          {offerReset && <ResetOffer email={offerReset} />}
+        </Notice>
       );
     }
     case 'confirm-recover':
-      return <RecoverEmail email={view.email} code={params?.oobCode ?? ''} onView={onView} />;
+      return <RecoverEmail email={view.email} code={params?.oobCode ?? ''} onView={onView} qc={qc} />;
     case 'reset-form':
       return <ResetPassword email={view.email} code={params?.oobCode ?? ''} onView={onView} />;
   }
@@ -186,12 +226,14 @@ function Notice({
   title,
   body,
   cta,
+  children,
 }: {
   testId: string;
   icon: React.ReactNode;
   title: string;
   body: string;
   cta?: { label: string; to: string };
+  children?: React.ReactNode;
 }) {
   return (
     <div data-testid={testId}>
@@ -200,6 +242,7 @@ function Notice({
         <h1 className="text-[18px] font-bold tracking-[-0.02em] text-[var(--on-surface)]">{title}</h1>
       </div>
       <p className="text-[13px] leading-relaxed text-[var(--on-surface-variant)]">{body}</p>
+      {children}
       <Link
         to={cta?.to ?? '/dashboard'}
         data-testid="auth-action-cta"
@@ -304,14 +347,66 @@ function ResetPassword({
   );
 }
 
+/**
+ * "Send me a password-reset link" for the restored address. Rendered on the
+ * recovery and second-factor-removal success cards, where the account's
+ * password may be compromised as well. Outcome is shown either way.
+ */
+function ResetOffer({ email }: { email: string }) {
+  const [state, setState] = useState<
+    { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'error'; message: string }
+  >({ kind: 'idle' });
+
+  const onSend = async () => {
+    setState({ kind: 'sending' });
+    try {
+      await sendPasswordReset(email);
+      setState({ kind: 'sent' });
+    } catch (err) {
+      const e = err as { code?: string };
+      setState({ kind: 'error', message: friendlyActionError(e.code) });
+    }
+  };
+
+  return (
+    <div data-testid="auth-action-reset-offer" className="mt-4 rounded-lg bg-[var(--surface-2)] p-3">
+      <p className="text-[12px] leading-relaxed text-[var(--on-surface-variant)]">
+        If you did not make the change that this link undid, whoever did may also know your password.
+      </p>
+      {state.kind === 'sent' ? (
+        <p data-testid="auth-action-reset-sent" className="mt-2 flex items-center gap-1.5 text-[12px] font-medium text-[var(--on-surface)]">
+          <KeyRound size={13} className="text-[var(--brand)]" aria-hidden />
+          A password-reset link is on its way to {email}.
+        </p>
+      ) : (
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={state.kind === 'sending'}
+          data-testid="auth-action-reset-send"
+          className="mt-2 flex items-center gap-1.5 rounded-md border border-[var(--outline-variant)] bg-[var(--surface-1)] px-3 py-1.5 text-[12px] font-semibold text-[var(--on-surface)] hover:bg-[var(--surface-0)] disabled:opacity-50"
+        >
+          <KeyRound size={13} aria-hidden />
+          {state.kind === 'sending' ? 'Sending…' : 'Send me a password-reset link'}
+        </button>
+      )}
+      {state.kind === 'error' && (
+        <p data-testid="auth-action-reset-error" className="mt-2 text-[12px] text-[var(--bear)]">{state.message}</p>
+      )}
+    </div>
+  );
+}
+
 function RecoverEmail({
   email,
   code,
   onView,
+  qc,
 }: {
   email: string | null;
   code: string;
   onView: (v: View) => void;
+  qc: QueryClient;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -320,12 +415,16 @@ function RecoverEmail({
     setBusy(true);
     try {
       await applyAuthActionCode(code);
-      onView({ kind: 'success', mode: 'recoverEmail', email });
     } catch (err) {
       onView(errorView(err));
-    } finally {
       setBusy(false);
+      return;
     }
+    // Restored on the server; refresh a signed-in session so the app shows
+    // the restored address (best effort, cannot fail the completed action).
+    await syncSignedInUser(qc);
+    onView({ kind: 'success', mode: 'recoverEmail', email });
+    setBusy(false);
   };
 
   return (
