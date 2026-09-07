@@ -11,12 +11,21 @@
  * whole app (admin nav, journal, preferences) is explorable and the Support
  * menu keeps showing the toggle to exit the mode.
  */
+import type { MostActiveResponse } from '@/components/shared/MostActiveBar';
 import type { MarketHours } from '@/hooks/useConfig';
+import type { MeResponse } from '@/hooks/useUser';
+import type { RuntimeConfig } from '@/lib/runtimeConfig';
+import type { UserPreferences } from '@/types/preferences';
 import type { UserProfile } from '@/types/profile';
 import type { LiveStatus } from '@/hooks/useLiveStatus';
 import type { WatchlistResponse } from '@/types/watchlist';
 import type { MockRoute } from './types';
 
+/** The full body HealthResponse declares. This branch once carried a
+ *  minimal `{status, cloud_sql}` with a note that nothing in the SPA reads
+ *  it, so it had no contract to satisfy; the contract check (#54) made that
+ *  false — the schema names project_root, gcs_bucket and lib_dir_exists as
+ *  always present, and a mock missing them fails the payload check. */
 export const MOCK_HEALTH = {
   status: 'ok',
   project_root: '/app',
@@ -26,14 +35,14 @@ export const MOCK_HEALTH = {
 };
 
 /** Open auth keeps the gate inert — matching iap/local behaviour. */
-export const MOCK_FIREBASE_CONFIG_OPEN = { authMode: 'open', firebase: null };
+export const MOCK_FIREBASE_CONFIG_OPEN = { authMode: 'open', firebase: null } satisfies RuntimeConfig;
 
 /** The identity mock mode runs as: a dev-role admin, clearly fake domain. */
 export const MOCK_ME_DEV = {
   email: 'dev@mock.solyra',
   is_admin: true,
   is_dev: true,
-};
+} satisfies MeResponse;
 
 /**
  * GET /api/me/profile — the Settings profile form (useProfile). A populated
@@ -62,7 +71,7 @@ export const MOCK_PREFERENCES_EMPTY = {
   nav_pattern: null,
   density: null,
   accent: null,
-};
+} satisfies UserPreferences;
 
 /**
  * Wire shape per routers/live.py:169-174 — no `ts` field exists there; the
@@ -94,7 +103,7 @@ export const MOCK_MOST_ACTIVE_EMPTY = {
   snapshot_date: null,
   label: null,
   items: [],
-};
+} satisfies MostActiveResponse;
 
 export const MOCK_MARKET_HOURS = {
   timezone: 'America/New_York',

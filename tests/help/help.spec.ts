@@ -3,11 +3,11 @@
  */
 import { test, expect } from '@playwright/test';
 import { perfBudgetMs } from '../helpers/perfBudget';
-import { mockCommon } from '../helpers/mocks';
+import { mockHelpApi } from '../helpers/fixtures/help';
 
 test.describe('Help & Glossary', () => {
   test.beforeEach(async ({ page }) => {
-    await mockCommon(page);
+    await mockHelpApi(page);
   });
 
   test('renders Help heading', async ({ page }) => {

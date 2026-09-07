@@ -15,6 +15,7 @@ import type { Page } from '@playwright/test';
 import type { SignalSeriesResponse } from '@/hooks/useLiveIndicators';
 import type { SimilarResponse } from '@/hooks/useSimilarSetups';
 import type { JournalTradesResponse } from '@/mocks/journal';
+import { MOCK_BACKTEST_ALL, MOCK_BACKTEST_EQUITY, MOCK_BACKTEST_RESULTS } from '@/mocks/dashboard';
 import { MOCK_LEVELS_POPULATED } from '@/mocks/options';
 import {
   MOCK_JOURNAL_TRADES_EMPTY,
@@ -72,4 +73,9 @@ export async function mockChartsApi(page: Page, opts: ChartsMockOpts = {}) {
     r.fulfill(M.ok({ ticker: 'IWM', count: 0, signals: [] }))
   );
   await page.route('**/api/signals/IWM/similar*', (r) => r.fulfill(M.ok(similar)));
+  // ChartsPage mounts BacktesterSection, which fetches the run list and the
+  // selected run on mount. Same payloads mock mode serves (src/mocks/dashboard.ts).
+  await page.route('**/api/backtest/results/IWM*', (r) => r.fulfill(M.ok(MOCK_BACKTEST_RESULTS)));
+  await page.route('**/api/backtest/equity/IWM', (r) => r.fulfill(M.ok(MOCK_BACKTEST_EQUITY)));
+  await page.route('**/api/backtest/all/IWM', (r) => r.fulfill(M.ok(MOCK_BACKTEST_ALL)));
 }

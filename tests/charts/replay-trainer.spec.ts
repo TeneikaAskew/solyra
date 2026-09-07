@@ -27,6 +27,11 @@
  */
 import { test, expect } from '@playwright/test';
 import { mockCommon, M } from '../helpers/mocks';
+import {
+  MOCK_BACKTEST_ALL,
+  MOCK_BACKTEST_EQUITY,
+  MOCK_BACKTEST_RESULTS,
+} from '../helpers/fixtures/dashboard';
 
 // 30 one-minute bars starting 09:31 "ET" (naive-ET-as-UTC epoch, matching
 // this repo's chart-time convention), so every bar falls inside the default
@@ -163,7 +168,10 @@ test.describe('Charts page — bar-replay trainer session (Task 5.2)', () => {
     );
     await page.route('**/api/journal/trades/IWM', (r) =>
       r.fulfill(M.ok({ ticker: 'IWM', source: 'cloud_sql', count: 2, trades: [EARLY_TRADE, LATE_TRADE] }))
-    );
+    );    // ChartsPage mounts BacktesterSection (run list + selected run on mount).
+    await page.route('**/api/backtest/results/IWM*', (r) => r.fulfill(M.ok(MOCK_BACKTEST_RESULTS)));
+    await page.route('**/api/backtest/equity/IWM', (r) => r.fulfill(M.ok(MOCK_BACKTEST_EQUITY)));
+    await page.route('**/api/backtest/all/IWM', (r) => r.fulfill(M.ok(MOCK_BACKTEST_ALL)));
   });
 
   test('start -> warm-start reveal -> step x2 -> Sig disabled -> future trade hidden -> Mark Entry POSTs source:replay pinned to the last revealed bar', async ({ page }) => {
@@ -355,7 +363,14 @@ test.describe('Charts page — replay session scorecard (Task 5.3)', () => {
     await page.route('**/api/live/signal-series', (r) => r.fulfill(M.ok(MOCK_SIGNAL_SERIES)));
     await page.route('**/api/journal/seed/IWM*', (r) =>
       r.fulfill(M.ok({ ticker: 'IWM', date: '2026-04-25', count: 0, trades: [] }))
+    );    // Honest empty trade list by default; tests that need trades re-register.
+    await page.route('**/api/journal/trades/IWM', (r) =>
+      r.fulfill(M.ok({ ticker: 'IWM', source: 'cloud_sql', count: 0, trades: [] }))
     );
+    // ChartsPage mounts BacktesterSection (run list + selected run on mount).
+    await page.route('**/api/backtest/results/IWM*', (r) => r.fulfill(M.ok(MOCK_BACKTEST_RESULTS)));
+    await page.route('**/api/backtest/equity/IWM', (r) => r.fulfill(M.ok(MOCK_BACKTEST_EQUITY)));
+    await page.route('**/api/backtest/all/IWM', (r) => r.fulfill(M.ok(MOCK_BACKTEST_ALL)));
   });
 
   test('stop() with >=1 closed session trade POSTs {ticker, session_id} and opens the Task 3.3 scorecard modal', async ({ page }) => {
