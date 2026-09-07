@@ -88,6 +88,65 @@ test('a low-sample slot carries the badge, and only that rung', async ({ page })
   await expect(page.getByText('Put levels')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('38% (n=24)')).toBeVisible();
   await expect(page.getByTestId('low-sample-badge')).toHaveCount(1);
+  await page.getByTestId('movement-headline').locator('xpath=ancestor::*[contains(@class,"min-w-0")][1]')
+    .screenshot({ path: `${outDir}/ladder-lowsample.png` });
+});
+
+test('an untracked rung and a withheld expected_move degrade only their own fields', async ({ page }) => {
+  await mockDashboard(page);
+  // The production shape until the magnitude engine is retrained (stocks
+  // #1025): the levels ladder is OK but one rung's price matched no playbook
+  // slot, and expected_move is withheld with the model collapse named. The
+  // headline, the other rungs and the regime must render unchanged; the two
+  // withheld fields render the em-dash + "data unavailable" badge (Rule 4),
+  // never 0% or a fabricated size class.
+  const calls = MOCK_STATEMENT.levels.calls;
+  const degraded = {
+    ...MOCK_STATEMENT,
+    levels: {
+      ...MOCK_STATEMENT.levels,
+      calls: [
+        calls[0],
+        {
+          ...calls[1],
+          reach_rate: {
+            status: 'UNAVAILABLE',
+            reason: 'PWH 220.05 is not a slot the playbook tracked on 2026-09-07',
+          },
+        },
+      ],
+    },
+    confidence_modifiers: {
+      ...MOCK_STATEMENT.confidence_modifiers,
+      expected_move: {
+        status: 'UNAVAILABLE',
+        role: 'context',
+        reason:
+          'magnitude-engine-c49qf is degenerate: 100% of inference rows share one bucket (TIGHT); withheld until retrained',
+      },
+    },
+  };
+  await page.route('**/api/movement-statement*', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(degraded) }),
+  );
+  await page.goto('/dashboard');
+  const headline = page.getByTestId('movement-headline');
+  await expect(headline).toContainText('continuation', { timeout: 15000 });
+  // The tracked rungs keep their rates; the untracked one carries no number.
+  await expect(page.getByText('70% (n=115)')).toBeVisible();
+  await expect(page.getByText('45% (n=94)')).toBeVisible();
+  await expect(page.getByText('55% (n=95)')).toHaveCount(0);
+  // Exactly two unavailable badges: the untracked rung and expected_move,
+  // each carrying its reason as the tooltip.
+  const badges = page.getByTestId('unavailable-badge');
+  await expect(badges).toHaveCount(2);
+  await expect(badges.nth(0)).toHaveAttribute('title', /not a slot the playbook tracked/);
+  await expect(badges.nth(1)).toHaveAttribute('title', /degenerate/);
+  await expect(page.getByTestId('context-modifiers')).toContainText('trending');
+  // No size affordance can be built from a withheld expected_move.
+  await expect(page.getByTestId('size-light-chip')).toHaveCount(0);
+  await headline.locator('xpath=ancestor::*[contains(@class,"min-w-0")][1]')
+    .screenshot({ path: `${outDir}/ladder-untracked-expected-move-withheld.png` });
 });
 
 // --- Affordances (three tiers) -------------------------------------------
