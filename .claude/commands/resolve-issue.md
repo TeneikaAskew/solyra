@@ -35,6 +35,11 @@ With no argument, list what is open and stop for a decision:
 #          orderBy=UPDATED_AT direction=DESC minimal_output=true
 ```
 
+**Page to exhaustion before reporting a count.** One `list_issues` call returns
+one page. Grouping page 1 and calling it the inventory silently drops the
+oldest issues. Pass an explicit `perPage` and keep requesting `page` until a
+short page comes back. Same for the label listing below.
+
 Report counts by label, then ask which to take. Do not pick one yourself unless
 the user named a label or a number.
 
@@ -74,7 +79,14 @@ git fetch origin
 
 # CASE A — a PR already exists for this issue. Work on ITS head; do not open
 # a second PR.
-git checkout -B "<the PR's headRefName>" "origin/<the PR's headRefName>"
+# Never `checkout -B` here: -B RESETS an existing local branch to the start
+# point, silently discarding unpushed commits from an earlier run.
+if git show-ref --verify --quiet "refs/heads/<headRefName>"; then
+  git checkout "<headRefName>"        # already local: keep what it carries
+  git merge --ff-only "origin/<headRefName>" || echo "diverged — reconcile before working"
+else
+  git checkout -b "<headRefName>" --track "origin/<headRefName>"
+fi
 
 # CASE B — no existing PR. Create one branch and remember its name; every
 # later phase refers back to it rather than reconstructing a prefix.
@@ -270,6 +282,18 @@ Phase 0 may have created a `feature/`, `chore/`, `docs/` or `test/` branch, or
 checked out an existing PR's head, and pushing a name that does not exist fails
 with a refspec error.
 
+**Commit before you push.** Phase 5 leaves the candidate in the working tree,
+and `git push` transfers only what is reachable from `HEAD`. Pushing without
+committing produces a PR containing none of the work you just did and tested,
+while every command still reports success:
+
+```bash
+git status --short               # confirm the candidate is actually here
+git add <the files this issue's fix touches>   # never `git add -A` blindly
+git commit -F <message file>     # the body described above
+git log --oneline -1             # confirm the commit exists before pushing
+```
+
 ```bash
 git push -u origin HEAD          # or "$BRANCH", captured in Phase 0
 ```
@@ -311,6 +335,15 @@ In order:
    and commit, or replied to with why not. Zero unresolved is the bar.
 4. Verify each finding against the code before fixing it: reproduce, write the
    failing test, fix, show it pass.
+   **If this produced a commit, go back to step 1 on the new head.** A fix
+   commit moves the head past the review that approved it, so merging from
+   here lets the review-fix itself merge unreviewed — the same stale-head
+   condition, arriving by a different route. Push, let the review re-run on
+   the new SHA, re-check. No round limit.
+   **A completed review with no findings posts no review at all**, only a 👍
+   reaction, so an absent review for a SHA means either "clean" or "not yet
+   run". Read the review summary comment's status table alongside the review
+   list to tell them apart.
 5. Only then CI green on the current head, and no merge conflict.
 
 Resolving is part of the fix. A finding fixed in a later PR with the original
