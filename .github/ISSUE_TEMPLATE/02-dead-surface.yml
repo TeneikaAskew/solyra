@@ -51,7 +51,9 @@ body:
       placeholder: |
         # Search for every name the surface exports, not just the filename —
         # a default export re-exported under another name still has an importer.
-        $ grep -rn "<Component>\|<useThing>" src/
+        # src/ ALONE is not enough: a Playwright spec, a script or a workflow
+        # helper importing it is a caller the resolver's own check now looks for.
+        $ git grep -n "<Component>\|<useThing>" -- src tests scripts .github
         src/components/<area>/<Component>.tsx:12:export function <Component>(
         src/hooks/<useThing>.ts:8:export function <useThing>(
         (definitions only; no importer)
@@ -132,7 +134,7 @@ body:
         package.json. Paste the check.
       render: shell
       placeholder: |
-        $ grep -rn "@tanstack/react-table" src/
+        $ git grep -n "@tanstack/react-table" -- src tests scripts .github
         src/components/backtest/BacktesterSection.tsx:22
         src/routes/SignalsPage.tsx:15
         Live consumers remain; no dependency cleanup follows.

@@ -42,6 +42,20 @@ body:
         body built inside a `page.route` handler. The canonical mock takes the null in
         step 3, once the synced schema admits it.
 
+        **A widening is nullable OR optional, and they need different payloads.**
+        Required to nullable takes `T | null` and a null value. Required to
+        optional but still non-nullable takes `field?: T` and an **omitted key** —
+        the new schema still REJECTS null there, so a null payload exercises a
+        shape the API cannot emit while the missing-key path goes untested, and
+        step 3 would then put that null in the canonical mock and fail validation.
+
+        **Step 2 waits for old bundles, not for step 1's deploy.** Deploying the
+        compatible frontend changes what a browser fetches NEXT and nothing about a
+        tab already open, and this app registers no service worker and no update
+        prompt — so a session keeps its bundle until someone reloads. stocks
+        emitting the null before then hits exactly the readers the ordering
+        protects. A deploy and every client having it are different events.
+
         **Whichever side RECEIVES must tolerate the new shape first**, and that is
         not always this app. For a response we read, it is us: our reader goes
         first. For a request body we send, it is stocks — it relaxes the field to

@@ -166,6 +166,10 @@ half:
 ```bash
 BASE_TREE=$(mktemp -d -t base-tree-XXXXXX) && rmdir "$BASE_TREE"
 git worktree add "$BASE_TREE" origin/main          # validity: is it still real?
+ln -s "$PWD/node_modules" "$BASE_TREE/node_modules"   # a worktree has TRACKED
+  # files only, so `npm test` there exits 127 — and `npx vitest` silently
+  # fetches a DIFFERENT vitest from the registry (5.0.0 against this repo's
+  # 4.1.11). Symlink first, and run with `npx --no-install` so a miss is loud.
 # ...and for the PR's own before/after, the base it forked from:
 #   git worktree add "$BASE_TREE" "$(git merge-base origin/main <headRefName>)"
 ...
@@ -315,7 +319,7 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
 | A surface is deleted | `git grep -q "<Component>\|<useThing>" -- src tests scripts .github; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Not `src/` alone** — a Playwright spec importing the component is a caller that `src/`-only misses, and so is a CI reference. `docs/` and `.claude/` mentions are prose: worth tidying, not a broken caller. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
-| A response field this app READS is being dropped (the consumer-first PR) | the same `rc -eq 1` form on `"<field>"`, but **scoped away from the declarations this row tells you to keep**: `grep -rq "<field>" src/ --exclude-dir=types --exclude-dir=mocks`. Across all of `src/` it can never pass — `src/types/` and `src/mocks/` are inside it, and the field stays there until the sync PR, so the check would fail after every read is gone. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
+| A response field this app READS is being dropped (the consumer-first PR) | the `rc -eq 1` form on the **property access**, not the name: `grep -rq "\.<field>\b" src/`. A bare `"<field>"` also matches the declaration this row tells you to keep, and excluding `src/types/` and `src/mocks/` does not help because plenty of API types are declared in hooks and components — measured, `LiveQuote.change_pct` is declared at `src/hooks/useLiveQuote.ts:15`, so the excluded-directory form still returns 0 after every reader is gone. `\.<field>\b` matches `q.change_pct` in the four reading files and not the declaration. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
 | The final sync PR for that removal | after stocks merges, `npm run contract:sync`, then `src/mocks/contract.test.ts` failing — measured, the mock's field is now undeclared and `additionalProperties` is forced `false` at `src/mocks/contract.test.ts:587`. It passes once the field leaves `src/types/`, the canonical mock and `tests/helpers/fixtures/`. `tsc -b` is not the instrument: it is clean before the sync because the old type still declares the field |
 | A type is widened, and call sites stop compiling | `npx tsc -b` failing on the unguarded call site, clean after |
 | A guard is added and the type ALREADY admits null | a unit or render assertion — **`tsc -b` cannot fail here**. `fmtNum` takes `number \| null \| undefined` (`src/lib/format.ts:75`), so `` `${fmtNum(v)}%` `` compiles before and after while rendering `—%`. The compiler is silent on exactly the Rule 4 defect these forms are about |
@@ -474,14 +478,17 @@ _sig() { node -e '
     catch { console.error("eslint produced no JSON"); process.exit(2); }
     const o=[];
     for (const f of r) for (const m of f.messages)
-      o.push(f.filePath.replace(process.cwd()+"/","")+"\t"+(m.ruleId||"(fatal)"));
+      o.push(f.filePath.replace(process.cwd()+"/","")+"\t"+(m.ruleId||"(fatal)")+"\t"+m.message);
     if (o.length) process.stdout.write(o.sort().join("\n")+"\n");
   });'; }
 # Each takes its OUTPUT FILE as $1 and sorts in place, so no `| sort` sits
 # between the producer and the status being read — that pipe would report
 # sort's success and hide the producer's failure.
 rule_sig() { local out=$1; shift
-  npx eslint -f json "$@" | _sig > "$out" || return 1
+  # --no-error-on-unmatched-pattern: a deletion resolution puts the removed
+  # file in $FILES, and eslint on a missing path prints "Oops!" not JSON,
+  # which would make _sig exit 2 and this gate fail for every deletion.
+  npx eslint -f json --no-error-on-unmatched-pattern "$@" | _sig > "$out" || return 1
   sort -o "$out" "$out"; }
 head_sig() { local out=$1 f rc=0; shift; : > "$out"
   for f in "$@"; do
