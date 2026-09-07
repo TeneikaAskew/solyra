@@ -257,9 +257,10 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 | Resolution | The before/after check |
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
-| A surface is deleted | `grep -rn "<Component>\|<useThing>" src/` — hits before, silent after — plus `npx tsc -b` and `npm run build` clean |
+| A surface is deleted | `! grep -rq "<Component>\|<useThing>" src/` — **negated**, so it FAILS while the definitions exist and PASSES once they are gone; a bare `grep` has it backwards, exiting 0 on a hit. Plus `npx tsc -b` and `npm run build` clean |
 | A response field is dropped by the API | `npm run contract:sync` then `src/mocks/contract.test.ts` failing — **not** `tsc -b`, which is clean before the sync because the old type still declares the field, and which fails after it for as long as the call site remains. `tsc -b` clean is the AFTER half, once the consumer is gone |
-| A type is widened or a guard added | `npx tsc -b` failing on the unguarded call site, clean after |
+| A type is widened, and call sites stop compiling | `npx tsc -b` failing on the unguarded call site, clean after |
+| A guard is added and the type ALREADY admits null | a unit or render assertion — **`tsc -b` cannot fail here**. `fmtNum` takes `number \| null \| undefined` (`src/lib/format.ts:75`), so `` `${fmtNum(v)}%` `` compiles before and after while rendering `—%`. The compiler is silent on exactly the Rule 4 defect these forms are about |
 | A dependency is dropped | the importer grep, plus the removal from `package.json` |
 
 What is NOT acceptable is skipping the before half. "It builds now" says

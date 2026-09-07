@@ -37,6 +37,15 @@ body:
         body built inside a `page.route` handler. The canonical mock takes the null in
         step 3, once the synced schema admits it.
 
+        **Whichever side RECEIVES must tolerate the new shape first**, and that is
+        not always this app. For a response we read, it is us: our reader goes
+        first. For a request body we send, it is stocks — it relaxes the field to
+        optional and deploys BEFORE we stop sending it, because its request models
+        set `extra="forbid"`, so an unknown or missing key is a 422 rather than
+        something quietly ignored. And its final removal waits for old browser
+        sessions to age out, not for our deploy. "Consumer first" describes a
+        response; it is not a rule about which repository moves first.
+
         **Scope `jq` to the FIELD and pass `-Sc`.** Diffing whole
         pretty-printed schemas gives you multiline blocks and `@@` ranges you
         have to read around; one compact sorted line per side shows the change
@@ -122,7 +131,7 @@ body:
     id: paired-change
     attributes:
       label: The paired change set
-      description: "Rule 6: the consumer changes first, in both directions. A widening is three steps — say which one this is."
+      description: "Rule 6: the RECEIVING side tolerates the new shape first. That is this app for a response, stocks for a request body. Say which step this is."
       placeholder: |
         A widening, in order.
 
@@ -143,7 +152,8 @@ body:
         schema admits it. The type does not move again.
 
         Producer first breaks this: stocks deploys, the API emits null, and the frontend
-        in front of it still assumes non-null.
+        in front of it still assumes non-null. A narrowing flips by direction — see
+        above — so say which one you have.
     validations:
       required: true
 
