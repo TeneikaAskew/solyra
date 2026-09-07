@@ -258,10 +258,11 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
 | A surface is deleted | `! grep -rq "<Component>\|<useThing>" src/` — **negated**, so it FAILS while the definitions exist and PASSES once they are gone; a bare `grep` has it backwards, exiting 0 on a hit. Plus `npx tsc -b` and `npm run build` clean |
-| A response field is dropped by the API | `npm run contract:sync` then `src/mocks/contract.test.ts` failing — **not** `tsc -b`, which is clean before the sync because the old type still declares the field, and which fails after it for as long as the call site remains. `tsc -b` clean is the AFTER half, once the consumer is gone |
+| A response field this app READS is being dropped (the consumer-first PR) | `! grep -rq "<field>" src/` — negated, failing while the reads remain. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
+| The final sync PR for that removal | after stocks merges, `npm run contract:sync`, then `src/mocks/contract.test.ts` failing — measured, the mock's field is now undeclared and `additionalProperties` is forced `false` at `src/mocks/contract.test.ts:587`. It passes once the field leaves `src/types/`, the canonical mock and `tests/helpers/fixtures/`. `tsc -b` is not the instrument: it is clean before the sync because the old type still declares the field |
 | A type is widened, and call sites stop compiling | `npx tsc -b` failing on the unguarded call site, clean after |
 | A guard is added and the type ALREADY admits null | a unit or render assertion — **`tsc -b` cannot fail here**. `fmtNum` takes `number \| null \| undefined` (`src/lib/format.ts:75`), so `` `${fmtNum(v)}%` `` compiles before and after while rendering `—%`. The compiler is silent on exactly the Rule 4 defect these forms are about |
-| A dependency is dropped | the importer grep, plus the removal from `package.json` |
+| A dependency is dropped | `! grep -rq "from '<pkg>'" src/ tests/ && ! grep -q '"<pkg>":' package.json` — negated for the same reason as the deletion row above, and covering both halves in one assertion: it fails while either an import or the manifest entry survives, and a `package.json` edit on its own is a diff, not a check |
 
 What is NOT acceptable is skipping the before half. "It builds now" says
 nothing; "it did not build before and builds now" is the evidence.
@@ -355,11 +356,47 @@ the fix the issue actually asked for. Most of them are
 exporting a pure helper beside its component so the Rule 4 behaviour can be
 unit-tested.
 
-Run it scoped to what you touched instead, and that must be clean:
+Scoping it to what you touched does not rescue it, and this is the trap: the
+files this command sends you to are the ones carrying the baseline. Measured
+on the three the Rule 4 sections name as the patterns to copy —
+
+```
+$ npx eslint src/routes/DashboardPage.tsx \
+             src/components/dashboard/MovementRead.tsx \
+             src/components/primitives/index.tsx
+✖ 8 problems (8 errors, 0 warnings)     # all react-refresh/only-export-components
+```
+
+— so "scoped, and it must be clean" makes a presentation fix in `MovementRead`
+conditional on refactoring the deliberate helper exports that
+`MovementRead.test.tsx` exists to test. Gate on what your change ADDS, by
+taking the signature of the same files BEFORE you edit them:
 
 ```bash
-npx eslint <the files this issue's fix touches>
+sig() { npx eslint -f json "$@" | node -e "
+let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
+  const out=[];
+  for (const f of JSON.parse(s))
+    for (const m of f.messages)
+      out.push(f.filePath.replace(process.cwd()+'/','')+'  '+(m.ruleId||'(fatal)'));
+  console.log(out.sort().join('\n'));});"; }
+
+FILES="<the files this issue's fix touches>"
+sig $FILES > /tmp/lint-before.txt      # BEFORE the first edit. Non-zero is expected
+# ...fix...
+sig $FILES > /tmp/lint-after.txt
+comm -13 /tmp/lint-before.txt /tmp/lint-after.txt > /tmp/lint-new.txt
+test ! -s /tmp/lint-new.txt || { cat /tmp/lint-new.txt; echo "NEW lint errors"; false; }
 ```
+
+`comm` on sorted duplicate lines is a multiset difference, so a fourth
+`only-export-components` becoming a fifth surfaces as one new line rather than
+being absorbed. Verified both directions on this tree: unchanged, it exits 0
+against the 8-error baseline; with one exported helper appended to
+`MovementRead.tsx` it prints that file's rule and exits 1. The `sig` pipeline
+deliberately discards eslint's own status — a dirty baseline is the premise
+here, not the failure — so the assertion is the `test`, and it ends in `false`
+rather than a bare `echo`, which would report the failure and exit 0.
 
 A repo-wide lint count is a backlog item, not a gate. The drift from 32 to 43
 is what an ungated backlog looks like, and it is worth filing as a follow-up
@@ -562,6 +599,24 @@ In order:
      rollback, keeps sending the field; dropping it the moment we ship 422s
      them. It stays optional until old sessions have aged out or telemetry
      shows the field has stopped arriving.
+
+   **Both narrowings end back HERE, on a NEW branch and a NEW PR** — the same
+   final step the widening has, for the same reason. The moment stocks' removal
+   is on its `main`, this repo's vendored snapshot declares a field the API no
+   longer has, and `contract:check` runs on every PR here
+   (`.github/workflows/ci.yml:91`), so one unfinished narrowing turns every
+   unrelated frontend PR red. That PR runs `npm run contract:sync` and takes
+   the field out of `src/types/`, the canonical mock and
+   `tests/helpers/fixtures/`.
+
+   It cannot be folded into the consumer-first PR, and this is measured rather
+   than cautious: while stocks `main` still declares the field as required,
+   dropping it from the canonical mock fails `contract.test.ts` with
+   ``/ must have required property `<field>` ``. So the consumer-first PR
+   removes the READS and leaves the type and mocks alone; the type, the mock
+   and the fixtures move in this last one. Phase 7 opens one PR per run, so
+   this means going back to Phase 7 rather than falling through to Phase 9,
+   and the issue does not close before it lands.
 
    The invariant underneath both, and under the widening, is the same:
    **whichever side is receiving must tolerate the new shape before the sending
