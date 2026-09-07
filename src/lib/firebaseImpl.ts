@@ -88,10 +88,10 @@ export async function signUpWithEmail(email: string, password: string) {
   // still rethrown (never swallowed).
   try {
     await sendEmailVerification(cred.user);
-    recordVerificationEmail({ status: 'sent' });
+    recordVerificationEmail(cred.user.uid, { status: 'sent' });
   } catch (err) {
     const e = err as { code?: string; message?: string };
-    recordVerificationEmail({ status: 'failed', message: e.code ?? e.message ?? 'unknown error' });
+    recordVerificationEmail(cred.user.uid, { status: 'failed', message: e.code ?? e.message ?? 'unknown error' });
     throw err;
   }
   return cred;
@@ -110,7 +110,7 @@ export async function resendVerificationEmail(): Promise<void> {
   const user = _auth?.currentUser;
   if (!user) throw new Error('No signed-in user');
   await sendEmailVerification(user);
-  recordVerificationEmail({ status: 'sent' });
+  recordVerificationEmail(user.uid, { status: 'sent' });
 }
 
 /**

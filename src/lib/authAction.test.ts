@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ACTION_MISMATCH,
   AUTH_ACTION_MODES,
   MIN_PASSWORD_LENGTH,
+  OPERATION_FOR_MODE,
   friendlyActionError,
+  operationMatchesMode,
   friendlyError,
   parseAuthAction,
   resetLooksSent,
@@ -30,6 +33,24 @@ describe('parseAuthAction', () => {
     expect(parseAuthAction('?oobCode=abc')).toBeNull();
     expect(parseAuthAction('?mode=signIn&oobCode=abc')).toBeNull();
     expect(parseAuthAction('?mode=RESETPASSWORD&oobCode=abc')).toBeNull();
+  });
+});
+
+describe('operationMatchesMode', () => {
+  it('accepts only the operation the mode requires', () => {
+    for (const mode of AUTH_ACTION_MODES) {
+      expect(operationMatchesMode(mode, OPERATION_FOR_MODE[mode])).toBe(true);
+      for (const other of AUTH_ACTION_MODES) {
+        if (other !== mode) expect(operationMatchesMode(mode, OPERATION_FOR_MODE[other])).toBe(false);
+      }
+      expect(operationMatchesMode(mode, 'EMAIL_SIGNIN')).toBe(false);
+    }
+  });
+
+  it('has copy for a mismatched link that does not echo the code', () => {
+    const msg = friendlyActionError(ACTION_MISMATCH);
+    expect(msg).toMatch(/does not match/i);
+    expect(msg).not.toContain('solyra/');
   });
 });
 

@@ -193,11 +193,13 @@ export function AuthStatusBanner() {
  * here. Resend failures are shown, not swallowed (Rule 4).
  */
 export function EmailVerificationBanner() {
-  const { email, emailVerified } = useUser();
+  const { email, emailVerified, uid } = useUser();
   // What actually happened to the sign-up email: sign-up records it in the
   // authGate store because SignInScreen is unmounted by the time the send
-  // resolves. 'unknown' = no send this session, so no claim is made.
-  const delivery = useVerificationEmailState();
+  // resolves. Keyed by uid so an account switch without a reload never
+  // inherits the previous account's outcome; 'unknown' = no send for this
+  // account this session, so no claim is made.
+  const delivery = useVerificationEmailState(uid);
   // Local override once a refresh reports verified; the subscription value
   // only updates on the next auth-state event.
   const [confirmed, setConfirmed] = useState(false);

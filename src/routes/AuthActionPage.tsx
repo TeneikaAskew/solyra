@@ -10,10 +10,11 @@ import {
   confirmReset,
   refreshEmailVerified,
   sendPasswordReset,
-  verifyResetCode,
 } from '@/lib/firebase';
 import {
+  ACTION_MISMATCH,
   friendlyActionError,
+  operationMatchesMode,
   parseAuthAction,
   successCopy,
   validateNewPassword,
@@ -113,18 +114,26 @@ const inflight = new Map<string, Promise<View>>();
 async function runAction(params: AuthActionParams, qc: QueryClient): Promise<View> {
   const { mode, oobCode } = params;
   try {
+    // The code is checked before anything is applied, and the operation the
+    // SDK reports for it must be the one `mode` asks for: `mode` is only a
+    // query parameter, so a recovery code presented as `mode=verifyEmail`
+    // would otherwise be applied without the confirmation step and reported
+    // as a verification.
+    const info = await checkAuthActionCode(oobCode);
+    if (!operationMatchesMode(mode, info.operation)) {
+      throw Object.assign(new Error('action code operation does not match mode'), { code: ACTION_MISMATCH });
+    }
+    const email = info.data.email ?? null;
     if (mode === 'resetPassword') {
-      const email = await verifyResetCode(oobCode);
+      if (!email) throw Object.assign(new Error('reset code carries no email'), { code: 'auth/invalid-action-code' });
       return { kind: 'reset-form', email };
     }
     if (mode === 'recoverEmail') {
-      const info = await checkAuthActionCode(oobCode);
-      return { kind: 'confirm-recover', email: info.data.email ?? null };
+      return { kind: 'confirm-recover', email };
     }
-    const info = await checkAuthActionCode(oobCode);
     await applyAuthActionCode(oobCode);
     await syncSignedInUser(qc);
-    return { kind: 'success', mode, email: info.data.email ?? null };
+    return { kind: 'success', mode, email };
   } catch (err) {
     return errorView(err);
   }

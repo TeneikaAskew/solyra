@@ -81,5 +81,5 @@ export function useUser() {
   const isSignedIn = firebaseMode ? signedIn : true;
   const isLoading = !fbReady || (meEnabled && query.isLoading);
 
-  return { email, isAdmin, isDev, isSignedIn, isLoading, authMode, emailVerified };
+  return { email, isAdmin, isDev, isSignedIn, isLoading, authMode, emailVerified, uid };
 }

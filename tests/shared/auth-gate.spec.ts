@@ -327,6 +327,26 @@ test.describe('/auth/action', () => {
     expect(reset?.body).toMatchObject({ requestType: 'PASSWORD_RESET', email: 'old@example.test' });
   });
 
+  test('a code whose operation disagrees with mode is refused before it is applied', async ({ page }) => {
+    await firebaseMode(page);
+    const calls = await mockIdentityToolkit(page, (call) => {
+      if (call.path.endsWith('accounts:resetPassword')) {
+        // A RECOVERY code, presented in the URL as a verification link.
+        return { status: 200, body: { email: 'old@example.test', newEmail: 'x@example.test', requestType: 'RECOVER_EMAIL' } };
+      }
+      return itkError('UNEXPECTED_CALL');
+    });
+
+    await page.goto('/auth/action?mode=verifyEmail&oobCode=recovery-in-disguise', { waitUntil: 'domcontentloaded' });
+
+    const error = page.getByTestId('auth-action-error');
+    await expect(error).toBeVisible();
+    await expect(error).toContainText(/does not match/i);
+    // Never applied: no accounts:update, no success card, no reset offer.
+    expect(calls.filter((c) => c.path.endsWith('accounts:update'))).toHaveLength(0);
+    await expect(page.getByTestId('auth-action-success')).toHaveCount(0);
+  });
+
   test('an expired link renders the error card with the SDK-mapped reason', async ({ page }) => {
     await firebaseMode(page);
     await mockIdentityToolkit(page, () => itkError('EXPIRED_OOB_CODE'));

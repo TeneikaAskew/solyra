@@ -34,6 +34,8 @@ export function friendlyError(code: string | undefined, fallback: string): strin
       return 'Too many attempts. Try again later.';
     case 'auth/network-request-failed':
       return 'Could not reach the sign-in service. Check your connection and try again.';
+    case ACTION_MISMATCH:
+      return 'This link does not match the action it claims to perform. Open the link from the email again, or request a new one.';
     default:
       return fallback;
   }
@@ -85,6 +87,28 @@ export function parseAuthAction(search: string): AuthActionParams | null {
   return { mode, oobCode };
 }
 
+/**
+ * The Firebase `ActionCodeInfo.operation` each link mode must carry. The
+ * `mode` query parameter is attacker-controlled (it is just the URL); the
+ * operation encoded in the code is authoritative, so the page checks the
+ * code with the SDK first and refuses to apply it under a different mode.
+ */
+export const OPERATION_FOR_MODE: Record<AuthActionMode, string> = {
+  resetPassword: 'PASSWORD_RESET',
+  verifyEmail: 'VERIFY_EMAIL',
+  recoverEmail: 'RECOVER_EMAIL',
+  verifyAndChangeEmail: 'VERIFY_AND_CHANGE_EMAIL',
+  revertSecondFactorAddition: 'REVERT_SECOND_FACTOR_ADDITION',
+};
+
+/** Error code the page raises when a code's operation disagrees with `mode`. */
+export const ACTION_MISMATCH = 'solyra/action-mismatch';
+
+/** True when the SDK-reported operation is the one `mode` requires. */
+export function operationMatchesMode(mode: AuthActionMode, operation: string): boolean {
+  return OPERATION_FOR_MODE[mode] === operation;
+}
+
 /** Firebase's configured minimum; matches SignInScreen's sign-up copy. */
 export const MIN_PASSWORD_LENGTH = 6;
 
@@ -121,6 +145,8 @@ export function friendlyActionError(code: string | undefined): string {
       return 'Too many attempts. Try again later.';
     case 'auth/network-request-failed':
       return 'Could not reach the sign-in service. Check your connection and try again.';
+    case ACTION_MISMATCH:
+      return 'This link does not match the action it claims to perform. Open the link from the email again, or request a new one.';
     default:
       return 'Something went wrong with this link. Request a new one and try again.';
   }
