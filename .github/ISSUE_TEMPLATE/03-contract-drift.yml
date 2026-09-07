@@ -136,11 +136,10 @@ body:
         A widening, in order.
 
         Step 1 HERE — widen `VolumeBar.value` to `number | null` in
-        src/hooks/useMarketData.ts and guard every call site tsc flags, INCLUDING the
-        AUDIT-marked `?? 0` at src/routes/ChartsPage.tsx:364, which becomes a live
-        Rule 4 violation the moment step 2 emits null. Null exercised by a TEST-ONLY
-        payload (see above). No snapshot change, so contract:check still passes.
-        Merge, deploy.
+        src/hooks/useMarketData.ts, guard every call site tsc flags, and remove the
+        AUDIT-marked `?? 0` at src/routes/ChartsPage.tsx:364 — a live Rule 4
+        violation the moment step 2 emits null. Null exercised by a TEST-ONLY
+        payload (see above). No snapshot change. Merge, deploy.
 
         Step 2 STOCKS — widen `_Bar.volume` to `float | None` in
         platform/api/routers/live.py, handle a null-volume bar in lib/indicators VWAP,
