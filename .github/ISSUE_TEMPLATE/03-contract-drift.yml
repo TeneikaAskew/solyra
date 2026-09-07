@@ -28,6 +28,15 @@ body:
         schema that validates anything, so a renamed field there passes CI in
         both repos and breaks this app at runtime.
 
+        **In step 1 the null goes in a test-only payload, never the canonical
+        mock.** The mocks `satisfies` the TS types AND are Ajv-validated against the
+        vendored schema, which in step 1 is still the OLD one. So a null in
+        `MOCK_MARKET_DATA` fails `tsc -b` before the type is widened and fails
+        `src/mocks/contract.test.ts` after — the compatibility step cannot use the
+        canonical fixture to prove itself. Use a unit case on the pure helper, or a
+        body built inside a `page.route` handler. The canonical mock takes the null in
+        step 3, once the synced schema admits it.
+
         **`contract:check` names the operation and never the field.** It prints
         `components.schemas changed` and stops, so the field-level evidence this
         form asks for has to be produced by diffing the two documents yourself.
@@ -109,17 +118,24 @@ body:
       label: The paired change set
       description: "Rule 6: the consumer changes first, in both directions. A widening is three steps — say which one this is."
       placeholder: |
-        A widening, in order. Step 1 HERE: admit null on `VolumeBar` in
-        src/hooks/useMarketData.ts's reader path and add a null-volume case to
-        tests/helpers/fixtures/charts.ts, so the app tolerates both shapes. No snapshot
-        change, so contract:check still passes against the current stocks main. Merge, deploy.
-        Step 2 STOCKS: widen `_Bar.volume` to `float | None` in platform/api/routers/live.py,
-        handle a null-volume bar in lib/indicators VWAP, regenerate openapi.json, deploy.
-        Step 3 HERE: `npm run contract:sync`, widen the type, drop the AUDIT-marked fallback
-        at src/routes/ChartsPage.tsx:364.
+        A widening, in order.
 
-        Producer first breaks this: stocks deploys, the API emits null, and the frontend in
-        front of it still assumes non-null.
+        Step 1 HERE — widen the TYPE and guard the readers: `VolumeBar.value` to
+        `number | null` in src/hooks/useMarketData.ts, plus every call site tsc then
+        flags. Exercise the null with a TEST-ONLY payload, never the canonical mock
+        (see above). No snapshot change, so contract:check still passes against the
+        current stocks main. Merge, deploy.
+
+        Step 2 STOCKS — widen `_Bar.volume` to `float | None` in
+        platform/api/routers/live.py, handle a null-volume bar in lib/indicators VWAP,
+        regenerate openapi.json, merge, deploy.
+
+        Step 3 HERE — `npm run contract:sync`, then move the null INTO the canonical
+        mock and tests/helpers/fixtures/charts.ts now that the schema admits it, and
+        drop the AUDIT-marked fallback at src/routes/ChartsPage.tsx:364.
+
+        Producer first breaks this: stocks deploys, the API emits null, and the frontend
+        in front of it still assumes non-null.
     validations:
       required: true
 
@@ -129,8 +145,11 @@ body:
       label: Acceptance criteria
       placeholder: |
         - `npm run contract:check` clean against stocks main.
-        - A fixture or mock carrying the NEW shape — for a widening, one whose field is
-          actually `null` — added FIRST, and failing before the type is widened.
+        - A null-bearing case added FIRST and failing before the type is widened. In
+          step 1 that has to be a TEST-ONLY payload; the canonical mocks `satisfies` the
+          types and are Ajv-validated against the still-old vendored schema, so a null
+          in one fails both `tsc -b` and `src/mocks/contract.test.ts` before the widening
+          it is meant to prove. The canonical mock carries the null in step 3.
         - An E2E or unit assertion that the surface renders `—` rather than `—%`.
         - Both PR descriptions name the other side's PR number.
 
