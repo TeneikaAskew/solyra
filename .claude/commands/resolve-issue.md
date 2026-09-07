@@ -257,12 +257,12 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 | Resolution | The before/after check |
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
-| A surface is deleted | `! grep -rq "<Component>\|<useThing>" src/` — **negated**, so it FAILS while the definitions exist and PASSES once they are gone; a bare `grep` has it backwards, exiting 0 on a hit. Plus `npx tsc -b` and `npm run build` clean |
-| A response field this app READS is being dropped (the consumer-first PR) | `! grep -rq "<field>" src/` — negated, failing while the reads remain. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
+| A surface is deleted | `grep -rq "<Component>\|<useThing>" src/; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
+| A response field this app READS is being dropped (the consumer-first PR) | the same `rc -eq 1` form on `"<field>"` across `src/`, failing while the reads remain. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
 | The final sync PR for that removal | after stocks merges, `npm run contract:sync`, then `src/mocks/contract.test.ts` failing — measured, the mock's field is now undeclared and `additionalProperties` is forced `false` at `src/mocks/contract.test.ts:587`. It passes once the field leaves `src/types/`, the canonical mock and `tests/helpers/fixtures/`. `tsc -b` is not the instrument: it is clean before the sync because the old type still declares the field |
 | A type is widened, and call sites stop compiling | `npx tsc -b` failing on the unguarded call site, clean after |
 | A guard is added and the type ALREADY admits null | a unit or render assertion — **`tsc -b` cannot fail here**. `fmtNum` takes `number \| null \| undefined` (`src/lib/format.ts:75`), so `` `${fmtNum(v)}%` `` compiles before and after while rendering `—%`. The compiler is silent on exactly the Rule 4 defect these forms are about |
-| A dependency is dropped | `! grep -rq "from '<pkg>'" src/ tests/ && ! grep -q '"<pkg>":' package.json` — negated for the same reason as the deletion row above, and covering both halves in one assertion: it fails while either an import or the manifest entry survives, and a `package.json` edit on its own is a diff, not a check |
+| A dependency is dropped | both halves, each on the `rc -eq 1` form: the importers in `src/ tests/`, and `'"<pkg>":'` in `package.json`. It must fail while either an import or the manifest entry survives — a `package.json` edit on its own is a diff, not a check — and it must not pass because `grep` errored on a bad path |
 
 What is NOT acceptable is skipping the before half. "It builds now" says
 nothing; "it did not build before and builds now" is the evidence.
@@ -447,7 +447,16 @@ git status --short               # confirm the candidate is actually here
 git add <the files this issue's fix touches>   # never `git add -A` blindly
 git commit -F <message file>     # the body described above
 git log --oneline -1             # confirm the commit exists before pushing
+test -z "$(git status --porcelain)" \
+  || { git status --porcelain; echo "^ NOT in the commit"; false; }
 ```
+
+The last check is the price of naming files rather than `git add -A`. An
+omitted file is invisible: `commit` and `log` both succeed, and the `tsc -b`,
+Vitest and Playwright runs you pasted passed against the working tree, which
+is the commit PLUS what you left out. The PR then carries a candidate that was
+never the thing you verified. A leftover may be legitimate — say so per file
+rather than letting the check stay silent.
 
 ```bash
 git push -u origin HEAD          # or "$BRANCH", captured in Phase 0
@@ -526,17 +535,28 @@ In order:
 5. **Now zero unresolved**, across every page: each thread fixed-and-resolved
    naming what changed and the covering test and commit, or replied to with
    why not. Then CI green on the current head, and no merge conflict.
-6. **Merge it.** Steps 1-5 are the gate, not the destination; stopping here
-   leaves the fix on a branch while Phase 9 describes the issue as landed.
-   Merge once every step above passes, and record the merge commit in the
-   status comment.
+6. **Merge it, bound to the SHA that passed.** Steps 1-5 are the gate, not
+   the destination; stopping here leaves the fix on a branch while Phase 9
+   describes the issue as landed. Merge once every step above passes, and
+   record the merge commit in the status comment.
+
+   **Pass the reviewed head SHA to the merge.** The steps above established
+   that a review and a green CI run exist for one specific commit; a push
+   landing between the last check and the merge moves the head, and an
+   unqualified merge takes whatever is there. Re-read the PR immediately
+   before merging and give `merge_pull_request` its `expectedHeadSha`, so a
+   moved head is a rejected merge rather than an unreviewed one. If it has
+   moved, go back and re-run the gate against the new head.
 
    Stop instead of merging, saying which: the PR is one this session did not
    open and was not asked to drive; or the user wants to merge it themselves.
    Never merge to get past a step that has not passed.
 
-   **Rule 6 ordering: the consumer changes first, in both directions.** An
-   earlier version of this step said the stocks PR merges first because the
+   **Rule 6 ordering: the RECEIVING side moves first.** (This heading read
+   "the consumer changes first, in both directions" until round 17. That
+   clause was retired from the body below and from
+   `03-contract-drift.yml`, and survived here — where a reader meets it
+   first.) An earlier version of this step said the stocks PR merges first because the
    snapshot this repo vendors is read from stocks `main`. That derives the
    rollout order from what keeps `contract:check` green, which is a CI
    question, not from what keeps the deployed app working, which is a
