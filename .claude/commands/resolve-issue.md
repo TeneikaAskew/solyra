@@ -447,15 +447,26 @@ In order:
 
    So a widening is three steps, not two:
 
-   1. **Here first.** Make the reader tolerate BOTH shapes — the null guard at
-      the presentation boundary, plus a fixture or mock whose field is
-      actually `null`. This touches no type and no snapshot, so
-      `contract:check` still passes against the old stocks `main`. Merge and
-      let it deploy.
+   1. **Here first.** Widen the TS type and guard every call site `tsc` then
+      flags — that pair IS the compatibility change. Exercise the null with a
+      **test-only payload** (a unit case on the pure helper, or a body built
+      inside a `page.route` handler), never the canonical mock: the mocks
+      `satisfies` the types AND are Ajv-validated by
+      `src/mocks/contract.test.ts` against the vendored schema, which at this
+      step is still the OLD one, so a null there fails `tsc -b` before the
+      widening and the contract test after it. No snapshot change, so
+      `contract:check` still passes against the current stocks `main`. Merge
+      and let it deploy.
+
+      The asymmetry that makes this work: `contract.test.ts` validates
+      payloads, not types. Widening the type costs nothing there; moving a
+      null into a payload costs everything. That is why the type goes first
+      and the fixture cannot.
    2. **Then stocks.** Widen the response model, regenerate
       `platform/api/openapi.json`, merge, deploy.
-   3. **Then here again.** `npm run contract:sync`, widen the TS type, update
-      the fixtures.
+   3. **Then here again.** `npm run contract:sync`, then move the null INTO
+      the canonical mock and `tests/helpers/fixtures/` now that the schema
+      admits it.
 
    A narrowing runs the same way for the same reason: this app stops reading
    or sending the field first, and stocks drops it only once nothing consumes
