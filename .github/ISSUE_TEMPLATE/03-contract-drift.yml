@@ -137,11 +137,13 @@ body:
     id: attestation
     attributes:
       label: Evidence attestation
+      description: >-
+        The evidence has to come from the API. `src/types/`, a fixture, a mock
+        and a hook's doc comment are all this side of the wire.
       options:
         - label: >-
-            The API-side evidence came from a real response or from the snapshot
-            checked against stocks `main` while filing this issue. It is not
-            read off `src/types/`, a fixture, a mock, or a hook's doc comment.
+            The API-side evidence came from a real response, or from the
+            snapshot checked against stocks `main`, while filing this issue.
           required: true
         - label: >-
             I confirmed what the stocks router actually returns rather than

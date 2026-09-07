@@ -144,17 +144,16 @@ body:
     id: attestation
     attributes:
       label: Evidence attestation
+      description: >-
+        "Measured" is defined at the top of this form. An honestly unverified
+        report is fine; an unmarked guess is not.
       options:
         - label: >-
-            Everything I have presented above **as measured** came from running
-            against the real app or the real API while filing this issue — not
-            a fixture, not a mock payload, not read off a type, not recalled.
-            Anything I did not verify is labelled "not measured" rather than
-            stated as fact. An honestly unverified report is fine; an
-            unmarked guess is not.
+            Everything presented above **as measured** came from the real app
+            or the real API now, and anything unverified is labelled as such.
           required: true
         - label: >-
             Where this concerns a value the API returns **and I checked it**, I
-            looked at an actual response rather than at `src/types/` or
-            `tests/helpers/fixtures/`. If I did not check, I said so above.
+            looked at an actual response, not `src/types/` or a fixture. If I
+            did not, I said so above.
           required: true
