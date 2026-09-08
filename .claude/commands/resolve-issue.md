@@ -356,7 +356,7 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 | Resolution | The before/after check |
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
-| A surface is deleted | `git grep -q "<Component>\|<useThing>" -- src tests scripts .github; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Not `src/` alone** — a Playwright spec importing the component is a caller that `src/`-only misses, and so is a CI reference. `docs/` and `.claude/` mentions are prose: worth tidying, not a broken caller. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
+| A surface is deleted | `git grep -q "<Component>\|<useThing>" -- . ':!package-lock.json' ':!bun.lock' ':!package.json' ':!tests/fixtures/stocks-openapi.json' ':!docs/' ':!.github/ISSUE_TEMPLATE/' ':!*.md' ':!*.drawio'; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Repo-wide over tracked files, the SAME scope the filing-time search in `02-dead-surface.yml` uses** — the gate and the form disagreeing is how a resolution closes with a live caller. Measured: delete `LOCAL_API` from `src/lib/apiTargets.ts` and the old `-- src tests scripts .github` form returns **rc=1, "deleted"**, while `vite.config.ts:7,45,93` still imports and uses it — a root-level file that scope cannot see, and the dev server's proxy target. **Not `src/` alone** either — a Playwright spec importing the component is a caller that `src/`-only misses, and so is a CI reference. `docs/` and `.claude/` mentions are prose: worth tidying, not a broken caller. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
 | A response field this app READS is being dropped (the consumer-first PR) | **not a grep — delete the field from its TypeScript declaration and run `npx tsc -b`.** Every surviving reader becomes a `TS2339`/`TS2353`, and the list of errors IS the list of call sites; put the field back once you have it. Three greps were tried on this row and each was wrong in a different direction, because a regex cannot tell a read from a declaration or one type from another. Measured on this tree: `grep -rq "\.confidence_modifiers\b" src/` returns **rc=1, "no readers"**, for a field declared at `src/types/index.ts:264` and read four times in `MovementRead.tsx` — because `:147` destructures it (`const { confidence_modifiers } = statement`) and `:259` reads it as `MovementStatement['confidence_modifiers']`, and `\.<field>\b` sees neither. The same grep for `change_pct` reports `MostActiveBar.tsx`, which reads `MostActiveItem.change_pct` — a different type that happens to share the name — while missing `src/lib/reviewQuote.ts` and three mock files. Deleting the declaration finds all of them and nothing else, in both the `src/types/` case and the hook-declared `LiveQuote` case. **But delete the type's INDEX SIGNATURE too, if it has one.** A `[key: string]: unknown` keeps every removed key legal, so the compiler stays silent on readers that are really there — measured on `SignalRow` (`src/routes/SignalsPage.tsx:25-36`): removing `time`, `direction` and `score` while leaving `[key: string]: unknown` left `npx tsc -b` at **rc=0**, while `SignalsPage` still reads all three at `:65`, `:69`, `:77`, `:79`, `:134`, `:160`, `:161` and `:162` — `columnHelper.accessor('time')` and `String(row.original.direction)` both stay legal, and after the API drops the field they yield `undefined`/`NaN` rather than a type error. Removing the index signature as well turned that into **rc=2 and all eight call sites**. So: delete the named field AND any index signature, read the errors, then put both back. The index signature's removal also surfaces genuinely dynamic keys elsewhere in the type — those are noise for this question, so read the list rather than counting it. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
 | The final sync PR for that removal | after stocks merges, `npm run contract:sync`, then `src/mocks/contract.test.ts` failing — measured, the mock's field is now undeclared and `additionalProperties` is forced `false` at `src/mocks/contract.test.ts:587`. It passes once the field leaves the canonical mock, `tests/helpers/fixtures/`, **and the type — wherever that type lives.** Not `src/types/` by name: `LiveQuote` is declared at `src/hooks/useLiveQuote.ts:15` and `OptionsResponse` in its own hook, and a directory-scoped cleanup leaves those behind. Whether anything catches the leftover depends on one thing — **is the stale property required or optional?** Measured, simulating stocks dropping `change_pct` from `LiveQuoteResponse`: a **required** leftover fails `tsc -b`, because every mock `satisfies` the type and dropping the field from the mock then breaks four call sites; an **optional** leftover (`change_pct?:`) passes **everything** — `tsc -b` rc=0, `contract.test.ts` 14/14, the whole suite 45 files / 397 tests green — while the hook still declares a field the API no longer has. That is the repo's own documented blind spot: per CLAUDE.md Rule 6, the narrowing direction is caught but "the widening direction needs a schema-to-type comparison the test does not do". So grep the field name across `src/` before calling the sync done, rather than trusting the gates. `tsc -b` is not the before-half instrument either: it is clean before the sync because the old type still declares the field |
 | A type is widened, and call sites stop compiling | `npx tsc -b` failing on the unguarded call site, clean after |
@@ -623,14 +623,33 @@ _base_path() {   # echo the path $1 had at $LINT_BASE, or $1 itself
         | awk -v new="$1" '$1 ~ /^R/ && $3 == new {print $2; exit}')
   printf '%s' "${old:-$1}"; }
 
-head_sig() { local out=$1 f b rc=0; shift; : > "$out"
+head_sig() { local out=$1 f b tmp rc=0; shift; : > "$out"
+  tmp=$(mktemp -t lint-base-XXXXXX)
   for f in "$@"; do
     b=$(_base_path "$f")
     git show "$LINT_BASE:$b" >/dev/null 2>&1 || continue  # new file: no baseline
-    # --stdin-filename stays $f: eslint config is matched on the CURRENT path.
-    git show "$LINT_BASE:$b" | npx eslint --stdin --stdin-filename "$f" -f json \
-      --no-warn-ignored | _sig >> "$out" || rc=1
+    # --stdin-filename is $b, the OLD path. eslint picks its config BY PATH, and
+    # the baseline has to be judged under the config that governed it THEN, not
+    # the one the PR moved it under. Measured against this repo's
+    # `files: ['**/*.{ts,tsx}']`, same blob with one unused variable:
+    #   as scripts/tool.ts   -> 1 message, @typescript-eslint/no-unused-vars
+    #   as scripts/tool.mjs  -> 0 messages
+    # So a rename that moves a file INTO lint scope (.mjs -> .ts, and scripts/
+    # holds two .mjs files today) gave the baseline the SAME diagnostic as the
+    # current signature, they cancelled in `comm -13`, and the gate passed on
+    # diagnostics the PR itself introduced. Under $b the baseline is empty and
+    # they correctly show as added.
+    #
+    # Then rewrite the path back to $f, because rule_sig reports under the
+    # CURRENT path and the two signature sets have to line up. Via a temp file,
+    # not another pipe stage: `| _sig | awk ... || rc=1` would read AWK's exit
+    # and swallow a failure in eslint or _sig, which is the swallowed-status
+    # bug this gate is full of guards against.
+    git show "$LINT_BASE:$b" | npx eslint --stdin --stdin-filename "$b" -f json \
+      --no-warn-ignored | _sig > "$tmp" || { rc=1; continue; }
+    awk -v b="$b" -v f="$f" 'BEGIN{FS=OFS="\t"} $1==b{$1=f} {print}' "$tmp" >> "$out"
   done
+  rm -f "$tmp"
   sort -o "$out" "$out"; return $rc; }
 
 # BOTH halves sit in ONE function, and every stop is a `return`, not a bare
