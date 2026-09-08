@@ -106,9 +106,16 @@ body:
         # 39,065 lines for `mockCommon` versus 23 with it, in a field that asks
         # you to paste the output. -G selection and the parent-qualified
         # summaries are unaffected.
+        # The pathspec is the SAME repo-wide scope as the importer field above,
+        # and for the same reason. `src tests scripts .github platform/src` is
+        # what this example was written against, and it cannot see root-level
+        # config: measured, `defineConfig` has FOUR root-level consumers and
+        # zero in-scope files, so that pathspec returns 0 commits and the
+        # forensics answer "never had a consumer" while repo-wide returns 6.
+        # (`platform/src` left this repo at #957 and matches nothing here now.)
         $ git log --oneline --all --full-history --diff-merges=separate --no-patch \
             -G "TermHover" --no-renames \
-            -- src tests scripts .github platform/src
+            -- . ':!docs/' ':!.github/ISSUE_TEMPLATE/' ':!*.md' ':!*.drawio'
         a5ae6a8 (Jun 9) rename refactor, kept the dead component up to date
         e1ce147 (May 31, Phase C1) shipped it "not yet wired into any page — C2-C5 will
                 consume it as the heatmap UI lands"

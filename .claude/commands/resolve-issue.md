@@ -497,13 +497,31 @@ let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
     o.push(f.filePath.replace(process.cwd()+'/','')+':'+m.line);
   console.log(o.sort().join('\n'));});" | sort -u; }
 
+# $LINT_BASE, not a hardcoded HEAD. Under CASE B (a branch you just cut) they
+# are the same thing. Under CASE A they are NOT: HEAD is the adopted PR's
+# current head, so every diagnostic its earlier commits introduced is scored as
+# pre-existing and waved through — and CI here does not run lint, so nothing
+# downstream catches it either. The gate would then be judging only the edits
+# made in this session rather than the PR that Phase 8 actually merges.
+#   CASE B:  LINT_BASE=HEAD
+#   CASE A:  LINT_BASE=$(git merge-base origin/main "<headRefName>")
+# The changed-line half takes the same ref, for the same reason.
+LINT_BASE=HEAD                       # override to the merge base under CASE A
+
 FILES="<the files this issue's fix touches>"
 # CASE A: that is NOT enough. Moving $LINT_BASE to the merge base only changes
 # what each file is compared against; it does not add the existing PR's other
 # files. An earlier commit can carry a lint error in file A while this session
 # edits only file B, and a gate scoped to B never lints A. So under CASE A,
-# derive the set mechanically rather than listing it by hand:
-#   FILES="$(git diff --name-only --diff-filter=d "$LINT_BASE") \
+# derive the set mechanically rather than listing it by hand — and note the
+# `:?`, which is load-bearing. The last substitution in that assignment is the
+# `git ls-files`, and it succeeds whatever `git diff` did, so an unset or empty
+# LINT_BASE gives the WHOLE assignment exit 0. Measured in a clean shell: it
+# prints `fatal: ambiguous argument ''`, sets FILES to that error text plus
+# whitespace, returns 0, and every lint command downstream then runs against
+# nothing — which passes. That is why LINT_BASE is defined ABOVE this line and
+# why the expansion refuses an empty value rather than trusting the order.
+#   FILES="$(git diff --name-only --diff-filter=d "${LINT_BASE:?set LINT_BASE first}") \
 #          $(git ls-files --others --exclude-standard)"
 # ONE ref, for the same reason _base_path takes one: `"$LINT_BASE" HEAD` diffs
 # commit-to-commit and cannot see this session's UNCOMMITTED edits, so a file
@@ -571,17 +589,6 @@ rule_sig() { local out=$1; shift
   npx eslint -f json --no-error-on-unmatched-pattern --no-warn-ignored "$@" \
     | _sig > "$out" || return 1
   sort -o "$out" "$out"; }
-# $LINT_BASE, not a hardcoded HEAD. Under CASE B (a branch you just cut) they
-# are the same thing. Under CASE A they are NOT: HEAD is the adopted PR's
-# current head, so every diagnostic its earlier commits introduced is scored as
-# pre-existing and waved through — and CI here does not run lint, so nothing
-# downstream catches it either. The gate would then be judging only the edits
-# made in this session rather than the PR that Phase 8 actually merges.
-#   CASE B:  LINT_BASE=HEAD
-#   CASE A:  LINT_BASE=$(git merge-base origin/main "<headRefName>")
-# The changed-line half takes the same ref, for the same reason.
-LINT_BASE=HEAD                       # override to the merge base under CASE A
-
 # Rename-aware. `git show "$LINT_BASE:$f"` fails for a file the PR RENAMED —
 # measured, `fatal: path '<new>' exists on disk, but not in <base>` — so the
 # plain form gives it no baseline and every pre-existing diagnostic in it reads
