@@ -195,11 +195,26 @@ body:
       label: Acceptance criteria
       placeholder: |
         - `npm run contract:check` clean against stocks main.
-        - A null-bearing case added FIRST and failing before the type is widened. In
-          step 1 that has to be a TEST-ONLY payload; the canonical mocks `satisfies` the
-          types and are Ajv-validated against the still-old vendored schema, so a null
-          in one fails both `tsc -b` and `src/mocks/contract.test.ts` before the widening
-          it is meant to prove. The canonical mock carries the null in step 3.
+        - A case matching the widening you selected above, added FIRST and failing
+          before the type is widened. **Nullable -> a null-bearing payload.
+          Optional-but-still-non-nullable -> the key OMITTED. BOTH at once -> one
+          payload of EACH**, `field?: T | null`; a single payload leaves the other
+          newly-valid production shape untested, and "or" is not the bar here (the
+          resolver's widening table says "one of each" for that row). The type is
+          `field?: T` — NOT `field: T | undefined`, which still REQUIRES the key and
+          only lets its value be undefined. Measured: against `{ a: 'x' }` with `b`
+          omitted, `b: number | undefined` fails TS2741 "Property 'b' is missing
+          ... but required", while `b?: number` compiles. Use `?:`, adding
+          `| null` only when the field is nullable too. An optional-only schema
+          REJECTS null, so a null payload there
+          exercises a shape the API cannot emit while the missing-key path — the one
+          that actually changed — goes untested. In step 1 they have to be TEST-ONLY
+          payloads either way; the canonical mocks `satisfies` the types and are
+          Ajv-validated against the still-old vendored schema, so they would fail both
+          `tsc -b` and `src/mocks/contract.test.ts` before the widening they are meant to
+          prove. The canonical mock carries the null, or the omission, in step 3 — and
+          for a combined widening one canonical mock cannot show both, so the shape it
+          does not carry keeps a test-only payload.
         - An E2E or unit assertion that the surface renders `—` rather than `—%`.
         - Both PR descriptions name the other side's PR number.
 
@@ -207,7 +222,8 @@ body:
         TypeScript never imports tests/fixtures/stocks-openapi.json, which is read at
         runtime by src/mocks/contract.test.ts, and under a widened schema the old
         fixture stays valid — that blind spot is the whole reason this form exists.
-        Only a null-bearing fixture, or a schema-to-type check, can fail on widening.
+        Only a fixture carrying the new shape — a null, or an omitted key — or a
+        schema-to-type check, can fail on widening.
     validations:
       required: true
 

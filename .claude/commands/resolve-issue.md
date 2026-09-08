@@ -356,12 +356,12 @@ both ways and pasted; it does not have to be a Vitest or Playwright case:
 | Resolution | The before/after check |
 |---|---|
 | A behaviour changes | a unit or E2E test, as below |
-| A surface is deleted | `git grep -q "<Component>\|<useThing>" -- src tests scripts .github; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Not `src/` alone** — a Playwright spec importing the component is a caller that `src/`-only misses, and so is a CI reference. `docs/` and `.claude/` mentions are prose: worth tidying, not a broken caller. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
-| A response field this app READS is being dropped (the consumer-first PR) | **not a grep — delete the field from its TypeScript declaration and run `npx tsc -b`.** Every surviving reader becomes a `TS2339`/`TS2353`, and the list of errors IS the list of call sites; put the field back once you have it. Three greps were tried on this row and each was wrong in a different direction, because a regex cannot tell a read from a declaration or one type from another. Measured on this tree: `grep -rq "\.confidence_modifiers\b" src/` returns **rc=1, "no readers"**, for a field declared at `src/types/index.ts:264` and read four times in `MovementRead.tsx` — because `:147` destructures it (`const { confidence_modifiers } = statement`) and `:259` reads it as `MovementStatement['confidence_modifiers']`, and `\.<field>\b` sees neither. The same grep for `change_pct` reports `MostActiveBar.tsx`, which reads `MostActiveItem.change_pct` — a different type that happens to share the name — while missing `src/lib/reviewQuote.ts` and three mock files. Deleting the declaration finds all of them and nothing else, in both the `src/types/` case and the hook-declared `LiveQuote` case. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
+| A surface is deleted | `git grep -q "<Component>\|<useThing>" -- . ':!package-lock.json' ':!bun.lock' ':!package.json' ':!tests/fixtures/stocks-openapi.json' ':!docs/' ':!.github/ISSUE_TEMPLATE/' ':!*.md' ':!*.drawio'; rc=$?` then `test $rc -eq 1 \|\| { echo "rc=$rc"; false; }`. **Repo-wide over tracked files, the SAME scope the filing-time search in `02-dead-surface.yml` uses** — the gate and the form disagreeing is how a resolution closes with a live caller. Measured: delete `LOCAL_API` from `src/lib/apiTargets.ts` and the old `-- src tests scripts .github` form returns **rc=1, "deleted"**, while `vite.config.ts:7,45,93` still imports and uses it — a root-level file that scope cannot see, and the dev server's proxy target. **Not `src/` alone** either — a Playwright spec importing the component is a caller that `src/`-only misses, and so is a CI reference. `docs/` and `.claude/` mentions are prose: worth tidying, not a broken caller. **Exactly 1**: `grep` exits 0 on a hit, 1 on no match and **2 on an error**, so `! grep` reports success for a typo'd path — measured, `! grep -rq x /nonexistent-dir` exits 0. Plus `npx tsc -b` and `npm run build` clean |
+| A response field this app READS is being dropped (the consumer-first PR) | **not a grep — delete the field from its TypeScript declaration and run `npx tsc -b`.** Every surviving reader becomes a `TS2339`/`TS2353`, and the list of errors IS the list of call sites; put the field back once you have it. Three greps were tried on this row and each was wrong in a different direction, because a regex cannot tell a read from a declaration or one type from another. Measured on this tree: `grep -rq "\.confidence_modifiers\b" src/` returns **rc=1, "no readers"**, for a field declared at `src/types/index.ts:264` and read four times in `MovementRead.tsx` — because `:147` destructures it (`const { confidence_modifiers } = statement`) and `:259` reads it as `MovementStatement['confidence_modifiers']`, and `\.<field>\b` sees neither. The same grep for `change_pct` reports `MostActiveBar.tsx`, which reads `MostActiveItem.change_pct` — a different type that happens to share the name — while missing `src/lib/reviewQuote.ts` and three mock files. Deleting the declaration finds all of them and nothing else, in both the `src/types/` case and the hook-declared `LiveQuote` case. **But delete the type's INDEX SIGNATURE too, if it has one.** A `[key: string]: unknown` keeps every removed key legal, so the compiler stays silent on readers that are really there — measured on `SignalRow` (`src/routes/SignalsPage.tsx:25-36`): removing `time`, `direction` and `score` while leaving `[key: string]: unknown` left `npx tsc -b` at **rc=0**, while `SignalsPage` still reads all three at `:65`, `:69`, `:77`, `:79`, `:134`, `:160`, `:161` and `:162` — `columnHelper.accessor('time')` and `String(row.original.direction)` both stay legal, and after the API drops the field they yield `undefined`/`NaN` rather than a type error. Removing the index signature as well turned that into **rc=2 and all eight call sites**. So: delete the named field AND any index signature, read the errors, then put both back. The index signature's removal also surfaces genuinely dynamic keys elsewhere in the type — those are noise for this question, so read the list rather than counting it. `contract.test.ts` **cannot** be the before half here: a bare `contract:sync` fetches stocks `main`, which still declares the field, so it is green; and syncing against the stocks branch instead fails on the canonical mock's now-undeclared property, which removing a reader does not fix. Leave the field in `src/types/` and the mocks for the sync PR — measured, dropping it from the mock while `main` still marks it required fails as ``/ must have required property `<field>` `` |
 | The final sync PR for that removal | after stocks merges, `npm run contract:sync`, then `src/mocks/contract.test.ts` failing — measured, the mock's field is now undeclared and `additionalProperties` is forced `false` at `src/mocks/contract.test.ts:587`. It passes once the field leaves the canonical mock, `tests/helpers/fixtures/`, **and the type — wherever that type lives.** Not `src/types/` by name: `LiveQuote` is declared at `src/hooks/useLiveQuote.ts:15` and `OptionsResponse` in its own hook, and a directory-scoped cleanup leaves those behind. Whether anything catches the leftover depends on one thing — **is the stale property required or optional?** Measured, simulating stocks dropping `change_pct` from `LiveQuoteResponse`: a **required** leftover fails `tsc -b`, because every mock `satisfies` the type and dropping the field from the mock then breaks four call sites; an **optional** leftover (`change_pct?:`) passes **everything** — `tsc -b` rc=0, `contract.test.ts` 14/14, the whole suite 45 files / 397 tests green — while the hook still declares a field the API no longer has. That is the repo's own documented blind spot: per CLAUDE.md Rule 6, the narrowing direction is caught but "the widening direction needs a schema-to-type comparison the test does not do". So grep the field name across `src/` before calling the sync done, rather than trusting the gates. `tsc -b` is not the before-half instrument either: it is clean before the sync because the old type still declares the field |
 | A type is widened, and call sites stop compiling | `npx tsc -b` failing on the unguarded call site, clean after |
 | A guard is added and the type ALREADY admits null | a unit or render assertion — **`tsc -b` cannot fail here**. `fmtNum` takes `number \| null \| undefined` (`src/lib/format.ts:75`), so `` `${fmtNum(v)}%` `` compiles before and after while rendering `—%`. The compiler is silent on exactly the Rule 4 defect these forms are about |
-| A dependency is dropped | both halves on the `rc -eq 1` form, and the importer half is **repo-wide over tracked files, minus the lockfiles**: `git grep -q "<pkg>" -- . ':!package-lock.json' ':!bun.lock' ':!package.json'; rc=$?`. Not `src/ tests/` — measured, `@tailwindcss/vite` and `@vitejs/plugin-react` are imported at `vite.config.ts:2-3` and the `src/ tests/` form returns **rc=1, "no importers"** for both. **Exclude every lockfile this repo tracks** (`git ls-files \| grep -i lock` — there are two here, `package-lock.json` and `bun.lock`); a lockfile names every package, so leaving one in makes every package look used and the check can never fail. Then `'"<pkg>":'` in `package.json` for the manifest half. **A green local `npm run build` proves nothing here**: removing the manifest entry does not remove the package from `node_modules`, so vite still resolves it — measured, `npm run build` succeeded after dropping `@tailwindcss/vite` from `package.json`, while CI's `npm ci` installs from the manifest and would fail. Hits under `docs/` and `.claude/` are prose, as on the deletion row. And it must not pass because `git grep` errored — that exits **128** on a bad pathspec, not 1 |
+| A dependency is dropped | both halves on the `rc -eq 1` form, and the importer half is **repo-wide over tracked files, minus the lockfiles**: `git grep -q "<pkg>" -- . ':!package-lock.json' ':!bun.lock' ':!package.json' ':!tests/fixtures/stocks-openapi.json' ':!docs/' ':!.github/ISSUE_TEMPLATE/' ':!*.md' ':!*.drawio'; rc=$?`. Not `src/ tests/` — measured, `@tailwindcss/vite` and `@vitejs/plugin-react` are imported at `vite.config.ts:2-3` and the `src/ tests/` form returns **rc=1, "no importers"** for both. **Exclude every lockfile this repo tracks** (`git ls-files \| grep -i lock` — there are two here, `package-lock.json` and `bun.lock`); a lockfile names every package, so leaving one in makes every package look used and the check can never fail. Then `'"<pkg>":'` in `package.json` for the manifest half. **A green local `npm run build` proves nothing here**: removing the manifest entry does not remove the package from `node_modules`, so vite still resolves it — measured, `npm run build` succeeded after dropping `@tailwindcss/vite` from `package.json`, while CI's `npm ci` installs from the manifest and would fail. Hits under `docs/`, `.github/ISSUE_TEMPLATE/` and any `*.md` are prose, and they must be **excluded from the pathspec, not just discounted while reading** — otherwise the `rc -eq 1` half can never pass. `.github/ISSUE_TEMPLATE/` belongs in that list for the same reason the rest do: `02-dead-surface.yml` cites `@tanstack/react-table` as its worked example, so its own placeholder is a hit for it — measured, 2 prose hits from that one file. So do the two `.drawio` diagrams and the vendored `tests/fixtures/stocks-openapi.json`: measured, `Frontend.drawio` matches `@tanstack/react-table`, `Frontend-icons.drawio` matches `@eslint/js`, and the OpenAPI document matches `firebase` (on `/api/config/firebase`, not an import). **Do not extend this list one reported artifact at a time — re-derive it.** Run the search for every dependency, union the files, and read what is not source: `while read -r p; do git grep -l -F "$p" -- . <exclusions>; done < <(jq -r '.dependencies + .devDependencies | keys[]' package.json) | sort -u | grep -vE '\.(ts|tsx|js|jsx|mjs|cjs)$'`. Measured across all 36 dependencies: 219 files matched, and the 8 non-source survivors are all genuine consumers — `src/index.css`, `src/components/landing/landing.css`, the three tsconfigs, `index.html` and `.github/workflows/ci.yml`. **And do not "just match import syntax" instead**: measured, restricting to `'*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' '.github/workflows/'` loses `@heroui/styles` and `tailwindcss`, whose only consumer is the `@import` in `src/index.css`, and would report both dead. An exclusion list fails open on a new prose format; a positive list fails closed on a real consumer, and closed is the direction that deletes a live dependency. **Exclude prose by what it IS, not by where it lives.** `':!.claude/'` is deliberately NOT in the pathspec even though the prose in that directory is excluded: `':!*.md'` already covers it — measured, the only tracked non-markdown file under `.claude/` is `settings.json` — and that one is EXECUTABLE, a `UserPromptSubmit` command hook that runs `jq` and names `.github/workflows/gh-api.yml`. A blanket directory exclusion would report a surface consumed only by that hook as having no consumer. This row demonstrated its own defect: it cites `@tailwindcss/vite` as the example, so after deleting the import from `vite.config.ts` the search still matched **this file**, measured rc=0 with `.claude/commands/resolve-issue.md` as the only hit. A check whose failing state is unreachable is not a check. And it must not pass because `git grep` errored — that exits **128** on a bad pathspec, not 1 |
 
 What is NOT acceptable is skipping the before half. "It builds now" says
 nothing; "it did not build before and builds now" is the evidence.
@@ -497,7 +497,42 @@ let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
     o.push(f.filePath.replace(process.cwd()+'/','')+':'+m.line);
   console.log(o.sort().join('\n'));});" | sort -u; }
 
+# $LINT_BASE, not a hardcoded HEAD. Under CASE B (a branch you just cut) they
+# are the same thing. Under CASE A they are NOT: HEAD is the adopted PR's
+# current head, so every diagnostic its earlier commits introduced is scored as
+# pre-existing and waved through — and CI here does not run lint, so nothing
+# downstream catches it either. The gate would then be judging only the edits
+# made in this session rather than the PR that Phase 8 actually merges.
+#   CASE B:  LINT_BASE=HEAD
+#   CASE A:  LINT_BASE=$(git merge-base origin/main "<headRefName>")
+# The changed-line half takes the same ref, for the same reason.
+LINT_BASE=HEAD                       # override to the merge base under CASE A
+
 FILES="<the files this issue's fix touches>"
+# CASE A: that is NOT enough. Moving $LINT_BASE to the merge base only changes
+# what each file is compared against; it does not add the existing PR's other
+# files. An earlier commit can carry a lint error in file A while this session
+# edits only file B, and a gate scoped to B never lints A. So under CASE A,
+# derive the set mechanically rather than listing it by hand — and note the
+# `:?`, which is load-bearing. The last substitution in that assignment is the
+# `git ls-files`, and it succeeds whatever `git diff` did, so an unset or empty
+# LINT_BASE gives the WHOLE assignment exit 0. Measured in a clean shell: it
+# prints `fatal: ambiguous argument ''`, sets FILES to that error text plus
+# whitespace, returns 0, and every lint command downstream then runs against
+# nothing — which passes. That is why LINT_BASE is defined ABOVE this line and
+# why the expansion refuses an empty value rather than trusting the order.
+#   FILES="$(git diff --name-only --diff-filter=d "${LINT_BASE:?set LINT_BASE first}") \
+#          $(git ls-files --others --exclude-standard)"
+# ONE ref, for the same reason _base_path takes one: `"$LINT_BASE" HEAD` diffs
+# commit-to-commit and cannot see this session's UNCOMMITTED edits, so a file
+# the PR never touched but you just changed is left out of its own gate.
+# Measured on a probe — PR commit adds src/b.ts, this session edits src/a.ts and
+# creates untracked src/c.ts:
+#   two refs : src/b.ts
+#   one ref  : src/a.ts src/b.ts
+#   --others : src/c.ts
+# The one-ref form is a superset of the two-ref one, so it needs no manual
+# `<yours>` on top; --others adds the untracked files `git diff` cannot see.
 git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
                       # emits no hunk for it, so every line of it would count
                       # as unchanged and its errors would pass this gate
@@ -514,6 +549,13 @@ git add -N $FILES     # intent-to-add: a NEW file is untracked, and `git diff`
 # Text, not `m.line`: a line NUMBER churns on every insertion above. Measured on
 # the three files this file names, one inserted comment produced 3 spurious
 # "new diagnostic" entries with a line/column anchor and 0 with the text anchor.
+# RAW, not `.trim()`. Two same-named declarations whose lines are identical
+# except for INDENTATION trim to the same signature, and a swap between them is
+# then invisible to both halves. Measured — `  const value = compute();` in one
+# scope and `    const value = compute();` in another: trimmed, the before and
+# after signatures are byte-identical and the gate passes; raw, they differ and
+# it fires. Indentation is part of the line's identity, and an insertion ABOVE
+# a line still does not change its contents, so keeping it costs no churn.
 # `f.source` rather than reading the file: in `head_sig` the lint runs on
 # `git show HEAD:$f` through --stdin, so the file on disk is the WORKING TREE
 # version and would anchor the baseline to the wrong content. Verified `source`
@@ -527,7 +569,7 @@ _sig() { node -e '
       const src=(f.source||"").split("\n");
       for (const m of f.messages)
         o.push(f.filePath.replace(process.cwd()+"/","")+"\t"+(m.ruleId||"(fatal)")
-               +"\t"+m.message+"\t"+String(src[m.line-1]||"").trim());
+               +"\t"+m.message+"\t"+String(src[m.line-1]||""));
     }
     if (o.length) process.stdout.write(o.sort().join("\n")+"\n");
   });'; }
@@ -538,14 +580,76 @@ rule_sig() { local out=$1; shift
   # --no-error-on-unmatched-pattern: a deletion resolution puts the removed
   # file in $FILES, and eslint on a missing path prints "Oops!" not JSON,
   # which would make _sig exit 2 and this gate fail for every deletion.
-  npx eslint -f json --no-error-on-unmatched-pattern "$@" | _sig > "$out" || return 1
+  # --no-warn-ignored: a fix that adds a JSON fixture, a stylesheet or an
+  # image puts a file eslint has no config for in $FILES. Measured, it emits
+  # `File ignored because no matching configuration was supplied.` with a NULL
+  # ruleId, which _sig records as `(fatal)`; the file has no HEAD baseline, so
+  # the second half reads it as a newly introduced diagnostic and rejects a
+  # perfectly good fix.
+  npx eslint -f json --no-error-on-unmatched-pattern --no-warn-ignored "$@" \
+    | _sig > "$out" || return 1
   sort -o "$out" "$out"; }
-head_sig() { local out=$1 f rc=0; shift; : > "$out"
+# Rename-aware. `git show "$LINT_BASE:$f"` fails for a file the PR RENAMED —
+# measured, `fatal: path '<new>' exists on disk, but not in <base>` — so the
+# plain form gives it no baseline and every pre-existing diagnostic in it reads
+# as newly added, blocking the gate on a pure rename. `-M` recovers the old
+# path: `git diff --name-status -M` reports `R100 src/old.ts src/new.ts`.
+_base_path() {   # echo the path $1 had at $LINT_BASE, or $1 itself
+  local old
+  # NO pathspec. Restricting the diff to the NEW path filters the old one out
+  # and rename detection then has nothing to pair it with — measured, the
+  # `-- "$1"` form reports `A src/new.ts`, an ADDITION, and this helper hands
+  # back the new path unchanged, which is the bug it exists to fix. Diff the
+  # whole tree and match the destination column instead.
+  #
+  # ONE ref, not `"$LINT_BASE" HEAD`. Two refs diff commit-to-commit and cannot
+  # see a rename that is still only in the WORKING TREE — which is every rename
+  # under CASE B, where LINT_BASE=HEAD and the gate runs BEFORE Phase 7 commits.
+  # `git diff <commit> <commit>` with both sides equal is empty by construction.
+  # Measured on a `git mv src/old.ts src/new.ts` probe, uncommitted:
+  #   two refs : (no output)  -> helper returns src/new.ts
+  #              -> `git show HEAD:src/new.ts` exits 128, baseline SKIPPED,
+  #                 and every pre-existing diagnostic in the file is scored as
+  #                 newly introduced — the gate blocks on a pure rename, which
+  #                 is the exact failure the helper exists to prevent
+  #   one ref  : R100  src/old.ts  src/new.ts  -> helper returns src/old.ts
+  #              -> `git show HEAD:src/old.ts` OK
+  # One ref diffs commit-to-WORKING-TREE, which is also the right comparison:
+  # the files being linted are the working-tree files, not HEAD's. It is not a
+  # CASE B special case either — measured under CASE A (rename already
+  # committed on the branch), both forms return `src/old.ts`, with and without
+  # a further uncommitted edit on top. Single-ref is never worse.
+  old=$(git diff --name-status -M "$LINT_BASE" 2>/dev/null \
+        | awk -v new="$1" '$1 ~ /^R/ && $3 == new {print $2; exit}')
+  printf '%s' "${old:-$1}"; }
+
+head_sig() { local out=$1 f b tmp rc=0; shift; : > "$out"
+  tmp=$(mktemp -t lint-base-XXXXXX)
   for f in "$@"; do
-    git show "HEAD:$f" >/dev/null 2>&1 || continue        # new file: no baseline
-    git show "HEAD:$f" | npx eslint --stdin --stdin-filename "$f" -f json \
-      | _sig >> "$out" || rc=1
+    b=$(_base_path "$f")
+    git show "$LINT_BASE:$b" >/dev/null 2>&1 || continue  # new file: no baseline
+    # --stdin-filename is $b, the OLD path. eslint picks its config BY PATH, and
+    # the baseline has to be judged under the config that governed it THEN, not
+    # the one the PR moved it under. Measured against this repo's
+    # `files: ['**/*.{ts,tsx}']`, same blob with one unused variable:
+    #   as scripts/tool.ts   -> 1 message, @typescript-eslint/no-unused-vars
+    #   as scripts/tool.mjs  -> 0 messages
+    # So a rename that moves a file INTO lint scope (.mjs -> .ts, and scripts/
+    # holds two .mjs files today) gave the baseline the SAME diagnostic as the
+    # current signature, they cancelled in `comm -13`, and the gate passed on
+    # diagnostics the PR itself introduced. Under $b the baseline is empty and
+    # they correctly show as added.
+    #
+    # Then rewrite the path back to $f, because rule_sig reports under the
+    # CURRENT path and the two signature sets have to line up. Via a temp file,
+    # not another pipe stage: `| _sig | awk ... || rc=1` would read AWK's exit
+    # and swallow a failure in eslint or _sig, which is the swallowed-status
+    # bug this gate is full of guards against.
+    git show "$LINT_BASE:$b" | npx eslint --stdin --stdin-filename "$b" -f json \
+      --no-warn-ignored | _sig > "$tmp" || { rc=1; continue; }
+    awk -v b="$b" -v f="$f" 'BEGIN{FS=OFS="\t"} $1==b{$1=f} {print}' "$tmp" >> "$out"
   done
+  rm -f "$tmp"
   sort -o "$out" "$out"; return $rc; }
 
 # BOTH halves sit in ONE function, and every stop is a `return`, not a bare
@@ -559,7 +663,7 @@ lint_gate() {
   # mktemp for the same reason the replay log and the worktrees use it: two
   # sessions sharing a fixed /tmp name is one reading the other's answer.
   NEW=$(mktemp -t lint-new-XXXXXX)
-  comm -12 <(changed_lines HEAD $FILES) <(diag_lines $FILES) > "$NEW"
+  comm -12 <(changed_lines "$LINT_BASE" $FILES) <(diag_lines $FILES) > "$NEW"
   test ! -s "$NEW" || { cat "$NEW"; echo "^ lint errors on lines you changed"; return 1; }
 
   # To FILES, not process substitution: a producer that dies inside <(...)
@@ -924,16 +1028,33 @@ In order:
      shows the field has stopped arriving.
 
    **Both narrowings end back HERE, on a NEW branch and a NEW PR** — the same
-   final step the widening has, for the same reason. And that step removes the
-   field from **the type wherever it is declared**, not from `src/types/`: an
-   optional leftover in a hook- or component-declared type passes every gate
-   this repo has (measured — see the Phase 4 row). The moment stocks' removal
-   is on its `main`, this repo's vendored snapshot declares a field the API no
-   longer has, and `contract:check` runs on every PR here
+   final step the widening has, for the same reason. **What that step DOES
+   differs by direction, and conflating them breaks one of the two.**
+
+   - **Response field** (stocks drops something we read): the final PR runs
+     `contract:sync` AND removes the field from the type, the canonical mock
+     and `tests/helpers/fixtures/`. Remove it from **the type wherever it is
+     declared**, not from `src/types/` by name: an optional leftover in a hook-
+     or component-declared type passes every gate this repo has (measured — see
+     the Phase 4 row).
+   - **Request field** (stocks stops requiring something we send): the type and
+     its typed sample already moved in the SENDER PR — they had to, because
+     `tsc -b` fails at the construction site while the type still marks the
+     field required. So the final PR here is **the snapshot sync alone**.
+     Telling it to remove the type again points it at artifacts that are
+     already gone, and telling the sender PR to wait for the final one leaves
+     it unable to stop sending a still-required property.
+
+   **Why the final PR is not optional in either direction.** The moment stocks'
+   removal is on its `main`, this repo's vendored snapshot declares a field the
+   API no longer has, and `contract:check` runs on every PR here
    (`.github/workflows/ci.yml:91`), so one unfinished narrowing turns every
-   unrelated frontend PR red. That PR runs `npm run contract:sync` and takes
-   the field out of `src/types/`, the canonical mock and
-   `tests/helpers/fixtures/`.
+   unrelated frontend PR red. **What that PR does still differs**: for a
+   RESPONSE field it runs `npm run contract:sync` and takes the field out of
+   the type, the canonical mock and `tests/helpers/fixtures/`; for a REQUEST
+   field it is `contract:sync` **alone**, because the type and its typed sample
+   left in the sender PR. Do not go looking for artifacts the sender already
+   removed.
 
    It cannot be folded into the consumer-first PR, and this is measured rather
    than cautious: while stocks `main` still declares the field as required,

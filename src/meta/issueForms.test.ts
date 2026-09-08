@@ -128,8 +128,32 @@ describe('issue forms', () => {
   // their own evidence; an option without `required: true` can be left
   // unticked and the issue still submits, which makes it decoration.
   it.each(formFiles)('%s requires every checkbox option', (file) => {
-    for (const el of read<Form>(file).body ?? []) {
-      if (el.type !== 'checkboxes') continue
+    const body = read<Form>(file).body ?? []
+
+    // Guard the guard, as test_there_are_forms_to_check does for the glob. The
+    // loop below is a no-op for a form with no checkboxes element at all, so
+    // deleting a form's whole attestation used to pass CI — the body-budget
+    // test stays green because the body only gets SHORTER. Measured on the
+    // stocks mirror with the element removed: 14 passed.
+    //
+    // By ID and by POSITION, not "some checkboxes element exists". The sentence
+    // this defends is "every form ENDS in an evidence attestation", and a
+    // length check is neither half of it: a form that grew an unrelated
+    // checkbox group could lose `id: attestation` and still pass, and one that
+    // appends fields after the attestation asks the filer to swear to evidence
+    // they have not written yet. Measured on 01-defect.yml with `attestation`
+    // renamed to `evidence-attestation` AND swapped with `acceptance` — element
+    // count unchanged, so the body-budget test stayed green too — 14 passed.
+    const boxes = body.filter((el) => el.type === 'checkboxes')
+    const last = body[body.length - 1]
+    expect(
+      { type: last?.type, id: last?.id },
+      `${file}: the LAST body element is not the id: attestation checkboxes group. ` +
+        'Every form ends in an evidence attestation, and presence alone is not that. ' +
+        `Checkboxes found: ${JSON.stringify(boxes.map((el) => el.id))}`,
+    ).toEqual({ type: 'checkboxes', id: 'attestation' })
+
+    for (const el of boxes) {
       const options = el.attributes?.options ?? []
       expect(options.length, `${file}: checkboxes ${el.id} has no options`).toBeGreaterThan(0)
       for (const opt of options) {
