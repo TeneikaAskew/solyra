@@ -58,7 +58,10 @@ body:
         # named in a placeholder here matches itself and the check can never
         # reach rc=1. Exclude the prose, do not discount it while reading — the
         # resolver asserts on rc.
-        $ git grep -n "<Component>\|<useThing>" -- . ':!docs/' ':!.claude/' \
+        # NOT ':!.claude/': .claude/settings.json is an executable hook, and a
+        # blanket directory exclusion would hide a surface only that hook uses.
+        # ':!*.md' already covers the prose in there.
+        $ git grep -n "<Component>\|<useThing>" -- . ':!docs/' \
             ':!.github/ISSUE_TEMPLATE/' ':!*.md' ':!*.drawio'
         src/components/<area>/<Component>.tsx:12:export function <Component>(
         src/hooks/<useThing>.ts:8:export function <useThing>(
@@ -179,7 +182,7 @@ body:
         # them an importer. Re-derive that list rather than adding to it one
         # report at a time; the resolver's dependency row carries the recipe.
         $ git grep -n "@tanstack/react-table" -- . ':!package-lock.json' ':!bun.lock' \
-            ':!package.json' ':!tests/fixtures/stocks-openapi.json' ':!docs/' ':!.claude/' \
+            ':!package.json' ':!tests/fixtures/stocks-openapi.json' ':!docs/' \
             ':!.github/ISSUE_TEMPLATE/' ':!*.md' ':!*.drawio'
         src/components/backtest/BacktesterSection.tsx:22
         src/routes/SignalsPage.tsx:15
