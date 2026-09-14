@@ -21,6 +21,7 @@ import {
   MOCK_OPTIONS_CHAIN,
   MOCK_GRID_POPULATED,
   MOCK_GREEKS,
+  MOCK_GREEKS_WITH_NODES,
 } from '../helpers/fixtures/options';
 
 /** Open the Profiles tab (the original chain-profile view). */
@@ -52,6 +53,29 @@ test.describe('Options Flow', () => {
     // Strike 220 should appear at least once (as an axis label in the D3
     // heatmap ProfilesTab renders from the mocked chain)
     await expect(page.getByText(/220/).first()).toBeVisible();
+  });
+
+  test('renders King/Gatekeeper/Midpoint badges when the taxonomy is populated (Profiles tab)', async ({
+    page,
+  }) => {
+    // Registered AFTER the beforeEach's mockOptionsApi, so this wins
+    // (Playwright matches routes newest-first). MOCK_GREEKS itself always
+    // ships an EMPTY taxonomy, so without this override the badge path —
+    // including ProfilesTab's two `!`-asserted midpoint bounds — never
+    // executes in any spec (issue #32 coverage gap).
+    await page.route('**/api/options/greeks', (r) => r.fulfill(M.ok(MOCK_GREEKS_WITH_NODES)));
+    await page.goto('/options');
+    await page.waitForLoadState('networkidle');
+    await openProfilesTab(page);
+    // The heatmap draws each badge as an SVG text node whose ENTIRE text is
+    // the bare glyph — exact matching separates them from the levels chips
+    // ("◆ Gate $219.00" etc.), which substring-match the same characters.
+    // ★ king (220), ◆ gatekeepers (219/222), ● the one row inside the
+    // midpoint band (221, bounds 220.5–221.5).
+    await expect(page.getByText('★', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('◆', { exact: true })).toHaveCount(2);
+    await expect(page.getByText('●', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('★', { exact: true })).toBeVisible();
   });
 
   test('renders chart axes and net/calls/puts toggle (Profiles tab)', async ({ page }) => {

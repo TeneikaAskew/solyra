@@ -21,6 +21,28 @@ function formatGEX(val: number): string {
   return `${sign}$${abs.toFixed(0)}`;
 }
 
+/**
+ * Strike nearest spot, to tag the ladder's spot row. Exported as a pure
+ * helper so the guard is unit-testable (issue #32; repo convention, same
+ * as deltaText).
+ *
+ * The levels endpoint signals "no usable spot" with method 'none' and a
+ * non-positive price — no spot, an empty ladder, or a missing levels
+ * payload must yield undefined so no row is falsely tinted as "at spot"
+ * (Rule 4: a missing price never fabricates a location). On an exact
+ * midpoint tie the FIRST ladder entry wins; the ladder is sorted high→low,
+ * so ties resolve to the higher strike.
+ */
+export function nearestStrike(
+  ladder: ReadonlyArray<{ strike: number }>,
+  spot: number | null | undefined,
+): number | undefined {
+  if (spot == null || spot <= 0 || ladder.length === 0) return undefined;
+  return ladder.reduce((best, l) =>
+    Math.abs(l.strike - spot) < Math.abs(best.strike - spot) ? l : best,
+  ).strike;
+}
+
 // One synced panel. Fetches its own latest date + levels.
 function TrinityPanel({ symbol }: { symbol: string }) {
   const datesQuery = useLatestOptionsDate(symbol);
@@ -35,18 +57,15 @@ function TrinityPanel({ symbol }: { symbol: string }) {
   const failed = datesQuery.isError || levelsQuery.isError || (!loading && !latestDate);
 
   // Build the strike ladder from the classified levels, sorted high → low.
-  const spot = levels?.spot.price ?? 0;
+  // A missing payload stays null (never a fabricated 0 price — Rule 4);
+  // nearestStrike and the header guard below handle the absent case.
+  const spot = levels ? levels.spot.price : null;
   const king = levels?.kings?.[0]?.strike;
-  // Strike nearest spot — tag it as the spot row.
   const ladder: GammaLevel[] = (levels?.levels ?? [])
     .slice()
     .sort((a, b) => b.strike - a.strike);
-  const spotStrike =
-    spot > 0 && ladder.length > 0
-      ? ladder.reduce((best, l) =>
-          Math.abs(l.strike - spot) < Math.abs(best.strike - spot) ? l : best,
-        ).strike
-      : undefined;
+  // Strike nearest spot — tag it as the spot row.
+  const spotStrike = nearestStrike(ladder, spot);
 
   // Diverging scale — split net_gamma into a put side (negative) and call
   // side (positive) using the classified per-strike net_gamma sign.
@@ -58,7 +77,7 @@ function TrinityPanel({ symbol }: { symbol: string }) {
       <div className="flex items-center justify-between gap-2 px-3.5 py-3">
         <div className="flex items-baseline gap-2.5">
           <h3 className="text-[15px] font-semibold text-[var(--on-surface)]">{symbol}</h3>
-          {spot > 0 && (
+          {spot != null && spot > 0 && (
             <span className="text-[15px] font-semibold text-[var(--on-surface)]">
               {spot.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </span>

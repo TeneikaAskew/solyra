@@ -25,6 +25,7 @@ const ROUTES: Array<{ path: string; heading: RegExp }> = [
   { path: '/signals',   heading: /signals?/i },
   { path: '/journal',   heading: /journal/i },
   { path: '/insights',  heading: /insights?/i },
+  { path: '/settings',  heading: /settings/i },
   { path: '/help',      heading: /help/i },
 ];
 
