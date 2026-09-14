@@ -13,7 +13,7 @@
 
 import { useState } from 'react';
 import { Loader2, Play } from 'lucide-react';
-import { usePredictMutation, type StratPredictRequest, type StratPredictResponse } from '@/hooks/useAdmin';
+import { asStratClass, usePredictMutation, type StratPredictRequest, type StratPredictResponse } from '@/hooks/useAdmin';
 import { SCOPE_STATEMENT, formatRefreshed } from './StructureBrief';
 
 const TICKERS = ['IWM', 'SPY', 'QQQ'] as const;
@@ -126,6 +126,8 @@ export function PredictForm({ enabled }: { enabled: boolean }) {
 
 
 function PredictResultCard({ result }: { result: StratPredictResponse }) {
+  // Wire top_class is a plain string; narrow once for the palette lookups.
+  const topCls = asStratClass(result.top_class);
   if (!result.available) {
     return (
       <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 text-xs text-[var(--color-text-muted)]">
@@ -164,14 +166,14 @@ function PredictResultCard({ result }: { result: StratPredictResponse }) {
             next bar{' '}
             <span
               className="font-semibold"
-              style={{ color: result.top_class ? CLASS_COLOR_VAR[result.top_class] : 'inherit' }}
+              style={{ color: topCls ? CLASS_COLOR_VAR[topCls] : 'inherit' }}
             >
               {result.top_prob != null ? `${(result.top_prob * 100).toFixed(0)}%` : '—'}
             </span>{' '}
             likely to be type{' '}
             <span
               className="font-semibold"
-              style={{ color: result.top_class ? CLASS_COLOR_VAR[result.top_class] : 'inherit' }}
+              style={{ color: topCls ? CLASS_COLOR_VAR[topCls] : 'inherit' }}
             >
               {result.top_class ?? '—'}
             </span>

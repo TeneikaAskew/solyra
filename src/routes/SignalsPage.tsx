@@ -23,15 +23,17 @@ import { fmtPct, fmtNum } from '@/lib/format';
 // Exported so tests/helpers/fixtures/signals.ts can pin its fixtures to the
 // real contract (see the same note in ReportsPage.tsx).
 export interface SignalRow {
-  time: string;
+  // Only `ticker` is required by the schema; every metric is optional+
+  // nullable — render sites em-dash the gaps.
+  time?: string | null;
   ticker: string;
-  direction: string;
-  score: number;
-  rsi: number | null;
-  ema9: number | null;
-  ema20: number | null;
-  close: number | null;
-  volume: number | null;
+  direction?: string | null;
+  score?: number | null;
+  rsi?: number | null;
+  ema9?: number | null;
+  ema20?: number | null;
+  close?: number | null;
+  volume?: number | null;
   [key: string]: unknown;
 }
 
@@ -42,7 +44,7 @@ export interface SignalsResponse {
   returned: number;
   source: string;
   /** Parquet fallback only. */
-  file?: string;
+  file?: string | null;
   signals: SignalRow[];
 }
 

@@ -56,8 +56,11 @@ export interface BriefResponse {
   live?: { price: number; session: string; updated_at: string; source: string };
 }
 interface PlaybookCard {
-  id: string; name: string; direction: string; win_rate: number | null;
-  avg_return: number | null; conditions: string[]; description: string;
+  // name/direction/win_rate/avg_return optional+nullable per schema; the
+  // schema declares `conditions` untyped (unknown[]), so render sites
+  // filter to strings.
+  id: string; name?: string | null; direction?: string | null; win_rate?: number | null;
+  avg_return?: number | null; conditions: unknown[]; description: string;
   target_pct?: number | null; stop_pct?: number | null;
   horizons?: SetupHorizon[];
   best_horizon_min?: number | null; best_horizon_win_rate?: number | null; best_horizon_avg_bps?: number | null;
@@ -71,11 +74,11 @@ export interface PlaybookResponse {
   ticker: string;
   cards: PlaybookCard[];
   source: string;
-  analysis_date?: string;
+  analysis_date?: string | null;
   generated_at?: string | null;
-  age_days?: number;
-  max_age_days?: number;
-  as_of?: string;
+  age_days?: number | null;
+  max_age_days?: number | null;
+  as_of?: string | null;
 }
 interface SignalEntry {
   time: string; direction: string; score: number;
@@ -88,9 +91,9 @@ interface SignalsResponse {
 
 export interface ReferenceResponse {
   ticker: string; date: string; open: number; close: number; high: number; low: number;
-  source?: string; stale_days?: number;
+  source?: string | null; stale_days?: number | null;
   week?: {
-    high: number; low: number; avg_close: number; avg_rsi_14: number | null;
+    high: number; low: number; avg_close: number; avg_rsi_14?: number | null;
     start_date: string; end_date: string; sessions: number;
   } | null;
 }
@@ -106,14 +109,18 @@ interface CatalystEvent {
 }
 interface CatalystsResponse { events_by_date: Record<string, CatalystEvent[]> }
 
-interface SectorRowOk {
-  symbol: string; name: string; close: number;
-  chg_1d_pct: number; chg_5d_pct: number | null; status: 'ok';
+// Flattened (no ok/unavailable discriminated union): the API schema is one
+// shape with status: 'ok'|'unavailable' and every metric optional, so an
+// 'ok' row is not TYPE-guaranteed its numbers — render sites null-guard.
+export interface SectorRow {
+  symbol: string;
+  name: string;
+  status: 'ok' | 'unavailable';
+  close?: number | null;
+  chg_1d_pct?: number | null;
+  chg_5d_pct?: number | null;
+  reason?: string | null;
 }
-interface SectorRowUnavailable {
-  symbol: string; name: string; status: 'unavailable'; reason: string;
-}
-export type SectorRow = SectorRowOk | SectorRowUnavailable;
 interface SectorsResponse {
   as_of: string | null; status: 'ok' | 'unavailable'; reason?: string;
   sectors: SectorRow[];
@@ -233,7 +240,7 @@ export function sectorBarWidthPct(chg: number, maxAbs: number): number {
 /** Pull the active-period pct off a sector row; null for unavailable rows or a missing 5D value. */
 function sectorMetric(row: SectorRow, period: '1d' | '5d'): number | null {
   if (row.status !== 'ok') return null;
-  return period === '1d' ? row.chg_1d_pct : row.chg_5d_pct;
+  return (period === '1d' ? row.chg_1d_pct : row.chg_5d_pct) ?? null;
 }
 
 function todayISO(): string {
@@ -646,7 +653,7 @@ export default function DashboardPage() {
                 <div className="flex flex-1 flex-col gap-1.5">
                   <MicroLabel>Conditions</MicroLabel>
                   <div className="flex flex-1 flex-col justify-around gap-2.5">
-                    {topCard.conditions.slice(0, 5).map((c, i) => (
+                    {topCard.conditions.filter((c): c is string => typeof c === 'string').slice(0, 5).map((c, i) => (
                       <div key={i} className="flex items-center gap-2.5 text-[13px]">
                         <Check size={14} className="shrink-0 text-[var(--on-surface-muted)]" />
                         <span className="text-[var(--on-surface-variant)]">{c}</span>
@@ -846,7 +853,7 @@ export default function DashboardPage() {
               {sectorRows.map((row) => {
                 if (row.status === 'unavailable') {
                   return (
-                    <div key={row.symbol} data-testid="sector-row" className="flex items-center gap-2 py-1" title={row.reason}>
+                    <div key={row.symbol} data-testid="sector-row" className="flex items-center gap-2 py-1" title={row.reason ?? undefined}>
                       <span className="w-[92px] shrink-0 truncate text-[11.5px] text-[var(--on-surface-muted)]">{row.name}</span>
                       <div className="h-2 flex-1" />
                       <span className="w-14 shrink-0 text-right text-[12px] text-[var(--on-surface-muted)]">—</span>

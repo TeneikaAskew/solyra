@@ -5,7 +5,7 @@ import { LayoutGrid, Columns3 } from 'lucide-react';
 import SwingMode from '@/components/options/SwingMode';
 import TrinityTab from '@/components/options/TrinityTab';
 
-// HeatseekerSection — top-level "Heatseeker" tab with an inner mode toggle:
+// GammaMapSection — top-level "Gamma Map" tab with an inner mode toggle:
 //   Swing   — 2D strikes×expirations exposure heatmap (MOCK; no per-expiration
 //             backend endpoint yet).
 //   Trinity — 3 synced index-proxy strike ladders (REAL data via useGammaLevels).
@@ -17,12 +17,12 @@ function firstKey(keys: Set<Key>): Key | undefined {
   return undefined;
 }
 
-interface HeatseekerSectionProps {
+interface GammaMapSectionProps {
   /** Page focus symbol — feeds the Swing surface selection. */
   focusSymbol: string;
 }
 
-export default function HeatseekerSection({ focusSymbol }: HeatseekerSectionProps) {
+export default function GammaMapSection({ focusSymbol }: GammaMapSectionProps) {
   const [mode, setMode] = useState<Mode>('swing');
 
   return (

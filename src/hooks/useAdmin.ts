@@ -65,8 +65,17 @@ export function useAdminModels(enabled: boolean) {
 // behind Tracks B and C.
 // ---------------------------------------------------------------------------
 
+export type StratClass = '1' | '2U' | '2D' | '3';
+
+/** Narrow a wire class label onto the four strat classes the UI palettes
+ *  know; anything else renders unstyled rather than crashing a lookup. */
+export function asStratClass(v: string | null | undefined): StratClass | null {
+  return v === '1' || v === '2U' || v === '2D' || v === '3' ? v : null;
+}
+
 export interface StructureBriefClassProb {
-  cls: '1' | '2U' | '2D' | '3';
+  /** '1' | '2U' | '2D' | '3' today; plain string per schema. */
+  cls: string;
   prob: number;
 }
 
@@ -74,15 +83,16 @@ export interface StructureBriefCell {
   ticker: string;
   timeframe: string;
   available: boolean;
-  top_class: '1' | '2U' | '2D' | '3' | null;
-  top_prob: number | null;
+  /** '1' | '2U' | '2D' | '3' on the wire today; plain string per schema. */
+  top_class?: string | null;
+  top_prob?: number | null;
   distribution: StructureBriefClassProb[];
-  live_ece: number | null;
+  live_ece?: number | null;
   ece_ceiling: number;
   muted: boolean;
-  mute_reason: string | null;
-  refreshed_at: string | null;
-  note: string | null;
+  mute_reason?: string | null;
+  refreshed_at?: string | null;
+  note?: string | null;
 }
 
 export interface StructureBriefResponse {
@@ -119,18 +129,19 @@ export interface StratPredictRequest {
 export interface StratPredictResponse {
   ticker: string;
   timeframe: string;
-  ts: string | null;
+  ts?: string | null;
   available: boolean;
-  top_class: '1' | '2U' | '2D' | '3' | null;
-  top_prob: number | null;
-  class_probs: Record<'1' | '2U' | '2D' | '3', number>;
-  model_version: string | null;
-  last_train_date: string | null;
-  live_ece: number | null;
+  /** '1' | '2U' | '2D' | '3' on the wire today; plain string per schema. */
+  top_class?: string | null;
+  top_prob?: number | null;
+  class_probs: Record<string, number>;
+  model_version?: string | null;
+  last_train_date?: string | null;
+  live_ece?: number | null;
   muted: boolean;
-  mute_reason: string | null;
+  mute_reason?: string | null;
   scope_statement: string;
-  note: string | null;
+  note?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,9 +152,9 @@ export interface StratEngineCellState {
   ticker: string;
   timeframe: string;
   available: boolean;
-  model_version: string | null;
-  last_train_date: string | null;
-  live_ece: number | null;
+  model_version?: string | null;
+  last_train_date?: string | null;
+  live_ece?: number | null;
 }
 
 export interface StratEngineStateResponse {
@@ -226,12 +237,12 @@ export function useUpdateAdminRoute() {
 
 export interface AdminUserRow {
   uid: string;
-  email: string | null;
-  display_name: string | null;
+  email?: string | null;
+  display_name?: string | null;
   roles: string[];
   disabled: boolean;
-  created_at: string | null;
-  last_sign_in_at: string | null;
+  created_at?: string | null;
+  last_sign_in_at?: string | null;
 }
 
 export interface AdminUsersResponse {
@@ -296,17 +307,25 @@ export function useUpdateUserStatus() {
 
 export type DataSourceStatus = 'ok' | 'stale' | 'error' | 'unknown';
 
+/** Narrow a wire status onto the vocabulary the badge palette knows. */
+export function asDataSourceStatus(status: string): DataSourceStatus {
+  return status === 'ok' || status === 'stale' || status === 'error'
+    ? status
+    : 'unknown';
+}
+
 export interface AdminDataSourceRow {
   id: string;
   label: string;
   /** Which surface consumes it: charts, reports, signals, … */
   category: string;
-  status: DataSourceStatus;
-  row_count: number | null;
-  last_refreshed_at: string | null;
-  coverage_start: string | null;
-  coverage_end: string | null;
-  message: string | null;
+  /** Wire is a plain string; `asDataSourceStatus` narrows for display. */
+  status: string;
+  row_count?: number | null;
+  last_refreshed_at?: string | null;
+  coverage_start?: string | null;
+  coverage_end?: string | null;
+  message?: string | null;
   refreshable: boolean;
 }
 

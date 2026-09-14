@@ -98,7 +98,14 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
     if (statSync(full).isDirectory()) {
       if (name === 'mocks') continue; // regex route tables, not request literals
       sourceFiles(full, out);
-    } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
+    } else if (
+      /\.tsx?$/.test(name) &&
+      !/\.test\.tsx?$/.test(name) &&
+      // The generated OpenAPI types carry every declared PATH TEMPLATE as a
+      // string-literal key — those are the contract itself, not requests
+      // the app makes (issue #56 codegen).
+      !/\.gen\.d\.ts$/.test(name)
+    ) {
       out.push(full);
     }
   }
@@ -539,23 +546,17 @@ const UNSAMPLEABLE = new Set<string>([]);
  * A mock route disappearing (deleted, or its regex stopping matching) leaves
  * mock mode serving its loud 501 for a real request while this suite stays
  * green, so an uncovered requested operation is a failure (Codex, #54).
- * These twelve are PRE-EXISTING gaps — mock mode has never had routes for
- * them, mostly mutations — and adding those mocks is its own change. The list
- * is a floor, not a licence: an entry that gains a mock must be deleted from
- * here, which the test enforces, so it can only shrink.
+ * The list is a floor, not a licence: an entry that gains a mock must be
+ * deleted from here, which the test enforces, so it can only shrink.
+ *
+ * Issue #57 wired eleven of the original twelve. The one that stays is a
+ * DECISION, not a gap: the landing page renders outside AppShell with no
+ * MockModeBanner, so a mocked 200 on the waitlist would tell a real person
+ * "you're on the list" while nothing was saved (Rule 4: fabricated
+ * success — see src/mocks/landing.ts). The engine's loud 501 flows through
+ * submitWaitlist's error branch as an honest visible failure instead.
  */
 const UNMOCKED_REQUESTED = new Set<string>([
-  'POST /api/backtest/replay-trades',
-  'POST /api/insights/watchlist/add',
-  'DELETE /api/insights/watchlist/{ticker}',
-  'POST /api/journal/import/commit',
-  'POST /api/journal/import/preview',
-  'GET /api/journal/seed/{ticker}',
-  'POST /api/journal/trades',
-  'DELETE /api/journal/trades/{trade_id}',
-  'PATCH /api/journal/trades/{trade_id}',
-  'GET /api/options/live/{ticker}/{date_str}',
-  'POST /api/style/mine-and-validate',
   'POST /api/waitlist',
 ]);
 

@@ -492,7 +492,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Heatseeker Swing Mode — 2D strikes×expirations exposure heatmap ── */
+/* ── Gamma Map Swing Mode — 2D strikes×expirations exposure heatmap ── */
 .hs-swing-grid table {
   border-spacing: 0;
 }
@@ -539,7 +539,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .recharts-wrapper { min-width: 0 !important; }
 
 /* ===========================================================
-   Heatseeker — full dealer-gamma cockpit (Swing Mode)
+   Gamma Map — full dealer-gamma cockpit (Swing Mode)
    Ported from the design's styles.css (.hs-* + needed base helpers).
    Uses Obsidian Analyst CSS vars; King gold #ffb800, spot=brand,
    flip/gate=red. --font-display / --font-body fall back gracefully.
@@ -882,7 +882,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .hs-stage { grid-template-columns: 1fr; }
 }
 
-/* ── Heatseeker mobile containment ────────────────────────────────────────
+/* ── Gamma Map mobile containment ────────────────────────────────────────
    Grid and flex children default to `min-width: auto`, so a real snapshot
    (~6 expirations × ~25 strikes, plus long tactical copy) widened the CARDS
    instead of scrolling inside them: the whole page then scrolled sideways and

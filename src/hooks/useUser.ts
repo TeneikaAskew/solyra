@@ -4,7 +4,7 @@ import { getAuthMode } from '@/lib/runtimeConfig';
 import { subscribeAuth } from '@/lib/firebase';
 
 export interface MeResponse {
-  email: string | null;
+  email?: string | null;
   is_admin?: boolean;
   /** Server-verified 'dev' role: the account auto-loads mock-data mode. */
   is_dev?: boolean;

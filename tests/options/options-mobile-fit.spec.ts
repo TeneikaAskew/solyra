@@ -1,7 +1,7 @@
 /**
  * E2E: /options must not bleed horizontally on phone viewports.
  *
- * Regression cover for the Heatseeker cockpit on mobile: the strike ×
+ * Regression cover for the Gamma Map cockpit on mobile: the strike ×
  * expiration heatmap, the pivot/ROC bars and the tactical copy sit in grid
  * and flex tracks whose children default to `min-width: auto`, so a wide
  * snapshot (many expirations, many strikes — what production actually
@@ -60,7 +60,7 @@ for (const phone of PHONES) {
       await mockOptionsWideGrid(page);
     });
 
-    test('Heatseeker cockpit does not overflow the viewport', async ({ page }) => {
+    test('Gamma Map cockpit does not overflow the viewport', async ({ page }) => {
       await page.goto('/options');
       await page.waitForLoadState('networkidle');
       await expect(page.locator('.hs-grid').first()).toBeVisible();
@@ -88,7 +88,7 @@ for (const phone of PHONES) {
       expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
     });
 
-    for (const tab of ['Flowseeker', 'Profiles'] as const) {
+    for (const tab of ['Flow', 'Profiles'] as const) {
       test(`${tab} tab does not overflow the viewport`, async ({ page }) => {
         await page.goto('/options');
         await page.waitForLoadState('networkidle');

@@ -20,9 +20,9 @@ import {
   glossary,
   type NodeRole,
   type DataSource,
-} from '@/data/heatseekerMock';
+} from '@/data/gammaMapMock';
 
-// SwingMode — Heatseeker "Swing Mode" dealer-gamma cockpit.
+// SwingMode — Gamma Map "Swing Mode" dealer-gamma cockpit.
 //
 // Toolbar (Live/Historical · GEX/VEX · expiry filter) + Legend strip + a
 // 3-column stage —

@@ -443,7 +443,7 @@ function HistoryView({
                 {r.as_of ? new Date(r.as_of).toLocaleString() : NA}
               </span>
             </div>
-            {r.cost_usd !== null && (
+            {r.cost_usd != null && (
               <span className="text-[10px] text-[var(--on-surface-muted)]">
                 ${r.cost_usd.toFixed(4)}
               </span>

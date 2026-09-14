@@ -527,9 +527,9 @@ export const MOCK_DASHBOARD_REFERENCE = {
  * the build rather than compile against a loosened `string`.
  */
 export interface SectorsResponse {
-  as_of: string | null;
+  as_of?: string | null;
   status: 'ok' | 'unavailable';
-  reason?: string;
+  reason?: string | null;
   sectors: SectorRow[];
 }
 

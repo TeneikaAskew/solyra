@@ -25,6 +25,7 @@ const ROUTES: Array<{ path: string; heading: RegExp }> = [
   { path: '/signals',   heading: /signals?/i },
   { path: '/journal',   heading: /journal/i },
   { path: '/insights',  heading: /insights?/i },
+  { path: '/settings',  heading: /settings/i },
   { path: '/help',      heading: /help/i },
 ];
 
@@ -139,7 +140,7 @@ test.describe('Navigation smoke', () => {
 
 // ── SwingMode toolbar (options page) — Refresh must refetch the live grid,
 // Glossary must navigate to /help. The default ticker (IWM, from tickerStore)
-// and default Heatseeker/Swing mode drive the /api/options/IWM/grid live path.
+// and default Gamma Map/Swing mode drive the /api/options/IWM/grid live path.
 test.describe('SwingMode toolbar', () => {
   const MOCK_DATES = { ticker: 'IWM', dates: ['2026-04-25', '2026-04-24'] };
 

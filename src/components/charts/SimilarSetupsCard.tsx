@@ -151,13 +151,13 @@ function RecentMatches({ matches }: { matches: SimilarMatch[] }) {
                   {fmtNum(m.rsi, 1)}
                 </td>
                 <td className="py-1 text-right font-mono">
-                  <ReturnCell v={m.return_pct} />
+                  <ReturnCell v={m.return_pct ?? null} />
                 </td>
                 <td className="py-1 text-right font-mono">
-                  <ReturnCell v={m.return_5min} />
+                  <ReturnCell v={m.return_5min ?? null} />
                 </td>
                 <td className="py-1 text-right font-mono">
-                  <ReturnCell v={m.return_20min} />
+                  <ReturnCell v={m.return_20min ?? null} />
                 </td>
               </tr>
             ))}

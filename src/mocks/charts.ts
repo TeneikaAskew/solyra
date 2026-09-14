@@ -26,6 +26,7 @@
  * to assert on the request body themselves.
  */
 import type { SignalSeriesResponse } from '@/hooks/useLiveIndicators';
+import type { ReplayTradesResponse } from '@/hooks/useJournalChartTrades';
 import type { SimilarResponse } from '@/hooks/useSimilarSetups';
 import type { MockRoute } from './types';
 import type { JournalTradesResponse } from './journal';
@@ -174,6 +175,39 @@ export const MOCK_JOURNAL_TRADES_ONE_CLOSED = {
  * own modules — one canonical payload per endpoint, so no page's fixture
  * can shadow a richer one (Codex P2 on PR #46).
  */
+/** POST /api/backtest/replay-trades — the replay-trainer scorecard for the
+ *  two MOCK_SEED_TRADES (issue #57): one scored close, one still open. The
+ *  aggregate mirrors lib/backtest.py's honest-null discipline (win_rate and
+ *  averages over the SCORED set only, never fabricated from n=0). */
+export const MOCK_REPLAY_TRADES = {
+  trades: [
+    {
+      id: 'seed-1',
+      status: 'ok',
+      actual_return_pct: 0.78,
+      fill_check: 'ok',
+      system_signal_at_entry: { direction: 'CALL', score: 0.64 },
+      system_exit: { exit_reason: 'target', return_pct: 0.91, exit_time: '2026-04-24T15:20:00' },
+      exit_edge_bps: -13,
+    },
+    {
+      id: 'seed-2',
+      status: 'unavailable',
+      reason: 'trade still open — nothing to score',
+    },
+  ],
+  aggregate: {
+    n: 2,
+    scored_n: 1,
+    win_rate: 1,
+    avg_return_pct: 0.78,
+    system_resolved_n: 1,
+    system_no_signal_n: 0,
+    system_agreement_rate: 1,
+    avg_exit_edge_bps: -13,
+  },
+} satisfies ReplayTradesResponse;
+
 export const chartsRoutes: MockRoute[] = [
   { pattern: /^\/api\/market\/dates\/IWM$/, reply: () => ({ body: MOCK_MARKET_DATES }) },
   {
@@ -182,4 +216,9 @@ export const chartsRoutes: MockRoute[] = [
     reply: () => ({ body: MOCK_SIGNAL_SERIES }),
   },
   { pattern: /^\/api\/signals\/IWM\/similar$/, reply: () => ({ body: MOCK_SIMILAR_SETUPS }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/backtest\/replay-trades$/,
+    reply: () => ({ body: MOCK_REPLAY_TRADES }),
+  },
 ];

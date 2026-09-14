@@ -14,7 +14,9 @@ export type AuthMode = 'firebase' | 'iap' | 'open';
 
 export interface RuntimeConfig {
   authMode: AuthMode;
-  firebase: FirebaseWebConfig | null;
+  /** Present only in firebase mode; absent and null both mean "no web
+   *  config" (open/iap). */
+  firebase?: FirebaseWebConfig | null;
 }
 
 let _config: RuntimeConfig = { authMode: 'open', firebase: null };

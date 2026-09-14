@@ -2,7 +2,7 @@
  * E2E: Options Flow ("/options") — chain heatmap, toggles, live AV fallback.
  *
  * The page was restructured (OptionsFlowPage.tsx): it now opens on the
- * Heatseeker tab (SwingMode grid cockpit) and the original chain-profile
+ * Gamma Map tab (SwingMode grid cockpit) and the original chain-profile
  * body — D3 GEX heatmap, net/calls/puts toggles, source footer — lives in
  * the Profiles tab (ProfilesTab.tsx), reached via the top-level segmented
  * control. Tests that assert the chain UI click into Profiles first.
@@ -21,6 +21,7 @@ import {
   MOCK_OPTIONS_CHAIN,
   MOCK_GRID_POPULATED,
   MOCK_GREEKS,
+  MOCK_GREEKS_WITH_NODES,
 } from '../helpers/fixtures/options';
 
 /** Open the Profiles tab (the original chain-profile view). */
@@ -38,9 +39,9 @@ test.describe('Options Flow', () => {
     await page.waitForLoadState('networkidle');
     // The restructured page (OptionsFlowPage.tsx) no longer renders the
     // literal word "options" — its landmark is the Symbol combobox plus the
-    // Heatseeker / Flowseeker / Profiles view switcher (TABS).
+    // Gamma Map / Flow / Profiles view switcher (TABS).
     await expect(page.getByText('Symbol', { exact: true })).toBeVisible();
-    for (const tab of ['Heatseeker', 'Flowseeker', 'Profiles']) {
+    for (const tab of ['Gamma Map', 'Flow', 'Profiles']) {
       await expect(page.getByRole('button', { name: tab })).toBeVisible();
     }
   });
@@ -52,6 +53,29 @@ test.describe('Options Flow', () => {
     // Strike 220 should appear at least once (as an axis label in the D3
     // heatmap ProfilesTab renders from the mocked chain)
     await expect(page.getByText(/220/).first()).toBeVisible();
+  });
+
+  test('renders King/Gatekeeper/Midpoint badges when the taxonomy is populated (Profiles tab)', async ({
+    page,
+  }) => {
+    // Registered AFTER the beforeEach's mockOptionsApi, so this wins
+    // (Playwright matches routes newest-first). MOCK_GREEKS itself always
+    // ships an EMPTY taxonomy, so without this override the badge path —
+    // including ProfilesTab's two `!`-asserted midpoint bounds — never
+    // executes in any spec (issue #32 coverage gap).
+    await page.route('**/api/options/greeks', (r) => r.fulfill(M.ok(MOCK_GREEKS_WITH_NODES)));
+    await page.goto('/options');
+    await page.waitForLoadState('networkidle');
+    await openProfilesTab(page);
+    // The heatmap draws each badge as an SVG text node whose ENTIRE text is
+    // the bare glyph — exact matching separates them from the levels chips
+    // ("◆ Gate $219.00" etc.), which substring-match the same characters.
+    // ★ king (220), ◆ gatekeepers (219/222), ● the one row inside the
+    // midpoint band (221, bounds 220.5–221.5).
+    await expect(page.getByText('★', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('◆', { exact: true })).toHaveCount(2);
+    await expect(page.getByText('●', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('★', { exact: true })).toBeVisible();
   });
 
   test('renders chart axes and net/calls/puts toggle (Profiles tab)', async ({ page }) => {
@@ -68,6 +92,18 @@ test.describe('Options Flow', () => {
     await page.goto('/options');
     await page.waitForLoadState('networkidle');
     expect(Date.now() - start).toBeLessThan(perfBudgetMs(5000));
+  });
+
+  test('the borrowed internal module names never appear in the app UI (issue #27)', async ({
+    page,
+  }) => {
+    // Same negative fence the landing page carries (landing.spec.ts):
+    // "Heatseeker"/"Flowseeker" are Skylit's module names and were renamed
+    // to the public "Gamma Map"/"Flow" before launch. Assert on the page
+    // that used to render them so a stray label cannot come back.
+    await page.goto('/options');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/heatseeker|flowseeker|skylit/i)).toHaveCount(0);
   });
 });
 
@@ -151,7 +187,7 @@ test.describe('options dates: the limit contract', () => {
     await page.goto('/options');
     await page.waitForLoadState('networkidle');
 
-    // Heatseeker/Swing is the landing tab and reads dates[0] only.
+    // Gamma Map/Swing is the landing tab and reads dates[0] only.
     //
     // Parsed, not substring-matched. `includes('limit=1')` is also true of
     // `limit=10` and `limit=1000`, so the assertion that exists to stop the

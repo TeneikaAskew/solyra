@@ -9,7 +9,9 @@ import { useQuery } from '@tanstack/react-query';
 
 export interface SpotEstimate {
   price: number;
-  method: 'override' | 'parity' | 'delta' | 'median_strike' | 'none';
+  /** 'override' | 'parity' | 'delta' | 'median_strike' | 'none' on the wire
+   *  today; plain string per schema. */
+  method: string;
   note: string;
 }
 
@@ -21,21 +23,33 @@ export interface GammaLevel {
   put_oi: number;
   distance_pct: number;
   score: number;
-  kind: 'king' | 'gate' | 'spot' | 'gamma_balance' | 'none';
+  /** 'king' | 'gate' | 'spot' | 'gamma_balance' | 'none' today; string per
+   *  schema. */
+  kind: string;
   tags: string[];
 }
 
 export type GammaRegime = 'positive_gamma' | 'negative_gamma' | 'unknown';
+
+/** Narrow a wire regime onto the vocabulary the UI palettes know. */
+export function asGammaRegime(regime: string): GammaRegime {
+  return regime === 'positive_gamma' || regime === 'negative_gamma'
+    ? regime
+    : 'unknown';
+}
 
 export interface GammaLevelsResponse {
   ticker: string;
   snapshot_date: string;
   spot: SpotEstimate;
   // Cumulative-net-gamma balance price (formerly mislabeled `flip`).
-  gamma_balance: number | null;
+  // Optional per schema: absent and null both mean "no balance level".
+  gamma_balance?: number | null;
   // True Black-Scholes-recurved zero-gamma level (the real regime divider).
-  gamma_flip: number | null;
-  regime: GammaRegime;
+  gamma_flip?: number | null;
+  /** GammaRegime values today; plain string per schema — narrow with
+   *  `asGammaRegime` before palette lookups. */
+  regime: string;
   total_gex: number;
   levels: GammaLevel[];
   kings: GammaLevel[];
@@ -96,6 +110,10 @@ export function spotMethodLabel(method: SpotEstimate['method']): string {
       return 'spot manually overridden';
     case 'none':
       return 'spot unavailable';
+    default:
+      // Wire is a plain string per schema; name the value rather than
+      // guessing a method we do not know.
+      return `spot method: ${method}`;
   }
 }
 

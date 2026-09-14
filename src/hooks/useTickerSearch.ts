@@ -10,36 +10,36 @@ export interface SearchMatch {
 }
 
 export interface TickerInfo {
-  symbol: string | null;
-  name: string | null;
-  exchange: string | null;
-  sector: string | null;
-  industry: string | null;
-  market_cap: string | null;
-  asset_type: string | null;
-  description: string | null;
+  symbol?: string | null;
+  name?: string | null;
+  exchange?: string | null;
+  sector?: string | null;
+  industry?: string | null;
+  market_cap?: string | null;
+  asset_type?: string | null;
+  description?: string | null;
 }
 
 export interface TickerQuote {
   symbol: string;
-  open: number | null;
-  high: number | null;
-  low: number | null;
-  price: number | null;
-  volume: number | null;
-  latest_trading_day: string | null;
-  previous_close: number | null;
-  change: number | null;
-  change_percent: string | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  price?: number | null;
+  volume?: number | null;
+  latest_trading_day?: string | null;
+  previous_close?: number | null;
+  change?: number | null;
+  change_percent?: string | null;
 }
 
 export interface WatchlistAddResult {
   ticker: string;
   added: boolean;
-  info: TickerInfo | null;
-  quote: TickerQuote | null;
-  /** null when the peers lookup returned nothing. */
-  peers: string[] | null;
+  info?: TickerInfo | null;
+  quote?: TickerQuote | null;
+  /** null/absent when the peers lookup returned nothing. */
+  peers?: string[] | null;
   watchlist: string[];
 }
 

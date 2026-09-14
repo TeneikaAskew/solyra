@@ -1,4 +1,4 @@
-// Heatseeker dealer-gamma mock — typed TS port of the design's heatseeker-data.js.
+// Gamma Map dealer-gamma mock — typed TS port of the design's gamma-map-data.js.
 //
 // This is the data backbone for the SwingMode "dealer-gamma cockpit". There is
 // NO per-expiration dealer-exposure backend endpoint, so the 2D Strike ×
@@ -114,7 +114,7 @@ export interface HSDetailRow {
   pcOiRatio: number;
 }
 
-export interface HeatseekerData {
+export interface GammaMapData {
   ticker: string;
   asOf: string;
   dataSource: DataSource;
@@ -368,7 +368,7 @@ function buildDetail(): Record<string, HSDetailRow[]> {
   return out;
 }
 
-export const HS: HeatseekerData = {
+export const HS: GammaMapData = {
   ticker,
   asOf: '2026-05-23T15:55:00-04:00',
   dataSource: 'realtime',

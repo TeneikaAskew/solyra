@@ -29,7 +29,10 @@ import { riskReward } from '@/lib/risk';
 
 export interface JournalStatEntry {
   return_pct?: number | null;
-  entry_ts: string;
+  /** Optional per the journal API schema (legacy local-file rows may lack
+   *  it); a row without a timestamp cannot match a date scope and sorts
+   *  by the empty string. */
+  entry_ts?: string | null;
   exit_ts?: string | null;
   /** 'chart' | 'manual' | 'replay' (server's journal_entries.source column).
    *  Absent on legacy rows — treated as non-practice, same as 'chart'/'manual'. */
@@ -107,7 +110,7 @@ export function computeJournalStats(
   // With options.date omitted, inScope === entries and everything below is
   // byte-identical to the pre-Task-5 behaviour.
   const inScope = options.date
-    ? entries.filter((e) => e.entry_ts.slice(0, 10) === options.date)
+    ? entries.filter((e) => e.entry_ts != null && e.entry_ts.slice(0, 10) === options.date)
     : entries;
   const replayExcludedCount = includeReplay
     ? 0
@@ -121,11 +124,11 @@ export function computeJournalStats(
   const losses = returns.filter((r) => r <= 0);
   const sum = returns.reduce((a, b) => a + b, 0);
   const sorted = [...withRet].sort((a, b) =>
-    (a.exit_ts || a.entry_ts).localeCompare(b.exit_ts || b.entry_ts));
+    (a.exit_ts || a.entry_ts || '').localeCompare(b.exit_ts || b.entry_ts || ''));
   let cum = 0;
   const equityPoints: PricePoint[] = sorted.map((e, i) => {
     cum += e.return_pct;
-    return { time: i, price: cum, label: (e.exit_ts || e.entry_ts).slice(0, 10) };
+    return { time: i, price: cum, label: (e.exit_ts || e.entry_ts || '').slice(0, 10) };
   });
 
   // Task 5 — Avg R:R: per-trade riskReward over every scoped entry where the

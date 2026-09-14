@@ -470,7 +470,7 @@ export default function ChartsPage() {
           lineStyle: 2, // Dotted
         });
       }
-      if (gammaLevels.gamma_flip !== null) {
+      if (gammaLevels.gamma_flip != null) {
         lines.push({
           price: gammaLevels.gamma_flip,
           color: '#a78bfa',
@@ -479,7 +479,7 @@ export default function ChartsPage() {
           lineWidth: 2 as LineWidth,
         });
       }
-      if (gammaLevels.gamma_balance !== null) {
+      if (gammaLevels.gamma_balance != null) {
         lines.push({
           price: gammaLevels.gamma_balance,
           color: '#c4b5fd',
@@ -798,11 +798,18 @@ export default function ChartsPage() {
       // always falls back to its no-setup state during replay.
       const fires = replay.active ? [] : signalSeriesQuery.data?.fires ?? [];
       const lastFire = fires.find((f) => f.bar_index === chartBars.length - 1);
+      // Wire direction is a plain string; the card POSTS it back to
+      // /api/live/similar-setups, whose request contract is CALL|PUT —
+      // narrow here rather than widening the request type.
+      const fireDirection =
+        lastFire?.direction === 'CALL' || lastFire?.direction === 'PUT'
+          ? lastFire.direction
+          : null;
       return (
         <SimilarSetupsCard
           ticker={activeTicker}
-          direction={lastFire?.direction ?? null}
-          rsi={chartIndicators.rsi}
+          direction={fireDirection}
+          rsi={chartIndicators.rsi ?? null}
           score={lastFire?.score ?? null}
         />
       );

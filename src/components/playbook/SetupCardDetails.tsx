@@ -12,13 +12,14 @@
 
 export interface SetupHorizon {
   minutes: number;
-  win_rate: number | null;        // percent (0-100)
-  avg_return_bps: number | null;  // basis points
-  sample_n?: number | null;
+  win_rate?: number | null;        // percent (0-100)
+  avg_return_bps?: number | null;  // basis points
+  /** Schema declares it untyped (unknown); render sites narrow to number. */
+  sample_n?: unknown;
 }
 
 export interface SetupCardStats {
-  direction?: string;
+  direction?: string | null;
   target_pct?: number | null;     // move magnitude, % of price
   stop_pct?: number | null;
   horizons?: SetupHorizon[];

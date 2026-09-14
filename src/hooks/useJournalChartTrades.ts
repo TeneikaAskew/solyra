@@ -2,30 +2,33 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TradeDirection, TradeEntry } from '@/types';
 
 // ── Server row shape ──────────────────────────────────────────────────────
-// GET /api/journal/trades/{ticker} (platform/api/routers/journal.py). Every
-// field beyond id/ticker/direction/entry_ts/entry_price is optional because
-// legacy local-dev rows (pre-Phase-2 schema) may lack the newer columns
-// entirely — journalRowToTradeEntry below defaults those with optional
-// chaining, never `?? 0` on a financial value.
+// GET /api/journal/trades/{ticker} (platform/api/routers/journal.py). The
+// schema guarantees only id + ticker — its JournalTradeRow docstring says
+// legacy local-dev rows (pre-Phase-2 schema) may lack every newer column —
+// so everything else is optional here, never defaulted with `?? 0` on a
+// financial value.
 export interface JournalRow {
   id: string;
   ticker: string;
-  direction: string; // 'CALL' | 'PUT'
-  entry_ts: string;
-  exit_ts: string | null;
-  entry_price: number;
-  exit_price: number | null;
-  return_pct: number | null; // PERCENT, already sign-corrected for direction
-  notes?: string;
-  take_profits?: number[];
+  // journalRowsToTradeEntries gates chart mapping on isPlottableJournalRow
+  // and console.warns the skipped count, so a legacy row missing these
+  // never crashes the chart and is never dropped silently.
+  direction?: string | null; // 'CALL' | 'PUT'
+  entry_ts?: string | null;
+  exit_ts?: string | null;
+  entry_price?: number | null;
+  exit_price?: number | null;
+  return_pct?: number | null; // PERCENT, already sign-corrected for direction
+  notes?: string | null;
+  take_profits?: number[] | null;
   stop_loss?: number | null;
-  status?: string;
+  status?: string | null;
   /** 'manual' | 'chart' | 'replay' | 'pipeline' (task-examples-union — an
    *  automated-pipeline `trades` row surfaced read-only in the Examples
    *  union). */
-  source?: string;
+  source?: string | null;
   session_id?: string | null;
-  created_at?: string;
+  created_at?: string | null;
   /** task-alerts-enrichment (2026-07-12) — a pipeline row's matched
    *  `signal_alerts.time_stop_minutes` (server: journal.py's
    *  `_pipeline_rows_to_trades`). Only ever set alongside `stop_loss: null`
@@ -36,22 +39,23 @@ export interface JournalRow {
   time_stop_minutes?: number | null;
 }
 
-interface JournalTradesResponse {
+export interface JournalTradesResponse {
   ticker: string;
-  source: 'cloud_sql' | 'local';
+  /** 'cloud_sql' | 'local' today; plain string per schema. */
+  source: string;
   count: number;
   trades: JournalRow[];
 }
 
-interface JournalMutationResponse {
-  source: 'cloud_sql' | 'local';
+export interface JournalMutationResponse {
+  source: string;
   id: string;
-  return_pct: number | null;
+  return_pct?: number | null;
   status: string;
 }
 
-interface JournalDeleteResponse {
-  source: 'cloud_sql' | 'local';
+export interface JournalDeleteResponse {
+  source: string;
   deleted: string;
 }
 
@@ -64,24 +68,24 @@ interface JournalDeleteResponse {
 // in-line comment), same units as journal_entries.return_pct.
 export interface SeedTradeRow {
   id: string;
-  direction: string; // 'CALL' | 'PUT'
-  entry_time: string | null;
-  entry_price: number | null;
-  exit_time: string | null;
-  exit_price: number | null;
-  return_pct: number | null; // PERCENT
-  strat_combo: string | null;
-  exit_reason: string | null;
+  direction?: string | null; // 'CALL' | 'PUT'
+  entry_time?: string | null;
+  entry_price?: number | null;
+  exit_time?: string | null;
+  exit_price?: number | null;
+  return_pct?: number | null; // PERCENT
+  strat_combo?: string | null;
+  exit_reason?: string | null;
 }
 
-interface SeedTradesOk {
+export interface SeedTradesOk {
   ticker: string;
   date: string;
   count: number;
   trades: SeedTradeRow[];
 }
 
-interface SeedTradesUnavailable {
+export interface SeedTradesUnavailable {
   status: 'unavailable';
   reason: string;
 }
@@ -143,8 +147,40 @@ function deriveStatus(row: JournalRow): TradeEntry['status'] {
   return 'breakeven';
 }
 
+/** The minimum a row needs to be drawn on a chart: a direction to pick the
+ *  marker, a wall-clock instant, and an entry price for the y-axis. The
+ *  schema guarantees only id+ticker (legacy local-file rows), so mapping is
+ *  gated on this guard rather than assuming presence. */
+export type PlottableJournalRow = JournalRow & {
+  direction: string;
+  entry_ts: string;
+  entry_price: number;
+};
+
+export function isPlottableJournalRow(row: JournalRow): row is PlottableJournalRow {
+  return (
+    typeof row.direction === 'string' &&
+    typeof row.entry_ts === 'string' &&
+    typeof row.entry_price === 'number'
+  );
+}
+
+/** Map rows to chart TradeEntry shapes, skipping unplottable legacy rows
+ *  LOUDLY: the count is warned once per mapping, never dropped in silence
+ *  (Rule 4 — an import that silently drops rows is a fabricated success). */
+export function journalRowsToTradeEntries(rows: JournalRow[]): TradeEntry[] {
+  const plottable = rows.filter(isPlottableJournalRow);
+  if (plottable.length !== rows.length) {
+    console.warn(
+      `[journal] skipped ${rows.length - plottable.length} row(s) missing ` +
+        'direction/entry_ts/entry_price — legacy local-file rows cannot be charted',
+    );
+  }
+  return plottable.map(journalRowToTradeEntry);
+}
+
 /** GET /api/journal/trades/{ticker} row -> the chart's TradeEntry shape. */
-export function journalRowToTradeEntry(row: JournalRow): TradeEntry {
+export function journalRowToTradeEntry(row: PlottableJournalRow): TradeEntry {
   const entryTime = isoNaiveToEpoch(row.entry_ts);
   const exitTime = row.exit_ts ? isoNaiveToEpoch(row.exit_ts) : undefined;
 
@@ -215,8 +251,7 @@ export function useJournalChartTrades(ticker: string, date: string) {
       return r.json();
     },
     select: (resp) =>
-      resp.trades
-        .map(journalRowToTradeEntry)
+      journalRowsToTradeEntries(resp.trades)
         .filter((t) => epochToJournalDateTime(t.entryTime).date === date),
     enabled: !!ticker && !!date,
     staleTime: 10_000,
@@ -427,14 +462,15 @@ export function useSeedTrades(ticker: string, date: string) {
 
 export interface ReplaySystemSignal {
   direction?: string | null;
-  score?: number;
-  status?: 'unavailable';
+  score?: number | null;
+  /** 'unavailable' today; plain string per schema. */
+  status?: string | null;
 }
 
 export interface ReplaySystemExit {
-  exit_reason: string | null;
-  return_pct: number | null; // PERCENT
-  exit_time: string | null;
+  exit_reason?: string | null;
+  return_pct?: number | null; // PERCENT
+  exit_time?: string | null;
 }
 
 /** A trade's `status` distinguishes two DIFFERENT meanings of "unavailable":
@@ -442,24 +478,26 @@ export interface ReplaySystemExit {
  * still open / bad data), not `TradeEntry['status']` (win/loss/active). */
 export interface ReplayTradeCard {
   id: string;
-  status: 'ok' | 'unavailable';
-  reason?: string;
-  actual_return_pct?: number; // PERCENT
-  fill_check?: 'ok' | 'price_outside_bar_range';
-  system_signal_at_entry?: ReplaySystemSignal;
-  system_exit?: ReplaySystemExit;
+  /** 'ok' | 'unavailable' today; plain string per schema. */
+  status: string;
+  reason?: string | null;
+  actual_return_pct?: number | null; // PERCENT
+  /** 'ok' | 'price_outside_bar_range' today; string per schema. */
+  fill_check?: string | null;
+  system_signal_at_entry?: ReplaySystemSignal | null;
+  system_exit?: ReplaySystemExit | null;
   exit_edge_bps?: number | null;
 }
 
 export interface ReplayAggregate {
   n: number;
   scored_n: number;
-  win_rate: number | null; // 0-1, or null when scored_n === 0 (Rule 3.7: honest null, never fabricated 0.0)
-  avg_return_pct: number | null; // PERCENT, or null when scored_n === 0
+  win_rate?: number | null; // 0-1, or null when scored_n === 0 (Rule 3.7: honest null, never fabricated 0.0)
+  avg_return_pct?: number | null; // PERCENT, or null when scored_n === 0
   system_resolved_n: number;
   system_no_signal_n: number;
-  system_agreement_rate: number | null; // 0-1, or null when system_resolved_n === 0 (Rule 3.7: honest null, never fabricated 0)
-  avg_exit_edge_bps: number | null; // bps, or null when scored_n === 0
+  system_agreement_rate?: number | null; // 0-1, or null when system_resolved_n === 0 (Rule 3.7: honest null, never fabricated 0)
+  avg_exit_edge_bps?: number | null; // bps, or null when scored_n === 0
 }
 
 export interface ReplayTradesResponse {
@@ -587,10 +625,10 @@ export interface MineStyleProfile {
  * older/partial payloads — the panel falls back to stability-only text when
  * it's missing rather than fabricating a fold count. */
 export interface MineStyleAggregateMetrics {
-  avg_expectancy_pct: number | null; // TRUE PERCENT (e.g. 0.42 == +0.42%)
-  avg_win_rate: number | null; // 0-1 fraction
-  total_trades_all_folds: number;
-  total_folds?: number;
+  avg_expectancy_pct?: number | null; // TRUE PERCENT (e.g. 0.42 == +0.42%)
+  avg_win_rate?: number | null; // 0-1 fraction
+  total_trades_all_folds?: number | null;
+  total_folds?: number | null;
 }
 
 export interface MineStyleSuccess {
@@ -709,9 +747,9 @@ export interface ImportPreviewTrade {
   direction: string; // 'CALL' | 'PUT'
   entry_ts: string; // naive-ET "YYYY-MM-DD HH:MM"
   entry_price: number;
-  exit_ts: string | null;
-  exit_price: number | null;
-  return_pct: number | null; // ADVISORY ONLY, import_commit recomputes server-side
+  exit_ts?: string | null;
+  exit_price?: number | null;
+  return_pct?: number | null; // ADVISORY ONLY, import_commit recomputes server-side
   quantity: number;
   status: string; // 'active' | 'closed'
   duplicate: boolean;
