@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useLatestOptionsDate } from '@/hooks/useOptionsDates';
 import { useGammaLevels, type GammaLevel } from '@/hooks/useGammaLevels';
 
 // TrinityTab — 3 synced index-proxy panels (SPX · SPY · QQQ). Each panel
@@ -11,24 +11,6 @@ import { useGammaLevels, type GammaLevel } from '@/hooks/useGammaLevels';
 // api/routers/options.py) — not '^SPX'.
 
 const TRINITY_SYMBOLS = ['SPX', 'SPY', 'QQQ'] as const;
-
-interface DatesResponse {
-  ticker: string;
-  dates: string[];
-}
-
-function useLatestOptionsDate(ticker: string) {
-  return useQuery<DatesResponse>({
-    queryKey: ['options-dates', ticker],
-    queryFn: async () => {
-      const r = await fetch(`/api/options/dates/${ticker}`);
-      if (!r.ok) throw new Error(`dates ${r.status}`);
-      return r.json();
-    },
-    staleTime: 300_000,
-    retry: false,
-  });
-}
 
 function formatGEX(val: number): string {
   const abs = Math.abs(val);

@@ -16,7 +16,7 @@ test.describe('Mock data surfaces stay banner-honest', () => {
     // Options page needs grid/levels/dates endpoints to avoid infinite loading
     const MOCK_DATES = { ticker: 'IWM', dates: ['2026-04-25', '2026-04-24'] };
 
-    await page.route('**/api/options/dates/IWM', (r) => r.fulfill(M.ok(MOCK_DATES)));
+    await page.route('**/api/options/dates/IWM*', (r) => r.fulfill(M.ok(MOCK_DATES)));
     await page.route('**/api/options/IWM/*/levels', (r) => r.fulfill(M.ok(MOCK_LEVELS)));
     await page.route('**/api/options/**/grid**', (route) => route.fulfill(M.ok(MOCK_GRID)));
 

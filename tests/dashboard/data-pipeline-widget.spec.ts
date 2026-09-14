@@ -19,7 +19,8 @@
  * `9f28a60^:platform/tests/data-pipeline-status.spec.ts`.
  */
 import { test, expect } from '@playwright/test';
-import { mockCommon, M } from '../helpers/mocks';
+import { M } from '../helpers/mocks';
+import { mockAllPages } from '../helpers/fixtures/all';
 
 // Mirrors the real /api/health/freshness envelope (stocks
 // platform/api/routers/health.py get_freshness → audit_data_freshness
@@ -55,7 +56,7 @@ const MOCK_FRESHNESS = {
 
 test.describe('Data pipeline status widget', () => {
   test('dashboard renders without the data-pipeline widget', async ({ page }) => {
-    await mockCommon(page);
+    await mockAllPages(page);
     await page.route('**/api/health/freshness', (r) => r.fulfill(M.ok(MOCK_FRESHNESS)));
 
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });

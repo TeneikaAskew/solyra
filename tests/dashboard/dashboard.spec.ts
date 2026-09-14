@@ -14,6 +14,8 @@ import { M } from '../helpers/mocks';
 import {
   mockDashboard,
   mockDashboardCards,
+  MOCK_PLAYBOOK_FRESH,
+  MOCK_PLAYBOOK_STALE_DETAIL,
   MOCK_SECTORS,
   buildDashboardNews,
 } from '../helpers/fixtures/dashboard';
@@ -117,5 +119,30 @@ test.describe('Dashboard', () => {
     await page.goto('/dashboard');
     await page.waitForLoadState('networkidle');
     expect(Date.now() - start).toBeLessThan(perfBudgetMs(7000));
+  });
+  // #861 — playbook_cards went 85 days stale and the top setup rendered the
+  // June card set as today's. The server now sends the set's date and
+  // refuses a stale one; the tile must show the date and surface the refusal.
+  test('top setup shows the card set date and age', async ({ page }) => {
+    await page.route('**/api/playbook/IWM', (r) => r.fulfill(M.ok(MOCK_PLAYBOOK_FRESH)));
+    await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(MOCK_PLAYBOOK_FRESH.cards[0].name)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('playbook-age')).toHaveText(/as of Sep 5, 2026 \(1d old\)/);
+  });
+
+  test('top setup surfaces the stale-cards refusal instead of a generic empty state', async ({ page }) => {
+    await page.route('**/api/playbook/IWM', (r) =>
+      r.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_PLAYBOOK_STALE_DETAIL),
+      })
+    );
+    await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/playbook unavailable/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/2026-06-13 is 85 days old/)).toBeVisible();
+    await expect(page.getByText(/run the pipeline to populate/i)).toHaveCount(0);
   });
 });

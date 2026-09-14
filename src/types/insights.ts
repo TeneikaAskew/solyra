@@ -103,12 +103,14 @@ export interface InsightReportEnvelope {
 }
 
 // GET /api/insights/report/{ticker}/history
+/** insights.py _fetch_report_history: every field but `id` comes from a
+ *  JSONB lookup that yields NULL when the stored report lacks the key. */
 export interface InsightHistoryRow {
   id: string;
-  as_of: string;
-  direction: Direction;
-  conviction: Conviction;
-  thesis: string;
+  as_of: string | null;
+  direction: Direction | null;
+  conviction: Conviction | null;
+  thesis: string | null;
   cost_usd: number | null;
 }
 

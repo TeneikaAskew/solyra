@@ -25,6 +25,8 @@ import type { MockRoute } from './types';
 export const MOCK_SIGNALS = {
   ticker: 'IWM',
   count: 3,
+  returned: 3,
+  source: 'cloud_sql',
   signals: [
     {
       time: '2026-04-24 18:00:00',
@@ -77,6 +79,8 @@ export const MOCK_SIGNALS = {
 export const MOCK_SIGNALS_EMPTY = {
   ticker: 'IWM',
   count: 0,
+  returned: 0,
+  source: 'cloud_sql',
   signals: [],
 } satisfies SignalsResponse;
 
@@ -133,6 +137,6 @@ export const signalsRoutes: MockRoute[] = [
   // TickerCombobox — search + per-symbol data coverage, empty by default.
   // `coverage` is an OBJECT map keyed by symbol ({"IWM": {intraday, daily}}),
   // never an array — main.py's _coverage_from_frames returns a dict.
-  { pattern: /^\/api\/insights\/ticker\/search$/, reply: () => ({ body: { results: [] } }) },
+  { pattern: /^\/api\/insights\/ticker\/search$/, reply: () => ({ body: { keywords: '', results: [] } }) },
   { pattern: /^\/api\/market\/coverage$/, reply: () => ({ body: { coverage: {} } }) },
 ];

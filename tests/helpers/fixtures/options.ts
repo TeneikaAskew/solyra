@@ -33,6 +33,11 @@ export {
   MOCK_OPTIONS_DATES,
 } from '@/mocks/options';
 
+// TrinityTab's three index-proxy panels (see TRINITY_SYMBOLS in
+// src/components/options/TrinityTab.tsx). Each fetches its own dates + levels,
+// so an IWM-only mock set leaves nine requests to escape to a real backend.
+const TRINITY_TICKERS = ['SPX', 'SPY', 'QQQ'] as const;
+
 /**
  * Intercept every options endpoint the /options page can hit (both the
  * default Heatseeker/Swing view and the Profiles tab), scoped to IWM.
@@ -43,7 +48,25 @@ export {
  */
 export async function mockOptionsApi(page: Page) {
   await mockCommon(page);
-  await page.route('**/api/options/dates/IWM', (r) => r.fulfill(M.ok(MOCK_OPTIONS_DATES)));
+  // Trailing `*` so the route still matches once SwingMode appends `?limit=1`
+  // (it only reads dates[0]). Without it that view issues an unmocked request
+  // and the spec talks to a real backend.
+  //
+  // Scoped to IWM, which was NOT enough: `TrinityTab` renders SPX/SPY/QQQ
+  // panels, and an IWM-only route set left every one of those requests
+  // unintercepted. `playwright.config.ts` runs its own Vite whose proxy falls
+  // through to `solyra-api-staging` when no local backend answers, so those
+  // requests reached real staging infrastructure — the exact failure the
+  // config's isolation settings are documented to prevent, and a silent one:
+  // the spec still passes, it just is not hermetic.
+  for (const t of TRINITY_TICKERS) {
+    await page.route(`**/api/options/dates/${t}*`, (r) => r.fulfill(M.ok({
+      ...MOCK_OPTIONS_DATES, ticker: t,
+    })));
+    await page.route(`**/api/options/${t}/*/levels*`,
+                     (r) => r.fulfill(M.ok(MOCK_LEVELS_POPULATED)));
+  }
+  await page.route('**/api/options/dates/IWM*', (r) => r.fulfill(M.ok(MOCK_OPTIONS_DATES)));
   // Chain (single-segment glob: does NOT match /grid?…, /…/levels or
   // /api/options/live/IWM/… — those are handled below / by the caller).
   await page.route('**/api/options/IWM/*', (r) => r.fulfill(M.ok(MOCK_OPTIONS_CHAIN)));

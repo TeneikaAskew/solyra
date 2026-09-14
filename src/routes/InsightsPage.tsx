@@ -28,6 +28,7 @@ import { WatchlistPanel } from '@/components/insights/WatchlistPanel';
 import { AgentsPanel } from '@/components/insights/AgentsPanel';
 import { MicroLabel } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
+import { NA } from '@/lib/format';
 
 type Tab = 'report' | 'agents' | 'history' | 'chat' | 'watchlist';
 
@@ -433,10 +434,13 @@ function HistoryView({
                     : 'border-[var(--outline-variant)] bg-[var(--surface-3)] text-[var(--on-surface-muted)]'
                 }`}
               >
-                {r.direction} · {r.conviction}
+                {/* Older stored reports lack these JSONB keys, so both can
+                    be null. Joining them unconditionally rendered a bare
+                    "·" badge; show whichever survives, or the marker. */}
+                {[r.direction, r.conviction].filter(Boolean).join(' · ') || NA}
               </span>
               <span className="text-xs text-[var(--on-surface-muted)]">
-                {new Date(r.as_of).toLocaleString()}
+                {r.as_of ? new Date(r.as_of).toLocaleString() : NA}
               </span>
             </div>
             {r.cost_usd !== null && (
@@ -445,7 +449,10 @@ function HistoryView({
               </span>
             )}
           </div>
-          <p className="text-xs leading-relaxed text-[var(--on-surface-variant)]">{r.thesis}</p>
+          {/* A null thesis rendered as an empty paragraph; say so instead. */}
+          <p className="text-xs leading-relaxed text-[var(--on-surface-variant)]">
+            {r.thesis ?? <span className="italic opacity-70">No summary recorded</span>}
+          </p>
         </button>
       ))}
     </div>

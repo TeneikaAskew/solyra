@@ -49,12 +49,7 @@ export function usePlaybookBatch(
   const keys = batches ? Object.keys(batches) : [];
   const ready = !!snapshot && keys.length > 0;
   return useQuery<Map<string, EvalResult[]>>({
-    queryKey: [
-      'playbook-batch',
-      snapshot ? signatureForSnapshot(snapshot) : null,
-      keys,
-      batches ? keys.map((k) => batches[k].length) : [],
-    ],
+    queryKey: playbookBatchKey(batches, snapshot),
     queryFn: async () => {
       const r = await fetch('/api/playbook/evaluate', {
         method: 'POST',
@@ -68,6 +63,26 @@ export function usePlaybookBatch(
     enabled: ready,
     staleTime: 30_000,
   });
+}
+
+/**
+ * Query key for the per-card batch evaluation. The card ids AND the full
+ * condition text are part of the key: the playbook query refetches every 15
+ * minutes (stocks #861), and a regenerated card set keeps the same ids and
+ * usually the same condition counts, so a key built from ids + counts let
+ * TanStack hand back the previous set's evaluation map for the new text
+ * until the snapshot moved (Codex on solyra #49). Exported so the
+ * invariant is unit-testable without mounting the hook.
+ */
+export function playbookBatchKey(
+  batches: Record<string, string[]> | undefined,
+  snapshot: MarketSnapshot | null,
+): unknown[] {
+  return [
+    'playbook-batch',
+    snapshot ? signatureForSnapshot(snapshot) : null,
+    batches ?? null,
+  ];
 }
 
 // Short digest used in queryKey so React Query refetches when the snapshot

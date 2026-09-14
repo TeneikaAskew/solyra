@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "e2e": "playwright test --project=chromium",
     "e2e:cloud:auth": "playwright test --project=iap-setup --headed",
-    "e2e:cloud": "playwright test --project=cloud"
+    "e2e:cloud": "playwright test --project=cloud",
+    "contract:sync": "node scripts/sync-api-contract.mjs",
+    "contract:check": "node scripts/sync-api-contract.mjs --check"
   },
   "dependencies": {
     "@heroui/react": "^3.1.0",
@@ -37,14 +39,17 @@
     "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.0",
     "@types/d3": "^7.4.3",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "ajv": "^8.20.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "js-yaml": "^4.3.2",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.2.0",
     "typescript": "~5.9.3",

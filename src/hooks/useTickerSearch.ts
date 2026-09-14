@@ -38,6 +38,8 @@ export interface WatchlistAddResult {
   added: boolean;
   info: TickerInfo | null;
   quote: TickerQuote | null;
+  /** null when the peers lookup returned nothing. */
+  peers: string[] | null;
   watchlist: string[];
 }
 

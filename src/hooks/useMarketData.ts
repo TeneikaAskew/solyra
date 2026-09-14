@@ -26,6 +26,7 @@ interface MarketDataResponse {
 
 interface DatesResponse {
   ticker: string;
+  source: string;
   dates: string[];
   months: string[];
 }
@@ -68,6 +69,14 @@ interface ReferenceLevels {
   high: number;
   low: number;
   close: number;
+  /** Absent on the GCS branch. */
+  source?: string;
+  /** Cloud SQL branch only. */
+  stale_days?: number;
+  week?: {
+    high: number; low: number; avg_close: number; avg_rsi_14: number | null;
+    start_date: string; end_date: string; sessions: number;
+  } | null;
 }
 
 export function useReferenceLevels(ticker: string, date: string) {

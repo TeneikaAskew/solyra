@@ -19,6 +19,7 @@
  * here, not imported.
  */
 import type { Page } from '@playwright/test';
+import type { MeResponse } from '@/hooks/useUser';
 import {
   MOCK_FIREBASE_CONFIG_OPEN,
   MOCK_HEALTH,
@@ -26,6 +27,7 @@ import {
   MOCK_MARKET_HOURS,
   MOCK_MOST_ACTIVE_EMPTY,
   MOCK_PREFERENCES_EMPTY,
+  MOCK_PROFILE,
   MOCK_WATCHLIST_EMPTY,
 } from '@/mocks/common';
 
@@ -59,7 +61,9 @@ export async function mockCommon(page: Page) {
   // directly), matching iap/local behaviour. The login page only appears in
   // `firebase` mode.
   await page.route('**/api/config/firebase', (r) => r.fulfill(ok(MOCK_FIREBASE_CONFIG_OPEN)));
-  await page.route('**/api/me', (r) => r.fulfill(ok({ email: null, is_admin: false })));
+  await page.route('**/api/me', (r) =>
+    r.fulfill(ok({ email: null, is_admin: false } satisfies MeResponse))
+  );
   // Per-user shell preferences (usePreferencesSync, mounted in AppShell on
   // every route). 404 = "no stored preferences" — the app keeps its local
   // choice. Unmocked, this hits the proxy and logs a 500 console error that
@@ -67,6 +71,9 @@ export async function mockCommon(page: Page) {
   // 200 with all-null fields = "nothing stored yet" without the 404 that
   // browsers log as a console error (several specs assert a clean console).
   await page.route('**/api/me/preferences', (r) => r.fulfill(ok(MOCK_PREFERENCES_EMPTY)));
+  // Settings profile form (useProfile). Mock mode's commonRoutes serve the
+  // same payload; settings.spec.ts re-registers per test and wins.
+  await page.route('**/api/me/profile', (r) => r.fulfill(ok(MOCK_PROFILE)));
 
   await page.route('**/api/live/status', (r) => r.fulfill(ok(MOCK_LIVE_STATUS)));
   // The brief endpoint NEVER 404s: its no-data/DB-down state is a 200

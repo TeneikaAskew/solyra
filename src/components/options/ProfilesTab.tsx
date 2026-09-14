@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { parseApiError } from '@/lib/apiError';
 import { useQuery } from '@tanstack/react-query';
+import { useAllOptionsDates } from '@/hooks/useOptionsDates';
 import { MetricCard } from '@/components/shared/MetricCard';
 import {
   useOptionsGreeks,
   EMPTY_GREEKS,
+  type ChainOptionRecord,
   type OptionRecord,
   type GEXByStrike,
   type NodeResult,
@@ -26,39 +29,12 @@ type Filter = 'net' | 'calls' | 'puts';
 interface OptionsResponse {
   ticker: string;
   date: string;
-  options: OptionRecord[];
-  snapshot_timestamp?: string;
-  metadata?: { source?: string; data_source?: string; row_count?: number };
+  options: ChainOptionRecord[];
+  snapshot_timestamp: string;
+  metadata: { source: string; data_source: string; row_count: number };
+  cached: boolean;
 }
 
-interface AvailableDatesResponse {
-  ticker: string;
-  dates: string[];
-}
-
-async function parseApiError(r: Response, fallback: string): Promise<string> {
-  try {
-    const body = await r.json();
-    if (typeof body?.detail === 'string') return body.detail;
-    if (Array.isArray(body?.detail)) return body.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ');
-  } catch {
-    // body wasn't JSON
-  }
-  return `${fallback} (HTTP ${r.status})`;
-}
-
-function useOptionsDates(ticker: string) {
-  return useQuery<AvailableDatesResponse>({
-    queryKey: ['options-dates', ticker],
-    queryFn: async () => {
-      const r = await fetch(`/api/options/dates/${ticker}`);
-      if (!r.ok) throw new Error(await parseApiError(r, 'Failed to fetch options dates'));
-      return r.json();
-    },
-    staleTime: 300_000,
-    retry: false,
-  });
-}
 
 function useOptionsData(ticker: string, date: string, enabled: boolean) {
   return useQuery<OptionsResponse>({
@@ -297,7 +273,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     isError: datesError,
     error: datesErrorObj,
     refetch: refetchDates,
-  } = useOptionsDates(activeTicker);
+  } = useAllOptionsDates(activeTicker);
   const dates = datesData?.dates ?? [];
   const selectedDate = dates[dateIdx] ?? '';
 

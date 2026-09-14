@@ -20,11 +20,7 @@
  */
 import type { GammaLevel, GammaLevelsResponse } from '@/hooks/useGammaLevels';
 import type { GammaGridCell, GammaGridSummary } from '@/hooks/useGammaGrid';
-import type {
-  AggregatedStrike,
-  GreeksResponse,
-  OptionRecord,
-} from '@/hooks/useOptionsGreeks';
+import type { ChainOptionRecord, GreeksResponse } from '@/hooks/useOptionsGreeks';
 import type { MockRoute } from './types';
 
 // ── Empty variants (navigation.spec.ts, demo-banners.spec.ts) ──────────────
@@ -66,63 +62,85 @@ export const MOCK_GRID = {
   warnings: [],
 } satisfies GammaGridSummary;
 
+/**
+ * GET /api/options/{ticker}/nodes and /{date}/nodes (grid.py). No component
+ * reads these yet; the mock exists so the chain catch-all below cannot
+ * answer them with a chain payload (which is what happened before this
+ * route existed). The unavailable envelope keeps every key the happy path
+ * carries, nulled or empty, exactly as the router emits it.
+ */
+export const MOCK_NODES_UNAVAILABLE = {
+  ticker: 'IWM',
+  snapshot_ts: null,
+  snapshot_date: null,
+  data_source: 'unavailable',
+  spot: null,
+  gamma_balance: null,
+  gamma_flip: null,
+  regime: 'unknown',
+  total_gex: 0.0,
+  total_vex: 0.0,
+  king: null,
+  gates: [],
+  midpoints: [],
+  hedge_nodes: [],
+  opex_nodes: [],
+  tactical_summary: null,
+  warnings: ['no realtime or EOD chain found within the lookup window'],
+};
+
 // ── Chain + dates ──────────────────────────────────────────────────────────
 
 interface OptionsDatesResponse {
   ticker: string;
   dates: string[];
+  source: string;
+  /** Absent on a cache hit. */
+  window?: string;
+  cached: boolean;
 }
 
 export const MOCK_OPTIONS_DATES = {
   ticker: 'IWM',
   dates: ['2026-04-24', '2026-04-23'],
+  source: 'cloud_sql',
+  window: '365d',
+  cached: false,
 } satisfies OptionsDatesResponse;
 
 interface OptionsChainResponse {
   ticker: string;
   date: string;
-  options: OptionRecord[];
+  options: ChainOptionRecord[];
+  snapshot_timestamp: string;
   metadata: { source: string; data_source: string; row_count: number };
+  cached: boolean;
 }
 
 export const MOCK_OPTIONS_CHAIN = {
   ticker: 'IWM',
   date: '2026-04-24',
   options: [
-    { type: 'call', strike: 218, open_interest: 4000, gamma: 0.03, vega: 0.04, delta: 0.7, volume: 800 },
-    { type: 'call', strike: 219, open_interest: 5000, gamma: 0.04, vega: 0.05, delta: 0.6, volume: 900 },
-    { type: 'call', strike: 220, open_interest: 6000, gamma: 0.04, vega: 0.05, delta: 0.5, volume: 1200 },
-    { type: 'call', strike: 221, open_interest: 5000, gamma: 0.04, vega: 0.05, delta: 0.4, volume: 950 },
-    { type: 'call', strike: 222, open_interest: 4000, gamma: 0.03, vega: 0.04, delta: 0.3, volume: 700 },
-    { type: 'put',  strike: 218, open_interest: 4500, gamma: 0.03, vega: 0.04, delta: -0.3, volume: 850 },
-    { type: 'put',  strike: 219, open_interest: 5200, gamma: 0.04, vega: 0.05, delta: -0.4, volume: 1000 },
-    { type: 'put',  strike: 220, open_interest: 6200, gamma: 0.04, vega: 0.05, delta: -0.5, volume: 1300 },
-    { type: 'put',  strike: 221, open_interest: 5100, gamma: 0.04, vega: 0.05, delta: -0.6, volume: 1100 },
-    { type: 'put',  strike: 222, open_interest: 4400, gamma: 0.03, vega: 0.04, delta: -0.7, volume: 900 },
+    { type: 'call', strike: 218, expiration: '2026-04-24', open_interest: 4000, gamma: 0.03, vega: 0.04, delta: 0.7, volume: 800 },
+    { type: 'call', strike: 219, expiration: '2026-04-24', open_interest: 5000, gamma: 0.04, vega: 0.05, delta: 0.6, volume: 900 },
+    { type: 'call', strike: 220, expiration: '2026-04-24', open_interest: 6000, gamma: 0.04, vega: 0.05, delta: 0.5, volume: 1200 },
+    { type: 'call', strike: 221, expiration: '2026-04-24', open_interest: 5000, gamma: 0.04, vega: 0.05, delta: 0.4, volume: 950 },
+    { type: 'call', strike: 222, expiration: '2026-04-24', open_interest: 4000, gamma: 0.03, vega: 0.04, delta: 0.3, volume: 700 },
+    { type: 'put',  strike: 218, expiration: '2026-04-24', open_interest: 4500, gamma: 0.03, vega: 0.04, delta: -0.3, volume: 850 },
+    { type: 'put',  strike: 219, expiration: '2026-04-24', open_interest: 5200, gamma: 0.04, vega: 0.05, delta: -0.4, volume: 1000 },
+    { type: 'put',  strike: 220, expiration: '2026-04-24', open_interest: 6200, gamma: 0.04, vega: 0.05, delta: -0.5, volume: 1300 },
+    { type: 'put',  strike: 221, expiration: '2026-04-24', open_interest: 5100, gamma: 0.04, vega: 0.05, delta: -0.6, volume: 1100 },
+    { type: 'put',  strike: 222, expiration: '2026-04-24', open_interest: 4400, gamma: 0.03, vega: 0.04, delta: -0.7, volume: 900 },
   ],
-  // Real source enum is 'cloud_sql' | 'alphavantage_live' — never 'mock'.
-  metadata: { source: 'cloud_sql', data_source: 'cloud_sql', row_count: 10 },
+  snapshot_timestamp: '2026-04-24T20:00:00',
+  // Real `source` enum is 'cloud_sql' | 'alphavantage_live' — never 'mock';
+  // `data_source` is the vendor and is 'alphavantage' on both paths.
+  metadata: { source: 'cloud_sql', data_source: 'alphavantage', row_count: 10 },
+  cached: false,
 } satisfies OptionsChainResponse;
 
 // ── Greeks ─────────────────────────────────────────────────────────────────
 
-/**
- * The greeks router returns per-strike vega alongside gamma, but the
- * frontend's `AggregatedStrike` doesn't model those three fields. Rather
- * than drop them from a fixture captured byte-for-byte off the live router,
- * the wire shape is declared here so the rest of the payload still
- * type-checks. If `AggregatedStrike` ever grows the vega fields, delete this
- * and satisfy `GreeksResponse` directly.
- */
-type AggregatedStrikeWire = AggregatedStrike & {
-  net_vega: number;
-  call_vega: number;
-  put_vega: number;
-};
-
-type GreeksResponseWire = Omit<GreeksResponse, 'aggregated'> & {
-  aggregated: AggregatedStrikeWire[];
-};
 
 export const MOCK_GREEKS = {
   aggregated: [
@@ -149,7 +167,7 @@ export const MOCK_GREEKS = {
   },
   nodes: { kingNode: null, gatekeepers: [], midpoints: [], allNodes: [] },
   config: { strike_range_pct: 0.15, atm_tolerance: 0.02, node_min_gamma: 500 },
-} satisfies GreeksResponseWire;
+} satisfies GreeksResponse;
 
 // ── Populated levels / grid ────────────────────────────────────────────────
 
@@ -338,6 +356,8 @@ export const optionsRoutes: MockRoute[] = [
     pattern: /^\/api\/options\/IWM\/([^/]+)\/levels$/,
     reply: () => ({ body: MOCK_LEVELS_POPULATED }),
   },
+  { pattern: /^\/api\/options\/IWM\/nodes$/, reply: () => ({ body: MOCK_NODES_UNAVAILABLE }) },
+  { pattern: /^\/api\/options\/IWM\/([^/]+)\/nodes$/, reply: () => ({ body: MOCK_NODES_UNAVAILABLE }) },
   { pattern: /^\/api\/options\/IWM\/([^/]+)$/, reply: () => ({ body: MOCK_OPTIONS_CHAIN }) },
   { method: 'POST', pattern: /^\/api\/options\/greeks$/, reply: () => ({ body: MOCK_GREEKS }) },
 ];

@@ -82,3 +82,22 @@ export function toneOf(v: number | null | undefined): 'bull' | 'bear' | 'neutral
   if (!isNum(v) || v === 0) return 'neutral';
   return v > 0 ? 'bull' : 'bear';
 }
+
+/**
+ * Error text for a failed API response. FastAPI puts the reason in
+ * `{detail}`; surface it so a 503 "playbook_cards … is 85 days old" reads
+ * as that on the widget instead of an anonymous "Request failed (HTTP 503)".
+ * Falls back to the bare status when the body is not that shape.
+ */
+export async function responseErrorMessage(r: Response): Promise<string> {
+  try {
+    const body = (await r.json()) as { detail?: unknown };
+    // The status rides along so consumers keyed on it keep working:
+    // WidgetState.isAuthError looks for "401" to show the sign-in state,
+    // and a FastAPI 401 body is just {"detail": "Not authenticated"}.
+    if (typeof body?.detail === 'string' && body.detail) return `${body.detail} (HTTP ${r.status})`;
+  } catch {
+    // non-JSON body: fall through to the status code
+  }
+  return `${r.status}`;
+}

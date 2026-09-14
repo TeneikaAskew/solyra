@@ -1,0 +1,34 @@
+# Blank issues stay enabled deliberately. The forms encode the standard; they
+# are not a gate. A finding that does not fit one of them is better filed
+# freehand than squeezed into the wrong shape.
+#
+# These forms apply to the GitHub web UI only. Issues opened through the API
+# bypass them entirely, which includes anything an agent files.
+#
+# contact_links: `name` is kept to 30 characters or fewer and `about` under
+# 200. Codex cited a 30-char name limit; the page it cited states no limit at
+# all, and neither does the JSON schema. Applied anyway: if the cap is real an
+# over-length name makes the file invalid and every link silently vanishes.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Backend issues go to stocks
+    url: https://github.com/TeneikaAskew/stocks/issues/new/choose
+    about: >-
+      This repo is the frontend only. Wrong shape, wrong value, or a missing
+      route belongs there. If the fix needs both sides, file here with the
+      contract-drift form and link the stocks issue.
+
+  - name: The rules these forms enforce
+    url: https://github.com/TeneikaAskew/solyra/blob/main/CLAUDE.md
+    about: >-
+      Rule 0 (never rewrite published history, Lovable), Rule 4 (no silent
+      fallbacks; null stays null and only the presentation boundary renders an
+      em-dash), Rule 5, Rule 6, Rule 2.5.
+
+  - name: Evidence, not fixtures
+    url: https://github.com/TeneikaAskew/solyra/blob/main/CLAUDE.md
+    about: >-
+      npm run dev proxies /api to a real backend, so you can see real
+      responses. npm run contract:check diffs the vendored OpenAPI snapshot.
+      Fixtures only prove the app agrees with itself.

@@ -9,101 +9,12 @@
  * with a realistic payload and produces screenshots for visual verification.
  */
 import { test, expect } from '@playwright/test';
-import { mockDashboard } from '../helpers/fixtures/dashboard';
+import { MOCK_MOVEMENT_STATEMENT, mockDashboard } from '../helpers/fixtures/dashboard';
 
-// A realistic assembled statement — shape verified live against the production
-// assembler (lib/movement_statement.py) with the flag on: validated 15m model.
-const MOCK_STATEMENT = {
-  status: 'OK',
-  ticker: 'IWM',
-  timeframe: '15m',
-  scope_statement:
-    'Structure read, not a directional or P&L edge. The headline probability ' +
-    'is the calibrated chance the current candle type continues.',
-  headline: {
-    status: 'OK',
-    probability: 0.087,
-    current_type: '1',
-    statement: 'IWM 15m: current structure is a 1 candle; continuation 9%.',
-  },
-  continuation: { status: 'OK', current_type: '1', continuation_prob: 0.087 },
-  confidence_modifiers: {
-    note:
-      'Context only. These DO NOT change the headline probability — the ' +
-      'headline is the calibrated continuation probability alone.',
-    expected_move: {
-      status: 'OK',
-      role: 'context',
-      size_class: 'TIGHT',
-      pred_bucket: 0,
-      probabilities: {
-        p_tight: 0.69,
-        p_normal: 0.24,
-        p_expanded: 0.05,
-        p_explosive: 0.01,
-      },
-      max_proba: 0.69,
-      model_version: 'magnitude-recal-48njf',
-      ts: '2026-07-10T19:45:00+00:00',
-      usage_guidance:
-        'How BIG the next move is likely to be — not which way. Sizing / ' +
-        'filtering / strike-selection context only: it is NOT a directional ' +
-        'signal and does not move the headline probability.',
-    },
-    regime: {
-      status: 'OK',
-      role: 'context',
-      regime: 'negative_gamma',
-      mood: 'trending',
-      gamma_flip: null,
-      total_gex: -22226013.0,
-    },
-  },
-  // In production the endpoint builds this via _build_movement_level_map; a
-  // realistic ladder (levels-to-go each way, per-tier population reach-rates).
-  levels: {
-    status: 'OK',
-    current_price: 218.4,
-    reach_rate_note:
-      'Reach-rates are population statistics per tier, not per-instance predictions.',
-    calls: [
-      {
-        price: 219.1,
-        name: 'ORB 15m High',
-        period: 'intraday',
-        level_type: 'ORB',
-        distance_pct: 0.32,
-        reach_rate: { status: 'OK', reach_rate: 0.61, hits: 92, sample_n: 151, low_sample: false },
-      },
-      {
-        price: 220.05,
-        name: 'Prev Day High',
-        period: 'daily',
-        level_type: 'PDH',
-        distance_pct: 0.76,
-        reach_rate: { status: 'OK', reach_rate: 0.38, hits: 57, sample_n: 151, low_sample: false },
-      },
-    ],
-    puts: [
-      {
-        price: 217.8,
-        name: 'ORB 15m Low',
-        period: 'intraday',
-        level_type: 'ORB',
-        distance_pct: -0.27,
-        reach_rate: { status: 'OK', reach_rate: 0.58, hits: 88, sample_n: 151, low_sample: false },
-      },
-      {
-        price: 216.9,
-        name: 'Prev Day Low',
-        period: 'daily',
-        level_type: 'PDL',
-        distance_pct: -0.69,
-        reach_rate: { status: 'OK', reach_rate: 0.31, hits: 12, sample_n: 40, low_sample: true },
-      },
-    ],
-  },
-};
+// The assembled statement (shape verified live against the production
+// assembler) now lives in src/mocks/dashboard.ts, shared with mock mode and
+// the mockDashboard fixture; the variants below derive from it.
+const MOCK_STATEMENT = MOCK_MOVEMENT_STATEMENT;
 
 test('movement-read card renders TYPE + validated SIZE + regime (flag ON)', async ({ page }) => {
   await mockDashboard(page);
@@ -131,10 +42,15 @@ test('movement-read card renders TYPE + validated SIZE + regime (flag ON)', asyn
   // The honesty guard is present (never implies a direction).
   await expect(page.getByText(/not a directional or P&L edge/i)).toBeVisible();
 
-  // Levels-to-go ladder renders each way, with reach-rates + a low-sample badge.
+  // Levels-to-go ladder renders each way with each rung's slot reach-rate and
+  // population size. The shared mock is IWM's real per-slot populations
+  // (stocks #1024), none of which is low-sample, so no badge may appear here;
+  // the badge branch is covered by the low-sample variant below.
   await expect(page.getByText('Call levels')).toBeVisible();
   await expect(page.getByText('Put levels')).toBeVisible();
-  await expect(page.getByTestId('low-sample-badge').first()).toBeVisible();
+  await expect(page.getByText('70% (n=115)')).toBeVisible();
+  await expect(page.getByText('45% (n=94)')).toBeVisible();
+  await expect(page.getByTestId('low-sample-badge')).toHaveCount(0);
 
   // Screenshots for visual verification: the card element + the full page.
   // Write to an explicit, stable dir (env override) so they survive Playwright's
@@ -145,6 +61,92 @@ test('movement-read card renders TYPE + validated SIZE + regime (flag ON)', asyn
   );
   await card.screenshot({ path: `${outDir}/movement-read-card.png` });
   await page.screenshot({ path: `${outDir}/movement-read-dashboard.png`, fullPage: true });
+});
+
+test('a low-sample slot carries the badge, and only that rung', async ({ page }) => {
+  await mockDashboard(page);
+  // A young slot population (n < 30) on the second put rung, everything else
+  // as the shared mock: the badge must appear exactly once, on that rung.
+  const puts = MOCK_STATEMENT.levels.puts;
+  const lowSample = {
+    ...MOCK_STATEMENT,
+    levels: {
+      ...MOCK_STATEMENT.levels,
+      puts: [
+        puts[0],
+        {
+          ...puts[1],
+          reach_rate: { ...puts[1].reach_rate, reach_rate: 0.375, hits: 9, sample_n: 24, low_sample: true },
+        },
+      ],
+    },
+  };
+  await page.route('**/api/movement-statement*', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(lowSample) }),
+  );
+  await page.goto('/dashboard');
+  await expect(page.getByText('Put levels')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('38% (n=24)')).toBeVisible();
+  await expect(page.getByTestId('low-sample-badge')).toHaveCount(1);
+  await page.getByTestId('movement-headline').locator('xpath=ancestor::*[contains(@class,"min-w-0")][1]')
+    .screenshot({ path: `${outDir}/ladder-lowsample.png` });
+});
+
+test('an untracked rung and a withheld expected_move degrade only their own fields', async ({ page }) => {
+  await mockDashboard(page);
+  // The production shape until the magnitude engine is retrained (stocks
+  // #1025): the levels ladder is OK but one rung's price matched no playbook
+  // slot, and expected_move is withheld with the model collapse named. The
+  // headline, the other rungs and the regime must render unchanged; the two
+  // withheld fields render the em-dash + "data unavailable" badge (Rule 4),
+  // never 0% or a fabricated size class.
+  const calls = MOCK_STATEMENT.levels.calls;
+  const degraded = {
+    ...MOCK_STATEMENT,
+    levels: {
+      ...MOCK_STATEMENT.levels,
+      calls: [
+        calls[0],
+        {
+          ...calls[1],
+          reach_rate: {
+            status: 'UNAVAILABLE',
+            reason: 'PWH 220.05 is not a slot the playbook tracked on 2026-09-07',
+          },
+        },
+      ],
+    },
+    confidence_modifiers: {
+      ...MOCK_STATEMENT.confidence_modifiers,
+      expected_move: {
+        status: 'UNAVAILABLE',
+        role: 'context',
+        reason:
+          'magnitude-engine-c49qf is degenerate: 100% of inference rows share one bucket (TIGHT); withheld until retrained',
+      },
+    },
+  };
+  await page.route('**/api/movement-statement*', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(degraded) }),
+  );
+  await page.goto('/dashboard');
+  const headline = page.getByTestId('movement-headline');
+  await expect(headline).toContainText('continuation', { timeout: 15000 });
+  // The tracked rungs keep their rates; the untracked one carries no number.
+  await expect(page.getByText('70% (n=115)')).toBeVisible();
+  await expect(page.getByText('45% (n=94)')).toBeVisible();
+  await expect(page.getByText('55% (n=95)')).toHaveCount(0);
+  // Exactly two unavailable badges: the untracked rung and expected_move,
+  // each carrying its reason as the tooltip.
+  const badges = page.getByTestId('unavailable-badge');
+  await expect(badges).toHaveCount(2);
+  await expect(badges.nth(0)).toHaveAttribute('title', /not a slot the playbook tracked/);
+  await expect(badges.nth(1)).toHaveAttribute('title', /degenerate/);
+  await expect(page.getByTestId('context-modifiers')).toContainText('trending');
+  // No size affordance can be built from a withheld expected_move.
+  await expect(page.getByTestId('size-light-chip')).toHaveCount(0);
+  await headline.locator('xpath=ancestor::*[contains(@class,"min-w-0")][1]')
+    .screenshot({ path: `${outDir}/ladder-untracked-expected-move-withheld.png` });
 });
 
 // --- Affordances (three tiers) -------------------------------------------

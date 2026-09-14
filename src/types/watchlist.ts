@@ -7,6 +7,7 @@ export type CatalystType =
   | 'insider'
   | 'top_mover'
   | 'economic_event'
+  | 'watchlist'
   | 'manual';
 
 export interface SignalContribution {

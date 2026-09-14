@@ -25,18 +25,19 @@ import { useLiveStatus } from '@/hooks/useLiveStatus';
 import { useLiveQuote } from '@/hooks/useLiveQuote';
 import { useReviewQuote, reviewCutoffTs } from '@/hooks/useReviewQuote';
 import { useInsightReport } from '@/hooks/useInsights';
-import { todayET, addDaysToISO } from '@/lib/dates';
+import { todayET, addDaysToISO, snapshotAgeLabel } from '@/lib/dates';
+import { dataUnlessError } from '@/lib/queryData';
 import {
   Pill, Metric, MicroLabel, Delta, ScoreStars, DirTag, Card, CardHeader, KpiTile,
 } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
-import { WidgetState } from '@/components/shared/WidgetState';
+import { WidgetState, errorMessage } from '@/components/shared/WidgetState';
 import { useAuthBlocked } from '@/lib/authGate';
 import { MovementRead } from '@/components/dashboard/MovementRead';
 import { SetupCardDetails, type SetupHorizon } from '@/components/playbook/SetupCardDetails';
 import { PriceAreaChart, type PricePoint } from '@/components/charts/PriceAreaChart';
 import { CandlestickChart } from '@/components/charts/CandlestickChart';
-import { fmtPrice, fmtPct, fmtNum, NA } from '@/lib/format';
+import { fmtPrice, fmtPct, fmtNum, NA, responseErrorMessage } from '@/lib/format';
 import type { Tone } from '@/components/primitives';
 
 // ── Response shapes (mirror the existing API contracts) ──────────────────────
@@ -52,25 +53,46 @@ export interface BriefResponse {
   rsi?: number; strat_candle?: string; strat_combo?: string;
   ftfc_score?: number; ftfc_direction?: string; signal_status?: string;
   daily_indicators: DailyIndicators;
-  live?: { price: number; session: string };
+  live?: { price: number; session: string; updated_at: string; source: string };
 }
 interface PlaybookCard {
-  id: string; name: string; direction: string; win_rate: number;
-  avg_return: number; conditions: string[]; description: string;
+  id: string; name: string; direction: string; win_rate: number | null;
+  avg_return: number | null; conditions: string[]; description: string;
   target_pct?: number | null; stop_pct?: number | null;
   horizons?: SetupHorizon[];
   best_horizon_min?: number | null; best_horizon_win_rate?: number | null; best_horizon_avg_bps?: number | null;
 }
-export interface PlaybookResponse { ticker: string; cards: PlaybookCard[] }
+/** /api/playbook/{ticker}. `analysis_date` / `age_days` are the card set's
+ *  own date and its age in days as judged by the server (against today, or
+ *  the reviewed date in review mode). The server refuses (503) a set older
+ *  than `max_age_days`, so a 200 is always a set it considers current — the
+ *  UI still shows the date so the user can see how current (#861). */
+export interface PlaybookResponse {
+  ticker: string;
+  cards: PlaybookCard[];
+  source: string;
+  analysis_date?: string;
+  generated_at?: string | null;
+  age_days?: number;
+  max_age_days?: number;
+  as_of?: string;
+}
 interface SignalEntry {
   time: string; direction: string; score: number;
   conditions_met: string; return_pct: number;
 }
-interface SignalsResponse { ticker: string; count: number; signals: SignalEntry[] }
+interface SignalsResponse {
+  ticker: string; count: number; returned: number; source: string; file?: string;
+  signals: SignalEntry[];
+}
 
 export interface ReferenceResponse {
-  ticker: string; date: string; close: number; high: number; low: number;
-  week?: { high: number; low: number; avg_close?: number } | null;
+  ticker: string; date: string; open: number; close: number; high: number; low: number;
+  source?: string; stale_days?: number;
+  week?: {
+    high: number; low: number; avg_close: number; avg_rsi_14: number | null;
+    start_date: string; end_date: string; sessions: number;
+  } | null;
 }
 interface MarketDataResponse {
   candlestick: Array<{ time: number; open: number; high: number; low: number; close: number }>;
@@ -98,12 +120,17 @@ interface SectorsResponse {
 }
 
 // ── Small fetch helper ───────────────────────────────────────────────────────
+/** Playbook re-check cadence in live mode: the server re-evaluates the card
+ *  set's age on every request, so this bounds how long an open dashboard can
+ *  show a set past its max age (7 days) to 15 minutes. */
+const PLAYBOOK_REFETCH_MS = 15 * 60_000;
+
 function useFetch<T>(key: unknown[], url: string, enabled = true, refetchInterval: number | false = false) {
   return useQuery<T>({
     queryKey: key,
     queryFn: async () => {
       const r = await fetch(url);
-      if (!r.ok) throw new Error(`${r.status}`);
+      if (!r.ok) throw new Error(await responseErrorMessage(r));
       return r.json();
     },
     enabled,
@@ -288,10 +315,23 @@ export default function DashboardPage() {
     isOpen && !isReview ? 15_000 : false,
   );
   const brief = briefQ.data;
-  const { data: playbook } = useFetch<PlaybookResponse>(
+  const playbookQ = useFetch<PlaybookResponse>(
     ['playbook', activeTicker, reviewDate ?? 'live'],
     isReview ? `/api/playbook/${activeTicker}?date=${reviewDate}` : `/api/playbook/${activeTicker}`,
+    true,
+    // Live mode re-asks the server periodically so a dashboard left open
+    // across the date boundary gets a fresh age (and the server's 503 once
+    // the set crosses max_age_days) instead of the original age forever.
+    // Review mode is pinned to a past date and never changes.
+    isReview ? false : PLAYBOOK_REFETCH_MS,
   );
+  // A refused refetch (the stale-cards 503) leaves the last good payload in
+  // the query cache with isError set; reading through dataUnlessError means
+  // the rejected set is not rendered as actionable.
+  const playbook = dataUnlessError(playbookQ.data, playbookQ.isError);
+  // Shown under the top setup so an old card set is visibly old. Null when
+  // the server sent no date — nothing is rendered rather than a guess.
+  const playbookAge = snapshotAgeLabel(playbook?.analysis_date, playbook?.age_days);
   const signalsQ = useFetch<SignalsResponse>(
     ['signals', activeTicker, reviewDate ?? 'live', reviewTime ?? 'eod'],
     `/api/signals/${activeTicker}?limit=20${reviewSuffix}`,
@@ -423,7 +463,12 @@ export default function DashboardPage() {
     if (!cards.length) return null;
     const biasDir = brief?.bias === 'bullish' ? 'CALL' : brief?.bias === 'bearish' ? 'PUT' : null;
     const pool = biasDir ? cards.filter((c) => c.direction === biasDir) : cards;
-    return (pool.length ? pool : cards).reduce((best, c) => (c.win_rate > best.win_rate ? c : best));
+    const candidates = pool.length ? pool : cards;
+    // A card with no win rate (NULL in playbook_cards) cannot be ranked; it
+    // only wins when nothing rankable exists, and then reads as '—'.
+    const ranked = candidates.filter((c): c is PlaybookCard & { win_rate: number } => c.win_rate != null);
+    if (!ranked.length) return candidates[0];
+    return ranked.reduce((best, c) => (c.win_rate > best.win_rate ? c : best));
   }, [playbook, brief?.bias]);
 
   // Most-recent first.
@@ -560,6 +605,14 @@ export default function DashboardPage() {
                   <div>
                     <MicroLabel>Top setup</MicroLabel>
                     <div className="mt-1 text-[16px] font-bold">{topCard.name}</div>
+                    {playbookAge && (
+                      <div
+                        className="mt-0.5 text-[11px] text-[var(--on-surface-muted)]"
+                        data-testid="playbook-age"
+                      >
+                        Cards {playbookAge}
+                      </div>
+                    )}
                   </div>
                   <DirTag dir={topCard.direction} />
                 </div>
@@ -567,13 +620,27 @@ export default function DashboardPage() {
                   <div>
                     <MicroLabel>Win rate</MicroLabel>
                     <div className="mt-1.5 flex items-center gap-2">
-                      <ScoreStars value={Math.round(topCard.win_rate / 20)} />
-                      <span className="tabular-nums text-[12px] text-[var(--on-surface-muted)]">{fmtNum(topCard.win_rate, 0)}%</span>
+                      {topCard.win_rate != null && <ScoreStars value={Math.round(topCard.win_rate / 20)} />}
+                      {/* No `%` on the unavailable marker: fmtNum returns
+                          `—` for a null win rate, and `—%` reads as a
+                          measurement of zero rather than an absent one. */}
+                      <span className="tabular-nums text-[12px] text-[var(--on-surface-muted)]">
+                        {topCard.win_rate == null ? NA : `${fmtNum(topCard.win_rate, 0)}%`}
+                      </span>
                     </div>
                   </div>
                   <div>
                     <MicroLabel>Avg return</MicroLabel>
-                    <Metric value={topSetupAvgReturn(topCard.avg_return)} tone={(topCard.avg_return ?? 0) >= 0 ? 'bull' : 'bear'} />
+                    {/* toneOf, not `?? 0`: a null avg_return coerced to 0
+                        painted an absent value bullish (Rule 4). */}
+                    <Metric
+                      value={topSetupAvgReturn(topCard.avg_return)}
+                      tone={
+                        topCard.avg_return == null
+                          ? 'default'
+                          : topCard.avg_return >= 0 ? 'bull' : 'bear'
+                      }
+                    />
                   </div>
                 </div>
                 <div className="flex flex-1 flex-col gap-1.5">
@@ -597,7 +664,15 @@ export default function DashboardPage() {
             ) : (
               <div>
                 <MicroLabel>Top setup</MicroLabel>
-                <Unavailable msg="No playbook setups yet, run the pipeline to populate." />
+                {/* A failed fetch carries the server's reason (e.g. the #861
+                    stale-cards 503) — show it, never a generic "no setups". */}
+                <Unavailable
+                  msg={
+                    playbookQ.isError
+                      ? `Playbook unavailable: ${errorMessage(playbookQ.error) ?? 'request failed'}`
+                      : 'No playbook setups yet, run the pipeline to populate.'
+                  }
+                />
               </div>
             )}
           </div>

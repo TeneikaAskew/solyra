@@ -11,19 +11,23 @@
  * and which a cold transform cannot meet. Without this, whichever spec happens
  * to touch a route first fails on compile time rather than on anything real.
  *
- * `mockCommon` is not optional here. The boot sequence in main.tsx fetches
+ * Mocks are not optional here. The boot sequence in main.tsx fetches
  * /api/config/firebase and, on any failure, renders the config-error screen
  * INSTEAD of the app (a deliberate fail-loud). With the proxy pointed at a
  * local backend that usually isn't running, an unmocked warm-up would render
  * that error screen on every route, mount no page component, and warm nothing
- * — passing while doing exactly none of its job.
+ * — passing while doing exactly none of its job. `mockAllPages` rather than
+ * `mockCommon` so each route mounts its real component tree (charts, tables,
+ * cards) instead of a wall of error states, warming the chunks the specs
+ * actually exercise — and so the warm-up itself stops logging one
+ * ECONNREFUSED per unmocked endpoint per route (audit §10.2).
  *
  * Runs as its own project that `chromium` depends on, so it completes before
  * any spec starts. Never fails the run: a route that won't load is a real
  * spec's problem to report, with its own assertions and diagnostics.
  */
 import { test } from '@playwright/test';
-import { mockCommon } from './helpers/mocks';
+import { mockAllPages } from './helpers/fixtures/all';
 
 // Mirrors the router in src/App.tsx. '/welcome' is a redirect to '/' and adds
 // no chunk of its own, so it is deliberately omitted.
@@ -49,7 +53,7 @@ test('warm every route so perf budgets measure a warm server', async ({ page }) 
   // it is paid once per run, not per spec.
   test.setTimeout(300_000);
 
-  await mockCommon(page);
+  await mockAllPages(page);
 
   for (const route of ROUTES) {
     // 'load' — not 'commit' — so the lazy chunk is actually fetched and
