@@ -3790,6 +3790,8 @@ export interface components {
             direction?: string | null;
             /** Id */
             id: string;
+            /** Run Kind */
+            run_kind?: string | null;
             /** Thesis */
             thesis?: string | null;
         } & {
@@ -4875,6 +4877,8 @@ export interface components {
             report: {
                 [key: string]: unknown;
             };
+            /** Run Kind */
+            run_kind?: string | null;
             /** Ticker */
             ticker: string;
         };
@@ -5106,6 +5110,8 @@ export interface components {
             return_pct?: number | null;
             /** Rsi */
             rsi?: number | null;
+            /** Run Kind */
+            run_kind?: string | null;
             /** Score */
             score?: number | null;
             /** Ticker */
@@ -5179,6 +5185,8 @@ export interface components {
             return_pct?: number | null;
             /** Rsi */
             rsi?: number | null;
+            /** Run Kind */
+            run_kind?: string | null;
             /** Score */
             score?: number | null;
             /** Time */
