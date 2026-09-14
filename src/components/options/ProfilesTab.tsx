@@ -15,6 +15,7 @@ import {
   useGammaLevels,
   spotMethodLabel,
   regimeLabel,
+  asGammaRegime,
 } from '@/hooks/useGammaLevels';
 import type { Ticker } from '@/types';
 import * as d3 from 'd3';
@@ -304,7 +305,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
   });
   const gammaLevels = levelsQuery.data;
   const flip = gammaLevels?.gamma_balance ?? null;
-  const regime = gammaLevels?.regime ?? 'unknown';
+  const regime = asGammaRegime(gammaLevels?.regime ?? 'unknown');
   const spotMethod = gammaLevels?.spot.method;
   const serverSpot = gammaLevels?.spot.price;
 

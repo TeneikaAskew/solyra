@@ -92,7 +92,7 @@ export function buildSnapshot(params: {
     orbLow: orb.low,
     lastBar: lastBar ?? null,
     minutesSinceOpen: minutesSinceOpen(lastBar ?? null),
-    stochKPrev: params.indicators.stochKPrev,
+    stochKPrev: params.indicators.stochKPrev ?? null,
     indicators: params.indicators,
   };
 }

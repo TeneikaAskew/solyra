@@ -58,24 +58,25 @@ export interface GEXByStrike {
 export interface OptionsMetrics {
   total_gex: number;
   total_vex: number;
-  zero_gamma: number | null;
-  max_pain: number | null;
-  implied_move: number | null;
+  zero_gamma?: number | null;
+  max_pain?: number | null;
+  implied_move?: number | null;
   put_call_ratio: number;
 }
 
 export interface StrikeNode {
-  type: 'king' | 'gatekeeper' | 'midpoint';
+  /** 'king' | 'gatekeeper' | 'midpoint' today; plain string per schema. */
+  type: string;
   strike: number;
   gamma: number;
   distance_from_spot: number;
   distance_percent: number;
-  lower_bound?: number;
-  upper_bound?: number;
+  lower_bound?: number | null;
+  upper_bound?: number | null;
 }
 
 export interface NodeResult {
-  kingNode: StrikeNode | null;
+  kingNode?: StrikeNode | null;
   gatekeepers: StrikeNode[];
   midpoints: StrikeNode[];
   allNodes: StrikeNode[];

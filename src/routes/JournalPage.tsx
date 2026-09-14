@@ -41,7 +41,7 @@ import {
   useCreateChartTrade,
   useCloseChartTrade,
   useDeleteChartTrade,
-  journalRowToTradeEntry,
+  journalRowsToTradeEntries,
   epochToJournalDateTime,
   resolveJournalView,
   chartTradesKey,
@@ -61,7 +61,7 @@ import type { Timeframe } from '@/types';
 // trailing offset/'Z' — all ignored, never fed to Date parsing.
 const NAIVE_ET_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/;
 
-export function tsToDisplay(ts: string | null): { date: string; time: string } {
+export function tsToDisplay(ts: string | null | undefined): { date: string; time: string } {
   if (ts == null) return { date: '—', time: '—' };
   // Bug (2026-07-12): journal_entries.entry_ts/exit_ts encode a naive-ET
   // wall clock (see journal.py's `_rows_to_trades` docstring), never real
@@ -232,8 +232,7 @@ export default function JournalPage() {
   // ── Chart/rail trades: active view's trades on the charted session ──────
   const railTrades = useMemo(
     () =>
-      viewRows
-        .map(journalRowToTradeEntry)
+      journalRowsToTradeEntries(viewRows)
         .filter((t) => chartIsoDate && epochToJournalDateTime(t.entryTime).date === chartIsoDate),
     [viewRows, chartIsoDate],
   );
@@ -273,7 +272,7 @@ export default function JournalPage() {
   // Plain derivation (no useMemo) — the filter is cheap and the React
   // Compiler rejects manual memoization keyed on this derived scope value.
   const tableRows = scopeIso
-    ? viewRows.filter((r) => r.entry_ts.slice(0, 10) === scopeIso)
+    ? viewRows.filter((r) => r.entry_ts != null && r.entry_ts.slice(0, 10) === scopeIso)
     : viewRows;
 
   const scopeLabel = selectedDate
@@ -889,7 +888,13 @@ export default function JournalPage() {
                         )}
                       </td>
                       <td data-testid="table-entry-time" className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">{entry.time}</td>
-                      <td className="px-3 py-1.5 font-mono text-xs text-[var(--color-text-primary)]">${e.entry_price.toFixed(2)}</td>
+                      <td className="px-3 py-1.5 font-mono text-xs text-[var(--color-text-primary)]">
+                        {e.entry_price == null ? (
+                          <span className="text-[var(--on-surface-muted)]">—</span>
+                        ) : (
+                          `$${e.entry_price.toFixed(2)}`
+                        )}
+                      </td>
                       <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">{exit.time}</td>
                       <td className="px-3 py-1.5 font-mono text-xs text-[var(--color-text-primary)]">
                         {e.exit_price == null ? (

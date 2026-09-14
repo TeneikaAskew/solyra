@@ -46,6 +46,43 @@ import type {
   RunStatus,
 } from './insights';
 import type { RankedTicker, SignalContribution, WatchlistResponse } from './watchlist';
+// Wire types declared where they are consumed (hooks, routes, shared
+// components, lib) rather than in src/types — the check covers them all the
+// same; a type-only import pulls no runtime code into any chunk.
+import type {
+  AdminDataSourcesResponse,
+  AdminUsersResponse,
+  StratEngineStateResponse,
+  StructureBriefResponse,
+} from '@/hooks/useAdmin';
+import type { IndicatorConfig, MarketHours } from '@/hooks/useConfig';
+import type { GammaGridCell } from '@/hooks/useGammaGrid';
+import type { GammaLevelsResponse } from '@/hooks/useGammaLevels';
+import type {
+  ImportCommitResponse,
+  ImportPreviewResponse,
+  JournalDeleteResponse,
+  JournalMutationResponse,
+  JournalTradesResponse,
+  MineStyleSuccess,
+  MineStyleUnavailable,
+  ReplayTradesResponse,
+  SeedTradesOk,
+  SeedTradesUnavailable,
+} from '@/hooks/useJournalChartTrades';
+import type { IndicatorsResponse, SignalSeriesResponse } from '@/hooks/useLiveIndicators';
+import type { MarketDataResponse } from '@/hooks/useMarketData';
+import type { OptionsDatesResponse } from '@/hooks/useOptionsDates';
+import type { GreeksResponse } from '@/hooks/useOptionsGreeks';
+import type { SimilarResponse } from '@/hooks/useSimilarSetups';
+import type { WatchlistAddResult } from '@/hooks/useTickerSearch';
+import type { MeResponse } from '@/hooks/useUser';
+import type { ReportListResponse } from '@/lib/reports';
+import type { MostActiveResponse } from '@/components/shared/MostActiveBar';
+import type { SectorsResponse } from '@/mocks/dashboard';
+import type { CatalystTypesResponse, CatalystsResponse } from '@/routes/CatalystsPage';
+import type { PlaybookResponse, ReferenceResponse } from '@/routes/DashboardPage';
+import type { SignalsResponse } from '@/routes/SignalsPage';
 
 type S = components['schemas'];
 
@@ -86,7 +123,42 @@ export type AssignabilityChecks = [
   Expect<IsAssignable<S['RankedTicker'], RankedTicker>>,
   Expect<IsAssignable<S['SignalContribution'], SignalContribution>>,
   Expect<IsAssignable<S['WatchlistResponse'], WatchlistResponse>>,
+  // ── direct name matches — hook/route/component-local wire types ────
+  Expect<IsAssignable<S['AdminDataSourcesResponse'], AdminDataSourcesResponse>>,
+  Expect<IsAssignable<S['AdminUsersResponse'], AdminUsersResponse>>,
+  Expect<IsAssignable<S['CatalystTypesResponse'], CatalystTypesResponse>>,
+  Expect<IsAssignable<S['CatalystsResponse'], CatalystsResponse>>,
+  Expect<IsAssignable<S['GammaGridCell'], GammaGridCell>>,
+  Expect<IsAssignable<S['GammaLevelsResponse'], GammaLevelsResponse>>,
+  Expect<IsAssignable<S['GreeksResponse'], GreeksResponse>>,
+  Expect<IsAssignable<S['ImportCommitResponse'], ImportCommitResponse>>,
+  Expect<IsAssignable<S['ImportPreviewResponse'], ImportPreviewResponse>>,
+  Expect<IsAssignable<S['IndicatorsResponse'], IndicatorsResponse>>,
+  Expect<IsAssignable<S['JournalDeleteResponse'], JournalDeleteResponse>>,
+  Expect<IsAssignable<S['JournalMutationResponse'], JournalMutationResponse>>,
+  Expect<IsAssignable<S['JournalTradesResponse'], JournalTradesResponse>>,
+  Expect<IsAssignable<S['MeResponse'], MeResponse>>,
+  Expect<IsAssignable<S['MineStyleSuccess'], MineStyleSuccess>>,
+  Expect<IsAssignable<S['MineStyleUnavailable'], MineStyleUnavailable>>,
+  Expect<IsAssignable<S['MostActiveResponse'], MostActiveResponse>>,
+  Expect<IsAssignable<S['OptionsDatesResponse'], OptionsDatesResponse>>,
+  Expect<IsAssignable<S['PlaybookResponse'], PlaybookResponse>>,
+  Expect<IsAssignable<S['ReferenceResponse'], ReferenceResponse>>,
+  Expect<IsAssignable<S['ReplayTradesResponse'], ReplayTradesResponse>>,
+  Expect<IsAssignable<S['ReportListResponse'], ReportListResponse>>,
+  Expect<IsAssignable<S['SectorsResponse'], SectorsResponse>>,
+  Expect<IsAssignable<S['SeedTradesOk'], SeedTradesOk>>,
+  Expect<IsAssignable<S['SeedTradesUnavailable'], SeedTradesUnavailable>>,
+  Expect<IsAssignable<S['SignalSeriesResponse'], SignalSeriesResponse>>,
+  Expect<IsAssignable<S['SignalsResponse'], SignalsResponse>>,
+  Expect<IsAssignable<S['SimilarResponse'], SimilarResponse>>,
+  Expect<IsAssignable<S['StratEngineStateResponse'], StratEngineStateResponse>>,
+  Expect<IsAssignable<S['StructureBriefResponse'], StructureBriefResponse>>,
   // ── renamed pairs (frontend name ↔ schema name) ─────────────────────
   Expect<IsAssignable<S['ExpectedMove'], MovementExpectedMove>>,
   Expect<IsAssignable<S['MovementStatementResponse'], MovementStatement>>,
+  Expect<IsAssignable<S['IndicatorConfigResponse'], IndicatorConfig>>,
+  Expect<IsAssignable<S['MarketDataResponse'], MarketDataResponse>>,
+  Expect<IsAssignable<S['MarketHoursResponse'], MarketHours>>,
+  Expect<IsAssignable<S['WatchlistAddResponse'], WatchlistAddResult>>,
 ];

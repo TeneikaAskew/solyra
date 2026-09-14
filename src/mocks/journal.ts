@@ -23,22 +23,21 @@
  * so that can't recur.
  */
 import type {
+  ImportCommitResponse,
+  ImportPreviewResponse,
+  ImportPreviewTrade,
   JournalDeleteResponse,
   JournalMutationResponse,
   JournalRow,
+  JournalTradesResponse,
   MineStyleSuccess,
   MineStyleUnavailable,
   SeedTradesOk,
 } from '@/hooks/useJournalChartTrades';
 import type { MockRoute } from './types';
 
-/** `JournalTradesResponse` is internal to useJournalChartTrades.ts. */
-export interface JournalTradesResponse {
-  ticker: string;
-  source: 'cloud_sql' | 'local';
-  count: number;
-  trades: JournalRow[];
-}
+// Re-exported so mocks/charts.ts and the E2E fixtures keep one import site.
+export type { ImportPreviewResponse, ImportPreviewTrade, JournalTradesResponse };
 
 const wrap = (trades: JournalRow[]): JournalTradesResponse => ({
   ticker: 'IWM',
@@ -213,27 +212,9 @@ export const MOCK_JOURNAL_MARKET_DATA = {
  * cash transfer). The IWM row is additionally marked `duplicate: true` to
  * exercise the pre-unchecked/labeled duplicate path.
  *
- * No frontend type models this payload, so the shape is declared here.
+ * Typed against the hook's `ImportPreviewResponse` (useJournalChartTrades),
+ * the same type the modal's mutation parses into.
  */
-export interface ImportPreviewTrade {
-  ticker: string;
-  direction: 'CALL' | 'PUT';
-  entry_ts: string;
-  entry_price: number;
-  exit_ts: string | null;
-  exit_price: number | null;
-  return_pct: number | null;
-  quantity: number;
-  status: 'closed' | 'active';
-  duplicate: boolean;
-}
-
-export interface ImportPreviewResponse {
-  broker: string;
-  trades: ImportPreviewTrade[];
-  skipped: { raw_index: number; reason: string }[];
-}
-
 export const MOCK_IMPORT_PREVIEW = {
   broker: 'robinhood',
   trades: [
@@ -282,7 +263,9 @@ export const MOCK_IMPORT_PREVIEW = {
   ],
 } satisfies ImportPreviewResponse;
 
-/** Commit of the preview above with the duplicate left unchecked. */
+/** Commit of the preview above with the duplicate left unchecked — kept for
+ *  Playwright specs that register their own handlers; the mock-mode route
+ *  below computes its totals from the submitted rows instead (Codex, #64). */
 export const MOCK_IMPORT_COMMIT = { imported: 2, skipped_duplicates: 1 };
 
 /** POST /api/journal/export/{ticker} — the exact keys journal.py returns
@@ -384,6 +367,39 @@ export const MOCK_SEED_TRADES = {
   ],
 } satisfies SeedTradesOk;
 
+// ── In-memory journal state (Codex, #64) ───────────────────────────────────
+// The mutation routes used to answer success while every subsequent GET
+// still returned MOCK_JOURNAL_EMPTY, so a created trade vanished on the
+// invalidate-refetch and a replay session could never find its closed
+// trades for the scorecard. Module state backs the flow instead: POST
+// appends, PATCH closes, DELETE removes, import/commit appends
+// non-duplicates, and the per-ticker GET reads it. Starts empty (same
+// first render as before); mock mode is a per-tab dev mode, so a reload
+// starts clean. Fixture math below (return %, duplicate detection) is
+// mock-only canned behavior, exempt from Rule 4.
+
+const journalStore: JournalRow[] = [];
+let nextMockId = 1;
+
+/** The identity the preview flags `duplicate: true` — commit re-detects it
+ *  the way the server re-checks its own journal. */
+const PREVIEW_DUPLICATE = MOCK_IMPORT_PREVIEW.trades[0];
+
+const isStoredDuplicate = (t: {
+  ticker: string; direction: string; entry_ts: string; entry_price: number;
+}): boolean =>
+  journalStore.some(
+    (row) =>
+      row.ticker === t.ticker &&
+      row.direction === t.direction &&
+      row.entry_ts === t.entry_ts &&
+      row.entry_price === t.entry_price,
+  ) ||
+  (t.ticker === PREVIEW_DUPLICATE.ticker &&
+    t.direction === PREVIEW_DUPLICATE.direction &&
+    t.entry_ts === PREVIEW_DUPLICATE.entry_ts &&
+    t.entry_price === PREVIEW_DUPLICATE.entry_price);
+
 /**
  * Mock-mode routes OWNED by the journal domain: the journal reads, the
  * export/import/create/close/delete mutations, the replay-trainer seed, and
@@ -397,27 +413,161 @@ export const MOCK_SEED_TRADES = {
  */
 export const journalRoutes: MockRoute[] = [
   { pattern: /^\/api\/journal\/examples\/IWM$/, reply: () => ({ body: MOCK_JOURNAL_EMPTY }) },
-  { pattern: /^\/api\/journal\/trades\/IWM$/, reply: () => ({ body: MOCK_JOURNAL_EMPTY }) },
+  {
+    pattern: /^\/api\/journal\/trades\/([^/]+)$/,
+    reply: (_req, match) => {
+      const ticker = match[1].toUpperCase();
+      const trades = journalStore.filter((t) => t.ticker === ticker);
+      const body = {
+        ticker,
+        source: 'cloud_sql',
+        count: trades.length,
+        trades,
+      } satisfies JournalTradesResponse;
+      return { body };
+    },
+  },
   {
     method: 'POST',
     pattern: /^\/api\/journal\/export\/([^/]+)$/,
     reply: () => ({ body: MOCK_JOURNAL_EXPORT }),
   },
-  { method: 'POST', pattern: /^\/api\/journal\/trades$/, reply: () => ({ body: MOCK_JOURNAL_CREATE }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/journal\/trades$/,
+    reply: (req) => {
+      const b = (req.body ?? {}) as Partial<{
+        ticker: string; direction: string; entry_date: string;
+        entry_time: string; entry_price: number; stop_loss: number;
+        take_profits: number[]; source: string; session_id: string;
+      }>;
+      const id = `mock-created-${nextMockId++}`;
+      if (
+        typeof b.ticker === 'string' &&
+        typeof b.direction === 'string' &&
+        typeof b.entry_date === 'string' &&
+        typeof b.entry_time === 'string' &&
+        typeof b.entry_price === 'number'
+      ) {
+        journalStore.push({
+          id,
+          ticker: b.ticker.toUpperCase(),
+          direction: b.direction,
+          // journal.py's local-row shape: `${date}T${time}:00`, naive-ET.
+          entry_ts: `${b.entry_date}T${b.entry_time}:00`,
+          exit_ts: null,
+          entry_price: b.entry_price,
+          exit_price: null,
+          return_pct: null,
+          take_profits: b.take_profits,
+          stop_loss: typeof b.stop_loss === 'number' ? b.stop_loss : null,
+          status: 'active',
+          source: typeof b.source === 'string' ? b.source : 'chart',
+          session_id: typeof b.session_id === 'string' ? b.session_id : null,
+        });
+      }
+      return { body: { ...MOCK_JOURNAL_CREATE, id } };
+    },
+  },
   {
     method: 'PATCH',
     pattern: /^\/api\/journal\/trades\/([^/]+)$/,
-    // Echo the addressed id so optimistic UI reconciles against the row it
-    // actually closed, not a fixed fixture id.
-    reply: (_req, match) => ({ body: { ...MOCK_JOURNAL_CLOSE, id: match[1] } }),
+    reply: (req, match) => {
+      const id = match[1];
+      const b = (req.body ?? {}) as Partial<{
+        exit_date: string; exit_time: string; exit_price: number;
+      }>;
+      const row = journalStore.find((t) => t.id === id);
+      if (
+        row &&
+        typeof row.entry_price === 'number' &&
+        typeof b.exit_price === 'number' &&
+        typeof b.exit_date === 'string' &&
+        typeof b.exit_time === 'string'
+      ) {
+        row.exit_ts = `${b.exit_date}T${b.exit_time}:00`;
+        row.exit_price = b.exit_price;
+        // Chart trades carry UNDERLYING prices: CALL wins when exit >
+        // entry, PUT when exit < entry — the sign-corrected return_pct
+        // convention journal.py documents on JournalRow.
+        const raw = ((b.exit_price - row.entry_price) / row.entry_price) * 100;
+        const pct = Number((row.direction === 'PUT' ? -raw : raw).toFixed(2));
+        row.return_pct = pct;
+        row.status = pct >= 0 ? 'win' : 'loss';
+        const body = {
+          source: 'cloud_sql',
+          id,
+          return_pct: pct,
+          status: row.status,
+        } satisfies JournalMutationResponse;
+        return { body };
+      }
+      // Unknown id (e.g. the contract suite's synthesized sample): keep the
+      // static close fixture so the typed-200 validation stays exercised.
+      return { body: { ...MOCK_JOURNAL_CLOSE, id } };
+    },
   },
   {
     method: 'DELETE',
     pattern: /^\/api\/journal\/trades\/([^/]+)$/,
-    reply: (_req, match) => ({ body: { ...MOCK_JOURNAL_DELETED, deleted: match[1] } }),
+    reply: (_req, match) => {
+      const idx = journalStore.findIndex((t) => t.id === match[1]);
+      if (idx !== -1) journalStore.splice(idx, 1);
+      return { body: { ...MOCK_JOURNAL_DELETED, deleted: match[1] } };
+    },
   },
   { method: 'POST', pattern: /^\/api\/journal\/import\/preview$/, reply: () => ({ body: MOCK_IMPORT_PREVIEW }) },
-  { method: 'POST', pattern: /^\/api\/journal\/import\/commit$/, reply: () => ({ body: MOCK_IMPORT_COMMIT }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/journal\/import\/commit$/,
+    // Totals derive from the SUBMITTED subset (the modal lets the user
+    // check any rows), not a fixed 2/1 summary that contradicted the
+    // "Import 1 trade" button (Codex, #64). Non-duplicates land in the
+    // store so the journal read reflects the import.
+    reply: (req) => {
+      const b = (req.body ?? {}) as Partial<{ trades: unknown[] }>;
+      const submitted = Array.isArray(b.trades) ? b.trades : [];
+      let imported = 0;
+      let skipped = 0;
+      for (const raw of submitted) {
+        const t = raw as Partial<ImportPreviewTrade>;
+        if (
+          typeof t.ticker !== 'string' ||
+          typeof t.direction !== 'string' ||
+          typeof t.entry_ts !== 'string' ||
+          typeof t.entry_price !== 'number'
+        ) {
+          continue;
+        }
+        const key = {
+          ticker: t.ticker.toUpperCase(),
+          direction: t.direction,
+          entry_ts: t.entry_ts,
+          entry_price: t.entry_price,
+        };
+        if (isStoredDuplicate(key)) {
+          skipped += 1;
+          continue;
+        }
+        journalStore.push({
+          id: `mock-import-${nextMockId++}`,
+          ...key,
+          exit_ts: typeof t.exit_ts === 'string' ? t.exit_ts : null,
+          exit_price: typeof t.exit_price === 'number' ? t.exit_price : null,
+          return_pct: typeof t.return_pct === 'number' ? t.return_pct : null,
+          status: t.status === 'active' ? 'active' : 'win',
+          source: 'manual',
+          session_id: null,
+        });
+        imported += 1;
+      }
+      const body = {
+        imported,
+        skipped_duplicates: skipped,
+      } satisfies ImportCommitResponse;
+      return { body };
+    },
+  },
   {
     pattern: /^\/api\/journal\/seed\/([^/]+)$/,
     reply: (_req, match) => ({ body: { ...MOCK_SEED_TRADES, ticker: match[1] } }),

@@ -19,39 +19,42 @@ import { DateRangePicker } from '@/components/shared/DateRangePicker';
 // Exported so tests/helpers/fixtures/catalysts.ts can pin its fixtures to
 // the real contract (see the same note in ReportsPage.tsx).
 export interface CatalystEvent {
-  date: string;
-  ticker: string;
-  company_name?: string;
-  catalyst_type: string;
+  // EVERY field is optional+nullable per the API schema (the model unions
+  // seven catalyst sources, so nothing beyond the envelope is guaranteed);
+  // the renderer treats absent and null alike.
+  date?: string | null;
+  ticker?: string | null;
+  company_name?: string | null;
+  catalyst_type?: string | null;
   // Benzinga uses `event`; DB-sourced events use `title`. Renderer
   // prefers `title` then falls back to `event`.
-  event?: string;
-  title?: string;
+  event?: string | null;
+  title?: string | null;
   // Benzinga: `expected_impact` ('Very High'|'High'|'Medium'|'Low').
   // DB: `impact` (same vocabulary). Renderer accepts either.
-  expected_impact?: string;
-  impact?: string;
-  confirmed?: boolean;
-  source?: string;
-  details?: Record<string, unknown>;
+  expected_impact?: string | null;
+  impact?: string | null;
+  confirmed?: boolean | null;
+  source?: string | null;
+  details?: Record<string, unknown> | null;
   // News-specific
-  sentiment_score?: number;
-  sentiment_label?: string;
-  relevance_score?: number;
-  url?: string;
+  sentiment_score?: number | null;
+  sentiment_label?: string | null;
+  relevance_score?: number | null;
+  url?: string | null;
   // SEC-specific
-  items?: string[];
-  primary_doc?: string;
+  items?: string[] | null;
+  primary_doc?: string | null;
   // Insider-specific
-  insiders?: number;
-  total_value?: number;
+  insiders?: number | null;
+  total_value?: number | null;
   // SEC 8-K
-  accession_number?: string;
+  accession_number?: string | null;
   // Economic (FRED/Calendar): strings on the wire, '' when unknown
-  country?: string;
-  actual?: string;
-  forecast?: string;
-  previous?: string;
+  country?: string | null;
+  actual?: string | null;
+  forecast?: string | null;
+  previous?: string | null;
 }
 
 const IMPACT_RANK: Record<string, number> = {
@@ -203,9 +206,10 @@ function getRelativeLabel(dateStr: string): string | null {
 
 // ── Components ─────────────────────────────────────────────────────────────
 
-function CatalystBadge({ type }: { type: string }) {
+function CatalystBadge({ type }: { type: string | null | undefined }) {
   const theme = useThemeStore((s) => s.theme);
-  const config = TYPE_CONFIG[type] || { label: type, tone: 'neutral' as Tone, icon: Calendar };
+  // Absent type renders the honest neutral 'other' badge, not a crash.
+  const config = (type != null && TYPE_CONFIG[type]) || { label: type ?? 'other', tone: 'neutral' as Tone, icon: Calendar };
   const color = toneColor(config.tone, theme);
   const Icon = config.icon;
   return (
@@ -263,7 +267,7 @@ function EventRow({ event, onOpenTicker }: {
         </span>
       ) : (
         <button
-          onClick={() => onOpenTicker(event.ticker)}
+          onClick={() => { if (event.ticker) onOpenTicker(event.ticker); }}
           className="w-16 shrink-0 text-left text-xs font-bold text-[var(--brand)] hover:underline"
           title={`Open ${event.ticker} insight report`}
         >
@@ -294,7 +298,7 @@ function EventRow({ event, onOpenTicker }: {
       )}
       {!macro && (
         <button
-          onClick={() => onOpenTicker(event.ticker)}
+          onClick={() => { if (event.ticker) onOpenTicker(event.ticker); }}
           className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-0.5 text-[11px] text-[var(--brand)] transition-opacity"
           title="Open insight report"
         >
@@ -468,7 +472,7 @@ export default function CatalystsPage() {
 
   // Unique types in data for filter chips
   const allTypes = new Set<string>();
-  allEvents.forEach(e => allTypes.add(e.catalyst_type));
+  allEvents.forEach(e => { if (e.catalyst_type) allTypes.add(e.catalyst_type); });
 
   return (
     <div className="space-y-6">

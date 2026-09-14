@@ -30,11 +30,19 @@ async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
     throw new Error(`/api/config/firebase returned ${r.status}`);
   }
   // Guard against non-JSON responses (e.g. a static host's SPA fallback
-  // returning index.html with a 200). Parse defensively and validate shape.
+  // returning index.html with a 200). Parse defensively and validate shape:
+  // authMode must be one of the modes the app implements — an unknown mode
+  // behaving as `open` would strip the gate on a misconfigured backend
+  // (the API's schema pins the same Literal server-side).
   const text = await r.text();
   try {
     const data = JSON.parse(text) as RuntimeConfig;
-    if (data && typeof data.authMode === 'string') return data;
+    if (
+      data &&
+      (data.authMode === 'open' || data.authMode === 'firebase' || data.authMode === 'iap')
+    ) {
+      return data;
+    }
   } catch {
     /* fall through to error below */
   }
@@ -114,10 +122,28 @@ function ConfigErrorScreen({ message }: { message: string }) {
   );
 }
 
-export function ConfigGate({ children }: { children: ReactNode }) {
+export function ConfigGate({
+  children,
+  preload,
+}: {
+  children: ReactNode;
+  /** Import of the lazy chunk this gate will render once ready. Fired on
+   *  mount so the download runs IN PARALLEL with the config fetch (and, in
+   *  firebase mode, the awaited SDK init) instead of chaining behind them —
+   *  without it a cold /dashboard visit paid config → shell → page as three
+   *  serial round trips. Render still waits for `ready`. */
+  preload?: () => Promise<unknown>;
+}) {
   const [state, setState] = useState<
     { phase: 'loading' } | { phase: 'error'; message: string } | { phase: 'ready' }
   >({ phase: 'loading' });
+
+  useEffect(() => {
+    // Swallowing a preload failure is safe only because React.lazy re-runs
+    // the SAME import when the child renders — the error then surfaces
+    // through the route error boundary, once, instead of twice.
+    void preload?.().catch(() => {});
+  }, [preload]);
 
   useEffect(() => {
     let cancelled = false;

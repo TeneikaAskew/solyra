@@ -44,6 +44,43 @@ test.describe('Auth gate', () => {
     await expect(page.getByTestId('signin-screen')).toHaveCount(0);
   });
 
+  test('gated chunk downloads in parallel with the config fetch', async ({ page }) => {
+    // ConfigGate preloads the AppGroup chunk on mount (Codex, #64):
+    // without it a cold app-route visit pays config → shell → page as
+    // serial round trips. Hold the config response open and require the
+    // AppGroup module request to arrive WHILE it is pending; if the
+    // preload regresses, the 3s grace elapses with no request and the
+    // flag stays false. (Dev server → the chunk is the unbundled
+    // /src/components/layout/AppGroup.tsx module request.)
+    await mockAllPages(page);
+    let sawAppGroup!: () => void;
+    const appGroupSeen = new Promise<void>((res) => {
+      sawAppGroup = res;
+    });
+    page.on('request', (req) => {
+      if (new URL(req.url()).pathname.includes('AppGroup')) sawAppGroup();
+    });
+    let sawAppGroupDuringConfig = false;
+    await page.route('**/api/config/firebase', async (r) => {
+      sawAppGroupDuringConfig = await Promise.race([
+        appGroupSeen.then(() => true),
+        new Promise<boolean>((res) => setTimeout(() => res(false), 3000)),
+      ]);
+      await r.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ authMode: 'open', firebase: null }),
+      });
+    });
+
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('nav-menu-support')).toBeVisible();
+    expect(
+      sawAppGroupDuringConfig,
+      'AppGroup was not requested while the config fetch was pending — the serial boot waterfall is back',
+    ).toBe(true);
+  });
+
   test('firebase mode, signed out → login screen blocks the app', async ({ page }) => {
     await mockAllPages(page);
     // Registered after mockCommon so it wins (Playwright: last route matches first).

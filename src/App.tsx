@@ -62,7 +62,7 @@ const router = createBrowserRouter([
   {
     path: '/auth/action',
     element: (
-      <ConfigGate>
+      <ConfigGate preload={() => import('@/routes/AuthActionPage')}>
         <Suspense fallback={<PageLoader />}><AuthActionPage /></Suspense>
       </ConfigGate>
     ),
@@ -72,7 +72,10 @@ const router = createBrowserRouter([
   // ConfigGate blocks on the runtime config first (fail-loud, issue #5).
   {
     element: (
-      <ConfigGate>
+      // preload starts the AppGroup chunk download in parallel with the
+      // runtime-config fetch (Codex, #64) — only on gated routes; `/` has
+      // no ConfigGate, so the landing fence in landing.spec.ts still holds.
+      <ConfigGate preload={() => import('@/components/layout/AppGroup')}>
         <Suspense fallback={<PageLoader />}><AppGroup /></Suspense>
       </ConfigGate>
     ),

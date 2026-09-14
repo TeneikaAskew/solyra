@@ -17,8 +17,10 @@ export interface IndicatorConfig {
     oversold: number;
     overbought: number;
     zones: RsiZone[];
-    call_range: [number, number];
-    put_range: [number, number];
+    // Plain arrays per schema (JSON cannot promise a 2-tuple); the wire
+    // always carries [low, high].
+    call_range: number[];
+    put_range: number[];
     call_exit: number;
     put_exit: number;
   };

@@ -6,8 +6,8 @@ import {
   seedBenchmark,
   formatEdgeBps,
   styleConditionLabel,
-  type JournalRow,
   type SeedTradeRow,
+  type PlottableJournalRow,
 } from './useJournalChartTrades';
 
 describe('epochToJournalDateTime', () => {
@@ -49,7 +49,7 @@ describe('isoNaiveToEpoch', () => {
 });
 
 describe('journalRowToTradeEntry', () => {
-  const baseRow: JournalRow = {
+  const baseRow: PlottableJournalRow = {
     id: 'abc-123',
     ticker: 'IWM',
     direction: 'CALL',
@@ -88,7 +88,7 @@ describe('journalRowToTradeEntry', () => {
   });
 
   it('derives pnl/pnlPercent for a closed CALL from server return_pct, sign preserved', () => {
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       ...baseRow,
       exit_ts: '2026-07-02T13:40:00',
       exit_price: 224.5,
@@ -102,7 +102,7 @@ describe('journalRowToTradeEntry', () => {
   });
 
   it('derives pnl/pnlPercent for a closed PUT (return_pct already negated server-side)', () => {
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       ...baseRow,
       direction: 'PUT',
       exit_ts: '2026-07-02T13:40:00',
@@ -120,7 +120,7 @@ describe('journalRowToTradeEntry', () => {
   });
 
   it('defaults missing take_profits/stop_loss/notes/status/session_id on a legacy row', () => {
-    const legacyRow: JournalRow = {
+    const legacyRow: PlottableJournalRow = {
       id: 'legacy-1',
       ticker: 'SPY',
       direction: 'PUT',
@@ -141,7 +141,7 @@ describe('journalRowToTradeEntry', () => {
   });
 
   it('derives status from exit_ts + return_pct sign when status is absent but the trade is closed', () => {
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       id: 'legacy-2',
       ticker: 'QQQ',
       direction: 'CALL',
@@ -159,7 +159,7 @@ describe('journalRowToTradeEntry', () => {
   // time_stop_minutes passes through to TradeEntry.timeStopMinutes
   // untouched (structural passthrough, not a fabricated financial value).
   it('passes through time_stop_minutes for a matched pipeline row (no stop price)', () => {
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       ...baseRow,
       source: 'pipeline',
       stop_loss: null,
@@ -191,7 +191,7 @@ describe('journalRowToTradeEntry', () => {
     const { date, time } = epochToJournalDateTime(originalEntryTime);
     // Mirrors the local-fallback entry_ts format journal.py's create_trade
     // builds: `f"{entry_date}T{entry_time}:00"`.
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       ...baseRow,
       entry_ts: `${date}T${time}:00`,
     };

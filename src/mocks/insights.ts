@@ -344,8 +344,10 @@ export const insightsRoutes: MockRoute[] = [
     pattern: /^\/api\/insights\/chat$/,
     reply: () => ({ text: MOCK_CHAT_REPLY, contentType: 'text/plain; charset=utf-8' }),
   },
-  // Watchlist mutations (issue #57). The add echoes the requested ticker so
-  // the combobox's auto-ingest notice names what the user typed.
+  // Watchlist mutations (issue #57). Only IWM has fixture metadata; any
+  // other symbol gets the server's honest lookup-empty shape (info/quote/
+  // peers null) rather than IWM's fund name and price wearing the typed
+  // ticker (Codex, #64) — AddedTickerCard renders its null-tolerant state.
   {
     method: 'POST',
     pattern: /^\/api\/insights\/watchlist\/add$/,
@@ -354,7 +356,16 @@ export const insightsRoutes: MockRoute[] = [
         typeof (req.body as { ticker?: unknown } | undefined)?.ticker === 'string'
           ? ((req.body as { ticker: string }).ticker.toUpperCase())
           : 'IWM';
-      return { body: { ...MOCK_WATCHLIST_ADD, ticker } };
+      if (ticker === 'IWM') return { body: MOCK_WATCHLIST_ADD };
+      const body = {
+        ticker,
+        added: true,
+        info: null,
+        quote: null,
+        peers: null,
+        watchlist: [...MOCK_WATCHLIST_ADD.watchlist, ticker],
+      } satisfies WatchlistAddResult;
+      return { body };
     },
   },
   {

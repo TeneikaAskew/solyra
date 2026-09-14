@@ -22,18 +22,19 @@ export interface SimilarStats {
 
 export interface SimilarMatch {
   time: string;
-  direction: string | null;
-  price: number | null;
-  score: number | null;
-  rsi: number | null;
-  return_pct: number | null;
-  return_5min: number | null;
-  return_20min: number | null;
+  direction?: string | null;
+  price?: number | null;
+  score?: number | null;
+  rsi?: number | null;
+  return_pct?: number | null;
+  return_5min?: number | null;
+  return_20min?: number | null;
 }
 
 export interface SimilarResponse {
   ticker: string;
-  direction: 'CALL' | 'PUT';
+  /** 'CALL' | 'PUT' today; plain string per schema. */
+  direction: string;
   rsi: number;
   score: number;
   rsi_band: number;

@@ -125,8 +125,8 @@ function SignalCard({ direction, strength, conditions, fired }: {
             key={c.id}
             label={c.label}
             met={c.met}
-            current={c.current}
-            threshold={c.threshold}
+            current={c.current ?? null}
+            threshold={c.threshold ?? null}
             operator={c.operator}
             direction={direction}
           />
@@ -350,21 +350,21 @@ export default function LiveMarketPage() {
 
       {/* Indicators */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <MetricCard label="EMA 9" value={indicators.ema9 !== null ? `$${indicators.ema9.toFixed(2)}` : '--'} />
-        <MetricCard label="EMA 20" value={indicators.ema20 !== null ? `$${indicators.ema20.toFixed(2)}` : '--'} />
-        <MetricCard label="EMA 50" value={indicators.ema50 !== null ? `$${indicators.ema50.toFixed(2)}` : '--'} />
+        <MetricCard label="EMA 9" value={indicators.ema9 != null ? `$${indicators.ema9.toFixed(2)}` : '--'} />
+        <MetricCard label="EMA 20" value={indicators.ema20 != null ? `$${indicators.ema20.toFixed(2)}` : '--'} />
+        <MetricCard label="EMA 50" value={indicators.ema50 != null ? `$${indicators.ema50.toFixed(2)}` : '--'} />
         <MetricCard
           label="RSI (14)"
-          value={indicators.rsi !== null ? indicators.rsi.toFixed(1) : '--'}
-          change={indicators.rsi !== null ? (indicators.rsi > 70 ? -1 : indicators.rsi < 30 ? 1 : 0) : undefined}
+          value={indicators.rsi != null ? indicators.rsi.toFixed(1) : '--'}
+          change={indicators.rsi != null ? (indicators.rsi > 70 ? -1 : indicators.rsi < 30 ? 1 : 0) : undefined}
           changeLabel={
-            indicators.rsi !== null
+            indicators.rsi != null
               ? indicators.rsi > 70 ? 'Overbought' : indicators.rsi < 30 ? 'Oversold' : 'Neutral'
               : undefined
           }
         />
-        <MetricCard label="StochRSI" value={indicators.stochK !== null ? indicators.stochK.toFixed(1) : '--'} />
-        <MetricCard label="ATR (14)" value={indicators.atr !== null ? `$${indicators.atr.toFixed(2)}` : '--'} />
+        <MetricCard label="StochRSI" value={indicators.stochK != null ? indicators.stochK.toFixed(1) : '--'} />
+        <MetricCard label="ATR (14)" value={indicators.atr != null ? `$${indicators.atr.toFixed(2)}` : '--'} />
       </div>
 
       {bars.length === 0 && (polling || isReview) && (
