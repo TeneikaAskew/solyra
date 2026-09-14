@@ -5,7 +5,7 @@ import { TopTabs } from './TopTabs';
 import { Header } from './Header';
 import { CommandPalette } from './CommandPalette';
 import { MostActiveBar } from '@/components/shared/MostActiveBar';
-import { AuthStatusBanner } from '@/components/shared/AuthStatusIndicator';
+import { AuthStatusBanner, EmailVerificationBanner } from '@/components/shared/AuthStatusIndicator';
 import { MockModeBanner } from '@/components/shared/MockModeBanner';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { usePreferencesSync } from '@/hooks/usePreferences';
@@ -66,6 +66,7 @@ export function AppShell() {
         {isSidebar && <Header />}
         <MockModeBanner />
         <AuthStatusBanner />
+        <EmailVerificationBanner />
         {showMostActiveBar(pathname) && <MostActiveBar />}
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
           <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-8 sm:py-8">

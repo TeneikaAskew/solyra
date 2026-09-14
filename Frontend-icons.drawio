@@ -196,7 +196,7 @@
                 <mxCell id="d_prod" value="Cloud Run prod&#xa;solyra-api-prod (IAP)" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#34a853;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" vertex="1">
                     <mxGeometry x="2030" y="562" width="64" height="64" as="geometry"/>
                 </mxCell>
-                <mxCell id="dc2" value="stocks.insightscollective.org → solyra-api-staging (remapped 2026-09-05)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#7b8794;" parent="1" vertex="1">
+                <mxCell id="dc2" value="api.stocks.insightscollective.org → solyra-api-staging (moved 2026-09-06)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#7b8794;" parent="1" vertex="1">
                     <mxGeometry x="1690" y="646" width="480" height="30" as="geometry"/>
                 </mxCell>
                 <mxCell id="d_e1" value="trigger" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" source="d_push" target="d_gha" edge="1">
@@ -378,7 +378,7 @@
                 <mxCell id="brun" value="solyra-api-prod (prod)" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=10;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" vertex="1">
                     <mxGeometry x="1230" y="1006" width="44" height="44" as="geometry"/>
                 </mxCell>
-                <mxCell id="brun_s" value="solyra-api-prod behind IAP · stocks.insightscollective.org now maps to solyra-api-staging · --no-cpu-throttling (PR #507) · 1 vCPU / 2 GiB" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;fillColor=#eef2fb;strokeColor=#6b83c9;strokeWidth=1;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=5;" parent="1" vertex="1">
+                <mxCell id="brun_s" value="solyra-api-prod behind IAP · api.stocks.insightscollective.org maps to solyra-api-staging · --no-cpu-throttling (PR #507) · 1 vCPU / 2 GiB" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;fillColor=#eef2fb;strokeColor=#6b83c9;strokeWidth=1;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=5;" parent="1" vertex="1">
                     <mxGeometry x="1290" y="1004" width="1050" height="48" as="geometry"/>
                 </mxCell>
                 <mxCell id="g_t" value="Testing" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#eef6ec;strokeColor=#7cae7a;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">

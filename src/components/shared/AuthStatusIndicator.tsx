@@ -1,8 +1,9 @@
-import { LogIn, LogOut, Lock, ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
+import { LogIn, LogOut, Lock, ShieldCheck, MailWarning } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuthBlocked } from '@/lib/authGate';
+import { useAuthBlocked, useVerificationEmailState } from '@/lib/authGate';
 import { useUser } from '@/hooks/useUser';
-import { firebaseSignOut } from '@/lib/firebase';
+import { firebaseSignOut, refreshEmailVerified, resendVerificationEmail } from '@/lib/firebase';
 
 /**
  * Global auth status.
@@ -176,6 +177,128 @@ export function AuthStatusBanner() {
       >
         Sign in
       </button>
+    </div>
+  );
+}
+
+/**
+ * Strip shown to a signed-in email/password account whose address is not yet
+ * confirmed. Non-blocking: the app stays usable, the banner just keeps the
+ * task visible and offers the two things the user can do about it. Never
+ * renders outside `firebase` mode (emailVerified is null there) and never for
+ * Google sign-ins (they arrive verified).
+ *
+ * "I've confirmed" re-reads the account from the server because clicking the
+ * emailed link happens in another tab and does not fire onAuthStateChanged
+ * here. Resend failures are shown, not swallowed (Rule 4).
+ */
+export function EmailVerificationBanner() {
+  const { uid } = useUser();
+  // Keyed by uid so the component-local state below (confirmed, resend,
+  // re-check) is discarded when the account changes without the shell
+  // unmounting, e.g. another tab replacing the persisted Firebase user:
+  // account A's "I've confirmed" must not hide the banner from account B.
+  return <EmailVerificationBannerFor key={uid ?? 'signed-out'} />;
+}
+
+function EmailVerificationBannerFor() {
+  const { email, emailVerified, uid } = useUser();
+  // What actually happened to the sign-up email: sign-up records it in the
+  // authGate store because SignInScreen is unmounted by the time the send
+  // resolves. Keyed by uid so an account switch without a reload never
+  // inherits the previous account's outcome; 'unknown' = no send for this
+  // account this session, so no claim is made.
+  const delivery = useVerificationEmailState(uid);
+  // Local override once a refresh reports verified; the subscription value
+  // only updates on the next auth-state event.
+  const [confirmed, setConfirmed] = useState(false);
+  const [resend, setResend] = useState<
+    { state: 'idle' } | { state: 'sending' } | { state: 'sent' } | { state: 'error'; message: string }
+  >({ state: 'idle' });
+  const [checking, setChecking] = useState(false);
+  const [stillUnverified, setStillUnverified] = useState(false);
+
+  if (emailVerified !== false || confirmed) return null;
+
+  const onResend = async () => {
+    setResend({ state: 'sending' });
+    try {
+      await resendVerificationEmail();
+      setResend({ state: 'sent' });
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      setResend({
+        state: 'error',
+        message:
+          e.code === 'auth/too-many-requests'
+            ? 'Too many requests. Wait a few minutes and try again.'
+            : `Could not send the email${e.message ? `: ${e.message}` : '.'}`,
+      });
+    }
+  };
+
+  const onConfirmed = async () => {
+    setChecking(true);
+    setStillUnverified(false);
+    try {
+      const verified = await refreshEmailVerified();
+      if (verified) setConfirmed(true);
+      else setStillUnverified(true);
+    } catch (err) {
+      const e = err as { message?: string };
+      setResend({ state: 'error', message: `Could not check the account${e.message ? `: ${e.message}` : '.'}` });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const btnCls =
+    'rounded-md border border-[var(--outline-variant)] bg-[var(--surface-1)] px-3 py-1 text-[12px] font-semibold text-[var(--on-surface)] hover:bg-[var(--surface-0)] disabled:opacity-50';
+
+  return (
+    <div
+      role="status"
+      data-testid="email-verification-banner"
+      className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-[var(--outline-variant)] bg-[var(--surface-2)] px-4 py-2 text-center text-[12px] text-[var(--on-surface)]"
+    >
+      <span className="flex items-center gap-1.5" data-delivery={delivery.status}>
+        <MailWarning size={13} className="text-[var(--warning, var(--on-surface-variant))]" aria-hidden />
+        Confirm your email address.
+        {delivery.status === 'sent'
+          ? email
+            ? ` We sent a link to ${email}.`
+            : ' We sent you a link.'
+          : delivery.status === 'sending'
+            ? ' Sending the confirmation email…'
+            : delivery.status === 'failed'
+              ? ` The confirmation email could not be sent (${delivery.message}). Resend it below.`
+              : ' Use "Resend email" to get a fresh link.'}
+      </span>
+      {/* Disabled while ANY send is in flight, including the sign-up send that
+          may still be settling when this banner first mounts, so two sends can
+          never race (and a later failure cannot overwrite a successful resend). */}
+      <button
+        type="button"
+        onClick={onResend}
+        disabled={resend.state === 'sending' || delivery.status === 'sending'}
+        data-testid="verification-resend"
+        className={btnCls}
+      >
+        {resend.state === 'sending' || delivery.status === 'sending'
+          ? 'Sending…'
+          : resend.state === 'sent'
+            ? 'Sent, check your inbox'
+            : 'Resend email'}
+      </button>
+      <button type="button" onClick={onConfirmed} disabled={checking} data-testid="verification-check" className={btnCls}>
+        {checking ? 'Checking…' : "I've confirmed"}
+      </button>
+      {stillUnverified && (
+        <span className="text-[var(--on-surface-variant)]">Not confirmed yet. Open the link in the email, then try again.</span>
+      )}
+      {resend.state === 'error' && (
+        <span data-testid="verification-error" className="text-[var(--bear)]">{resend.message}</span>
+      )}
     </div>
   );
 }
