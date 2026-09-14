@@ -20,6 +20,7 @@ const AdminPage = lazy(() => import('@/routes/AdminPage'));
 const HelpPage = lazy(() => import('@/routes/HelpPage'));
 const SettingsPage = lazy(() => import('@/routes/SettingsPage'));
 const LandingPage = lazy(() => import('@/routes/LandingPage'));
+const AuthActionPage = lazy(() => import('@/routes/AuthActionPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -49,6 +50,13 @@ const router = createBrowserRouter([
     element: <Suspense fallback={<PageLoader />}><LandingPage /></Suspense>,
   },
   { path: '/welcome', element: <Navigate to="/" replace /> },
+  // Where the Firebase auth emails' buttons land (password reset, email
+  // confirmation, recovery). Public on purpose: the visitor is usually
+  // signed out, so it must render outside the gate.
+  {
+    path: '/auth/action',
+    element: <Suspense fallback={<PageLoader />}><AuthActionPage /></Suspense>,
+  },
   // The app group — AuthGate wraps the shell, so in firebase mode a signed-out
   // visitor hitting any app route sees SignInScreen, then the app on success.
   {
