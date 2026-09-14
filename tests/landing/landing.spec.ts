@@ -34,6 +34,41 @@ test.describe('Solyra landing page', () => {
     await expect(page.getByText(/heatseeker|flowseeker|skylit/i)).toHaveCount(0);
   });
 
+  test('visiting / fetches no runtime config and no Firebase code (issue #26)', async ({
+    page,
+  }) => {
+    // The acceptance for the lazy boot: a logged-out marketing visit ships
+    // only landing code. Collect every request the visit makes — none may be
+    // the runtime-config probe or any module of the auth stack (the dev
+    // server serves modules unbundled, so a leaked import shows up as a
+    // /src/... request; in the production build these are the firebaseImpl
+    // and AppGroup chunks).
+    const offending: string[] = [];
+    page.on('request', (req) => {
+      const url = req.url();
+      // /firebase/i catches the facade, the impl and the SDK chunks;
+      // the case-SENSITIVE component alternatives catch the gated shell.
+      // (Case-insensitive there would false-positive on lib/authGate.ts —
+      // a 2 KB react store with no Firebase in it, allowed on `/` because
+      // authedFetch, installed for the waitlist POST's origin rewrite,
+      // reaches its mark/clear helpers.)
+      if (
+        url.includes('/api/config/firebase') ||
+        /firebase/i.test(new URL(url).pathname) ||
+        /AuthGate\.tsx|AppShell|AppGroup|SignInScreen/.test(new URL(url).pathname)
+      ) {
+        offending.push(url);
+      }
+    });
+
+    await page.goto('/');
+    await expect(page.getByTestId('landing-page')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+
+    expect(offending, `landing visit loaded gated-boot resources: ${offending.join(' | ')}`)
+      .toEqual([]);
+  });
+
   test('waitlist form rejects an invalid email with a visible error', async ({ page }) => {
     await page.goto('/');
     await page.getByTestId('waitlist-email').fill('not-an-email');

@@ -1,10 +1,15 @@
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AppShell } from '@/components/layout/AppShell';
-import { AuthGate } from '@/components/auth/AuthGate';
+import { ConfigGate } from '@/components/auth/ConfigGate';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { RouteErrorBoundary } from '@/components/shared/RouteErrorBoundary';
+
+// The gated shell (AuthGate + AppShell + the stores and layout they pull) is
+// its own chunk, so `/` — the public landing — downloads none of it
+// (issue #26). ConfigGate stays in the entry chunk: it is tiny and it owns
+// the runtime-config fetch those routes block on.
+const AppGroup = lazy(() => import('@/components/layout/AppGroup'));
 
 const DashboardPage = lazy(() => import('@/routes/DashboardPage'));
 const LiveMarketPage = lazy(() => import('@/routes/LiveMarketPage'));
@@ -52,15 +57,25 @@ const router = createBrowserRouter([
   { path: '/welcome', element: <Navigate to="/" replace /> },
   // Where the Firebase auth emails' buttons land (password reset, email
   // confirmation, recovery). Public on purpose: the visitor is usually
-  // signed out, so it must render outside the gate.
+  // signed out, so it renders outside AuthGate — but INSIDE ConfigGate,
+  // because its SDK calls need the runtime web config even signed-out.
   {
     path: '/auth/action',
-    element: <Suspense fallback={<PageLoader />}><AuthActionPage /></Suspense>,
+    element: (
+      <ConfigGate>
+        <Suspense fallback={<PageLoader />}><AuthActionPage /></Suspense>
+      </ConfigGate>
+    ),
   },
   // The app group — AuthGate wraps the shell, so in firebase mode a signed-out
   // visitor hitting any app route sees SignInScreen, then the app on success.
+  // ConfigGate blocks on the runtime config first (fail-loud, issue #5).
   {
-    element: <AuthGate><AppShell /></AuthGate>,
+    element: (
+      <ConfigGate>
+        <Suspense fallback={<PageLoader />}><AppGroup /></Suspense>
+      </ConfigGate>
+    ),
     errorElement,
     children: [
       { path: '/dashboard', errorElement, element: <Suspense fallback={<PageLoader />}><DashboardPage /></Suspense> },
