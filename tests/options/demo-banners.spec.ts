@@ -1,7 +1,7 @@
 /**
  * Regression: demo-data banners on mock options surfaces.
  *
- * Flowseeker (live feed) and SwingMode (heatmap) render data disclaimers
+ * Flow (live feed) and SwingMode (heatmap) render data disclaimers
  * to prevent silent drift into illusion of liveness. This suite pins
  * those banners so they can't vanish while the tabs stay mock.
  */
@@ -24,18 +24,18 @@ test.describe('Mock data surfaces stay banner-honest', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('Heatseeker Swing Mode shows the demo banner', async ({ page }) => {
-    // Heatseeker is the default tab; SwingMode is the default inner mode.
+  test('Gamma Map Swing Mode shows the demo banner', async ({ page }) => {
+    // Gamma Map is the default tab; SwingMode is the default inner mode.
     // The SwingMode component renders <div class="hs-demo-banner">
     await expect(page.locator('.hs-demo-banner').first()).toBeVisible();
   });
 
-  test('Flowseeker tab shows the demo banner text', async ({ page }) => {
-    // Click the Flowseeker tab (button with "Flowseeker" text)
-    await page.getByRole('button', { name: /Flowseeker/i }).click();
+  test('Flow tab shows the demo banner text', async ({ page }) => {
+    // Click the Flow tab (button with "Flow" text)
+    await page.getByRole('button', { name: /Flow/i }).click();
     // Wait for the component to render
     await page.waitForLoadState('networkidle');
-    // FlowseekerTab renders <DemoDataBanner> with text "Demo data, not live."
+    // FlowTab renders <DemoDataBanner> with text "Demo data, not live."
     // (The em dash is U+2014, copied from DemoDataBanner.tsx line 23)
     await expect(page.getByText('Demo data, not live.').first()).toBeVisible();
   });

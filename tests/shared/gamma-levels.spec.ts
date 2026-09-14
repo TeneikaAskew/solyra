@@ -24,7 +24,7 @@ import { mockChartsApi } from '../helpers/fixtures/charts';
 import { mockHelpApi } from '../helpers/fixtures/help';
 
 // The /options page was restructured (OptionsFlowPage.tsx): it opens on the
-// Heatseeker tab (SwingMode gamma cockpit) and the original levels/chain
+// Gamma Map tab (SwingMode gamma cockpit) and the original levels/chain
 // profile — spot-method chip, ★ King / ◆ Gate taxonomy chips, metric cards,
 // regime label — moved verbatim into the Profiles tab (ProfilesTab.tsx).
 // These tests run fully mocked via mockOptionsApi (dates + chain + grid +

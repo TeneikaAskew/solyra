@@ -22,7 +22,14 @@
  * therefore undefined at render. Everything here is pinned with `satisfies`
  * so that can't recur.
  */
-import type { JournalRow, MineStyleSuccess, MineStyleUnavailable } from '@/hooks/useJournalChartTrades';
+import type {
+  JournalDeleteResponse,
+  JournalMutationResponse,
+  JournalRow,
+  MineStyleSuccess,
+  MineStyleUnavailable,
+  SeedTradesOk,
+} from '@/hooks/useJournalChartTrades';
 import type { MockRoute } from './types';
 
 /** `JournalTradesResponse` is internal to useJournalChartTrades.ts. */
@@ -289,9 +296,9 @@ export const MOCK_JOURNAL_EXPORT = {
 };
 
 // ── "My style" panel (POST /api/style/mine-and-validate, issue #14) ────────
-// NOT wired into the route tables: the panel only POSTs on an explicit button
-// click, and its specs assert on the request body, so they register their own
-// handlers — same convention as the import/commit mutations.
+// Wired into journalRoutes below since issue #57 (mock mode answers the
+// button click with the success profile); specs that assert on the request
+// body still register their own handlers, which win over the table.
 
 /** Mined + walk-forward-validated profile — the panel's full success render:
  *  direction badge, three condition chips (one parameterized), support/total
@@ -320,13 +327,73 @@ export const MOCK_MINE_STYLE_UNAVAILABLE = {
   reason: 'Need at least 10 closed trades to mine a style profile (have 3).',
 } satisfies MineStyleUnavailable;
 
+// ── Mutation + seed payloads (issue #57: every requested operation gets a
+// route so hermetic/offline work can exercise the full flows; the loud 501
+// is for genuine table GAPS, not for whole features) ───────────────────────
+
+/** POST /api/journal/trades — the row journal.py creates for a chart entry. */
+export const MOCK_JOURNAL_CREATE = {
+  source: 'cloud_sql',
+  id: 'mock-created-1',
+  return_pct: null, // just opened — no return yet (Rule 4: null, never 0)
+  status: 'active',
+} satisfies JournalMutationResponse;
+
+/** PATCH /api/journal/trades/{id} — the close of the trade above. */
+export const MOCK_JOURNAL_CLOSE = {
+  source: 'cloud_sql',
+  id: 'mock-created-1',
+  return_pct: 12.5, // PERCENT, server-computed
+  status: 'win',
+} satisfies JournalMutationResponse;
+
+export const MOCK_JOURNAL_DELETED = {
+  source: 'cloud_sql',
+  deleted: 'mock-created-1',
+} satisfies JournalDeleteResponse;
+
+/** GET /api/journal/seed/{ticker} — replay-trainer seed trades for the
+ *  MOCK_JOURNAL_DATES day the Charts card offers. */
+export const MOCK_SEED_TRADES = {
+  ticker: 'IWM',
+  date: '2026-04-24',
+  count: 2,
+  trades: [
+    {
+      id: 'seed-1',
+      direction: 'CALL',
+      entry_time: '2026-04-24T13:35:00',
+      entry_price: 218.4,
+      exit_time: '2026-04-24T15:10:00',
+      exit_price: 220.1,
+      return_pct: 0.78,
+      strat_combo: '2D-2U RevStrat',
+      exit_reason: 'target',
+    },
+    {
+      id: 'seed-2',
+      direction: 'PUT',
+      entry_time: '2026-04-24T17:05:00',
+      entry_price: 221.3,
+      exit_time: null,
+      exit_price: null,
+      return_pct: null,
+      strat_combo: null,
+      exit_reason: null,
+    },
+  ],
+} satisfies SeedTradesOk;
+
 /**
- * Mock-mode routes OWNED by the journal domain: the journal reads plus the
- * export mutation. The chart card's market dates/candles and the RTH window
- * are served by ./charts, ./live and ./common — one canonical route per
- * endpoint across the whole engine (see src/mocks/index.ts). Import
- * mutations (POST /api/journal/trades, /import/preview, /import/commit)
- * stay unwired on purpose — a miss is answered 501 loudly by the engine.
+ * Mock-mode routes OWNED by the journal domain: the journal reads, the
+ * export/import/create/close/delete mutations, the replay-trainer seed, and
+ * the "My style" miner (issue #57 wired the mutations; they answered 501
+ * before). The chart card's market dates/candles and the RTH window are
+ * served by ./charts, ./live and ./common — one canonical route per
+ * endpoint across the whole engine (see src/mocks/index.ts).
+ *
+ * Specs that assert on request BODIES (import modal, style panel) keep
+ * registering their own Playwright handlers, which win over these.
  */
 export const journalRoutes: MockRoute[] = [
   { pattern: /^\/api\/journal\/examples\/IWM$/, reply: () => ({ body: MOCK_JOURNAL_EMPTY }) },
@@ -335,5 +402,29 @@ export const journalRoutes: MockRoute[] = [
     method: 'POST',
     pattern: /^\/api\/journal\/export\/([^/]+)$/,
     reply: () => ({ body: MOCK_JOURNAL_EXPORT }),
+  },
+  { method: 'POST', pattern: /^\/api\/journal\/trades$/, reply: () => ({ body: MOCK_JOURNAL_CREATE }) },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/journal\/trades\/([^/]+)$/,
+    // Echo the addressed id so optimistic UI reconciles against the row it
+    // actually closed, not a fixed fixture id.
+    reply: (_req, match) => ({ body: { ...MOCK_JOURNAL_CLOSE, id: match[1] } }),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/journal\/trades\/([^/]+)$/,
+    reply: (_req, match) => ({ body: { ...MOCK_JOURNAL_DELETED, deleted: match[1] } }),
+  },
+  { method: 'POST', pattern: /^\/api\/journal\/import\/preview$/, reply: () => ({ body: MOCK_IMPORT_PREVIEW }) },
+  { method: 'POST', pattern: /^\/api\/journal\/import\/commit$/, reply: () => ({ body: MOCK_IMPORT_COMMIT }) },
+  {
+    pattern: /^\/api\/journal\/seed\/([^/]+)$/,
+    reply: (_req, match) => ({ body: { ...MOCK_SEED_TRADES, ticker: match[1] } }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/style\/mine-and-validate$/,
+    reply: () => ({ body: MOCK_MINE_STYLE_SUCCESS }),
   },
 ];

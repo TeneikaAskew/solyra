@@ -2,7 +2,7 @@
  * E2E: Options Flow ("/options") — chain heatmap, toggles, live AV fallback.
  *
  * The page was restructured (OptionsFlowPage.tsx): it now opens on the
- * Heatseeker tab (SwingMode grid cockpit) and the original chain-profile
+ * Gamma Map tab (SwingMode grid cockpit) and the original chain-profile
  * body — D3 GEX heatmap, net/calls/puts toggles, source footer — lives in
  * the Profiles tab (ProfilesTab.tsx), reached via the top-level segmented
  * control. Tests that assert the chain UI click into Profiles first.
@@ -39,9 +39,9 @@ test.describe('Options Flow', () => {
     await page.waitForLoadState('networkidle');
     // The restructured page (OptionsFlowPage.tsx) no longer renders the
     // literal word "options" — its landmark is the Symbol combobox plus the
-    // Heatseeker / Flowseeker / Profiles view switcher (TABS).
+    // Gamma Map / Flow / Profiles view switcher (TABS).
     await expect(page.getByText('Symbol', { exact: true })).toBeVisible();
-    for (const tab of ['Heatseeker', 'Flowseeker', 'Profiles']) {
+    for (const tab of ['Gamma Map', 'Flow', 'Profiles']) {
       await expect(page.getByRole('button', { name: tab })).toBeVisible();
     }
   });
@@ -92,6 +92,18 @@ test.describe('Options Flow', () => {
     await page.goto('/options');
     await page.waitForLoadState('networkidle');
     expect(Date.now() - start).toBeLessThan(perfBudgetMs(5000));
+  });
+
+  test('the borrowed internal module names never appear in the app UI (issue #27)', async ({
+    page,
+  }) => {
+    // Same negative fence the landing page carries (landing.spec.ts):
+    // "Heatseeker"/"Flowseeker" are Skylit's module names and were renamed
+    // to the public "Gamma Map"/"Flow" before launch. Assert on the page
+    // that used to render them so a stray label cannot come back.
+    await page.goto('/options');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/heatseeker|flowseeker|skylit/i)).toHaveCount(0);
   });
 });
 
@@ -175,7 +187,7 @@ test.describe('options dates: the limit contract', () => {
     await page.goto('/options');
     await page.waitForLoadState('networkidle');
 
-    // Heatseeker/Swing is the landing tab and reads dates[0] only.
+    // Gamma Map/Swing is the landing tab and reads dates[0] only.
     //
     // Parsed, not substring-matched. `includes('limit=1')` is also true of
     // `limit=10` and `limit=1000`, so the assertion that exists to stop the

@@ -576,7 +576,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         </div>
       )}
 
-      {/* Fallback: original heatseeker node summary if /levels hasn't loaded yet */}
+      {/* Fallback: original gamma-map node summary if /levels hasn't loaded yet */}
       {!gammaLevels && nodes.kingNode && (
         <div className="flex flex-wrap gap-2 text-xs">
           <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[var(--warn)]">

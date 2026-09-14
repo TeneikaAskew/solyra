@@ -41,7 +41,7 @@ const TRINITY_TICKERS = ['SPX', 'SPY', 'QQQ'] as const;
 
 /**
  * Intercept every options endpoint the /options page can hit (both the
- * default Heatseeker/Swing view and the Profiles tab), scoped to IWM.
+ * default Gamma Map/Swing view and the Profiles tab), scoped to IWM.
  * Registration order matters: Playwright matches routes newest-first, so the
  * single-segment chain glob goes FIRST and the more specific /grid and
  * /levels patterns after it take precedence.

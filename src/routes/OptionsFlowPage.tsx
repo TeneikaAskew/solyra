@@ -2,34 +2,34 @@ import { useState } from 'react';
 import { Layers, Activity, BarChart3 } from 'lucide-react';
 import { useTickerStore } from '@/stores/tickerStore';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
-import HeatseekerSection from '@/components/options/HeatseekerSection';
-import FlowseekerSection from '@/components/options/FlowseekerSection';
+import GammaMapSection from '@/components/options/GammaMapSection';
+import FlowSection from '@/components/options/FlowSection';
 import ProfilesTab from '@/components/options/ProfilesTab';
 import { DataGate, SignInBanner } from '@/components/shared/SignInEmptyState';
 
 // Options Flow — restructured to Skylit's real IA. Three TOP views switched by a
 // single-row segmented control, each with an inner mode toggle where applicable:
 //
-//   Heatseeker → Swing Mode (mock 2D strikes×expirations heatmap)
+//   Gamma Map → Swing Mode (mock 2D strikes×expirations heatmap)
 //                Trinity Mode (REAL data — SPX/SPY/QQQ strike ladders)
-//   Flowseeker → Live Feed (mock flow tape)
+//   Flow → Live Feed (mock flow tape)
 //                Contract Drilldown (mock per-contract tape)
 //   Profiles   → original Options Flow body, verbatim (REAL data).
 //
 // The shared <TickerCombobox /> drives symbol focus across views; the global
 // header no longer pins a ticker.
 
-type TabId = 'heatseeker' | 'flowseeker' | 'profiles';
+type TabId = 'gamma-map' | 'flow' | 'profiles';
 
 const TABS: { id: TabId; label: string; icon: typeof Layers }[] = [
-  { id: 'heatseeker', label: 'Heatseeker', icon: Layers },
-  { id: 'flowseeker', label: 'Flowseeker', icon: Activity },
+  { id: 'gamma-map', label: 'Gamma Map', icon: Layers },
+  { id: 'flow', label: 'Flow', icon: Activity },
   { id: 'profiles', label: 'Profiles', icon: BarChart3 },
 ];
 
 export default function OptionsFlowPage() {
   const { activeTicker } = useTickerStore();
-  const [tab, setTab] = useState<TabId>('heatseeker');
+  const [tab, setTab] = useState<TabId>('gamma-map');
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,8 +62,8 @@ export default function OptionsFlowPage() {
 
       <SignInBanner label="options data" />
       <DataGate>
-      {tab === 'heatseeker' && <HeatseekerSection focusSymbol={activeTicker} />}
-      {tab === 'flowseeker' && <FlowseekerSection />}
+      {tab === 'gamma-map' && <GammaMapSection focusSymbol={activeTicker} />}
+      {tab === 'flow' && <FlowSection />}
       {tab === 'profiles' && <ProfilesTab activeTicker={activeTicker} />}
       </DataGate>
     </div>

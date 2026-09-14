@@ -2,12 +2,12 @@
 // MOCK PLACEHOLDER DATA — NOT LIVE.
 //
 // There is currently NO backend flow-tape / sweeps / live-options-feed
-// endpoint in this platform. The Flowseeker tab is built against this typed
+// endpoint in this platform. The Flow tab is built against this typed
 // placeholder dataset so the UI can ship ahead of the data pipeline. Replace
 // every consumer of this module with a real `/api/options/flow/...` hook once
 // a flow-tape endpoint exists, and delete this file.
 //
-// The FlowseekerTab renders a persistent "Demo data — no live flow feed
+// The FlowTab renders a persistent "Demo data — no live flow feed
 // connected" banner so this is never mistaken for real market data.
 // ─────────────────────────────────────────────────────────────────────────
 

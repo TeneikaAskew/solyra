@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 // MOCK PLACEHOLDER DATA — NOT LIVE. Real source TBD.
 //
-// Flowseeker "Contract Drilldown" needs per-contract intraday tape: a stats
+// Flow "Contract Drilldown" needs per-contract intraday tape: a stats
 // strip, a bid/ask chain-ratio split, volume-over-time bars with an overlaid
 // average-fill line, and a Bid/Mid/Ask/No-Side time-bucket breakdown. There is
 // NO backend contract-tape endpoint today, so this typed mock drives the view.
@@ -57,7 +57,7 @@ export interface ContractDrilldown {
   buckets: TimeBucket[];
 }
 
-// SPY 605C — a representative liquid 0–1 DTE contract from the Flowseeker tape.
+// SPY 605C — a representative liquid 0–1 DTE contract from the Flow tape.
 export const CONTRACT_DRILLDOWN: ContractDrilldown = {
   header: { sym: 'SPY', strike: 605, cp: 'CALL', expiry: '2026-01-17', dte: 1 },
   stats: {

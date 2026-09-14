@@ -43,14 +43,14 @@ interface JournalTradesResponse {
   trades: JournalRow[];
 }
 
-interface JournalMutationResponse {
+export interface JournalMutationResponse {
   source: 'cloud_sql' | 'local';
   id: string;
   return_pct: number | null;
   status: string;
 }
 
-interface JournalDeleteResponse {
+export interface JournalDeleteResponse {
   source: 'cloud_sql' | 'local';
   deleted: string;
 }
@@ -74,7 +74,7 @@ export interface SeedTradeRow {
   exit_reason: string | null;
 }
 
-interface SeedTradesOk {
+export interface SeedTradesOk {
   ticker: string;
   date: string;
   count: number;

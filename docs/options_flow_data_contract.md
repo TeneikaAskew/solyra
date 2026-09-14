@@ -8,10 +8,10 @@ This doc specifies the endpoints needed to make the mocked views real.
 | View | Tab · Mode | Data today | Real source needed |
 |------|-----------|-----------|--------------------|
 | GEX/VEX profile | Profiles | **Real** — `/api/options/{t}/{date}/levels` + `POST /api/options/greeks` | — |
-| Trinity 3-panel | Heatseeker · Trinity | **Real** — `useGammaLevels` for SPX/SPY/QQQ | — |
-| Swing 2D heatmap | Heatseeker · Swing | Mock `src/data/heatseekerSwingMock.ts` | **(A)** per-expiration GEX/VEX surface |
-| Live flow tape | Flowseeker · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |
-| Contract drilldown | Flowseeker · Drilldown | Mock `src/data/contractDrilldownMock.ts` | **(C)** per-contract tape |
+| Trinity 3-panel | Gamma Map · Trinity | **Real** — `useGammaLevels` for SPX/SPY/QQQ | — |
+| Swing 2D heatmap | Gamma Map · Swing | Mock `src/data/gammaMapMock.ts` | **(A)** per-expiration GEX/VEX surface |
+| Live flow tape | Flow · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |
+| Contract drilldown | Flow · Drilldown | Mock `src/data/contractDrilldownMock.ts` | **(C)** per-contract tape |
 
 ## (A) Per-expiration dealer-exposure surface — Swing Mode
 The current chain endpoints return a single snapshot collapsed across

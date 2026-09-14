@@ -91,7 +91,8 @@ export interface ChartVoterSide {
 export interface ChartVoter {
   call: ChartVoterSide;
   put: ChartVoterSide;
-  firing: TradeDirection | null;
+  /** Omittable as well as null: the schema marks it optional (issue #56). */
+  firing?: TradeDirection | null;
 }
 
 export interface BacktestResult {
@@ -178,12 +179,14 @@ export interface MovementLevelEntry {
   reach_rate: ReachRate;
 }
 
-/** The levels block — calls/puts ladders, each with per-tier reach-rates. */
+/** The levels block — calls/puts ladders, each with per-tier reach-rates.
+ *  `calls`/`puts` admit null as well as omission: the schema declares them
+ *  nullable and the endpoint serializes with exclude_unset (issue #56). */
 export interface MovementLevels {
   status: MovementFieldStatus;
   reason?: string | null;
-  calls?: MovementLevelEntry[];
-  puts?: MovementLevelEntry[];
+  calls?: MovementLevelEntry[] | null;
+  puts?: MovementLevelEntry[] | null;
   current_price?: number | null;
   reach_rate_note?: string | null;
 }

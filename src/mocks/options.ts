@@ -6,7 +6,7 @@
  * wiring — so the app's mock mode and the E2E mocks cannot drift.
  *
  * The /options page (OptionsFlowPage.tsx) fans out to FIVE endpoints:
- *   Heatseeker/Swing (default tab, SwingMode.tsx):
+ *   Gamma Map/Swing (default tab, SwingMode.tsx):
  *     GET  /api/options/dates/{ticker}          latest snapshot date
  *     GET  /api/options/{ticker}/grid?…         useGammaGrid   → GammaGridSummary
  *     GET  /api/options/{ticker}/{date}/levels  useGammaLevels → GammaLevelsResponse
@@ -137,6 +137,14 @@ export const MOCK_OPTIONS_CHAIN = {
   // `data_source` is the vendor and is 'alphavantage' on both paths.
   metadata: { source: 'cloud_sql', data_source: 'alphavantage', row_count: 10 },
   cached: false,
+} satisfies OptionsChainResponse;
+
+/** GET /api/options/live/{ticker}/{date} — the AV live-proxy fallback the
+ *  Profiles tab uses when the Cloud SQL EOD snapshot 404s (issue #57).
+ *  Identical chain, `metadata.source` honestly says which path answered. */
+export const MOCK_OPTIONS_CHAIN_LIVE = {
+  ...MOCK_OPTIONS_CHAIN,
+  metadata: { source: 'alphavantage_live', data_source: 'alphavantage', row_count: 10 },
 } satisfies OptionsChainResponse;
 
 // ── Greeks ─────────────────────────────────────────────────────────────────
@@ -347,7 +355,7 @@ export const optionsRoutes: MockRoute[] = [
   { pattern: /^\/api\/options\/dates\/IWM$/, reply: () => ({ body: MOCK_OPTIONS_DATES }) },
   { pattern: /^\/api\/options\/IWM\/grid$/, reply: () => ({ body: MOCK_GRID_POPULATED }) },
   // Historical mode requests /{date}/grid (useGammaGrid) — same populated
-  // payload; without this route a normal Heatseeker workflow 501s.
+  // payload; without this route a normal Gamma Map workflow 501s.
   {
     pattern: /^\/api\/options\/IWM\/([^/]+)\/grid$/,
     reply: () => ({ body: MOCK_GRID_POPULATED }),
@@ -359,5 +367,12 @@ export const optionsRoutes: MockRoute[] = [
   { pattern: /^\/api\/options\/IWM\/nodes$/, reply: () => ({ body: MOCK_NODES_UNAVAILABLE }) },
   { pattern: /^\/api\/options\/IWM\/([^/]+)\/nodes$/, reply: () => ({ body: MOCK_NODES_UNAVAILABLE }) },
   { pattern: /^\/api\/options\/IWM\/([^/]+)$/, reply: () => ({ body: MOCK_OPTIONS_CHAIN }) },
+  // The live AV fallback (issue #57): same chain, honestly labelled as the
+  // live-proxy source so ProfilesTab's footer shows "AlphaVantage Live"
+  // instead of pretending a Cloud SQL snapshot answered.
+  {
+    pattern: /^\/api\/options\/live\/([^/]+)\/([^/]+)$/,
+    reply: () => ({ body: MOCK_OPTIONS_CHAIN_LIVE }),
+  },
   { method: 'POST', pattern: /^\/api\/options\/greeks$/, reply: () => ({ body: MOCK_GREEKS }) },
 ];

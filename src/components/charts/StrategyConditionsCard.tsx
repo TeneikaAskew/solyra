@@ -70,7 +70,8 @@ function FiringBadge({
   callMet,
   putMet,
 }: {
-  firing: 'CALL' | 'PUT' | null;
+  /** Omitted and null both mean "neither side fires" (schema-optional). */
+  firing: 'CALL' | 'PUT' | null | undefined;
   callMet: number;
   putMet: number;
 }) {
