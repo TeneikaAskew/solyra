@@ -4152,6 +4152,25 @@ export interface components {
             /** Ticker */
             ticker: string;
         };
+        /**
+         * MineStyleAggregateMetrics
+         * @description The keys the frontend's style panel renders, typed but optional:
+         *     lib/walk_forward._aggregate_metrics only emits avg_*\/std_* keys the
+         *     folds actually produced, so none of these are guaranteed present. Every
+         *     other fold metric passes through untyped (ApiModel allows extras).
+         */
+        MineStyleAggregateMetrics: {
+            /** Avg Expectancy Pct */
+            avg_expectancy_pct?: number | null;
+            /** Avg Win Rate */
+            avg_win_rate?: number | null;
+            /** Total Folds */
+            total_folds?: number | null;
+            /** Total Trades All Folds */
+            total_trades_all_folds?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** MineStyleProfile */
         MineStyleProfile: {
             /** Conditions */
@@ -4167,10 +4186,7 @@ export interface components {
         };
         /** MineStyleSuccess */
         MineStyleSuccess: {
-            /** Aggregate Metrics */
-            aggregate_metrics: {
-                [key: string]: number;
-            };
+            aggregate_metrics: components["schemas"]["MineStyleAggregateMetrics"];
             profile: components["schemas"]["MineStyleProfile"];
             /** Stability Score */
             stability_score: number;
@@ -4972,8 +4988,11 @@ export interface components {
         };
         /** RuntimeConfigResponse */
         RuntimeConfigResponse: {
-            /** Authmode */
-            authMode: string;
+            /**
+             * Authmode
+             * @enum {string}
+             */
+            authMode: "open" | "firebase" | "iap";
             firebase?: components["schemas"]["FirebaseWebConfig"] | null;
         } & {
             [key: string]: unknown;
@@ -5299,7 +5318,7 @@ export interface components {
              * @default {}
              */
             class_probs: {
-                [key: string]: unknown;
+                [key: string]: number;
             };
             /** Last Train Date */
             last_train_date?: string | null;

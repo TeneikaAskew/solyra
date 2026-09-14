@@ -53,6 +53,7 @@ import type {
   AdminDataSourcesResponse,
   AdminUsersResponse,
   StratEngineStateResponse,
+  StratPredictResponse,
   StructureBriefResponse,
 } from '@/hooks/useAdmin';
 import type { IndicatorConfig, MarketHours } from '@/hooks/useConfig';
@@ -78,6 +79,7 @@ import type { SimilarResponse } from '@/hooks/useSimilarSetups';
 import type { WatchlistAddResult } from '@/hooks/useTickerSearch';
 import type { MeResponse } from '@/hooks/useUser';
 import type { ReportListResponse } from '@/lib/reports';
+import type { RuntimeConfig } from '@/lib/runtimeConfig';
 import type { MostActiveResponse } from '@/components/shared/MostActiveBar';
 import type { SectorsResponse } from '@/mocks/dashboard';
 import type { CatalystTypesResponse, CatalystsResponse } from '@/routes/CatalystsPage';
@@ -160,5 +162,7 @@ export type AssignabilityChecks = [
   Expect<IsAssignable<S['IndicatorConfigResponse'], IndicatorConfig>>,
   Expect<IsAssignable<S['MarketDataResponse'], MarketDataResponse>>,
   Expect<IsAssignable<S['MarketHoursResponse'], MarketHours>>,
+  Expect<IsAssignable<S['RuntimeConfigResponse'], RuntimeConfig>>,
+  Expect<IsAssignable<S['StratEnginePredictResponse'], StratPredictResponse>>,
   Expect<IsAssignable<S['WatchlistAddResponse'], WatchlistAddResult>>,
 ];
