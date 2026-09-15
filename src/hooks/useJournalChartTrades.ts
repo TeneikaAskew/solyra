@@ -59,6 +59,15 @@ export interface JournalDeleteResponse {
   deleted: string;
 }
 
+/** POST /api/journal/export/{ticker} — JournalPage reads
+ *  `trades_exported`/`filename` for its status line. */
+export interface JournalExportResponse {
+  success: boolean;
+  trades_exported: number;
+  output_path: string;
+  filename: string;
+}
+
 // ── Seed layer (Task 2.4) ────────────────────────────────────────────────
 // GET /api/journal/seed/{ticker}?date= (platform/api/routers/journal.py
 // seed_trades). Read-only admin pull from the automated pipeline `trades`

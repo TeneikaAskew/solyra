@@ -27,6 +27,7 @@ import type {
   ImportPreviewResponse,
   ImportPreviewTrade,
   JournalDeleteResponse,
+  JournalExportResponse,
   JournalMutationResponse,
   JournalRow,
   JournalTradesResponse,
@@ -276,7 +277,7 @@ export const MOCK_JOURNAL_EXPORT = {
   trades_exported: 1,
   output_path: 'data/signals/iwm_trade_tracker.csv',
   filename: 'iwm_trade_tracker.csv',
-};
+} satisfies JournalExportResponse;
 
 // ── "My style" panel (POST /api/style/mine-and-validate, issue #14) ────────
 // Wired into journalRoutes below since issue #57 (mock mode answers the

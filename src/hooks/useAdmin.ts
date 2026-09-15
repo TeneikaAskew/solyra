@@ -18,8 +18,8 @@ export interface RouteRow {
   role: string;
   provider: string;
   model: string;
-  updated_at: string | null;
-  updated_by: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
 }
 
 export interface AvailableModelRow {
@@ -30,8 +30,12 @@ export interface AvailableModelRow {
   output_usd_per_mtok: number;
 }
 
+export interface RouteListResponse {
+  routes: RouteRow[];
+}
+
 export function useAdminRoutes(enabled: boolean) {
-  return useQuery<{ routes: RouteRow[] }>({
+  return useQuery<RouteListResponse>({
     queryKey: ['admin-routes'],
     queryFn: async () => {
       const r = await fetch('/api/admin/routes');
@@ -44,8 +48,12 @@ export function useAdminRoutes(enabled: boolean) {
   });
 }
 
+export interface AvailableModelsResponse {
+  models: AvailableModelRow[];
+}
+
 export function useAdminModels(enabled: boolean) {
-  return useQuery<{ models: AvailableModelRow[] }>({
+  return useQuery<AvailableModelsResponse>({
     queryKey: ['admin-models'],
     queryFn: async () => {
       const r = await fetch('/api/admin/models');
@@ -342,11 +350,17 @@ export function useAdminDataSources(enabled: boolean) {
   });
 }
 
+export interface DataSourceRefreshResult {
+  id: string;
+  queued: boolean;
+  job_id?: string | null;
+}
+
 export function useRefreshDataSource() {
   const qc = useQueryClient();
-  return useMutation<{ id: string; queued: boolean; job_id: string | null }, Error, { id: string }>({
+  return useMutation<DataSourceRefreshResult, Error, { id: string }>({
     mutationFn: ({ id }) =>
-      adminJson<{ id: string; queued: boolean; job_id: string | null }>(
+      adminJson<DataSourceRefreshResult>(
         `/api/admin/data-sources/${encodeURIComponent(id)}/refresh`,
         { method: 'POST', body: JSON.stringify({}) },
       ),

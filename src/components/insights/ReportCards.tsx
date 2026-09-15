@@ -483,17 +483,19 @@ export function DegradationBanner({ failedSections }: { failedSections: string[]
 // insight pipeline's direction.
 // ---------------------------------------------------------------------------
 
-type BriefBias = 'bullish' | 'bearish' | 'neutral';
-
+// Mirrors the widened BriefDirection (DashboardBriefResponse makes every
+// field optional-nullable and leaves signal_status/ftfc_direction
+// untyped); the card narrows what it renders.
 interface BriefDirectionLite {
-  bias: BriefBias;
-  signal_status: string | null;
-  ftfc_direction: 'bullish' | 'bearish' | 'mixed' | null;
+  bias?: string | null;
+  signal_status?: unknown;
+  ftfc_direction?: unknown;
 }
 
 // Map brief bias to the equivalent insight direction so we can decide
-// agreement. neutral → flat treats "no opinion" as "stand aside".
-function biasToDirection(bias: BriefBias): Direction {
+// agreement. Anything that isn't an explicit bullish/bearish (neutral,
+// absent, or an unrecognized value) → flat: "no opinion" is "stand aside".
+function biasToDirection(bias: string | null | undefined): Direction {
   if (bias === 'bullish') return 'long';
   if (bias === 'bearish') return 'short';
   return 'flat';
@@ -559,10 +561,10 @@ export function BriefVsInsightsCard({
             <div>
               <dt className="inline">bias: </dt>
               <dd className="inline font-medium text-[var(--on-surface)]">
-                {brief.bias}
+                {typeof brief.bias === 'string' && brief.bias !== '' ? brief.bias : '—'}
               </dd>
             </div>
-            {brief.signal_status && (
+            {typeof brief.signal_status === 'string' && brief.signal_status !== '' && (
               <div>
                 <dt className="inline">signal_status: </dt>
                 <dd className="inline font-medium text-[var(--on-surface)]">
@@ -570,7 +572,7 @@ export function BriefVsInsightsCard({
                 </dd>
               </div>
             )}
-            {brief.ftfc_direction && (
+            {typeof brief.ftfc_direction === 'string' && brief.ftfc_direction !== '' && (
               <div>
                 <dt className="inline">FTFC: </dt>
                 <dd className="inline font-medium text-[var(--on-surface)]">
