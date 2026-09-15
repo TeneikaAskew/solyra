@@ -375,8 +375,10 @@ export const MOCK_SEED_TRADES = {
 // appends, PATCH closes, DELETE removes, import/commit appends
 // non-duplicates, and the per-ticker GET reads it. Starts empty (same
 // first render as before); mock mode is a per-tab dev mode, so a reload
-// starts clean. Fixture math below (return %, duplicate detection) is
-// mock-only canned behavior, exempt from Rule 4.
+// starts clean. Return %/status/dedupe below mirror journal.py's own
+// helpers (`_return_pct`, `_import_return_pct`, `_derive_status`,
+// `_dedupe_key`) so mock mode can't render a win for a loss (Codex, #64
+// verification review).
 
 const journalStore: JournalRow[] = [];
 let nextMockId = 1;
@@ -385,20 +387,41 @@ let nextMockId = 1;
  *  the way the server re-checks its own journal. */
 const PREVIEW_DUPLICATE = MOCK_IMPORT_PREVIEW.trades[0];
 
+/** journal.py `_dedupe_key` compares entry_ts at MINUTE precision with a
+ *  space separator — a created row stores seconds ("...T09:31:00") while a
+ *  broker import arrives as "... 09:31", and the two must still collide. */
+const minuteKey = (ts: string): string => ts.replace('T', ' ').slice(0, 16);
+
 const isStoredDuplicate = (t: {
   ticker: string; direction: string; entry_ts: string; entry_price: number;
-}): boolean =>
-  journalStore.some(
-    (row) =>
-      row.ticker === t.ticker &&
-      row.direction === t.direction &&
-      row.entry_ts === t.entry_ts &&
-      row.entry_price === t.entry_price,
-  ) ||
-  (t.ticker === PREVIEW_DUPLICATE.ticker &&
-    t.direction === PREVIEW_DUPLICATE.direction &&
-    t.entry_ts === PREVIEW_DUPLICATE.entry_ts &&
-    t.entry_price === PREVIEW_DUPLICATE.entry_price);
+}): boolean => {
+  const key = minuteKey(t.entry_ts);
+  return (
+    journalStore.some(
+      (row) =>
+        row.ticker === t.ticker &&
+        row.direction === t.direction &&
+        typeof row.entry_ts === 'string' &&
+        minuteKey(row.entry_ts) === key &&
+        row.entry_price === t.entry_price,
+    ) ||
+    (t.ticker === PREVIEW_DUPLICATE.ticker &&
+      t.direction === PREVIEW_DUPLICATE.direction &&
+      minuteKey(PREVIEW_DUPLICATE.entry_ts) === key &&
+      t.entry_price === PREVIEW_DUPLICATE.entry_price)
+  );
+};
+
+/** journal.py `_derive_status`: no exit → active; otherwise win/loss/
+ *  breakeven by the sign of the server-recomputed return. Client-supplied
+ *  status is never trusted. */
+const deriveMockStatus = (hasExit: boolean, pct: number | null): string => {
+  if (!hasExit) return 'active';
+  if (pct == null) return 'closed';
+  if (pct > 0) return 'win';
+  if (pct < 0) return 'loss';
+  return 'breakeven';
+};
 
 /**
  * Mock-mode routes OWNED by the journal domain: the journal reads, the
@@ -440,6 +463,7 @@ export const journalRoutes: MockRoute[] = [
         ticker: string; direction: string; entry_date: string;
         entry_time: string; entry_price: number; stop_loss: number;
         take_profits: number[]; source: string; session_id: string;
+        exit_date: string; exit_time: string; exit_price: number;
       }>;
       const id = `mock-created-${nextMockId++}`;
       if (
@@ -449,22 +473,43 @@ export const journalRoutes: MockRoute[] = [
         typeof b.entry_time === 'string' &&
         typeof b.entry_price === 'number'
       ) {
+        // JournalTradeCreate accepts optional exit_* — JournalPage's manual
+        // form logs already-closed trades in one POST. Dropping them stored
+        // every such trade as active (Codex, #64 verification review).
+        const hasExit =
+          typeof b.exit_date === 'string' &&
+          typeof b.exit_time === 'string' &&
+          typeof b.exit_price === 'number';
+        // journal.py `_return_pct`: UNDERLYING price convention — a PUT
+        // profits when the underlying falls, so the sign flips. (Imports
+        // use premium math WITHOUT the flip — see import/commit below.)
+        const raw = hasExit && b.entry_price !== 0
+          ? ((b.exit_price! - b.entry_price) / b.entry_price) * 100
+          : hasExit ? 0 : null;
+        const pct = raw == null
+          ? null
+          : Number((b.direction === 'PUT' ? -raw : raw).toFixed(2));
+        const status = deriveMockStatus(hasExit, pct);
         journalStore.push({
           id,
           ticker: b.ticker.toUpperCase(),
           direction: b.direction,
           // journal.py's local-row shape: `${date}T${time}:00`, naive-ET.
           entry_ts: `${b.entry_date}T${b.entry_time}:00`,
-          exit_ts: null,
+          exit_ts: hasExit ? `${b.exit_date}T${b.exit_time}:00` : null,
           entry_price: b.entry_price,
-          exit_price: null,
-          return_pct: null,
+          exit_price: hasExit ? b.exit_price! : null,
+          return_pct: pct,
           take_profits: b.take_profits,
           stop_loss: typeof b.stop_loss === 'number' ? b.stop_loss : null,
-          status: 'active',
+          status,
           source: typeof b.source === 'string' ? b.source : 'chart',
           session_id: typeof b.session_id === 'string' ? b.session_id : null,
         });
+        const body = {
+          ...MOCK_JOURNAL_CREATE, id, return_pct: pct, status,
+        } satisfies JournalMutationResponse;
+        return { body };
       }
       return { body: { ...MOCK_JOURNAL_CREATE, id } };
     },
@@ -493,7 +538,8 @@ export const journalRoutes: MockRoute[] = [
         const raw = ((b.exit_price - row.entry_price) / row.entry_price) * 100;
         const pct = Number((row.direction === 'PUT' ? -raw : raw).toFixed(2));
         row.return_pct = pct;
-        row.status = pct >= 0 ? 'win' : 'loss';
+        // journal.py `_derive_status`: a flat close is breakeven, not a win.
+        row.status = deriveMockStatus(true, pct);
         const body = {
           source: 'cloud_sql',
           id,
@@ -525,8 +571,11 @@ export const journalRoutes: MockRoute[] = [
     // "Import 1 trade" button (Codex, #64). Non-duplicates land in the
     // store so the journal read reflects the import.
     reply: (req) => {
-      const b = (req.body ?? {}) as Partial<{ trades: unknown[] }>;
+      const b = (req.body ?? {}) as Partial<{ broker: string; trades: unknown[] }>;
       const submitted = Array.isArray(b.trades) ? b.trades : [];
+      const source = typeof b.broker === 'string'
+        ? `import:${b.broker.toLowerCase()}`
+        : 'import:robinhood';
       let imported = 0;
       let skipped = 0;
       for (const raw of submitted) {
@@ -542,6 +591,9 @@ export const journalRoutes: MockRoute[] = [
         const key = {
           ticker: t.ticker.toUpperCase(),
           direction: t.direction,
+          // Stored VERBATIM at the preview's minute precision — exactly
+          // what the server's shared insert path does; the chart parser
+          // (isoNaiveToEpoch) accepts the missing seconds.
           entry_ts: t.entry_ts,
           entry_price: t.entry_price,
         };
@@ -549,14 +601,24 @@ export const journalRoutes: MockRoute[] = [
           skipped += 1;
           continue;
         }
+        // import_commit NEVER trusts the client's return_pct/status: it
+        // recomputes via `_import_return_pct` — PREMIUM math, a long-only
+        // BTO→STC round trip where a rising premium is always a gain, so
+        // NO CALL/PUT sign flip (unlike create/close's underlying math) —
+        // and re-derives status. The old `? 'active' : 'win'` mapping
+        // stored losing closed trades as wins (Codex, #64 verification).
+        const hasExit = typeof t.exit_ts === 'string' && typeof t.exit_price === 'number';
+        const pct = hasExit && t.entry_price !== 0
+          ? Number((((t.exit_price! - t.entry_price) / t.entry_price) * 100).toFixed(4))
+          : hasExit ? 0 : null;
         journalStore.push({
           id: `mock-import-${nextMockId++}`,
           ...key,
-          exit_ts: typeof t.exit_ts === 'string' ? t.exit_ts : null,
-          exit_price: typeof t.exit_price === 'number' ? t.exit_price : null,
-          return_pct: typeof t.return_pct === 'number' ? t.return_pct : null,
-          status: t.status === 'active' ? 'active' : 'win',
-          source: 'manual',
+          exit_ts: hasExit ? t.exit_ts! : null,
+          exit_price: hasExit ? t.exit_price! : null,
+          return_pct: pct,
+          status: deriveMockStatus(hasExit, pct),
+          source,
           session_id: null,
         });
         imported += 1;

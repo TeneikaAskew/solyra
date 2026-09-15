@@ -114,20 +114,25 @@ export function epochToJournalDateTime(epochSec: number): { date: string; time: 
 /**
  * Reverse of epochToJournalDateTime. The journal API returns entry_ts/exit_ts
  * as ISO-ish strings that encode the SAME naive-ET wall clock (never real
- * UTC) — but the exact separator/offset varies by storage backend:
+ * UTC) — but the exact separator/offset/precision varies by storage backend:
  *   - local-fallback rows: "2026-07-02T13:35:00"       ('T', no offset —
  *     built as `${date}T${time}:00` in journal.py's create_trade)
  *   - Cloud SQL rows:      "2026-07-02 13:35:00+00:00"  (space + offset,
  *     from the `entry_ts AT TIME ZONE 'UTC'` cast in journal.py's SELECT)
+ *   - broker-import rows:  "2026-06-01 00:00"           (MINUTE precision —
+ *     ImportCommitTrade.entry_ts is "YYYY-MM-DD HH:MM" and the shared
+ *     insert path stores it verbatim, so local-mode read-back has no
+ *     seconds; requiring them made every such row a silent NaN)
  * `new Date(isoString)` is forbidden here (local-tz dependent, per project
- * convention) — instead pull the y/m/d/h/mi/s digits out with a regex and
+ * convention) — instead pull the y/m/d/h/mi[/s] digits out with a regex and
  * rebuild the epoch via Date.UTC, which reproduces the exact wall-clock
- * value regardless of separator or trailing offset.
+ * value regardless of separator, precision, or trailing offset.
  */
 export function isoNaiveToEpoch(iso: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/.exec(iso);
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(iso);
   if (!m) return NaN;
-  const [y, mo, d, h, mi, s] = m.slice(1).map(Number);
+  const [y, mo, d, h, mi] = m.slice(1, 6).map(Number);
+  const s = m[6] === undefined ? 0 : Number(m[6]);
   return Math.floor(Date.UTC(y, mo - 1, d, h, mi, s) / 1000);
 }
 

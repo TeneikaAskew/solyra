@@ -43,8 +43,24 @@ describe('isoNaiveToEpoch', () => {
     expect(isoNaiveToEpoch('2026-07-02T13:35:00.123456+00:00')).toBe(expected);
   });
 
+  it('parses minute-precision broker-import rows (space separator, no seconds)', () => {
+    // ImportCommitTrade.entry_ts is "YYYY-MM-DD HH:MM" (journal.py) and the
+    // shared insert path stores it VERBATIM, so a local-mode read-back is
+    // genuinely minute-precision. Requiring seconds made these rows chart
+    // as NaN — silently unplottable (Codex, #64 verification review).
+    expect(isoNaiveToEpoch('2026-07-02 13:35')).toBe(expected);
+  });
+
+  it('parses minute-precision with a "T" separator', () => {
+    expect(isoNaiveToEpoch('2026-07-02T13:35')).toBe(expected);
+  });
+
   it('returns NaN for an unparseable string', () => {
     expect(Number.isNaN(isoNaiveToEpoch('not-a-date'))).toBe(true);
+  });
+
+  it('returns NaN when the minute is truncated', () => {
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13'))).toBe(true);
   });
 });
 
