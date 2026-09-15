@@ -414,18 +414,25 @@ const isStoredDuplicate = (t: {
 };
 
 /** Rows POST /api/backtest/replay-trades scores: backtest.py accepts
- *  trade_ids and/or session_id (either or both). Exported for
- *  mocks/charts.ts — a replay session's scorecard must reflect the
- *  caller's own trades, not a canned pair (Codex, #64 verification). */
+ *  trade_ids and/or session_id (either or both), and its SQL scopes to
+ *  the request's ticker BEFORE the id/session predicate — a session
+ *  belonging to ticker A must not answer a request for ticker B
+ *  (Codex, #66). Exported for mocks/charts.ts — a replay session's
+ *  scorecard must reflect the caller's own trades, not a canned pair
+ *  (Codex, #64 verification). */
 export const selectReplayRows = (
+  ticker: string,
   tradeIds: string[] | null | undefined,
   sessionId: string | null | undefined,
-): JournalRow[] =>
-  journalStore.filter(
+): JournalRow[] => {
+  const tickerUpper = ticker.toUpperCase();
+  return journalStore.filter(
     (row) =>
-      (Array.isArray(tradeIds) && tradeIds.includes(row.id)) ||
-      (typeof sessionId === 'string' && sessionId !== '' && row.session_id === sessionId),
+      row.ticker === tickerUpper &&
+      ((Array.isArray(tradeIds) && tradeIds.includes(row.id)) ||
+        (typeof sessionId === 'string' && sessionId !== '' && row.session_id === sessionId)),
   );
+};
 
 /** journal.py `_derive_status`: no exit → active; otherwise win/loss/
  *  breakeven by the sign of the server-recomputed return. Client-supplied
@@ -504,9 +511,12 @@ export const journalRoutes: MockRoute[] = [
         const raw = hasExit && b.entry_price !== 0
           ? ((b.exit_price! - b.entry_price) / b.entry_price) * 100
           : null;
+        // create_trade rounds to FOUR decimals (journal.py:1104) — two
+        // coarsened the stored value and mock-mode stats diverged from
+        // production (Codex, #66).
         const pct = raw == null
           ? null
-          : Number((b.direction === 'PUT' ? -raw : raw).toFixed(2));
+          : Number((b.direction === 'PUT' ? -raw : raw).toFixed(4));
         const status = deriveMockStatus(hasExit, pct);
         journalStore.push({
           id,
@@ -554,7 +564,9 @@ export const journalRoutes: MockRoute[] = [
         // entry, PUT when exit < entry — the sign-corrected return_pct
         // convention journal.py documents on JournalRow.
         const raw = ((b.exit_price - row.entry_price) / row.entry_price) * 100;
-        const pct = Number((row.direction === 'PUT' ? -raw : raw).toFixed(2));
+        // The close paths return ret_pct UNROUNDED (journal.py:1195/:1243),
+        // unlike create's round-to-4 — mirror that asymmetry (Codex, #66).
+        const pct = row.direction === 'PUT' ? -raw : raw;
         row.return_pct = pct;
         // journal.py `_derive_status`: a flat close is breakeven, not a win.
         row.status = deriveMockStatus(true, pct);

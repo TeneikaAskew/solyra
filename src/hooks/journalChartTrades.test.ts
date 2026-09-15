@@ -62,6 +62,16 @@ describe('isoNaiveToEpoch', () => {
   it('returns NaN when the minute is truncated', () => {
     expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13'))).toBe(true);
   });
+
+  it('rejects malformed partial seconds instead of silently plotting :00', () => {
+    // The optional-seconds group must not backtrack "13:35:4" into a valid
+    // 13:35 — the required-seconds regex rejected it, and accepting the
+    // prefix would plot a corrupt timestamp as a real bar (Codex, #66).
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:4'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02T13:35:4'))).toBe(true);
+    // A run-on minute is equally malformed.
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:355'))).toBe(true);
+  });
 });
 
 describe('journalRowToTradeEntry', () => {

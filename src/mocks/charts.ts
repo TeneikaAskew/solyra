@@ -200,12 +200,15 @@ export const chartsRoutes: MockRoute[] = [
       const b = (req.body ?? {}) as Partial<{
         ticker: string; trade_ids: string[]; session_id: string;
       }>;
+      if (typeof b.ticker !== 'string' || b.ticker === '') {
+        return { status: 422, body: { detail: 'ticker is required' } };
+      }
       const hasIds = Array.isArray(b.trade_ids) && b.trade_ids.length > 0;
       const hasSession = typeof b.session_id === 'string' && b.session_id !== '';
       if (!hasIds && !hasSession) {
         return { status: 422, body: { detail: 'trade_ids or session_id is required' } };
       }
-      const rows = selectReplayRows(b.trade_ids, b.session_id);
+      const rows = selectReplayRows(b.ticker, b.trade_ids, b.session_id);
       if (rows.length === 0) {
         return { status: 404, body: { detail: 'no matching trades found' } };
       }

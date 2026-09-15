@@ -229,6 +229,31 @@ describe('journal mutation semantics (server parity)', () => {
     expect(row.status).toBe('win');
   });
 
+  it('create rounds to four decimals like journal.py; close leaves the return unrounded', () => {
+    // Server parity on precision: create_trade rounds `round(ret_pct, 4)`,
+    // the close paths return ret_pct unrounded (journal.py:1104 vs :1195).
+    // toFixed(2) prematurely coarsened the stored value, so mock-mode
+    // stats diverged from production (Codex, #66).
+    const created = post('/api/journal/trades', {
+      ticker: 'XPREC', direction: 'CALL', entry_date: '2026-06-19',
+      entry_time: '10:00', entry_price: 3,
+      exit_date: '2026-06-19', exit_time: '14:00', exit_price: 1,
+      source: 'manual',
+    });
+    // (1-3)/3*100 = -66.666...; four decimals, not -66.67.
+    expect(JSON.parse(created!.payload).return_pct).toBe(-66.6667);
+
+    const open = post('/api/journal/trades', {
+      ticker: 'XPREC', direction: 'CALL', entry_date: '2026-06-19',
+      entry_time: '11:00', entry_price: 3, source: 'chart',
+    });
+    const id = JSON.parse(open!.payload).id as string;
+    const closed = resolveMock('PATCH', new URL(`http://mock.test/api/journal/trades/${id}`), {
+      exit_date: '2026-06-19', exit_time: '15:00', exit_price: 1,
+    });
+    expect(JSON.parse(closed!.payload).return_pct).toBeCloseTo(-200 / 3, 10);
+  });
+
   it('a zero entry price keeps the return null and derives closed, never a fabricated 0%', () => {
     // A 0 denominator makes the percentage uncomputable. journal.py's
     // `_return_pct` used to fabricate 0.0 there (Rule 3.7 violation, being
@@ -326,8 +351,8 @@ describe('journal mutation semantics (server parity)', () => {
     expect(body.trades.map((t: { id: string }) => t.id)).toEqual([winId, lossId, openId]);
     const [win, loss, open] = body.trades;
     expect(win.status).toBe('ok');
-    expect(win.actual_return_pct).toBe(2);
-    expect(loss.actual_return_pct).toBe(-3);
+    expect(win.actual_return_pct).toBeCloseTo(2, 10);
+    expect(loss.actual_return_pct).toBeCloseTo(-3, 10);
     expect(open.status).toBe('unavailable');
     expect(open.reason).toMatch(/still open/);
     expect(body.aggregate).toMatchObject({
@@ -356,5 +381,16 @@ describe('journal mutation semantics (server parity)', () => {
     // And neither selector mirrors the endpoint's 422.
     const neither = post('/api/backtest/replay-trades', { ticker: 'IWM' });
     expect(neither!.status).toBe(422);
+  });
+
+  it('replay-trades scopes to the requested ticker like the production query', () => {
+    // backtest.py's SQL is `WHERE ticker = :ticker AND ... AND (ids/session)`
+    // — a session that belongs to XRPL must not answer a request for
+    // another symbol with XRPL's scorecard (Codex, #66).
+    const wrongTicker = post('/api/backtest/replay-trades', { ticker: 'SPYX', session_id: 'sess-9' });
+    expect(wrongTicker!.status).toBe(404);
+    const [winner] = tradesFor('XRPL');
+    const wrongTickerById = post('/api/backtest/replay-trades', { ticker: 'SPYX', trade_ids: [winner.id] });
+    expect(wrongTickerById!.status).toBe(404);
   });
 });

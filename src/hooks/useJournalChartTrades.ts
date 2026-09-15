@@ -138,7 +138,11 @@ export function epochToJournalDateTime(epochSec: number): { date: string; time: 
  * value regardless of separator, precision, or trailing offset.
  */
 export function isoNaiveToEpoch(iso: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(iso);
+  // The trailing lookahead stops the optional-seconds group backtracking a
+  // malformed tail ("13:35:4", "13:355") into a valid 13:35 — a corrupt
+  // timestamp is NaN, never silently plotted at :00 (Codex, #66). Valid
+  // tails (end, ".ffffff", "+00:00") carry no leading [:]digit.
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?!:?\d)/.exec(iso);
   if (!m) return NaN;
   const [y, mo, d, h, mi] = m.slice(1, 6).map(Number);
   const s = m[6] === undefined ? 0 : Number(m[6]);
