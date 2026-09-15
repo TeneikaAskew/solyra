@@ -12,7 +12,6 @@ import { MOCK_ADMIN_ROUTES } from './admin';
 import { MOCK_GRID_POPULATED } from './options';
 import { MOCK_PROFILE } from './common';
 import { MOCK_MOVEMENT_STATEMENT, MOCK_PLAYBOOK } from './dashboard';
-import { MOCK_REPLAY_TRADES } from './charts';
 
 const get = (path: string) =>
   resolveMock('GET', new URL(`http://mock.test${path}`), undefined);
@@ -341,15 +340,21 @@ describe('journal mutation semantics (server parity)', () => {
     expect(body.aggregate.avg_exit_edge_bps).toBeNull();
   });
 
-  it('replay-trades honors explicit trade_ids and keeps the static fallback for a miss', () => {
+  it('replay-trades honors explicit trade_ids and 404s a miss like backtest.py', () => {
     const [winner] = tradesFor('XRPL');
     const byIds = post('/api/backtest/replay-trades', { ticker: 'XRPL', trade_ids: [winner.id] });
     const scored = JSON.parse(byIds!.payload);
     expect(scored.trades.map((t: { id: string }) => t.id)).toEqual([winner.id]);
     expect(scored.aggregate).toMatchObject({ n: 1, scored_n: 1, win_rate: 1 });
-    // Nothing matches (e.g. the contract suite's synthesized sample):
-    // the static seed scorecard keeps the typed-200 validation exercised.
+    // A stale session or deleted trade is a 404 "no matching trades
+    // found" on the real endpoint — answering the unrelated seed pair
+    // with a 200 presented fabricated results as the caller's own
+    // (Codex, #66).
     const miss = post('/api/backtest/replay-trades', { ticker: 'IWM', session_id: 'nope' });
-    expect(JSON.parse(miss!.payload)).toEqual(MOCK_REPLAY_TRADES);
+    expect(miss!.status).toBe(404);
+    expect(JSON.parse(miss!.payload).detail).toMatch(/no matching trades/);
+    // And neither selector mirrors the endpoint's 422.
+    const neither = post('/api/backtest/replay-trades', { ticker: 'IWM' });
+    expect(neither!.status).toBe(422);
   });
 });

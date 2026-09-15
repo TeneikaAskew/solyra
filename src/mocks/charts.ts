@@ -177,39 +177,6 @@ export const MOCK_JOURNAL_TRADES_ONE_CLOSED = {
  * own modules — one canonical payload per endpoint, so no page's fixture
  * can shadow a richer one (Codex P2 on PR #46).
  */
-/** POST /api/backtest/replay-trades — the replay-trainer scorecard for the
- *  two MOCK_SEED_TRADES (issue #57): one scored close, one still open. The
- *  aggregate mirrors lib/backtest.py's honest-null discipline (win_rate and
- *  averages over the SCORED set only, never fabricated from n=0). */
-export const MOCK_REPLAY_TRADES = {
-  trades: [
-    {
-      id: 'seed-1',
-      status: 'ok',
-      actual_return_pct: 0.78,
-      fill_check: 'ok',
-      system_signal_at_entry: { direction: 'CALL', score: 0.64 },
-      system_exit: { exit_reason: 'target', return_pct: 0.91, exit_time: '2026-04-24T15:20:00' },
-      exit_edge_bps: -13,
-    },
-    {
-      id: 'seed-2',
-      status: 'unavailable',
-      reason: 'trade still open — nothing to score',
-    },
-  ],
-  aggregate: {
-    n: 2,
-    scored_n: 1,
-    win_rate: 1,
-    avg_return_pct: 0.78,
-    system_resolved_n: 1,
-    system_no_signal_n: 0,
-    system_agreement_rate: 1,
-    avg_exit_edge_bps: -13,
-  },
-} satisfies ReplayTradesResponse;
-
 export const chartsRoutes: MockRoute[] = [
   { pattern: /^\/api\/market\/dates\/IWM$/, reply: () => ({ body: MOCK_MARKET_DATES }) },
   {
@@ -224,15 +191,24 @@ export const chartsRoutes: MockRoute[] = [
     // Scores the CALLER'S trades (trade_ids and/or session_id, like
     // backtest.py) out of the journal mock store — a replay session's own
     // closes must show up in its scorecard, not a static seed-1/seed-2
-    // pair (Codex, #64 verification review). The static fixture answers
-    // only when nothing matches (e.g. the contract suite's synthesized
-    // sample), keeping the typed-200 validation exercised.
+    // pair (Codex, #64 verification review). A miss is the endpoint's
+    // 404 and a selector-less body its 422 — answering the seed pair
+    // with a 200 presented fabricated results as the caller's own
+    // (Codex, #66); contract.test.ts seeds a matching session before
+    // validating the typed 200.
     reply: (req) => {
       const b = (req.body ?? {}) as Partial<{
         ticker: string; trade_ids: string[]; session_id: string;
       }>;
+      const hasIds = Array.isArray(b.trade_ids) && b.trade_ids.length > 0;
+      const hasSession = typeof b.session_id === 'string' && b.session_id !== '';
+      if (!hasIds && !hasSession) {
+        return { status: 422, body: { detail: 'trade_ids or session_id is required' } };
+      }
       const rows = selectReplayRows(b.trade_ids, b.session_id);
-      if (rows.length === 0) return { body: MOCK_REPLAY_TRADES };
+      if (rows.length === 0) {
+        return { status: 404, body: { detail: 'no matching trades found' } };
+      }
 
       const trades = rows.map((row): ReplayTradeCard => {
         if (row.status === 'active' || row.return_pct == null) {
