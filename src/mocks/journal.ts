@@ -498,9 +498,12 @@ export const journalRoutes: MockRoute[] = [
         // journal.py `_return_pct`: UNDERLYING price convention — a PUT
         // profits when the underlying falls, so the sign flips. (Imports
         // use premium math WITHOUT the flip — see import/commit below.)
+        // A 0 entry price makes the percentage uncomputable: the return
+        // stays null and `deriveMockStatus` yields 'closed', never a
+        // fabricated 0%/breakeven (Rule 4; Codex, #66).
         const raw = hasExit && b.entry_price !== 0
           ? ((b.exit_price! - b.entry_price) / b.entry_price) * 100
-          : hasExit ? 0 : null;
+          : null;
         const pct = raw == null
           ? null
           : Number((b.direction === 'PUT' ? -raw : raw).toFixed(2));
@@ -623,9 +626,11 @@ export const journalRoutes: MockRoute[] = [
         // and re-derives status. The old `? 'active' : 'win'` mapping
         // stored losing closed trades as wins (Codex, #64 verification).
         const hasExit = typeof t.exit_ts === 'string' && typeof t.exit_price === 'number';
+        // A 0 entry price: return stays null → status 'closed', never a
+        // fabricated 0% (Rule 4; Codex, #66 — same rule as create above).
         const pct = hasExit && t.entry_price !== 0
           ? Number((((t.exit_price! - t.entry_price) / t.entry_price) * 100).toFixed(4))
-          : hasExit ? 0 : null;
+          : null;
         journalStore.push({
           id: `mock-import-${nextMockId++}`,
           ...key,

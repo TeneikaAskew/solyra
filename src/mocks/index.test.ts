@@ -230,6 +230,40 @@ describe('journal mutation semantics (server parity)', () => {
     expect(row.status).toBe('win');
   });
 
+  it('a zero entry price keeps the return null and derives closed, never a fabricated 0%', () => {
+    // A 0 denominator makes the percentage uncomputable. journal.py's
+    // `_return_pct` used to fabricate 0.0 there (Rule 3.7 violation, being
+    // fixed server-side); the honest envelope is a null return with the
+    // `_derive_status` 'closed' state — indistinguishable-from-flat "0%"
+    // is exactly what Rule 4 forbids (Codex, #66).
+    const created = post('/api/journal/trades', {
+      ticker: 'XZERO', direction: 'CALL', entry_date: '2026-06-17',
+      entry_time: '10:00', entry_price: 0,
+      exit_date: '2026-06-17', exit_time: '15:00', exit_price: 5,
+      source: 'manual',
+    });
+    const body = JSON.parse(created!.payload);
+    expect(body.return_pct).toBeNull();
+    expect(body.status).toBe('closed');
+    const [row] = tradesFor('XZERO');
+    expect(row.return_pct).toBeNull();
+    expect(row.status).toBe('closed');
+    expect(row.exit_price).toBe(5);
+
+    const imported = post('/api/journal/import/commit', {
+      broker: 'robinhood',
+      trades: [{
+        ticker: 'XZIMP', direction: 'PUT', entry_ts: '2026-06-18 09:30',
+        entry_price: 0, exit_ts: '2026-06-18 15:00', exit_price: 1.5,
+        return_pct: 99, quantity: 1, status: 'win', duplicate: false,
+      }],
+    });
+    expect(JSON.parse(imported!.payload)).toEqual({ imported: 1, skipped_duplicates: 0 });
+    const [impRow] = tradesFor('XZIMP');
+    expect(impRow.return_pct).toBeNull();
+    expect(impRow.status).toBe('closed');
+  });
+
   it('a flat close derives breakeven, not win', () => {
     const created = post('/api/journal/trades', {
       ticker: 'XBRK', direction: 'CALL', entry_date: '2026-06-14',
