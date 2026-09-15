@@ -12,6 +12,7 @@ import { MOCK_ADMIN_ROUTES } from './admin';
 import { MOCK_GRID_POPULATED } from './options';
 import { MOCK_PROFILE } from './common';
 import { MOCK_MOVEMENT_STATEMENT, MOCK_PLAYBOOK } from './dashboard';
+import { MOCK_REPLAY_TRADES } from './charts';
 
 const get = (path: string) =>
   resolveMock('GET', new URL(`http://mock.test${path}`), undefined);
@@ -264,5 +265,57 @@ describe('journal mutation semantics (server parity)', () => {
     });
     expect(JSON.parse(hit!.payload)).toEqual({ imported: 0, skipped_duplicates: 1 });
     expect(tradesFor('XDUP')).toHaveLength(1);
+  });
+
+  it('replay-trades scores the session\'s own journal rows, not a canned pair', () => {
+    // A replay-trainer session: two closed trades and one still open, all
+    // tagged with the same session_id via the same mock routes the app hits.
+    const mk = (direction: string, entryTime: string, exit?: { time: string; price: number }) => {
+      const created = post('/api/journal/trades', {
+        ticker: 'XRPL', direction, entry_date: '2026-06-16',
+        entry_time: entryTime, entry_price: 100,
+        source: 'replay', session_id: 'sess-9',
+      });
+      const id = JSON.parse(created!.payload).id as string;
+      if (exit) {
+        resolveMock('PATCH', new URL(`http://mock.test/api/journal/trades/${id}`), {
+          exit_date: '2026-06-16', exit_time: exit.time, exit_price: exit.price,
+        });
+      }
+      return id;
+    };
+    const winId = mk('CALL', '10:00', { time: '11:00', price: 102 });
+    const lossId = mk('PUT', '12:00', { time: '13:00', price: 103 }); // underlying rose → PUT loss
+    const openId = mk('CALL', '14:00');
+
+    const hit = post('/api/backtest/replay-trades', { ticker: 'XRPL', session_id: 'sess-9' });
+    const body = JSON.parse(hit!.payload);
+    expect(body.trades.map((t: { id: string }) => t.id)).toEqual([winId, lossId, openId]);
+    const [win, loss, open] = body.trades;
+    expect(win.status).toBe('ok');
+    expect(win.actual_return_pct).toBe(2);
+    expect(loss.actual_return_pct).toBe(-3);
+    expect(open.status).toBe('unavailable');
+    expect(open.reason).toMatch(/still open/);
+    expect(body.aggregate).toMatchObject({
+      n: 3, scored_n: 2, win_rate: 0.5, avg_return_pct: -0.5,
+      system_resolved_n: 0, system_no_signal_n: 2,
+    });
+    // No bar engine behind the mock — the benchmark stays an honest null,
+    // never a fabricated agreement rate.
+    expect(body.aggregate.system_agreement_rate).toBeNull();
+    expect(body.aggregate.avg_exit_edge_bps).toBeNull();
+  });
+
+  it('replay-trades honors explicit trade_ids and keeps the static fallback for a miss', () => {
+    const [winner] = tradesFor('XRPL');
+    const byIds = post('/api/backtest/replay-trades', { ticker: 'XRPL', trade_ids: [winner.id] });
+    const scored = JSON.parse(byIds!.payload);
+    expect(scored.trades.map((t: { id: string }) => t.id)).toEqual([winner.id]);
+    expect(scored.aggregate).toMatchObject({ n: 1, scored_n: 1, win_rate: 1 });
+    // Nothing matches (e.g. the contract suite's synthesized sample):
+    // the static seed scorecard keeps the typed-200 validation exercised.
+    const miss = post('/api/backtest/replay-trades', { ticker: 'IWM', session_id: 'nope' });
+    expect(JSON.parse(miss!.payload)).toEqual(MOCK_REPLAY_TRADES);
   });
 });

@@ -412,6 +412,20 @@ const isStoredDuplicate = (t: {
   );
 };
 
+/** Rows POST /api/backtest/replay-trades scores: backtest.py accepts
+ *  trade_ids and/or session_id (either or both). Exported for
+ *  mocks/charts.ts — a replay session's scorecard must reflect the
+ *  caller's own trades, not a canned pair (Codex, #64 verification). */
+export const selectReplayRows = (
+  tradeIds: string[] | null | undefined,
+  sessionId: string | null | undefined,
+): JournalRow[] =>
+  journalStore.filter(
+    (row) =>
+      (Array.isArray(tradeIds) && tradeIds.includes(row.id)) ||
+      (typeof sessionId === 'string' && sessionId !== '' && row.session_id === sessionId),
+  );
+
 /** journal.py `_derive_status`: no exit → active; otherwise win/loss/
  *  breakeven by the sign of the server-recomputed return. Client-supplied
  *  status is never trusted. */
