@@ -75,6 +75,16 @@ test.describe('Navigation smoke', () => {
     await expect(page.locator('a[href="/journal"]')).toBeVisible();
   });
 
+  test('the shell is branded Solyra — wordmark and document title', async ({ page }) => {
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    // One <Brand /> component backs the shell, the sign-in screen and
+    // /auth/action, so this also guards the page a Firebase action link lands
+    // on: a reset email branded Solyra must not open a page branded anything
+    // else.
+    await expect(page.getByTestId('brand-wordmark').first()).toHaveText('Solyra');
+    await expect(page).toHaveTitle('Solyra');
+  });
+
   test('market session badge is truthful — CLOSED when the market is closed', async ({ page }) => {
     await page.route('**/api/live/status', (route) =>
       route.fulfill({
