@@ -21,12 +21,15 @@ beforeEach(() => {
 });
 
 describe('initialisation', () => {
-  it('defaults to top-tabs / dense / blue and applies the body classes', async () => {
+  it('defaults to top-tabs / dense / dawn and applies the body classes', async () => {
     const { useSettingsStore } = await importStore();
     const s = useSettingsStore.getState();
-    expect([s.navPattern, s.density, s.accent]).toEqual(['top-tabs', 'dense', 'blue']);
+    expect([s.navPattern, s.density, s.accent]).toEqual(['top-tabs', 'dense', 'dawn']);
     expect(document.body.classList.contains('density-dense')).toBe(true);
-    expect(document.body.classList.contains('accent-blue')).toBe(true);
+    // `dawn` is the brand orange from the landing gradient. A visitor with no
+    // stored settings — which is everyone arriving on an emailed auth link —
+    // gets the brand, not the blue fallback.
+    expect(document.body.classList.contains('accent-dawn')).toBe(true);
   });
 
   it('merges a PARTIAL persisted object over the defaults', async () => {
@@ -56,7 +59,7 @@ describe('shell setters', () => {
     expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({
       navPattern: 'top-tabs',
       density: 'comfy',
-      accent: 'blue',
+      accent: 'dawn',
     });
   });
 
@@ -82,7 +85,7 @@ describe('shell setters', () => {
     expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({
       navPattern: 'sidebar',
       density: 'dense',
-      accent: 'blue',
+      accent: 'dawn',
     });
     expect(useSettingsStore.getState().navPattern).toBe('sidebar');
   });

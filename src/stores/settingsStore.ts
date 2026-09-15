@@ -4,6 +4,7 @@ import type { Timeframe } from '@/types';
 export type NavPattern = 'top-tabs' | 'sidebar';
 export type Density = 'comfy' | 'default' | 'dense';
 export type Accent =
+  | 'dawn'
   | 'blue'
   | 'amber'
   | 'violet'
@@ -17,6 +18,7 @@ export type Accent =
   | 'rose';
 
 export const ACCENTS: Accent[] = [
+  'dawn',
   'blue',
   'amber',
   'violet',
@@ -40,7 +42,7 @@ interface Persisted {
 
 // Dense is the product default (Bloomberg-terminal information density); users
 // can switch to default/comfy in Settings, which persists over this.
-const DEFAULTS: Persisted = { navPattern: 'top-tabs', density: 'dense', accent: 'blue' };
+const DEFAULTS: Persisted = { navPattern: 'top-tabs', density: 'dense', accent: 'dawn' };
 
 function loadPersisted(): Persisted {
   if (typeof window === 'undefined') return DEFAULTS;
