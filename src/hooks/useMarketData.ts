@@ -92,4 +92,4 @@ export function useReferenceLevels(ticker: string, date: string) {
   });
 }
 
-export type { CandlestickBar, VolumeBar, MarketDataResponse, ReferenceLevels };
+export type { CandlestickBar, VolumeBar, DatesResponse, MarketDataResponse, ReferenceLevels };

@@ -27,7 +27,7 @@ import { WidgetSkeleton } from '@/components/shared/WidgetState';
 type Metric = 'gex' | 'vex';
 type Filter = 'net' | 'calls' | 'puts';
 
-interface OptionsResponse {
+export interface OptionsResponse {
   ticker: string;
   date: string;
   options: ChainOptionRecord[];

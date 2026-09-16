@@ -51,18 +51,26 @@ import type { RankedTicker, SignalContribution, WatchlistResponse } from './watc
 // same; a type-only import pulls no runtime code into any chunk.
 import type {
   AdminDataSourcesResponse,
+  AdminUserRow,
   AdminUsersResponse,
+  AvailableModelsResponse,
+  DataSourceRefreshResult,
+  RouteListResponse,
+  RouteRow,
   StratEngineStateResponse,
   StratPredictResponse,
   StructureBriefResponse,
 } from '@/hooks/useAdmin';
 import type { IndicatorConfig, MarketHours } from '@/hooks/useConfig';
-import type { GammaGridCell } from '@/hooks/useGammaGrid';
+import type { GammaGridCell, GammaGridSummary } from '@/hooks/useGammaGrid';
 import type { GammaLevelsResponse } from '@/hooks/useGammaLevels';
+import type { BriefDirection } from '@/hooks/useInsights';
+import type { InsightReportEnvelope } from './insights';
 import type {
   ImportCommitResponse,
   ImportPreviewResponse,
   JournalDeleteResponse,
+  JournalExportResponse,
   JournalMutationResponse,
   JournalTradesResponse,
   MineStyleSuccess,
@@ -71,19 +79,35 @@ import type {
   SeedTradesOk,
   SeedTradesUnavailable,
 } from '@/hooks/useJournalChartTrades';
+import type { AvgVolume, LiveHistory } from '@/hooks/useLiveHistory';
 import type { IndicatorsResponse, SignalSeriesResponse } from '@/hooks/useLiveIndicators';
-import type { MarketDataResponse } from '@/hooks/useMarketData';
+import type { LiveQuote } from '@/hooks/useLiveQuote';
+import type { LiveStatus } from '@/hooks/useLiveStatus';
+import type { DatesResponse, MarketDataResponse } from '@/hooks/useMarketData';
 import type { OptionsDatesResponse } from '@/hooks/useOptionsDates';
 import type { GreeksResponse } from '@/hooks/useOptionsGreeks';
+import type { PlaybookEvaluateResponse } from '@/hooks/usePlaybookEvaluation';
 import type { SimilarResponse } from '@/hooks/useSimilarSetups';
-import type { WatchlistAddResult } from '@/hooks/useTickerSearch';
+import type {
+  CoverageResult,
+  TickerSearchResult,
+  WatchlistAddResult,
+  WatchlistRemoveResult,
+} from '@/hooks/useTickerSearch';
+import type { TradeStats } from '@/hooks/useTradeAnalytics';
 import type { MeResponse } from '@/hooks/useUser';
 import type { ReportListResponse } from '@/lib/reports';
 import type { RuntimeConfig } from '@/lib/runtimeConfig';
+import type {
+  BacktestAllResponse,
+  BacktestResultsResponse,
+  EquityResponse,
+} from '@/components/backtest/BacktesterSection';
+import type { OptionsResponse } from '@/components/options/ProfilesTab';
 import type { MostActiveResponse } from '@/components/shared/MostActiveBar';
 import type { SectorsResponse } from '@/mocks/dashboard';
 import type { CatalystTypesResponse, CatalystsResponse } from '@/routes/CatalystsPage';
-import type { PlaybookResponse, ReferenceResponse } from '@/routes/DashboardPage';
+import type { BriefResponse, PlaybookResponse, ReferenceResponse } from '@/routes/DashboardPage';
 import type { SignalsResponse } from '@/routes/SignalsPage';
 
 type S = components['schemas'];
@@ -110,6 +134,14 @@ type Expect<T extends true> = T;
  *    widening, which is stronger than an assignability assertion — and
  *    the schema's plain `str` fields are themselves deliberate
  *    (PreferencesResponse: "the columns are bare TEXT").
+ *  - `HealthResponse` / `WaitlistResponse` — the app never READS these
+ *    bodies (authedFetch's probe and submitWaitlist check `r.ok` only),
+ *    so there is no hand-written type to check; the mock payloads are
+ *    still schema-validated by contract.test.ts.
+ *  - Schemas with no app consumer at all (2026-09-15 sweep):
+ *    FreshnessResponse, GammaNodesResponse, GridTimeseriesResponse,
+ *    MagnitudePrediction, StructureContinuationResponse. Pair them in
+ *    the same change that adds their first consumer.
  */
 export type AssignabilityChecks = [
   // ── direct name matches ─────────────────────────────────────────────
@@ -127,7 +159,11 @@ export type AssignabilityChecks = [
   Expect<IsAssignable<S['WatchlistResponse'], WatchlistResponse>>,
   // ── direct name matches — hook/route/component-local wire types ────
   Expect<IsAssignable<S['AdminDataSourcesResponse'], AdminDataSourcesResponse>>,
+  Expect<IsAssignable<S['AdminUserRow'], AdminUserRow>>,
   Expect<IsAssignable<S['AdminUsersResponse'], AdminUsersResponse>>,
+  Expect<IsAssignable<S['AvailableModelsResponse'], AvailableModelsResponse>>,
+  Expect<IsAssignable<S['BacktestAllResponse'], BacktestAllResponse>>,
+  Expect<IsAssignable<S['BacktestResultsResponse'], BacktestResultsResponse>>,
   Expect<IsAssignable<S['CatalystTypesResponse'], CatalystTypesResponse>>,
   Expect<IsAssignable<S['CatalystsResponse'], CatalystsResponse>>,
   Expect<IsAssignable<S['GammaGridCell'], GammaGridCell>>,
@@ -137,6 +173,7 @@ export type AssignabilityChecks = [
   Expect<IsAssignable<S['ImportPreviewResponse'], ImportPreviewResponse>>,
   Expect<IsAssignable<S['IndicatorsResponse'], IndicatorsResponse>>,
   Expect<IsAssignable<S['JournalDeleteResponse'], JournalDeleteResponse>>,
+  Expect<IsAssignable<S['JournalExportResponse'], JournalExportResponse>>,
   Expect<IsAssignable<S['JournalMutationResponse'], JournalMutationResponse>>,
   Expect<IsAssignable<S['JournalTradesResponse'], JournalTradesResponse>>,
   Expect<IsAssignable<S['MeResponse'], MeResponse>>,
@@ -144,8 +181,11 @@ export type AssignabilityChecks = [
   Expect<IsAssignable<S['MineStyleUnavailable'], MineStyleUnavailable>>,
   Expect<IsAssignable<S['MostActiveResponse'], MostActiveResponse>>,
   Expect<IsAssignable<S['OptionsDatesResponse'], OptionsDatesResponse>>,
+  Expect<IsAssignable<S['PlaybookEvaluateResponse'], PlaybookEvaluateResponse>>,
   Expect<IsAssignable<S['PlaybookResponse'], PlaybookResponse>>,
   Expect<IsAssignable<S['ReferenceResponse'], ReferenceResponse>>,
+  Expect<IsAssignable<S['RouteListResponse'], RouteListResponse>>,
+  Expect<IsAssignable<S['RouteRow'], RouteRow>>,
   Expect<IsAssignable<S['ReplayTradesResponse'], ReplayTradesResponse>>,
   Expect<IsAssignable<S['ReportListResponse'], ReportListResponse>>,
   Expect<IsAssignable<S['SectorsResponse'], SectorsResponse>>,
@@ -157,12 +197,34 @@ export type AssignabilityChecks = [
   Expect<IsAssignable<S['StratEngineStateResponse'], StratEngineStateResponse>>,
   Expect<IsAssignable<S['StructureBriefResponse'], StructureBriefResponse>>,
   // ── renamed pairs (frontend name ↔ schema name) ─────────────────────
+  Expect<IsAssignable<S['AvgVolumeResponse'], AvgVolume>>,
+  Expect<IsAssignable<S['BacktestEquityResponse'], EquityResponse>>,
+  Expect<IsAssignable<S['CoverageResponse'], CoverageResult>>,
+  // Two consumers hand-type this endpoint (useInsights' direction slice,
+  // DashboardPage's full brief) — both are wire claims, so both pair.
+  Expect<IsAssignable<S['DashboardBriefResponse'], BriefDirection>>,
+  Expect<IsAssignable<S['DashboardBriefResponse'], BriefResponse>>,
+  Expect<IsAssignable<S['DataSourceRefreshResponse'], DataSourceRefreshResult>>,
   Expect<IsAssignable<S['ExpectedMove'], MovementExpectedMove>>,
-  Expect<IsAssignable<S['MovementStatementResponse'], MovementStatement>>,
+  Expect<IsAssignable<S['GammaGridResponse'], GammaGridSummary>>,
   Expect<IsAssignable<S['IndicatorConfigResponse'], IndicatorConfig>>,
+  Expect<IsAssignable<S['LiveHistoryResponse'], LiveHistory>>,
+  Expect<IsAssignable<S['LiveQuoteResponse'], LiveQuote>>,
+  Expect<IsAssignable<S['LiveStatusResponse'], LiveStatus>>,
   Expect<IsAssignable<S['MarketDataResponse'], MarketDataResponse>>,
+  Expect<IsAssignable<S['MarketDatesResponse'], DatesResponse>>,
   Expect<IsAssignable<S['MarketHoursResponse'], MarketHours>>,
+  Expect<IsAssignable<S['MovementStatementResponse'], MovementStatement>>,
+  Expect<IsAssignable<S['OptionsChainResponse'], OptionsResponse>>,
+  // `report` excluded: the schema declares it an open JSONB object, so the
+  // hand-written `InsightReport` is a structural claim the schema cannot
+  // check in either direction; the envelope's scalar half is what a
+  // widening can silently break, and that half is fully paired.
+  Expect<IsAssignable<Omit<S['ReportEnvelope'], 'report'>, Omit<InsightReportEnvelope, 'report'>>>,
   Expect<IsAssignable<S['RuntimeConfigResponse'], RuntimeConfig>>,
   Expect<IsAssignable<S['StratEnginePredictResponse'], StratPredictResponse>>,
+  Expect<IsAssignable<S['TickerSearchResponse'], TickerSearchResult>>,
   Expect<IsAssignable<S['WatchlistAddResponse'], WatchlistAddResult>>,
+  Expect<IsAssignable<S['WatchlistRemoveResponse'], WatchlistRemoveResult>>,
+  Expect<IsAssignable<S['_TradeStats'], TradeStats>>,
 ];

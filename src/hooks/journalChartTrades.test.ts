@@ -43,8 +43,46 @@ describe('isoNaiveToEpoch', () => {
     expect(isoNaiveToEpoch('2026-07-02T13:35:00.123456+00:00')).toBe(expected);
   });
 
+  it('parses minute-precision broker-import rows (space separator, no seconds)', () => {
+    // ImportCommitTrade.entry_ts is "YYYY-MM-DD HH:MM" (journal.py) and the
+    // shared insert path stores it VERBATIM, so a local-mode read-back is
+    // genuinely minute-precision. Requiring seconds made these rows chart
+    // as NaN — silently unplottable (Codex, #64 verification review).
+    expect(isoNaiveToEpoch('2026-07-02 13:35')).toBe(expected);
+  });
+
+  it('parses minute-precision with a "T" separator', () => {
+    expect(isoNaiveToEpoch('2026-07-02T13:35')).toBe(expected);
+  });
+
   it('returns NaN for an unparseable string', () => {
     expect(Number.isNaN(isoNaiveToEpoch('not-a-date'))).toBe(true);
+  });
+
+  it('returns NaN when the minute is truncated', () => {
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13'))).toBe(true);
+  });
+
+  it('rejects malformed partial seconds instead of silently plotting :00', () => {
+    // The optional-seconds group must not backtrack "13:35:4" into a valid
+    // 13:35 — the required-seconds regex rejected it, and accepting the
+    // prefix would plot a corrupt timestamp as a real bar (Codex, #66).
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:4'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02T13:35:4'))).toBe(true);
+    // A run-on minute is equally malformed.
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:355'))).toBe(true);
+  });
+
+  it('rejects any tail that is not seconds, a fraction, or an offset', () => {
+    // The valid suffix forms are enumerated, so corrupt tails cannot ride
+    // a valid minute prefix into the chart (Codex, #66): only end-of-
+    // string, ":ss", ":ss.ffffff" and a "+HH:MM"/"-HH:MM" offset parse.
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:x'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35junk'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35.abc'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:00garbage'))).toBe(true);
+    // The negative-offset Cloud SQL form still parses.
+    expect(isoNaiveToEpoch('2026-07-02 13:35:00-05:00')).toBe(expected);
   });
 });
 

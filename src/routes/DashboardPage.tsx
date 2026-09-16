@@ -41,19 +41,22 @@ import { fmtPrice, fmtPct, fmtNum, NA, responseErrorMessage } from '@/lib/format
 import type { Tone } from '@/components/primitives';
 
 // ── Response shapes (mirror the existing API contracts) ──────────────────────
+// DashboardBriefResponse per the schema (#56): every field is
+// optional-nullable and ftfc_direction is untyped; briefBullets narrows
+// what it renders.
 interface DailyIndicators {
-  date?: string; close?: number; rsi_14?: number; rvol?: number;
-  strat_candle?: string; strat_combo?: string;
-  ftfc_score?: number; ftfc_direction?: string;
+  date?: string | null; close?: number | null; rsi_14?: number | null; rvol?: number | null;
+  strat_candle?: unknown; strat_combo?: unknown;
+  ftfc_score?: number | null; ftfc_direction?: unknown;
 }
 // Exported so tests/helpers/fixtures/dashboard.ts can pin its fixtures to
 // the real contract (see the same note in ReportsPage.tsx).
 export interface BriefResponse {
-  ticker: string; source: string; bias: string; reason?: string;
-  rsi?: number; strat_candle?: string; strat_combo?: string;
-  ftfc_score?: number; ftfc_direction?: string; signal_status?: string;
-  daily_indicators: DailyIndicators;
-  live?: { price: number; session: string; updated_at: string; source: string };
+  ticker?: string | null; source?: string | null; bias?: string | null; reason?: string | null;
+  rsi?: number | null; strat_candle?: unknown; strat_combo?: unknown;
+  ftfc_score?: number | null; ftfc_direction?: unknown; signal_status?: unknown;
+  daily_indicators?: DailyIndicators | null;
+  live?: { price: number; session: string; updated_at: string; source: string } | null;
 }
 interface PlaybookCard {
   // name/direction/win_rate/avg_return optional+nullable per schema; the
@@ -189,7 +192,7 @@ function rsiZone(v: number): { label: string; tone: Tone } {
 
 // Build the brief bullet list from real brief fields (never fabricated).
 function briefBullets(b: BriefResponse): { text: string; tone: Tone }[] {
-  const di = b.daily_indicators ?? {};
+  const di: DailyIndicators = b.daily_indicators ?? {};
   const out: { text: string; tone: Tone }[] = [];
   const biasTone: Tone = b.bias === 'bullish' ? 'bull' : b.bias === 'bearish' ? 'bear' : 'brand';
   out.push({

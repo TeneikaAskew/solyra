@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { ROUTES, resolveMock } from './index';
+import {
+  isPlottableJournalRow,
+  isoNaiveToEpoch,
+  type JournalRow,
+} from '@/hooks/useJournalChartTrades';
 import { MOCK_SIGNALS } from './signals';
 import { MOCK_LIVE_HISTORY_EOD } from './live';
 import { MOCK_ADMIN_ROUTES } from './admin';
@@ -141,5 +146,307 @@ describe('canonical payload resolution', () => {
       snapshot: {},
     });
     expect(neither!.status).toBe(400);
+  });
+});
+
+// Server-parity semantics for the journal mutation mocks (Codex, #64
+// verification review): journal.py NEVER trusts client status/return_pct —
+// import_commit recomputes return via _import_return_pct (PREMIUM math, no
+// CALL/PUT sign flip) and re-derives status; create/close compute
+// _return_pct (UNDERLYING math, WITH the PUT flip). The mocks must mirror
+// that split or mock mode renders wins for losses.
+describe('journal mutation semantics (server parity)', () => {
+  const post = (path: string, body: unknown) =>
+    resolveMock('POST', new URL(`http://mock.test${path}`), body);
+  const tradesFor = (ticker: string): JournalRow[] =>
+    JSON.parse(get(`/api/journal/trades/${ticker}`)!.payload).trades;
+
+  it('import/commit derives loss from the recomputed premium return, ignoring client status', () => {
+    const hit = post('/api/journal/import/commit', {
+      broker: 'robinhood',
+      trades: [
+        {
+          // PUT premium fell 2.5 → 2.0: a LOSS. Premium math has no sign
+          // flip, and the client's lying status/return_pct are advisory.
+          ticker: 'XLOSS', direction: 'PUT', entry_ts: '2026-06-10 09:30',
+          entry_price: 2.5, exit_ts: '2026-06-10 14:10', exit_price: 2.0,
+          return_pct: 12.0, quantity: 1, status: 'win', duplicate: false,
+        },
+        {
+          ticker: 'XOPEN', direction: 'CALL', entry_ts: '2026-06-11 09:30',
+          entry_price: 1.0, exit_ts: null, exit_price: null,
+          return_pct: null, quantity: 1, status: 'active', duplicate: false,
+        },
+      ],
+    });
+    expect(JSON.parse(hit!.payload)).toEqual({ imported: 2, skipped_duplicates: 0 });
+
+    const [loss] = tradesFor('XLOSS');
+    expect(loss.return_pct).toBe(-20);
+    expect(loss.status).toBe('loss');
+
+    const [open] = tradesFor('XOPEN');
+    expect(open.status).toBe('active');
+    expect(open.return_pct).toBeNull();
+    expect(open.exit_ts).toBeNull();
+  });
+
+  it('imported minute-precision rows stay plottable end-to-end', () => {
+    post('/api/journal/import/commit', {
+      broker: 'robinhood',
+      trades: [{
+        ticker: 'XMIN', direction: 'CALL', entry_ts: '2026-06-12 10:15',
+        entry_price: 4.2, exit_ts: '2026-06-12 15:45', exit_price: 4.62,
+        return_pct: 10, quantity: 1, status: 'closed', duplicate: false,
+      }],
+    });
+    const [row] = tradesFor('XMIN');
+    expect(isPlottableJournalRow(row)).toBe(true);
+    // The regression: entry_ts is stored verbatim at minute precision (the
+    // real local-mode insert path does the same) and the chart mapper must
+    // parse it — NaN here silently dropped every imported trade.
+    expect(Number.isFinite(isoNaiveToEpoch(row.entry_ts!))).toBe(true);
+    expect(row.status).toBe('win');
+    expect(row.return_pct).toBe(10);
+  });
+
+  it('POST create honors the manual closed-trade form exit fields (PUT sign flip)', () => {
+    const hit = post('/api/journal/trades', {
+      ticker: 'XPUT', direction: 'PUT', entry_date: '2026-06-13',
+      entry_time: '10:00', entry_price: 200,
+      exit_date: '2026-06-13', exit_time: '14:00', exit_price: 190,
+      source: 'manual',
+    });
+    const body = JSON.parse(hit!.payload);
+    // Underlying fell 5% and this is a PUT → +5% win after the sign flip.
+    expect(body.return_pct).toBe(5);
+    expect(body.status).toBe('win');
+
+    const [row] = tradesFor('XPUT');
+    expect(row.exit_ts).toBe('2026-06-13T14:00:00');
+    expect(row.exit_price).toBe(190);
+    expect(row.return_pct).toBe(5);
+    expect(row.status).toBe('win');
+  });
+
+  it('POST create stores the submitted notes', () => {
+    // JournalPage's manual form sends `notes` and journal.py persists it
+    // (default "") — dropping it made mock mode look like it discarded
+    // the user's saved text on the invalidate-refetch (Codex, #66).
+    post('/api/journal/trades', {
+      ticker: 'XNOTE', direction: 'CALL', entry_date: '2026-06-20',
+      entry_time: '10:00', entry_price: 50, source: 'manual',
+      notes: 'sized down into CPI',
+    });
+    const [row] = tradesFor('XNOTE');
+    expect(row.notes).toBe('sized down into CPI');
+  });
+
+  it('create rounds to four decimals like journal.py; close leaves the return unrounded', () => {
+    // Server parity on precision: create_trade rounds `round(ret_pct, 4)`,
+    // the close paths return ret_pct unrounded (journal.py:1104 vs :1195).
+    // toFixed(2) prematurely coarsened the stored value, so mock-mode
+    // stats diverged from production (Codex, #66).
+    const created = post('/api/journal/trades', {
+      ticker: 'XPREC', direction: 'CALL', entry_date: '2026-06-19',
+      entry_time: '10:00', entry_price: 3,
+      exit_date: '2026-06-19', exit_time: '14:00', exit_price: 1,
+      source: 'manual',
+    });
+    // (1-3)/3*100 = -66.666...; four decimals, not -66.67.
+    expect(JSON.parse(created!.payload).return_pct).toBe(-66.6667);
+
+    const open = post('/api/journal/trades', {
+      ticker: 'XPREC', direction: 'CALL', entry_date: '2026-06-19',
+      entry_time: '11:00', entry_price: 3, source: 'chart',
+    });
+    const id = JSON.parse(open!.payload).id as string;
+    const closed = resolveMock('PATCH', new URL(`http://mock.test/api/journal/trades/${id}`), {
+      exit_date: '2026-06-19', exit_time: '15:00', exit_price: 1,
+    });
+    expect(JSON.parse(closed!.payload).return_pct).toBeCloseTo(-200 / 3, 10);
+  });
+
+  it('a zero entry price keeps the return null and derives closed, never a fabricated 0%', () => {
+    // A 0 denominator makes the percentage uncomputable. journal.py's
+    // `_return_pct` used to fabricate 0.0 there (Rule 3.7 violation, being
+    // fixed server-side); the honest envelope is a null return with the
+    // `_derive_status` 'closed' state — indistinguishable-from-flat "0%"
+    // is exactly what Rule 4 forbids (Codex, #66).
+    const created = post('/api/journal/trades', {
+      ticker: 'XZERO', direction: 'CALL', entry_date: '2026-06-17',
+      entry_time: '10:00', entry_price: 0,
+      exit_date: '2026-06-17', exit_time: '15:00', exit_price: 5,
+      source: 'manual',
+    });
+    const body = JSON.parse(created!.payload);
+    expect(body.return_pct).toBeNull();
+    expect(body.status).toBe('closed');
+    const [row] = tradesFor('XZERO');
+    expect(row.return_pct).toBeNull();
+    expect(row.status).toBe('closed');
+    expect(row.exit_price).toBe(5);
+
+    const imported = post('/api/journal/import/commit', {
+      broker: 'robinhood',
+      trades: [{
+        ticker: 'XZIMP', direction: 'PUT', entry_ts: '2026-06-18 09:30',
+        entry_price: 0, exit_ts: '2026-06-18 15:00', exit_price: 1.5,
+        return_pct: 99, quantity: 1, status: 'win', duplicate: false,
+      }],
+    });
+    expect(JSON.parse(imported!.payload)).toEqual({ imported: 1, skipped_duplicates: 0 });
+    const [impRow] = tradesFor('XZIMP');
+    expect(impRow.return_pct).toBeNull();
+    expect(impRow.status).toBe('closed');
+
+    // The PATCH close of a zero-entry ACTIVE trade hits the same zero
+    // denominator: unguarded it stored Infinity, which serializes to a
+    // lying null beside a win/loss status (Codex, #66).
+    const zeroActive = post('/api/journal/trades', {
+      ticker: 'XZCLS', direction: 'CALL', entry_date: '2026-06-18',
+      entry_time: '10:00', entry_price: 0, source: 'chart',
+    });
+    const zeroId = JSON.parse(zeroActive!.payload).id as string;
+    const closed = resolveMock('PATCH', new URL(`http://mock.test/api/journal/trades/${zeroId}`), {
+      exit_date: '2026-06-18', exit_time: '15:00', exit_price: 5,
+    });
+    const closeBody = JSON.parse(closed!.payload);
+    expect(closeBody.return_pct).toBeNull();
+    expect(closeBody.status).toBe('closed');
+    const [closedRow] = tradesFor('XZCLS');
+    expect(closedRow.return_pct).toBeNull();
+    expect(closedRow.status).toBe('closed');
+  });
+
+  it('replay card for a closed uncomputable-return trade is not "still open"', () => {
+    // A zero-entry trade closed in a session is CLOSED with a null return;
+    // the scorecard must say the return is unavailable, not that the trade
+    // is still open (Codex, #66).
+    const zc = post('/api/journal/trades', {
+      ticker: 'XZRPL', direction: 'CALL', entry_date: '2026-06-21',
+      entry_time: '10:00', entry_price: 0, source: 'replay', session_id: 'sess-z',
+    });
+    const zcId = JSON.parse(zc!.payload).id as string;
+    resolveMock('PATCH', new URL(`http://mock.test/api/journal/trades/${zcId}`), {
+      exit_date: '2026-06-21', exit_time: '15:00', exit_price: 5,
+    });
+    const replay = post('/api/backtest/replay-trades', { ticker: 'XZRPL', session_id: 'sess-z' });
+    const [card] = JSON.parse(replay!.payload).trades;
+    expect(card.status).toBe('unavailable');
+    expect(card.reason).toMatch(/return unavailable/);
+    expect(card.reason).not.toMatch(/still open/);
+  });
+
+  it('a flat close derives breakeven, not win', () => {
+    const created = post('/api/journal/trades', {
+      ticker: 'XBRK', direction: 'CALL', entry_date: '2026-06-14',
+      entry_time: '10:00', entry_price: 100, source: 'chart',
+    });
+    const id = JSON.parse(created!.payload).id as string;
+    const closed = resolveMock(
+      'PATCH',
+      new URL(`http://mock.test/api/journal/trades/${id}`),
+      { exit_date: '2026-06-14', exit_time: '15:00', exit_price: 100 },
+    );
+    const body = JSON.parse(closed!.payload);
+    expect(body.return_pct).toBe(0);
+    expect(body.status).toBe('breakeven');
+  });
+
+  it('import dedupe matches across second/minute precision like the server key', () => {
+    // A manually created trade stores seconds ("...T09:31:00"); the same
+    // trade re-imported from a broker CSV arrives at minute precision.
+    // journal.py's _dedupe_key normalizes to "YYYY-MM-DD HH:MM", so the
+    // import must be skipped, not double-logged.
+    post('/api/journal/trades', {
+      ticker: 'XDUP', direction: 'CALL', entry_date: '2026-06-15',
+      entry_time: '09:31', entry_price: 5, source: 'chart',
+    });
+    const hit = post('/api/journal/import/commit', {
+      broker: 'robinhood',
+      trades: [{
+        ticker: 'XDUP', direction: 'CALL', entry_ts: '2026-06-15 09:31',
+        entry_price: 5, exit_ts: null, exit_price: null,
+        return_pct: null, quantity: 1, status: 'active', duplicate: false,
+      }],
+    });
+    expect(JSON.parse(hit!.payload)).toEqual({ imported: 0, skipped_duplicates: 1 });
+    expect(tradesFor('XDUP')).toHaveLength(1);
+  });
+
+  it('replay-trades scores the session\'s own journal rows, not a canned pair', () => {
+    // A replay-trainer session: two closed trades and one still open, all
+    // tagged with the same session_id via the same mock routes the app hits.
+    const mk = (direction: string, entryTime: string, exit?: { time: string; price: number }) => {
+      const created = post('/api/journal/trades', {
+        ticker: 'XRPL', direction, entry_date: '2026-06-16',
+        entry_time: entryTime, entry_price: 100,
+        source: 'replay', session_id: 'sess-9',
+      });
+      const id = JSON.parse(created!.payload).id as string;
+      if (exit) {
+        resolveMock('PATCH', new URL(`http://mock.test/api/journal/trades/${id}`), {
+          exit_date: '2026-06-16', exit_time: exit.time, exit_price: exit.price,
+        });
+      }
+      return id;
+    };
+    const winId = mk('CALL', '10:00', { time: '11:00', price: 102 });
+    const lossId = mk('PUT', '12:00', { time: '13:00', price: 103 }); // underlying rose → PUT loss
+    const openId = mk('CALL', '14:00');
+
+    const hit = post('/api/backtest/replay-trades', { ticker: 'XRPL', session_id: 'sess-9' });
+    const body = JSON.parse(hit!.payload);
+    expect(body.trades.map((t: { id: string }) => t.id)).toEqual([winId, lossId, openId]);
+    const [win, loss, open] = body.trades;
+    expect(win.status).toBe('ok');
+    expect(win.actual_return_pct).toBeCloseTo(2, 10);
+    expect(loss.actual_return_pct).toBeCloseTo(-3, 10);
+    // No bar engine ran, so fill quality is UNKNOWN — never a fabricated
+    // 'ok' that suppresses the outside-range warning (Codex, #66).
+    expect(win.fill_check).toBeNull();
+    expect(open.status).toBe('unavailable');
+    expect(open.reason).toMatch(/still open/);
+    // "No signal" would mean the benchmark ran and found no setup; the
+    // mock's benchmark never runs, so the count stays 0 to match the
+    // per-row 'unavailable' state (Codex, #66).
+    expect(body.aggregate).toMatchObject({
+      n: 3, scored_n: 2, win_rate: 0.5, avg_return_pct: -0.5,
+      system_resolved_n: 0, system_no_signal_n: 0,
+    });
+    // No bar engine behind the mock — the benchmark stays an honest null,
+    // never a fabricated agreement rate.
+    expect(body.aggregate.system_agreement_rate).toBeNull();
+    expect(body.aggregate.avg_exit_edge_bps).toBeNull();
+  });
+
+  it('replay-trades honors explicit trade_ids and 404s a miss like backtest.py', () => {
+    const [winner] = tradesFor('XRPL');
+    const byIds = post('/api/backtest/replay-trades', { ticker: 'XRPL', trade_ids: [winner.id] });
+    const scored = JSON.parse(byIds!.payload);
+    expect(scored.trades.map((t: { id: string }) => t.id)).toEqual([winner.id]);
+    expect(scored.aggregate).toMatchObject({ n: 1, scored_n: 1, win_rate: 1 });
+    // A stale session or deleted trade is a 404 "no matching trades
+    // found" on the real endpoint — answering the unrelated seed pair
+    // with a 200 presented fabricated results as the caller's own
+    // (Codex, #66).
+    const miss = post('/api/backtest/replay-trades', { ticker: 'IWM', session_id: 'nope' });
+    expect(miss!.status).toBe(404);
+    expect(JSON.parse(miss!.payload).detail).toMatch(/no matching trades/);
+    // And neither selector mirrors the endpoint's 422.
+    const neither = post('/api/backtest/replay-trades', { ticker: 'IWM' });
+    expect(neither!.status).toBe(422);
+  });
+
+  it('replay-trades scopes to the requested ticker like the production query', () => {
+    // backtest.py's SQL is `WHERE ticker = :ticker AND ... AND (ids/session)`
+    // — a session that belongs to XRPL must not answer a request for
+    // another symbol with XRPL's scorecard (Codex, #66).
+    const wrongTicker = post('/api/backtest/replay-trades', { ticker: 'SPYX', session_id: 'sess-9' });
+    expect(wrongTicker!.status).toBe(404);
+    const [winner] = tradesFor('XRPL');
+    const wrongTickerById = post('/api/backtest/replay-trades', { ticker: 'SPYX', trade_ids: [winner.id] });
+    expect(wrongTickerById!.status).toBe(404);
   });
 });
