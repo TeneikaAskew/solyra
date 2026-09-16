@@ -486,6 +486,7 @@ export const journalRoutes: MockRoute[] = [
         entry_time: string; entry_price: number; stop_loss: number;
         take_profits: number[]; source: string; session_id: string;
         exit_date: string; exit_time: string; exit_price: number;
+        notes: string;
       }>;
       const id = `mock-created-${nextMockId++}`;
       if (
@@ -531,6 +532,9 @@ export const journalRoutes: MockRoute[] = [
           take_profits: b.take_profits,
           stop_loss: typeof b.stop_loss === 'number' ? b.stop_loss : null,
           status,
+          // JournalTradeCreate persists notes (default "") — dropping it
+          // made mock mode discard the form's saved text (Codex, #66).
+          notes: typeof b.notes === 'string' ? b.notes : '',
           source: typeof b.source === 'string' ? b.source : 'chart',
           session_id: typeof b.session_id === 'string' ? b.session_id : null,
         });

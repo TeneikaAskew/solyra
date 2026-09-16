@@ -214,11 +214,21 @@ export const chartsRoutes: MockRoute[] = [
       }
 
       const trades = rows.map((row): ReplayTradeCard => {
-        if (row.status === 'active' || row.return_pct == null) {
+        // Open and closed-with-uncomputable-return are DIFFERENT
+        // unavailable states: a zero-entry trade closed in the session is
+        // not "still open" (Codex, #66).
+        if (row.status === 'active' || row.exit_ts == null) {
           return {
             id: row.id,
             status: 'unavailable',
             reason: 'trade still open — nothing to score',
+          };
+        }
+        if (row.return_pct == null) {
+          return {
+            id: row.id,
+            status: 'unavailable',
+            reason: 'return unavailable for this trade — nothing to score',
           };
         }
         // No bar engine behind the mock: the "actual" return is the

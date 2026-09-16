@@ -229,6 +229,19 @@ describe('journal mutation semantics (server parity)', () => {
     expect(row.status).toBe('win');
   });
 
+  it('POST create stores the submitted notes', () => {
+    // JournalPage's manual form sends `notes` and journal.py persists it
+    // (default "") — dropping it made mock mode look like it discarded
+    // the user's saved text on the invalidate-refetch (Codex, #66).
+    post('/api/journal/trades', {
+      ticker: 'XNOTE', direction: 'CALL', entry_date: '2026-06-20',
+      entry_time: '10:00', entry_price: 50, source: 'manual',
+      notes: 'sized down into CPI',
+    });
+    const [row] = tradesFor('XNOTE');
+    expect(row.notes).toBe('sized down into CPI');
+  });
+
   it('create rounds to four decimals like journal.py; close leaves the return unrounded', () => {
     // Server parity on precision: create_trade rounds `round(ret_pct, 4)`,
     // the close paths return ret_pct unrounded (journal.py:1104 vs :1195).
@@ -304,6 +317,25 @@ describe('journal mutation semantics (server parity)', () => {
     const [closedRow] = tradesFor('XZCLS');
     expect(closedRow.return_pct).toBeNull();
     expect(closedRow.status).toBe('closed');
+  });
+
+  it('replay card for a closed uncomputable-return trade is not "still open"', () => {
+    // A zero-entry trade closed in a session is CLOSED with a null return;
+    // the scorecard must say the return is unavailable, not that the trade
+    // is still open (Codex, #66).
+    const zc = post('/api/journal/trades', {
+      ticker: 'XZRPL', direction: 'CALL', entry_date: '2026-06-21',
+      entry_time: '10:00', entry_price: 0, source: 'replay', session_id: 'sess-z',
+    });
+    const zcId = JSON.parse(zc!.payload).id as string;
+    resolveMock('PATCH', new URL(`http://mock.test/api/journal/trades/${zcId}`), {
+      exit_date: '2026-06-21', exit_time: '15:00', exit_price: 5,
+    });
+    const replay = post('/api/backtest/replay-trades', { ticker: 'XZRPL', session_id: 'sess-z' });
+    const [card] = JSON.parse(replay!.payload).trades;
+    expect(card.status).toBe('unavailable');
+    expect(card.reason).toMatch(/return unavailable/);
+    expect(card.reason).not.toMatch(/still open/);
   });
 
   it('a flat close derives breakeven, not win', () => {

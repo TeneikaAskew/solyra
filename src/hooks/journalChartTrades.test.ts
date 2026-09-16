@@ -72,6 +72,18 @@ describe('isoNaiveToEpoch', () => {
     // A run-on minute is equally malformed.
     expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:355'))).toBe(true);
   });
+
+  it('rejects any tail that is not seconds, a fraction, or an offset', () => {
+    // The valid suffix forms are enumerated, so corrupt tails cannot ride
+    // a valid minute prefix into the chart (Codex, #66): only end-of-
+    // string, ":ss", ":ss.ffffff" and a "+HH:MM"/"-HH:MM" offset parse.
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:x'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35junk'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35.abc'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:00garbage'))).toBe(true);
+    // The negative-offset Cloud SQL form still parses.
+    expect(isoNaiveToEpoch('2026-07-02 13:35:00-05:00')).toBe(expected);
+  });
 });
 
 describe('journalRowToTradeEntry', () => {
