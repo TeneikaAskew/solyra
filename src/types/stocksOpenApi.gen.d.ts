@@ -4606,7 +4606,7 @@ export interface components {
          */
         PreferencesUpdate: {
             /** Accent */
-            accent?: ("blue" | "amber" | "violet" | "cyan" | "teal" | "pink" | "magenta" | "orange" | "yellow" | "indigo" | "rose") | null;
+            accent?: ("dawn" | "blue" | "amber" | "violet" | "cyan" | "teal" | "pink" | "magenta" | "orange" | "yellow" | "indigo" | "rose") | null;
             /** Density */
             density?: ("comfy" | "default" | "dense") | null;
             /** Nav Pattern */
