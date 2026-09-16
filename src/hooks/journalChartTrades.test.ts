@@ -84,6 +84,16 @@ describe('isoNaiveToEpoch', () => {
     // The negative-offset Cloud SQL form still parses.
     expect(isoNaiveToEpoch('2026-07-02 13:35:00-05:00')).toBe(expected);
   });
+
+  it('rejects out-of-range fields instead of letting Date.UTC normalize them', () => {
+    // Date.UTC silently rolls "13:99" over to 14:39, plotting a corrupt
+    // timestamp on the WRONG bar rather than not at all (Codex, #66).
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:99'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 24:00'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:99'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-13-02 13:35'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-32 13:35'))).toBe(true);
+  });
 });
 
 describe('journalRowToTradeEntry', () => {

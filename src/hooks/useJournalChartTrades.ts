@@ -147,6 +147,10 @@ export function isoNaiveToEpoch(iso: string): number {
   if (!m) return NaN;
   const [y, mo, d, h, mi] = m.slice(1, 6).map(Number);
   const s = m[6] === undefined ? 0 : Number(m[6]);
+  // Date.UTC silently normalizes out-of-range fields ("13:99" → 14:39),
+  // which would plot a corrupt timestamp on the WRONG bar rather than not
+  // at all — reject instead (Codex, #66).
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return NaN;
   return Math.floor(Date.UTC(y, mo - 1, d, h, mi, s) / 1000);
 }
 
