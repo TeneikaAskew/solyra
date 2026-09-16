@@ -563,10 +563,16 @@ export const journalRoutes: MockRoute[] = [
         // Chart trades carry UNDERLYING prices: CALL wins when exit >
         // entry, PUT when exit < entry — the sign-corrected return_pct
         // convention journal.py documents on JournalRow.
-        const raw = ((b.exit_price - row.entry_price) / row.entry_price) * 100;
+        // A zero entry price is the same uncomputable percentage as the
+        // create/import branches (journal.py `_return_pct`, stocks #1115):
+        // null + 'closed', never an Infinity that serializes to a lying
+        // null beside a win/loss status (Codex, #66).
+        const raw = row.entry_price !== 0
+          ? ((b.exit_price - row.entry_price) / row.entry_price) * 100
+          : null;
         // The close paths return ret_pct UNROUNDED (journal.py:1195/:1243),
         // unlike create's round-to-4 — mirror that asymmetry (Codex, #66).
-        const pct = row.direction === 'PUT' ? -raw : raw;
+        const pct = raw == null ? null : row.direction === 'PUT' ? -raw : raw;
         row.return_pct = pct;
         // journal.py `_derive_status`: a flat close is breakeven, not a win.
         row.status = deriveMockStatus(true, pct);

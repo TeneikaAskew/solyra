@@ -286,6 +286,24 @@ describe('journal mutation semantics (server parity)', () => {
     const [impRow] = tradesFor('XZIMP');
     expect(impRow.return_pct).toBeNull();
     expect(impRow.status).toBe('closed');
+
+    // The PATCH close of a zero-entry ACTIVE trade hits the same zero
+    // denominator: unguarded it stored Infinity, which serializes to a
+    // lying null beside a win/loss status (Codex, #66).
+    const zeroActive = post('/api/journal/trades', {
+      ticker: 'XZCLS', direction: 'CALL', entry_date: '2026-06-18',
+      entry_time: '10:00', entry_price: 0, source: 'chart',
+    });
+    const zeroId = JSON.parse(zeroActive!.payload).id as string;
+    const closed = resolveMock('PATCH', new URL(`http://mock.test/api/journal/trades/${zeroId}`), {
+      exit_date: '2026-06-18', exit_time: '15:00', exit_price: 5,
+    });
+    const closeBody = JSON.parse(closed!.payload);
+    expect(closeBody.return_pct).toBeNull();
+    expect(closeBody.status).toBe('closed');
+    const [closedRow] = tradesFor('XZCLS');
+    expect(closedRow.return_pct).toBeNull();
+    expect(closedRow.status).toBe('closed');
   });
 
   it('a flat close derives breakeven, not win', () => {
