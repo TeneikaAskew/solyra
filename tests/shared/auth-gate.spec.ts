@@ -438,6 +438,26 @@ test.describe('/auth/action', () => {
     await expect(page.getByTestId('auth-action-success')).toHaveCount(0);
   });
 
+  test('the action page is branded: it carries the accent class, not the base blue', async ({ page }) => {
+    await firebaseMode(page);
+    await mockIdentityToolkit(page, () => itkError('EXPIRED_OOB_CODE'));
+
+    await page.goto('/auth/action?mode=resetPassword&oobCode=stale', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('auth-action-error')).toBeVisible();
+
+    // This route renders OUTSIDE AppShell, and the settings store is what puts
+    // the accent class on <body> when its module evaluates. Every other
+    // importer lives inside the shell, so before the side-effect import in
+    // AuthActionPage.tsx this page fell through to the base blue --brand while
+    // the rest of the app was orange. Measured on the deployed site:
+    // /dashboard --brand #ff7a4d, /auth/action --brand #8bceff.
+    await expect(page.locator('body')).toHaveClass(/accent-/);
+    const brand = await page.evaluate(() =>
+      getComputedStyle(document.body).getPropertyValue('--brand').trim(),
+    );
+    expect(brand.toLowerCase()).toBe('#ff7a4d');
+  });
+
   test('an expired link renders the error card with the SDK-mapped reason', async ({ page }) => {
     await firebaseMode(page);
     await mockIdentityToolkit(page, () => itkError('EXPIRED_OOB_CODE'));

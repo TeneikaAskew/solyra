@@ -3,6 +3,14 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Loader2, Lock, CheckCircle2, AlertTriangle, MailWarning, KeyRound } from 'lucide-react';
 import { Brand } from '@/components/layout/Brand';
+// Side-effect import: the settings store applies the density/accent classes to
+// <body> when its module first evaluates. Every other importer is inside the
+// authenticated shell (AppShell, Sidebar, SettingsPage…), and this route
+// renders OUTSIDE it, so without this line /auth/action was the one page that
+// never got an accent class and fell through to the base blue --brand — the
+// page a Solyra-branded reset email lands on. Measured on the deployed site:
+// /dashboard had `accent-dawn` and --brand #ff7a4d, /auth/action had neither.
+import '@/stores/settingsStore';
 import { getAuthMode } from '@/lib/runtimeConfig';
 import {
   applyAuthActionCode,
