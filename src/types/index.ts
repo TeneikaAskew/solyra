@@ -231,6 +231,11 @@ export interface MovementExpectedMove {
     modal_bucket?: number | null;
     modal_share?: number | null;
     n_bars?: number | null;
+    /** Distinct ET sessions behind n_bars; under min_sessions the share is not a verdict. */
+    n_sessions?: number | null;
+    min_sessions?: number | null;
+    /** Share over the ceiling but too few sessions to call it collapse: rendered, and this says why. */
+    insufficient_sessions?: boolean | null;
     distinct_buckets?: number | null;
     lookback_days?: number | null;
   } | null;
