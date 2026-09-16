@@ -1,5 +1,7 @@
 # Project Instructions for Claude Code — Solyra
 
+**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+
 ## Project Overview
 
 Solyra is the **frontend** for the trading platform: a React 19 + TypeScript

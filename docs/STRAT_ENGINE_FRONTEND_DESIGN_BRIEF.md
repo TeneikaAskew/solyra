@@ -8,6 +8,8 @@
 
 # Strat Engine — Frontend Design Brief
 
+**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+
 **For:** the designer / design agent that will lay out the frontend surfaces.
 **From:** the backend + product close-out.
 **Status:** the strat-engine candle-type prediction model is shipped as a shelf-ready deliverable. The frontend surfaces below are all built and reachable today; this brief gives the designer the data, the information hierarchy, and — most importantly — the language constraints. Visual polish + interaction details are open for design judgment.

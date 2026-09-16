@@ -1,5 +1,7 @@
 # Solyra
 
+**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+
 The frontend for the trading platform — a React + TypeScript single-page app
 covering the market dashboard, live quotes, charts, options/gamma analysis,
 signals, the trade journal, AI insights, and catalysts.

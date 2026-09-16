@@ -8,6 +8,8 @@
 
 # Solyra Landing Page Implementation Plan
 
+**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the public Solyra marketing/landing page (10 sections per spec) inside `platform/`, with a public waitlist API, public route wiring, and visuals that mirror the real app's gamma/chart language.
