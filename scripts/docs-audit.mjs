@@ -77,12 +77,26 @@ const CODE_EXTS = new Set(['.py', '.ts', '.tsx', '.js', '.mjs', '.sql', '.sh', '
 
 export class AuditError extends Error {}
 
-function run(cmd, args, { allowFail = false } = {}) {
+/**
+ * Run a command, treating only the listed non-zero exits as answers.
+ *
+ * `okExitCodes` replaced a boolean `allowFail`, which conflated two different
+ * things and produced a fabricated measurement. `git grep` exits 1 for "ran
+ * fine, no matches" and 128 for "could not resolve that revision"; swallowing
+ * both as '' made a broken read look like a count of zero. CI caught it because
+ * actions/checkout does a shallow single-branch clone with no `origin/main`
+ * ref, so every grep exited 128 and `derive` reported 0 where the answer was
+ * 37 -- which would have had the audit report a correct document as wrong.
+ * That is the silent fallback Rule 4 forbids, in the tool built to find them.
+ */
+export function run(cmd, args, { okExitCodes = [] } = {}) {
   try {
     return execFileSync(cmd, args, { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   } catch (err) {
-    if (allowFail) return '';
-    throw new AuditError(`${cmd} ${args.slice(0, 3).join(' ')}... failed: ${String(err.stderr || err.message).slice(0, 400)}`);
+    if (okExitCodes.includes(err.status)) return '';
+    throw new AuditError(
+      `${cmd} ${args.slice(0, 3).join(' ')}... exited ${err.status}: `
+      + String(err.stderr || err.message).slice(0, 400));
   }
 }
 
@@ -483,8 +497,12 @@ export function checkDeadLinks(doc, text, tracked, topLevelDirs) {
 
 export function checkChangedSince(doc, sha, codePaths) {
   if (!sha || codePaths.length === 0) return [];
-  const out = run('git', ['log', '--oneline', '--diff-filter=M', `${sha}..origin/main`, '--', ...codePaths],
-    { allowFail: true });
+  // `git log` exits 0 with empty output when the range holds no commits, so
+  // there is no non-zero code that means "no matches" here. A bad SHA exits
+  // 128 and must abort: reporting "nothing changed since <sha>" for a SHA the
+  // repo does not have is the same fabrication as a count of zero. The marker
+  // check reports the unknown SHA separately.
+  const out = run('git', ['log', '--oneline', '--diff-filter=M', `${sha}..origin/main`, '--', ...codePaths]);
   const commits = out.trim().split('\n').filter(Boolean);
   if (commits.length === 0) return [];
   return [{ check: 'changed-since', doc, severity: 'P2',
@@ -535,14 +553,16 @@ export function loadClaims(text) {
  * a search for "tests <pattern>" under `src` -- a check that ran, returned a
  * number, and measured the wrong thing.
  */
-export function derive(derivation) {
+export function derive(derivation, { exec = run } = {}) {
   const [kind, target, ...rest] = derivation.split(' ');
   const pattern = rest.join(' ');
   if (!pattern) throw new AuditError(`derivation has no pattern: ${derivation}`);
   if (kind === 'grep-count' || kind === 'grep-files') {
     const flag = kind === 'grep-count' ? '-ohE' : '-lE';
     const paths = target.split(',').filter(Boolean);
-    const out = run('git', ['grep', flag, pattern, 'origin/main', '--', ...paths], { allowFail: true });
+    // Exit 1 is git grep's "no matches", and a real answer. Everything else --
+    // 128 for an unresolvable ref above all -- aborts the run.
+    const out = exec('git', ['grep', flag, pattern, 'origin/main', '--', ...paths], { okExitCodes: [1] });
     return out.trim() ? out.trim().split('\n').length : 0;
   }
   if (kind === 'list-len') {
@@ -554,12 +574,12 @@ export function derive(derivation) {
   throw new AuditError(`unknown derivation kind: ${kind}`);
 }
 
-export function checkClaims(claims) {
+export function checkClaims(claims, { exec = run } = {}) {
   const out = [];
   for (const { doc, pattern, derivation } of claims) {
     const text = fs.readFileSync(path.join(REPO, doc), 'utf8');
     const re = new RegExp(pattern, 'g');
-    const actual = derive(derivation);
+    const actual = derive(derivation, { exec });
     let hits = 0;
     for (const m of text.matchAll(re)) {
       hits += 1;

@@ -7,6 +7,7 @@
  * ground; where a test exists in both, the wording is deliberately the same so
  * a divergence between the two implementations is visible in the diff.
  */
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   cell,
@@ -18,6 +19,7 @@ import {
   findMarker,
   h1Index,
   legacyTailIsBare,
+  run,
   loadClaims,
   loadRegistry,
   ownedLines,
@@ -235,11 +237,42 @@ describe('count claims', () => {
     // search for "tests <pattern>" under `src`: a check that ran, returned a
     // number, and measured the wrong thing. It reported 8 where the answer
     // was 37, and nothing about the output said so.
-    expect(derive('grep-files src,tests Rule 3\\.7|§3\\.7')).toBe(37);
+    let seen;
+    derive('grep-files src,tests Rule 3\\.7|§3\\.7', {
+      exec: (_cmd, args) => { seen = args; return 'a\nb\nc\n'; },
+    });
+    expect(seen.slice(-2)).toEqual(['src', 'tests']);
+    expect(seen).toContain('Rule 3\\.7|§3\\.7');
   });
 
   it('rejects a derivation with no pattern rather than grepping for nothing', () => {
     expect(() => derive('grep-files src')).toThrow(/no pattern/);
+  });
+
+  it('counts an exit-1 grep as a real zero', () => {
+    // `git grep` exits 1 when it ran fine and matched nothing. That IS the
+    // answer, so it must not abort.
+    expect(derive('grep-files src nothing-matches-this', {
+      exec: () => '',
+    })).toBe(0);
+  });
+
+  it('throws rather than returning 0 when the underlying command cannot run', () => {
+    // The bug this file exists to prevent, and the one that turned solyra#69
+    // red. actions/checkout does a shallow single-branch clone, so origin/main
+    // is not a ref in CI and `git grep ... origin/main` exits 128. The old
+    // code swallowed every non-zero exit alike and reported 0 matches, so the
+    // audit would have said "CLAUDE.md claims 37, the tree has 0" and sent
+    // someone to correct a document that was already right. A read that could
+    // not happen is never a measurement (Rule 4).
+    expect(() => derive('grep-files src,tests Rule 3\\.7', {
+      exec: (_cmd, args, opts) => {
+        const err = new Error('fatal: unable to resolve revision: origin/main');
+        err.status = 128;
+        if (opts?.okExitCodes?.includes(128)) return '';
+        throw err;
+      },
+    })).toThrow(/128|unable to resolve/);
   });
 
   it('reports a claim pattern that no longer matches as inert, not as passing', () => {
@@ -248,19 +281,72 @@ describe('count claims', () => {
     const findings = checkClaims([
       { doc: 'CLAUDE.md', pattern: 'this text is not in the file \\((\\d+)\\)',
         derivation: 'grep-files src fetch\\(' },
-    ]);
+    ], { exec: () => 'x\n' });
     expect(findings).toHaveLength(1);
     expect(findings[0].detail).toContain('matched nothing');
   });
 
   it('is quiet when the claim matches the derivation', () => {
-    // CLAUDE.md's "37 files ... reference Rule 3.7" is correct today. A check
-    // that flags everything is as useless as one that flags nothing, so one
-    // true row has to stay silent.
+    // A check that flags everything is as useless as one that flags nothing,
+    // so a row whose claim is true has to stay silent.
     expect(checkClaims([
       { doc: 'CLAUDE.md', pattern: '(\\d+) files under `src/` and',
         derivation: 'grep-files src,tests Rule 3\\.7|§3\\.7' },
-    ])).toEqual([]);
+    ], { exec: () => 'f\n'.repeat(37) })).toEqual([]);
+  });
+
+  it('flags a claim the derivation contradicts', () => {
+    const findings = checkClaims([
+      { doc: 'CLAUDE.md', pattern: '(\\d+) files under `src/` and',
+        derivation: 'grep-files src,tests Rule 3\\.7|§3\\.7' },
+    ], { exec: () => 'f\n'.repeat(11) });
+    expect(findings).toHaveLength(1);
+    expect(findings[0].detail).toBe(
+      'claims 37, `grep-files src,tests Rule 3\\.7|§3\\.7` gives 11');
+  });
+});
+
+// The one assertion that must touch the real tree: that CLAUDE.md's "37 files
+// reference Rule 3.7" is still true. It needs `origin/main`, which a shallow
+// CI clone does not have — so it is skipped there, loudly, rather than
+// silently measuring nothing. A skipped test says so in the output.
+const hasOriginMain = (() => {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', 'origin/main'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+describe.skipIf(!hasOriginMain)('count claims against the real tree', () => {
+  it('confirms the one CLAUDE.md count that is currently correct', () => {
+    expect(derive('grep-files src,tests Rule 3\\.7|§3\\.7')).toBe(37);
+  });
+});
+
+// ── run(): the exit code IS the answer ──────────────────────────────────────
+
+describe('run', () => {
+  it('returns empty for a tolerated non-zero exit', () => {
+    // `git grep` exits 1 for "ran fine, matched nothing". That is a result.
+    // HEAD always resolves, so this is hermetic in a shallow clone too.
+    expect(run('git', ['grep', '-lE', 'zzz-no-such-string-zzz', 'HEAD', '--', 'package.json'],
+      { okExitCodes: [1] })).toBe('');
+  });
+
+  it('throws for an exit code the caller did not tolerate', () => {
+    // `git grep` exits 128 for "unable to resolve revision", which is not a
+    // result. The old boolean allowFail collapsed 1 and 128 into the same ''
+    // and every caller read that as zero matches. This test drives the real
+    // implementation rather than a stub, because the defect was IN run().
+    expect(() => run('git', ['grep', '-lE', 'x', 'no-such-ref-zzz', '--', 'package.json'],
+      { okExitCodes: [1] })).toThrow(/128/);
+  });
+
+  it('throws on any failure when no exit code is tolerated', () => {
+    expect(() => run('git', ['grep', '-lE', 'zzz-no-such-string-zzz', 'HEAD', '--', 'package.json']))
+      .toThrow(/exited 1/);
   });
 });
 
