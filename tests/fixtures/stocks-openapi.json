@@ -1189,6 +1189,10 @@
           "firing": {
             "anyOf": [
               {
+                "enum": [
+                  "CALL",
+                  "PUT"
+                ],
                 "type": "string"
               },
               {
@@ -1248,6 +1252,10 @@
             "type": "array"
           },
           "direction": {
+            "enum": [
+              "CALL",
+              "PUT"
+            ],
             "title": "Direction",
             "type": "string"
           },
@@ -1996,6 +2004,14 @@
             "title": "Max Proba"
           },
           "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Model Version"
           },
           "pred_bucket": {
@@ -2008,6 +2024,17 @@
               }
             ],
             "title": "Pred Bucket"
+          },
+          "pred_bucket_proba": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pred Bucket Proba"
           },
           "probabilities": {
             "anyOf": [
@@ -2057,6 +2084,18 @@
             "type": "string"
           },
           "ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Ts"
           },
           "usage_guidance": {
@@ -3688,6 +3727,17 @@
             "title": "Id",
             "type": "string"
           },
+          "run_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Kind"
+          },
           "thesis": {
             "anyOf": [
               {
@@ -4493,6 +4543,10 @@
             "title": "Pred Bucket Label",
             "type": "string"
           },
+          "pred_bucket_proba": {
+            "title": "Pred Bucket Proba",
+            "type": "number"
+          },
           "probabilities": {
             "$ref": "#/components/schemas/BucketProbabilities"
           },
@@ -4525,6 +4579,7 @@
           "probabilities",
           "pred_bucket",
           "pred_bucket_label",
+          "pred_bucket_proba",
           "max_proba",
           "model_version",
           "source",
@@ -4712,6 +4767,58 @@
         "title": "MineAndValidateRequest",
         "type": "object"
       },
+      "MineStyleAggregateMetrics": {
+        "additionalProperties": true,
+        "description": "The keys the frontend's style panel renders, typed but optional:\nlib/walk_forward._aggregate_metrics only emits avg_*/std_* keys the\nfolds actually produced, so none of these are guaranteed present. Every\nother fold metric passes through untyped (ApiModel allows extras).",
+        "properties": {
+          "avg_expectancy_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Expectancy Pct"
+          },
+          "avg_win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Win Rate"
+          },
+          "total_folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Folds"
+          },
+          "total_trades_all_folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Trades All Folds"
+          }
+        },
+        "title": "MineStyleAggregateMetrics",
+        "type": "object"
+      },
       "MineStyleProfile": {
         "additionalProperties": true,
         "properties": {
@@ -4748,11 +4855,7 @@
         "additionalProperties": true,
         "properties": {
           "aggregate_metrics": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "title": "Aggregate Metrics",
-            "type": "object"
+            "$ref": "#/components/schemas/MineStyleAggregateMetrics"
           },
           "profile": {
             "$ref": "#/components/schemas/MineStyleProfile"
@@ -6118,6 +6221,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "dawn",
                   "blue",
                   "amber",
                   "violet",
@@ -6502,6 +6606,15 @@
           },
           "catalyst_types": {
             "items": {
+              "enum": [
+                "earnings",
+                "sec_8k",
+                "insider",
+                "top_mover",
+                "economic_event",
+                "watchlist",
+                "manual"
+              ],
               "type": "string"
             },
             "title": "Catalyst Types",
@@ -6719,6 +6832,12 @@
           },
           "status": {
             "default": "queued",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -6738,9 +6857,25 @@
         "additionalProperties": true,
         "properties": {
           "data_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Data Source"
           },
           "gamma_flip": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Gamma Flip"
           },
           "mood": {
@@ -6788,6 +6923,18 @@
             "title": "Role"
           },
           "snapshot_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Snapshot Ts"
           },
           "status": {
@@ -6795,6 +6942,14 @@
             "type": "string"
           },
           "total_gex": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total Gex"
           }
         },
@@ -7162,6 +7317,17 @@
             "title": "Report",
             "type": "object"
           },
+          "run_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Kind"
+          },
           "ticker": {
             "title": "Ticker",
             "type": "string"
@@ -7410,6 +7576,12 @@
             "title": "Started At"
           },
           "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -7435,6 +7607,11 @@
         "additionalProperties": true,
         "properties": {
           "authMode": {
+            "enum": [
+              "open",
+              "firebase",
+              "iap"
+            ],
             "title": "Authmode",
             "type": "string"
           },
@@ -7865,6 +8042,17 @@
             ],
             "title": "Rsi"
           },
+          "run_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Kind"
+          },
           "score": {
             "anyOf": [
               {
@@ -8095,6 +8283,17 @@
               }
             ],
             "title": "Rsi"
+          },
+          "run_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Kind"
           },
           "score": {
             "anyOf": [
@@ -8428,7 +8627,9 @@
             "type": "boolean"
           },
           "class_probs": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "type": "number"
+            },
             "default": {},
             "title": "Class Probs",
             "type": "object"
@@ -14261,7 +14462,7 @@
     },
     "/api/signals/{ticker}": {
       "get": {
-        "description": "Return historical signals for a ticker.\n\nReads from Cloud SQL ``historical_signals`` when configured, falls back\nto the legacy GCS parquet otherwise. Supports point-in-time review via\n``end_date`` (+ optional ``end_time``).",
+        "description": "Return historical signals for a ticker.\n\nReads from Cloud SQL ``historical_signals`` when configured; a failed\nquery is a 503, never the legacy parquet (Cloud SQL is the system of\nrecord, and a fallback nothing can tell apart is a silent one: audit\nP1-#2, CLAUDE.md 3.7.1). The legacy GCS parquet path serves only when\nCloud SQL is NOT configured (local dev). Supports point-in-time review\nvia ``end_date`` (+ optional ``end_time``).",
         "operationId": "get_signals_api_signals__ticker__get",
         "parameters": [
           {

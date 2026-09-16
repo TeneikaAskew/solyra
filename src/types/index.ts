@@ -211,6 +211,12 @@ export interface MovementExpectedMove {
   probabilities?: {
     p_tight: number; p_normal: number; p_expanded: number; p_explosive: number;
   } | null;
+  /** Probability of the served bucket (size_class). Present on every OK row since 2026-09-16. */
+  pred_bucket_proba?: number | null;
+  /**
+   * Probability of the ARGMAX bucket, TIGHT on nearly every bar. A drift metric,
+   * not the confidence of size_class; never render it as one.
+   */
   max_proba?: number | null;
   model_version?: string | null;
   ts?: string | null;
