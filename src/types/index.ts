@@ -218,6 +218,8 @@ export interface MovementExpectedMove {
    * not the confidence of size_class; never render it as one.
    */
   max_proba?: number | null;
+  /** The rule pred_bucket was made under: 'lift' on every OK row; argmax-era rows are not served. */
+  decision_rule?: string | null;
   model_version?: string | null;
   ts?: string | null;
   atr_20?: number | null; // NEW: current ATR-20 for the Tier-3 sizing calculator

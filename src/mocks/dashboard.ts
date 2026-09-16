@@ -727,6 +727,7 @@ export const MOCK_MOVEMENT_STATEMENT = {
       },
       pred_bucket_proba: 0.69,
       max_proba: 0.69,
+      decision_rule: 'lift',
       model_version: 'magnitude-recal-48njf',
       ts: '2026-07-10T19:45:00+00:00',
       usage_guidance:
