@@ -232,13 +232,14 @@ export const chartsRoutes: MockRoute[] = [
           };
         }
         // No bar engine behind the mock: the "actual" return is the
-        // journal's own recorded close, and every system benchmark field
-        // is an honest unavailable/null — never fabricated (Rule 4).
+        // journal's own recorded close, and every field a bar comparison
+        // would produce — fill_check included — is an honest
+        // unavailable/null, never fabricated (Rule 4; Codex, #66).
         return {
           id: row.id,
           status: 'ok',
           actual_return_pct: row.return_pct,
-          fill_check: 'ok',
+          fill_check: null,
           system_signal_at_entry: { direction: null, score: null, status: 'unavailable' },
           system_exit: null,
           exit_edge_bps: null,
@@ -258,7 +259,10 @@ export const chartsRoutes: MockRoute[] = [
           ? Number((scoredReturns.reduce((a, r) => a + r, 0) / scoredN).toFixed(4))
           : null,
         system_resolved_n: 0,
-        system_no_signal_n: scoredN,
+        // "No signal" means the benchmark RAN and found no setup; every
+        // mock card is system-unavailable (it never ran), so counting
+        // them here would contradict the per-row state (Codex, #66).
+        system_no_signal_n: 0,
         system_agreement_rate: null,
         avg_exit_edge_bps: null,
       };

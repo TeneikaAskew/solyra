@@ -403,11 +403,17 @@ describe('journal mutation semantics (server parity)', () => {
     expect(win.status).toBe('ok');
     expect(win.actual_return_pct).toBeCloseTo(2, 10);
     expect(loss.actual_return_pct).toBeCloseTo(-3, 10);
+    // No bar engine ran, so fill quality is UNKNOWN — never a fabricated
+    // 'ok' that suppresses the outside-range warning (Codex, #66).
+    expect(win.fill_check).toBeNull();
     expect(open.status).toBe('unavailable');
     expect(open.reason).toMatch(/still open/);
+    // "No signal" would mean the benchmark ran and found no setup; the
+    // mock's benchmark never runs, so the count stays 0 to match the
+    // per-row 'unavailable' state (Codex, #66).
     expect(body.aggregate).toMatchObject({
       n: 3, scored_n: 2, win_rate: 0.5, avg_return_pct: -0.5,
-      system_resolved_n: 0, system_no_signal_n: 2,
+      system_resolved_n: 0, system_no_signal_n: 0,
     });
     // No bar engine behind the mock — the benchmark stays an honest null,
     // never a fabricated agreement rate.
