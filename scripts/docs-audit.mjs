@@ -738,25 +738,29 @@ export function checkClaims(claims, { exec = run } = {}) {
  * each time meaning the vendored snapshot was claiming a freshness it did not
  * have. A doc having an owning job is not evidence the job delivered.
  */
-export function checkContractSync() {
-  const res = spawnSync('node', ['scripts/sync-api-contract.mjs', '--check'],
+const CONTRACT_STALE_RE = /^\[api-contract\] .*\b(?:stale|missing)\b/im;
+
+export function checkContractSync({ spawn = spawnSync } = {}) {
+  const res = spawn('node', ['scripts/sync-api-contract.mjs', '--check'],
     { cwd: REPO, encoding: 'utf8' });
   const why = `${res.stdout ?? ''}${res.stderr ?? ''}`.trim();
   if (res.error) throw new AuditError(`contract:check could not run: ${res.error.message}`);
   if (res.status === 0) return [];
-  // sync-api-contract.mjs distinguishes its own outcomes by exit code:
-  //   1 = compared, and the vendored snapshot really is stale
-  //   2 = could not fetch upstream (non-OK HTTP)
-  //   anything else = it died (missing dependency, DNS failure, a throw)
-  // Only 1 is a finding. Reporting an unreachable upstream as "the snapshot is
-  // stale, run contract:sync" tells someone to resync against a contract that
-  // was never compared -- a fabricated result, which is the rule this module
-  // exists to enforce (Rule 4).
-  if (res.status !== 1) {
+  // sync-api-contract.mjs exits 1 for "compared, and stale" and 2 for a non-OK
+  // HTTP response. But Node ALSO exits 1 for anything it did not catch -- a
+  // DNS failure inside fetch(), a malformed body in JSON.parse, a missing
+  // package -- so the exit status alone cannot separate a verdict from a
+  // crash. The script's verdict is the `[api-contract] ... stale|missing`
+  // line it writes to stderr; nothing else counts. Reporting an unreachable
+  // upstream as "the snapshot is stale, run contract:sync" tells someone to
+  // resync against a contract that was never compared -- a fabricated result,
+  // which is the rule this module exists to enforce (Rule 4).
+  const verdict = res.status === 1 && CONTRACT_STALE_RE.test(res.stderr ?? '');
+  if (!verdict) {
     throw new AuditError(
-      `contract:check could not compare the snapshot (exit ${res.status}); the audit `
-      + `cannot report on the vendored OpenAPI contract. `
-      + `(${why.split('\n').slice(0, 2).join(' ').slice(0, 200)})`);
+      `contract:check could not compare the snapshot (exit ${res.status}, a transport `
+      + `or execution failure, not a verdict); the audit cannot report on the vendored `
+      + `OpenAPI contract. (${why.split('\n').slice(0, 2).join(' ').slice(0, 200)})`);
   }
   return [{ check: 'class-a', doc: 'tests/fixtures/stocks-openapi.json', severity: 'P1',
     detail: `contract:check is red: the vendored OpenAPI snapshot no longer matches `

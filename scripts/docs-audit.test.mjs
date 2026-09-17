@@ -13,6 +13,7 @@ import {
   cell,
   checkClaims,
   checkChangedSince,
+  checkContractSync,
   checkDeadLinks,
   checkRegions,
   classify,
@@ -272,6 +273,56 @@ describe('checkChangedSince', () => {
       { exec: () => 'aaa one\nbbb two\n' });
     expect(out).toHaveLength(1);
     expect(out[0].detail).toContain('2 content commit(s)');
+  });
+});
+
+// ── contract delivery (Class A) ─────────────────────────────────────────────
+
+describe('checkContractSync', () => {
+  const spawnWith = (status, stderr = '', stdout = '') => () => ({ status, stdout, stderr });
+
+  it('is quiet when the snapshot matches', () => {
+    expect(checkContractSync({ spawn: spawnWith(0, '', '[api-contract] vendored snapshot matches') }))
+      .toEqual([]);
+  });
+
+  it('reports the stale result the script itself printed', () => {
+    const out = checkContractSync({ spawn: spawnWith(1,
+      '[api-contract] vendored snapshot is STALE against stocks. Run: npm run contract:sync\n') });
+    expect(out).toHaveLength(1);
+    expect(out[0].severity).toBe('P1');
+  });
+
+  it('reports a missing or unreadable snapshot as the stale finding too', () => {
+    const out = checkContractSync({ spawn: spawnWith(1,
+      '[api-contract] tests/fixtures/stocks-openapi.json is missing or unreadable — run: npm run contract:sync\n') });
+    expect(out).toHaveLength(1);
+  });
+
+  it('treats a non-OK HTTP response (exit 2) as an audit error, not a stale snapshot', () => {
+    expect(() => checkContractSync({ spawn: spawnWith(2, '[api-contract] HTTP 503 for https://raw...') }))
+      .toThrow(/could not compare/);
+  });
+
+  it('treats a DNS failure as an audit error even though Node exits 1 for it', () => {
+    // An uncaught top-level rejection exits 1 -- the SAME code the script uses
+    // for "compared, and stale". The exit status alone cannot tell them apart;
+    // only the script's own verdict on stderr can. Reporting `fetch failed` as
+    // "run contract:sync" sends someone to resync a contract nobody compared.
+    const stderr = 'TypeError: fetch failed\n    at node:internal/deps/undici/undici:13510:13\n'
+      + '  [cause]: Error: getaddrinfo ENOTFOUND raw.githubusercontent.com';
+    expect(() => checkContractSync({ spawn: spawnWith(1, stderr) })).toThrow(/could not compare/);
+  });
+
+  it('treats a malformed upstream body as an audit error', () => {
+    const stderr = 'SyntaxError: Unexpected token < in JSON at position 0\n    at JSON.parse';
+    expect(() => checkContractSync({ spawn: spawnWith(1, stderr) })).toThrow(/could not compare/);
+  });
+
+  it('treats a missing dependency as an audit error', () => {
+    expect(() => checkContractSync({ spawn: spawnWith(1,
+      "Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'openapi-typescript'") }))
+      .toThrow(/could not compare/);
   });
 });
 
