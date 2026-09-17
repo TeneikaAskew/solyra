@@ -100,10 +100,17 @@ describe('isoNaiveToEpoch', () => {
     // Date.UTC rolls it to Mar 1 — the wrong bar again (Codex, #66).
     // The round-trip check catches it; real leap days still parse.
     expect(Number.isNaN(isoNaiveToEpoch('2026-02-29 13:35'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2025-02-29 13:35'))).toBe(true);
     expect(Number.isNaN(isoNaiveToEpoch('2026-04-31 13:35'))).toBe(true);
     expect(Number.isNaN(isoNaiveToEpoch('2026-07-00 13:35'))).toBe(true);
+    expect(isoNaiveToEpoch('2024-02-29 13:35')).toBe(
+      Math.floor(Date.UTC(2024, 1, 29, 13, 35, 0) / 1000),
+    );
     expect(isoNaiveToEpoch('2028-02-29 13:35')).toBe(
       Math.floor(Date.UTC(2028, 1, 29, 13, 35, 0) / 1000),
+    );
+    expect(isoNaiveToEpoch('2026-02-28 13:35')).toBe(
+      Math.floor(Date.UTC(2026, 1, 28, 13, 35, 0) / 1000),
     );
   });
 
