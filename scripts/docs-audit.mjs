@@ -75,10 +75,14 @@ const MD_LINK_RE = /\[[^\]]*\]\(([^)#\s]+)(?:#[^)\s]*)?\)/g;
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
 // slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
 // which the living docs cite constantly -- could never produce a dead-path
-// finding. A bare name is only checked when it is an exact tracked root file,
-// so prose naming a file generically is not flagged.
+// finding. The bare shape must admit a dotted stem: `vite.config.ts` and
+// `playwright.config.ts` are the two most-cited root files here (12 and 15
+// mentions) and a stem of `[A-Za-z0-9_-]+` matched neither. A bare name is
+// only checked against the root files this repo tracks (see checkDeadLinks),
+// because the docs also name `mocks.ts`, `main.py`, `deploy.sh` and a hundred
+// other bare files that live under a directory or in the sibling repo.
 const BACKTICK_PATH_RE = /`([A-Za-z0-9_./-]+\/[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,5})`/g;
-const BACKTICK_ROOT_FILE_RE = /`([A-Za-z0-9_-]+\.[A-Za-z0-9]{1,5})`/g;
+const BACKTICK_ROOT_FILE_RE = /`([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[A-Za-z0-9]{1,5})`/g;
 const CODE_EXTS = new Set(['.py', '.ts', '.tsx', '.js', '.mjs', '.sql', '.sh', '.yml', '.yaml', '.json', '.md']);
 
 export class AuditError extends Error {}
@@ -451,17 +455,28 @@ export function h1Index(lines) {
   return null;
 }
 
-/** Segments of an existing marker line this script does not own, e.g. a
- *  `**Status:**` field or a trailing caveat sentence. Rebuilding the line from
- *  only the known fields silently deletes them. */
+/**
+ * The value shape of each field this script owns. `Owner:` is absent on
+ * purpose: its value is free text that `ownerOf` carries whole, so there is no
+ * recognised prefix after which a caveat could begin.
+ */
+const OWNED_VALUE_RE = {
+  'Last reviewed:': /^(?:\d{4}-\d{2}-\d{2}|unknown)/,
+  'Depth:': /^(?:verified|scanned)/,
+  'Against:': /^`[0-9a-f]{7,40}`/,
+  'Last scanned:': /^\d{4}-\d{2}-\d{2}/,
+};
+
 /**
  * The parts of a marker line this script does not own, so a restamp keeps them.
  *
  * Dropping any segment that merely STARTS with an owned field also deleted the
  * prose riding on it: `**Last reviewed:** 2026-08-31 — deployment only` lost
  * the caveat silently, which is exactly what `legacyTailIsBare` refuses to do
- * for legacy lines. An owned segment now contributes back whatever trails its
- * recognised value instead of being discarded whole.
+ * for legacy lines. An owned segment contributes back whatever trails its
+ * recognised value, and only that: taking "the first token" as the value made
+ * `**Owner:** Jane Doe` yield a tail of `Doe`, which a restamp appended as a
+ * new segment and then appended again on every run after.
  */
 export function extraSegments(line) {
   const out = [];
@@ -470,9 +485,14 @@ export function extraSegments(line) {
     if (!s) continue;
     const field = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`));
     if (!field) { out.push(s); continue; }
-    // `**Field:** <value><tail>` — keep a non-empty tail, drop the value.
-    const m = /^\*\*[^*]+\*\*:?\s*(?:`[^`]*`|[^\s]+)?\s*(.*)$/.exec(s);
-    const tail = m && m[1] ? m[1].trim() : '';
+    const valueRe = OWNED_VALUE_RE[field];
+    if (!valueRe) continue; // Owner: the whole segment is the value.
+    const afterLabel = s.slice(`**${field}**`.length).trim();
+    const v = valueRe.exec(afterLabel);
+    // An owned label with a value this script did not write is kept whole
+    // rather than guessed at; the parser will have rejected the line anyway.
+    if (!v) { out.push(s); continue; }
+    const tail = afterLabel.slice(v[0].length).trim();
     if (tail) out.push(tail);
   }
   return out;
@@ -616,6 +636,21 @@ export function checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles = new
     }
   });
   return out;
+}
+
+/**
+ * The content checks a class is subject to. Class C keeps its LINK check but
+ * not its issue check, and the split is the point: a dated record citing an
+ * issue that has since closed was true on its date, so reporting it builds a
+ * backlog whose only resolution is "leave it". A dead link is different: the
+ * record still means what it said, but its evidence can no longer be reached,
+ * and repointing the link changes nothing the record asserts. The registry
+ * promises Class C is read for cross-references; this is that promise.
+ */
+export function contentChecks(cls, doc, text, { states, tracked, topLevelDirs, rootFiles }) {
+  const links = checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles);
+  if (cls === 'C') return links;
+  return [...checkClosedIssues(doc, text, states), ...links];
 }
 
 export function checkChangedSince(doc, sha, codePaths, baseRef = 'origin/main', { exec = run } = {}) {
@@ -793,7 +828,11 @@ export function parseArgs(argv) {
     else if (t === '--check') a.check = true;
     else if (t === '--stamp') a.stamp = true;
     else if (t === '--verify') {
+      const before = a.verify.length;
       while (argv[i + 1] && !argv[i + 1].startsWith('--')) a.verify.push(argv[++i]);
+      // `--stamp --verify` with the path forgotten is a scan-only pass the
+      // operator believes recorded a review.
+      if (a.verify.length === before) throw new AuditError(`${t} needs a value`);
     } else if (t === '--contract-check' || t === '--no-contract-check') {
       a.contractCheck = t === '--contract-check';
     } else if (VALUE_FLAGS[t]) {
@@ -862,15 +901,10 @@ export function main(argv) {
 
     const text = fs.readFileSync(path.join(REPO, doc), 'utf8');
 
-    // Class C keeps its LINK checks but not its issue checks, and the split is
-    // the point. A dated record citing an issue that has since closed was true
-    // on its date, so reporting it builds a backlog whose only resolution is
-    // "leave it". A dead link is different: the record still means what it
-    // said, but its evidence can no longer be reached, and repointing the link
-    // changes nothing the record asserts. The registry promises these are read
-    // for cross-references — this is that promise.
+    // Class C is read for cross-references and nothing else: no issue
+    // freshness, no marker, no rewriting. See contentChecks for why.
     if (cls === 'C') {
-      findings.push(...checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles));
+      findings.push(...contentChecks(cls, doc, text, { states, tracked, topLevelDirs, rootFiles }));
       continue;
     }
 
@@ -890,10 +924,7 @@ export function main(argv) {
       stampable = prompt === null && unownedSpans(text, owned).length > 0;
     }
 
-    const content = [
-      ...checkClosedIssues(doc, text, states),
-      ...checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles),
-    ];
+    const content = contentChecks(cls, doc, text, { states, tracked, topLevelDirs, rootFiles });
     if (cls === 'A') for (const f of content) f.region = regionOf(f.line ?? 0, owned, prompt);
     findings.push(...content);
 

@@ -16,6 +16,7 @@ import {
   checkContractSync,
   checkDeadLinks,
   checkRegions,
+  contentChecks,
   classify,
   derive,
   docLines,
@@ -340,6 +341,13 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--since', '--json'])).toThrow(/needs a value/);
   });
 
+  it('rejects --verify with no path, which would otherwise stamp nothing as verified', () => {
+    // `--stamp --verify` with the path forgotten is a scan-only pass that the
+    // operator believes recorded a review. The list option is a value option.
+    expect(() => parseArgs(['--stamp', '--verify'])).toThrow(/needs a value/);
+    expect(() => parseArgs(['--verify', '--stamp'])).toThrow(/needs a value/);
+  });
+
   it('parses the documented options', () => {
     const a = parseArgs(['--json', '--check', '--since', 'abc1234', '--verify', 'a.md', 'b.md']);
     expect(a).toMatchObject({ json: true, check: true, since: 'abc1234', verify: ['a.md', 'b.md'] });
@@ -395,6 +403,24 @@ describe('checkDeadLinks', () => {
     expect(out[0].detail).toContain('package.json');
   });
 
+  it('matches a dotted root filename, which is what the docs actually cite', () => {
+    // `vite.config.ts` and `playwright.config.ts` are the two most-cited root
+    // files in the living docs (12 and 15 mentions). A stem of `[A-Za-z0-9_-]+`
+    // cannot contain a dot, so neither could ever be matched and the check
+    // only ever worked for `package.json`.
+    const out = checkDeadLinks('d.md', 'Edit `vite.config.ts` first.\n',
+      new Set(['vite.config.mts']), new Set(['src']), roots);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('vite.config.ts');
+  });
+
+  it('does not flag a dotted name with no tracked sibling of that stem', () => {
+    // `pw.sandbox.config.ts` is cited six times and has never been a root
+    // file here; the docs name it as a proposal.
+    expect(checkDeadLinks('d.md', 'Add `pw.sandbox.config.ts`.\n',
+      tracked, new Set(['src']), roots)).toEqual([]);
+  });
+
   it('does not flag a root file that is still tracked', () => {
     expect(checkDeadLinks('d.md', 'See `vite.config.ts`.\n', tracked, new Set(['src']), roots))
       .toEqual([]);
@@ -404,6 +430,33 @@ describe('checkDeadLinks', () => {
     // Prose naming some other project's file is not this repo's to resolve.
     expect(checkDeadLinks('d.md', 'Their `webpack.config.js` differs.\n',
       tracked, new Set(['src']), roots)).toEqual([]);
+  });
+});
+
+// ── which checks a class gets ───────────────────────────────────────────────
+
+describe('contentChecks', () => {
+  const ctx = {
+    states: { solyra: { 8: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } },
+    tracked: new Set(['README.md']),
+    topLevelDirs: new Set(['src']),
+    rootFiles: new Set(['README']),
+  };
+  const text = 'Blocked by https://github.com/TeneikaAskew/solyra/issues/8.\n'
+    + 'See [the plan](../missing.md) and `src/gone.ts`.\n';
+
+  it('still validates links in a Class C record', () => {
+    // An unconditional `continue` skipped every check for Class C, contradicting
+    // the registry's promise that dated records are read for cross-references.
+    // A closed issue in a record was true on its date; a dead link is evidence
+    // that can no longer be reached, whatever the date.
+    const out = contentChecks('C', 'docs/record.md', text, ctx);
+    expect(out.map((f) => f.check)).toEqual(['dead-link', 'dead-link']);
+  });
+
+  it('runs the issue check as well for a living doc', () => {
+    const out = contentChecks('D', 'docs/living.md', text, ctx);
+    expect(out.map((f) => f.check).sort()).toEqual(['closed-issue', 'dead-link', 'dead-link']);
   });
 });
 
@@ -425,6 +478,41 @@ describe('extraSegments', () => {
   it('keeps an unrecognised field whole', () => {
     expect(extraSegments('**Trust status:** partial')).toEqual(['**Trust status:** partial']);
   });
+
+  it('does not mistake the second word of an owner for a caveat', () => {
+    // The owner is free text and `ownerOf` already carries the whole of it.
+    // Taking "the first token" as the value made `**Owner:** Jane Doe` yield
+    // a tail of `Doe`, which a restamp appended as a new segment -- and then
+    // again on every run after that.
+    expect(extraSegments('**Owner:** Jane Doe')).toEqual([]);
+    expect(extraSegments('**Owner:** @TeneikaAskew (frontend)')).toEqual([]);
+  });
+
+  it('keeps only prose that follows the recognised value of each owned field', () => {
+    expect(extraSegments('**Depth:** verified (routes only)')).toEqual(['(routes only)']);
+    expect(extraSegments('**Against:** `abc1234` pre-split tree')).toEqual(['pre-split tree']);
+    expect(extraSegments('**Last scanned:** 2026-09-01')).toEqual([]);
+  });
+});
+
+describe('restamp with a multi-word owner', () => {
+  it('is idempotent and never duplicates part of the owner', () => {
+    const before = `# T\n\n${renderMarker('2026-08-31', null, null, '2026-09-01', 'Jane Doe')}\n`;
+    const once = stamp(before, '2026-09-16', 'scanned', 'abc1234', false).text;
+    const twice = stamp(once, '2026-09-17', 'scanned', 'abc1234', false).text;
+    expect(once.split('\n')[2]).toBe(
+      '**Last reviewed:** 2026-08-31 · **Last scanned:** 2026-09-16 · **Owner:** Jane Doe');
+    expect(twice.split('\n')[2]).toBe(
+      '**Last reviewed:** 2026-08-31 · **Last scanned:** 2026-09-17 · **Owner:** Jane Doe');
+  });
+
+  it('keeps a caveat on a current-format marker through two restamps', () => {
+    const before = '# T\n\n**Last reviewed:** 2026-08-31 — deployment only\n';
+    const once = stamp(before, '2026-09-16', 'scanned', 'abc1234', false).text;
+    const twice = stamp(once, '2026-09-17', 'scanned', 'abc1234', false).text;
+    expect(once).toContain('— deployment only');
+    expect(twice.split('— deployment only')).toHaveLength(2);
+  });
 });
 
 // ── the marker window ───────────────────────────────────────────────────────
@@ -439,6 +527,16 @@ describe('markerWindow', () => {
     const found = findMarker(doc.split('\n'));
     expect(found).not.toBeNull();
     expect(found.date).toBe('2026-08-31');
+  });
+
+  it('does not insert a second marker on the run after a long-front-matter insert', () => {
+    const pre = Array.from({ length: 45 }, (_, i) => `<!-- filler ${i} -->`).join('\n');
+    const doc = `${pre}\n\n# Title\n\nBody.\n`;
+    const once = stamp(doc, '2026-09-16', 'scanned', 'abc1234', false);
+    expect(once.action).toBe('inserted');
+    const twice = stamp(once.text, '2026-09-17', 'scanned', 'abc1234', false);
+    expect(twice.action).toBe('updated');
+    expect(twice.text.split('**Last reviewed:**')).toHaveLength(2);
   });
 
   it('does not accept a later section\'s metadata as the document marker', () => {
