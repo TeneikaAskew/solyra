@@ -106,6 +106,16 @@ describe('isoNaiveToEpoch', () => {
       Math.floor(Date.UTC(2028, 1, 29, 13, 35, 0) / 1000),
     );
   });
+
+  it('rejects malformed offsets the round-trip cannot see', () => {
+    // The offset is discarded by design (naive-ET convention), so the
+    // round-trip check never sees it — the regex itself must bound the
+    // offset fields, or "+00:99" rides a valid wall clock onto the chart
+    // (Codex, #66).
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35+00:99'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:00+24:00'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:00+0:00'))).toBe(true);
+  });
 });
 
 describe('journalRowToTradeEntry', () => {

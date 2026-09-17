@@ -143,7 +143,10 @@ export function isoNaiveToEpoch(iso: string): number {
   // "+HH:MM"/"-HH:MM" offset. A corrupt tail ("13:35:4", "13:355",
   // "13:35junk", "13:35.abc") must be NaN, never silently plotted at :00
   // (Codex, #66; wire timestamps are never Z-suffixed — see above).
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:[+-]\d{2}:\d{2})?$/.exec(iso);
+  // The offset is discarded (naive-ET wall clock), so the round-trip check
+  // below never sees it — its fields are bounded here instead: hour 00-23,
+  // minute 00-59, or the whole tail is corrupt ("+00:99" → NaN; Codex, #66).
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/.exec(iso);
   if (!m) return NaN;
   const [y, mo, d, h, mi] = m.slice(1, 6).map(Number);
   const s = m[6] === undefined ? 0 : Number(m[6]);
