@@ -232,6 +232,35 @@ describe('journalRowToTradeEntry', () => {
     expect(t.status).toBe('loss');
   });
 
+  it('keeps a closed trade with an unavailable return as "closed", never breakeven', () => {
+    // journal.py's `_derive_status` (stocks #1115) returns 'closed' for an
+    // exited trade whose return could not be computed (zero entry price).
+    // Mapping that to 'breakeven' fabricates a flat result the user never
+    // had (Rule 4; Codex, #66) — both when the server says so and when a
+    // legacy row has no status and the client re-derives it.
+    const closedNull: PlottableJournalRow = {
+      id: 'zero-entry',
+      ticker: 'IWM',
+      direction: 'CALL',
+      entry_ts: '2026-06-18T10:00:00',
+      exit_ts: '2026-06-18T15:00:00',
+      entry_price: 0,
+      exit_price: 5,
+      return_pct: null,
+    };
+    const fromServer = journalRowToTradeEntry({ ...closedNull, status: 'closed' });
+    expect(fromServer.status).toBe('closed');
+    expect(fromServer.pnl).toBeUndefined();
+    expect(fromServer.pnlPercent).toBeUndefined();
+    const rederived = journalRowToTradeEntry(closedNull);
+    expect(rederived.status).toBe('closed');
+    expect(rederived.pnl).toBeUndefined();
+    // A genuine flat close is still breakeven: 0 is a real return here.
+    expect(journalRowToTradeEntry({ ...closedNull, entry_price: 5, return_pct: 0 }).status).toBe(
+      'breakeven',
+    );
+  });
+
   // task-alerts-enrichment (2026-07-12) — a matched pipeline row's
   // time_stop_minutes passes through to TradeEntry.timeStopMinutes
   // untouched (structural passthrough, not a fabricated financial value).

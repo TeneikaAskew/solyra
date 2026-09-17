@@ -167,16 +167,25 @@ export function isoNaiveToEpoch(iso: string): number {
 }
 
 function deriveStatus(row: JournalRow): TradeEntry['status'] {
-  if (row.status === 'win' || row.status === 'loss' || row.status === 'breakeven' || row.status === 'active') {
+  if (
+    row.status === 'win' ||
+    row.status === 'loss' ||
+    row.status === 'breakeven' ||
+    row.status === 'active' ||
+    row.status === 'closed'
+  ) {
     return row.status;
   }
   // Legacy local-dev rows (pre-Phase-2) or an unrecognized server value:
-  // re-derive the same win/loss/breakeven/active split the server's own
-  // `_derive_status` uses (journal.py), keyed off exit_ts + return_pct sign.
-  // This is a structural fallback for a possibly-absent key, not the
+  // re-derive the same win/loss/breakeven/closed/active split the server's
+  // own `_derive_status` uses (journal.py), keyed off exit_ts + return_pct
+  // sign. This is a structural fallback for a possibly-absent key, not the
   // "financial ?? 0" pattern CLAUDE.md Rule 3.7 forbids.
   if (!row.exit_ts) return 'active';
-  if (row.return_pct == null) return 'breakeven';
+  // Exited with no computable return (zero entry price) is 'closed', the
+  // server's own value: calling it breakeven fabricates a flat result the
+  // user never had (Rule 4; Codex, #66).
+  if (row.return_pct == null) return 'closed';
   if (row.return_pct > 0) return 'win';
   if (row.return_pct < 0) return 'loss';
   return 'breakeven';
