@@ -375,14 +375,18 @@ describe('journal mutation semantics (server parity)', () => {
     expect(tradesFor('XDUP')).toHaveLength(1);
   });
 
-  it('replay-trades scores the session\'s own journal rows, not a canned pair', () => {
-    // A replay-trainer session: two closed trades and one still open, all
-    // tagged with the same session_id via the same mock routes the app hits.
+  // A replay-trainer session: two closed trades and one still open, all
+  // tagged with the same session_id via the same mock routes the app hits.
+  // Each replay test seeds its OWN ticker/session through this helper: the
+  // module store is shared across the file and never reset, so a test that
+  // read rows seeded by a preceding `it` threw on `winner.id` when run
+  // alone with `-t` (Codex, #66).
+  const seedReplaySession = (ticker: string, sessionId: string) => {
     const mk = (direction: string, entryTime: string, exit?: { time: string; price: number }) => {
       const created = post('/api/journal/trades', {
-        ticker: 'XRPL', direction, entry_date: '2026-06-16',
+        ticker, direction, entry_date: '2026-06-16',
         entry_time: entryTime, entry_price: 100,
-        source: 'replay', session_id: 'sess-9',
+        source: 'replay', session_id: sessionId,
       });
       const id = JSON.parse(created!.payload).id as string;
       if (exit) {
@@ -395,6 +399,11 @@ describe('journal mutation semantics (server parity)', () => {
     const winId = mk('CALL', '10:00', { time: '11:00', price: 102 });
     const lossId = mk('PUT', '12:00', { time: '13:00', price: 103 }); // underlying rose → PUT loss
     const openId = mk('CALL', '14:00');
+    return { winId, lossId, openId };
+  };
+
+  it('replay-trades scores the session\'s own journal rows, not a canned pair', () => {
+    const { winId, lossId, openId } = seedReplaySession('XRPL', 'sess-9');
 
     const hit = post('/api/backtest/replay-trades', { ticker: 'XRPL', session_id: 'sess-9' });
     const body = JSON.parse(hit!.payload);
@@ -422,10 +431,10 @@ describe('journal mutation semantics (server parity)', () => {
   });
 
   it('replay-trades honors explicit trade_ids and 404s a miss like backtest.py', () => {
-    const [winner] = tradesFor('XRPL');
-    const byIds = post('/api/backtest/replay-trades', { ticker: 'XRPL', trade_ids: [winner.id] });
+    const { winId } = seedReplaySession('XRPLI', 'sess-9i');
+    const byIds = post('/api/backtest/replay-trades', { ticker: 'XRPLI', trade_ids: [winId] });
     const scored = JSON.parse(byIds!.payload);
-    expect(scored.trades.map((t: { id: string }) => t.id)).toEqual([winner.id]);
+    expect(scored.trades.map((t: { id: string }) => t.id)).toEqual([winId]);
     expect(scored.aggregate).toMatchObject({ n: 1, scored_n: 1, win_rate: 1 });
     // A stale session or deleted trade is a 404 "no matching trades
     // found" on the real endpoint — answering the unrelated seed pair
@@ -441,12 +450,12 @@ describe('journal mutation semantics (server parity)', () => {
 
   it('replay-trades scopes to the requested ticker like the production query', () => {
     // backtest.py's SQL is `WHERE ticker = :ticker AND ... AND (ids/session)`
-    // — a session that belongs to XRPL must not answer a request for
-    // another symbol with XRPL's scorecard (Codex, #66).
-    const wrongTicker = post('/api/backtest/replay-trades', { ticker: 'SPYX', session_id: 'sess-9' });
+    // — a session that belongs to XRPLS must not answer a request for
+    // another symbol with XRPLS's scorecard (Codex, #66).
+    const { winId } = seedReplaySession('XRPLS', 'sess-9s');
+    const wrongTicker = post('/api/backtest/replay-trades', { ticker: 'SPYX', session_id: 'sess-9s' });
     expect(wrongTicker!.status).toBe(404);
-    const [winner] = tradesFor('XRPL');
-    const wrongTickerById = post('/api/backtest/replay-trades', { ticker: 'SPYX', trade_ids: [winner.id] });
+    const wrongTickerById = post('/api/backtest/replay-trades', { ticker: 'SPYX', trade_ids: [winId] });
     expect(wrongTickerById!.status).toBe(404);
   });
 });
