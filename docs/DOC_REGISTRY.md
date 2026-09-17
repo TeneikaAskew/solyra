@@ -57,6 +57,7 @@ no audit reading them. The spec grammar:
 | `fence:NAME` | the `<!-- NAME:BEGIN -->`..`<!-- NAME:END -->` pair (Lovable's shape) |
 | `line:REGEX` | every line matching REGEX |
 | `prose:PATH` | the remainder is model-written, by the prompt at PATH |
+| `exhaustive` | the file is wholly machine-owned — any line outside the declared regions is a **P1**, because a regeneration will discard it |
 
 A declared region that matches nothing is a **P1**: the writer stopped emitting
 it and this table is claiming a coverage that no longer exists. An empty region
@@ -92,7 +93,7 @@ renames are ignored, so a file-move wave does not flag every document.
 
 | Class | Path glob | Declared code paths | Generated regions |
 |---|---|---|---|
-| A | AGENTS.md | | fence:LOVABLE |
+| A | AGENTS.md | | fence:LOVABLE; exhaustive |
 | C | docs/LOVABLE_COMMITS_REVIEW.md | | |
 | C | docs/TEST_COVERAGE_AUDIT.md | | |
 | C | docs/expected-move-affordances-design.md | | |
@@ -113,6 +114,14 @@ renames are ignored, so a file-move wave does not flag every document.
 | X | .claude/commands/*.md | | |
 | X | .github/pull_request_template.md | | |
 | X | .lovable/plan/*.md | | |
+
+`Frontend.drawio` and `Frontend-icons.drawio` are deliberately absent. They are
+hand-maintained here — unlike the stocks `Architecture*.drawio`, no job writes
+them — and they are XML, so there is no H1 to stamp and the link checks would
+read markup rather than prose. Registering them would produce noise, not
+coverage. This paragraph exists so the omission reads as a decision rather than
+a gap; the audit only pulls a non-Markdown file into the document set when the
+registry names it.
 
 ## Claims
 

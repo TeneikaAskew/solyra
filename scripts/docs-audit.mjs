@@ -72,7 +72,13 @@ const ISSUE_URL_RE = new RegExp(
   'g'
 );
 const MD_LINK_RE = /\[[^\]]*\]\(([^)#\s]+)(?:#[^)\s]*)?\)/g;
+// Two shapes: a path with a slash, and a bare root-level filename. Requiring a
+// slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
+// which the living docs cite constantly -- could never produce a dead-path
+// finding. A bare name is only checked when it is an exact tracked root file,
+// so prose naming a file generically is not flagged.
 const BACKTICK_PATH_RE = /`([A-Za-z0-9_./-]+\/[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,5})`/g;
+const BACKTICK_ROOT_FILE_RE = /`([A-Za-z0-9_-]+\.[A-Za-z0-9]{1,5})`/g;
 const CODE_EXTS = new Set(['.py', '.ts', '.tsx', '.js', '.mjs', '.sql', '.sh', '.yml', '.yaml', '.json', '.md']);
 
 export class AuditError extends Error {}
@@ -98,6 +104,32 @@ export function run(cmd, args, { okExitCodes = [] } = {}) {
       `${cmd} ${args.slice(0, 3).join(' ')}... exited ${err.status}: `
       + String(err.stderr || err.message).slice(0, 400));
   }
+}
+
+// ── the base ref ────────────────────────────────────────────────────────────
+
+export const BASE_REF_CANDIDATES = ['origin/main', 'main', 'HEAD'];
+
+/**
+ * The ref this run audits against: the first candidate git can resolve.
+ *
+ * Hard-coding `origin/main` aborts every documented invocation in a detached
+ * or shallow checkout — including the actions/checkout case this module's own
+ * `run()` describes. `--since` did not work around it, because the ls-tree,
+ * ancestry and drift reads each named the ref separately.
+ *
+ * Falling back is not a silent fallback: the ref used is reported in the run's
+ * output, so a run against `HEAD` cannot be mistaken for one against the
+ * trunk. Inventing an answer when nothing resolves would be, so that throws.
+ */
+export function resolveBaseRef(candidates = BASE_REF_CANDIDATES) {
+  for (const ref of candidates) {
+    const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: REPO, encoding: 'utf8' });
+    if (r.status === 0) return ref;
+  }
+  throw new AuditError(
+    `none of ${candidates.join(', ')} resolves in this checkout; there is nothing to audit against`,
+  );
 }
 
 // ── registry ────────────────────────────────────────────────────────────────
@@ -166,6 +198,18 @@ function globToRe(glob) {
   return new RegExp(`^${escaped}$`);
 }
 
+/**
+ * Every file this audit treats as a document: Markdown, plus any file the
+ * registry names outright. A bare `.md` filter drops registered non-Markdown
+ * artefacts before classification, so their declared regions are never checked.
+ * Glob rows are deliberately not expanded — a directory rule is not a licence
+ * to run the content checks over everything beneath it.
+ */
+export function documentSet(tracked, registry) {
+  const named = new Set(registry.filter((r) => !/[*?[]/.test(r.glob)).map((r) => r.glob));
+  return [...tracked].filter((p) => p.endsWith('.md') || named.has(p)).sort();
+}
+
 /** Most specific match wins, so a file rule beats the directory rule. */
 export function classify(doc, registry) {
   let best = null;
@@ -207,6 +251,8 @@ export function docLines(text) {
  *   fence:NAME    the `<!-- NAME:BEGIN -->`..`<!-- NAME:END -->` pair, which is
  *                 the shape Lovable writes into AGENTS.md
  *   prose:PATH    everything not otherwise claimed is model-written, by PATH
+ *   exhaustive    this file is wholly machine-owned: ANY line outside the
+ *                 declared regions is a defect, not expected prose
  *
  * A spec matching nothing is returned as unmatched rather than ignored: a
  * renderer that stopped emitting its block leaves the registry claiming a
@@ -217,7 +263,9 @@ export function ownedLines(text, specs) {
   const lines = docLines(text);
   const owned = new Set();
   const unmatched = [];
+  const orphans = [];
   let prompt = null;
+  let exhaustive = false;
 
   for (const spec of specs) {
     let hit = false;
@@ -229,13 +277,22 @@ export function ownedLines(text, specs) {
       lines.forEach((line, i) => {
         const m = INVENTORY_RE.exec(line);
         if (!m) return;
-        if (m[2] === 'start') openAt.set(m[1], i + 1);
-        else if (openAt.has(m[1])) {
+        if (m[2] === 'start') {
+          if (openAt.has(m[1])) {
+            orphans.push(`inventory:${m[1]} opened twice (lines ${openAt.get(m[1])} and ${i + 1})`);
+          }
+          openAt.set(m[1], i + 1);
+        } else if (openAt.has(m[1])) {
           for (let n = openAt.get(m[1]); n <= i + 1; n += 1) owned.add(n);
           openAt.delete(m[1]);
           hit = true;
+        } else {
+          orphans.push(`inventory:${m[1]} ends at line ${i + 1} with no start`);
         }
       });
+      for (const [name, n] of [...openAt.entries()].sort((a, b) => a[1] - b[1])) {
+        orphans.push(`inventory:${name} starts at line ${n} with no end`);
+      }
     } else if (spec.startsWith('mark:') || spec.startsWith('fence:')) {
       const name = spec.slice(spec.indexOf(':') + 1);
       const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -253,6 +310,9 @@ export function ownedLines(text, specs) {
       lines.forEach((line, i) => {
         if (pat.test(line)) { owned.add(i + 1); hit = true; }
       });
+    } else if (spec === 'exhaustive') {
+      exhaustive = true;
+      hit = true;
     } else if (spec.startsWith('prose:')) {
       prompt = spec.slice(6);
       hit = true;
@@ -262,7 +322,7 @@ export function ownedLines(text, specs) {
     }
     if (!hit) unmatched.push(spec);
   }
-  return { owned, unmatched, prompt };
+  return { owned, unmatched, prompt, orphans, exhaustive };
 }
 
 /**
@@ -297,29 +357,46 @@ export function checkRegions(doc, text, specs) {
               + 'cannot say which lines a job writes' }],
       owned: new Set(),
       prompt: null,
+      regionMap: null,
     };
   }
-  const { owned, unmatched, prompt } = ownedLines(text, specs);
+  const { owned, unmatched, prompt, orphans, exhaustive } = ownedLines(text, specs);
   const findings = unmatched.map((spec) => ({
     check: 'unowned', doc, severity: 'P1',
     detail: `declared region \`${spec}\` matched nothing -- a renderer stopped `
           + 'emitting it, or the registry is stale',
   }));
-  if (prompt === null) {
-    let total = 0;
-    for (const [lo, hi] of unownedSpans(text, owned)) {
-      total += hi - lo + 1;
-      findings.push({ check: 'unowned', doc, line: lo, severity: 'P2',
-        detail: `lines ${lo}-${hi} (${hi - lo + 1}) are in no generated region: `
-              + 'no job writes them, audit as Class D' });
-    }
-    if (total) {
-      findings.push({ check: 'unowned', doc, severity: 'P2',
-        detail: `${total} of ${docLines(text).length} lines are hand-written prose `
-              + 'inside a doc labelled machine-owned' });
+  for (const o of orphans) {
+    findings.push({ check: 'unowned', doc, severity: 'P1', detail: `unbalanced generated region: ${o}` });
+  }
+  // The unowned complement is NOT a finding. It is the expected shape of a
+  // mixed Class A document, and emitting one per span gave those documents
+  // permanent findings that no amount of reviewing could clear — so --check
+  // could never go green and the gate was worthless. The spans drive routing
+  // and stamping; they are reported as a map, not as defects. What IS a
+  // finding is a declared region that no longer exists.
+  const spans = prompt ? [] : unownedSpans(text, owned);
+  // A doc the registry declares `exhaustive` has no legitimate complement: it
+  // is wholly machine-owned, so anything outside the regions is content a
+  // regeneration will destroy with nobody able to say what it was. AGENTS.md
+  // is the case — a paragraph added below the Lovable fence vanishes on the
+  // next sync. That is the opposite of a mixed doc, where the complement is
+  // the hand-written half and reporting it would make --check permanently red.
+  if (exhaustive) {
+    for (const [lo, hi] of spans) {
+      findings.push({ check: 'unowned', doc, line: lo, severity: 'P1',
+        detail: `lines ${lo}-${hi} sit outside every declared region of a wholly `
+              + 'machine-owned file; the next regeneration will discard them' });
     }
   }
-  return { findings, owned, prompt };
+  const regionMap = {
+    lines: docLines(text).length,
+    generated: owned.size,
+    prompt,
+    unowned_spans: spans.map(([lo, hi]) => [lo, hi]),
+    unowned_lines: spans.reduce((n, [lo, hi]) => n + hi - lo + 1, 0),
+  };
+  return { findings, owned, prompt, regionMap };
 }
 
 // ── markers ─────────────────────────────────────────────────────────────────
@@ -329,8 +406,28 @@ export function legacyTailIsBare(rest) {
   return BARE_TAIL_RE.test(rest || '');
 }
 
+/**
+ * Where a DOCUMENT-level marker may live: after the H1, before the next heading.
+ *
+ * A flat first-40-lines scan had two failure modes. It let a later section's
+ * metadata stand in for the document's provenance, and — because `stamp`
+ * inserts after the H1 wherever that is — it could not find its own marker in a
+ * file with more than 40 lines of front matter, so the next run reported the
+ * marker missing and inserted a duplicate.
+ */
+export function markerWindow(lines, limit = 40) {
+  const h1 = h1Index(lines);
+  if (h1 === null) return { from: 0, to: Math.min(limit, lines.length) };
+  let stop = lines.length;
+  for (let j = h1 + 1; j < Math.min(h1 + 1 + limit, lines.length); j += 1) {
+    if (lines[j].startsWith('#')) { stop = j; break; }
+  }
+  return { from: h1 + 1, to: Math.min(stop, h1 + 1 + limit, lines.length) };
+}
+
 export function findMarker(lines) {
-  for (let i = 0; i < Math.min(lines.length, 40); i += 1) {
+  const { from, to } = markerWindow(lines);
+  for (let i = from; i < to; i += 1) {
     const line = lines[i].trim();
     const m = MARKER_RE.exec(line);
     if (m) {
@@ -357,11 +454,28 @@ export function h1Index(lines) {
 /** Segments of an existing marker line this script does not own, e.g. a
  *  `**Status:**` field or a trailing caveat sentence. Rebuilding the line from
  *  only the known fields silently deletes them. */
+/**
+ * The parts of a marker line this script does not own, so a restamp keeps them.
+ *
+ * Dropping any segment that merely STARTS with an owned field also deleted the
+ * prose riding on it: `**Last reviewed:** 2026-08-31 — deployment only` lost
+ * the caveat silently, which is exactly what `legacyTailIsBare` refuses to do
+ * for legacy lines. An owned segment now contributes back whatever trails its
+ * recognised value instead of being discarded whole.
+ */
 export function extraSegments(line) {
-  return line
-    .split(DOT)
-    .map((s) => s.trim())
-    .filter((s) => s && !OWNED_FIELDS.some((f) => s.startsWith(`**${f}`)));
+  const out = [];
+  for (const raw of line.split(DOT)) {
+    const s = raw.trim();
+    if (!s) continue;
+    const field = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`));
+    if (!field) { out.push(s); continue; }
+    // `**Field:** <value><tail>` — keep a non-empty tail, drop the value.
+    const m = /^\*\*[^*]+\*\*:?\s*(?:`[^`]*`|[^\s]+)?\s*(.*)$/.exec(s);
+    const tail = m && m[1] ? m[1].trim() : '';
+    if (tail) out.push(tail);
+  }
+  return out;
 }
 
 export function ownerOf(line) {
@@ -469,7 +583,7 @@ export function checkClosedIssues(doc, text, states) {
   return out;
 }
 
-export function checkDeadLinks(doc, text, tracked, topLevelDirs) {
+export function checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles = new Set()) {
   const out = [];
   const base = path.posix.dirname(doc);
   text.split('\n').forEach((line, i) => {
@@ -491,18 +605,31 @@ export function checkDeadLinks(doc, text, tracked, topLevelDirs) {
         out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `backticked path -> ${p}` });
       }
     }
+    for (const m of line.matchAll(BACKTICK_ROOT_FILE_RE)) {
+      const f = m[1];
+      if (!CODE_EXTS.has(path.posix.extname(f))) continue;
+      // Only a name that USED to be a tracked root file can be dead. Prose
+      // naming some other `config.json` is not this repo's to resolve, so the
+      // check is anchored on the sibling set rather than on the name alone.
+      if (tracked.has(f) || !rootFiles.has(f.split('.').slice(0, -1).join('.'))) continue;
+      out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `backticked root file -> ${f}` });
+    }
   });
   return out;
 }
 
-export function checkChangedSince(doc, sha, codePaths) {
+export function checkChangedSince(doc, sha, codePaths, baseRef = 'origin/main', { exec = run } = {}) {
   if (!sha || codePaths.length === 0) return [];
   // `git log` exits 0 with empty output when the range holds no commits, so
   // there is no non-zero code that means "no matches" here. A bad SHA exits
   // 128 and must abort: reporting "nothing changed since <sha>" for a SHA the
   // repo does not have is the same fabrication as a count of zero. The marker
   // check reports the unknown SHA separately.
-  const out = run('git', ['log', '--oneline', '--diff-filter=M', `${sha}..origin/main`, '--', ...codePaths]);
+  // AMD, not M: a declared path GAINING a route under src/routes or LOSING a
+  // documented component changes the described surface as much as editing one,
+  // and `M` alone queued neither. Renames stay excluded, which is the point of
+  // the filter.
+  const out = exec('git', ['log', '--oneline', '--diff-filter=AMD', `${sha}..${baseRef}`, '--', ...codePaths]);
   const commits = out.trim().split('\n').filter(Boolean);
   if (commits.length === 0) return [];
   return [{ check: 'changed-since', doc, severity: 'P2',
@@ -616,15 +743,21 @@ export function checkContractSync() {
     { cwd: REPO, encoding: 'utf8' });
   const why = `${res.stdout ?? ''}${res.stderr ?? ''}`.trim();
   if (res.error) throw new AuditError(`contract:check could not run: ${res.error.message}`);
-  // A check that could not EXECUTE is not a check that FAILED. Reporting a
-  // missing dependency as "the snapshot is stale" sends someone to run
-  // contract:sync over a contract that was never compared (Rule 4).
-  if (res.status !== 0 && /ERR_MODULE_NOT_FOUND|Cannot find (module|package)|ENOENT/.test(why)) {
-    throw new AuditError(
-      `contract:check could not run -- the audit cannot report on the vendored `
-      + `OpenAPI snapshot. Run \`npm ci\`. (${why.split('\n').slice(0, 2).join(' ').slice(0, 200)})`);
-  }
   if (res.status === 0) return [];
+  // sync-api-contract.mjs distinguishes its own outcomes by exit code:
+  //   1 = compared, and the vendored snapshot really is stale
+  //   2 = could not fetch upstream (non-OK HTTP)
+  //   anything else = it died (missing dependency, DNS failure, a throw)
+  // Only 1 is a finding. Reporting an unreachable upstream as "the snapshot is
+  // stale, run contract:sync" tells someone to resync against a contract that
+  // was never compared -- a fabricated result, which is the rule this module
+  // exists to enforce (Rule 4).
+  if (res.status !== 1) {
+    throw new AuditError(
+      `contract:check could not compare the snapshot (exit ${res.status}); the audit `
+      + `cannot report on the vendored OpenAPI contract. `
+      + `(${why.split('\n').slice(0, 2).join(' ').slice(0, 200)})`);
+  }
   return [{ check: 'class-a', doc: 'tests/fixtures/stocks-openapi.json', severity: 'P1',
     detail: `contract:check is red: the vendored OpenAPI snapshot no longer matches `
           + `stocks main, so every type and fixture derived from it is unverified. `
@@ -633,18 +766,41 @@ export function checkContractSync() {
 
 // ── cli ─────────────────────────────────────────────────────────────────────
 
-function parseArgs(argv) {
+const VALUE_FLAGS = {
+  '--since': 'since',
+  '--issues-snapshot': 'issuesSnapshot',
+  '--write-issues-snapshot': 'writeIssuesSnapshot',
+  '--date': 'date',
+};
+
+/**
+ * Parse argv, rejecting anything unrecognised.
+ *
+ * Silently ignoring an unknown option meant `--chek` left `args.check` false:
+ * the audit printed its findings and exited 0, so a typo in a CI invocation
+ * turned the gate off without a word. Exit status is this CLI's contract with
+ * automation, and a contract that a misspelling can void is not one.
+ */
+export function parseArgs(argv) {
   const a = { verify: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const t = argv[i];
     if (t === '--json') a.json = true;
     else if (t === '--check') a.check = true;
     else if (t === '--stamp') a.stamp = true;
-    else if (t === '--verify') { while (argv[i + 1] && !argv[i + 1].startsWith('--')) a.verify.push(argv[++i]); }
-    else if (t === '--since') a.since = argv[++i];
-    else if (t === '--issues-snapshot') a.issuesSnapshot = argv[++i];
-    else if (t === '--write-issues-snapshot') a.writeIssuesSnapshot = argv[++i];
-    else if (t === '--date') a.date = argv[++i];
+    else if (t === '--verify') {
+      while (argv[i + 1] && !argv[i + 1].startsWith('--')) a.verify.push(argv[++i]);
+    } else if (t === '--contract-check' || t === '--no-contract-check') {
+      a.contractCheck = t === '--contract-check';
+    } else if (VALUE_FLAGS[t]) {
+      const v = argv[++i];
+      if (v === undefined || v.startsWith('--')) {
+        throw new AuditError(`${t} needs a value`);
+      }
+      a[VALUE_FLAGS[t]] = v;
+    } else {
+      throw new AuditError(`unknown option: ${t}`);
+    }
   }
   return a;
 }
@@ -652,7 +808,8 @@ function parseArgs(argv) {
 export function main(argv) {
   const args = parseArgs(argv);
   const today = args.date || new Date().toISOString().slice(0, 10);
-  const head = args.since || run('git', ['rev-parse', '--short', 'origin/main']).trim();
+  const baseRef = resolveBaseRef();
+  const head = args.since || run('git', ['rev-parse', '--short', baseRef]).trim();
 
   const regPath = path.join(REPO, REGISTRY);
   if (!fs.existsSync(regPath)) {
@@ -661,9 +818,11 @@ export function main(argv) {
   }
   const registry = loadRegistry(fs.readFileSync(regPath, 'utf8'));
 
-  const tracked = new Set(run('git', ['ls-tree', '-r', 'origin/main', '--name-only']).trim().split('\n'));
+  const tracked = new Set(run('git', ['ls-tree', '-r', baseRef, '--name-only']).trim().split('\n'));
   const topLevelDirs = new Set([...tracked].filter((p) => p.includes('/')).map((p) => p.split('/')[0]));
-  const docs = [...tracked].filter((p) => p.endsWith('.md')).sort();
+  const rootFiles = new Set([...tracked].filter((p) => !p.includes('/'))
+    .map((p) => p.split('.').slice(0, -1).join('.')).filter(Boolean));
+  const docs = documentSet(tracked, registry);
 
   let states;
   if (args.issuesSnapshot) states = JSON.parse(fs.readFileSync(args.issuesSnapshot, 'utf8'));
@@ -671,9 +830,13 @@ export function main(argv) {
   if (args.writeIssuesSnapshot) fs.writeFileSync(args.writeIssuesSnapshot, JSON.stringify(states, null, 1));
 
   const findings = [];
-  // Class A delivery: is this repo's one machine-written artefact actually in
-  // sync? Skipped with --issues-snapshot so the tests stay hermetic.
-  if (!args.issuesSnapshot) findings.push(...checkContractSync());
+  const regionMaps = {};
+  // Class A delivery: is this repo's one machine-written artefact in sync?
+  // This used to be skipped whenever --issues-snapshot was passed, which
+  // coupled an OpenAPI check to an unrelated flag: an offline issue-state run
+  // reported Class A clean no matter how stale the vendored snapshot was.
+  // The opt-out is now its own flag, and it defaults to running.
+  if (args.contractCheck !== false) findings.push(...checkContractSync());
   findings.push(...checkClaims(loadClaims(fs.readFileSync(regPath, 'utf8'))));
   const stamped = [];
   const verify = new Set(args.verify.map((v) => v.replace(/^\.\//, '')));
@@ -695,10 +858,17 @@ export function main(argv) {
 
     const text = fs.readFileSync(path.join(REPO, doc), 'utf8');
 
-    // Class C is exempt from the content checks, not merely from rewriting. A
-    // dated record citing an issue that has since closed was TRUE on its date;
-    // reporting it builds a backlog whose only correct resolution is "leave it".
-    if (cls === 'C') continue;
+    // Class C keeps its LINK checks but not its issue checks, and the split is
+    // the point. A dated record citing an issue that has since closed was true
+    // on its date, so reporting it builds a backlog whose only resolution is
+    // "leave it". A dead link is different: the record still means what it
+    // said, but its evidence can no longer be reached, and repointing the link
+    // changes nothing the record asserts. The registry promises these are read
+    // for cross-references — this is that promise.
+    if (cls === 'C') {
+      findings.push(...checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles));
+      continue;
+    }
 
     // Class A is write-restricted per REGION, not per file. Map the regions
     // first: the complement is prose no job writes, and that prose is Class D
@@ -712,12 +882,13 @@ export function main(argv) {
       const r = checkRegions(doc, text, regions);
       findings.push(...r.findings);
       ({ owned, prompt } = r);
+      if (r.regionMap) regionMaps[doc] = r.regionMap;
       stampable = prompt === null && unownedSpans(text, owned).length > 0;
     }
 
     const content = [
       ...checkClosedIssues(doc, text, states),
-      ...checkDeadLinks(doc, text, tracked, topLevelDirs),
+      ...checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles),
     ];
     if (cls === 'A') for (const f of content) f.region = regionOf(f.line ?? 0, owned, prompt);
     findings.push(...content);
@@ -739,14 +910,14 @@ export function main(argv) {
         // `git merge-base --is-ancestor` reports through its EXIT STATUS and
         // prints nothing, so testing its stdout for '' treats every SHA --
         // ancestor or not -- as suspect. Read the status.
-        const anc = spawnSync('git', ['merge-base', '--is-ancestor', prev.sha, 'origin/main'],
+        const anc = spawnSync('git', ['merge-base', '--is-ancestor', prev.sha, baseRef],
           { cwd: REPO, encoding: 'utf8' });
         if (anc.status !== 0) {
           findings.push({ check: 'marker', doc, severity: 'P2',
-            detail: `reviewed-against ${prev.sha} is not an ancestor of origin/main` });
+            detail: `reviewed-against ${prev.sha} is not an ancestor of ${baseRef}` });
         }
       }
-      findings.push(...checkChangedSince(doc, prev.sha, codePaths));
+      findings.push(...checkChangedSince(doc, prev.sha, codePaths, baseRef));
     }
 
     if (args.stamp) {
@@ -770,12 +941,18 @@ export function main(argv) {
 
   const summary = {};
   for (const f of findings) summary[f.check] = (summary[f.check] ?? 0) + 1;
-  const report = { date: today, head, docs: docs.length, classes: counts, findings, stamped, summary };
+  const report = { date: today, baseRef, head, docs: docs.length, classes: counts,
+    regions: regionMaps, findings, stamped, summary };
 
   if (args.json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } else {
-    process.stdout.write(`docs ${docs.length}  classes ${JSON.stringify(counts)}  head ${head}\n`);
+    process.stdout.write(`docs ${docs.length}  classes ${JSON.stringify(counts)}  head ${head} (${baseRef})\n`);
+    for (const [d, rm] of Object.entries(regionMaps).sort()) {
+      if (rm.unowned_lines) {
+        process.stdout.write(`  region: ${d} — ${rm.unowned_lines} of ${rm.lines} lines hand-written (audit as Class D)\n`);
+      }
+    }
     for (const [k, v] of Object.entries(summary).sort()) process.stdout.write(`  ${k}: ${v}\n`);
     for (const f of findings) {
       process.stdout.write(`  [${f.severity}] ${f.check}: ${f.doc}${f.line ? `:${f.line}` : ''} — ${f.detail}\n`);

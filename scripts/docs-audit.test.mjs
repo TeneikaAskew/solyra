@@ -12,13 +12,20 @@ import { describe, expect, it } from 'vitest';
 import {
   cell,
   checkClaims,
+  checkChangedSince,
+  checkDeadLinks,
   checkRegions,
   classify,
   derive,
   docLines,
   findMarker,
   h1Index,
+  documentSet,
+  extraSegments,
   legacyTailIsBare,
+  markerWindow,
+  parseArgs,
+  resolveBaseRef,
   run,
   loadClaims,
   loadRegistry,
@@ -170,9 +177,26 @@ describe('generated regions', () => {
   });
 
   it('treats the whole Lovable fence as owned and AGENTS.md as fully covered', () => {
-    const { findings, owned } = checkRegions('AGENTS.md', FENCED_DOC, ['fence:LOVABLE']);
+    const { findings, owned } = checkRegions('AGENTS.md', FENCED_DOC, ['fence:LOVABLE', 'exhaustive']);
     expect(owned.size).toBe(3);
     expect(findings).toEqual([]);
+  });
+
+  it('reports the mixed-doc complement as a map, not as defects', () => {
+    // A mixed Class A doc's hand-written prose is its expected shape. Emitting
+    // a finding per span gives it permanent findings no review can clear, so
+    // --check can never go green and the gate is worthless.
+    const { findings, regionMap } = checkRegions('05-e.md', INVENTORY_DOC, ['inventory:*']);
+    expect(findings).toEqual([]);
+    expect(regionMap.unowned_spans).toEqual([[1, 4], [9, 10]]);
+    expect(regionMap.unowned_lines).toBe(6);
+  });
+
+  it('reports an unbalanced block even when another pair is valid', () => {
+    const doc = '<!-- inventory:a:start -->\nx\n<!-- inventory:a:end -->\n'
+      + '<!-- inventory:b:start -->\ny\n';
+    const { orphans } = ownedLines(doc, ['inventory:*']);
+    expect(orphans).toEqual(['inventory:b starts at line 4 with no end']);
   });
 
   it('flags a line added outside the Lovable fence', () => {
@@ -180,8 +204,8 @@ describe('generated regions', () => {
     // the next regeneration with nobody able to say which one it was, so the
     // audit has to see it before that happens.
     const tampered = `${FENCED_DOC}\nA hand-written note that will not survive.\n`;
-    const { findings } = checkRegions('AGENTS.md', tampered, ['fence:LOVABLE']);
-    expect(findings.some((f) => f.detail.includes('no generated region'))).toBe(true);
+    const { findings } = checkRegions('AGENTS.md', tampered, ['fence:LOVABLE', 'exhaustive']);
+    expect(findings.some((f) => f.severity === 'P1' && f.detail.includes('wholly'))).toBe(true);
   });
 
   it('owns individual lines for a line: spec', () => {
@@ -212,6 +236,164 @@ describe('generated regions', () => {
       + '<!-- inventory:b:start -->\ny\n<!-- inventory:b:end -->\n';
     const { owned } = ownedLines(doc, ['inventory:*']);
     expect(unownedSpans(doc, owned)).toEqual([]);
+  });
+});
+
+// ── drift ───────────────────────────────────────────────────────────────────
+
+describe('checkChangedSince', () => {
+  it('asks git for additions and deletions, not just edits', () => {
+    // A commit that only adds a route under src/routes, or removes a
+    // documented component, is drift. `--diff-filter=M` excluded both, so the
+    // describing document kept looking current. Renames stay excluded — that
+    // is what the filter is for.
+    let seen;
+    checkChangedSince('d.md', 'abc1234', ['src/routes'], 'origin/main', {
+      exec: (_c, args) => { seen = args; return ''; },
+    });
+    expect(seen).toContain('--diff-filter=AMD');
+    expect(seen).toContain('abc1234..origin/main');
+  });
+
+  it('uses the resolved base ref rather than a hard-coded origin/main', () => {
+    let seen;
+    checkChangedSince('d.md', 'abc1234', ['src'], 'HEAD', {
+      exec: (_c, args) => { seen = args; return ''; },
+    });
+    expect(seen).toContain('abc1234..HEAD');
+  });
+
+  it('reports nothing when the range is empty', () => {
+    expect(checkChangedSince('d.md', 'abc1234', ['src'], 'HEAD', { exec: () => '' })).toEqual([]);
+  });
+
+  it('reports the commit count when the declared paths moved', () => {
+    const out = checkChangedSince('d.md', 'abc1234', ['src'], 'HEAD',
+      { exec: () => 'aaa one\nbbb two\n' });
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('2 content commit(s)');
+  });
+});
+
+// ── the CLI contract ────────────────────────────────────────────────────────
+
+describe('parseArgs', () => {
+  it('rejects an unknown option instead of ignoring it', () => {
+    // `--chek` left args.check false, so the audit printed its findings and
+    // exited 0 — a typo in a CI invocation turned the gate off silently.
+    expect(() => parseArgs(['--chek'])).toThrow(/unknown option/);
+  });
+
+  it('rejects a value flag with no value', () => {
+    expect(() => parseArgs(['--since'])).toThrow(/needs a value/);
+    expect(() => parseArgs(['--since', '--json'])).toThrow(/needs a value/);
+  });
+
+  it('parses the documented options', () => {
+    const a = parseArgs(['--json', '--check', '--since', 'abc1234', '--verify', 'a.md', 'b.md']);
+    expect(a).toMatchObject({ json: true, check: true, since: 'abc1234', verify: ['a.md', 'b.md'] });
+  });
+
+  it('has a contract-check opt-out that is not the issues-snapshot flag', () => {
+    // Coupling them meant an offline issue-state run reported Class A clean no
+    // matter how stale the vendored OpenAPI snapshot was.
+    expect(parseArgs(['--issues-snapshot', 'f.json']).contractCheck).toBeUndefined();
+    expect(parseArgs(['--no-contract-check']).contractCheck).toBe(false);
+  });
+});
+
+// ── the base ref ────────────────────────────────────────────────────────────
+
+describe('resolveBaseRef', () => {
+  it('falls back when origin/main is absent', () => {
+    expect(resolveBaseRef(['definitely-not-a-ref', 'HEAD'])).toBe('HEAD');
+  });
+
+  it('throws rather than guessing when nothing resolves', () => {
+    expect(() => resolveBaseRef(['no-such-a', 'no-such-b'])).toThrow(/nothing to audit against/);
+  });
+});
+
+// ── the document set ────────────────────────────────────────────────────────
+
+describe('documentSet', () => {
+  it('includes a registered non-markdown artifact and excludes glob members', () => {
+    const rows = loadRegistry(`${REGISTRY}| D | Frontend.drawio | src/routes | |\n`);
+    const docs = documentSet(
+      new Set(['README.md', 'Frontend.drawio', 'docs/archive/x.png', 'src/app.ts']), rows,
+    );
+    expect(docs).toContain('Frontend.drawio');
+    expect(docs).toContain('README.md');
+    expect(docs).not.toContain('docs/archive/x.png');
+    expect(docs).not.toContain('src/app.ts');
+  });
+});
+
+// ── dead links ──────────────────────────────────────────────────────────────
+
+describe('checkDeadLinks', () => {
+  const tracked = new Set(['vite.config.ts', 'src/app.ts']);
+  const roots = new Set(['vite.config', 'package']);
+
+  it('flags a root-level backticked file that no longer exists', () => {
+    // Requiring a slash meant `vite.config.ts` and `package.json` — cited
+    // constantly in the living docs — could never produce a dead-path finding.
+    const out = checkDeadLinks('d.md', 'See `package.json` for the scripts.\n',
+      tracked, new Set(['src']), roots);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('package.json');
+  });
+
+  it('does not flag a root file that is still tracked', () => {
+    expect(checkDeadLinks('d.md', 'See `vite.config.ts`.\n', tracked, new Set(['src']), roots))
+      .toEqual([]);
+  });
+
+  it('does not flag a bare name with no tracked sibling of that stem', () => {
+    // Prose naming some other project's file is not this repo's to resolve.
+    expect(checkDeadLinks('d.md', 'Their `webpack.config.js` differs.\n',
+      tracked, new Set(['src']), roots)).toEqual([]);
+  });
+});
+
+// ── marker segments ─────────────────────────────────────────────────────────
+
+describe('extraSegments', () => {
+  it('keeps a caveat riding a recognised field', () => {
+    // Dropping any segment that merely STARTS with an owned field also deleted
+    // the prose on it, which is what legacyTailIsBare refuses to do for legacy
+    // lines. A restamp silently lost the caveat.
+    const segs = extraSegments('**Last reviewed:** 2026-08-31 — deployment only');
+    expect(segs).toEqual(['— deployment only']);
+  });
+
+  it('drops a bare recognised field entirely', () => {
+    expect(extraSegments('**Last reviewed:** 2026-08-31')).toEqual([]);
+  });
+
+  it('keeps an unrecognised field whole', () => {
+    expect(extraSegments('**Trust status:** partial')).toEqual(['**Trust status:** partial']);
+  });
+});
+
+// ── the marker window ───────────────────────────────────────────────────────
+
+describe('markerWindow', () => {
+  it('finds a marker past line 40 when the front matter is long', () => {
+    // stamp() inserts after the H1 wherever that is; a flat 40-line search
+    // could not find its own marker, so the next run called it missing and
+    // inserted a duplicate.
+    const pre = Array.from({ length: 45 }, (_, i) => `<!-- filler ${i} -->`).join('\n');
+    const doc = `${pre}\n\n# Title\n\n**Last reviewed:** 2026-08-31 · **Owner:** TBD\n`;
+    const found = findMarker(doc.split('\n'));
+    expect(found).not.toBeNull();
+    expect(found.date).toBe('2026-08-31');
+  });
+
+  it('does not accept a later section\'s metadata as the document marker', () => {
+    const doc = '# Doc\n\nIntro.\n\n# PART A\n\n**Last reviewed:** 2026-06-05 · **Owner:** TBD\n';
+    expect(findMarker(doc.split('\n'))).toBeNull();
+    expect(markerWindow(doc.split('\n'))).toEqual({ from: 1, to: 4 });
   });
 });
 
