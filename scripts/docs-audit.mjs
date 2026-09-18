@@ -223,6 +223,13 @@ export function run(cmd, args, { okExitCodes = [] } = {}) {
 // added was never enumerated at all. The Python twin leads with HEAD for the
 // same reason (stocks#1121, 686fdea).
 export const BASE_REF_CANDIDATES = ['HEAD', 'origin/main', 'main'];
+// Where "what USED to be here" is read from. resolveBaseRef prefers HEAD, so
+// baseTracked was the same tree as `tracked` and carried no history at all:
+// once a root file or the last file under a top-level directory was deleted in
+// an earlier branch commit, knownRootFiles and topLevelDirs forgot it had ever
+// belonged to this repo and citations of the deleted path became silently
+// uncheckable -- at the exact moment they went dead.
+export const HISTORY_REF_CANDIDATES = ['origin/main', 'main', 'HEAD'];
 
 /**
  * The ref this run audits against: the first candidate git can resolve.
@@ -1924,7 +1931,12 @@ export function main(argv) {
   // The documents come from the working tree; the base ref is consulted only
   // for what USED to be there (drift, ancestry, deleted root files).
   const tracked = workingTreeFiles();
-  const baseTracked = new Set(run('git', ['ls-tree', '-r', baseRef, '--name-only']).trim().split('\n'));
+  // A DIFFERENT ref from baseRef on purpose: the tree before this branch, so a
+  // path deleted on the branch is still recognised as this repo's. Falls back
+  // to baseRef in a checkout with no main, where there is no history to read.
+  const historyRef = resolveBaseRef(HISTORY_REF_CANDIDATES);
+  const baseTracked = new Set(
+    run('git', ['ls-tree', '-r', historyRef, '--name-only']).trim().split('\n'));
   const docs = documentSet(tracked, registry);
 
   let states;

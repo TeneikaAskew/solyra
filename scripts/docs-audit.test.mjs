@@ -56,6 +56,7 @@ import {
   markerWindow,
   parseArgs,
   resolveBaseRef,
+  HISTORY_REF_CANDIDATES,
   run,
   loadClaims,
   loadRegistry,
@@ -2403,5 +2404,34 @@ describe("the UI-SCREENS row's declared code paths", () => {
     const row = loadRegistry(fs.readFileSync(path.join(process.cwd(), 'docs/DOC_REGISTRY.md'),
       'utf8')).find((r) => r.glob === 'docs/UI-SCREENS.md');
     expect(row.codePaths).toContain('src/App.tsx');
+  });
+});
+
+describe('the ref the link history is read from', () => {
+  it('prefers the target branch over this one', () => {
+    // resolveBaseRef prefers HEAD, so baseTracked was the same tree as
+    // `tracked` and carried no history: once a root file or the last file
+    // under a top-level directory was deleted in an earlier branch commit,
+    // knownRootFiles and topLevelDirs forgot it had ever belonged here and
+    // citations of the deleted path went silently uncheckable -- at the exact
+    // moment they went dead.
+    expect(HISTORY_REF_CANDIDATES[0]).toBe('origin/main');
+    expect(HISTORY_REF_CANDIDATES).toContain('HEAD');
+    expect(HISTORY_REF_CANDIDATES.indexOf('HEAD'))
+      .toBeGreaterThan(HISTORY_REF_CANDIDATES.indexOf('origin/main'));
+  });
+
+  it('resolves to a different commit than HEAD on a branch ahead of main', () => {
+    // This checkout is exactly that case, so the two refs must not collapse.
+    const head = resolveBaseRef(['HEAD']);
+    const history = resolveBaseRef(HISTORY_REF_CANDIDATES);
+    expect(history).toBeTruthy();
+    expect(history).not.toBe(head);
+  });
+
+  it('still recognises a root file the history ref had and the tree does not', () => {
+    // The mechanism the ref choice exists to feed.
+    const ctx = linkContext(new Set(['src/a.ts']), new Set(['vite.config.ts']), []);
+    expect(checkDeadLinks('d.md', 'See `vite.config.ts`.\n', ctx)).toHaveLength(1);
   });
 });
