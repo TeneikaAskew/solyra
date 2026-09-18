@@ -15,6 +15,9 @@ import { describe, expect, it } from 'vitest';
 import {
   checkMarkerDates,
   commentSpans,
+  commentedLines,
+  markerAnchor,
+  indentedCodeLines,
   pathInCommit,
   fencedLines,
   AuditError,
@@ -727,7 +730,7 @@ describe('checkProvenance', () => {
 
   it('reports a reviewed document that supports no drift check', () => {
     const out = checkProvenance('d.md',
-      { date: '2026-09-01', sha: null, depth: 'verified' });
+      { date: '2026-09-01', sha: null, depth: 'verified', scanned: '2026-09-18' });
     expect(out[0].detail).toBe('incomplete provenance: no reviewed-against SHA, '
       + 'so drift cannot be checked');
   });
@@ -756,8 +759,25 @@ describe('checkProvenance', () => {
   });
 
   it('is quiet on a complete verified marker', () => {
-    expect(checkProvenance('d.md',
-      { date: '2026-09-01', sha: 'abc1234', depth: 'verified' })).toEqual([]);
+    expect(checkProvenance('d.md', { date: '2026-09-01', sha: 'abc1234',
+      depth: 'verified', scanned: '2026-09-18' })).toEqual([]);
+  });
+
+  it('reports a current marker carrying no Last scanned date', () => {
+    // The registry's marker format requires the field and --stamp always
+    // writes it, but a hand-written marker can omit it: it then parses with
+    // `scanned: null`, checkMarkerDates has nothing to range-check, and every
+    // provenance check stayed quiet -- a document passing --check with no
+    // record of ever having been scanned.
+    const out = checkProvenance('d.md',
+      { date: '2026-09-01', sha: 'abc1234', depth: 'verified', scanned: null });
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/no Last scanned date/);
+  });
+
+  it('does not ask a legacy marker for a field its format has no room for', () => {
+    expect(checkProvenance('d.md', { date: '2026-09-01', sha: 'abc1234',
+      depth: 'verified', scanned: null, legacy: true })).toEqual([]);
   });
 });
 
@@ -1939,6 +1959,23 @@ describe('a whole run over a fixture repository', () => {
       .toMatch(/\*\*Depth:\*\* verified/);
   });
 
+  it('turns an unreadable document into exit 2, not a traceback', () => {
+    // A tracked document the audit cannot open threw a plain filesystem error
+    // that the handler rethrew, so Node exited 1 -- the status this CLI
+    // documents for FINDINGS. Automation could not tell "this documentation
+    // has problems" from "the audit never ran". A dangling symlink is the
+    // deterministic way to reproduce it: git tracks it, readFileSync throws
+    // ENOENT, and unlike a chmod it still fails when the tests run as root.
+    const dir = fixture();
+    fs.symlinkSync('nowhere.md', path.join(dir, 'docs/d.md'));
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const res = runAudit(dir);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/cannot be read/);
+    expect(res.stderr).not.toMatch(/at Object|at Module/);
+  });
+
   it('is quiet about dates on a well-formed marker', () => {
     const dir = fixture();
     fs.writeFileSync(path.join(dir, 'docs/d.md'),
@@ -2922,5 +2959,188 @@ describe('pathInCommit', () => {
     const spawn = (cmd, args) => spawnSync(cmd, args, { cwd: dir, encoding: 'utf8' });
     expect(pathInCommit(sha, 'empty.md', { spawn })).toBe(true);
     expect(pathInCommit(sha, 'absent.md', { spawn })).toBe(false);
+  });
+});
+
+
+// ── the two rounds on 4ce1044 and a8b00d3 ──────────────────────────────────
+
+describe('a heading with a non-ASCII letter', () => {
+  it('keeps that letter in its anchor', () => {
+    // JavaScript's `\w` is ASCII-only, so `## Café` produced `caf`: a valid
+    // link to `#café` read as a dead anchor AND the nonexistent `#caf` was
+    // accepted -- wrong in both directions at once.
+    expect(headingSlug('Café')).toBe('café');
+    expect(headingSlug('Ärger und Mühe')).toBe('ärger-und-mühe');
+    expect(headingSlug('API_FIELD')).toBe('api_field');
+    expect(headingSlug('a: b!')).toBe('a-b');
+  });
+});
+
+describe('a negated blocking cue with a modifier in between', () => {
+  it('is still a negation', () => {
+    // `is not currently blocking` and `is no longer an open issue` both say
+    // the opposite of live work; requiring the negator flush against the cue
+    // emitted a P1 contradicting the sentence it was reading.
+    expect(hasBlockingCue('is not currently blocking')).toBe(false);
+    expect(hasBlockingCue('is no longer an open issue')).toBe(false);
+    expect(hasBlockingCue('is not blocking')).toBe(false);
+  });
+
+  it('does not reach across a clause it does not govern', () => {
+    expect(hasBlockingCue('not done yet; the api rewrite is still open')).toBe(true);
+    expect(hasBlockingCue('still blocking')).toBe(true);
+  });
+});
+
+describe('a document titled with a Setext H1', () => {
+  it('keeps its heading when stamped', () => {
+    // markerAnchor exists because inserting after the TITLE splits the
+    // heading: the underline becomes ordinary text and h1Index then returns
+    // null, so the document ends with no H1 at all -- worse than the
+    // `skipped-no-h1` the recognizer replaced.
+    const res = stamp('Title\n=====\n\nBody.\n', '2026-09-18', 'verified', 'abc1234', true);
+    expect(res.action).toBe('inserted');
+    const lines = res.text.split('\n');
+    expect(lines.slice(0, 2)).toEqual(['Title', '=====']);
+    expect(h1Index(lines)).toBe(0);
+    expect(lines[3]).toMatch(/^\*\*Last reviewed:\*\* 2026-09-18/);
+  });
+
+  it('anchors on the underline, not the title', () => {
+    expect(markerAnchor(['Title', '=====', 'body'])).toBe(1);
+    expect(markerAnchor(['# Title', 'body'])).toBe(0);
+    expect(markerAnchor(['body only'])).toBeNull();
+  });
+});
+
+describe('a heading inside an HTML comment', () => {
+  it('is not the document H1', () => {
+    // A retired title kept as `<!-- # Old title -->` above the real one was
+    // chosen, so --stamp wrote the marker INSIDE the comment, reported
+    // success, and left the rendered document with no provenance.
+    expect(h1Index(['<!--', '# Old title', '-->', '# Current title'])).toBe(3);
+    expect(commentedLines(['<!--', '# Old', '-->', 'x'])).toEqual(new Set([0, 1, 2]));
+  });
+
+  it('does not hide a line that merely contains a comment', () => {
+    // Whole-line is the question an H1 asks; a line with a trailing comment
+    // still renders.
+    expect(commentedLines(['# Real <!-- note -->'])).toEqual(new Set());
+  });
+});
+
+describe('a fenced heading in the title section', () => {
+  it('does not end the marker window', () => {
+    const lines = ['# T', '```', '## Example', '```', '**Last reviewed:** 2026-01-01'];
+    expect(markerWindow(lines).to).toBe(5);
+    expect(findMarker(lines)).not.toBeNull();
+  });
+
+  it('still stops at a real later heading', () => {
+    expect(markerWindow(['# T', 'body', '## Next', 'x']).to).toBe(2);
+  });
+});
+
+describe('an unmatched comment opener inside a fence', () => {
+  it('comments nothing', () => {
+    expect(commentSpans(['# T', '```', '<!-- unbalanced', '```', '## Real']).size).toBe(0);
+  });
+
+  it('but a comment closed on an indented line still closes', () => {
+    // The regression the findings diff caught: masking every code line
+    // wholesale destroyed a `-->` sitting on an indented continuation of the
+    // comment above it, so the comment ran to EOF and FIVE real closed-issue
+    // findings on docs/UI-SCREENS.md vanished.
+    const lines = ['<!-- Moved from the stocks repo', '',
+      '     which stayed there. -->', 'still blocked by #1'];
+    expect(indentedCodeLines(lines).has(2)).toBe(true);
+    expect([...commentSpans(lines).keys()]).toEqual([0, 2]);
+  });
+});
+
+describe('a citation in ordinary prose with a cue in another clause', () => {
+  it('does not inherit that cue', () => {
+    // `Background: #1. Still blocked by #2.` gave #1 a finding from #2's cue.
+    const u = 'https://github.com/TeneikaAskew/solyra/issues/9';
+    const states = { solyra: { 9: { state: 'closed', reason: 'completed' } } };
+    expect(checkClosedIssues('d.md', `# T\n\nBackground: ${u}. Still blocked by other work.\n`,
+      states)).toEqual([]);
+  });
+
+  it('but a table row still puts its cue cell over its citation cell', () => {
+    const u = 'https://github.com/TeneikaAskew/solyra/issues/9';
+    const states = { solyra: { 9: { state: 'closed', reason: 'completed' } } };
+    expect(checkClosedIssues('d.md', `# T\n\n| Open issues | ${u} |\n`, states))
+      .toHaveLength(1);
+  });
+
+  it('and a label heading a list carries onto its items', () => {
+    // `Blocked by:` over a list of links is the ordinary Markdown form, and
+    // requiring the cue on the URL's own line skipped every one of them.
+    const u = 'https://github.com/TeneikaAskew/solyra/issues/9';
+    const states = { solyra: { 9: { state: 'closed', reason: 'completed' } } };
+    expect(checkClosedIssues('d.md', `# T\n\nBlocked by:\n\n- ${u}\n`, states))
+      .toHaveLength(1);
+    // and stops at the end of the block
+    expect(checkClosedIssues('d.md', `# T\n\nBlocked by:\n\n- x\n\nSee ${u}\n`, states))
+      .toEqual([]);
+    // and needs a cue in the label, not just a colon
+    expect(checkClosedIssues('d.md', `# T\n\nSee also:\n\n- ${u}\n`, states)).toEqual([]);
+  });
+});
+
+describe('a link destination with balanced parentheses', () => {
+  it('is parsed whole', () => {
+    const ctx = linkContext(new Set(['docs/d.md', 'docs/foo(bar).md']), new Set(), []);
+    expect(checkDeadLinks('docs/d.md', 'See [g](foo(bar).md).\n', ctx)).toEqual([]);
+  });
+});
+
+describe('link syntax shown as inline code', () => {
+  it('is an example, not a link', () => {
+    const ctx = linkContext(new Set(['docs/d.md']), new Set(), []);
+    expect(checkDeadLinks('docs/d.md', 'Write `[x](missing.md)` to link.\n', ctx))
+      .toEqual([]);
+  });
+
+  it('and a real link on the same line is still checked', () => {
+    const ctx = linkContext(new Set(['docs/d.md']), new Set(), []);
+    const out = checkDeadLinks('docs/d.md', 'Write `[x](a.md)` — see [y](gone.md).\n', ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/gone\.md/);
+  });
+});
+
+describe('a registry row declaring both prose and exhaustive ownership', () => {
+  it('is contradictory input, not a clean region map', () => {
+    // `prose:` says a model owns the complement; `exhaustive` says there is
+    // none. Accepting both emptied the spans before the exhaustive check ran,
+    // so content a regeneration will discard passed clean.
+    // Driven through checkRegions: ownedLines only reports the specs, and a
+    // push into its list after the findings were built reaches nobody -- which
+    // is exactly what the first version of this fix did.
+    const { findings } = checkRegions('a.md', '# T\n\nprose\n', ['prose:p.md', 'exhaustive']);
+    expect(findings.some((f) => /both `prose:` and `exhaustive`/.test(f.detail))).toBe(true);
+  });
+});
+
+describe('a single-star registry glob', () => {
+  it('stays inside one path segment', () => {
+    // As `.*` it also matched `.claude/agents/nested/example.md`, so a newly
+    // nested document was silently classified instead of becoming unclassified
+    // and forcing an explicit registry decision.
+    const reg = loadRegistry('## Registry\n\n| Class | Path glob | Declared code paths |\n'
+      + '|---|---|---|\n| X | .claude/agents/*.md | |\n');
+    expect(classify('.claude/agents/a.md', reg).cls).toBe('X');
+    // `classify` reports no match as null; the caller is what calls that
+    // "unclassified", and a document nobody has placed is the finding.
+    expect(classify('.claude/agents/nested/a.md', reg).cls).toBeNull();
+  });
+
+  it('and `**` still crosses them', () => {
+    const reg = loadRegistry('## Registry\n\n| Class | Path glob | Declared code paths |\n'
+      + '|---|---|---|\n| X | .claude/**/*.md | |\n');
+    expect(classify('.claude/agents/nested/a.md', reg).cls).toBe('X');
   });
 });

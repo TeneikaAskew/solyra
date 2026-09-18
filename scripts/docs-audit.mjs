@@ -79,7 +79,13 @@ const BLOCKING_CUE_RE =
 // Text immediately before a cue that inverts it. `not started` is itself a
 // cue, so what precedes it is what is tested -- the leading `not` is never
 // read as negating the phrase it belongs to.
-const CUE_NEGATOR_RE = /\b(?:not|non|never|no longer|without|un)[\s-]*$/i;
+// An intervening modifier or article is admitted: `is not currently blocking`
+// and `is no longer an open issue` both invert the cue, and requiring the
+// negator to sit flush against it read them as live work and emitted a P1
+// saying the opposite of the sentence. The window is bounded to two such words
+// so a negation cannot reach across a clause it does not govern.
+const CUE_NEGATOR_RE =
+  /\b(?:not|non|never|no longer|without|un)[\s-]*(?:\w+[\s-]+){0,2}$/i;
 
 /**
  * Does this line cite live work? True when at least ONE cue occurrence is not
@@ -146,11 +152,22 @@ export function citationClause(line, start, end) {
  * `| Open issues | #838 · #839 |` is a real finding whose citations sit in a
  * clause with no cue of its own.
  */
-export function citesLiveWork(line, start, end) {
+export function citesLiveWork(line, start, end, { context = null } = {}) {
   const clause = citationClause(line, start, end);
   BLOCKING_CUE_RE.lastIndex = 0;
   if (BLOCKING_CUE_RE.test(clause)) return hasBlockingCue(clause);
-  return hasBlockingCue(line);
+  // No cue in the citation's own clause. Two things can still supply one, and
+  // ordinary prose is neither.
+  //
+  // `context` is a label heading a list -- `Blocked by:` above a list of
+  // links, the ordinary Markdown form, which the caller carries down.
+  if (context !== null) return hasBlockingCue(context);
+  // A TABLE ROW puts the cue in one cell and the citations in another:
+  // `| Open issues | #838 · #839 |`. Applied to ordinary PROSE the same
+  // fallback recreated the cross-clause false positive this function exists to
+  // prevent -- `Background: #1. Still blocked by #2.` gave #1 a finding from
+  // #2's cue. A pipe is what tells the two apart.
+  return line.includes('|') ? hasBlockingCue(line) : false;
 }
 // The fragment is CAPTURED, not discarded. Dropping it meant a link to a real
 // file but a heading that does not exist always passed. The Python twin had
@@ -159,8 +176,13 @@ export function citesLiveWork(line, start, end) {
 // is standard CommonMark; requiring `)` straight after the destination meant
 // the pattern did not match at all, so a missing target reported clean rather
 // than dead.
+// One level of BALANCED parentheses is admitted in the destination. `[g](docs/foo(bar).md)`
+// is a valid link; stopping at the first `)` validated `docs/foo(bar` and
+// reported a tracked file dead. One level is what CommonMark's own examples
+// need and what a regex can express honestly -- deeper nesting is rare enough
+// that failing to match (and so not reporting) beats reporting a wrong path.
 const MD_LINK_RE =
-  /\[[^\]]*\]\(([^)#\s]*)(?:#([^)\s]+))?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
+  /\[[^\]]*\]\(((?:[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
 // slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
 // which the living docs cite constantly -- could never produce a dead-path
@@ -413,7 +435,18 @@ export function loadRegistry(text) {
 }
 
 function globToRe(glob) {
-  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  // `*` and `?` stay INSIDE one path segment, which is what a path glob means
+  // everywhere else. As `.*` a row like `.claude/agents/*.md` also swallowed
+  // `.claude/agents/nested/example.md`, so a newly nested document was
+  // silently classified by that row instead of becoming unclassified and
+  // forcing an explicit registry decision -- the audit going quiet about a
+  // document nobody has placed. `**` keeps the recursive meaning.
+  const escaped = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '\u0000')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/\u0000/g, '.*');
   return new RegExp(`^${escaped}$`);
 }
 
@@ -805,7 +838,17 @@ export function checkRegions(doc, text, specs) {
   // could never go green and the gate was worthless. The spans drive routing
   // and stamping; they are reported as a map, not as defects. What IS a
   // finding is a declared region that no longer exists.
-  const spans = prompt ? [] : unownedSpans(text, owned);
+  // `prose:` says a model owns the complement; `exhaustive` says there is no
+  // legitimate complement at all. Declaring both emptied `spans` before the
+  // exhaustive check ran, so a wholly machine-owned file reported zero unowned
+  // lines instead of the promised P1 -- content a regeneration will discard,
+  // passing clean. The registry has to say which it means.
+  if (prompt && exhaustive) {
+    findings.push({ check: 'unowned', doc, severity: 'P1',
+      detail: 'the registry declares both `prose:` and `exhaustive` for this file: '
+            + 'one says a model owns the complement, the other that there is none' });
+  }
+  const spans = prompt && !exhaustive ? [] : unownedSpans(text, owned);
   // A doc the registry declares `exhaustive` has no legitimate complement: it
   // is wholly machine-owned, so anything outside the regions is content a
   // regeneration will destroy with nobody able to say what it was. AGENTS.md
@@ -848,6 +891,7 @@ export function legacyTailIsBare(rest) {
 export function markerWindow(lines, limit = 40) {
   const h1 = h1Index(lines);
   if (h1 === null) return { from: 0, to: Math.min(limit, lines.length) };
+  const fencedHere = fencedLines(lines);
   let stop = lines.length;
   // To the next HEADING, with no additional line cap. A document opening with
   // more than 40 lines of HTML metadata before its marker had the real marker
@@ -860,6 +904,10 @@ export function markerWindow(lines, limit = 40) {
     // marker inside that section satisfied findMarker -- suppressing the
     // missing top-level provenance finding and making --stamp update the
     // section's marker instead of inserting the document's.
+    // A heading inside a FENCE is an example, not the next section. Treating
+    // it as one ended the search early, so an existing marker below the fence
+    // was reported missing and --stamp inserted a second one above it.
+    if (fencedHere.has(j)) continue;
     if (/^ {0,3}#/.test(lines[j])) { stop = j; break; }
   }
   return { from: h1 + 1, to: Math.min(stop, lines.length) };
@@ -921,6 +969,15 @@ export function checkProvenance(doc, prev) {
   if (prev.date !== 'unknown' && prev.depth !== 'verified') {
     missing.push(`depth is ${prev.depth ?? 'unset'}, not verified, so no human has `
       + 'confirmed the claims');
+  }
+  // `Last scanned` is the field the registry's marker format requires and the
+  // weekly pass writes. A current-format marker omitting it parses with
+  // `scanned: null`, so checkMarkerDates has nothing to range-check and every
+  // provenance check stayed quiet: a document could pass --check carrying no
+  // record of ever having been scanned.
+  if (!prev.legacy && !prev.scanned) {
+    missing.push('no Last scanned date, so nothing records when the mechanical '
+      + 'checks last ran');
   }
   if (!missing.length) return [];
   return [{ check: 'marker', doc, severity: 'P3',
@@ -1016,39 +1073,67 @@ export function codeSpans(line) {
  * stocks#1121.
  */
 export function commentSpans(lines) {
-  const masked = lines.map((line) => {
-    const buf = [...line];
-    for (const [a, b] of codeSpans(line)) for (let k = a; k < b; k += 1) buf[k] = '\u0000';
-    return buf.join('');
-  });
-  const text = masked.join('\n');
-
-  const ranges = [];
-  let pos = 0;
-  for (;;) {
-    const a = text.indexOf('<!--', pos);
-    if (a < 0) break;
-    const b = text.indexOf('-->', a + 4);
-    const end = b < 0 ? text.length : b + 3;
-    ranges.push([a, end]);
-    if (b < 0) break;
-    pos = end;
-  }
-
+  // ONE ordered scan, because a fence and a comment compete for the same text
+  // and whichever opens first wins until it closes. Masking every fenced line
+  // wholesale looked equivalent and was not: docs/UI-SCREENS.md opens with a
+  // multi-line comment whose closing `-->` sits on an indented continuation
+  // line, so masking destroyed the closer, the comment ran to EOF, and FIVE
+  // real closed-issue findings vanished. The findings diff is what caught it.
+  //
+  // So: a code line cannot OPEN a comment -- `<!--` shown inside a code block
+  // is a sample -- but it can close one, because inside a comment nothing is
+  // code. An unmatched `<!--` in a fence therefore comments nothing, and a
+  // comment that encloses a fence still covers it.
+  const code = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
   const out = new Map();
-  let base = 0;
+  const add = (i, a, b) => {
+    if (a >= b) return;
+    if (!out.has(i)) out.set(i, []);
+    out.get(i).push([a, b]);
+  };
+  let openAt = null;
   lines.forEach((line, i) => {
-    const lo = base;
-    const hi = base + line.length;
-    for (const [a, b] of ranges) {
-      const s0 = Math.max(a, lo);
-      const e0 = Math.min(b, hi);
-      if (s0 < e0) {
-        if (!out.has(i)) out.set(i, []);
-        out.get(i).push([s0 - base, e0 - base]);
+    let pos = 0;
+    for (;;) {
+      if (openAt === null) {
+        if (code.has(i)) return;
+        const spans = codeSpans(line);
+        let a = line.indexOf('<!--', pos);
+        while (a >= 0 && spans.some(([lo, hi]) => lo <= a && a < hi)) {
+          a = line.indexOf('<!--', a + 1);
+        }
+        if (a < 0) return;
+        openAt = [i, a];
+        pos = a + 4;
+      } else {
+        const from = openAt[0] === i ? openAt[1] : 0;
+        const b = line.indexOf('-->', openAt[0] === i ? pos : 0);
+        if (b < 0) { add(i, from, line.length); return; }
+        add(i, from, b + 3);
+        openAt = null;
+        pos = b + 3;
       }
     }
-    base = hi + 1;
+  });
+  return out;
+}
+
+/**
+ * Line indices ENTIRELY inside an HTML comment, which renders as nothing.
+ *
+ * Whole-line, because that is the question a marker or an H1 asks. A line with
+ * a comment in the MIDDLE still renders, and the link and closed-issue checks
+ * use `commentSpans` so they can skip the commented part and read the rest.
+ * Ported from the Python twin (stocks#1121).
+ */
+export function commentedLines(lines) {
+  const spans = commentSpans(lines);
+  const out = new Set();
+  lines.forEach((line, i) => {
+    const stop = line.replace(/\s+$/, '').length;
+    for (const [a, b] of spans.get(i) ?? []) {
+      if (a === 0 && b >= stop) { out.add(i); break; }
+    }
   });
   return out;
 }
@@ -1106,7 +1191,11 @@ export function h1Index(lines) {
   // live marker inside the code block: the example corrupted, the document
   // still carrying no rendered provenance. The heading and marker scanners
   // already skip fenced lines.
-  const fenced = fencedLines(lines);
+  // And commented-out ones. A document that retires an old title as
+  // `<!-- # Old title -->` above its real one had the hidden heading chosen,
+  // so --stamp wrote the marker INSIDE the comment, reported success, and left
+  // the rendered document with no provenance at all.
+  const fenced = new Set([...fencedLines(lines), ...commentedLines(lines)]);
   for (let i = 0; i < lines.length; i += 1) {
     if (fenced.has(i)) continue;
     if (H1_RE.test(lines[i])) return i;
@@ -1117,6 +1206,21 @@ export function h1Index(lines) {
         && /^ {0,3}=+\s*$/.test(lines[i + 1] ?? '')) return i;
   }
   return null;
+}
+
+/**
+ * The line a new marker goes AFTER, which is not always the H1's own line.
+ *
+ * A Setext H1 is TWO lines -- the title and its `===` underline -- so
+ * inserting after the title splits the heading in half and leaves the document
+ * with no H1 at all (`h1Index` returns null for the result). That is strictly
+ * worse than the `skipped-no-h1` the recognizer replaced: it corrupts the
+ * document instead of declining to touch it.
+ */
+export function markerAnchor(lines) {
+  const h1 = h1Index(lines);
+  if (h1 === null) return null;
+  return /^ {0,3}=+\s*$/.test(lines[h1 + 1] ?? '') ? h1 + 1 : h1;
 }
 
 /**
@@ -1204,7 +1308,9 @@ export function stampGuard(text, owned) {
     return `not stamped: the existing marker on line ${n} sits inside a generated region `
       + `(lines ${lo}-${hi}); move it into hand-written prose or let the renderer own it`;
   }
-  const h1 = h1Index(lines);
+  // The anchor, not the H1's own line: a Setext H1 is two lines, so the marker
+  // lands one lower and a region starting there was not detected.
+  const h1 = markerAnchor(lines);
   // Where the marker would LAND, not the earliest owned line anywhere. A mixed
   // Class A document with a complete generated header BEFORE its H1 and
   // hand-written prose after it has a minimum owned line below h1 + 2 by
@@ -1254,7 +1360,11 @@ export function stamp(text, date, depth, sha, reviewed = false) {
     lines[prev.idx] = marker;
     return { text: lines.join('\n'), action: 'updated' };
   }
-  const h1 = h1Index(lines);
+  // The line the marker goes AFTER. For a Setext H1 that is the `===`
+  // underline, not the title: inserting between them split the heading and
+  // left the document with no H1 at all -- worse than the `skipped-no-h1` the
+  // recognizer replaced, because it corrupts rather than declines.
+  const h1 = markerAnchor(lines);
   if (h1 === null) return { text, action: 'skipped-no-h1' };
   // Target shape: "# Title" / "" / marker / "" / body.
   if (h1 + 1 < lines.length && lines[h1 + 1].trim() === '') lines.splice(h1 + 2, 0, marker, '');
@@ -1401,13 +1511,29 @@ export function checkClosedIssues(doc, text, states) {
   // losing it: the prose no longer renders, but --check still held the build
   // red over it. Raised on the Python twin (stocks#1121).
   const commented = commentSpans(lines);
+  // A cue can head a BLOCK rather than sit on the citation's own line:
+  // `Blocked by:` followed by a list of issue links is the ordinary Markdown
+  // form, and requiring the cue on the URL's physical line skipped every one
+  // of them -- closed blockers passing the audit because the label and the
+  // list are on adjacent lines. The context is carried only across list items
+  // and table rows, and only from a line that ENDS in a cue-bearing label, so
+  // it cannot leak into the prose after the block.
+  const CUE_LABEL_RE = /:\s*$/;
+  let carried = null;
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
-    if (!hasBlockingCue(line)) return;
+    const isItem = /^\s*(?:[-*+]|\d+[.)])\s/.test(line) || /^\s*\|/.test(line);
+    // A blank line between the label and its list is the normal spelling, so
+    // it must not clear the context; any other non-item line does.
+    if (!isItem && line.trim()) {
+      carried = hasBlockingCue(line) && CUE_LABEL_RE.test(line) ? line : null;
+    }
+    const context = isItem ? carried : null;
+    if (!hasBlockingCue(line) && context === null) return;
     const hidden = commented.get(i) ?? [];
     for (const m of line.matchAll(ISSUE_URL_RE)) {
       if (hidden.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
-      if (!citesLiveWork(line, m.index, m.index + m[0].length)) continue;
+      if (!citesLiveWork(line, m.index, m.index + m[0].length, { context })) continue;
       const [, rawRepo, rawKind, num] = m;
       const repo = normaliseRepo(rawRepo);
       const kind = rawKind.toLowerCase();
@@ -1485,7 +1611,12 @@ export function headingSlug(heading) {
   // while an incorrect `#apifield` was accepted. CommonMark does not treat an
   // intraword `_` as emphasis and GitHub's anchor keeps it.
   s = s.replace(/\*/g, '').replace(/(?<!\w)_+|_+(?!\w)/g, '').trim().toLowerCase();
-  return s.replace(/[^\w\s-]/g, '').replace(/ /g, '-');
+  // `\w` is ASCII-only in JavaScript, so `## Café` produced `caf` -- a valid
+  // link to `#café` read as a dead anchor while the nonexistent `#caf` was
+  // accepted, wrong in both directions at once. `\p{L}\p{N}_` is what `\w`
+  // means in the Python twin, whose `re` module is Unicode by default; `_` has
+  // to be named because it is not a letter or a number.
+  return s.replace(/[^\p{L}\p{N}_\s-]/gu, '').replace(/ /g, '-');
 }
 
 /** Every anchor a document offers, duplicates numbered as GitHub numbers them. */
@@ -1659,7 +1790,16 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // clones, so letting it satisfy a link produced a clean audit over a
     // committed link broken for every reader. All of that now lives in
     // checkTarget, shared with the reference-style definitions above.
-    for (const m of line.matchAll(MD_LINK_RE)) checkTarget(m[1], m[2], i + 1);
+    // Link SYNTAX shown as inline code renders literally: `` `[x](missing.md)` ``
+    // displays the brackets. Scanning it produced gating dead-link findings
+    // over a document's own syntax examples. Only THIS pass is masked -- the
+    // backtick pass below needs code spans, because a backticked path IS its
+    // subject. The Python twin masks the same way (stocks#1121).
+    const codeHere = codeSpans(line);
+    for (const m of line.matchAll(MD_LINK_RE)) {
+      if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+      checkTarget(m[1], m[2], i + 1);
+    }
     // A backticked path is this repo's to resolve only when nothing says
     // otherwise: its extension is one this tree tracks, and the citation is
     // not the sibling repo's. Ownership is decided per citation, not per
@@ -2278,7 +2418,18 @@ export function main(argv) {
     // registry has a gap, which is a finding worth acting on.
     if (cls === 'B' || cls === 'X') continue;
 
-    const text = fs.readFileSync(path.join(REPO, doc), 'utf8');
+    // Exit 2, not a traceback. A tracked document made unreadable by
+    // permissions, or deleted between the inventory read and here, threw a
+    // plain filesystem error that the handler rethrew -- Node then exited 1,
+    // the status this CLI documents for FINDINGS, so automation could not tell
+    // "this documentation has problems" from "the audit never ran".
+    let text;
+    try {
+      text = fs.readFileSync(path.join(REPO, doc), 'utf8');
+    } catch (err) {
+      throw new AuditError(`${doc} is in the audited tree but cannot be read `
+        + `(${err.message}); the audit cannot report on a document it could not open`);
+    }
 
     // Class C is read for cross-references and nothing else: no issue
     // freshness, no marker, no rewriting. See contentChecks for why.
