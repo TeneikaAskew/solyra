@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  AuditError,
   cell,
   checkClaims,
   checkVerifyTargets,
@@ -25,6 +26,7 @@ import {
   knownRootFiles,
   linkContext,
   loadIssuesSnapshot,
+  writeIssuesSnapshot,
   resolveCommit,
   workingTreeFiles,
   classify,
@@ -431,9 +433,62 @@ describe('loadIssuesSnapshot', () => {
     expect(() => loadIssuesSnapshot(f)).toThrow(/stocks/);
   });
 
+  it('rejects a repo entry that is an array, not a map of issue rows', () => {
+    // typeof [] === 'object', so an array passed the old check and then
+    // resolved no issue at all.
+    const f = path.join(dir, 'listed.json');
+    fs.writeFileSync(f, JSON.stringify({ stocks: [], solyra: {} }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(/stocks/);
+  });
+
+  it('rejects an issue row with no usable state', () => {
+    // checkClosedIssues reads st.state once it has decided the row is not
+    // nullish, so { "8": {} } is neither closed nor unresolved and a cited
+    // blocker DISAPPEARS from the report -- a clean bill of health produced
+    // by a malformed file.
+    const f = path.join(dir, 'nostate.json');
+    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: {} } }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
+  });
+
+  it('rejects a null issue row rather than reading it as unresolvable', () => {
+    // The opposite error to the one above: null takes the `st == null`
+    // branch, so a live issue is reported as unresolvable and the audit
+    // FABRICATES a finding (Rule 4).
+    const f = path.join(dir, 'nullrow.json');
+    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: null } }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
+  });
+
+  it('rejects a state that is not a string', () => {
+    const f = path.join(dir, 'numstate.json');
+    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: { state: 7 } } }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
+  });
+
   it('returns the states of a well-formed snapshot', () => {
     const f = path.join(dir, 'ok.json');
     fs.writeFileSync(f, JSON.stringify({ solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, stocks: {} }));
+    expect(loadIssuesSnapshot(f).solyra[1].state).toBe('open');
+  });
+});
+
+describe('writeIssuesSnapshot', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-w-'));
+
+  it('maps a write failure to the same exit status as a read failure', () => {
+    // writeFileSync threw a plain filesystem error, which the handler at the
+    // bottom of docs-audit.mjs rethrows, so Node exited 1: the status
+    // reserved for "this documentation has findings".
+    expect(() => writeIssuesSnapshot(path.join(dir, 'nodir', 'out.json'), { stocks: {}, solyra: {} }))
+      .toThrow(AuditError);
+    expect(() => writeIssuesSnapshot(path.join(dir, 'nodir', 'out.json'), { stocks: {}, solyra: {} }))
+      .toThrow(/could not be written/);
+  });
+
+  it('writes a snapshot that loads back', () => {
+    const f = path.join(dir, 'out.json');
+    writeIssuesSnapshot(f, { stocks: {}, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } });
     expect(loadIssuesSnapshot(f).solyra[1].state).toBe('open');
   });
 });
@@ -445,12 +500,34 @@ describe('checkVerifyTargets', () => {
     // `--stamp --verify nope.md` ran to completion, stamped ten documents
     // scan-only and exited 0, and nothing in the output said the review it
     // was asked to record had not been.
-    expect(() => checkVerifyTargets(new Set(['nope.md', 'CLAUDE.md']), new Set(['CLAUDE.md'])))
-      .toThrow(/nope\.md/);
+    expect(() => checkVerifyTargets(new Set(['nope.md', 'CLAUDE.md']),
+      new Map([['CLAUDE.md', 'updated']]))).toThrow(/nope\.md/);
   });
 
   it('is quiet when every requested path was stamped', () => {
-    expect(() => checkVerifyTargets(new Set(['CLAUDE.md']), new Set(['CLAUDE.md', 'README.md']))).not.toThrow();
+    expect(() => checkVerifyTargets(new Set(['CLAUDE.md']),
+      new Map([['CLAUDE.md', 'inserted'], ['README.md', 'updated']]))).not.toThrow();
+  });
+
+  it.each(['skipped-no-h1', 'skipped-legacy-content'])(
+    'rejects a --verify path whose stamp was refused (%s)', (action) => {
+      // The set of candidates was filled BEFORE stamp() ran, so a document
+      // stamp() declines still satisfied this check and --stamp --verify
+      // exited 0 having written no verified marker -- the ignored-verification
+      // behaviour this check exists to prevent, one layer in.
+      expect(() => checkVerifyTargets(new Set(['a.md']), new Map([['a.md', action]])))
+        .toThrow(/a\.md/);
+    });
+
+  it('names why the stamp was refused, not just the path', () => {
+    expect(() => checkVerifyTargets(new Set(['a.md']), new Map([['a.md', 'skipped-no-h1']])))
+      .toThrow(/no H1/);
+  });
+
+  it('accepts a target whose marker is already exactly what would be written', () => {
+    // `unchanged` records nothing because the review is already on disk.
+    // Refusing it would fail a re-run of a review that WAS recorded.
+    expect(() => checkVerifyTargets(new Set(['a.md']), new Map([['a.md', 'unchanged']]))).not.toThrow();
   });
 });
 

@@ -696,12 +696,39 @@ export function loadIssuesSnapshot(file) {
     throw new AuditError(`--issues-snapshot ${file} could not be read: ${err.message}`);
   }
   for (const repo of [THIS_REPO, SIBLING_REPO]) {
-    if (!states || typeof states[repo] !== 'object' || states[repo] === null) {
+    const entry = states?.[repo];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       throw new AuditError(`--issues-snapshot ${file} has no "${repo}" entry; every ${repo} citation `
         + 'would read as unresolvable');
     }
+    // "It is an object" is not enough. checkClosedIssues reads st.state once
+    // it has decided the row is not nullish, so a row with no state is
+    // neither closed nor unresolved and a cited blocker DISAPPEARS from the
+    // report. A null row is the opposite error: it takes the unresolvable
+    // branch and fabricates a finding against a live issue (Rule 4).
+    for (const num of Object.keys(entry).sort()) {
+      const rec = entry[num];
+      if (!rec || typeof rec !== 'object' || typeof rec.state !== 'string') {
+        throw new AuditError(`--issues-snapshot ${file}: ${repo}#${num} has no usable state `
+          + `(${JSON.stringify(rec)}); a row the audit cannot read is not a row it may report on`);
+      }
+    }
   }
   return states;
+}
+
+/**
+ * Reading an unusable snapshot is exit 2; failing to WRITE one was exit 1,
+ * because a filesystem error walks straight past the AuditError handler at the
+ * bottom of this file. An unwritable path, a missing parent directory or a
+ * full disk all mean the run did not happen, not that the docs have findings.
+ */
+export function writeIssuesSnapshot(file, states) {
+  try {
+    fs.writeFileSync(file, JSON.stringify(states, null, 1));
+  } catch (err) {
+    throw new AuditError(`--write-issues-snapshot ${file} could not be written: ${err.message}`);
+  }
 }
 
 /** One paginated read per repo, never one call per reference. */
@@ -1100,15 +1127,39 @@ export function parseArgs(argv) {
   return a;
 }
 
+/** The stamp actions that leave the requested review recorded on disk. */
+export const RECORDS_REVIEW = new Set(['inserted', 'updated', 'unchanged']);
+
+const STAMP_REFUSALS = {
+  'skipped-no-h1': 'no H1 to place a marker after',
+  'skipped-legacy-content': 'a legacy marker carrying prose that rewriting would delete',
+};
+
 /**
- * Every --verify path must have been consumed by a stampable document, or
- * the review it was asked to record was never recorded: `--verify nope.md`
- * used to stamp everything else scan-only and exit 0 without a word.
+ * Every --verify path must have been consumed by a document whose marker was
+ * actually written, or the review it was asked to record was never recorded:
+ * `--verify nope.md` used to stamp everything else scan-only and exit 0
+ * without a word.
+ *
+ * This takes the ACTIONS rather than a set of candidates on purpose. The set
+ * was filled before stamp() ran, so a document stamp() declines --
+ * `skipped-no-h1`, or `skipped-legacy-content` for a legacy line carrying
+ * prose that rewriting would delete -- still satisfied the check, and
+ * `--stamp --verify <doc>` exited 0 having written nothing. Passing the
+ * action makes that ordering unrepresentable rather than merely corrected.
+ *
+ * `unchanged` counts: the marker on disk is already byte-identical to what
+ * would be written, so refusing it would fail a re-run of a review that IS
+ * recorded.
  */
-export function checkVerifyTargets(verify, stampable) {
-  const missing = [...verify].filter((v) => !stampable.has(v));
+export function checkVerifyTargets(verify, stampActions) {
+  const missing = [...verify].filter((v) => !RECORDS_REVIEW.has(stampActions.get(v)));
   if (missing.length) {
-    throw new AuditError(`--verify ${missing.join(', ')}: no stampable document matches `
+    const named = missing.map((d) => {
+      const action = stampActions.get(d);
+      return action ? `${d} (${STAMP_REFUSALS[action] ?? action})` : d;
+    });
+    throw new AuditError(`--verify ${named.join(', ')}: the review could not be recorded `
       + '(not a tracked doc, or Class B/C/X, or a machine-owned file with nowhere to stamp)');
   }
 }
@@ -1147,7 +1198,7 @@ export function main(argv) {
   let states;
   if (args.issuesSnapshot) states = loadIssuesSnapshot(args.issuesSnapshot);
   else states = { [THIS_REPO]: fetchIssueStates(THIS_REPO), [SIBLING_REPO]: fetchIssueStates(SIBLING_REPO) };
-  if (args.writeIssuesSnapshot) fs.writeFileSync(args.writeIssuesSnapshot, JSON.stringify(states, null, 1));
+  if (args.writeIssuesSnapshot) writeIssuesSnapshot(args.writeIssuesSnapshot, states);
   const ctx = { states, ...linkContext(tracked, baseTracked, registry) };
 
   const findings = [];
@@ -1160,7 +1211,7 @@ export function main(argv) {
   if (args.contractCheck !== false) findings.push(...checkContractSync());
   findings.push(...checkClaims(loadClaims(fs.readFileSync(regPath, 'utf8'))));
   const stamped = [];
-  const stampTargets = new Set();
+  const stampTargets = new Map();
   const writes = [];
   const verify = new Set(args.verify.map((v) => v.replace(/^\.\//, '')));
   const counts = { A: 0, B: 0, C: 0, D: 0, X: 0, unclassified: 0 };
@@ -1243,9 +1294,9 @@ export function main(argv) {
         findings.push({ check: 'unowned', doc, severity: 'P2', detail: why });
         continue;
       }
-      stampTargets.add(doc);
       const reviewed = verify.has(doc);
       const res = stamp(text, today, reviewed ? 'verified' : 'scanned', head, reviewed);
+      stampTargets.set(doc, res.action);
       const record = stampRecord(doc, res, reviewed);
       if (record.depth) writes.push({ doc, text: res.text });
       stamped.push(record);
