@@ -27,6 +27,7 @@ import {
   linkContext,
   loadIssuesSnapshot,
   writeIssuesSnapshot,
+  writeStamps,
   resolveCommit,
   workingTreeFiles,
   classify,
@@ -466,6 +467,23 @@ describe('loadIssuesSnapshot', () => {
     expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
   });
 
+  it('rejects a state the checks do not branch on', () => {
+    // Requiring a string was not enough. checkClosedIssues tests
+    // `st.state === 'closed'` and falls through everything else, so a row
+    // reading `bogus` is neither closed nor unresolved and the cited blocker
+    // DISAPPEARS. Reproduced against the string-only validator: the row loaded
+    // and checkClosedIssues returned [] for a line citing it as blocking.
+    const f = path.join(dir, 'bogus.json');
+    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: { state: 'bogus' } } }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
+  });
+
+  it.each(['open', 'closed'])('still accepts the real state %s', (state) => {
+    const f = path.join(dir, `${state}.json`);
+    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: { state, reason: '', kind: 'ISSUE' } } }));
+    expect(loadIssuesSnapshot(f).solyra[8].state).toBe(state);
+  });
+
   it('returns the states of a well-formed snapshot', () => {
     const f = path.join(dir, 'ok.json');
     fs.writeFileSync(f, JSON.stringify({ solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, stocks: {} }));
@@ -490,6 +508,48 @@ describe('writeIssuesSnapshot', () => {
     const f = path.join(dir, 'out.json');
     writeIssuesSnapshot(f, { stocks: {}, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } });
     expect(loadIssuesSnapshot(f).solyra[1].state).toBe('open');
+  });
+});
+
+describe('writeStamps', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-s-'));
+
+  it('refuses before writing anything when one target is unwritable', () => {
+    // Each marker went out through a bare writeFileSync, so a read-only or
+    // deleted document exited 1 -- the status reserved for findings -- and,
+    // because the writes are sequential, could stop partway and leave the tree
+    // half stamped with nothing saying where.
+    fs.writeFileSync(path.join(dir, 'a.md'), '# A\n');
+    const written = [];
+    const fsImpl = {
+      constants: fs.constants,
+      accessSync: (p) => { if (p.endsWith('b.md')) throw new Error('EACCES'); },
+      writeFileSync: (p) => written.push(p),
+    };
+    expect(() => writeStamps([{ doc: 'a.md', text: 'x' }, { doc: 'b.md', text: 'y' }],
+      { repo: dir, fsImpl })).toThrow(/b\.md.*not writable/s);
+    expect(written).toEqual([]);
+  });
+
+  it('says how far it got when a write fails mid-loop', () => {
+    // The pre-flight narrows the window but cannot close it: a full disk fails
+    // mid-loop, and accessSync answers for the calling uid, which under root
+    // calls a mode-444 file writable.
+    const fsImpl = {
+      constants: fs.constants,
+      accessSync: () => {},
+      writeFileSync: (p) => { if (p.endsWith('b.md')) throw new Error('ENOSPC'); },
+    };
+    expect(() => writeStamps([{ doc: 'a.md', text: 'x' }, { doc: 'b.md', text: 'y' }],
+      { repo: dir, fsImpl })).toThrow(AuditError);
+    expect(() => writeStamps([{ doc: 'a.md', text: 'x' }, { doc: 'b.md', text: 'y' }],
+      { repo: dir, fsImpl })).toThrow(/1 of 2 documents were already stamped \(a\.md\)/);
+  });
+
+  it('writes every marker when all targets are writable', () => {
+    fs.writeFileSync(path.join(dir, 'c.md'), 'old');
+    expect(writeStamps([{ doc: 'c.md', text: 'new' }], { repo: dir })).toEqual(['c.md']);
+    expect(fs.readFileSync(path.join(dir, 'c.md'), 'utf8')).toBe('new');
   });
 });
 

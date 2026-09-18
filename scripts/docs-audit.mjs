@@ -683,6 +683,15 @@ export function stamp(text, date, depth, sha, reviewed = false) {
 // ── github state ────────────────────────────────────────────────────────────
 
 /**
+ * The only values checkClosedIssues branches on. "Any string" is not enough:
+ * it tests `st.state === 'closed'` and falls through everything else, so a row
+ * reading `bogus` silently drops a cited blocker from the report -- the same
+ * clean-bill-of-health failure the row check exists to stop, one value in.
+ * GitHub's issues API returns exactly these two.
+ */
+export const ISSUE_STATES = new Set(['open', 'closed']);
+
+/**
  * Read an issues snapshot written by --write-issues-snapshot. A missing or
  * malformed file threw past the AuditError handler and Node exited 1, which
  * is the documented status for "findings", not for "the run could not
@@ -708,9 +717,10 @@ export function loadIssuesSnapshot(file) {
     // branch and fabricates a finding against a live issue (Rule 4).
     for (const num of Object.keys(entry).sort()) {
       const rec = entry[num];
-      if (!rec || typeof rec !== 'object' || typeof rec.state !== 'string') {
+      if (!rec || typeof rec !== 'object' || !ISSUE_STATES.has(rec.state)) {
         throw new AuditError(`--issues-snapshot ${file}: ${repo}#${num} has no usable state `
-          + `(${JSON.stringify(rec)}); a row the audit cannot read is not a row it may report on`);
+          + `(${JSON.stringify(rec)}); expected one of ${[...ISSUE_STATES].join(', ')}. `
+          + 'A row the audit cannot read is not a row it may report on');
       }
     }
   }
@@ -1170,6 +1180,50 @@ export function stampRecord(doc, res, reviewed) {
   return { doc, action: res.action, depth: wrote ? (reviewed ? 'verified' : 'scan-only') : null };
 }
 
+/**
+ * Write every marker, or refuse before writing any.
+ *
+ * Each marker went out through a bare writeFileSync, so a read-only or deleted
+ * document threw a plain filesystem error, the handler at the bottom of this
+ * file rethrew it, and Node exited 1 -- the status reserved for findings. The
+ * writes are also sequential, so it could stop partway and leave the tree half
+ * stamped with nothing saying where.
+ *
+ * Every target is checked first. That narrows the window rather than closing
+ * it: a full disk still fails mid-loop, and accessSync answers for the calling
+ * uid, which under root calls a mode-444 file writable. So the loop reports how
+ * far it got instead of pretending the operation was atomic.
+ */
+export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
+  const unwritable = writes
+    .map((w) => w.doc)
+    .filter((doc) => {
+      try {
+        fsImpl.accessSync(path.join(repo, doc), fsImpl.constants.W_OK);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+  if (unwritable.length) {
+    throw new AuditError(`--stamp cannot write ${unwritable.sort().join(', ')}: missing or `
+      + 'not writable. Nothing was written.');
+  }
+  const done = [];
+  for (const w of writes) {
+    try {
+      fsImpl.writeFileSync(path.join(repo, w.doc), w.text);
+    } catch (err) {
+      throw new AuditError(`--stamp failed writing ${w.doc}: ${err.message}. `
+        + `${done.length} of ${writes.length} documents were already stamped`
+        + (done.length ? ` (${done.join(', ')})` : '')
+        + '; the tree is partially stamped.');
+    }
+    done.push(w.doc);
+  }
+  return done;
+}
+
 export function summariseStamps(stamped) {
   const changed = stamped.filter((s) => s.action === 'inserted' || s.action === 'updated').length;
   const unchanged = stamped.filter((s) => s.action === 'unchanged').length;
@@ -1307,7 +1361,7 @@ export function main(argv) {
   // on, so a misspelled --verify aborts the run instead of half of it.
   if (args.stamp) {
     checkVerifyTargets(verify, stampTargets);
-    for (const w of writes) fs.writeFileSync(path.join(REPO, w.doc), w.text);
+    writeStamps(writes);
   }
 
   const summary = {};
