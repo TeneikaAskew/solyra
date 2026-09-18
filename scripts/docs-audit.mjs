@@ -81,9 +81,16 @@ const MD_LINK_RE = /\[[^\]]*\]\(([^)#\s]+)(?:#[^)\s]*)?\)/g;
 // only checked against the root files this repo tracks (see checkDeadLinks),
 // because the docs also name `mocks.ts`, `main.py`, `deploy.sh` and a hundred
 // other bare files that live under a directory or in the sibling repo.
-const BACKTICK_PATH_RE = /`([A-Za-z0-9_./-]+\/[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,5})`/g;
-const BACKTICK_ROOT_FILE_RE = /`([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[A-Za-z0-9]{1,5})`/g;
-const CODE_EXTS = new Set(['.py', '.ts', '.tsx', '.js', '.mjs', '.sql', '.sh', '.yml', '.yaml', '.json', '.md']);
+// The extension admits six characters because `.drawio` has six, and a
+// five-character cap made both diagrams uncitable rather than unchecked.
+const BACKTICK_PATH_RE = /`([A-Za-z0-9_./-]+\/[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,6})`/g;
+const BACKTICK_ROOT_FILE_RE = /`([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[A-Za-z0-9]{1,6})`/g;
+// A line that names the sibling repo is citing its tree, not this one:
+// CLAUDE.md says `scripts/export_openapi.py` is a stocks file on the line
+// that cites it, and the design briefs wrap stocks paths in a
+// github.com/TeneikaAskew/stocks link. `scripts` and `docs` are also
+// top-level directories here, so without the marker those read as rot.
+const CROSS_REPO_RE = new RegExp(`github\\.com/${OWNER}/${SIBLING_REPO}\\b|\\b${SIBLING_REPO}\\b`, 'i');
 
 export class AuditError extends Error {}
 
@@ -134,6 +141,40 @@ export function resolveBaseRef(candidates = BASE_REF_CANDIDATES) {
   throw new AuditError(
     `none of ${candidates.join(', ')} resolves in this checkout; there is nothing to audit against`,
   );
+}
+
+// ── the tree being audited ──────────────────────────────────────────────────
+
+/**
+ * Every tracked file in the working tree: the index, minus anything deleted
+ * on disk but not yet staged. This is the tree the documents are read from
+ * (`fs.readFileSync`), so it is the tree they are enumerated from and checked
+ * against. `git ls-tree <baseRef>` was neither: it missed every document added
+ * on the branch -- docs/DOC_REGISTRY.md itself, on the branch that introduced
+ * it -- and kept a branch-deleted one for readFileSync to abort on.
+ */
+export function workingTreeFiles({ exec = run } = {}) {
+  const cached = exec('git', ['ls-files', '--cached']).trim().split('\n').filter(Boolean);
+  const deleted = new Set(exec('git', ['ls-files', '--deleted']).trim().split('\n').filter(Boolean));
+  return new Set(cached.filter((p) => !deleted.has(p)));
+}
+
+/**
+ * The commit a review is recorded against, abbreviated. `--since deadbeef`
+ * used to be written into the marker verbatim as `Against: deadbeef` next to
+ * `Depth: verified`, for a revision nobody had audited; the ancestry check
+ * reads only the PREVIOUS marker, so the same run reported the document as
+ * newly verified. A branch name would have been written verbatim too, and
+ * the marker parser reads only a hex SHA.
+ */
+export function resolveCommit(ref, { spawn = spawnSync } = {}) {
+  const r = spawn('git', ['rev-parse', '--verify', '--quiet', '--short', `${ref}^{commit}`],
+    { cwd: REPO, encoding: 'utf8' });
+  const sha = (r.stdout ?? '').trim();
+  if (r.status !== 0 || !sha) {
+    throw new AuditError(`--since ${ref} does not resolve to a commit in this checkout`);
+  }
+  return sha;
 }
 
 // ── registry ────────────────────────────────────────────────────────────────
@@ -212,6 +253,47 @@ function globToRe(glob) {
 export function documentSet(tracked, registry) {
   const named = new Set(registry.filter((r) => !/[*?[]/.test(r.glob)).map((r) => r.glob));
   return [...tracked].filter((p) => p.endsWith('.md') || named.has(p)).sort();
+}
+
+/**
+ * Root files a bare backticked name may legitimately refer to even when no
+ * tracked sibling shares its stem: the ones the registry registers outright,
+ * and the ones the base ref had that the tree no longer has. The stem anchor
+ * alone cannot see a deletion -- once package.json is gone, so is the stem
+ * that would have anchored the finding -- so the base ref is the persistent
+ * record of what used to be here.
+ */
+export function knownRootFiles(registry, baseTracked, tracked) {
+  const known = new Set(
+    registry.map((r) => r.glob).filter((g) => !g.includes('/') && !/[*?[]/.test(g)),
+  );
+  for (const p of baseTracked) if (!p.includes('/') && !tracked.has(p)) known.add(p);
+  return known;
+}
+
+const stem = (name) => name.split('.').slice(0, -1).join('.');
+
+/**
+ * Everything checkDeadLinks needs to know about the tree, derived once.
+ *
+ * `exts` is the set of extensions the tree actually tracks, not an allowlist:
+ * a fixed list omitted `.css` while the registry declared `src/index.css` as
+ * design-system surface, and `.drawio` and `.html` with it. Whatever this tree
+ * or the base ref tracks is, by definition, an extension a path here can have -- and
+ * an extension it does not track (`.py`; this repo has no Python) is one no
+ * path here can have, which is the first cross-repo rule.
+ */
+export function linkContext(tracked, baseTracked, registry) {
+  return {
+    tracked,
+    topLevelDirs: new Set([...tracked].filter((p) => p.includes('/')).map((p) => p.split('/')[0])),
+    rootFiles: new Set([...tracked].filter((p) => !p.includes('/')).map(stem).filter(Boolean)),
+    basenames: new Set([...tracked].map((p) => path.posix.basename(p))),
+    knownRoot: knownRootFiles(registry, baseTracked, tracked),
+    // The base ref counts too: a deleted file's extension is still one a path
+    // here can have, or the deletion itself becomes uncheckable.
+    exts: new Set([...tracked, ...baseTracked].map((p) => path.posix.extname(p)).filter(Boolean)),
+  };
 }
 
 /** Most specific match wins, so a file rule beats the directory rule. */
@@ -603,7 +685,8 @@ export function checkClosedIssues(doc, text, states) {
   return out;
 }
 
-export function checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles = new Set()) {
+export function checkDeadLinks(doc, text, ctx) {
+  const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
   const out = [];
   const base = path.posix.dirname(doc);
   text.split('\n').forEach((line, i) => {
@@ -615,9 +698,14 @@ export function checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles = new
         out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `relative link -> ${tgt}` });
       }
     }
+    // A backticked path is this repo's to resolve only when nothing says
+    // otherwise: its extension is one this tree tracks, and the line does not
+    // name the sibling repo. Either rule alone left a class of stocks
+    // citations reported as rot here, where nothing can fix them.
+    const crossRepo = CROSS_REPO_RE.test(line);
     for (const m of line.matchAll(BACKTICK_PATH_RE)) {
       const p = m[1];
-      if (!CODE_EXTS.has(path.posix.extname(p))) continue;
+      if (crossRepo || !exts.has(path.posix.extname(p))) continue;
       if (tracked.has(p) || fs.existsSync(path.join(REPO, p))) continue;
       // Only flag paths shaped like this repo's layout, so a deliberate
       // cross-repo citation is not reported as rot.
@@ -627,11 +715,18 @@ export function checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles = new
     }
     for (const m of line.matchAll(BACKTICK_ROOT_FILE_RE)) {
       const f = m[1];
-      if (!CODE_EXTS.has(path.posix.extname(f))) continue;
-      // Only a name that USED to be a tracked root file can be dead. Prose
-      // naming some other `config.json` is not this repo's to resolve, so the
-      // check is anchored on the sibling set rather than on the name alone.
-      if (tracked.has(f) || !rootFiles.has(f.split('.').slice(0, -1).join('.'))) continue;
+      if (crossRepo || !exts.has(path.posix.extname(f))) continue;
+      // A bare name that is the basename of some tracked file is a citation
+      // of that file, wherever it lives: `index.css` in the design docs is
+      // src/index.css, and the stem rule below would otherwise read it as a
+      // renamed root index.html.
+      if (tracked.has(f) || basenames.has(f)) continue;
+      // A bare name is weak evidence: the docs cite over a hundred bare
+      // filenames that live under a directory or in the sibling repo. It is
+      // reported only when a tracked root file shares its stem (a rename or
+      // an extension change) or the name is a root file this repo knows --
+      // registered outright, or present at the base ref and gone now.
+      if (!rootFiles.has(stem(f)) && !knownRoot.has(f)) continue;
       out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `backticked root file -> ${f}` });
     }
   });
@@ -647,10 +742,31 @@ export function checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles = new
  * and repointing the link changes nothing the record asserts. The registry
  * promises Class C is read for cross-references; this is that promise.
  */
-export function contentChecks(cls, doc, text, { states, tracked, topLevelDirs, rootFiles }) {
-  const links = checkDeadLinks(doc, text, tracked, topLevelDirs, rootFiles);
+export function contentChecks(cls, doc, text, ctx) {
+  const links = checkDeadLinks(doc, text, ctx);
   if (cls === 'C') return links;
-  return [...checkClosedIssues(doc, text, states), ...links];
+  return [...checkClosedIssues(doc, text, ctx.states), ...links];
+}
+
+/**
+ * Commits in a `--format=%h%x09%s --name-status` listing that changed content
+ * under the pathspec: an add, a modify, a delete, or a rename that did not
+ * keep 100% of its content. A pure rename (`R100`) is not drift; a moved file
+ * with an edit (`R089`) is exactly as much drift as the edit alone, and
+ * `--diff-filter=AMD` dropped the whole commit because git files it under R.
+ */
+export function driftCommits(out) {
+  const commits = [];
+  let current = null;
+  for (const line of out.split('\n')) {
+    const header = /^([0-9a-f]{7,40})\t/.exec(line);
+    if (header) { current = { line, drift: false }; commits.push(current); continue; }
+    const status = /^([AMDRCT])(\d{3})?\t/.exec(line);
+    if (!status || !current) continue;
+    const [, kind, score] = status;
+    if ('AMD'.includes(kind) || (kind === 'R' && Number(score) < 100)) current.drift = true;
+  }
+  return commits.filter((c) => c.drift).map((c) => c.line);
 }
 
 export function checkChangedSince(doc, sha, codePaths, baseRef = 'origin/main', { exec = run } = {}) {
@@ -660,12 +776,15 @@ export function checkChangedSince(doc, sha, codePaths, baseRef = 'origin/main', 
   // 128 and must abort: reporting "nothing changed since <sha>" for a SHA the
   // repo does not have is the same fabrication as a count of zero. The marker
   // check reports the unknown SHA separately.
-  // AMD, not M: a declared path GAINING a route under src/routes or LOSING a
-  // documented component changes the described surface as much as editing one,
-  // and `M` alone queued neither. Renames stay excluded, which is the point of
-  // the filter.
-  const out = exec('git', ['log', '--oneline', '--diff-filter=AMD', `${sha}..${baseRef}`, '--', ...codePaths]);
-  const commits = out.trim().split('\n').filter(Boolean);
+  // AMDR with the rename score read per file, not M: a declared path GAINING a
+  // route under src/routes or LOSING a documented component changes the
+  // described surface as much as editing one, and a file moved WITH an edit
+  // is drift that `--diff-filter=AMD` filed under R and dropped. Only a pure
+  // rename (R100) is excluded, which is what the filter was for: the
+  // 2026-09-07 file-move wave must not flag every document.
+  const out = exec('git', ['log', '--format=%h%x09%s', '--name-status', '-M', '--diff-filter=AMDR',
+    `${sha}..${baseRef}`, '--', ...codePaths]);
+  const commits = driftCommits(out);
   if (commits.length === 0) return [];
   return [{ check: 'changed-since', doc, severity: 'P2',
     detail: `${commits.length} content commit(s) to ${codePaths.join(', ')} since ${sha}`,
@@ -722,9 +841,14 @@ export function derive(derivation, { exec = run } = {}) {
   if (kind === 'grep-count' || kind === 'grep-files') {
     const flag = kind === 'grep-count' ? '-ohE' : '-lE';
     const paths = target.split(',').filter(Boolean);
-    // Exit 1 is git grep's "no matches", and a real answer. Everything else --
-    // 128 for an unresolvable ref above all -- aborts the run.
-    const out = exec('git', ['grep', flag, pattern, 'origin/main', '--', ...paths], { okExitCodes: [1] });
+    // No revision: the documents are read from the working tree, so the
+    // counts come from the same tree. Measured against origin/main, a branch
+    // that updates code and the doc counting it together was reported as
+    // wrong; and in a shallow single-branch clone origin/main does not
+    // resolve, which took the whole audit to exit 2 before any report.
+    // Exit 1 is git grep's "no matches", and a real answer. Everything else
+    // aborts the run.
+    const out = exec('git', ['grep', flag, pattern, '--', ...paths], { okExitCodes: [1] });
     return out.trim() ? out.trim().split('\n').length : 0;
   }
   if (kind === 'list-len') {
@@ -852,7 +976,7 @@ export function main(argv) {
   const args = parseArgs(argv);
   const today = args.date || new Date().toISOString().slice(0, 10);
   const baseRef = resolveBaseRef();
-  const head = args.since || run('git', ['rev-parse', '--short', baseRef]).trim();
+  const head = args.since ? resolveCommit(args.since) : run('git', ['rev-parse', '--short', baseRef]).trim();
 
   const regPath = path.join(REPO, REGISTRY);
   if (!fs.existsSync(regPath)) {
@@ -861,16 +985,17 @@ export function main(argv) {
   }
   const registry = loadRegistry(fs.readFileSync(regPath, 'utf8'));
 
-  const tracked = new Set(run('git', ['ls-tree', '-r', baseRef, '--name-only']).trim().split('\n'));
-  const topLevelDirs = new Set([...tracked].filter((p) => p.includes('/')).map((p) => p.split('/')[0]));
-  const rootFiles = new Set([...tracked].filter((p) => !p.includes('/'))
-    .map((p) => p.split('.').slice(0, -1).join('.')).filter(Boolean));
+  // The documents come from the working tree; the base ref is consulted only
+  // for what USED to be there (drift, ancestry, deleted root files).
+  const tracked = workingTreeFiles();
+  const baseTracked = new Set(run('git', ['ls-tree', '-r', baseRef, '--name-only']).trim().split('\n'));
   const docs = documentSet(tracked, registry);
 
   let states;
   if (args.issuesSnapshot) states = JSON.parse(fs.readFileSync(args.issuesSnapshot, 'utf8'));
   else states = { [THIS_REPO]: fetchIssueStates(THIS_REPO), [SIBLING_REPO]: fetchIssueStates(SIBLING_REPO) };
   if (args.writeIssuesSnapshot) fs.writeFileSync(args.writeIssuesSnapshot, JSON.stringify(states, null, 1));
+  const ctx = { states, ...linkContext(tracked, baseTracked, registry) };
 
   const findings = [];
   const regionMaps = {};
@@ -904,7 +1029,7 @@ export function main(argv) {
     // Class C is read for cross-references and nothing else: no issue
     // freshness, no marker, no rewriting. See contentChecks for why.
     if (cls === 'C') {
-      findings.push(...contentChecks(cls, doc, text, { states, tracked, topLevelDirs, rootFiles }));
+      findings.push(...contentChecks(cls, doc, text, ctx));
       continue;
     }
 
@@ -924,7 +1049,7 @@ export function main(argv) {
       stampable = prompt === null && unownedSpans(text, owned).length > 0;
     }
 
-    const content = contentChecks(cls, doc, text, { states, tracked, topLevelDirs, rootFiles });
+    const content = contentChecks(cls, doc, text, ctx);
     if (cls === 'A') for (const f of content) f.region = regionOf(f.line ?? 0, owned, prompt);
     findings.push(...content);
 

@@ -1,5 +1,7 @@
 # Documentation registry
 
+**Last reviewed:** unknown · **Last scanned:** 2026-09-18 · **Owner:** TBD
+
 Which documents this repo maintains, who owns each one, and what code each one
 describes. `scripts/docs-audit.mjs` reads the tables below; the prose around
 them is for humans and is ignored by the parser.

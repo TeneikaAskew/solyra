@@ -7,7 +7,6 @@
  * ground; where a test exists in both, the wording is deliberately the same so
  * a divergence between the two implementations is visible in the diff.
  */
-import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   cell,
@@ -17,6 +16,11 @@ import {
   checkDeadLinks,
   checkRegions,
   contentChecks,
+  driftCommits,
+  knownRootFiles,
+  linkContext,
+  resolveCommit,
+  workingTreeFiles,
   classify,
   derive,
   docLines,
@@ -253,8 +257,32 @@ describe('checkChangedSince', () => {
     checkChangedSince('d.md', 'abc1234', ['src/routes'], 'origin/main', {
       exec: (_c, args) => { seen = args; return ''; },
     });
-    expect(seen).toContain('--diff-filter=AMD');
+    expect(seen).toContain('--diff-filter=AMDR');
+    expect(seen).not.toContain('--diff-filter=M');
     expect(seen).toContain('abc1234..origin/main');
+  });
+
+  it('asks for name-status with rename detection so an edited rename is visible', () => {
+    let seen;
+    checkChangedSince('d.md', 'abc1234', ['src/routes'], 'origin/main', {
+      exec: (_c, args) => { seen = args; return ''; },
+    });
+    expect(seen).toContain('--name-status');
+    expect(seen).toContain('-M');
+    expect(seen).toContain('--diff-filter=AMDR');
+  });
+
+  it('counts a rename that also carried an edit, and not a pure one', () => {
+    // `git show --name-status` reports a moved file with a one-line edit as
+    // R089; `--diff-filter=AMD` excluded that commit entirely, so a declared
+    // path could change behaviour behind a move and the doc stay current. A
+    // pure rename (R100) is still not drift: that is what the filter is for.
+    const out = [
+      'aaa1111\tmove and edit the store', '', 'R089\tsrc/stores/a.ts\tsrc/stores/b.ts', '',
+      'bbb2222\tpure move', '', 'R100\tsrc/stores/c.ts\tsrc/stores/d.ts', '',
+      'ccc3333\tedit', '', 'M\tsrc/stores/e.ts', '',
+    ].join('\n');
+    expect(driftCommits(out).map((c) => c.split('\t')[0])).toEqual(['aaa1111', 'ccc3333']);
   });
 
   it('uses the resolved base ref rather than a hard-coded origin/main', () => {
@@ -271,7 +299,7 @@ describe('checkChangedSince', () => {
 
   it('reports the commit count when the declared paths moved', () => {
     const out = checkChangedSince('d.md', 'abc1234', ['src'], 'HEAD',
-      { exec: () => 'aaa one\nbbb two\n' });
+      { exec: () => 'aaa1111\tone\n\nM\tsrc/x.ts\n\nbbb2222\ttwo\n\nA\tsrc/y.ts\n' });
     expect(out).toHaveLength(1);
     expect(out[0].detail).toContain('2 content commit(s)');
   });
@@ -361,6 +389,24 @@ describe('parseArgs', () => {
   });
 });
 
+// ── review provenance ───────────────────────────────────────────────────────
+
+describe('resolveCommit', () => {
+  it('rejects a --since that is not a commit rather than stamping it', () => {
+    // `--stamp --verify README.md --since deadbeef` wrote `Against: deadbeef`
+    // and `Depth: verified` for a revision nobody audited; the ancestry check
+    // only reads the previous marker, so the same run reported it as newly
+    // verified and the error surfaced on a later audit, if ever.
+    expect(() => resolveCommit('deadbeef')).toThrow(/does not resolve to a commit/);
+  });
+
+  it('returns the abbreviated SHA of a real revision', () => {
+    // A branch name would otherwise be written verbatim, and the marker
+    // parser only reads a hex SHA.
+    expect(resolveCommit('HEAD')).toMatch(/^[0-9a-f]{7,40}$/);
+  });
+});
+
 // ── the base ref ────────────────────────────────────────────────────────────
 
 describe('resolveBaseRef', () => {
@@ -388,19 +434,85 @@ describe('documentSet', () => {
   });
 });
 
+// ── the tree being audited ──────────────────────────────────────────────────
+
+describe('workingTreeFiles', () => {
+  it('lists the index, not the base ref, and drops files deleted on disk', () => {
+    // `git ls-tree <baseRef>` misses every document added on the branch --
+    // docs/DOC_REGISTRY.md itself, on the branch that introduced it -- and
+    // keeps a branch-deleted one, which readFileSync then aborts on.
+    const calls = [];
+    const exec = (_c, args) => {
+      calls.push(args);
+      if (args.includes('--deleted')) return 'docs/gone.md\n';
+      return 'README.md\ndocs/DOC_REGISTRY.md\ndocs/gone.md\nsrc/a.ts\n';
+    };
+    const files = workingTreeFiles({ exec });
+    expect(calls.every((a) => a[0] === 'ls-files')).toBe(true);
+    expect(files.has('docs/DOC_REGISTRY.md')).toBe(true);
+    expect(files.has('docs/gone.md')).toBe(false);
+  });
+});
+
+describe('knownRootFiles', () => {
+  it('remembers a root file the base ref had and the tree no longer has', () => {
+    // The stem anchor only sees siblings that still exist: once package.json
+    // is really deleted, its stem is gone with it and the citation went
+    // unreported. The base ref is the persistent record of what was there.
+    const rows = loadRegistry(REGISTRY);
+    const known = knownRootFiles(rows, new Set(['package.json', 'README.md', 'src/a.ts']),
+      new Set(['README.md', 'src/a.ts']));
+    expect(known.has('package.json')).toBe(true);
+    expect(known.has('src/a.ts')).toBe(false);
+  });
+
+  it('names every root file the registry registers outright', () => {
+    const known = knownRootFiles(loadRegistry(REGISTRY), new Set(), new Set());
+    expect(known.has('AGENTS.md')).toBe(true);
+    expect(known.has('CLAUDE.md')).toBe(true);
+    expect(known.has('docs/*.md')).toBe(false);
+  });
+});
+
+describe('linkContext', () => {
+  it('derives the checked extensions from the tree instead of an allowlist', () => {
+    // `src/index.css` is declared in the registry as design-system surface
+    // and cited in the docs, and `.css` was not in the allowlist, so a rename
+    // of it could never be reported. Whatever extensions this tree tracks
+    // are, by definition, extensions a path in this tree can have.
+    const ctx = linkContext(new Set(['src/index.css', 'Frontend.drawio', 'src/a.ts']),
+      new Set(['old.html']), []);
+    expect(ctx.exts.has('.css')).toBe(true);
+    expect(ctx.exts.has('.drawio')).toBe(true);
+    expect(ctx.exts.has('.html')).toBe(true); // the base ref had one
+    expect(ctx.exts.has('.py')).toBe(false);
+    expect(ctx.topLevelDirs.has('src')).toBe(true);
+    expect(ctx.rootFiles.has('Frontend')).toBe(true);
+  });
+});
+
 // ── dead links ──────────────────────────────────────────────────────────────
 
 describe('checkDeadLinks', () => {
-  const tracked = new Set(['vite.config.ts', 'src/app.ts']);
-  const roots = new Set(['vite.config', 'package']);
+  const tracked = new Set(['vite.config.ts', 'src/app.ts', 'src/index.css', 'Frontend.drawio']);
+  const ctx = linkContext(tracked, new Set(['package.json', 'Frontend-icons.drawio', ...tracked]),
+    loadRegistry(REGISTRY));
 
   it('flags a root-level backticked file that no longer exists', () => {
     // Requiring a slash meant `vite.config.ts` and `package.json` — cited
     // constantly in the living docs — could never produce a dead-path finding.
-    const out = checkDeadLinks('d.md', 'See `package.json` for the scripts.\n',
-      tracked, new Set(['src']), roots);
+    const out = checkDeadLinks('d.md', 'See `package.json` for the scripts.\n', ctx);
     expect(out).toHaveLength(1);
     expect(out[0].detail).toContain('package.json');
+  });
+
+  it('flags a deleted root file the base ref remembers, with no sibling stem left', () => {
+    // package.json has no same-stem sibling once it is gone; the base ref is
+    // what says it used to be here.
+    const noSibling = linkContext(new Set(['src/a.ts']), new Set(['package.json']), []);
+    expect(noSibling.rootFiles.has('package')).toBe(false);
+    const out = checkDeadLinks('d.md', 'See `package.json`.\n', noSibling);
+    expect(out).toHaveLength(1);
   });
 
   it('matches a dotted root filename, which is what the docs actually cite', () => {
@@ -408,8 +520,8 @@ describe('checkDeadLinks', () => {
     // files in the living docs (12 and 15 mentions). A stem of `[A-Za-z0-9_-]+`
     // cannot contain a dot, so neither could ever be matched and the check
     // only ever worked for `package.json`.
-    const out = checkDeadLinks('d.md', 'Edit `vite.config.ts` first.\n',
-      new Set(['vite.config.mts']), new Set(['src']), roots);
+    const renamed = linkContext(new Set(['vite.config.mts', 'src/a.ts']), new Set(), []);
+    const out = checkDeadLinks('d.md', 'Edit `vite.config.ts` first.\n', renamed);
     expect(out).toHaveLength(1);
     expect(out[0].detail).toContain('vite.config.ts');
   });
@@ -417,19 +529,52 @@ describe('checkDeadLinks', () => {
   it('does not flag a dotted name with no tracked sibling of that stem', () => {
     // `pw.sandbox.config.ts` is cited six times and has never been a root
     // file here; the docs name it as a proposal.
-    expect(checkDeadLinks('d.md', 'Add `pw.sandbox.config.ts`.\n',
-      tracked, new Set(['src']), roots)).toEqual([]);
+    expect(checkDeadLinks('d.md', 'Add `pw.sandbox.config.ts`.\n', ctx)).toEqual([]);
+  });
+
+  it('does not read a bare basename of a nested file as a renamed root file', () => {
+    // `index.css` cited in docs/REDESIGN.md is src/index.css. The stem rule
+    // saw root index.html, decided the extension had changed, and flagged a
+    // file that exists.
+    const nested = linkContext(new Set(['index.html', 'src/index.css']), new Set(), []);
+    expect(checkDeadLinks('d.md', 'global net in `index.css`.\n', nested)).toEqual([]);
   });
 
   it('does not flag a root file that is still tracked', () => {
-    expect(checkDeadLinks('d.md', 'See `vite.config.ts`.\n', tracked, new Set(['src']), roots))
-      .toEqual([]);
+    expect(checkDeadLinks('d.md', 'See `vite.config.ts`.\n', ctx)).toEqual([]);
   });
 
   it('does not flag a bare name with no tracked sibling of that stem', () => {
     // Prose naming some other project's file is not this repo's to resolve.
-    expect(checkDeadLinks('d.md', 'Their `webpack.config.js` differs.\n',
-      tracked, new Set(['src']), roots)).toEqual([]);
+    expect(checkDeadLinks('d.md', 'Their `webpack.config.js` differs.\n', ctx)).toEqual([]);
+  });
+
+  it('checks a stylesheet and a drawio path, not only code', () => {
+    // Frontend-icons.drawio is in the base ref and not the tree: a deletion.
+    const out = checkDeadLinks('d.md', 'Tokens live in `src/tokens.css`; see `Frontend-icons.drawio`.\n', ctx);
+    expect(out.map((f) => f.detail)).toEqual([
+      'backticked path -> src/tokens.css',
+      'backticked root file -> Frontend-icons.drawio',
+    ]);
+  });
+
+  it('skips a path whose extension no file in this tree has', () => {
+    // This repo has no Python at all, so `tests/test_e2e.py` cannot be a path
+    // here whatever directory it starts with; it is the stocks repo's.
+    expect(checkDeadLinks('d.md', 'Backend: `tests/test_e2e.py`.\n', ctx)).toEqual([]);
+  });
+
+  it('skips a path on a line that names the stocks repo', () => {
+    // CLAUDE.md:265 says `scripts/export_openapi.py` is a stocks file, and
+    // `scripts` is also a top-level directory here. The docs mark such
+    // citations with a github.com/TeneikaAskew/stocks link or the word
+    // "stocks" on the same line; both are the marker.
+    const link = 'See [`docs/OPS.md`](https://github.com/TeneikaAskew/stocks/blob/main/docs/OPS.md).\n';
+    const word = 'Its snapshot test fails any stocks PR that touches `src/export.ts`.\n';
+    const linkCtx = linkContext(new Set(['docs/a.md', 'src/a.ts']), new Set(), []);
+    expect(checkDeadLinks('d.md', link, linkCtx)).toEqual([]);
+    expect(checkDeadLinks('d.md', word, linkCtx)).toEqual([]);
+    expect(checkDeadLinks('d.md', 'Plain `src/export.ts` mention.\n', linkCtx)).toHaveLength(1);
   });
 });
 
@@ -438,9 +583,7 @@ describe('checkDeadLinks', () => {
 describe('contentChecks', () => {
   const ctx = {
     states: { solyra: { 8: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } },
-    tracked: new Set(['README.md']),
-    topLevelDirs: new Set(['src']),
-    rootFiles: new Set(['README']),
+    ...linkContext(new Set(['README.md', 'src/keep.ts']), new Set(), []),
   };
   const text = 'Blocked by https://github.com/TeneikaAskew/solyra/issues/8.\n'
     + 'See [the plan](../missing.md) and `src/gone.ts`.\n';
@@ -576,6 +719,19 @@ describe('count claims', () => {
     expect(seen).toContain('Rule 3\\.7|§3\\.7');
   });
 
+  it('greps the tree the documents are read from, naming no revision', () => {
+    // The documents are read from the working tree, so the counts must come
+    // from the same tree: measured against origin/main, a branch that updates
+    // code and the doc that counts it together is reported as wrong. And a
+    // hard-coded origin/main exits 128 in a shallow single-branch clone, which
+    // took the whole audit to exit 2 before it produced a report.
+    let seen;
+    derive('grep-files src,tests Rule 3\\.7', { exec: (_c, args) => { seen = args; return ''; } });
+    expect(seen).not.toContain('origin/main');
+    expect(seen.slice(0, 3)).toEqual(['grep', '-lE', 'Rule 3\\.7']);
+    expect(seen.slice(-3)).toEqual(['--', 'src', 'tests']);
+  });
+
   it('rejects a derivation with no pattern rather than grepping for nothing', () => {
     expect(() => derive('grep-files src')).toThrow(/no pattern/);
   });
@@ -638,19 +794,9 @@ describe('count claims', () => {
 });
 
 // The one assertion that must touch the real tree: that CLAUDE.md's "37 files
-// reference Rule 3.7" is still true. It needs `origin/main`, which a shallow
-// CI clone does not have — so it is skipped there, loudly, rather than
-// silently measuring nothing. A skipped test says so in the output.
-const hasOriginMain = (() => {
-  try {
-    execFileSync('git', ['rev-parse', '--verify', 'origin/main'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-})();
-
-describe.skipIf(!hasOriginMain)('count claims against the real tree', () => {
+// reference Rule 3.7" is still true. It greps the working tree, so it runs in
+// a shallow CI clone too; it used to need origin/main and was skipped there.
+describe('count claims against the real tree', () => {
   it('confirms the one CLAUDE.md count that is currently correct', () => {
     expect(derive('grep-files src,tests Rule 3\\.7|§3\\.7')).toBe(37);
   });
