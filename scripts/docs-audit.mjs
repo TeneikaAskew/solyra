@@ -95,6 +95,8 @@ const BACKTICK_ROOT_FILE_RE = new RegExp(`\`([A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)
 // github.com/TeneikaAskew/stocks link. `scripts` and `docs` are also
 // top-level directories here, so without the marker those read as rot.
 const CROSS_REPO_RE = new RegExp(`github\\.com/${OWNER}/${SIBLING_REPO}\\b|\\b${SIBLING_REPO}\\b`, 'i');
+const CROSS_REPO_LINK_RE = new RegExp(`^\\]\\(https?://github\\.com/${OWNER}/${SIBLING_REPO}[/)]`, 'i');
+const LINK_TAIL_RE = /^\]\([^)\s]*\)/;
 
 export class AuditError extends Error {}
 
@@ -137,10 +139,16 @@ export const BASE_REF_CANDIDATES = ['origin/main', 'main', 'HEAD'];
  * output, so a run against `HEAD` cannot be mistaken for one against the
  * trunk. Inventing an answer when nothing resolves would be, so that throws.
  */
-export function resolveBaseRef(candidates = BASE_REF_CANDIDATES) {
+export function resolveBaseRef(candidates = BASE_REF_CANDIDATES, { spawn = spawnSync } = {}) {
   for (const ref of candidates) {
-    const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: REPO, encoding: 'utf8' });
-    if (r.status === 0) return ref;
+    const r = spawn('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: REPO, encoding: 'utf8' });
+    if (r.status !== 0) continue;
+    // A commit that resolves is not a tree that can be read: in a partial or
+    // stale clone `main` verifies while its tree is missing, and accepting
+    // it here made the later ls-tree abort the audit instead of falling
+    // through to the next candidate.
+    const t = spawn('git', ['cat-file', '-e', `${ref}^{tree}`], { cwd: REPO, encoding: 'utf8' });
+    if (t.status === 0) return ref;
   }
   throw new AuditError(
     `none of ${candidates.join(', ')} resolves in this checkout; there is nothing to audit against`,
@@ -290,7 +298,10 @@ const stem = (name) => name.split('.').slice(0, -1).join('.');
 export function linkContext(tracked, baseTracked, registry) {
   return {
     tracked,
-    topLevelDirs: new Set([...tracked].filter((p) => p.includes('/')).map((p) => p.split('/')[0])),
+    // Tree and base ref both: deleting the last file under a directory must
+    // not make every citation of that directory uncheckable at the moment
+    // it goes dead.
+    topLevelDirs: new Set([...tracked, ...baseTracked].filter((p) => p.includes('/')).map((p) => p.split('/')[0])),
     rootFiles: new Set([...tracked].filter((p) => !p.includes('/')).map(stem).filter(Boolean)),
     basenames: new Set([...tracked].map((p) => path.posix.basename(p))),
     knownRoot: knownRootFiles(registry, baseTracked, tracked),
@@ -604,6 +615,36 @@ export function renderMarker(date, depth, sha, scanned, owner, extras = []) {
   return parts.concat(extras).join(` ${DOT} `);
 }
 
+/**
+ * Why a document must not be stamped, or null. Two cases, in order: an
+ * existing marker that sits inside a generated region (rewriting it edits a
+ * line the registry declares machine-owned; the old guard only asked
+ * whether the FIRST owned line was near the H1, so a block starting on line
+ * 4 with the marker on line 5 was rewritten), and, with no marker yet, an
+ * insertion point that a region already occupies.
+ */
+export function stampGuard(text, owned) {
+  if (!owned.size) return null;
+  const lines = text.split('\n');
+  const prev = findMarker(lines);
+  if (prev) {
+    const n = prev.idx + 1;
+    if (!owned.has(n)) return null;
+    let lo = n;
+    let hi = n;
+    while (owned.has(lo - 1)) lo -= 1;
+    while (owned.has(hi + 1)) hi += 1;
+    return `not stamped: the existing marker on line ${n} sits inside a generated region `
+      + `(lines ${lo}-${hi}); move it into hand-written prose or let the renderer own it`;
+  }
+  const h1 = h1Index(lines);
+  if (h1 !== null && Math.min(...owned) <= h1 + 2) {
+    return `not stamped: a generated region starts at line ${Math.min(...owned)}, `
+      + `too close to the H1 on line ${h1 + 1}`;
+  }
+  return null;
+}
+
 export function stamp(text, date, depth, sha, reviewed = false) {
   const lines = text.split('\n');
   const prev = findMarker(lines);
@@ -719,6 +760,40 @@ export function checkClosedIssues(doc, text, states) {
   return out;
 }
 
+/**
+ * Which backticked citations on a line belong to the sibling repo, by start
+ * offset. A citation is the sibling's when its own markdown link targets
+ * that repo, or when the repo's name sits between it and the nearest other
+ * citation or table-cell edge on either side. A link's URL is part of the
+ * citation it belongs to, so a stocks URL never counts as free text next to
+ * the citation after it. Free text is bounded by other citations and by
+ * cell pipes, not by sentence punctuation: CLAUDE.md cites a stocks file
+ * and names the repo after a semicolon.
+ */
+export function crossRepoCitations(line) {
+  const cites = [];
+  for (const re of [BACKTICK_PATH_RE, BACKTICK_ROOT_FILE_RE]) {
+    for (const m of line.matchAll(re)) {
+      let end = m.index + m[0].length;
+      const tail = LINK_TAIL_RE.exec(line.slice(end));
+      const link = tail ? tail[0] : '';
+      if (link) end += link.length;
+      cites.push({ start: m.index, end, link });
+    }
+  }
+  cites.sort((a, b) => a.start - b.start);
+  const out = new Set();
+  cites.forEach((c, i) => {
+    if (CROSS_REPO_LINK_RE.test(c.link)) { out.add(c.start); return; }
+    const cellStart = line.lastIndexOf('|', c.start);
+    const cellEnd = line.indexOf('|', c.end);
+    const lo = Math.max(cellStart + 1, i > 0 ? cites[i - 1].end : 0);
+    const hi = Math.min(cellEnd === -1 ? line.length : cellEnd, i + 1 < cites.length ? cites[i + 1].start : line.length);
+    if (CROSS_REPO_RE.test(line.slice(lo, c.start)) || CROSS_REPO_RE.test(line.slice(c.end, hi))) out.add(c.start);
+  });
+  return out;
+}
+
 export function checkDeadLinks(doc, text, ctx) {
   const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
   const out = [];
@@ -733,13 +808,15 @@ export function checkDeadLinks(doc, text, ctx) {
       }
     }
     // A backticked path is this repo's to resolve only when nothing says
-    // otherwise: its extension is one this tree tracks, and the line does not
-    // name the sibling repo. Either rule alone left a class of stocks
-    // citations reported as rot here, where nothing can fix them.
-    const crossRepo = CROSS_REPO_RE.test(line);
+    // otherwise: its extension is one this tree tracks, and the citation is
+    // not the sibling repo's. Ownership is decided per citation, not per
+    // line: docs/TEST_COVERAGE_AUDIT.md:104 has a stocks docs/API.md link in
+    // one cell and a local src/lib path in another, and a line-level marker
+    // hid the local one.
+    const crossRepo = crossRepoCitations(line);
     for (const m of line.matchAll(BACKTICK_PATH_RE)) {
       const p = m[1];
-      if (crossRepo || !exts.has(path.posix.extname(p))) continue;
+      if (crossRepo.has(m.index) || !exts.has(path.posix.extname(p))) continue;
       if (tracked.has(p) || fs.existsSync(path.join(REPO, p))) continue;
       // Only flag paths shaped like this repo's layout, so a deliberate
       // cross-repo citation is not reported as rot.
@@ -749,7 +826,7 @@ export function checkDeadLinks(doc, text, ctx) {
     }
     for (const m of line.matchAll(BACKTICK_ROOT_FILE_RE)) {
       const f = m[1];
-      if (crossRepo || !exts.has(path.posix.extname(f))) continue;
+      if (crossRepo.has(m.index) || !exts.has(path.posix.extname(f))) continue;
       // A bare name that is the basename of some tracked file is a citation
       // of that file, wherever it lives: `index.css` in the design docs is
       // src/index.css, and the stem rule below would otherwise read it as a
@@ -1159,13 +1236,11 @@ export function main(argv) {
     }
 
     if (args.stamp) {
-      // Never write a marker into a generated region. The marker goes after
-      // the H1, so the question is whether anything a job owns sits that high.
-      const h1 = h1Index(text.split('\n'));
-      if (owned.size && h1 !== null && Math.min(...owned) <= h1 + 2) {
-        findings.push({ check: 'unowned', doc, severity: 'P2',
-          detail: `not stamped: a generated region starts at line ${Math.min(...owned)}, `
-                + `too close to the H1 on line ${h1 + 1}` });
+      // Never write a marker into a generated region, whether it would be
+      // inserted there or already sits there.
+      const why = stampGuard(text, owned);
+      if (why) {
+        findings.push({ check: 'unowned', doc, severity: 'P2', detail: why });
         continue;
       }
       stampTargets.add(doc);

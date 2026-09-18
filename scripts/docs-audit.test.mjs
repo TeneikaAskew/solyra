@@ -46,6 +46,7 @@ import {
   renderMarker,
   splitRow,
   stamp,
+  stampGuard,
   stampRecord,
   summariseStamps,
   unownedSpans,
@@ -503,6 +504,20 @@ describe('resolveBaseRef', () => {
     expect(resolveBaseRef(['definitely-not-a-ref', 'HEAD'])).toBe('HEAD');
   });
 
+  it('skips a candidate whose commit resolves but whose tree is unavailable', () => {
+    // In a partial or stale clone `rev-parse --verify main` succeeds while
+    // main's tree is missing, so the candidate was accepted and the later
+    // ls-tree aborted the audit instead of falling through to HEAD.
+    const seen = [];
+    const spawn = (_c, args) => {
+      seen.push(args);
+      if (args[0] === 'rev-parse') return { status: 0 };
+      return { status: args.at(-1).startsWith('origin/main') ? 128 : 0 };
+    };
+    expect(resolveBaseRef(['origin/main', 'HEAD'], { spawn })).toBe('HEAD');
+    expect(seen).toContainEqual(['cat-file', '-e', 'origin/main^{tree}']);
+  });
+
   it('throws rather than guessing when nothing resolves', () => {
     expect(() => resolveBaseRef(['no-such-a', 'no-such-b'])).toThrow(/nothing to audit against/);
   });
@@ -671,6 +686,42 @@ describe('checkDeadLinks', () => {
     expect(checkDeadLinks('d.md', 'Backend: `tests/test_e2e.py`.\n', ctx)).toEqual([]);
   });
 
+  it('suppresses only the citation the stocks marker belongs to, not the whole line', () => {
+    // docs/TEST_COVERAGE_AUDIT.md:104 puts a stocks docs/API.md link in one
+    // cell and a local `src/lib/journalStats.ts` in another. A line-level
+    // marker suppressed both, so a rename of the local file went unreported
+    // in the one place the registry promises cross-references are read.
+    const ctx = linkContext(new Set(['src/lib/keep.ts', 'docs/a.md']), new Set(), []);
+    const row = '| x | (`computeJournalStats` in `src/lib/gone.ts`) instead | alive: '
+      + '[`docs/API.md:47`](https://github.com/TeneikaAskew/stocks/blob/main/docs/API.md) |\n';
+    expect(checkDeadLinks('d.md', row, ctx).map((f) => f.detail)).toEqual(['backticked path -> src/lib/gone.ts']);
+    const prose = '`src/lib/gone.ts` is consumed by [`docs/API.md`](https://github.com/TeneikaAskew/stocks/blob/main/docs/API.md).\n';
+    expect(checkDeadLinks('d.md', prose, ctx).map((f) => f.detail)).toEqual(['backticked path -> src/lib/gone.ts']);
+    // The other order: a stocks link's URL is part of that citation, not
+    // free text that reaches the local path after it.
+    const after = 'See [`docs/API.md`](https://github.com/TeneikaAskew/stocks/blob/main/docs/API.md) and `src/lib/gone.ts`.\n';
+    expect(checkDeadLinks('d.md', after, ctx).map((f) => f.detail)).toEqual(['backticked path -> src/lib/gone.ts']);
+  });
+
+  it('lets a marker reach a citation only across free text, never past another citation', () => {
+    const ctx = linkContext(new Set(['src/keep.ts']), new Set(), []);
+    // `src/also.ts` is adjacent to "in stocks"; `src/gone.ts` has a citation between.
+    expect(checkDeadLinks('d.md', 'Compare `src/gone.ts` with `src/also.ts` in stocks.\n', ctx)
+      .map((f) => f.detail)).toEqual(['backticked path -> src/gone.ts']);
+    // A marker in the next table cell does not reach across the pipe.
+    expect(checkDeadLinks('d.md', '| `src/gone.ts` | stocks owns the rest |\n', ctx)
+      .map((f) => f.detail)).toEqual(['backticked path -> src/gone.ts']);
+  });
+
+  it('checks a path under a directory the base ref had and the tree no longer has', () => {
+    // Deleting the last file under `retired/` removed it from topLevelDirs,
+    // so every citation of the directory became uncheckable at the moment it
+    // went dead, though baseTracked remembered the file and its extension.
+    const ctx = linkContext(new Set(['src/a.ts']), new Set(['retired/guide.css']), []);
+    const out = checkDeadLinks('d.md', 'See `retired/guide.css`.\n', ctx);
+    expect(out.map((f) => f.detail)).toEqual(['backticked path -> retired/guide.css']);
+  });
+
   it('skips a path on a line that names the stocks repo', () => {
     // CLAUDE.md:265 says `scripts/export_openapi.py` is a stocks file, and
     // `scripts` is also a top-level directory here. The docs mark such
@@ -782,6 +833,31 @@ describe('extraSegments', () => {
     expect(extraSegments('**Depth:** verified (routes only)')).toEqual(['(routes only)']);
     expect(extraSegments('**Against:** `abc1234` pre-split tree')).toEqual(['pre-split tree']);
     expect(extraSegments('**Last scanned:** 2026-09-01')).toEqual([]);
+  });
+});
+
+describe('stampGuard', () => {
+  const GEN_DOC = '# T\n\nProse.\n<!-- BEGIN gen -->\n'
+    + '**Last reviewed:** 2026-08-31 · **Owner:** TBD\n<!-- END gen -->\nMore prose.\n';
+
+  it('refuses to rewrite a marker that sits inside a generated region', () => {
+    // The old guard asked only whether the first owned line was near the H1.
+    // A mark:gen block starting on line 4 with the marker on line 5 passed
+    // it, and stamp() then rewrote a line the registry declares machine-owned.
+    const { owned } = ownedLines(GEN_DOC, ['mark:gen']);
+    expect(stampGuard(GEN_DOC, owned)).toMatch(/marker on line 5 .*generated region .*lines 4-6/);
+  });
+
+  it('is quiet for a marker in prose beside a region', () => {
+    const doc = '# T\n\n**Last reviewed:** 2026-08-31 · **Owner:** TBD\n\n<!-- BEGIN gen -->\nx\n<!-- END gen -->\n';
+    const { owned } = ownedLines(doc, ['mark:gen']);
+    expect(stampGuard(doc, owned)).toBeNull();
+  });
+
+  it('still refuses an insertion point inside a region that starts at the H1', () => {
+    const doc = '# T\n<!-- BEGIN gen -->\nx\n<!-- END gen -->\nBody.\n';
+    const { owned } = ownedLines(doc, ['mark:gen']);
+    expect(stampGuard(doc, owned)).toMatch(/generated region starts at line 2/);
   });
 });
 
