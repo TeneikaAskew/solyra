@@ -8,10 +8,12 @@
  * a divergence between the two implementations is visible in the diff.
  */
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  checkMarkerDates,
   fencedLines,
   AuditError,
   cell,
@@ -1723,6 +1725,173 @@ describe('drift in the working tree', () => {
   it('is quiet when neither history nor the tree moved', () => {
     expect(checkChangedSince('d.md', 'abc1234', ['src'], 'HEAD',
       { exec: () => '' })).toEqual([]);
+  });
+});
+
+describe('a handled AuditError', () => {
+  it('exits 2 without a stack trace', () => {
+    // process.exit(2) made the rethrow below it unreachable; switching to
+    // exitCode so a piped report can flush made it reachable, so every handled
+    // AuditError printed a stack trace and exited 1 -- the status reserved for
+    // findings. A regression introduced by the flush fix.
+    const res = spawnSync(process.execPath,
+      [path.join(process.cwd(), 'scripts/docs-audit.mjs'), '--issues-snapshot', '/nope.json'],
+      { encoding: 'utf8', cwd: process.cwd() });
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/^error: /m);
+    expect(res.stderr).not.toMatch(/at \w+ \(/);
+  });
+});
+
+describe('heading anchors and fenced code', () => {
+  it('does not invent an anchor from a # line inside a fence', () => {
+    // GitHub renders those as code and creates no anchor, so recording one
+    // made a link to a nonexistent fragment PASS the dead-anchor check.
+    expect(headingAnchors('# Real\n\n```\n# Not A Heading\n```\n'))
+      .toEqual(new Set(['real']));
+  });
+});
+
+describe('duplicate registry rows with different metadata', () => {
+  const row = (cls, glob, codePaths, regions) => ({ cls, glob, codePaths, regions });
+
+  it('are ambiguous even when the class agrees', () => {
+    // Matching classes were treated as compatible, so the second row's
+    // declared paths were silently discarded and changes under them never
+    // triggered drift.
+    const out = classify('docs/a.md', [
+      row('D', 'docs/a.md', ['src/a'], []),
+      row('D', 'docs/a.md', ['src/b'], []),
+    ]);
+    expect(out.ambiguous).toBe(true);
+  });
+
+  it('are ambiguous when only the regions differ', () => {
+    const out = classify('docs/a.md', [
+      row('A', 'docs/a.md', [], ['inventory:*']),
+      row('A', 'docs/a.md', [], []),
+    ]);
+    expect(out.ambiguous).toBe(true);
+  });
+
+  it('are quiet when the rows are genuinely identical', () => {
+    const out = classify('docs/a.md', [
+      row('D', 'docs/a.md', ['src/a'], []),
+      row('D', 'docs/a.md', ['src/a'], []),
+    ]);
+    expect(out.ambiguous).toBe(false);
+  });
+});
+
+describe('a backticked path used as a link label', () => {
+  it('is one finding, not two', () => {
+    const ctx = { tracked: new Set(['d.md']), topLevelDirs: new Set(['src']),
+      rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.ts']), basenames: new Set() };
+    const out = checkDeadLinks('d.md', 'see [`src/gone.ts`](src/gone.ts)\n', ctx);
+    expect(out).toHaveLength(1);
+  });
+
+  it('still reports a backticked citation that is not a link label', () => {
+    const ctx = { tracked: new Set(['d.md']), topLevelDirs: new Set(['src']),
+      rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.ts']), basenames: new Set() };
+    const out = checkDeadLinks('d.md', 'see `src/gone.ts` in passing\n', ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/backticked path/);
+  });
+});
+
+describe('checkMarkerDates', () => {
+  it('rejects an impossible day in either field', () => {
+    // MARKER_RE checks the SHAPE only, and the future test is lexicographic,
+    // so an impossible date that sorts before today passed both.
+    expect(checkMarkerDates('d.md', { date: '2026-02-30', scanned: null }, '2026-09-18')[0])
+      .toMatchObject({ severity: 'P2' });
+    expect(checkMarkerDates('d.md', { date: '2026-09-01', scanned: '2026-02-30' }, '2026-09-18')[0].detail)
+      .toMatch(/last-scanned date/);
+  });
+
+  it('reports a future date in either field', () => {
+    expect(checkMarkerDates('d.md', { date: '2026-09-01', scanned: '2099-01-01' }, '2026-09-18')[0])
+      .toMatchObject({ severity: 'P1' });
+  });
+
+  it('is quiet on real past days and on unknown', () => {
+    expect(checkMarkerDates('d.md',
+      { date: '2026-09-01', scanned: '2026-09-18' }, '2026-09-18')).toEqual([]);
+    expect(checkMarkerDates('d.md', { date: 'unknown', scanned: null }, '2026-09-18')).toEqual([]);
+  });
+});
+
+describe('a whole run over a fixture repository', () => {
+  // REPO is derived from the script's own location, so the audit is copied
+  // into a throwaway tree and spawned there. This exists because four
+  // separate fixes in this file were "covered" by tests that called the
+  // helper directly and stayed green when the call site in main() was
+  // deleted. A helper nobody calls is not a check.
+  const fixture = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-e2e-'));
+    fs.mkdirSync(path.join(dir, 'scripts'));
+    fs.mkdirSync(path.join(dir, 'docs'));
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit.mjs'),
+      path.join(dir, 'scripts/docs-audit.mjs'));
+    fs.writeFileSync(path.join(dir, 'docs/DOC_REGISTRY.md'),
+      '# Registry\n\n## Registry\n\n| Class | Path glob | Declared code paths | Generated regions |\n'
+      + '|---|---|---|---|\n| D | docs/DOC_REGISTRY.md | | |\n| D | docs/*.md | src | |\n');
+    fs.writeFileSync(path.join(dir, 'src/a.ts'), 'export const a = 1;\n');
+    fs.writeFileSync(path.join(dir, 'issues.json'),
+      JSON.stringify({ stocks: {}, solyra: {} }));
+    for (const args of [['init', '-q', '-b', 'work'], ['config', 'user.email', 't@e.com'],
+      ['config', 'user.name', 't'], ['config', 'commit.gpgsign', 'false'],
+      ['add', '-A'], ['commit', '-qm', 'tree']]) {
+      spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+    }
+    return dir;
+  };
+
+  const runAudit = (dir, extra = []) => {
+    const res = spawnSync(process.execPath,
+      [path.join(dir, 'scripts/docs-audit.mjs'), '--json', '--date', '2026-09-18',
+        '--no-contract-check', '--issues-snapshot', path.join(dir, 'issues.json'), ...extra],
+      { cwd: dir, encoding: 'utf8' });
+    return res;
+  };
+
+  it('reports an impossible marker date through main()', () => {
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'),
+      '# D\n\n**Last reviewed:** 2026-02-30 · **Owner:** TBD\n\nbody\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const res = runAudit(dir);
+    expect(res.stdout).toBeTruthy();
+    const report = JSON.parse(res.stdout);
+    const bad = report.findings.filter((f) => /not a real calendar day/.test(f.detail));
+    expect(bad).toHaveLength(1);
+    expect(bad[0].severity).toBe('P2');
+  });
+
+  it('reports a future last-scanned date through main()', () => {
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'),
+      '# D\n\n**Last reviewed:** 2026-01-01 · **Last scanned:** 2099-01-01\n\nbody\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const report = JSON.parse(runAudit(dir).stdout);
+    const future = report.findings.filter((f) => /is in the future/.test(f.detail));
+    expect(future.length).toBeGreaterThanOrEqual(1);
+    expect(future[0].severity).toBe('P1');
+  });
+
+  it('is quiet about dates on a well-formed marker', () => {
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'),
+      '# D\n\n**Last reviewed:** 2026-01-01 · **Last scanned:** 2026-09-18\n\nbody\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const report = JSON.parse(runAudit(dir).stdout);
+    expect(report.findings.filter((f) => /calendar day|in the future/.test(f.detail)))
+      .toEqual([]);
   });
 });
 

@@ -387,6 +387,13 @@ export function linkContext(tracked, baseTracked, registry) {
 }
 
 /** Most specific match wins, so a file rule beats the directory rule. */
+/** Do two equally specific rows say the same thing, in full? */
+export function sameRule(a, b) {
+  return a.cls === b.cls
+    && a.codePaths.join('\u0000') === b.codePaths.join('\u0000')
+    && a.regions.join('\u0000') === b.regions.join('\u0000');
+}
+
 export function classify(doc, registry) {
   let best = null;
   let tied = false;
@@ -395,7 +402,7 @@ export function classify(doc, registry) {
     if (best === null || row.glob.length > best.glob.length) {
       best = row;
       tied = false;
-    } else if (row.glob.length === best.glob.length && row.cls !== best.cls) {
+    } else if (row.glob.length === best.glob.length && !sameRule(row, best)) {
       // Equally specific and disagreeing. First-wins meant a stale `X` or `B`
       // row could silently override a later `D` row and suppress every content
       // and provenance check for that document, while checkRegistryPaths
@@ -657,6 +664,37 @@ export function markerWindow(lines, limit = 40) {
  * and must not hold a build red forever. Same severity and reasoning as the
  * Python twin (stocks#1121).
  */
+/**
+ * Every date a marker carries has to name a real day, and be in the past.
+ *
+ * MARKER_RE checks the SHAPE only, so `2026-02-30` parses. With a verified
+ * depth and a valid ancestor SHA nothing else looked at it, and the future
+ * test is LEXICOGRAPHIC -- an impossible date that sorts before today passes
+ * that too. `Last scanned` was never date-checked at all. So a marker could
+ * record provenance that cannot be true and the audit reported clean.
+ *
+ * P2 for an impossible day: it is not an absent review, it is a recorded one
+ * that cannot be true, which is worse than `unknown` -- that at least says so.
+ * P1 for a future date, matching the twin, and applied to BOTH fields: a scan
+ * date is the one field a machine writes, so a future value there means the
+ * clock or the file is wrong.
+ */
+export function checkMarkerDates(doc, prev, today) {
+  const out = [];
+  for (const [field, label] of [['date', 'review date'], ['scanned', 'last-scanned date']]) {
+    const value = prev[field];
+    if (value === undefined || value === null || value === '' || value === 'unknown') continue;
+    if (!isCalendarDate(value)) {
+      out.push({ check: 'marker', doc, severity: 'P2',
+        detail: `${label} ${value} is not a real calendar day` });
+    } else if (value > today) {
+      out.push({ check: 'marker', doc, severity: 'P1',
+        detail: `${label} ${value} is in the future` });
+    }
+  }
+  return out;
+}
+
 export function checkProvenance(doc, prev) {
   const missing = [];
   if (prev.date === 'unknown') missing.push('never reviewed');
@@ -1038,7 +1076,17 @@ export function headingSlug(heading) {
 export function headingAnchors(text) {
   const seen = new Map();
   const out = new Set();
-  for (const m of text.matchAll(/^#{1,6}\s+(.*)$/gm)) {
+  // A `# ` line inside a fenced block is code, and GitHub creates no anchor
+  // for it -- docs/E2E_TEST_PLAN.md:59 has exactly that. Recording it invented
+  // an anchor, so a link to a fragment that does not exist PASSED the
+  // dead-anchor check. Marker parsing already excludes fenced lines; this is
+  // the same rule for the same reason.
+  const lines = text.split('\n');
+  const fenced = fencedLines(lines);
+  for (const [i, line] of lines.entries()) {
+    if (fenced.has(i)) continue;
+    const m = /^#{1,6}\s+(.*)$/.exec(line);
+    if (!m) continue;
     const base = headingSlug(m[1]);
     // Advance until the slug is unused, rather than trusting a per-base
     // counter. `## Notes`, `## Notes-1`, `## Notes` gave `notes` and
@@ -1075,6 +1123,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     return anchorCache.get(p);
   };
   text.split('\n').forEach((line, i) => {
+    // Spans a backticked citation occupies purely as a Markdown link's LABEL.
+    // ``[`src/gone.ts`](../src/gone.ts)`` is ONE broken link, and reporting it
+    // from both passes doubles the finding and the summary count.
+    const labelSpans = [...line.matchAll(/\[([^\]]*)\]\([^)\s]*\)/g)]
+      .map((m) => [m.index + 1, m.index + 1 + m[1].length]);
+    const inLinkLabel = (idx) => labelSpans.some(([lo, hi]) => idx >= lo && idx < hi);
     for (const m of line.matchAll(MD_LINK_RE)) {
       const tgt = m[1];
       const frag = m[2];
@@ -1119,7 +1173,8 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     const crossRepo = crossRepoCitations(line);
     for (const m of line.matchAll(BACKTICK_PATH_RE)) {
       const p = m[1];
-      if (crossRepo.has(m.index) || !exts.has(path.posix.extname(p))) continue;
+      if (inLinkLabel(m.index) || crossRepo.has(m.index)
+          || !exts.has(path.posix.extname(p))) continue;
       // Tracked membership for files, same rule as the Markdown-link branch
       // above: an ignored or generated file, or one recreated after a staged
       // deletion, is present here and absent for everyone who clones. The
@@ -1654,9 +1709,7 @@ export function main(argv) {
         findings.push({ check: 'marker', doc, severity: 'P3',
           detail: `legacy label, date ${prev.date}; normalise to Last reviewed` });
       }
-      if (prev.date !== 'unknown' && prev.date > today) {
-        findings.push({ check: 'marker', doc, severity: 'P1', detail: `review date ${prev.date} is in the future` });
-      }
+      findings.push(...checkMarkerDates(doc, prev, today));
       if (prev.sha) {
         // `git merge-base --is-ancestor` reports through its EXIT STATUS and
         // prints nothing, so testing its stdout for '' treats every SHA --
@@ -1744,9 +1797,15 @@ if (invokedDirectly) {
     process.exitCode = main(process.argv.slice(2));
   } catch (err) {
     if (err instanceof AuditError) {
+      // RETURN. This used to be process.exit(2), which made the rethrow below
+      // unreachable; switching to exitCode so a piped report can flush made it
+      // reachable, so every handled AuditError printed a stack trace and
+      // exited 1 -- the status reserved for findings. A regression introduced
+      // by the flush fix, not a pre-existing one.
       process.stderr.write(`error: ${err.message}\n`);
       process.exitCode = 2;
+    } else {
+      throw err;
     }
-    throw err;
   }
 }
