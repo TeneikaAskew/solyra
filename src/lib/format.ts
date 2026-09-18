@@ -38,6 +38,12 @@ export function fmtSigned(v: number | null | undefined): string {
   return `${v >= 0 ? '+' : '-'}${s}`;
 }
 
+/** Signed dollars, sign before the currency symbol: `+$12.50` / `-$3.00`. */
+export function fmtSignedMoney(v: number | null | undefined): string {
+  if (!isNum(v)) return NA;
+  return `${v >= 0 ? '+' : '-'}$${Math.abs(v).toFixed(2)}`;
+}
+
 /** Signed percent: `+0.37%` / `-2.05%`. `v` is already in percent units. */
 export function fmtPct(v: number | null | undefined, digits = 2): string {
   if (!isNum(v)) return NA;

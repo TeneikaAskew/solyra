@@ -7,14 +7,19 @@ import { useQuery } from '@tanstack/react-query';
 // The frontend never duplicates this math — if you find yourself needing
 // a number the server doesn't return, add it to the endpoint instead.
 
+/** `_OptionRecord`/`OptionContract` per the schema (#56): only `strike`
+ *  and `type` are guaranteed, `type` is a plain string ('call' | 'put'
+ *  today), and every greek/OI/volume field is optional-nullable. The
+ *  greeks REQUEST schema (`_OptionRecord`) accepts the same optionals, so
+ *  a fetched row forwards unchanged. */
 export interface OptionRecord {
-  type: 'call' | 'put';
+  type: string;
   strike: number;
-  open_interest: number | null;
-  gamma: number | null;
-  vega: number | null;
-  delta: number | null;
-  volume: number | null;
+  open_interest?: number | null;
+  gamma?: number | null;
+  vega?: number | null;
+  delta?: number | null;
+  volume?: number | null;
 }
 
 /**

@@ -93,13 +93,19 @@ export interface InsightReport {
 }
 
 // GET /api/insights/report/{ticker}
+// ReportEnvelope declares cost/latency/run_kind optional-nullable and
+// `report`/`model_versions` as open JSONB objects; the scalar half is
+// pair-checked in src/types/assignability.ts (report excluded there —
+// `InsightReport` is the app's structural claim over JSONB the schema
+// cannot type in either direction; render sites guard).
 export interface InsightReportEnvelope {
   ticker: string;
   as_of: string;
   report: InsightReport;
-  model_versions: Record<string, string>;
-  cost_usd: number | null;
-  latency_ms: number | null;
+  model_versions: Record<string, unknown>;
+  cost_usd?: number | null;
+  latency_ms?: number | null;
+  run_kind?: string | null;
 }
 
 // GET /api/insights/report/{ticker}/history

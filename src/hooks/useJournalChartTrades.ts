@@ -59,6 +59,15 @@ export interface JournalDeleteResponse {
   deleted: string;
 }
 
+/** POST /api/journal/export/{ticker} — JournalPage reads
+ *  `trades_exported`/`filename` for its status line. */
+export interface JournalExportResponse {
+  success: boolean;
+  trades_exported: number;
+  output_path: string;
+  filename: string;
+}
+
 // ── Seed layer (Task 2.4) ────────────────────────────────────────────────
 // GET /api/journal/seed/{ticker}?date= (platform/api/routers/journal.py
 // seed_trades). Read-only admin pull from the automated pipeline `trades`
@@ -114,34 +123,69 @@ export function epochToJournalDateTime(epochSec: number): { date: string; time: 
 /**
  * Reverse of epochToJournalDateTime. The journal API returns entry_ts/exit_ts
  * as ISO-ish strings that encode the SAME naive-ET wall clock (never real
- * UTC) — but the exact separator/offset varies by storage backend:
+ * UTC) — but the exact separator/offset/precision varies by storage backend:
  *   - local-fallback rows: "2026-07-02T13:35:00"       ('T', no offset —
  *     built as `${date}T${time}:00` in journal.py's create_trade)
  *   - Cloud SQL rows:      "2026-07-02 13:35:00+00:00"  (space + offset,
  *     from the `entry_ts AT TIME ZONE 'UTC'` cast in journal.py's SELECT)
+ *   - broker-import rows:  "2026-06-01 00:00"           (MINUTE precision —
+ *     ImportCommitTrade.entry_ts is "YYYY-MM-DD HH:MM" and the shared
+ *     insert path stores it verbatim, so local-mode read-back has no
+ *     seconds; requiring them made every such row a silent NaN)
  * `new Date(isoString)` is forbidden here (local-tz dependent, per project
- * convention) — instead pull the y/m/d/h/mi/s digits out with a regex and
+ * convention) — instead pull the y/m/d/h/mi[/s] digits out with a regex and
  * rebuild the epoch via Date.UTC, which reproduces the exact wall-clock
- * value regardless of separator or trailing offset.
+ * value regardless of separator, precision, or trailing offset.
  */
 export function isoNaiveToEpoch(iso: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/.exec(iso);
+  // Anchored: after the minute, ONLY the enumerated suffix forms parse —
+  // end of string, ":ss", a ":ss.ffffff" fraction, and a trailing
+  // "+HH:MM"/"-HH:MM" offset. A corrupt tail ("13:35:4", "13:355",
+  // "13:35junk", "13:35.abc") must be NaN, never silently plotted at :00
+  // (Codex, #66; wire timestamps are never Z-suffixed — see above).
+  // The offset is discarded (naive-ET wall clock), so the round-trip check
+  // below never sees it — its fields are bounded here instead: hour 00-23,
+  // minute 00-59, or the whole tail is corrupt ("+00:99" → NaN; Codex, #66).
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/.exec(iso);
   if (!m) return NaN;
-  const [y, mo, d, h, mi, s] = m.slice(1).map(Number);
-  return Math.floor(Date.UTC(y, mo - 1, d, h, mi, s) / 1000);
+  const [y, mo, d, h, mi] = m.slice(1, 6).map(Number);
+  const s = m[6] === undefined ? 0 : Number(m[6]);
+  // Date.UTC silently normalizes anything out of range — "13:99" → 14:39,
+  // and calendar-invalid days like a non-leap "02-29" → Mar 1 — plotting a
+  // corrupt timestamp on the WRONG bar rather than not at all. Per-field
+  // bounds can't see the calendar, so require the constructed instant to
+  // round-trip to the captured fields exactly (Codex, #66).
+  const ms = Date.UTC(y, mo - 1, d, h, mi, s);
+  const rt = new Date(ms);
+  if (
+    rt.getUTCFullYear() !== y || rt.getUTCMonth() !== mo - 1 || rt.getUTCDate() !== d ||
+    rt.getUTCHours() !== h || rt.getUTCMinutes() !== mi || rt.getUTCSeconds() !== s
+  ) {
+    return NaN;
+  }
+  return Math.floor(ms / 1000);
 }
 
 function deriveStatus(row: JournalRow): TradeEntry['status'] {
-  if (row.status === 'win' || row.status === 'loss' || row.status === 'breakeven' || row.status === 'active') {
+  if (
+    row.status === 'win' ||
+    row.status === 'loss' ||
+    row.status === 'breakeven' ||
+    row.status === 'active' ||
+    row.status === 'closed'
+  ) {
     return row.status;
   }
   // Legacy local-dev rows (pre-Phase-2) or an unrecognized server value:
-  // re-derive the same win/loss/breakeven/active split the server's own
-  // `_derive_status` uses (journal.py), keyed off exit_ts + return_pct sign.
-  // This is a structural fallback for a possibly-absent key, not the
+  // re-derive the same win/loss/breakeven/closed/active split the server's
+  // own `_derive_status` uses (journal.py), keyed off exit_ts + return_pct
+  // sign. This is a structural fallback for a possibly-absent key, not the
   // "financial ?? 0" pattern CLAUDE.md Rule 3.7 forbids.
   if (!row.exit_ts) return 'active';
-  if (row.return_pct == null) return 'breakeven';
+  // Exited with no computable return (zero entry price) is 'closed', the
+  // server's own value: calling it breakeven fabricates a flat result the
+  // user never had (Rule 4; Codex, #66).
+  if (row.return_pct == null) return 'closed';
   if (row.return_pct > 0) return 'win';
   if (row.return_pct < 0) return 'loss';
   return 'breakeven';

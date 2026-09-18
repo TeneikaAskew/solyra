@@ -45,6 +45,7 @@ import {
   epochToJournalDateTime,
   resolveJournalView,
   chartTradesKey,
+  type JournalExportResponse,
   type JournalRow,
   type JournalView,
 } from '@/hooks/useJournalChartTrades';
@@ -327,7 +328,7 @@ export default function JournalPage() {
         }),
       });
       if (r.ok) {
-        const d = await r.json();
+        const d: JournalExportResponse = await r.json();
         // Not all skipped rows are active — a row with a null exit_ts is
         // also unexportable — so say "not closed" rather than "active" (#714).
         const skippedNote = skippedCount > 0 ? ` · ${skippedCount} not closed, skipped` : '';

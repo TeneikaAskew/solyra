@@ -91,12 +91,17 @@ export function buildGrid(
  *  (the caller's "Couldn't estimate spot" state, whose copy already
  *  promises exactly this condition). */
 export function estimateSpotStrikeFromDeltas(
-  options: ReadonlyArray<{ strike: number; type: 'call' | 'put'; delta: number | null }>,
+  // `type` is a plain string on the wire ('call' | 'put' today); a row
+  // with a missing delta or an unrecognized type is skipped outright —
+  // scoring an unknown type against the put anchor would let it win the
+  // nearest-ATM pick and fabricate the spot (Codex, #66).
+  options: ReadonlyArray<{ strike: number; type: string; delta?: number | null }>,
 ): number | null {
   let bestStrike: number | null = null;
   let bestScore = Infinity;
   for (const o of options) {
     if (o.delta == null) continue;
+    if (o.type !== 'call' && o.type !== 'put') continue;
     const score = Math.abs(o.delta - (o.type === 'call' ? 0.5 : -0.5));
     if (score < bestScore) {
       bestScore = score;

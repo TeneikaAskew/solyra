@@ -28,7 +28,7 @@ export interface AvgVolume {
   ticker: string;
   avg_volume_20d: number;
   sample_size: number;
-  last_date: string | null;
+  last_date?: string | null;
   source: string;
 }
 

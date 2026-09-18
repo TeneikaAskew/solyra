@@ -30,74 +30,63 @@ interface BacktestRun {
   path: string;
   timestamp: string;
   /** Always null today (backtest.py hardcodes it); typed so nothing formats it as a date. */
-  modified: string | null;
-  size_bytes: number | null;
+  modified?: string | null;
+  size_bytes?: number | null;
   /** null when the run's CSV could not be downloaded. */
-  row_count: number | null;
-  trade_count: number | null;
-  win_rate: number | null;
-  avg_return_pct: number | null;
+  row_count?: number | null;
+  trade_count?: number | null;
+  win_rate?: number | null;
+  avg_return_pct?: number | null;
   has_equity_curve: boolean;
 }
 
-interface BacktestAllResponse {
+export interface BacktestAllResponse {
   ticker: string;
   total_runs: number;
   runs: BacktestRun[];
 }
 
-interface TradeRow {
-  entry_time: string;
-  exit_time: string;
-  direction: string;
-  entry_price: number;
-  exit_price: number;
-  exit_reason: string;
-  return_pct: number;
-  base_score: number;
-  strat_bonus: number;
-  total_score: number;
-  [key: string]: unknown;
-}
+/** backtest.py serializes each CSV row as an untyped dict (the schema says
+ *  `Record<string, unknown>`), so every cell narrows what it renders and
+ *  shows the em-dash for anything that isn't there. */
+type TradeRow = Record<string, unknown>;
 
+/** Every field optional-nullable per the schema: the empty-CSV branches
+ *  send `summary: {}`, and a partially-usable CSV can carry some keys and
+ *  not others — `total_trades` present does NOT imply `win_rate` is
+ *  (Codex, #64 verification review). Guard each field individually. */
 interface BacktestSummary {
-  total_trades: number;
-  win_count: number;
-  loss_count: number;
-  win_rate: number;
-  avg_return_pct: number;
-  avg_win_pct: number | null;
-  avg_loss_pct: number | null;
-  total_return_pct: number;
+  total_trades?: number | null;
+  win_count?: number | null;
+  loss_count?: number | null;
+  win_rate?: number | null;
+  avg_return_pct?: number | null;
+  avg_win_pct?: number | null;
+  avg_loss_pct?: number | null;
+  total_return_pct?: number | null;
 }
 
-/** The API's empty branches send `summary: {}`; the populated branch
- *  carries every key. Narrow on `total_trades != null` before reading. */
-type EmptySummary = { total_trades?: undefined };
-
-interface BacktestResultsResponse {
+export interface BacktestResultsResponse {
   ticker: string;
   filename: string;
   trade_count: number;
-  summary: BacktestSummary | EmptySummary;
+  summary: BacktestSummary;
   trades: TradeRow[];
 }
 
 interface EquitySummary {
-  start_value: number;
-  end_value: number;
-  peak_value: number;
-  total_return_pct: number;
-  max_drawdown_pct: number;
-  data_points: number;
+  start_value?: number | null;
+  end_value?: number | null;
+  peak_value?: number | null;
+  total_return_pct?: number | null;
+  max_drawdown_pct?: number | null;
+  data_points?: number | null;
 }
 
-type EmptyEquitySummary = { data_points?: undefined };
-
-interface EquityResponse {
+export interface EquityResponse {
   ticker: string;
   filename: string;
-  summary: EquitySummary | EmptyEquitySummary;
+  summary: EquitySummary;
   dates: string[];
   values: (number | null)[];
 }
@@ -237,31 +226,44 @@ function EquityCurve({ equity }: { equity: EquityResponse }) {
 
 const columnHelper = createColumnHelper<TradeRow>();
 
+/** A CSV row's cell as a finite number, or null when absent/unparseable —
+ *  the em-dash renders instead of "$NaN" (Rule 4). */
+const cellNum = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null;
+const cellStr = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
 const columns = [
   columnHelper.accessor('entry_time', {
     header: 'Entry',
-    cell: i => <span className="font-mono text-[10px]">{String(i.getValue()).slice(0, 16)}</span>,
+    cell: i => <span className="font-mono text-[10px]">{cellStr(i.getValue())?.slice(0, 16) ?? NA}</span>,
   }),
   columnHelper.accessor('direction', {
     header: 'Dir',
     cell: i => (
-      <span className={`text-xs font-bold ${String(i.getValue()) === 'CALL' ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}`}>
-        {String(i.getValue())}
+      <span className={`text-xs font-bold ${cellStr(i.getValue()) === 'CALL' ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}`}>
+        {cellStr(i.getValue()) ?? NA}
       </span>
     ),
   }),
   columnHelper.accessor('entry_price', {
     header: 'Entry $',
-    cell: i => <span className="font-mono text-xs">${Number(i.getValue()).toFixed(2)}</span>,
+    cell: i => {
+      const v = cellNum(i.getValue());
+      return <span className="font-mono text-xs">{v == null ? NA : `$${v.toFixed(2)}`}</span>;
+    },
   }),
   columnHelper.accessor('exit_price', {
     header: 'Exit $',
-    cell: i => <span className="font-mono text-xs">${Number(i.getValue()).toFixed(2)}</span>,
+    cell: i => {
+      const v = cellNum(i.getValue());
+      return <span className="font-mono text-xs">{v == null ? NA : `$${v.toFixed(2)}`}</span>;
+    },
   }),
   columnHelper.accessor('return_pct', {
     header: 'Return %',
     cell: i => {
-      const v = Number(i.getValue());
+      const v = cellNum(i.getValue());
+      if (v == null) return <span className="font-mono text-xs">{NA}</span>;
       return (
         <span className={`font-mono text-xs font-medium ${v >= 0 ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}`}>
           {v >= 0 ? '+' : ''}{v.toFixed(2)}%
@@ -271,11 +273,14 @@ const columns = [
   }),
   columnHelper.accessor('exit_reason', {
     header: 'Exit',
-    cell: i => <span className="text-xs text-[var(--color-text-muted)]">{String(i.getValue())}</span>,
+    cell: i => <span className="text-xs text-[var(--color-text-muted)]">{cellStr(i.getValue()) ?? NA}</span>,
   }),
   columnHelper.accessor('total_score', {
     header: 'Score',
-    cell: i => <span className="font-mono text-xs">{Number(i.getValue()).toFixed(1)}</span>,
+    cell: i => {
+      const v = cellNum(i.getValue());
+      return <span className="font-mono text-xs">{v == null ? NA : v.toFixed(1)}</span>;
+    },
   }),
 ];
 
@@ -366,12 +371,14 @@ export default function BacktesterSection({ ticker }: { ticker: string }) {
   );
 
   // The API's empty-CSV branch returns `summary: {}` — truthy, so an
-  // object-truthiness guard renders the metric grid and crashes on
-  // `summary.avg_return_pct.toFixed` for any ticker with no backtest
-  // rows. Gate on a field the populated branch always carries.
+  // object-truthiness guard renders the metric grid and crashes for any
+  // ticker with no backtest rows. `total_trades` gates whether the grid
+  // shows at all, but the schema makes EVERY summary key optional, so
+  // each metric card also guards its own field — total_trades being
+  // present does not make win_rate arithmetic safe (Codex, #64).
   const rawSummary = results?.summary;
-  const summary =
-    rawSummary && rawSummary.total_trades != null ? rawSummary : undefined;
+  const totalTrades = rawSummary?.total_trades;
+  const summary = rawSummary != null && totalTrades != null ? rawSummary : undefined;
 
   return (
     <div className="space-y-4">
@@ -415,27 +422,31 @@ export default function BacktesterSection({ ticker }: { ticker: string }) {
         </div>
       )}
 
-      {summary && (
+      {summary && totalTrades != null && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <MetricCard label="Total Trades" value={String(summary.total_trades)} />
+          <MetricCard label="Total Trades" value={String(totalTrades)} />
           <MetricCard
             label="Win Rate"
-            value={`${(summary.win_rate * 100).toFixed(1)}%`}
-            change={summary.win_rate >= 0.5 ? 1 : -1}
+            value={summary.win_rate != null ? `${(summary.win_rate * 100).toFixed(1)}%` : NA}
+            change={summary.win_rate != null ? (summary.win_rate >= 0.5 ? 1 : -1) : undefined}
           />
           <MetricCard
             label="Avg Return"
-            value={`${summary.avg_return_pct >= 0 ? '+' : ''}${summary.avg_return_pct.toFixed(2)}%`}
-            change={summary.avg_return_pct >= 0 ? 1 : -1}
+            value={
+              summary.avg_return_pct != null
+                ? `${summary.avg_return_pct >= 0 ? '+' : ''}${summary.avg_return_pct.toFixed(2)}%`
+                : NA
+            }
+            change={summary.avg_return_pct != null ? (summary.avg_return_pct >= 0 ? 1 : -1) : undefined}
           />
           <MetricCard
             label="Avg Win"
-            value={summary.avg_win_pct != null ? `+${summary.avg_win_pct.toFixed(2)}%` : '--'}
+            value={summary.avg_win_pct != null ? `+${summary.avg_win_pct.toFixed(2)}%` : NA}
             change={1}
           />
           <MetricCard
             label="Avg Loss"
-            value={summary.avg_loss_pct != null ? `${summary.avg_loss_pct.toFixed(2)}%` : '--'}
+            value={summary.avg_loss_pct != null ? `${summary.avg_loss_pct.toFixed(2)}%` : NA}
             change={-1}
           />
         </div>

@@ -5,6 +5,7 @@ import { useTradeMarking, type DrawingStep } from '@/hooks/useTradeMarking';
 import type { CreateChartTradeVars, CloseChartTradeVars } from '@/hooks/useJournalChartTrades';
 import type { TradeEntry } from '@/types';
 import type { CandlestickBar, VolumeBar } from '@/hooks/useMarketData';
+import { NA, fmtSignedMoney } from '@/lib/format';
 
 export interface PriceLineConfig {
   price: number;
@@ -18,7 +19,38 @@ export interface PriceLineConfig {
 // deliberately gray, never the bull/bear green/red the user's own trades
 // use, matching ChartsPage's SEED_MARKER_COLOR convention for the same
 // "two layers must be unmistakable at a glance" reason.
-const EXAMPLE_MARKER_COLOR = '#8a8f98';
+export const EXAMPLE_MARKER_COLOR = '#8a8f98';
+
+// A closed trade whose P&L is unavailable (status 'closed': the server
+// could not compute a return, stocks #1115) gets the same neutral gray —
+// it asserts nothing about direction, so it must not wear bull or bear.
+export const UNAVAILABLE_MARKER_COLOR = '#8a8f98';
+
+/**
+ * Exit-marker placement, color and label for a closed trade. Pure so the
+ * Rule-4 contract is unit-testable without mounting the chart: an
+ * unavailable P&L renders the em-dash placeholder in a neutral color,
+ * never `+$0.00` (which read as a real flat result; Codex, #66).
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, colocated for unit testing; no HMR impact
+export function exitMarkerSpec(
+  pnl: number | undefined,
+  isExamples: boolean,
+): { position: 'aboveBar' | 'belowBar'; color: string; text: string } {
+  const prefix = isExamples ? 'EX ' : '';
+  if (pnl == null) {
+    return {
+      position: 'aboveBar',
+      color: isExamples ? EXAMPLE_MARKER_COLOR : UNAVAILABLE_MARKER_COLOR,
+      text: `${prefix}Exit ${NA}`,
+    };
+  }
+  return {
+    position: pnl >= 0 ? 'aboveBar' : 'belowBar',
+    color: isExamples ? EXAMPLE_MARKER_COLOR : pnl >= 0 ? '#089981' : '#f23645',
+    text: `${prefix}Exit ${fmtSignedMoney(pnl)}`,
+  };
+}
 
 // Rail-card hover → chart highlight (design spec Option B, Task 5 gap):
 // "Hovering a card highlights its markers on the chart." Markers/price-lines
@@ -199,16 +231,16 @@ export const TradeMarkingChart = forwardRef<TradeMarkingChartHandle, TradeMarkin
           text: `${isExamples ? 'EX ' : ''}${trade.optionType} @ $${trade.entryPrice.toFixed(2)}`,
         });
         if (trade.exitTime) {
-          // AUDIT-2026-05-13: silent fallback — pre-existing; only reachable
-          // via manual DB writes (server always sets return_pct on close).
-          // See https://github.com/TeneikaAskew/stocks/blob/main/docs/audits/FALLBACK_AUDIT_2026-05-13.md
-          const pnl = trade.pnl ?? 0;
+          // `trade.pnl` is undefined for a 'closed' trade with no computable
+          // return (zero entry price) — the spec renders that as unavailable
+          // rather than coercing it to a green +$0.00 (Rule 4; Codex, #66).
+          const spec = exitMarkerSpec(trade.pnl, isExamples);
           m.push({
             time: trade.exitTime as Time,
-            position: pnl >= 0 ? 'aboveBar' : 'belowBar',
-            color: tint(isExamples ? EXAMPLE_MARKER_COLOR : pnl >= 0 ? '#089981' : '#f23645'),
+            position: spec.position,
+            color: tint(spec.color),
             shape: 'circle',
-            text: `${isExamples ? 'EX ' : ''}Exit ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`,
+            text: spec.text,
           });
         }
         return m;

@@ -4,12 +4,14 @@ import type { EvalResult, MarketSnapshot } from '@/lib/playbookEvaluator';
 // All condition parsing + threshold logic is server-side
 // (platform/api/routers/playbook.py). These hooks are thin wrappers.
 
-interface FlatResponse {
-  results: EvalResult[];
-}
-
-interface BatchResponse {
-  results_by_key: Record<string, EvalResult[]>;
+/** POST /api/playbook/evaluate — one envelope for both request shapes.
+ *  The server fills whichever key(s) the request carried and leaves the
+ *  other null (model_dump with null defaults), so BOTH are optional on
+ *  the wire; each caller below guards for the key it asked for and fails
+ *  loud when it is missing (INTERNAL — a bug, not an unavailable state). */
+export interface PlaybookEvaluateResponse {
+  results?: EvalResult[] | null;
+  results_by_key?: Record<string, EvalResult[]> | null;
 }
 
 /**
@@ -30,7 +32,10 @@ export function usePlaybookEvaluation(
         body: JSON.stringify({ snapshot, conditions }),
       });
       if (!r.ok) throw new Error(`playbook-eval ${r.status}`);
-      const data: FlatResponse = await r.json();
+      const data: PlaybookEvaluateResponse = await r.json();
+      if (!Array.isArray(data.results)) {
+        throw new Error('playbook-eval: results missing from a conditions request');
+      }
       return data.results;
     },
     enabled: ready,
@@ -57,7 +62,10 @@ export function usePlaybookBatch(
         body: JSON.stringify({ snapshot, batches }),
       });
       if (!r.ok) throw new Error(`playbook-batch ${r.status}`);
-      const data: BatchResponse = await r.json();
+      const data: PlaybookEvaluateResponse = await r.json();
+      if (data.results_by_key == null) {
+        throw new Error('playbook-batch: results_by_key missing from a batches request');
+      }
       return new Map(Object.entries(data.results_by_key));
     },
     enabled: ready,
