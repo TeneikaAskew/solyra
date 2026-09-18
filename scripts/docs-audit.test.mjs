@@ -14,6 +14,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   checkMarkerDates,
+  commentSpans,
+  pathInCommit,
   fencedLines,
   AuditError,
   cell,
@@ -1912,6 +1914,31 @@ describe('a whole run over a fixture repository', () => {
     expect(future[0].severity).toBe('P1');
   });
 
+  it('refuses to record a review against a commit that predates the document', () => {
+    // The refusal lives in main(), beside the stamp call -- checkVerifyTargets
+    // only RENDERS it, and a test that hands it the action by hand stays green
+    // when the call site is deleted. Spawning the script is what binds it.
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/new.md'), '# New\n\nbody\n');
+    spawnSync('git', ['add', 'docs/new.md'], { cwd: dir });
+    const res = runAudit(dir, ['--stamp', '--verify', 'docs/new.md']);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/baseline predating it/);
+    expect(fs.readFileSync(path.join(dir, 'docs/new.md'), 'utf8'))
+      .not.toMatch(/Last reviewed:/);
+  });
+
+  it('still records a review for a document the commit does contain', () => {
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/new.md'), '# New\n\nbody\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const res = runAudit(dir, ['--stamp', '--verify', 'docs/new.md']);
+    expect(res.status).not.toBe(2);
+    expect(fs.readFileSync(path.join(dir, 'docs/new.md'), 'utf8'))
+      .toMatch(/\*\*Depth:\*\* verified/);
+  });
+
   it('is quiet about dates on a well-formed marker', () => {
     const dir = fixture();
     fs.writeFileSync(path.join(dir, 'docs/d.md'),
@@ -2785,5 +2812,115 @@ describe('a fenced example row in the Claims table', () => {
     const text = `## Claims\n\n\`\`\`\n${head}| docs/EXAMPLE.md | (\\d+) x | grep-count src x |\n`
       + `\`\`\`\n\n${head}| README.md | (\\d+) y | grep-count src y |\n`;
     expect(loadClaims(text).map((c) => c.doc)).toEqual(['README.md']);
+  });
+});
+
+
+// ── round 19: ported from the Python twin (stocks#1121) ─────────────────────
+
+describe('a fenced example of a generated region', () => {
+  it('is documentation, not a region', () => {
+    // A document explaining the convention shows the delimiter pair in a code
+    // block. Reading that example as a real region reported the span
+    // generated, called a marker landing in it unstampable, and measured drift
+    // against a code sample.
+    const text = '# T\n\n```\n<!-- inventory:demo:start -->\n<!-- inventory:demo:end -->\n```\n';
+    const { owned, orphans } = ownedLines(text, ['inventory:*']);
+    expect([...owned]).toEqual([]);
+    expect(orphans).toEqual([]);
+  });
+
+  it('does not swallow a real unbalanced marker beside it', () => {
+    const text = '# T\n\n```\n<!-- inventory:demo:start -->\n```\n\n<!-- inventory:real:start -->\n';
+    const { orphans } = ownedLines(text, ['inventory:*']);
+    expect(orphans).toEqual(['inventory:real starts at line 7 with no end']);
+  });
+
+  it('applies to a mark: pair too', () => {
+    const text = '# T\n\n```\n<!-- BEGIN demo -->\nx\n<!-- END demo -->\n```\n';
+    const { owned } = ownedLines(text, ['mark:demo']);
+    expect([...owned]).toEqual([]);
+  });
+
+  it('still owns fenced CONTENT between two real delimiters', () => {
+    const text = '# T\n\n<!-- BEGIN demo -->\n```\nx\n```\n<!-- END demo -->\n';
+    // Only the delimiter SCAN skips fences. A generated block is usually a
+    // fenced table or code sample, so skipping its content would unown most
+    // of what a renderer writes; both delimiters are part of the region.
+    const { owned } = ownedLines(text, ['mark:demo']);
+    expect([...owned].sort((a, b) => a - b)).toEqual([3, 4, 5, 6, 7]);
+  });
+});
+
+describe('a tracked extension longer than six characters', () => {
+  it('is citable', () => {
+    // Six covered `.drawio` and stopped one short of `.properties`. The bound
+    // is not what filters: linkContext derives `exts` from the tree, so an
+    // extension this tree does not track is skipped there. Raised on the
+    // Python twin (stocks#1121), where a five-character cap made `.drawio`
+    // uncitable outright.
+    const ctx = linkContext(new Set(['docs/d.md', 'docs/here.properties']),
+      new Set(), []);
+    const out = checkDeadLinks('docs/d.md', 'See `docs/gone.properties`.\n', ctx);
+    expect(out.map((f) => f.detail)).toEqual(['backticked path -> docs/gone.properties']);
+    expect(checkDeadLinks('docs/d.md', 'See `docs/here.properties`.\n', ctx)).toEqual([]);
+  });
+});
+
+describe('a blocker citation commented out', () => {
+  it('does not gate the build', () => {
+    // Commenting the row out is how a blocker list is retired without losing
+    // it. The prose no longer renders; --check held the build red over it.
+    const u = 'https://github.com/TeneikaAskew/solyra/issues/9';
+    const states = { solyra: { 9: { state: 'closed', reason: 'completed' } } };
+    expect(checkClosedIssues('d.md', `# T\n\n<!-- was: still open ${u} -->\n`, states))
+      .toEqual([]);
+    const live = checkClosedIssues('d.md', `# T\n\nstill open ${u}\n`, states);
+    expect(live).toHaveLength(1);
+    expect(live[0].severity).toBe('P1');
+  });
+
+  it('is a SPAN, so a citation beside the comment is still read', () => {
+    const u = 'https://github.com/TeneikaAskew/solyra/issues/9';
+    const states = { solyra: { 9: { state: 'closed', reason: 'completed' } } };
+    const line = `still open ${u} <!-- superseded: ignore this -->`;
+    expect(checkClosedIssues('d.md', `# T\n\n${line}\n`, states)).toHaveLength(1);
+  });
+
+  it('does not treat a backticked `<!--` as opening a comment', () => {
+    // codeSpans masks inline code first; without it the rest of the document
+    // reads as commented out and every later finding disappears.
+    const spans = commentSpans(['an example of `<!--` in prose', 'a real citation']);
+    expect(spans.size).toBe(0);
+  });
+});
+
+describe('a review recorded against a commit that predates the document', () => {
+  it('names why it was refused, not a bare slug', () => {
+    // checkVerifyTargets turns the refusal into the error a user sees; an
+    // action missing from STAMP_REFUSALS prints as its slug and explains
+    // nothing.
+    expect(() => checkVerifyTargets(new Set(['docs/new.md']),
+      new Map([['docs/new.md', 'baseline-predates-doc']])))
+      .toThrow(/baseline predating it/);
+  });
+});
+
+describe('pathInCommit', () => {
+  it('tells an absent path apart from an empty file', () => {
+    // `git show <sha>:<doc>` yields '' for both, which is why the drift check
+    // read a baseline the document predates as "nothing changed".
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-pic-'));
+    const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q', '-b', 'work');
+    git('config', 'user.email', 't@example.com');
+    git('config', 'user.name', 't');
+    fs.writeFileSync(path.join(dir, 'empty.md'), '');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'one');
+    const sha = git('rev-parse', 'HEAD').stdout.trim();
+    const spawn = (cmd, args) => spawnSync(cmd, args, { cwd: dir, encoding: 'utf8' });
+    expect(pathInCommit(sha, 'empty.md', { spawn })).toBe(true);
+    expect(pathInCommit(sha, 'absent.md', { spawn })).toBe(false);
   });
 });

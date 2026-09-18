@@ -170,14 +170,18 @@ const MD_LINK_RE =
 // only checked against the root files this repo tracks (see checkDeadLinks),
 // because the docs also name `mocks.ts`, `main.py`, `deploy.sh` and a hundred
 // other bare files that live under a directory or in the sibling repo.
-// The extension admits six characters because `.drawio` has six, and a
-// five-character cap made both diagrams uncitable rather than unchecked.
+// The extension admits ten characters. Six covered `.drawio` and stopped one
+// short of `.properties`; the bound is not what does the filtering, so there
+// is no reason for it to be tight. `linkContext` derives `exts` from the
+// tree, and an extension this tree does not track is skipped there -- that is
+// what keeps a wide bound from inventing findings. Raised on the Python twin
+// (stocks#1121), where a five-character cap made `.drawio` uncitable outright.
 // A citation may carry a source location after the path: `src/App.tsx:44-72`,
 // `vite.config.ts:7,45,93`, `SwingMode.tsx:156`. Requiring the closing
 // backtick right after the extension made every such citation invisible.
 const LINE_SUFFIX = '(?::\\d+(?:-\\d+)?(?:,\\d+(?:-\\d+)?)*)?';
-const BACKTICK_PATH_RE = new RegExp(`\`([A-Za-z0-9_./-]+/[A-Za-z0-9_.-]+\\.[A-Za-z0-9]{1,6})${LINE_SUFFIX}\``, 'g');
-const BACKTICK_ROOT_FILE_RE = new RegExp(`\`([A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.[A-Za-z0-9]{1,6})${LINE_SUFFIX}\``, 'g');
+const BACKTICK_PATH_RE = new RegExp(`\`([A-Za-z0-9_./-]+/[A-Za-z0-9_.-]+\\.[A-Za-z0-9]{1,10})${LINE_SUFFIX}\``, 'g');
+const BACKTICK_ROOT_FILE_RE = new RegExp(`\`([A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.[A-Za-z0-9]{1,10})${LINE_SUFFIX}\``, 'g');
 // A line that names the sibling repo is citing its tree, not this one:
 // CLAUDE.md says `scripts/export_openapi.py` is a stocks file on the line
 // that cites it, and the design briefs wrap stocks paths in a
@@ -199,6 +203,18 @@ const CROSS_REPO_LINK_RE = new RegExp(`^\\]\\(https?://github\\.com/${OWNER}/${S
 const LINK_TAIL_RE = /^\]\([^)\s]*\)/;
 
 export class AuditError extends Error {}
+
+/**
+ * Does this commit contain this path?
+ *
+ * `git show <sha>:<doc>` cannot answer it: the command exits 128 for a path
+ * the commit lacks and yields an empty string, which is the same value an
+ * empty file gives.
+ */
+export function pathInCommit(sha, doc, { spawn = spawnSync } = {}) {
+  return spawn('git', ['cat-file', '-e', `${sha}:${doc}`],
+    { cwd: REPO, encoding: 'utf8' }).status === 0;
+}
 
 /**
  * Run a command, treating only the listed non-zero exits as answers.
@@ -616,6 +632,15 @@ export function docLines(text) {
  */
 export function ownedLines(text, specs) {
   const lines = docLines(text);
+  // The region DELIMITERS are HTML comments, and a document explaining the
+  // convention shows a pair inside a code block. Reading that example as a
+  // real region put the ownership map on prose: the span reported generated,
+  // a marker landing in it called unstampable, and drift measured against a
+  // code sample. Only the delimiter scan skips fences -- content BETWEEN two
+  // real delimiters is owned whether or not it is fenced, which it usually is,
+  // and `line:` matches generated lines that are frequently inside a fence.
+  // Raised on the Python twin (stocks#1121).
+  const fencedHere = fencedLines(lines);
   const owned = new Set();
   const unmatched = [];
   const orphans = [];
@@ -630,6 +655,7 @@ export function ownedLines(text, specs) {
     } else if (spec === 'inventory:*') {
       const openAt = new Map();
       lines.forEach((line, i) => {
+        if (fencedHere.has(i)) return;
         const m = INVENTORY_RE.exec(line);
         if (!m) return;
         if (m[2] === 'start') {
@@ -666,6 +692,7 @@ export function ownedLines(text, specs) {
       let open = -1;
       let nested = false;
       lines.forEach((l, n) => {
+        if (fencedHere.has(n)) return;
         if (begin.test(l)) {
           if (open >= 0) nested = true;
           else open = n;
@@ -960,6 +987,70 @@ export function fencedLines(lines) {
     }
   });
   return fenced;
+}
+
+/**
+ * Offset ranges of every inline code span on one line.
+ *
+ * A run of N backticks opens a span that only a run of exactly N closes, so
+ * `` ``a ` b`` `` is one span rather than two.
+ */
+export function codeSpans(line) {
+  const re = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
+  const out = [];
+  for (const m of line.matchAll(re)) out.push([m.index, m.index + m[0].length]);
+  return out;
+}
+
+/**
+ * Offset ranges inside an HTML comment, per line index.
+ *
+ * SPANS, not whole lines: commenting a citation out is how a blocker list is
+ * retired without losing it, and it is usually done to part of a line -- a
+ * table row with a trailing `<!-- superseded: ... -->`. A whole-line rule
+ * cannot see that, and on the Python twin a whole-line rule also cost a real
+ * finding on a line whose balanced inline comment was an EXAMPLE in backticks.
+ *
+ * A `<!--` inside a code span is not a comment, so code spans are masked
+ * first -- which is what makes that same line parse right. Ported from
+ * stocks#1121.
+ */
+export function commentSpans(lines) {
+  const masked = lines.map((line) => {
+    const buf = [...line];
+    for (const [a, b] of codeSpans(line)) for (let k = a; k < b; k += 1) buf[k] = '\u0000';
+    return buf.join('');
+  });
+  const text = masked.join('\n');
+
+  const ranges = [];
+  let pos = 0;
+  for (;;) {
+    const a = text.indexOf('<!--', pos);
+    if (a < 0) break;
+    const b = text.indexOf('-->', a + 4);
+    const end = b < 0 ? text.length : b + 3;
+    ranges.push([a, end]);
+    if (b < 0) break;
+    pos = end;
+  }
+
+  const out = new Map();
+  let base = 0;
+  lines.forEach((line, i) => {
+    const lo = base;
+    const hi = base + line.length;
+    for (const [a, b] of ranges) {
+      const s0 = Math.max(a, lo);
+      const e0 = Math.min(b, hi);
+      if (s0 < e0) {
+        if (!out.has(i)) out.set(i, []);
+        out.get(i).push([s0 - base, e0 - base]);
+      }
+    }
+    base = hi + 1;
+  });
+  return out;
 }
 
 /**
@@ -1306,10 +1397,16 @@ export function checkClosedIssues(doc, text, states) {
   // blocking citation looks like failed the audit over its own example. The
   // link, heading and marker checks already skip fenced lines.
   const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
+  // And text commented OUT, which is how a blocker list is retired without
+  // losing it: the prose no longer renders, but --check still held the build
+  // red over it. Raised on the Python twin (stocks#1121).
+  const commented = commentSpans(lines);
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
     if (!hasBlockingCue(line)) return;
+    const hidden = commented.get(i) ?? [];
     for (const m of line.matchAll(ISSUE_URL_RE)) {
+      if (hidden.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
       if (!citesLiveWork(line, m.index, m.index + m[0].length)) continue;
       const [, rawRepo, rawKind, num] = m;
       const repo = normaliseRepo(rawRepo);
@@ -2001,6 +2098,8 @@ export function parseArgs(argv) {
 export const RECORDS_REVIEW = new Set(['inserted', 'updated', 'unchanged']);
 
 const STAMP_REFUSALS = {
+  'baseline-predates-doc': 'the reviewed-against commit does not contain the document, '
+    + 'so the review would name a baseline predating it; commit it first',
   'skipped-no-h1': 'no H1 to place a marker after',
   'skipped-legacy-content': 'a legacy marker carrying prose that rewriting would delete',
 };
@@ -2259,6 +2358,18 @@ export function main(argv) {
         continue;
       }
       const reviewed = verify.has(doc);
+      // A review records "these claims were true against THIS revision". For a
+      // document the revision does not contain -- a staged-new file, the case
+      // that reaches here -- that sentence is simply false, and nothing later
+      // catches it: this module has no document-level drift check, so the SHA
+      // is never read back against the document at all. Raised on the Python
+      // twin (stocks#1121), where the doc-drift check DOES read it and, given
+      // an absent blob, reported "nothing changed". The answer either way is
+      // to commit the document and stamp against a revision that holds it.
+      if (reviewed && !pathInCommit(head, doc)) {
+        stampTargets.set(doc, 'baseline-predates-doc');
+        continue;
+      }
       const res = stamp(text, today, reviewed ? 'verified' : 'scanned', head, reviewed);
       stampTargets.set(doc, res.action);
       const record = stampRecord(doc, res, reviewed);
