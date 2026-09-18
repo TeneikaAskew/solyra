@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkMarkerDates,
   commentSpans,
+  isSetextUnderline,
   commentedLines,
   markerAnchor,
   indentedCodeLines,
@@ -3142,5 +3143,207 @@ describe('a single-star registry glob', () => {
     const reg = loadRegistry('## Registry\n\n| Class | Path glob | Declared code paths |\n'
       + '|---|---|---|\n| X | .claude/**/*.md | |\n');
     expect(classify('.claude/agents/nested/a.md', reg).cls).toBe('X');
+  });
+});
+
+
+// ── the round on a932cad ───────────────────────────────────────────────────
+
+describe('a recursive registry glob', () => {
+  it('matches an immediate child as well as a nested one', () => {
+    // A regression from the single-star fix one round earlier: compiling `**`
+    // as `.*` left the following slash mandatory, so `docs/**/*.md` matched
+    // `docs/sub/g.md` and NOT `docs/guide.md`. `**/` is ZERO or more segments.
+    const reg = loadRegistry('## Registry\n\n| Class | Path glob | Declared code paths |\n'
+      + '|---|---|---|\n| X | docs/**/*.md | |\n');
+    expect(classify('docs/guide.md', reg).cls).toBe('X');
+    expect(classify('docs/sub/guide.md', reg).cls).toBe('X');
+  });
+
+  it('and a single star still does not cross a separator', () => {
+    const reg = loadRegistry('## Registry\n\n| Class | Path glob | Declared code paths |\n'
+      + '|---|---|---|\n| X | .claude/agents/*.md | |\n');
+    expect(classify('.claude/agents/a.md', reg).cls).toBe('X');
+    expect(classify('.claude/agents/n/a.md', reg).cls).toBeNull();
+  });
+});
+
+describe('a heading containing inline HTML', () => {
+  it('anchors on its rendered text', () => {
+    // GitHub renders `## Use <code>foo</code>` as "Use foo" and anchors it
+    // `use-foo`; keeping the tag names recorded `use-codefoocode`, so a valid
+    // link read dead and a nonexistent slug was accepted.
+    expect(headingSlug('Use <code>foo</code>')).toBe('use-foo');
+    expect(headingSlug('Plain heading')).toBe('plain-heading');
+  });
+});
+
+describe('a fence nested in a block quote', () => {
+  it('is still code', () => {
+    expect([...fencedLines(['> ```md', '> [x](missing.md)', '> ```'])]).toEqual([0, 1, 2]);
+  });
+
+  it('and an unquoted fence still works', () => {
+    expect([...fencedLines(['```', 'x', '```'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('a document whose registry rows disagree', () => {
+  it('is skipped entirely, not processed on the first row', () => {
+    // Recording the finding and then proceeding on the first-by-table-order
+    // rule meant --stamp could write into a file whose ownership is
+    // explicitly unresolved.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-amb-'));
+    fs.mkdirSync(path.join(dir, 'scripts'));
+    fs.mkdirSync(path.join(dir, 'docs'));
+    fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit.mjs'),
+      path.join(dir, 'scripts/docs-audit.mjs'));
+    fs.writeFileSync(path.join(dir, 'docs/DOC_REGISTRY.md'),
+      '# Registry\n\n## Registry\n\n| Class | Path glob | Declared code paths | Generated regions |\n'
+      + '|---|---|---|---|\n| D | docs/DOC_REGISTRY.md | | |\n'
+      + '| D | docs/d.md | | |\n| X | docs/d.md | | |\n');
+    fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n\nbody\n');
+    fs.writeFileSync(path.join(dir, 'issues.json'),
+      JSON.stringify({ stocks: { 1: { state: 'open' } }, solyra: { 1: { state: 'open' } } }));
+    for (const args of [['init', '-q', '-b', 'work'], ['config', 'user.email', 't@e.com'],
+      ['config', 'user.name', 't'], ['add', '-A'], ['commit', '-qm', 'tree']]) {
+      spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+    }
+    const res = spawnSync(process.execPath,
+      [path.join(dir, 'scripts/docs-audit.mjs'), '--json', '--date', '2026-09-18',
+        '--no-contract-check', '--issues-snapshot', path.join(dir, 'issues.json'), '--stamp'],
+      { cwd: dir, encoding: 'utf8' });
+    const report = JSON.parse(res.stdout);
+    expect(report.findings.some((f) => /equally specific/.test(f.detail))).toBe(true);
+    // Not stamped, and no marker written.
+    expect(report.stamped.some((s) => s.doc === 'docs/d.md')).toBe(false);
+    expect(fs.readFileSync(path.join(dir, 'docs/d.md'), 'utf8'))
+      .not.toMatch(/Last reviewed/);
+  });
+});
+
+describe('a tracked Markdown symlink', () => {
+  it('is refused by --stamp rather than written through', () => {
+    // Both the read and the write follow the link, so --stamp edited the
+    // TARGET rather than a repository document -- and a symlink committed on
+    // a branch can point anywhere writable.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-link-'));
+    const outside = path.join(dir, 'outside.md');
+    fs.writeFileSync(outside, '# Outside\n\nuntouched\n');
+    fs.mkdirSync(path.join(dir, 'docs'));
+    fs.symlinkSync(outside, path.join(dir, 'docs/link.md'));
+    expect(() => writeStamps([{ doc: 'docs/link.md', text: '# X\n' }], { repo: dir }))
+      .toThrow(/a tracked symlink/);
+    expect(fs.readFileSync(outside, 'utf8')).toBe('# Outside\n\nuntouched\n');
+  });
+
+  it('and an ordinary document is still written', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-plain-'));
+    fs.mkdirSync(path.join(dir, 'docs'));
+    fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n');
+    writeStamps([{ doc: 'docs/d.md', text: '# D\n\nmarker\n' }], { repo: dir });
+    expect(fs.readFileSync(path.join(dir, 'docs/d.md'), 'utf8')).toBe('# D\n\nmarker\n');
+  });
+});
+
+describe('content hidden in an HTML comment', () => {
+  it('offers no heading anchor', () => {
+    expect([...headingAnchors('# T\n\n<!--\n## Hidden\n-->\n\n## Real\n')].sort())
+      .toEqual(['real', 't']);
+  });
+
+  it('does not end the marker window', () => {
+    const lines = ['# T', '<!--', '## Retired', '-->', '**Last reviewed:** 2026-01-01'];
+    expect(markerWindow(lines).to).toBe(5);
+    expect(findMarker(lines)).not.toBeNull();
+  });
+
+  it('and a registry that exists but cannot be read is exit 2', () => {
+    // Fresh evidence in the same revision: audited-document reads became
+    // AuditErrors while this prerequisite read stayed unwrapped, so a
+    // permissions or filesystem failure on the registry exited 1 with a stack
+    // trace -- the status this CLI documents for FINDINGS.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-reg-'));
+    fs.mkdirSync(path.join(dir, 'scripts'));
+    fs.mkdirSync(path.join(dir, 'docs'));
+    fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit.mjs'),
+      path.join(dir, 'scripts/docs-audit.mjs'));
+    // A DIRECTORY at the registry's path: `existsSync` says yes, so the
+    // not-found guard above this read lets it through, and `readFileSync`
+    // throws EISDIR. A chmod would not fail at all running as root, and a
+    // dangling symlink is caught by the not-found guard instead -- which is
+    // itself already correct, and so tests nothing about this read.
+    fs.mkdirSync(path.join(dir, 'docs/DOC_REGISTRY.md'));
+    fs.writeFileSync(path.join(dir, 'docs/DOC_REGISTRY.md/keep'), 'x\n');
+    for (const args of [['init', '-q', '-b', 'work'], ['config', 'user.email', 't@e.com'],
+      ['config', 'user.name', 't'], ['add', '-A'], ['commit', '-qm', 'tree']]) {
+      spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+    }
+    const res = spawnSync(process.execPath,
+      [path.join(dir, 'scripts/docs-audit.mjs'), '--json', '--date', '2026-09-18',
+        '--no-contract-check'], { cwd: dir, encoding: 'utf8' });
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/cannot be read/);
+    expect(res.stderr).not.toMatch(/at Object|at Module/);
+  });
+
+  it('is not a live registry row', () => {
+    const reg = loadRegistry('## Registry\n\n| Class | Path glob | Declared code paths |\n'
+      + '|---|---|---|\n<!--\n| X | docs/gone/*.md | |\n-->\n| D | docs/*.md | |\n');
+    expect(reg.map((r) => r.glob)).toEqual(['docs/*.md']);
+  });
+
+  it('is not a link to check', () => {
+    const ctx = linkContext(new Set(['docs/d.md']), new Set(), []);
+    expect(checkDeadLinks('docs/d.md', '<!-- [old](removed.md) -->\n', ctx)).toEqual([]);
+    expect(checkDeadLinks('docs/d.md', '<!-- see `docs/gone.md` -->\n', ctx)).toEqual([]);
+    // A visible link beside a comment on the same line is still checked.
+    expect(checkDeadLinks('docs/d.md',
+      '[gone](removed.md) <!-- [old](x.md) -->\n', ctx)).toHaveLength(1);
+  });
+});
+
+describe('a setext section heading after the H1', () => {
+  it('ends the marker window', () => {
+    const lines = ['# T', 'body', 'Section', '---', '**Last reviewed:** 2026-01-01'];
+    expect(markerWindow(lines).to).toBe(2);
+    expect(findMarker(lines)).toBeNull();
+  });
+
+  it('but a thematic break and a table delimiter are not headings', () => {
+    expect(isSetextUnderline(['# T', '', '---'], 2)).toBe(false);
+    expect(isSetextUnderline(['| a |', '|---|'], 1)).toBe(false);
+    expect(isSetextUnderline(['Section', '---'], 1)).toBe(true);
+  });
+});
+
+describe('an angle-bracket link destination', () => {
+  it('keeps its fragment out of the path', () => {
+    // `[tests](<README.md#tests>)` captured `<README.md` and `tests>`, so a
+    // tracked README was reported dead.
+    // A real tracked file, because resolving the path means its anchors get
+    // read from disk. The point is that the PATH parsed: a `dead-link` here
+    // would mean `<DOC_REGISTRY.md` was looked up.
+    const ctx = linkContext(new Set(['docs/d.md', 'docs/DOC_REGISTRY.md']), new Set(), []);
+    const out = checkDeadLinks('docs/d.md', 'See [x](<DOC_REGISTRY.md#registry>).\n', ctx);
+    expect(out.filter((f) => f.check === 'dead-link')).toEqual([]);
+  });
+
+  it('and admits a space, so a missing target is still checked', () => {
+    const ctx = linkContext(new Set(['docs/d.md']), new Set(), []);
+    expect(checkDeadLinks('docs/d.md', 'See [g](<user guide.md>).\n', ctx))
+      .toHaveLength(1);
+  });
+});
+
+describe('a future --date', () => {
+  it('is refused before --stamp writes anything', () => {
+    // A real but future date was written into every `Last scanned`, and the
+    // same run compared markers against that same future "today" and saw
+    // nothing wrong -- so the NEXT ordinary audit reported P1 future dates for
+    // markers this tool had just written.
+    expect(() => parseArgs(['--stamp', '--date', '2099-01-01']))
+      .toThrow(/in the future/);
+    expect(() => parseArgs(['--date', '2099-01-01'])).not.toThrow();
   });
 });

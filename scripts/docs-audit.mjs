@@ -181,8 +181,13 @@ export function citesLiveWork(line, start, end, { context = null } = {}) {
 // reported a tracked file dead. One level is what CommonMark's own examples
 // need and what a regex can express honestly -- deeper nesting is rare enough
 // that failing to match (and so not reporting) beats reporting a wrong path.
+// `<...>` FIRST, as a destination form of its own. It is how CommonMark writes
+// a destination containing a space, and the bare branch both rejects the
+// whitespace (so `[g](<docs/user guide.md>)` did not match at all and a missing
+// target reported clean) and split `[tests](<README.md#tests>)` into the path
+// `<README.md` and the fragment `tests>` -- reporting a tracked README dead.
 const MD_LINK_RE =
-  /\[[^\]]*\]\(((?:[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
+  /\[[^\]]*\]\(\s*(?:<([^<>#]*)(?:#([^>\s]+))?>|((?:[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
 // slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
 // which the living docs cite constantly -- could never produce a dead-path
@@ -404,7 +409,11 @@ export function loadRegistry(text) {
   // same example could switch `inRegistry` off and skip every real row after
   // the fence.
   const allLines = text.split('\n');
-  const fenced = fencedLines(allLines);
+  // And a row COMMENTED OUT rather than deleted, which is how a rule or a
+  // claim is retired without losing it: it still registered as live, and a
+  // heading-shaped line in the same comment could switch the section flag
+  // off and skip every real row below it.
+  const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines)]);
   for (const [i, raw] of allLines.entries()) {
     if (fenced.has(i)) continue;
     const line = raw.trim();
@@ -441,12 +450,19 @@ function globToRe(glob) {
   // silently classified by that row instead of becoming unclassified and
   // forcing an explicit registry decision -- the audit going quiet about a
   // document nobody has placed. `**` keeps the recursive meaning.
+  // `**/` is ZERO or more complete segments, not "at least one". Compiling it
+  // as `.*` left the following slash mandatory, so `docs/**/*.md` matched
+  // `docs/sub/g.md` and NOT `docs/guide.md` -- immediate children reported
+  // unclassified, or the row itself reported as matching nothing. A regression
+  // from the single-star fix one round earlier, caught by Codex on the same PR.
   const escaped = glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '\u0000')
+    .replace(/\*\*\//g, '\u0000')
+    .replace(/\*\*/g, '\u0001')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '[^/]')
-    .replace(/\u0000/g, '.*');
+    .replace(/\u0000/g, '(?:[^/]+/)*')
+    .replace(/\u0001/g, '.*');
   return new RegExp(`^${escaped}$`);
 }
 
@@ -879,6 +895,25 @@ export function legacyTailIsBare(rest) {
   return BARE_TAIL_RE.test(rest || '');
 }
 
+// `-` needs two or more: a single `-` under text is a list bullet's sibling
+// far more often than a heading, and CommonMark's own `---` case is covered.
+const SETEXT_UNDERLINE_RE = /^ {0,3}(?:=+|-{2,})\s*$/;
+
+/**
+ * Does line `i` underline a Setext heading written on line `i - 1`?
+ *
+ * Three things are NOT one: a thematic break (`---` after a blank line, with
+ * no heading text above it), a table's delimiter row (`|---|---|`, which the
+ * pattern rejects outright), and a real underline. The line above separates
+ * them. Ported from the Python twin (stocks#1121).
+ */
+export function isSetextUnderline(lines, i, masked = new Set()) {
+  if (i <= 0 || masked.has(i) || masked.has(i - 1)) return false;
+  if (!SETEXT_UNDERLINE_RE.test(lines[i] ?? '')) return false;
+  const above = lines[i - 1] ?? '';
+  return Boolean(above.trim()) && !/^ {0,3}#/.test(above);
+}
+
 /**
  * Where a DOCUMENT-level marker may live: after the H1, before the next heading.
  *
@@ -892,6 +927,8 @@ export function markerWindow(lines, limit = 40) {
   const h1 = h1Index(lines);
   if (h1 === null) return { from: 0, to: Math.min(limit, lines.length) };
   const fencedHere = fencedLines(lines);
+  const commentedHere = commentedLines(lines);
+  const masked = new Set([...fencedHere, ...commentedHere]);
   let stop = lines.length;
   // To the next HEADING, with no additional line cap. A document opening with
   // more than 40 lines of HTML metadata before its marker had the real marker
@@ -907,8 +944,19 @@ export function markerWindow(lines, limit = 40) {
     // A heading inside a FENCE is an example, not the next section. Treating
     // it as one ended the search early, so an existing marker below the fence
     // was reported missing and --stamp inserted a second one above it.
-    if (fencedHere.has(j)) continue;
+    // And a heading hidden in an HTML COMMENT, which renders as nothing:
+    // treating it as the next section excluded the real marker below it, so
+    // the audit reported the marker missing and --stamp added a second one.
+    if (fencedHere.has(j) || commentedHere.has(j)) continue;
     if (/^ {0,3}#/.test(lines[j])) { stop = j; break; }
+    // Setext is a section heading too, and its underline marks the heading on
+    // the line ABOVE -- so the section starts there, not at the underline.
+    // Reading only `#` let a `Last reviewed` inside that section stand in for
+    // the whole document's provenance. Ported from the Python twin.
+    if (isSetextUnderline(lines, j, masked)) {
+      stop = j - 1;
+      break;
+    }
   }
   return { from: h1 + 1, to: Math.min(stop, lines.length) };
 }
@@ -1029,7 +1077,11 @@ export function fencedLines(lines) {
   // and with no info string.
   let open = null;
   lines.forEach((line, i) => {
-    const m = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    // A container prefix -- a blockquote `>`, or list indentation -- precedes
+    // the fence rather than replacing it. `> ```md` is the shape this repo's
+    // own docs use, and seeing the `>` marked none of the block as code, so
+    // links and blocker citations in the sample were audited as live prose.
+    const m = /^ {0,3}(?:> ?)*\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (!open) {
       // An opening ``` fence may not carry a backtick in its info string.
       if (m && !(m[1][0] === '`' && m[2].includes('`'))) {
@@ -1605,7 +1657,12 @@ export function crossRepoCitations(line) {
  * every one of them valid.
  */
 export function headingSlug(heading) {
-  let s = heading.replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  // Inline HTML is MARKUP: GitHub renders `## Use <code>foo</code>` as
+  // "Use foo" and anchors it `use-foo`, while keeping the tag names recorded
+  // `use-codefoocode` -- a valid link reported dead and a nonexistent slug
+  // accepted, wrong in both directions.
+  let s = heading.replace(/<[^>]+>/g, '')
+    .replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
   // Emphasis MARKUP only. Stripping every underscore turned `## API_FIELD`
   // into `apifield`, so a valid link to `#api_field` read as a dead anchor
   // while an incorrect `#apifield` was accepted. CommonMark does not treat an
@@ -1623,13 +1680,15 @@ export function headingSlug(heading) {
 export function headingAnchors(text) {
   const seen = new Map();
   const out = new Set();
+  // A heading inside an HTML comment renders as nothing, so GitHub exposes no
+  // anchor for it -- recording one let a broken link to `#hidden` pass.
   // A `# ` line inside a fenced block is code, and GitHub creates no anchor
   // for it -- docs/E2E_TEST_PLAN.md:59 has exactly that. Recording it invented
   // an anchor, so a link to a fragment that does not exist PASSED the
   // dead-anchor check. Marker parsing already excludes fenced lines; this is
   // the same rule for the same reason.
   const lines = text.split('\n');
-  const fenced = fencedLines(lines);
+  const fenced = new Set([...fencedLines(lines), ...commentedLines(lines)]);
   for (const [i, line] of lines.entries()) {
     if (fenced.has(i)) continue;
     // `## Install ##` renders as `Install`, and GitHub's anchor is `install`.
@@ -1774,6 +1833,10 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     const [tgt, frag] = target.split('#');
     checkTarget(tgt, frag, line, label);
   }
+  // Offsets inside an HTML comment, per line: retired Markdown kept that way
+  // is not rendered, so it is not a citation. Spans rather than whole lines,
+  // matching checkClosedIssues, so a visible link beside a comment still counts.
+  const commentedSpans = commentSpans(lines);
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
     // Spans a backticked citation occupies purely as a Markdown link's LABEL.
@@ -1796,9 +1859,19 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // backtick pass below needs code spans, because a backticked path IS its
     // subject. The Python twin masks the same way (stocks#1121).
     const codeHere = codeSpans(line);
+    const hiddenHere = commentedSpans.get(i) ?? [];
     for (const m of line.matchAll(MD_LINK_RE)) {
       if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
-      checkTarget(m[1], m[2], i + 1);
+      // Retired Markdown kept in an HTML comment is not rendered, so it is not
+      // a citation: `<!-- [old](removed.md) -->` produced a gating dead-link
+      // finding over content no reader can see. A SPAN, so a visible link
+      // beside a comment on the same line is still checked -- which is what
+      // checkClosedIssues already does.
+      if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+      // Either destination form: `<...>` is a separate branch in the pattern
+      // because it admits a space, and both name the same thing here.
+      const [tgt, frag] = m[1] !== undefined ? [m[1], m[2]] : [m[3], m[4]];
+      checkTarget(tgt, frag, i + 1);
     }
     // A backticked path is this repo's to resolve only when nothing says
     // otherwise: its extension is one this tree tracks, and the citation is
@@ -1809,6 +1882,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     if (!backtickedPaths) return;
     const crossRepo = crossRepoCitations(line);
     for (const m of line.matchAll(BACKTICK_PATH_RE)) {
+      if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
       const cited = m[1];
       // `./src/removed.ts` and `docs/../src/live.ts` name the same files as
       // their plain spellings. Comparing the raw string meant the first hid a
@@ -1969,7 +2043,11 @@ export function loadClaims(text) {
   // exit 2, and a heading inside the fence could switch `inClaims` off and
   // skip every real row after it.
   const allLines = text.split('\n');
-  const fenced = fencedLines(allLines);
+  // And a row COMMENTED OUT rather than deleted, which is how a rule or a
+  // claim is retired without losing it: it still registered as live, and a
+  // heading-shaped line in the same comment could switch the section flag
+  // off and skip every real row below it.
+  const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines)]);
   for (const [i, raw] of allLines.entries()) {
     if (fenced.has(i)) continue;
     const line = raw.trim();
@@ -2231,6 +2309,14 @@ export function parseArgs(argv) {
   // A review is recorded only by writing a marker; --verify without --stamp
   // is a no-op that reads as if it had recorded one.
   if (a.verify.length && !a.stamp) throw new AuditError('--verify requires --stamp');
+  // A real but FUTURE --date passed validation and was written into every
+  // `Last scanned`, while the same run compared existing markers against that
+  // same future "today" and saw nothing wrong. The next ordinary audit then
+  // emitted P1 future-date findings for markers this tool had just written.
+  if (a.date && a.stamp && a.date > new Date().toISOString().slice(0, 10)) {
+    throw new AuditError(`--date ${a.date} is in the future; --stamp would write `
+      + 'markers that the next ordinary audit reports as future-dated');
+  }
   return a;
 }
 
@@ -2308,6 +2394,25 @@ export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
     throw new AuditError(`--stamp cannot write ${unwritable.sort().join(', ')}: missing or `
       + 'not writable. Nothing was written.');
   }
+  // A tracked `.md` SYMLINK is not a document this command may write. Both the
+  // read and the write follow it, so --stamp edited the link's target rather
+  // than a repository file -- and a symlink committed on a branch could point
+  // anywhere writable, inside the checkout or outside it. Checked before any
+  // write, so one bad path stops the whole batch rather than half of it.
+  const links = writes
+    .map((w) => w.doc)
+    .filter((doc) => {
+      try {
+        return fsImpl.lstatSync(path.join(repo, doc)).isSymbolicLink();
+      } catch {
+        return false;
+      }
+    });
+  if (links.length) {
+    throw new AuditError(`--stamp refuses ${links.sort().join(', ')}: a tracked `
+      + 'symlink, so the write would land on its target rather than a document '
+      + 'in this repository. Nothing was written.');
+  }
   const done = [];
   for (const w of writes) {
     try {
@@ -2360,7 +2465,17 @@ export function main(argv) {
     process.stderr.write(`error: ${REGISTRY} not found; every doc would be unclassified\n`);
     return 2;
   }
-  const registry = loadRegistry(fs.readFileSync(regPath, 'utf8'));
+  // Exit 2, matching the audited-document reads. A registry that exists but
+  // cannot be read is an audit that could not run, not a documentation
+  // finding, and a bare throw here exited 1 with a stack trace.
+  let registryText;
+  try {
+    registryText = fs.readFileSync(regPath, 'utf8');
+  } catch (err) {
+    throw new AuditError(`${REGISTRY} exists but cannot be read (${err.message}); `
+      + 'every document would be unclassified, so the audit cannot run');
+  }
+  const registry = loadRegistry(registryText);
 
   // The documents come from the working tree; the base ref is consulted only
   // for what USED to be there (drift, ancestry, deleted root files).
@@ -2404,7 +2519,14 @@ export function main(argv) {
       findings.push({ check: 'registry', doc, severity: 'P1',
         detail: 'two equally specific registry rows give this document different '
               + 'classes; the audit picked one by table order, so the other row\'s '
-              + 'checks are silently not running' });
+              + 'checks are silently not running, and the document is skipped '
+              + 'entirely until the registry says which rule owns it' });
+      // And SKIP it. Recording the finding and then proceeding on the
+      // first-by-table-order rule meant --stamp could write into a file whose
+      // ownership is explicitly unresolved -- inserting a marker into content
+      // the other rule declares machine-owned, or stamping a document the
+      // other rule freezes. An unresolved owner is not a licence to pick one.
+      continue;
     }
     if (cls === null) {
       counts.unclassified += 1;
