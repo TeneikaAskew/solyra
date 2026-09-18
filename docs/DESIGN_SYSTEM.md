@@ -1,5 +1,7 @@
 # Design System Document
 
+**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+
 ## 1. Overview & Creative North Star: "The Obsidian Analyst"
 
 The creative direction for this design system is **"The Obsidian Analyst."** Unlike generic fintech dashboards that rely on cluttered grids and neon distractions, this system treats data as a high-value asset curated within a premium, architectural space.

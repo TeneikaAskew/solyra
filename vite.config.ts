@@ -106,7 +106,12 @@ export default defineConfig(async () => {
   return {
     plugins: [react(), tailwindcss(), ...(offline ? [runtimeConfigPlugin()] : [])],
     test: {
-      include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+      // `scripts/` is in the list because scripts/docs-audit.mjs is real logic
+      // with real invariants (region parsing, marker rewriting) and no home
+      // under src/. Colocating its test beside it keeps the repo convention —
+      // the test lives next to the code it covers — without pretending the
+      // script is application source.
+      include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.mjs'],
     },
     resolve: {
       alias: {

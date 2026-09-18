@@ -8,6 +8,8 @@
 
 # Stocks Platform Redesign — Data Evaluation & Implementation Plan
 
+**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+
 > Companion to the Claude Design handoff (`Stocks Platform Redesign.html` +
 > `FRONTEND_STACK.md`). This doc answers the two questions that gate the
 > redesign: **what backend data can each new surface actually be wired to**,

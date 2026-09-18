@@ -1,5 +1,7 @@
 # Options Flow — backend data contract (Skylit-aligned UI)
 
+**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+
 The redesigned Options Flow page (`src/routes/OptionsFlowPage.tsx`) follows
 Skylit's product model. Three views are **real-data backed today**; three are
 built against **labeled demo mocks** because no backend endpoint exists yet.
