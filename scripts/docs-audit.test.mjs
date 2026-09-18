@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  fencedLines,
   AuditError,
   cell,
   checkClaims,
@@ -279,7 +280,7 @@ describe('checkChangedSince', () => {
     checkChangedSince('d.md', 'abc1234', ['src/routes'], 'origin/main', {
       exec: (_c, args) => { seen = args; return ''; },
     });
-    expect(seen).toContain('--diff-filter=AMDR');
+    expect(seen).toContain('--diff-filter=AMDRT');
     expect(seen).not.toContain('--diff-filter=M');
     expect(seen).toContain('abc1234..origin/main');
   });
@@ -291,7 +292,7 @@ describe('checkChangedSince', () => {
     });
     expect(seen).toContain('--name-status');
     expect(seen).toContain('-M');
-    expect(seen).toContain('--diff-filter=AMDR');
+    expect(seen).toContain('--diff-filter=AMDRT');
   });
 
   it('counts a rename that also carried an edit, and not a pure one', () => {
@@ -712,13 +713,38 @@ describe('checkProvenance', () => {
   });
 
   it('reports a reviewed document that supports no drift check', () => {
-    const out = checkProvenance('d.md', { date: '2026-09-01', sha: null });
+    const out = checkProvenance('d.md',
+      { date: '2026-09-01', sha: null, depth: 'verified' });
     expect(out[0].detail).toBe('incomplete provenance: no reviewed-against SHA, '
       + 'so drift cannot be checked');
   });
 
-  it('is quiet on a complete marker', () => {
-    expect(checkProvenance('d.md', { date: '2026-09-01', sha: 'abc1234' })).toEqual([]);
+  it('reports a scan-only depth on a document with a real date and SHA', () => {
+    // The registry defines `verified` as the only depth meaning a human
+    // reread the claims; `scanned` is what --stamp writes mechanically. Such
+    // a marker dropped off the worklist entirely and could yield a clean
+    // audit after nothing but a machine pass.
+    const out = checkProvenance('d.md',
+      { date: '2026-09-01', sha: 'abc1234', depth: 'scanned' });
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/depth is scanned, not verified/);
+  });
+
+  it('reports an unset depth, which is the older two-field marker', () => {
+    const out = checkProvenance('d.md',
+      { date: '2026-09-01', sha: 'abc1234', depth: null });
+    expect(out[0].detail).toMatch(/depth is unset/);
+  });
+
+  it('does not add a depth cause to a never-reviewed document', () => {
+    // It already says "never reviewed"; adding "depth is unset" is noise.
+    const out = checkProvenance('d.md', { date: 'unknown', sha: null, depth: null });
+    expect(out[0].detail).not.toMatch(/depth is/);
+  });
+
+  it('is quiet on a complete verified marker', () => {
+    expect(checkProvenance('d.md',
+      { date: '2026-09-01', sha: 'abc1234', depth: 'verified' })).toEqual([]);
   });
 });
 
@@ -1610,3 +1636,93 @@ describe('markers', () => {
     );
   });
 });
+
+describe('anchor numbering', () => {
+  it('does not collide with a naturally suffixed heading', () => {
+    // A per-base counter gave `notes` and `notes-1` twice and never emitted
+    // `notes-2`, which is what GitHub assigns the third heading -- so a valid
+    // link to it read as dead.
+    expect(headingAnchors('## Notes\n## Notes-1\n## Notes\n'))
+      .toEqual(new Set(['notes', 'notes-1', 'notes-2']));
+  });
+});
+
+describe('a marker-shaped line that is an example', () => {
+  it('is not read as provenance when indented', () => {
+    // Trimming before parsing let a four-space code sample count as the
+    // marker, suppressed the real missing-marker finding, and --stamp then
+    // replaced the example with an unindented live marker.
+    const lines = ['# T', '', 'Example:', '',
+      '    **Last reviewed:** 2026-01-01 . **Owner:** TBD', '', 'body'];
+    expect(findMarker(lines)).toBeNull();
+  });
+
+  it('is not read as provenance inside a fenced block', () => {
+    const lines = ['# T', '', '```', '**Last reviewed:** 2026-01-01 . **Owner:** TBD',
+      '```', '', 'body'];
+    expect(findMarker(lines)).toBeNull();
+  });
+
+  it('still finds a real unindented marker', () => {
+    const lines = ['# T', '', '**Last reviewed:** 2026-01-01', '', 'body'];
+    expect(findMarker(lines)).not.toBeNull();
+  });
+
+  it('knows which lines a fence covers', () => {
+    expect([...fencedLines(['a', '```', 'x', '```', 'b'])].sort()).toEqual([1, 2, 3]);
+  });
+});
+
+describe('a registry that says two things about one document', () => {
+  const reg = (rows) => rows.map(([cls, glob]) => ({ cls, glob, codePaths: [], regions: [] }));
+
+  it('reports equally specific rows that disagree', () => {
+    // First-wins meant a stale `X` row could override a later `D` row and
+    // silently suppress every content and provenance check.
+    expect(classify('docs/a.md', reg([['X', 'docs/a.md'], ['D', 'docs/a.md']])).ambiguous)
+      .toBe(true);
+  });
+
+  it('is quiet when the duplicate agrees', () => {
+    expect(classify('docs/a.md', reg([['D', 'docs/a.md'], ['D', 'docs/a.md']])).ambiguous)
+      .toBe(false);
+  });
+
+  it('is quiet when one row is genuinely more specific', () => {
+    expect(classify('docs/a.md', reg([['X', 'docs/**'], ['D', 'docs/a.md']])).ambiguous)
+      .toBe(false);
+  });
+});
+
+describe('a malformed region regex', () => {
+  it('is exit 2, not a documentation finding', () => {
+    // new RegExp throws a plain SyntaxError, which the handler rethrows, and
+    // Node exits 1 -- the status this CLI documents for findings.
+    expect(() => ownedLines('# T\nbody\n', ['line:[unclosed'])).toThrow(AuditError);
+    expect(() => ownedLines('# T\nbody\n', ['line:[unclosed']))
+      .toThrow(/not a valid regular/);
+  });
+
+  it('still accepts a valid one', () => {
+    expect(() => ownedLines('# T\nbody\n', ['line:body'])).not.toThrow();
+  });
+});
+
+describe('drift in the working tree', () => {
+  it('counts uncommitted changes under a declared path', () => {
+    // The documents and count claims are read from the WORKING TREE, so an
+    // uncommitted edit under a declared path makes the documentation stale
+    // while the committed range reports nothing -- exactly the run a
+    // developer does before committing.
+    const exec = (_c, argv) => (argv[0] === 'diff' ? 'M\tsrc/a.ts\n' : '');
+    const out = checkChangedSince('d.md', 'abc1234', ['src'], 'HEAD', { exec });
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/1 uncommitted change/);
+  });
+
+  it('is quiet when neither history nor the tree moved', () => {
+    expect(checkChangedSince('d.md', 'abc1234', ['src'], 'HEAD',
+      { exec: () => '' })).toEqual([]);
+  });
+});
+

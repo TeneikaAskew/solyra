@@ -389,14 +389,23 @@ export function linkContext(tracked, baseTracked, registry) {
 /** Most specific match wins, so a file rule beats the directory rule. */
 export function classify(doc, registry) {
   let best = null;
+  let tied = false;
   for (const row of registry) {
-    if (globToRe(row.glob).test(doc) && (best === null || row.glob.length > best.glob.length)) {
+    if (!globToRe(row.glob).test(doc)) continue;
+    if (best === null || row.glob.length > best.glob.length) {
       best = row;
+      tied = false;
+    } else if (row.glob.length === best.glob.length && row.cls !== best.cls) {
+      // Equally specific and disagreeing. First-wins meant a stale `X` or `B`
+      // row could silently override a later `D` row and suppress every content
+      // and provenance check for that document, while checkRegistryPaths
+      // happily accepted both declarations.
+      tied = true;
     }
   }
   return best
-    ? { cls: best.cls, codePaths: best.codePaths, regions: best.regions }
-    : { cls: null, codePaths: [], regions: [] };
+    ? { cls: best.cls, codePaths: best.codePaths, regions: best.regions, ambiguous: tied }
+    : { cls: null, codePaths: [], regions: [], ambiguous: false };
 }
 
 // ── generated regions (Class A) ─────────────────────────────────────────────
@@ -487,7 +496,16 @@ export function ownedLines(text, specs) {
         hit = true;
       }
     } else if (spec.startsWith('line:')) {
-      const pat = new RegExp(spec.slice(5));
+      // A registry typo is bad INPUT, not a documentation finding. new RegExp
+      // throws a plain SyntaxError, which the handler rethrows, and Node exits
+      // 1 -- the status this CLI documents for findings.
+      let pat;
+      try {
+        pat = new RegExp(spec.slice(5));
+      } catch (err) {
+        throw new AuditError(`registry region \`${spec}\` is not a valid regular `
+          + `expression: ${err.message}`);
+      }
       lines.forEach((line, i) => {
         if (pat.test(line)) { owned.add(i + 1); hit = true; }
       });
@@ -643,14 +661,40 @@ export function checkProvenance(doc, prev) {
   const missing = [];
   if (prev.date === 'unknown') missing.push('never reviewed');
   if (!prev.sha) missing.push('no reviewed-against SHA, so drift cannot be checked');
+  // The registry defines `verified` as the only depth meaning a human reread
+  // the claims; `scanned` is what --stamp writes mechanically. A marker with
+  // a real date and SHA but scan-only depth dropped off the worklist and could
+  // yield a clean audit after nothing but a machine pass.
+  if (prev.date !== 'unknown' && prev.depth !== 'verified') {
+    missing.push(`depth is ${prev.depth ?? 'unset'}, not verified, so no human has `
+      + 'confirmed the claims');
+  }
   if (!missing.length) return [];
   return [{ check: 'marker', doc, severity: 'P3',
     detail: `incomplete provenance: ${missing.join('; ')}` }];
 }
 
+/** Lines inside a fenced code block, which are examples rather than content. */
+export function fencedLines(lines) {
+  const fenced = new Set();
+  let open = false;
+  lines.forEach((line, i) => {
+    if (/^\s{0,3}(```|~~~)/.test(line)) { open = !open; fenced.add(i); return; }
+    if (open) fenced.add(i);
+  });
+  return fenced;
+}
+
 export function findMarker(lines) {
   const { from, to } = markerWindow(lines);
+  const fenced = fencedLines(lines);
   for (let i = from; i < to; i += 1) {
+    // An INDENTED marker-shaped line is an example, not the document's
+    // provenance: trimming before parsing let a four-space code sample count
+    // as the marker, suppressed the real missing-marker finding, and --stamp
+    // then replaced the example with an unindented live marker, destroying
+    // the example's structure. Fenced blocks are excluded for the same reason.
+    if (fenced.has(i) || /^\s/.test(lines[i])) continue;
     const line = lines[i].trim();
     const m = MARKER_RE.exec(line);
     if (m) {
@@ -996,9 +1040,15 @@ export function headingAnchors(text) {
   const out = new Set();
   for (const m of text.matchAll(/^#{1,6}\s+(.*)$/gm)) {
     const base = headingSlug(m[1]);
-    const n = seen.get(base) ?? 0;
+    // Advance until the slug is unused, rather than trusting a per-base
+    // counter. `## Notes`, `## Notes-1`, `## Notes` gave `notes` and
+    // `notes-1` twice and never emitted `notes-2`, which is what GitHub
+    // assigns the third -- so a valid link to it read as dead.
+    let n = seen.get(base) ?? 0;
+    let slug = n === 0 ? base : `${base}-${n}`;
+    while (out.has(slug)) { n += 1; slug = `${base}-${n}`; }
     seen.set(base, n + 1);
-    out.add(n === 0 ? base : `${base}-${n}`);
+    out.add(slug);
   }
   return out;
 }
@@ -1164,13 +1214,29 @@ export function checkChangedSince(doc, sha, codePaths, baseRef = 'origin/main', 
   // `%h` emits e.g. `abcd\tmessage`, driftCommits' header pattern rejects it,
   // no status line is associated with any commit, and the drift check reports
   // nothing however much the declared paths moved.
+  // The working tree too, not only committed history. The documents, their
+  // contents and every count claim are read from the working tree, so an
+  // uncommitted edit under a declared path makes the documentation stale while
+  // `sha..HEAD` reports nothing -- exactly the run a developer does before
+  // committing.
+  const pending = exec('git', ['diff', '--name-status', '-M', '--diff-filter=AMDRT',
+    'HEAD', '--', ...codePaths]);
   const out = exec('git', ['log', '--abbrev=12', '--format=%h%x09%s', '--name-status', '-M',
-    '--diff-filter=AMDR',
+    '--diff-filter=AMDRT',
     `${sha}..${baseRef}`, '--', ...codePaths]);
   const commits = driftCommits(out);
-  if (commits.length === 0) return [];
+  // A bare status listing with no commit header: driftCommits needs one, so
+  // the uncommitted changes are counted directly.
+  const uncommitted = pending.split('\n')
+    .filter((l) => /^([AMDRCT])(\d{3})?\t/.test(l))
+    .filter((l) => { const [, k, s] = /^([AMDRCT])(\d{3})?\t/.exec(l);
+      return 'AMDT'.includes(k) || (k === 'R' && Number(s ?? 100) < 100); });
+  if (commits.length === 0 && uncommitted.length === 0) return [];
+  const parts = [];
+  if (commits.length) parts.push(`${commits.length} content commit(s)`);
+  if (uncommitted.length) parts.push(`${uncommitted.length} uncommitted change(s)`);
   return [{ check: 'changed-since', doc, severity: 'P2',
-    detail: `${commits.length} content commit(s) to ${codePaths.join(', ')} since ${sha}`,
+    detail: `${parts.join(' and ')} to ${codePaths.join(', ')} since ${sha}`,
     commits: commits.slice(0, 10) }];
 }
 
@@ -1530,7 +1596,13 @@ export function main(argv) {
   const counts = { A: 0, B: 0, C: 0, D: 0, X: 0, unclassified: 0 };
 
   for (const doc of docs) {
-    const { cls, codePaths, regions } = classify(doc, registry);
+    const { cls, codePaths, regions, ambiguous } = classify(doc, registry);
+    if (ambiguous) {
+      findings.push({ check: 'registry', doc, severity: 'P1',
+        detail: 'two equally specific registry rows give this document different '
+              + 'classes; the audit picked one by table order, so the other row\'s '
+              + 'checks are silently not running' });
+    }
     if (cls === null) {
       counts.unclassified += 1;
       findings.push({ check: 'unclassified', doc, severity: 'P2',
@@ -1666,11 +1738,14 @@ export function main(argv) {
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
   try {
-    process.exit(main(process.argv.slice(2)));
+    // exitCode, not exit(): process.exit() can terminate Node before a
+    // buffered write to a pipe has flushed, truncating a large JSON report
+    // while still returning the intended status.
+    process.exitCode = main(process.argv.slice(2));
   } catch (err) {
     if (err instanceof AuditError) {
       process.stderr.write(`error: ${err.message}\n`);
-      process.exit(2);
+      process.exitCode = 2;
     }
     throw err;
   }
