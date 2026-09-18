@@ -218,7 +218,15 @@ export interface MovementExpectedMove {
   probabilities?: {
     p_tight: number; p_normal: number; p_expanded: number; p_explosive: number;
   } | null;
+  /** Probability of the served bucket (size_class). Present on every OK row since 2026-09-16. */
+  pred_bucket_proba?: number | null;
+  /**
+   * Probability of the ARGMAX bucket, TIGHT on nearly every bar. A drift metric,
+   * not the confidence of size_class; never render it as one.
+   */
   max_proba?: number | null;
+  /** The rule pred_bucket was made under: 'lift' on every OK row; argmax-era rows are not served. */
+  decision_rule?: string | null;
   model_version?: string | null;
   ts?: string | null;
   atr_20?: number | null; // NEW: current ATR-20 for the Tier-3 sizing calculator
@@ -232,6 +240,11 @@ export interface MovementExpectedMove {
     modal_bucket?: number | null;
     modal_share?: number | null;
     n_bars?: number | null;
+    /** Distinct ET sessions behind n_bars; under min_sessions the share is not a verdict. */
+    n_sessions?: number | null;
+    min_sessions?: number | null;
+    /** Share over the ceiling but too few sessions to call it collapse: rendered, and this says why. */
+    insufficient_sessions?: boolean | null;
     distinct_buckets?: number | null;
     lookback_days?: number | null;
   } | null;
