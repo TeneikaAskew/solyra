@@ -3164,14 +3164,20 @@ export interface components {
             degenerate?: boolean | null;
             /** Distinct Buckets */
             distinct_buckets?: number | null;
+            /** Insufficient Sessions */
+            insufficient_sessions?: boolean | null;
             /** Lookback Days */
             lookback_days?: number | null;
+            /** Min Sessions */
+            min_sessions?: number | null;
             /** Modal Bucket */
             modal_bucket?: number | null;
             /** Modal Share */
             modal_share?: number | null;
             /** N Bars */
             n_bars?: number | null;
+            /** N Sessions */
+            n_sessions?: number | null;
             /** Reason */
             reason?: string | null;
             /** Status */
@@ -3209,6 +3215,8 @@ export interface components {
             atr_20?: number | null;
             /** Current Price */
             current_price?: number | null;
+            /** Decision Rule */
+            decision_rule?: string | null;
             degeneracy?: components["schemas"]["Degeneracy"] | null;
             /** Max Proba */
             max_proba?: number | null;
@@ -3216,6 +3224,8 @@ export interface components {
             model_version?: string | null;
             /** Pred Bucket */
             pred_bucket?: number | null;
+            /** Pred Bucket Proba */
+            pred_bucket_proba?: number | null;
             probabilities?: components["schemas"]["ExpectedMoveProbabilities"] | null;
             /** Reason */
             reason?: string | null;
@@ -4058,6 +4068,8 @@ export interface components {
              * Format: date-time
              */
             computed_at: string;
+            /** Decision Rule */
+            decision_rule: string;
             /** Docs Ref */
             docs_ref: string;
             /** Max Proba */
@@ -4070,6 +4082,8 @@ export interface components {
             pred_bucket: number;
             /** Pred Bucket Label */
             pred_bucket_label: string;
+            /** Pred Bucket Proba */
+            pred_bucket_proba: number;
             probabilities: components["schemas"]["BucketProbabilities"];
             /** Source */
             source: string;
