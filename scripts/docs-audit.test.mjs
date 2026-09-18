@@ -1205,11 +1205,12 @@ describe('checkDeadLinks', () => {
 
   it('lets a marker reach a citation only across free text, never past another citation', () => {
     const ctx = linkContext(new Set(['src/keep.ts']), new Set(), []);
-    // `src/also.ts` is adjacent to "in stocks"; `src/gone.ts` has a citation between.
-    expect(checkDeadLinks('d.md', 'Compare `src/gone.ts` with `src/also.ts` in stocks.\n', ctx)
+    // `src/also.ts` is adjacent to the marker; `src/gone.ts` has a citation between.
+    expect(checkDeadLinks('d.md',
+      'Compare `src/gone.ts` with `src/also.ts` in the stocks repo.\n', ctx)
       .map((f) => f.detail)).toEqual(['backticked path -> src/gone.ts']);
     // A marker in the next table cell does not reach across the pipe.
-    expect(checkDeadLinks('d.md', '| `src/gone.ts` | stocks owns the rest |\n', ctx)
+    expect(checkDeadLinks('d.md', '| `src/gone.ts` | the stocks repo owns the rest |\n', ctx)
       .map((f) => f.detail)).toEqual(['backticked path -> src/gone.ts']);
   });
 
@@ -2175,5 +2176,136 @@ describe('the README table of commands', () => {
     const readme = fs.readFileSync(path.join(process.cwd(), 'README.md'), 'utf8');
     expect(readme).toMatch(/scripts\/docs-audit\.test\.mjs/);
     expect(readme).not.toMatch(/Vitest unit tests \(`src\/\*\*\/\*\.test\.ts\{,x\}`\)/);
+  });
+});
+
+// ── round 12 (c08f101) ──────────────────────────────────────────────────────
+
+describe('a fence closing on an incompatible delimiter', () => {
+  it('stays open until a matching one', () => {
+    // A `~~~` line inside a ``` example is CODE. Toggling on any fence-looking
+    // line closed the block there, so the rest of the example was read as
+    // prose and the prose after the real closing fence was read as code.
+    expect([...fencedLines(['```md', '~~~ example', '```', 'real prose'])])
+      .toEqual([0, 1, 2]);
+  });
+
+  it('ignores an info string on the opener and requires a bare closer', () => {
+    expect([...fencedLines(['~~~ts', 'code', '~~~', 'prose'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('a heading with closing ATX markers', () => {
+  it('anchors on the text alone', () => {
+    // `## Install ##` renders as `Install`; GitHub's anchor is `#install`.
+    // Passing `Install ##` to headingSlug recorded `install-`, so a valid link
+    // read as dead.
+    expect([...headingAnchors('## Install ##\n')]).toEqual(['install']);
+  });
+});
+
+describe('two citations on one line disagreeing about live work', () => {
+  const U = (n) => `https://github.com/TeneikaAskew/solyra/issues/${n}`;
+  const states = { solyra: {
+    1: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+    2: { state: 'open', reason: '', kind: 'ISSUE' } } };
+
+  it('reads each against its own clause', () => {
+    // One boolean for the whole line gave the closed #1 a P1 from #2's cue,
+    // on a line that says in so many words that #1 no longer blocks.
+    const line = `#1 ${U(1)} is no longer blocking; #2 ${U(2)} is still open\n`;
+    expect(checkClosedIssues('d.md', line, states)).toEqual([]);
+  });
+
+  it('still falls back to the line when the clause carries no cue', () => {
+    // A table row puts the cue and the citations in different cells, and
+    // `| Open issues | #1 |` is a real finding. Scoping strictly to the clause
+    // would lose it -- it is how stocks#838 is reported on the sibling tree.
+    const line = `| Open issues | [#1](${U(1)}) |\n`;
+    expect(checkClosedIssues('d.md', line, states)).toHaveLength(1);
+  });
+});
+
+describe('a Markdown destination that is not a repository path', () => {
+  const ctx = linkContext(new Set(['src/a.ts']), new Set(), []);
+
+  it.each(['tel:+15551234', 'ftp://example.com/x', 'HTTPS://example.com/a',
+    '//example.com/page'])('is left alone: %s', (tgt) => {
+    // A narrow, case-sensitive `https?:|mailto:` allowlist sent all four down
+    // the repository-path branch and produced a P2 for a file never meant to
+    // exist locally.
+    expect(checkDeadLinks('d.md', `# T\n\n[x](${tgt})\n`, ctx)).toEqual([]);
+  });
+
+  it('still resolves a genuine relative path', () => {
+    expect(checkDeadLinks('d.md', '# T\n\n[x](missing.md)\n', ctx)).toHaveLength(1);
+  });
+});
+
+describe('a backticked path spelled with dot segments', () => {
+  const ctx = linkContext(new Set(['src/a.ts']), new Set(), []);
+
+  it('does not hide a deleted file behind a leading ./', () => {
+    // `./src/removed.ts` has the top-level component `.`, which is in no
+    // topLevelDirs, so the citation was skipped and the deletion was invisible.
+    const out = checkDeadLinks('d.md', '# T\n\n`./src/removed.ts`\n', ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('./src/removed.ts');
+  });
+
+  it('resolves a path that climbs and comes back', () => {
+    expect(checkDeadLinks('d.md', '# T\n\n`docs/../src/a.ts`\n', ctx)).toEqual([]);
+  });
+});
+
+describe('a local citation sharing a line with the word stocks', () => {
+  const ctx = linkContext(new Set(['src/a.ts']), new Set(), []);
+
+  it('is this repo’s to resolve when nothing names the sibling', () => {
+    // ``src/removed.ts` formats stocks for the dashboard` is about the product
+    // noun. A bare \\bstocks\\b handed the citation to the sibling repo and
+    // skipped the existence check.
+    const out = checkDeadLinks('d.md',
+      '# T\n\n`src/removed.ts` formats stocks for the dashboard\n', ctx);
+    expect(out).toHaveLength(1);
+  });
+
+  it.each(['https://github.com/TeneikaAskew/stocks/blob/main/x.py',
+    'the stocks repo', 'a stocks PR', 'stocks/lib/x.py'])(
+    'still defers on explicit evidence: %s',
+    (evidence) => {
+      expect(checkDeadLinks('d.md', `# T\n\n\`src/removed.ts\` -- ${evidence}\n`, ctx))
+        .toEqual([]);
+    });
+});
+
+describe('two complete blocks of one named region', () => {
+  it('are both owned, not just the first', () => {
+    // Unowned complements are allowed for mixed Class A documents, so the
+    // second machine-written block was silently classified as hand-written
+    // prose and findings inside it were routed to the wrong owner.
+    const text = ['# T', '<!-- BEGIN GEN -->', 'a', '<!-- END GEN -->', 'prose',
+      '<!-- BEGIN GEN -->', 'b', '<!-- END GEN -->'].join('\n');
+    const { owned } = ownedLines(text, ['mark:GEN']);
+    expect([...owned].sort((x, y) => x - y)).toEqual([2, 3, 4, 6, 7, 8]);
+  });
+});
+
+describe('a prose region naming a prompt that is gone', () => {
+  it('is a registry finding, not a silently model-owned document', () => {
+    // The declaration marked the region matched without checking the path, so
+    // the complement was labelled model-owned, stamping was disabled, and
+    // nothing reported the vanished prompt.
+    const rows = [{ cls: 'A', glob: 'docs/x.md', codePaths: [],
+      regions: ['prose:.claude/prompts/gone.md'] }];
+    const out = checkRegistryPaths(new Set(['docs/x.md']), rows);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/names a prompt that is not in the audited tree/);
+  });
+
+  it('is quiet when the prompt exists', () => {
+    const rows = [{ cls: 'A', glob: 'docs/x.md', codePaths: [],
+      regions: ['prose:p/own.md'] }];
+    expect(checkRegistryPaths(new Set(['docs/x.md', 'p/own.md']), rows)).toEqual([]);
   });
 });

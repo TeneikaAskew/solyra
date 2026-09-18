@@ -103,6 +103,46 @@ const ISSUE_URL_RE = new RegExp(
 export function normaliseRepo(repo) {
   return repo.toLowerCase();
 }
+
+// What bounds a clause: sentence punctuation, a semicolon, or a table-cell
+// edge. Not a comma. Ported from the Python twin (stocks#1121).
+const CLAUSE_SPLIT_RE = /[.;|]/g;
+const URL_RE = /https?:\/\/\S+/g;
+
+/**
+ * The prose around ONE citation. URLs are masked at equal length first, so a
+ * `.` or `/` inside `github.com` does not split the clause the citation sits
+ * in, and offsets stay valid.
+ */
+export function citationClause(line, start, end) {
+  const masked = line.replace(URL_RE, (u) => '\u0000'.repeat(u.length));
+  let lo = 0;
+  for (const m of masked.matchAll(CLAUSE_SPLIT_RE)) {
+    if (m.index < start) lo = m.index + 1; else break;
+  }
+  let hi = line.length;
+  for (const m of masked.matchAll(CLAUSE_SPLIT_RE)) {
+    if (m.index >= end) { hi = m.index; break; }
+  }
+  return line.slice(lo, hi);
+}
+
+/**
+ * Is THIS citation cited as live work?
+ *
+ * A line-level answer put every URL on the line under one verdict, so
+ * `#1 is no longer blocking; #2 is still open` gave #1 a P1 from #2's cue.
+ * The clause decides when it carries a cue at all; otherwise the line does,
+ * because a table row puts the cue and the citations in different cells --
+ * `| Open issues | #838 · #839 |` is a real finding whose citations sit in a
+ * clause with no cue of its own.
+ */
+export function citesLiveWork(line, start, end) {
+  const clause = citationClause(line, start, end);
+  BLOCKING_CUE_RE.lastIndex = 0;
+  if (BLOCKING_CUE_RE.test(clause)) return hasBlockingCue(clause);
+  return hasBlockingCue(line);
+}
 // The fragment is CAPTURED, not discarded. Dropping it meant a link to a real
 // file but a heading that does not exist always passed. The Python twin had
 // the same gap, where 35 such links were measured (stocks#1121).
@@ -134,7 +174,18 @@ const BACKTICK_ROOT_FILE_RE = new RegExp(`\`([A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)
 // that cites it, and the design briefs wrap stocks paths in a
 // github.com/TeneikaAskew/stocks link. `scripts` and `docs` are also
 // top-level directories here, so without the marker those read as rot.
-const CROSS_REPO_RE = new RegExp(`github\\.com/${OWNER}/${SIBLING_REPO}\\b|\\b${SIBLING_REPO}\\b`, 'i');
+// Cross-repo ownership needs EVIDENCE, not the bare product noun. A citation
+// on `\`src/removed.ts\` formats stocks for the dashboard` is about stocks the
+// asset class, and handing it to the sibling repo skipped the existence check
+// so the deletion went unreported. What counts: an explicit repository URL, a
+// path under `stocks/`, or the repo named against a repository noun --
+// `stocks repo`, `stocks PR`, `stocks main`. Measured over this tree: the
+// tightening changes no finding, so it suppresses nothing real.
+const CROSS_REPO_NOUN = '(?:repo|repository|PR|pull request|issue|main|branch|tree|side|CI)';
+const CROSS_REPO_RE = new RegExp(
+  `github\\.com/${OWNER}/${SIBLING_REPO}\\b`
+  + `|\\b${SIBLING_REPO}\\s+${CROSS_REPO_NOUN}\\b`
+  + `|\\b${SIBLING_REPO}/`, 'i');
 const CROSS_REPO_LINK_RE = new RegExp(`^\\]\\(https?://github\\.com/${OWNER}/${SIBLING_REPO}[/)]`, 'i');
 const LINK_TAIL_RE = /^\]\([^)\s]*\)/;
 
@@ -373,6 +424,20 @@ export function checkRegistryPaths(tracked, registry) {
         detail: 'registry declaration matches no tracked document, so the rule it '
               + 'carries covers nothing' });
     }
+    // A `prose:PATH` region names the prompt that owns the complement. An
+    // empty or deleted path marked the region matched anyway, so the document
+    // was labelled model-owned, stamping was disabled, and nothing reported
+    // the vanished prompt.
+    for (const spec of row.regions ?? []) {
+      if (!spec.startsWith('prose:')) continue;
+      const prompt = spec.slice(6).trim();
+      if (!prompt || (!tracked.has(prompt) && !isTrackedDir(tracked, prompt))) {
+        out.push({ check: 'registry', doc: row.glob, severity: 'P2',
+          detail: `region \`${spec}\` names a prompt that is not in the audited tree, `
+                + 'so the complement is marked model-owned by a declaration that '
+                + 'points at nothing' });
+      }
+    }
     for (const cp of row.codePaths ?? []) {
       if (!tracked.has(cp) && !dirs.has(cp)) {
         out.push({ check: 'registry', doc: row.glob, severity: 'P2',
@@ -543,11 +608,19 @@ export function ownedLines(text, specs) {
       const [begin, end] = spec.startsWith('mark:')
         ? [new RegExp(`<!--\\s*BEGIN ${esc}\\s*-->`), new RegExp(`<!--\\s*END ${esc}\\s*-->`)]
         : [new RegExp(`<!--\\s*${esc}:BEGIN\\s*-->`), new RegExp(`<!--\\s*${esc}:END\\s*-->`)];
-      const lo = lines.findIndex((l) => begin.test(l)) + 1;
-      const hi = lines.findIndex((l) => end.test(l)) + 1;
-      if (lo && hi && hi >= lo) {
-        for (let n = lo; n <= hi; n += 1) owned.add(n);
+      // EVERY complete pair, not just the first. Two `mark:NAME` blocks in a
+      // mixed Class A document left the second silently classified as
+      // hand-written prose, so findings inside machine-written content were
+      // routed to the wrong owner.
+      let from = 0;
+      for (;;) {
+        const lo = lines.findIndex((l, n) => n >= from && begin.test(l));
+        if (lo < 0) break;
+        const hi = lines.findIndex((l, n) => n > lo && end.test(l));
+        if (hi < 0) break;
+        for (let n = lo + 1; n <= hi + 1; n += 1) owned.add(n);
         hit = true;
+        from = hi + 1;
       }
     } else if (spec.startsWith('line:')) {
       // A registry typo is bad INPUT, not a documentation finding. new RegExp
@@ -762,10 +835,27 @@ export function checkProvenance(doc, prev) {
 /** Lines inside a fenced code block, which are examples rather than content. */
 export function fencedLines(lines) {
   const fenced = new Set();
-  let open = false;
+  // The OPENING delimiter is remembered. Toggling on any fence-looking line
+  // meant a `~~~` inside a ``` example closed the block, so the rest of the
+  // example was read as prose and the prose after the real closing fence was
+  // read as code -- false findings and suppressed ones from one line.
+  // CommonMark: a fence closes only on the same character, at least as long,
+  // and with no info string.
+  let open = null;
   lines.forEach((line, i) => {
-    if (/^\s{0,3}(```|~~~)/.test(line)) { open = !open; fenced.add(i); return; }
-    if (open) fenced.add(i);
+    const m = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!open) {
+      // An opening ``` fence may not carry a backtick in its info string.
+      if (m && !(m[1][0] === '`' && m[2].includes('`'))) {
+        open = m[1];
+        fenced.add(i);
+      }
+      return;
+    }
+    fenced.add(i);
+    if (m && m[1][0] === open[0] && m[1].length >= open.length && m[2].trim() === '') {
+      open = null;
+    }
   });
   return fenced;
 }
@@ -1061,6 +1151,7 @@ export function checkClosedIssues(doc, text, states) {
     if (fenced.has(i)) return;
     if (!hasBlockingCue(line)) return;
     for (const m of line.matchAll(ISSUE_URL_RE)) {
+      if (!citesLiveWork(line, m.index, m.index + m[0].length)) continue;
       const [, rawRepo, rawKind, num] = m;
       const repo = normaliseRepo(rawRepo);
       const kind = rawKind.toLowerCase();
@@ -1150,7 +1241,10 @@ export function headingAnchors(text) {
   const fenced = fencedLines(lines);
   for (const [i, line] of lines.entries()) {
     if (fenced.has(i)) continue;
-    const m = /^#{1,6}\s+(.*)$/.exec(line);
+    // `## Install ##` renders as `Install`, and GitHub's anchor is `install`.
+    // Passing `Install ##` to headingSlug recorded `install-`, so a valid link
+    // to `#install` was reported dead.
+    const m = /^#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(line);
     if (!m) continue;
     const base = headingSlug(m[1]);
     // Advance until the slug is unused, rather than trusting a per-base
@@ -1220,7 +1314,11 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   const checkTarget = (tgt, frag, lineNo, label = null) => {
     const what = label === null ? `relative link -> ${tgt}` : `reference link [${label}] -> ${tgt}`;
     const anchorWhat = label === null ? `link -> ${tgt}` : what;
-    if (/^(https?:|mailto:)/.test(tgt)) return;
+    // Any scheme, case-insensitively, plus a protocol-relative `//host/path`.
+    // A narrow `https?:|mailto:` allowlist sent `tel:`, `ftp:`, `HTTPS:` and
+    // `//example.com/x` down the repository-path branch and produced a P2 for
+    // a local file that was never meant to exist.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(tgt) || tgt.startsWith('//')) return;
     let norm;
     if (!tgt) {
       norm = doc;
@@ -1271,7 +1369,13 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     if (!backtickedPaths) return;
     const crossRepo = crossRepoCitations(line);
     for (const m of line.matchAll(BACKTICK_PATH_RE)) {
-      const p = m[1];
+      const cited = m[1];
+      // `./src/removed.ts` and `docs/../src/live.ts` name the same files as
+      // their plain spellings. Comparing the raw string meant the first hid a
+      // deleted file (its top-level component is `.`, which is in no
+      // topLevelDirs) and the second could be called dead though it resolves.
+      const p = path.posix.normalize(cited);
+      if (p.startsWith('..')) continue;
       if (inLinkLabel(m.index) || crossRepo.has(m.index)
           || !exts.has(path.posix.extname(p))) continue;
       // Tracked membership for files, same rule as the Markdown-link branch
@@ -1282,7 +1386,8 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // Only flag paths shaped like this repo's layout, so a deliberate
       // cross-repo citation is not reported as rot.
       if (topLevelDirs.has(p.split('/')[0])) {
-        out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `backticked path -> ${p}` });
+        out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2',
+          detail: `backticked path -> ${cited}` });
       }
     }
     for (const m of line.matchAll(BACKTICK_ROOT_FILE_RE)) {
