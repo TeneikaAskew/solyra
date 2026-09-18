@@ -35,6 +35,7 @@ import {
   checkRegistryPaths,
   isTrackedDir,
   headingSlug,
+  globSpecificity,
   checkExitCode,
   headingAnchors,
   fetchIssueStates,
@@ -1377,7 +1378,9 @@ describe('stampGuard', () => {
   it('still refuses an insertion point inside a region that starts at the H1', () => {
     const doc = '# T\n<!-- BEGIN gen -->\nx\n<!-- END gen -->\nBody.\n';
     const { owned } = ownedLines(doc, ['mark:gen']);
-    expect(stampGuard(doc, owned)).toMatch(/generated region starts at line 2/);
+    // The message changed in round 12: the guard names where the marker WOULD
+    // LAND rather than the earliest owned line. The invariant is the same.
+    expect(stampGuard(doc, owned)).toMatch(/would land on line 3, inside a generated/);
   });
 });
 
@@ -2307,5 +2310,98 @@ describe('a prose region naming a prompt that is gone', () => {
     const rows = [{ cls: 'A', glob: 'docs/x.md', codePaths: [],
       regions: ['prose:p/own.md'] }];
     expect(checkRegistryPaths(new Set(['docs/x.md', 'p/own.md']), rows)).toEqual([]);
+  });
+});
+
+// ── round 13 (ab0debc) ──────────────────────────────────────────────────────
+
+describe('a fenced H1 example before the real title', () => {
+  it('is not the document heading', () => {
+    // markerWindow then missed a marker after the REAL heading, and --stamp
+    // inserted a live marker inside the code block: the example corrupted, the
+    // document still with no rendered provenance.
+    expect(h1Index(['```md', '# Example', '```', '# Real Title'])).toBe(3);
+  });
+});
+
+describe('a deleted root file cited as a link label', () => {
+  it('is one finding, not two', () => {
+    // inLinkLabel was consulted only by the slash-path loop, so the Markdown
+    // pass and the root-file pass each reported the same missing file.
+    const ctx = linkContext(new Set(['docs/d.md', 'src/a.ts']),
+      new Set(['vite.config.ts']), []);
+    const out = checkDeadLinks('docs/d.md',
+      '# T\n\nSee [`vite.config.ts`](../vite.config.ts).\n', ctx);
+    expect(out).toHaveLength(1);
+  });
+});
+
+describe('an exact registry row overlapped by a longer wildcard', () => {
+  it('wins, because length is not specificity', () => {
+    // `docs/*a*.md` is longer than `docs/a.md`, so an exclusion row outranked
+    // the living-document row it overlaps and suppressed every content, marker
+    // and drift check for it -- without setting `ambiguous`, because the
+    // lengths differ.
+    const reg = loadRegistry('## Registry\n\n'
+      + '| Class | Path glob | Declared code paths | Generated regions |\n|---|---|---|---|\n'
+      + '| X | docs/*a*.md | | |\n| D | docs/a.md | src | |\n');
+    const got = classify('docs/a.md', reg);
+    expect(got.cls).toBe('D');
+    expect(got.ambiguous).toBe(false);
+  });
+
+  it('ranks a wildcard matching more literal characters higher', () => {
+    expect(globSpecificity('docs/api/*.md')[1])
+      .toBeGreaterThan(globSpecificity('docs/*.md')[1]);
+  });
+});
+
+describe('a generated header before the document H1', () => {
+  it('does not refuse stamping, because the marker lands after the H1', () => {
+    // A mixed Class A document with a complete generated header BEFORE its H1
+    // has a minimum owned line below h1 + 2 by construction, so a legitimate
+    // --verify ended as an AuditError though nothing generated is touched.
+    const doc = '<!-- BEGIN gen -->\nheader\n<!-- END gen -->\n\n# T\n\nProse.\n';
+    const { owned } = ownedLines(doc, ['mark:gen']);
+    expect(stampGuard(doc, owned)).toBeNull();
+  });
+});
+
+describe('a snapshot key that is not an issue number', () => {
+  it('is bad input, not a map of unresolvable citations', () => {
+    // `{"junk": {...}}` passed the nonempty-map guard and the row check, then
+    // resolved no citation at all, so every numeric reference became a
+    // fabricated "could not be resolved" P2.
+    const f = path.join(os.tmpdir(), `snap-key-${process.pid}.json`);
+    fs.writeFileSync(f, JSON.stringify({
+      solyra: { junk: { state: 'open' } }, stocks: { 1: { state: 'open' } } }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(/not an issue number/);
+    fs.unlinkSync(f);
+  });
+
+  it.each(['0', '01', '-1', '1.0'])('rejects the non-canonical key %s', (key) => {
+    const f = path.join(os.tmpdir(), `snap-key2-${process.pid}.json`);
+    fs.writeFileSync(f, JSON.stringify({
+      solyra: { [key]: { state: 'open' } }, stocks: { 1: { state: 'open' } } }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(AuditError);
+    fs.unlinkSync(f);
+  });
+});
+
+describe('a list-len target that cannot be read', () => {
+  it('is exit 2, not a documentation finding', () => {
+    expect(() => derive('list-len docs/gone.md ^(.*)$')).toThrow(AuditError);
+    expect(() => derive('list-len docs/gone.md ^(.*)$')).toThrow(/could not be read/);
+  });
+});
+
+describe("the UI-SCREENS row's declared code paths", () => {
+  it('cover src/App.tsx, which its opening claims are derived from', () => {
+    // docs/UI-SCREENS.md derives its route count, auth topology, lazy loading,
+    // error boundary and React Query defaults from src/App.tsx, so a routing
+    // or provider change there must be able to trigger changed-since.
+    const row = loadRegistry(fs.readFileSync(path.join(process.cwd(), 'docs/DOC_REGISTRY.md'),
+      'utf8')).find((r) => r.glob === 'docs/UI-SCREENS.md');
+    expect(row.codePaths).toContain('src/App.tsx');
   });
 });

@@ -506,15 +506,37 @@ export function sameRule(a, b) {
     && a.regions.join('\u0000') === b.regions.join('\u0000');
 }
 
+/**
+ * How specific a registry glob is, most significant first.
+ *
+ * Raw character length is not specificity: `docs/*a*.md` is longer than
+ * `docs/a.md`, so an exclusion row could outrank the exact living-document row
+ * it overlaps and silently suppress every content, marker and drift check for
+ * it -- without setting `ambiguous`, because the lengths differ. An exact row
+ * wins outright; among wildcards, the one matching more literal characters
+ * (and, failing that, using fewer wildcards) is the more specific.
+ */
+export function globSpecificity(glob) {
+  const wildcards = (glob.match(/[*?[]/g) ?? []).length;
+  return [wildcards === 0 ? 1 : 0, glob.replace(/[*?[\]]/g, '').length, -wildcards];
+}
+
+function cmpSpecificity(a, b) {
+  const x = globSpecificity(a);
+  const y = globSpecificity(b);
+  for (let i = 0; i < x.length; i += 1) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
+}
+
 export function classify(doc, registry) {
   let best = null;
   let tied = false;
   for (const row of registry) {
     if (!globToRe(row.glob).test(doc)) continue;
-    if (best === null || row.glob.length > best.glob.length) {
+    if (best === null || cmpSpecificity(row.glob, best.glob) > 0) {
       best = row;
       tied = false;
-    } else if (row.glob.length === best.glob.length && !sameRule(row, best)) {
+    } else if (cmpSpecificity(row.glob, best.glob) === 0 && !sameRule(row, best)) {
       // Equally specific and disagreeing. First-wins meant a stale `X` or `B`
       // row could silently override a later `D` row and suppress every content
       // and provenance check for that document, while checkRegistryPaths
@@ -889,7 +911,15 @@ export function findMarker(lines) {
  * lands inside the comment.
  */
 export function h1Index(lines) {
-  for (let i = 0; i < lines.length; i += 1) if (H1_RE.test(lines[i])) return i;
+  // A fenced `# Example` before the real title was returned as the H1, so
+  // markerWindow missed a marker after the REAL heading and --stamp inserted a
+  // live marker inside the code block: the example corrupted, the document
+  // still carrying no rendered provenance. The heading and marker scanners
+  // already skip fenced lines.
+  const fenced = fencedLines(lines);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!fenced.has(i) && H1_RE.test(lines[i])) return i;
+  }
   return null;
 }
 
@@ -979,9 +1009,15 @@ export function stampGuard(text, owned) {
       + `(lines ${lo}-${hi}); move it into hand-written prose or let the renderer own it`;
   }
   const h1 = h1Index(lines);
-  if (h1 !== null && Math.min(...owned) <= h1 + 2) {
-    return `not stamped: a generated region starts at line ${Math.min(...owned)}, `
-      + `too close to the H1 on line ${h1 + 1}`;
+  // Where the marker would LAND, not the earliest owned line anywhere. A mixed
+  // Class A document with a complete generated header BEFORE its H1 and
+  // hand-written prose after it has a minimum owned line below h1 + 2 by
+  // construction, so a legitimate --verify ended as an AuditError though
+  // nothing generated would be touched.
+  const insertAt = h1 === null ? null : h1 + 3;
+  if (insertAt !== null && (owned.has(insertAt) || owned.has(insertAt - 1))) {
+    return `not stamped: the marker would land on line ${insertAt}, inside a `
+      + 'generated region; move the region or let the renderer own the provenance';
   }
   return null;
 }
@@ -1072,6 +1108,15 @@ export function loadIssuesSnapshot(file) {
     // report. A null row is the opposite error: it takes the unresolvable
     // branch and fabricates a finding against a live issue (Rule 4).
     for (const num of Object.keys(entry).sort()) {
+      // The key is what a citation is looked up BY. `{"junk": {...}}` passed
+      // the nonempty-map guard and the row check, then resolved no citation at
+      // all, so every numeric reference became a fabricated "could not be
+      // resolved" P2 instead of failing the run.
+      if (!/^[1-9]\d*$/.test(num)) {
+        throw new AuditError(`--issues-snapshot ${file}: "${repo}" has the key `
+          + `${JSON.stringify(num)}, which is not an issue number; a citation is looked `
+          + 'up by number and this row can never be found');
+      }
       const rec = entry[num];
       if (!rec || typeof rec !== 'object' || !ISSUE_STATES.has(rec.state)) {
         throw new AuditError(`--issues-snapshot ${file}: ${repo}#${num} has no usable state `
@@ -1392,7 +1437,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     }
     for (const m of line.matchAll(BACKTICK_ROOT_FILE_RE)) {
       const f = m[1];
-      if (crossRepo.has(m.index) || !exts.has(path.posix.extname(f))) continue;
+      // inLinkLabel was consulted only by the slash-path loop. A deleted root
+      // file cited as ``[`vite.config.ts`](../vite.config.ts)`` was reported
+      // once by the Markdown pass and again here -- one broken link, two
+      // findings and a doubled summary count.
+      if (inLinkLabel(m.index) || crossRepo.has(m.index)
+          || !exts.has(path.posix.extname(f))) continue;
       // A bare name that is the basename of some tracked file is a citation
       // of that file, wherever it lives: `index.css` in the design docs is
       // src/index.css, and the stem rule below would otherwise read it as a
@@ -1564,7 +1614,15 @@ export function derive(derivation, { exec = run } = {}) {
     return out.trim() ? out.trim().split('\n').length : 0;
   }
   if (kind === 'list-len') {
-    const body = fs.readFileSync(path.join(REPO, target), 'utf8');
+    let body;
+    try {
+      body = fs.readFileSync(path.join(REPO, target), 'utf8');
+    } catch (err) {
+      // Same split as claimPattern and the Claims document read: a registry
+      // row naming a moved or deleted target is bad INPUT, and a bare
+      // filesystem Error walks past the AuditError handler and exits 1.
+      throw new AuditError(`list-len target \`${target}\` could not be read: ${err.message}`);
+    }
     const m = claimPattern(pattern, '', 'list-len pattern').exec(body);
     if (!m) throw new AuditError(`list-len: ${pattern} matched nothing in ${target}`);
     return m[1].split(',').filter((s) => s.trim()).length;
