@@ -28,6 +28,11 @@ import {
   loadIssuesSnapshot,
   writeIssuesSnapshot,
   writeStamps,
+  checkRegistryPaths,
+  isTrackedDir,
+  classAIsStampable,
+  checkProvenance,
+  MARKER_SHA_LEN,
   resolveCommit,
   workingTreeFiles,
   classify,
@@ -553,6 +558,73 @@ describe('writeStamps', () => {
   });
 });
 
+describe('the SHA a marker carries', () => {
+  it('asks git for a length the marker parser accepts', () => {
+    // Bare `--short` honours core.abbrev, which can be set below 7, while
+    // MARKER_RE requires 7-40.
+    let seen;
+    const spawn = (_c, argv) => { seen = argv; return { status: 0, stdout: '0123456789ab\n' }; };
+    expect(resolveCommit('HEAD', { spawn })).toBe('0123456789ab');
+    expect(seen).toContain(`--short=${MARKER_SHA_LEN}`);
+    expect(MARKER_SHA_LEN).toBeGreaterThanOrEqual(7);
+  });
+
+  it('refuses a SHA the parser cannot read back', () => {
+    // `Against` is an OPTIONAL group, so a four-character id still MATCHES --
+    // it captures nothing and swallows the `Last scanned` field after it. The
+    // round trip has to compare the captured value, not that the line parsed.
+    const spawn = () => ({ status: 0, stdout: 'zzzz\n' });
+    expect(() => resolveCommit('HEAD', { spawn })).toThrow(/not a form the marker parser/);
+  });
+
+  it('still refuses a revision git cannot resolve', () => {
+    const spawn = () => ({ status: 1, stdout: '' });
+    expect(() => resolveCommit('not-a-sha', { spawn })).toThrow(/not-a-sha/);
+  });
+});
+
+describe('checkRegistryPaths', () => {
+  it('reports a registry row naming a document that is gone', () => {
+    // documentSet filters over `tracked`, so a deleted-but-registered document
+    // is never classified and the report is clean BECAUSE it disappeared.
+    const out = checkRegistryPaths(new Set(['src/a.ts']),
+      [{ cls: 'D', glob: 'README.md', codePaths: [], regions: [] }]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ check: 'registry', doc: 'README.md', severity: 'P1' });
+  });
+
+  it('reports a declared code path that does not exist', () => {
+    // `git log -- does/not/exist` exits 0 with empty output, so the drift
+    // check for that document can never fire. tailwind.config.ts on the
+    // Design System row was exactly this: Tailwind v4 has no such file.
+    const out = checkRegistryPaths(new Set(['README.md', 'src/a.ts']),
+      [{ cls: 'D', glob: 'README.md', codePaths: ['tailwind.config.ts'], regions: [] }]);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/tailwind\.config\.ts/);
+  });
+
+  it('accepts a directory prefix as an existing code path', () => {
+    const out = checkRegistryPaths(new Set(['README.md', 'src/lib/a.ts']),
+      [{ cls: 'D', glob: 'README.md', codePaths: ['src/lib'], regions: [] }]);
+    expect(out).toEqual([]);
+  });
+
+  it('does not report a glob row', () => {
+    expect(checkRegistryPaths(new Set(['a.md']),
+      [{ cls: 'D', glob: 'docs/*.md', codePaths: [], regions: [] }])).toEqual([]);
+  });
+});
+
+describe('the registry this repo actually ships', () => {
+  it('names no path the tree does not have', () => {
+    // The row-level guard above is only worth having if the shipped registry
+    // passes it; tailwind.config.ts did not.
+    const tracked = workingTreeFiles();
+    const registry = loadRegistry(fs.readFileSync(path.join(process.cwd(), 'docs/DOC_REGISTRY.md'), 'utf8'));
+    expect(checkRegistryPaths(tracked, registry)).toEqual([]);
+  });
+});
+
 // ── stamping ────────────────────────────────────────────────────────────────
 
 describe('checkVerifyTargets', () => {
@@ -588,6 +660,107 @@ describe('checkVerifyTargets', () => {
     // `unchanged` records nothing because the review is already on disk.
     // Refusing it would fail a re-run of a review that WAS recorded.
     expect(() => checkVerifyTargets(new Set(['a.md']), new Map([['a.md', 'unchanged']]))).not.toThrow();
+  });
+});
+
+describe('classAIsStampable', () => {
+  const MIXED = '# G\n\nhand written\n\n<!-- inventory:x:start -->\nr\n<!-- inventory:x:end -->\n';
+
+  it('stamps a mixed Class A document whose map resolved', () => {
+    const r = checkRegions('g.md', MIXED, ['inventory:*']);
+    expect(classAIsStampable(r, MIXED)).toBe(true);
+  });
+
+  it('refuses one with no declared regions', () => {
+    // checkRegions returns regionMap null here: ownership is unknown, not
+    // "all prose". Stamping would put a marker somewhere nobody can vouch for.
+    const r = checkRegions('g.md', MIXED, []);
+    expect(r.regionMap).toBeNull();
+    expect(classAIsStampable(r, MIXED)).toBe(false);
+  });
+
+  it('refuses one whose declared region matched nothing', () => {
+    // A renderer that stopped emitting leaves `owned` empty, so every line
+    // reads as hand-written prose -- including the lines a regeneration will
+    // overwrite.
+    const r = checkRegions('g.md', MIXED, ['inventory:gone']);
+    expect(r.findings.some((f) => f.severity === 'P1')).toBe(true);
+    expect(classAIsStampable(r, MIXED)).toBe(false);
+  });
+
+  it('refuses an exhaustive file with a nonblank complement', () => {
+    const r = checkRegions('g.md', MIXED, ['exhaustive', 'inventory:*']);
+    expect(classAIsStampable(r, MIXED)).toBe(false);
+  });
+});
+
+describe('checkProvenance', () => {
+  it('keeps a never-reviewed document on the worklist', () => {
+    // --stamp writes exactly this form for a scan-only pass, and findMarker
+    // returns it, so the missing-marker branch stays quiet: --check could
+    // report clean over a document that says nobody has read it.
+    const out = checkProvenance('d.md', { date: 'unknown', sha: null });
+    expect(out).toHaveLength(1);
+    expect(out[0].severity).toBe('P3');
+    expect(out[0].detail).toMatch(/never reviewed/);
+    expect(out[0].detail).toMatch(/drift cannot be checked/);
+  });
+
+  it('reports a reviewed document that supports no drift check', () => {
+    const out = checkProvenance('d.md', { date: '2026-09-01', sha: null });
+    expect(out[0].detail).toBe('incomplete provenance: no reviewed-against SHA, '
+      + 'so drift cannot be checked');
+  });
+
+  it('is quiet on a complete marker', () => {
+    expect(checkProvenance('d.md', { date: '2026-09-01', sha: 'abc1234' })).toEqual([]);
+  });
+});
+
+describe('docLines', () => {
+  it('counts an empty document as zero lines', () => {
+    // split('\n') returns [''] for '', so a Class A artifact truncated to
+    // nothing reported ONE generated line and its `all` region counted as
+    // matched -- suppressing the P1 promised for a renderer emitting nothing.
+    expect(docLines('')).toEqual([]);
+  });
+
+  it('still drops only the trailing newline', () => {
+    expect(docLines('a\nb\n')).toEqual(['a', 'b']);
+    expect(docLines('a\nb')).toEqual(['a', 'b']);
+    expect(docLines('\n')).toEqual(['']);
+  });
+});
+
+describe('a link the filesystem satisfies but the repository does not', () => {
+  it('does not let an untracked file stand in for a tracked one', () => {
+    // An ignored or generated file, or one recreated after a staged deletion,
+    // is present locally and absent for anyone who clones -- so a clean audit
+    // over a committed link that is broken for every reader.
+    // The target has to be a file that really EXISTS on disk and is not
+    // tracked, or the mutation this test guards against still passes:
+    // node_modules/vitest/package.json is present after `npm ci` here and in
+    // CI, and `git check-ignore` confirms it is not in the repository.
+    const untracked = 'node_modules/vitest/package.json';
+    expect(fs.existsSync(path.join(process.cwd(), untracked))).toBe(true);
+    const ctx = { tracked: new Set(['d.md']), topLevelDirs: new Set(), rootFiles: new Set(),
+      knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set() };
+    const out = checkDeadLinks('d.md', `see [x](./${untracked})\n`, ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/node_modules/);
+  });
+
+  it('still resolves a directory target, which git does not track', () => {
+    const ctx = { tracked: new Set(['d.md', 'src/lib/a.ts']), topLevelDirs: new Set(),
+      rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set() };
+    expect(checkDeadLinks('d.md', 'see [x](./src/lib)\n', ctx)).toEqual([]);
+  });
+});
+
+describe('isTrackedDir', () => {
+  it('recognises a directory by the tracked files beneath it', () => {
+    expect(isTrackedDir(new Set(['src/lib/a.ts']), 'src/lib')).toBe(true);
+    expect(isTrackedDir(new Set(['src/lib/a.ts']), 'src/nope')).toBe(false);
   });
 });
 

@@ -125,7 +125,13 @@ export function run(cmd, args, { okExitCodes = [] } = {}) {
 
 // ── the base ref ────────────────────────────────────────────────────────────
 
-export const BASE_REF_CANDIDATES = ['origin/main', 'main', 'HEAD'];
+// HEAD first, deliberately. The documents, their contents and every count
+// claim are read from the WORKING TREE, so ending the drift range at
+// `origin/main` excluded the branch's own commits: the audit reported no
+// drift for exactly the changes under review, and any document the branch
+// added was never enumerated at all. The Python twin leads with HEAD for the
+// same reason (stocks#1121, 686fdea).
+export const BASE_REF_CANDIDATES = ['HEAD', 'origin/main', 'main'];
 
 /**
  * The ref this run audits against: the first candidate git can resolve.
@@ -179,12 +185,37 @@ export function workingTreeFiles({ exec = run } = {}) {
  * newly verified. A branch name would have been written verbatim too, and
  * the marker parser reads only a hex SHA.
  */
+// Long enough to be unambiguous, and comfortably inside MARKER_RE's 7-40
+// whatever core.abbrev says locally.
+export const MARKER_SHA_LEN = 12;
+
+/**
+ * The SHA a marker will carry, in a form the marker parser reads back.
+ *
+ * Bare `--short` honours `core.abbrev`, which can be set below 7:
+ * `git -c core.abbrev=4 rev-parse --short HEAD` emits four characters while
+ * MARKER_RE requires 7-40. A marker written with a shorter id does not fail to
+ * parse -- `Against` is an OPTIONAL group, so the line still matches, the
+ * group captures nothing, and the `Last scanned` field after it is swallowed
+ * by the unmatched tail. The verified review then reads as having no
+ * reviewed-against SHA and its drift check silently stops running.
+ *
+ * So the round trip is the check: the rendered marker must give the value
+ * back. Asserting the line merely matches would pass a four-character id.
+ */
 export function resolveCommit(ref, { spawn = spawnSync } = {}) {
-  const r = spawn('git', ['rev-parse', '--verify', '--quiet', '--short', `${ref}^{commit}`],
-    { cwd: REPO, encoding: 'utf8' });
+  const r = spawn('git', ['rev-parse', '--verify', '--quiet', `--short=${MARKER_SHA_LEN}`,
+    `${ref}^{commit}`], { cwd: REPO, encoding: 'utf8' });
   const sha = (r.stdout ?? '').trim();
   if (r.status !== 0 || !sha) {
     throw new AuditError(`--since ${ref} does not resolve to a commit in this checkout`);
+  }
+  // Positional group 3 is `Against`, matching findMarker; this regex uses
+  // numbered groups, so there is no `.groups` to read.
+  const parsed = MARKER_RE.exec(`**Last reviewed:** unknown · **Against:** \`${sha}\``);
+  if (!parsed || parsed[3] !== sha) {
+    throw new AuditError(`the resolved SHA '${sha}' is not a form the marker parser reads back `
+      + '(expects 7-40 hex characters); refusing to write it');
   }
   return sha;
 }
@@ -262,6 +293,47 @@ function globToRe(glob) {
  * Glob rows are deliberately not expanded — a directory rule is not a licence
  * to run the content checks over everything beneath it.
  */
+/**
+ * Every explicit registry declaration must name something that exists.
+ *
+ * Two silent failures of the same shape -- a declaration resolving to nothing,
+ * read as "nothing to report" rather than "this declaration is wrong":
+ *
+ * - An exactly-named document that has been DELETED is absent from `tracked`,
+ *   so `documentSet` never yields it, the main loop never classifies it, and
+ *   the report is clean because a maintained document disappeared while
+ *   DOC_REGISTRY.md still claims it exists.
+ * - A declared code path that does not exist makes the drift check vacuous:
+ *   `git log -- does/not/exist` exits 0 with empty output, so the document
+ *   citing it can never be queued for re-review whatever its real surface
+ *   does. `tailwind.config.ts` on the Design System row was exactly this.
+ *
+ * Ported from the Python twin's check_registry_paths (stocks#1121).
+ */
+export function checkRegistryPaths(tracked, registry) {
+  const dirs = new Set();
+  for (const p of tracked) {
+    const parts = p.split('/');
+    for (let i = 1; i < parts.length; i += 1) dirs.add(parts.slice(0, i).join('/'));
+  }
+  const out = [];
+  for (const row of registry) {
+    if (!/[*?[]/.test(row.glob) && !tracked.has(row.glob)) {
+      out.push({ check: 'registry', doc: row.glob, severity: 'P1',
+        detail: 'registry names this document exactly, but it is not in the audited '
+              + 'tree -- it was deleted, moved, or never existed' });
+    }
+    for (const cp of row.codePaths ?? []) {
+      if (!tracked.has(cp) && !dirs.has(cp)) {
+        out.push({ check: 'registry', doc: row.glob, severity: 'P2',
+          detail: `declared code path \`${cp}\` does not exist, so the drift check `
+                + 'for this document can never fire' });
+      }
+    }
+  }
+  return out;
+}
+
 export function documentSet(tracked, registry) {
   const named = new Set(registry.filter((r) => !/[*?[]/.test(r.glob)).map((r) => r.glob));
   return [...tracked].filter((p) => p.endsWith('.md') || named.has(p)).sort();
@@ -336,6 +408,11 @@ const INVENTORY_RE = /<!--\s*inventory:([\w.-]+):(start|end)\s*-->/;
  * the file, which is the kind of off-by-one that makes a measurement useless.
  */
 export function docLines(text) {
+  // '' is zero lines, not one empty one. `split('\n')` returns [''] for it, so
+  // a Class A artifact truncated to nothing reported ONE generated line and
+  // its `all` region counted as matched -- suppressing the P1 this audit
+  // promises for a renderer that emitted nothing.
+  if (text === '') return [];
   return text.endsWith('\n') ? text.slice(0, -1).split('\n') : text.split('\n');
 }
 
@@ -450,6 +527,25 @@ export function regionOf(line, owned, prompt) {
   return prompt ? 'model-prose' : 'unowned';
 }
 
+/**
+ * May a Class A document be stamped?
+ *
+ * A valid region map is a PRECONDITION, not an implication of
+ * `prompt === null`. With no declarations, with every declaration unmatched,
+ * or on an `exhaustive` file whose complement is nonblank, `owned` is empty
+ * or incomplete and the unresolved content reads as hand-written prose -- so
+ * `--stamp` would insert a marker into an artifact `checkRegions` has just
+ * identified as wholly machine-owned or impossible to map, where the next
+ * regeneration discards it and nobody can say what was lost.
+ *
+ * The Python twin carries the same `map_valid` term (stocks#1121).
+ */
+export function classAIsStampable(region, text) {
+  const mapValid = region.regionMap !== null
+    && !region.findings.some((f) => f.severity === 'P1' && f.check === 'unowned');
+  return mapValid && region.prompt === null && unownedSpans(text, region.owned).length > 0;
+}
+
 export function checkRegions(doc, text, specs) {
   if (!specs.length) {
     return {
@@ -524,6 +620,29 @@ export function markerWindow(lines, limit = 40) {
     if (lines[j].startsWith('#')) { stop = j; break; }
   }
   return { from: h1 + 1, to: Math.min(stop, h1 + 1 + limit, lines.length) };
+}
+
+/**
+ * What a marker still owes, when it parses but claims nothing.
+ *
+ * A marker reading `Last reviewed: unknown`, or carrying no `Against`, passes
+ * every other check while supporting no drift check at all -- `findMarker`
+ * returns something, so the missing-marker branch stays quiet, and the absent
+ * SHA makes `checkChangedSince` a no-op. `--stamp` writes exactly that form
+ * for a scan-only pass, so once the unrelated findings are fixed `--check`
+ * could report clean over documents that explicitly say nobody has read them.
+ *
+ * P3, because --check gates on P1/P2: these belong on the standing worklist
+ * and must not hold a build red forever. Same severity and reasoning as the
+ * Python twin (stocks#1121).
+ */
+export function checkProvenance(doc, prev) {
+  const missing = [];
+  if (prev.date === 'unknown') missing.push('never reviewed');
+  if (!prev.sha) missing.push('no reviewed-against SHA, so drift cannot be checked');
+  if (!missing.length) return [];
+  return [{ check: 'marker', doc, severity: 'P3',
+    detail: `incomplete provenance: ${missing.join('; ')}` }];
 }
 
 export function findMarker(lines) {
@@ -831,6 +950,13 @@ export function crossRepoCitations(line) {
   return out;
 }
 
+/** Does any tracked path live under this one? Then it is a real directory. */
+export function isTrackedDir(tracked, norm) {
+  const prefix = `${norm}/`;
+  for (const p of tracked) if (p.startsWith(prefix)) return true;
+  return false;
+}
+
 export function checkDeadLinks(doc, text, ctx) {
   const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
   const out = [];
@@ -840,7 +966,13 @@ export function checkDeadLinks(doc, text, ctx) {
       const tgt = m[1];
       if (/^(https?:|mailto:|#)/.test(tgt)) continue;
       const norm = path.posix.normalize(tgt.startsWith('/') ? tgt.slice(1) : path.posix.join(base, tgt));
-      if (!tracked.has(norm) && !fs.existsSync(path.join(REPO, norm))) {
+      // Filesystem existence recognises a DIRECTORY target only. An ignored or
+      // generated file, or one recreated after a staged deletion, is present
+      // here and absent for anyone who clones the repository, so letting it
+      // satisfy the link produced a clean audit over a committed link that is
+      // broken for every reader. Directories are not tracked objects in git,
+      // so they still need the filesystem.
+      if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
         out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `relative link -> ${tgt}` });
       }
     }
@@ -1234,7 +1366,9 @@ export function main(argv) {
   const args = parseArgs(argv);
   const today = args.date || new Date().toISOString().slice(0, 10);
   const baseRef = resolveBaseRef();
-  const head = args.since ? resolveCommit(args.since) : run('git', ['rev-parse', '--short', baseRef]).trim();
+  // Both paths go through resolveCommit: see there for why a bare --short is
+  // not safe to write into a marker.
+  const head = resolveCommit(args.since ?? baseRef);
 
   const regPath = path.join(REPO, REGISTRY);
   if (!fs.existsSync(regPath)) {
@@ -1255,7 +1389,11 @@ export function main(argv) {
   if (args.writeIssuesSnapshot) writeIssuesSnapshot(args.writeIssuesSnapshot, states);
   const ctx = { states, ...linkContext(tracked, baseTracked, registry) };
 
-  const findings = [];
+  // Registry rows are validated against the tree before anything is
+  // classified: a row naming a deleted document, or a code path that no
+  // longer exists, is a declaration resolving to nothing rather than
+  // nothing to report.
+  const findings = checkRegistryPaths(tracked, registry);
   const regionMaps = {};
   // Class A delivery: is this repo's one machine-written artefact in sync?
   // This used to be skipped whenever --issues-snapshot was passed, which
@@ -1306,7 +1444,7 @@ export function main(argv) {
       findings.push(...r.findings);
       ({ owned, prompt } = r);
       if (r.regionMap) regionMaps[doc] = r.regionMap;
-      stampable = prompt === null && unownedSpans(text, owned).length > 0;
+      stampable = classAIsStampable(r, text);
     }
 
     const content = contentChecks(cls, doc, text, ctx);
@@ -1337,6 +1475,16 @@ export function main(argv) {
             detail: `reviewed-against ${prev.sha} is not an ancestor of ${baseRef}` });
         }
       }
+      // A marker reading `unknown`, or carrying no `Against`, passes every
+      // check above while supporting no drift check at all -- so `--stamp`
+      // could clear the missing-marker finding with nobody having reviewed
+      // anything, and once the unrelated findings are fixed `--check` reports
+      // clean over documents that explicitly say nobody has read them.
+      //
+      // P3, because --check gates on P1/P2: these belong on the standing
+      // worklist and must not hold a build red forever. The Python twin uses
+      // the same severity for the same reason (stocks#1121).
+      findings.push(...checkProvenance(doc, prev));
       findings.push(...checkChangedSince(doc, prev.sha, codePaths, baseRef));
     }
 
