@@ -23,6 +23,7 @@ import {
   checkChangedSince,
   checkContractSync,
   checkDeadLinks,
+  hasBlockingCue,
   checkRegions,
   contentChecks,
   driftCommits,
@@ -2022,10 +2023,30 @@ describe('reference-style Markdown links', () => {
     expect(out[0].detail).toContain('missing.md');
   });
 
-  it('flags a use with no definition', () => {
-    const out = checkDeadLinks('d.md', '# T\n\nSee [guide][nope].\n', ctx);
+  it('leaves a bracket pair that is not a reference use alone', () => {
+    // The USE half is deliberately unchecked, and that is a measurement:
+    // across the stocks twin's 322 markdown documents there is 1 reference
+    // definition and 204 bracket pairs, nearly all issue-title tags. Flagging
+    // undefined uses produced 79 fabricated findings there.
+    const doc = '# T\n\n| [#906](https://x/906) | P0 | [P0][Replay] Quarantine it |\n';
+    expect(checkDeadLinks('d.md', doc, ctx)).toEqual([]);
+  });
+
+  it('keeps an inline dead anchor at its original wording', () => {
+    // Sharing the message builder with reference links relabelled every inline
+    // anchor finding `relative link ->`, churning 19 findings on the stocks
+    // twin for no behaviour change.
+    const real = linkContext(new Set(['README.md']), new Set(), []);
+    const out = checkDeadLinks('d.md', '# T\n\n[x](README.md#no-such-heading-here)\n', real);
     expect(out).toHaveLength(1);
-    expect(out[0].detail).toContain('nope');
+    expect(out[0].detail.startsWith('link -> README.md#no-such-heading-here')).toBe(true);
+  });
+
+  it('still carries a blocking cue on the plural "Open issues"', () => {
+    // Word boundaries dropped `Open issues`: the trailing `s` leaves no
+    // boundary after `issue`.
+    expect(hasBlockingCue('| Open issues | [#838](x) |')).toBe(true);
+    expect(hasBlockingCue('one open issue remains')).toBe(true);
   });
 
   it('is quiet when the definition resolves', () => {

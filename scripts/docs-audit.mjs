@@ -71,7 +71,7 @@ const H1_RE = /^#\s+\S/;
 // source line says the opposite. `\b` alone stops `nonblocking`; the negator
 // scan below stops the spaced and hyphenated forms.
 const BLOCKING_CUE_RE =
-  /\b(?:blocking|blocked by|open issue|still open|outstanding|in progress|not started|pending)\b/gi;
+  /\b(?:blocking|blocked by|open issues?|still open|outstanding|in progress|not started|pending)\b/gi;
 // Text immediately before a cue that inverts it. `not started` is itself a
 // cue, so what precedes it is what is tested -- the leading `not` is never
 // read as negating the phrase it belongs to.
@@ -1186,11 +1186,17 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // Reference-style Markdown: `[guide][g]` with `[g]: docs/guide.md` further
   // down. Neither shape matches MD_LINK_RE, so a broken reference link -- the
   // form the CommonMark spec calls standard and readers see as an ordinary
-  // link -- produced a clean audit. Both halves are checked: a definition
-  // whose destination does not resolve, and a use with no definition.
+  // link -- produced a clean audit. The DEFINITION's destination is validated
+  // exactly as an inline link's is.
   // A footnote (`[^1]: ...`) is deliberately excluded: it defines a note, not
-  // a destination. A SHORTCUT use (`[g]` alone) is excluded too, because
-  // bracketed prose and checkbox syntax are indistinguishable from it.
+  // a destination.
+  // A USE (`[text][label]`) is excluded too, and that is a measurement, not a
+  // shortcut: across the stocks twin's 322 markdown documents there is 1
+  // reference definition and 204 bracket pairs, nearly all of them issue-title
+  // tags -- `| #906 | P0 | [P0][Replay] Quarantine ...` is a title, not a
+  // link, and indistinguishable from a full reference use. Checking uses
+  // produced 79 fabricated findings there. The definition's destination is the
+  // half that certainly names a path, so that is the half this checks.
   const refDefs = new Map();
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
@@ -1202,6 +1208,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // paths, same anchors. A different spelling must not buy a laxer check.
   const checkTarget = (tgt, frag, lineNo, label = null) => {
     const what = label === null ? `relative link -> ${tgt}` : `reference link [${label}] -> ${tgt}`;
+    const anchorWhat = label === null ? `link -> ${tgt}` : what;
     if (/^(https?:|mailto:)/.test(tgt)) return;
     let norm;
     if (!tgt) {
@@ -1218,7 +1225,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       const have = anchorsOf(norm);
       if (have && !have.has(frag.toLowerCase())) {
         out.push({ check: 'dead-anchor', doc, line: lineNo, severity: 'P2',
-          detail: `${what}#${frag}: the target has no such heading` });
+          detail: `${anchorWhat}#${frag}: the target has no such heading` });
       }
     }
   };
@@ -1227,16 +1234,6 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     const [tgt, frag] = target.split('#');
     checkTarget(tgt, frag, line, label);
   }
-  lines.forEach((line, i) => {
-    if (fenced.has(i)) return;
-    for (const m of line.matchAll(/\[([^\]]*)\]\[([^\]]*)\]/g)) {
-      const label = (m[2] || m[1]).trim().toLowerCase();
-      if (!label || refDefs.has(label)) continue;
-      out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2',
-        detail: `reference-style link [${label}] has no definition` });
-    }
-  });
-
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
     // Spans a backticked citation occupies purely as a Markdown link's LABEL.
