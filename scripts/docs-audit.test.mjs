@@ -31,6 +31,7 @@ import {
   checkRegistryPaths,
   isTrackedDir,
   headingSlug,
+  checkExitCode,
   headingAnchors,
   fetchIssueStates,
   ISSUE_PAGE_SIZE,
@@ -761,6 +762,72 @@ describe('a link the filesystem satisfies but the repository does not', () => {
   });
 });
 
+describe('checkExitCode', () => {
+  it('does not fail --check on the P3 worklist alone', () => {
+    // Gating on findings.length meant that the moment every actionable
+    // finding was cleared, --check stayed red forever on the never-reviewed
+    // documents -- contradicting the P3 design checkProvenance depends on.
+    expect(checkExitCode(true, [{ severity: 'P3' }, { severity: 'P3' }])).toBe(0);
+  });
+
+  it('still fails on P1 or P2', () => {
+    expect(checkExitCode(true, [{ severity: 'P3' }, { severity: 'P2' }])).toBe(1);
+    expect(checkExitCode(true, [{ severity: 'P1' }])).toBe(1);
+  });
+
+  it('is 0 without --check whatever was found', () => {
+    expect(checkExitCode(false, [{ severity: 'P1' }])).toBe(0);
+  });
+});
+
+describe('a backticked citation the filesystem satisfies', () => {
+  it('is reported when the file is not tracked', () => {
+    // Same rule as the Markdown-link branch. The target has to be a file that
+    // really EXISTS and really is not tracked, or the mutation this guards
+    // against still passes: node_modules/vitest/package.json is present after
+    // `npm ci` here and in CI, and git check-ignore confirms it is untracked.
+    const untracked = 'node_modules/vitest/package.json';
+    expect(fs.existsSync(path.join(process.cwd(), untracked))).toBe(true);
+    const ctx = { tracked: new Set(['d.md']), topLevelDirs: new Set(['node_modules']),
+      rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.json']), basenames: new Set() };
+    const out = checkDeadLinks('d.md', `see \`${untracked}\`\n`, ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/backticked path/);
+  });
+});
+
+describe('an inserted marker', () => {
+  it('gets a blank line on both sides when the H1 is followed by body text', () => {
+    // A leading blank only gave `# Title` / '' / marker / body, and Markdown
+    // renders the marker and the opening sentence as a SINGLE paragraph.
+    const { text } = stamp('# Title\nBody text.\n', '2026-09-18', 'scanned', 'abc1234567ab');
+    const lines = text.split('\n');
+    expect(lines[0]).toBe('# Title');
+    expect(lines[1]).toBe('');
+    expect(lines[2]).toMatch(/^\*\*Last reviewed:/);
+    expect(lines[3]).toBe('');
+    expect(lines[4]).toBe('Body text.');
+  });
+
+  it('reuses the blank the H1 already has', () => {
+    const { text } = stamp('# Title\n\nBody text.\n', '2026-09-18', 'scanned', 'abc1234567ab');
+    expect(text.split('\n').slice(0, 5)).toEqual(
+      ['# Title', '', expect.stringMatching(/^\*\*Last reviewed:/), '', 'Body text.']);
+  });
+});
+
+describe('driftCommits under a configured abbreviation', () => {
+  it('asks git for a fixed abbreviation rather than trusting core.abbrev', () => {
+    // With core.abbrev below 7, `%h` emits `abcd\tmessage`, the header pattern
+    // rejects it, no status line is associated with any commit, and the drift
+    // check reports nothing however much the declared paths moved.
+    let seen;
+    const exec = (_c, argv) => { seen = argv; return ''; };
+    checkChangedSince('d.md', 'abc1234', ['src'], 'HEAD', { exec });
+    expect(seen).toContain('--abbrev=12');
+  });
+});
+
 describe('anchors', () => {
   it('does not collapse separator runs, because GitHub does not', () => {
     // Strip punctuation, THEN replace each space. An em dash and a slash leave
@@ -1186,13 +1253,32 @@ describe('contentChecks', () => {
   const text = 'Blocked by https://github.com/TeneikaAskew/solyra/issues/8.\n'
     + 'See [the plan](../missing.md) and `src/gone.ts`.\n';
 
-  it('still validates links in a Class C record', () => {
+  it('still validates Markdown links in a Class C record', () => {
     // An unconditional `continue` skipped every check for Class C, contradicting
     // the registry's promise that dated records are read for cross-references.
-    // A closed issue in a record was true on its date; a dead link is evidence
-    // that can no longer be reached, whatever the date.
+    // A closed issue in a record was true on its date; a LINK is a promise to
+    // the reader now, and a dead one is evidence that cannot be reached.
     const out = contentChecks('C', 'docs/record.md', text, ctx);
-    expect(out.map((f) => f.check)).toEqual(['dead-link', 'dead-link']);
+    expect(out.map((f) => f.check)).toEqual(['dead-link']);
+    expect(out[0].detail).toMatch(/relative link/);
+  });
+
+  it('does not check a Class C record\'s historical file names', () => {
+    // A dated record truthfully lists the files an old commit touched. Once
+    // one is renamed or deleted, a live-tree path check turns that truth into
+    // a finding whose only remedy is rewriting the record -- the one thing
+    // Class C exists to prevent. Measured on the shipped
+    // docs/LOVABLE_COMMITS_REVIEW.md: 16 such findings, src/styles.css among
+    // them.
+    const out = contentChecks('C', 'docs/record.md', text, ctx);
+    expect(out.filter((f) => /backticked/.test(f.detail))).toEqual([]);
+  });
+
+  it('still checks a LIVING document\'s backticked paths', () => {
+    // The Class C carve-out must not leak into Class D, where a citation of a
+    // file that no longer exists is exactly the rot this audit is for.
+    const out = contentChecks('D', 'docs/living.md', text, ctx);
+    expect(out.filter((f) => /backticked/.test(f.detail))).toHaveLength(1);
   });
 
   it('runs the issue check as well for a living doc', () => {

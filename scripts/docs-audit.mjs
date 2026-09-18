@@ -798,7 +798,12 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   if (h1 === null) return { text, action: 'skipped-no-h1' };
   // Target shape: "# Title" / "" / marker / "" / body.
   if (h1 + 1 < lines.length && lines[h1 + 1].trim() === '') lines.splice(h1 + 2, 0, marker, '');
-  else lines.splice(h1 + 1, 0, '', marker);
+  // Both blanks, not just the leading one. An H1 followed straight by body
+  // text gave `# Title` / '' / marker / body, and Markdown renders the marker
+  // and the opening sentence as a SINGLE paragraph -- not the first-paragraph
+  // marker shape this promises, and it changes how the opening content reads.
+  // The Python twin already inserts both (stocks#1121).
+  else lines.splice(h1 + 1, 0, '', marker, '');
   return { text: lines.join('\n'), action: 'inserted' };
 }
 
@@ -1004,7 +1009,7 @@ export function isTrackedDir(tracked, norm) {
   return false;
 }
 
-export function checkDeadLinks(doc, text, ctx) {
+export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) {
   const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
   const out = [];
   const base = path.posix.dirname(doc);
@@ -1060,11 +1065,16 @@ export function checkDeadLinks(doc, text, ctx) {
     // line: docs/TEST_COVERAGE_AUDIT.md:104 has a stocks docs/API.md link in
     // one cell and a local src/lib path in another, and a line-level marker
     // hid the local one.
+    if (!backtickedPaths) return;
     const crossRepo = crossRepoCitations(line);
     for (const m of line.matchAll(BACKTICK_PATH_RE)) {
       const p = m[1];
       if (crossRepo.has(m.index) || !exts.has(path.posix.extname(p))) continue;
-      if (tracked.has(p) || fs.existsSync(path.join(REPO, p))) continue;
+      // Tracked membership for files, same rule as the Markdown-link branch
+      // above: an ignored or generated file, or one recreated after a staged
+      // deletion, is present here and absent for everyone who clones. The
+      // previous fix corrected one branch and left this one.
+      if (tracked.has(p) || isTrackedDir(tracked, p)) continue;
       // Only flag paths shaped like this repo's layout, so a deliberate
       // cross-repo citation is not reported as rot.
       if (topLevelDirs.has(p.split('/')[0])) {
@@ -1101,7 +1111,17 @@ export function checkDeadLinks(doc, text, ctx) {
  * promises Class C is read for cross-references; this is that promise.
  */
 export function contentChecks(cls, doc, text, ctx) {
-  const links = checkDeadLinks(doc, text, ctx);
+  // A Class C record keeps its links checked but NOT its historical file
+  // names. A dated record truthfully lists the files an old commit touched;
+  // once one is renamed or deleted, a live-tree path check turns that truth
+  // into a finding whose only remedy is rewriting the record -- which is the
+  // one thing Class C exists to prevent. Measured on the shipped
+  // docs/LOVABLE_COMMITS_REVIEW.md: 16 P2 findings, every one of them a file
+  // an old commit really did touch, including src/styles.css.
+  //
+  // Markdown links are different and stay checked: a link is a promise to the
+  // reader NOW, not a record of what was true then.
+  const links = checkDeadLinks(doc, text, ctx, { backtickedPaths: cls !== 'C' });
   if (cls === 'C') return links;
   return [...checkClosedIssues(doc, text, ctx.states), ...links];
 }
@@ -1140,7 +1160,12 @@ export function checkChangedSince(doc, sha, codePaths, baseRef = 'origin/main', 
   // is drift that `--diff-filter=AMD` filed under R and dropped. Only a pure
   // rename (R100) is excluded, which is what the filter was for: the
   // 2026-09-07 file-move wave must not flag every document.
-  const out = exec('git', ['log', '--format=%h%x09%s', '--name-status', '-M', '--diff-filter=AMDR',
+  // --abbrev=12 overrides core.abbrev, which can be set below 7. Without it
+  // `%h` emits e.g. `abcd\tmessage`, driftCommits' header pattern rejects it,
+  // no status line is associated with any commit, and the drift check reports
+  // nothing however much the declared paths moved.
+  const out = exec('git', ['log', '--abbrev=12', '--format=%h%x09%s', '--name-status', '-M',
+    '--diff-filter=AMDR',
     `${sha}..${baseRef}`, '--', ...codePaths]);
   const commits = driftCommits(out);
   if (commits.length === 0) return [];
@@ -1434,6 +1459,24 @@ export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
   return done;
 }
 
+/**
+ * What `--check` exits with. P1 and P2 only.
+ *
+ * P3 is the standing worklist -- legacy marker lines a human must merge, and
+ * documents nobody has reviewed yet. Both are real and both are reported;
+ * neither is a reason to fail a build, and a gate that can never go green is
+ * not a gate. `checkProvenance` emits P3 for exactly that reason, and gating
+ * on `findings.length` contradicted it: the moment every actionable finding
+ * was cleared, --check stayed red on the worklist forever. Same rule as the
+ * Python twin.
+ */
+export const BLOCKING_SEVERITIES = new Set(['P1', 'P2']);
+
+export function checkExitCode(check, findings) {
+  if (!check) return 0;
+  return findings.some((f) => BLOCKING_SEVERITIES.has(f.severity)) ? 1 : 0;
+}
+
 export function summariseStamps(stamped) {
   const changed = stamped.filter((s) => s.action === 'inserted' || s.action === 'updated').length;
   const unchanged = stamped.filter((s) => s.action === 'unchanged').length;
@@ -1617,7 +1660,7 @@ export function main(argv) {
     }
   }
 
-  return args.check && findings.length ? 1 : 0;
+  return checkExitCode(args.check, findings);
 }
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
