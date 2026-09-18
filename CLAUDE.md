@@ -134,7 +134,7 @@ test passing.
 
 ### 4. No Silent Fallbacks — Production-Grade Data Discipline
 
-**This is the rule the codebase cites most.** 37 files under `src/` and
+**This is the rule the codebase cites most.** 38 files under `src/` and
 `tests/` reference "CLAUDE.md Rule 3.7" or "§3.7" — that numbering comes from
 the stocks repo, where the rule originated. **It is Rule 4 here; both names
 refer to this section.** Do not renumber the existing citations.

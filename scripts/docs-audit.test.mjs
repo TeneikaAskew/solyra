@@ -1002,7 +1002,7 @@ describe('count claims', () => {
     expect(checkClaims([
       { doc: 'CLAUDE.md', pattern: '(\\d+) files under `src/` and',
         derivation: 'grep-files src,tests Rule 3\\.7|§3\\.7' },
-    ], { exec: () => 'f\n'.repeat(37) })).toEqual([]);
+    ], { exec: () => 'f\n'.repeat(38) })).toEqual([]);
   });
 
   it('flags a claim the derivation contradicts', () => {
@@ -1012,16 +1012,16 @@ describe('count claims', () => {
     ], { exec: () => 'f\n'.repeat(11) });
     expect(findings).toHaveLength(1);
     expect(findings[0].detail).toBe(
-      'claims 37, `grep-files src,tests Rule 3\\.7|§3\\.7` gives 11');
+      'claims 38, `grep-files src,tests Rule 3\\.7|§3\\.7` gives 11');
   });
 });
 
-// The one assertion that must touch the real tree: that CLAUDE.md's "37 files
+// The one assertion that must touch the real tree: that CLAUDE.md's "38 files
 // reference Rule 3.7" is still true. It greps the working tree, so it runs in
 // a shallow CI clone too; it used to need origin/main and was skipped there.
 describe('count claims against the real tree', () => {
   it('confirms the one CLAUDE.md count that is currently correct', () => {
-    expect(derive('grep-files src,tests Rule 3\\.7|§3\\.7')).toBe(37);
+    expect(derive('grep-files src,tests Rule 3\\.7|§3\\.7')).toBe(38);
   });
 });
 
