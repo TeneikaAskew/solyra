@@ -111,7 +111,12 @@ export function normaliseRepo(repo) {
 // What bounds a clause: sentence punctuation, a semicolon, or a table-cell
 // edge. Not a comma. Ported from the Python twin (stocks#1121).
 const CLAUSE_SPLIT_RE = /[.;|]/g;
-const URL_RE = /https?:\/\/\S+/g;
+// Not `\S+`: a table may omit padding (`| .../issues/1| still open ...|`), and
+// swallowing the `|` merged adjacent cells -- so an issue described as no
+// longer blocking inherited a live-work cue from the next cell. Trailing
+// sentence punctuation is excluded for the same reason it is on the Python
+// twin: it ends the sentence, not the URL.
+const URL_RE = /https?:\/\/[^\s|]*[^\s|.,;:!?)\]]/g;
 
 /**
  * The prose around ONE citation. URLs are masked at equal length first, so a
@@ -817,7 +822,12 @@ export function markerWindow(lines, limit = 40) {
   const h1 = h1Index(lines);
   if (h1 === null) return { from: 0, to: Math.min(limit, lines.length) };
   let stop = lines.length;
-  for (let j = h1 + 1; j < Math.min(h1 + 1 + limit, lines.length); j += 1) {
+  // To the next HEADING, with no additional line cap. A document opening with
+  // more than 40 lines of HTML metadata before its marker had the real marker
+  // excluded from the window, so the audit reported it missing and --stamp
+  // inserted a second one: contradictory provenance. The section boundary is
+  // the thing being asked about; the line count was a proxy for it.
+  for (let j = h1 + 1; j < lines.length; j += 1) {
     // The same optional indentation H1_RE admits. Without it, a later
     // section written `  ## Thing` did not end the document-level window, so a
     // marker inside that section satisfied findMarker -- suppressing the
@@ -825,7 +835,7 @@ export function markerWindow(lines, limit = 40) {
     // section's marker instead of inserting the document's.
     if (/^ {0,3}#/.test(lines[j])) { stop = j; break; }
   }
-  return { from: h1 + 1, to: Math.min(stop, h1 + 1 + limit, lines.length) };
+  return { from: h1 + 1, to: Math.min(stop, lines.length) };
 }
 
 /**
@@ -1007,7 +1017,13 @@ export function h1Index(lines) {
   // already skip fenced lines.
   const fenced = fencedLines(lines);
   for (let i = 0; i < lines.length; i += 1) {
-    if (!fenced.has(i) && H1_RE.test(lines[i])) return i;
+    if (fenced.has(i)) continue;
+    if (H1_RE.test(lines[i])) return i;
+    // Setext level one (`Title` over `===`). Without it the audit reported a
+    // missing marker on such a document while --stamp answered
+    // `skipped-no-h1`, so the command could not repair its own finding.
+    if (lines[i].trim() && !/^ {0,3}#/.test(lines[i]) && !fenced.has(i + 1)
+        && /^ {0,3}=+\s*$/.test(lines[i + 1] ?? '')) return i;
   }
   return null;
 }
@@ -1367,7 +1383,11 @@ export function crossRepoCitations(line) {
  */
 export function headingSlug(heading) {
   let s = heading.replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-  s = s.replace(/[*_]/g, '').trim().toLowerCase();
+  // Emphasis MARKUP only. Stripping every underscore turned `## API_FIELD`
+  // into `apifield`, so a valid link to `#api_field` read as a dead anchor
+  // while an incorrect `#apifield` was accepted. CommonMark does not treat an
+  // intraword `_` as emphasis and GitHub's anchor keeps it.
+  s = s.replace(/\*/g, '').replace(/(?<!\w)_+|_+(?!\w)/g, '').trim().toLowerCase();
   return s.replace(/[^\w\s-]/g, '').replace(/ /g, '-');
 }
 
@@ -1493,7 +1513,17 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // and the angle brackets are delimiters, not part of the path. A query
       // (`guide.md?plain=1`) is not part of it either -- the tracked-file
       // lookup searched for the literal filename including the `?`.
-      const bare = decodeURIComponent(tgt.replace(/^<(.*)>$/, '$1').split('?')[0]);
+      const raw = tgt.replace(/^<(.*)>$/, '$1').split('?')[0];
+      // `100%-coverage.md` is a literal percent, and decodeURIComponent throws
+      // a plain URIError on it -- a stack trace and exit 1, the status
+      // reserved for documentation findings. An undecodable destination is
+      // simply used as written.
+      let bare;
+      try {
+        bare = decodeURIComponent(raw);
+      } catch {
+        bare = raw;
+      }
       if (!bare) return;
       norm = path.posix.normalize(
         bare.startsWith('/') ? bare.slice(1) : path.posix.join(base, bare));
@@ -1696,7 +1726,15 @@ const CLAIMS_HEADING = '## Claims';
 export function loadClaims(text) {
   const rows = [];
   let inClaims = false;
-  for (const raw of text.split('\n')) {
+  // A FENCED example row is documentation, not a claim -- the same rule
+  // loadRegistry already applies. Parsing it made the audit try to read an
+  // example document or run an example derivation and fail the whole run with
+  // exit 2, and a heading inside the fence could switch `inClaims` off and
+  // skip every real row after it.
+  const allLines = text.split('\n');
+  const fenced = fencedLines(allLines);
+  for (const [i, raw] of allLines.entries()) {
+    if (fenced.has(i)) continue;
     const line = raw.trim();
     if (line.startsWith('#')) {
       inClaims = line.startsWith(CLAIMS_HEADING);
@@ -1725,8 +1763,12 @@ export function loadClaims(text) {
  * number, and measured the wrong thing.
  */
 export function derive(derivation, { exec = run } = {}) {
-  const [kind, target, ...rest] = derivation.split(' ');
+  // Split on RUNS of whitespace. `grep-count  src foo` made `target` the empty
+  // string and folded the path into the regex, so the empty pathspec grepped
+  // the whole repository and returned a plausible, wrong count.
+  const [kind, target, ...rest] = derivation.trim().split(/\s+/);
   const pattern = rest.join(' ');
+  if (!target) throw new AuditError(`derivation has no target: ${derivation}`);
   if (!pattern) throw new AuditError(`derivation has no pattern: ${derivation}`);
   if (kind === 'grep-count' || kind === 'grep-files') {
     const flag = kind === 'grep-count' ? '-ohE' : '-lE';

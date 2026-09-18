@@ -60,6 +60,7 @@ import {
   HISTORY_REF_CANDIDATES,
   run,
   loadClaims,
+  citationClause,
   loadRegistry,
   ownedLines,
   regionOf,
@@ -2687,5 +2688,102 @@ describe('the contract audit subprocess', () => {
     expect(passed).toBeTruthy();
     expect('STOCKS_OPENAPI_FILE' in passed).toBe(false);
     expect('STOCKS_OPENAPI_REF' in passed).toBe(false);
+  });
+});
+
+// ── round 18 (b5e17bd) ──────────────────────────────────────────────────────
+
+describe('a setext H1', () => {
+  it('is the document heading', () => {
+    // Without it the audit reported a missing marker while --stamp answered
+    // `skipped-no-h1`, so the command could not repair its own finding.
+    expect(h1Index(['Title', '=====', 'body'])).toBe(0);
+  });
+
+  it('is not a level-two setext', () => {
+    expect(h1Index(['Title', '-----', 'body'])).toBeNull();
+  });
+});
+
+describe('an intraword underscore in a heading', () => {
+  it('survives into the anchor, as GitHub keeps it', () => {
+    // Stripping every underscore turned `## API_FIELD` into `apifield`, so a
+    // valid link to `#api_field` read as a dead anchor while an incorrect
+    // `#apifield` was accepted -- wrong in both directions at once.
+    expect(headingSlug('API_FIELD')).toBe('api_field');
+  });
+
+  it('still strips emphasis markup', () => {
+    expect(headingSlug('_em_')).toBe('em');
+    expect(headingSlug('**Bold** thing')).toBe('bold-thing');
+  });
+});
+
+describe('a table row with no padding around its pipes', () => {
+  it('keeps its cells separate', () => {
+    // `\S+` swallowed the `|` with the URL, so citationClause merged adjacent
+    // cells and an issue described as no longer blocking inherited a live-work
+    // cue from the next one.
+    const u = 'https://github.com/TeneikaAskew/solyra/issues/';
+    const line = `| ${u}1| still open ${u}2|`;
+    expect(citationClause(line, line.indexOf(u), line.indexOf(u) + u.length + 1))
+      .not.toContain('still open');
+  });
+
+  it('does not report a citation the next cell describes as live', () => {
+    const u = 'https://github.com/TeneikaAskew/solyra/issues/';
+    const states = { solyra: {
+      1: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+      2: { state: 'open', reason: '', kind: 'ISSUE' } } };
+    expect(checkClosedIssues('d.md', `| ${u}1 is no longer blocking| still open ${u}2|\n`,
+      states)).toEqual([]);
+  });
+});
+
+describe('a destination with a literal percent sign', () => {
+  it('is a dead link, not a crash', () => {
+    // decodeURIComponent throws a plain URIError on `100%-coverage.md`: a
+    // stack trace and exit 1, the status reserved for documentation findings.
+    const ctx = linkContext(new Set(['a.md']), new Set(), []);
+    const out = checkDeadLinks('d.md', '# T\n\n[c](100%-coverage.md)\n', ctx);
+    expect(out.map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('a derivation written with repeated whitespace', () => {
+  it('parses as it reads', () => {
+    // Splitting on a literal single space made `target` empty and folded the
+    // path into the regex, so the empty pathspec grepped the whole repository
+    // and returned a plausible, wrong count.
+    expect(derive('grep-count  src zzz-no-such-string-zzz')).toBe(0);
+  });
+
+  it('still refuses a derivation with no target at all', () => {
+    expect(() => derive('grep-count')).toThrow(/no target/);
+  });
+});
+
+describe('a title section longer than forty lines', () => {
+  it('still contains its marker', () => {
+    // A document opening with more than 40 lines of HTML metadata had the real
+    // marker excluded from the window, so the audit reported it missing and
+    // --stamp inserted a second one: contradictory provenance.
+    const lines = ['# T', ...Array(45).fill('x'), '**Last reviewed:** 2026-01-01'];
+    expect(markerWindow(lines).to).toBeGreaterThan(45);
+    expect(findMarker(lines)).not.toBeNull();
+  });
+
+  it('still stops at the next heading', () => {
+    const lines = ['# T', 'body', '## Next', '**Last reviewed:** 2026-01-01'];
+    expect(markerWindow(lines).to).toBe(2);
+  });
+});
+
+describe('a fenced example row in the Claims table', () => {
+  it('is documentation, not a claim', () => {
+    const head = '| Doc | Pattern | Derivation |\n|---|---|---|\n';
+    const text = `## Claims\n\n\`\`\`\n${head}| docs/EXAMPLE.md | (\\d+) x | grep-count src x |\n`
+      + `\`\`\`\n\n${head}| README.md | (\\d+) y | grep-count src y |\n`;
+    expect(loadClaims(text).map((c) => c.doc)).toEqual(['README.md']);
   });
 });
