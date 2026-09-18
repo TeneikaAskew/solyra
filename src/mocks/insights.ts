@@ -29,6 +29,7 @@ import type {
   RunStatus,
 } from '@/types/insights';
 import type { WatchlistResponse } from '@/types/watchlist';
+import type { WatchlistAddResult } from '@/hooks/useTickerSearch';
 import type { RouteRow } from '@/hooks/useAdmin';
 import type { MockRoute } from './types';
 
@@ -283,6 +284,38 @@ export const MOCK_CHAT_REPLY =
  * concatenates decoded chunks, so it is answered as plain text, not JSON —
  * a JSON envelope would render verbatim into the bubble.
  */
+/** POST /api/insights/watchlist/add — a successful auto-ingest with the AV
+ *  OVERVIEW/GLOBAL_QUOTE lookups populated (issue #57). The route echoes the
+ *  requested ticker over this base. */
+export const MOCK_WATCHLIST_ADD = {
+  ticker: 'IWM',
+  added: true,
+  info: {
+    symbol: 'IWM',
+    name: 'iShares Russell 2000 ETF',
+    exchange: 'NYSE ARCA',
+    sector: null,
+    industry: null,
+    market_cap: null,
+    asset_type: 'ETF',
+    description: 'Tracks the Russell 2000 small-cap index.',
+  },
+  quote: {
+    symbol: 'IWM',
+    open: 219.4,
+    high: 221.9,
+    low: 218.7,
+    price: 220.55,
+    volume: 31200000,
+    latest_trading_day: '2026-04-24',
+    previous_close: 219.1,
+    change: 1.45,
+    change_percent: '0.6618%',
+  },
+  peers: ['SPY', 'QQQ'],
+  watchlist: ['IWM', 'SPY', 'QQQ'],
+} satisfies WatchlistAddResult;
+
 export const insightsRoutes: MockRoute[] = [
   { pattern: /^\/api\/insights\/report\/IWM$/, reply: () => ({ body: MOCK_INSIGHT_REPORT }) },
   {
@@ -310,5 +343,36 @@ export const insightsRoutes: MockRoute[] = [
     method: 'POST',
     pattern: /^\/api\/insights\/chat$/,
     reply: () => ({ text: MOCK_CHAT_REPLY, contentType: 'text/plain; charset=utf-8' }),
+  },
+  // Watchlist mutations (issue #57). Only IWM has fixture metadata; any
+  // other symbol gets the server's honest lookup-empty shape (info/quote/
+  // peers null) rather than IWM's fund name and price wearing the typed
+  // ticker (Codex, #64) — AddedTickerCard renders its null-tolerant state.
+  {
+    method: 'POST',
+    pattern: /^\/api\/insights\/watchlist\/add$/,
+    reply: (req) => {
+      const ticker =
+        typeof (req.body as { ticker?: unknown } | undefined)?.ticker === 'string'
+          ? ((req.body as { ticker: string }).ticker.toUpperCase())
+          : 'IWM';
+      if (ticker === 'IWM') return { body: MOCK_WATCHLIST_ADD };
+      const body = {
+        ticker,
+        added: true,
+        info: null,
+        quote: null,
+        peers: null,
+        watchlist: [...MOCK_WATCHLIST_ADD.watchlist, ticker],
+      } satisfies WatchlistAddResult;
+      return { body };
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/insights\/watchlist\/([^/]+)$/,
+    reply: (_req, match) => ({
+      body: { ticker: match[1].toUpperCase(), removed: true, watchlist: [] },
+    }),
   },
 ];

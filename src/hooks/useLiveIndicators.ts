@@ -51,7 +51,8 @@ export function useLiveIndicators(req: IndicatorsRequest, enabled: boolean) {
 
 export interface SignalSeriesFire {
   time: string;
-  direction: 'CALL' | 'PUT';
+  /** 'CALL' | 'PUT' today; plain string per schema. */
+  direction: string;
   score: number;
   bar_index: number;
 }

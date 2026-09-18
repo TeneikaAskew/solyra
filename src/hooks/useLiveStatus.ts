@@ -5,7 +5,7 @@ export type MarketSession = 'regular' | 'pre-market' | 'after-hours' | 'closed';
 export interface LiveStatus {
   is_open: boolean;
   session: MarketSession | string;
-  next_open: string | null;
+  next_open?: string | null;
   current_time_et: string;
 }
 

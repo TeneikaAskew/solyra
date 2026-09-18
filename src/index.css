@@ -296,9 +296,14 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .density-default { --row-pad-y: 8px;  --row-pad-x: 10px; --card-pad: 14px; --gap: 24px; --metric-size: 28px; }
 .density-dense   { --row-pad-y: 5px;  --row-pad-x: 8px;  --card-pad: 10px; --gap: 12px; --metric-size: 22px; }
 
-/* Alt accent palettes — set on <body class="accent-*">. `accent-blue` is the
-   default brand and needs no overrides. Greens/reds are reserved for bull/bear,
-   so they are intentionally excluded. */
+/* Alt accent palettes — set on <body class="accent-*">. `accent-dawn` is the
+   product default: the orange end of the landing page's dawn gradient
+   (landing.css --sl-orange), so the shell, the sign-in card and the
+   /auth/action page a reset email lands on all match the marketing site.
+   `accent-blue` needs no overrides — it falls through to the base --brand,
+   which is the only theme-aware one (lighter in dark mode). Greens/reds are
+   reserved for bull/bear, so they are intentionally excluded. */
+.accent-dawn    { --brand: #ff7a4d; --brand-glow: #ff9b76; --outline: rgba(255,122,77,0.22); }
 .accent-amber   { --brand: #ffb86b; --brand-glow: #ffd28a; --outline: rgba(255,184,107,0.22); }
 .accent-violet  { --brand: #b58bff; --brand-glow: #d2b3ff; --outline: rgba(181,139,255,0.22); }
 .accent-cyan    { --brand: #5ee3e1; --brand-glow: #88efed; --outline: rgba(94,227,225,0.22); }
@@ -492,7 +497,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Heatseeker Swing Mode — 2D strikes×expirations exposure heatmap ── */
+/* ── Gamma Map Swing Mode — 2D strikes×expirations exposure heatmap ── */
 .hs-swing-grid table {
   border-spacing: 0;
 }
@@ -539,7 +544,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .recharts-wrapper { min-width: 0 !important; }
 
 /* ===========================================================
-   Heatseeker — full dealer-gamma cockpit (Swing Mode)
+   Gamma Map — full dealer-gamma cockpit (Swing Mode)
    Ported from the design's styles.css (.hs-* + needed base helpers).
    Uses Obsidian Analyst CSS vars; King gold #ffb800, spot=brand,
    flip/gate=red. --font-display / --font-body fall back gracefully.
@@ -882,7 +887,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .hs-stage { grid-template-columns: 1fr; }
 }
 
-/* ── Heatseeker mobile containment ────────────────────────────────────────
+/* ── Gamma Map mobile containment ────────────────────────────────────────
    Grid and flex children default to `min-width: auto`, so a real snapshot
    (~6 expirations × ~25 strikes, plus long tactical copy) widened the CARDS
    instead of scrolling inside them: the whole page then scrolled sideways and

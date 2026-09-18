@@ -357,8 +357,8 @@ function ReportView({
       <HeaderCard
         report={report}
         asOf={envelope.as_of}
-        costUsd={envelope.cost_usd}
-        latencyMs={envelope.latency_ms}
+        costUsd={envelope.cost_usd ?? null}
+        latencyMs={envelope.latency_ms ?? null}
       />
       <BriefVsInsightsCard
         ticker={ticker}
@@ -443,7 +443,7 @@ function HistoryView({
                 {r.as_of ? new Date(r.as_of).toLocaleString() : NA}
               </span>
             </div>
-            {r.cost_usd !== null && (
+            {r.cost_usd != null && (
               <span className="text-[10px] text-[var(--on-surface-muted)]">
                 ${r.cost_usd.toFixed(4)}
               </span>

@@ -46,7 +46,7 @@
 | `insights.spec.ts` (+ Agents) | `/insights` | Briefing dossier · **Agents tab** (run cost/latency · per-role pipeline · model-routing roster · recent runs) |
 | `journal.spec.ts` | `/journal` | **KPI tiles + equity curve** · add/delete trade · CSV export |
 | `catalysts.spec.ts` | `/catalysts` | feed grouped by date · impact/type filter chips · sentiment |
-| `options-flow.spec.ts` · `gamma-levels.spec.ts` | `/options` | Heatseeker grid · GEX/VEX · King/Gate fallback · live-AV badge |
+| `options-flow.spec.ts` · `gamma-levels.spec.ts` | `/options` | Gamma Map grid · GEX/VEX · King/Gate fallback · live-AV badge |
 | `live-market.spec.ts` · `charts-cards.spec.ts` · `phase1-charts.spec.ts` | `/live` `/charts` | hero tiles · candlestick canvas · reference levels |
 | `playbook.spec.ts` · `reports.spec.ts` · `help.spec.ts` · `admin.spec.ts` · `admin-auth.spec.ts` | `/playbook` `/reports` `/help` `/admin` | cards · glossary · admin auth gate |
 | `navigation.spec.ts` | every route | each route loads without a fatal error |

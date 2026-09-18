@@ -1,13 +1,13 @@
-/** Brand mark — ascending dot-row + "Stocks" wordmark. */
+/** Brand mark — ascending dot-row + "Solyra" wordmark. */
 export function Brand({ tag }: { tag?: string }) {
   return (
-    <div className="brand-mark">
+    <div className="brand-mark" data-testid="brand">
       <div className="dot-row">
         <i />
         <i />
         <i />
       </div>
-      <span>Stocks</span>
+      <span data-testid="brand-wordmark">Solyra</span>
       {tag && <small>{tag}</small>}
     </div>
   );

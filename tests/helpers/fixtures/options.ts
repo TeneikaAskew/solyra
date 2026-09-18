@@ -11,6 +11,7 @@
  * reachable).
  */
 import type { Page } from '@playwright/test';
+import type { GreeksResponse, StrikeNode } from '@/hooks/useOptionsGreeks';
 import {
   MOCK_GREEKS,
   MOCK_GRID_POPULATED,
@@ -40,7 +41,7 @@ const TRINITY_TICKERS = ['SPX', 'SPY', 'QQQ'] as const;
 
 /**
  * Intercept every options endpoint the /options page can hit (both the
- * default Heatseeker/Swing view and the Profiles tab), scoped to IWM.
+ * default Gamma Map/Swing view and the Profiles tab), scoped to IWM.
  * Registration order matters: Playwright matches routes newest-first, so the
  * single-segment chain glob goes FIRST and the more specific /grid and
  * /levels patterns after it take precedence.
@@ -82,3 +83,44 @@ export async function mockOptionsApi(page: Page) {
 export async function mockOptionsWideGrid(page: Page) {
   await page.route('**/api/options/IWM/grid*', (r) => r.fulfill(M.ok(MOCK_GRID_WIDE)));
 }
+
+// ── Greeks with a populated node taxonomy ──────────────────────────────────
+
+const strikeNode = (
+  type: StrikeNode['type'],
+  strike: number,
+  bounds?: { lower_bound: number; upper_bound: number },
+): StrikeNode => ({
+  type,
+  strike,
+  gamma: 200,
+  distance_from_spot: strike - 220,
+  distance_percent: ((strike - 220) / 220) * 100,
+  ...bounds,
+});
+
+const KING_NODE = strikeNode('king', 220);
+const GATEKEEPER_NODES = [strikeNode('gatekeeper', 219), strikeNode('gatekeeper', 222)];
+// The midpoint's BAND (not its center strike) is what ProfilesTab checks:
+// `lower_bound! <= strike <= upper_bound!`. Bounds 220.5–221.5 put exactly
+// one charted strike (221) inside the band.
+const MIDPOINT_NODES = [strikeNode('midpoint', 221, { lower_bound: 220.5, upper_bound: 221.5 })];
+
+/**
+ * MOCK_GREEKS with the King/Gatekeeper/Midpoint taxonomy POPULATED, so the
+ * ProfilesTab badge path renders at all (issue #32: MOCK_GREEKS.nodes is
+ * always empty, which left the badge lookup — including its two
+ * `!`-asserted midpoint bounds — unexercised by every spec). Strikes align
+ * with MOCK_GREEKS.gex_by_strike (218–222, spot 220): ★ king 220,
+ * ◆ gatekeepers 219/222, ● the 221 row inside the midpoint band.
+ * Test-only: mock-data mode keeps serving MOCK_GREEKS.
+ */
+export const MOCK_GREEKS_WITH_NODES = {
+  ...MOCK_GREEKS,
+  nodes: {
+    kingNode: KING_NODE,
+    gatekeepers: GATEKEEPER_NODES,
+    midpoints: MIDPOINT_NODES,
+    allNodes: [KING_NODE, ...GATEKEEPER_NODES, ...MIDPOINT_NODES],
+  },
+} satisfies GreeksResponse;

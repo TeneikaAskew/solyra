@@ -30,7 +30,6 @@
  * must send `Access-Control-Allow-Origin` for the host serving the SPA (and
  * allow the `Authorization` header on preflight), or the browser blocks them.
  */
-import { getCurrentUid, getIdToken } from './firebase';
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
 import { markAuthBlocked, clearAuthBlocked } from './authGate';
@@ -183,6 +182,12 @@ export function installAuthFetch(): void {
     //  - public open paths (health, config, waitlist): proceed anonymously —
     //    the backend serves them identically without identity, and failing
     //    them would misreport a reachable server as down.
+    // Dynamic import so this module — which main.tsx pulls into the entry
+    // chunk to install the wrapper — does not drag the firebase facade into
+    // a public `/` visit (issue #26; the landing spec's fence pins it). We
+    // only get here in firebase mode, i.e. after ConfigGate loaded the
+    // facade anyway, so the import is already resolved.
+    const { getCurrentUid, getIdToken } = await import('./firebase');
     // The uid at request initiation. A forced-refresh retry takes long enough
     // for a cross-tab account switch to land, and getIdToken(true) mints a
     // token for whoever is signed in AT RETRY TIME — without this check, a

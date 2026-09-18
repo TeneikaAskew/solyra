@@ -15,6 +15,7 @@ import {
   useGammaLevels,
   spotMethodLabel,
   regimeLabel,
+  asGammaRegime,
 } from '@/hooks/useGammaLevels';
 import type { Ticker } from '@/types';
 import * as d3 from 'd3';
@@ -26,7 +27,7 @@ import { WidgetSkeleton } from '@/components/shared/WidgetState';
 type Metric = 'gex' | 'vex';
 type Filter = 'net' | 'calls' | 'puts';
 
-interface OptionsResponse {
+export interface OptionsResponse {
   ticker: string;
   date: string;
   options: ChainOptionRecord[];
@@ -304,7 +305,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
   });
   const gammaLevels = levelsQuery.data;
   const flip = gammaLevels?.gamma_balance ?? null;
-  const regime = gammaLevels?.regime ?? 'unknown';
+  const regime = asGammaRegime(gammaLevels?.regime ?? 'unknown');
   const spotMethod = gammaLevels?.spot.method;
   const serverSpot = gammaLevels?.spot.price;
 
@@ -576,7 +577,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         </div>
       )}
 
-      {/* Fallback: original heatseeker node summary if /levels hasn't loaded yet */}
+      {/* Fallback: original gamma-map node summary if /levels hasn't loaded yet */}
       {!gammaLevels && nodes.kingNode && (
         <div className="flex flex-wrap gap-2 text-xs">
           <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[var(--warn)]">

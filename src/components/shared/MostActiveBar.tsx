@@ -16,16 +16,16 @@ import { useQuery } from '@tanstack/react-query';
 export interface MostActiveItem {
   ticker: string;
   rank: number;
-  price: number | null;
-  change_pct: number | null;
-  volume: number | null;
-  spark?: number[];
+  price?: number | null;
+  change_pct?: number | null;
+  volume?: number | null;
+  spark?: number[] | null;
 }
 
 export interface MostActiveResponse {
-  snapshot_ts: string | null;
-  snapshot_date: string | null;
-  label: string | null;
+  snapshot_ts?: string | null;
+  snapshot_date?: string | null;
+  label?: string | null;
   items: MostActiveItem[];
 }
 

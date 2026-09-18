@@ -25,7 +25,11 @@ export interface TradeEntry {
   takeProfits: { price: number; size: number }[];
   notes: string;
   tags: string[];
-  status: 'active' | 'win' | 'loss' | 'breakeven';
+  /** 'closed' is an exited trade whose return could not be computed (the
+   *  server's `_derive_status` for a zero entry price, stocks #1115): it is
+   *  neither open nor a flat result, so `pnl`/`pnlPercent` stay undefined
+   *  and the chart renders the exit as unavailable rather than +$0.00. */
+  status: 'active' | 'win' | 'loss' | 'breakeven' | 'closed';
   pnl?: number;
   pnlPercent?: number;
   createdAt: number;
@@ -91,7 +95,8 @@ export interface ChartVoterSide {
 export interface ChartVoter {
   call: ChartVoterSide;
   put: ChartVoterSide;
-  firing: TradeDirection | null;
+  /** Omittable as well as null: the schema marks it optional (issue #56). */
+  firing?: TradeDirection | null;
 }
 
 export interface BacktestResult {
@@ -178,12 +183,14 @@ export interface MovementLevelEntry {
   reach_rate: ReachRate;
 }
 
-/** The levels block — calls/puts ladders, each with per-tier reach-rates. */
+/** The levels block — calls/puts ladders, each with per-tier reach-rates.
+ *  `calls`/`puts` admit null as well as omission: the schema declares them
+ *  nullable and the endpoint serializes with exclude_unset (issue #56). */
 export interface MovementLevels {
   status: MovementFieldStatus;
   reason?: string | null;
-  calls?: MovementLevelEntry[];
-  puts?: MovementLevelEntry[];
+  calls?: MovementLevelEntry[] | null;
+  puts?: MovementLevelEntry[] | null;
   current_price?: number | null;
   reach_rate_note?: string | null;
 }

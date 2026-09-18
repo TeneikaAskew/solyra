@@ -20,9 +20,9 @@ import {
   glossary,
   type NodeRole,
   type DataSource,
-} from '@/data/heatseekerMock';
+} from '@/data/gammaMapMock';
 
-// SwingMode — Heatseeker "Swing Mode" dealer-gamma cockpit.
+// SwingMode — Gamma Map "Swing Mode" dealer-gamma cockpit.
 //
 // Toolbar (Live/Historical · GEX/VEX · expiry filter) + Legend strip + a
 // 3-column stage —
@@ -207,17 +207,22 @@ interface RealOverlay {
 }
 
 // ─── Data source freshness pill ───────────────────────────────
-function SourcePill({ source, asOf }: { source: DataSource; asOf: string }) {
+// `source` is a plain string on the wire (GammaGridResponse.data_source,
+// Rule 6) — `DataSource` names today's known values, the lookup handles
+// the rest.
+const SOURCE_PILL_META: Record<string, { cls: string; label: string; hint: string }> = {
+  realtime: { cls: 'realtime', label: 'LIVE', hint: 'Realtime · 5-min snapshot' },
+  eod_fallback: { cls: 'eod-fallback', label: 'EOD', hint: 'Realtime missed · using yesterday close' },
+  stale_fallback: { cls: 'stale', label: 'STALE', hint: 'EOD > 2 sessions behind' },
+  unavailable: { cls: 'stale', label: 'UNAVAILABLE', hint: 'No snapshot available' },
+} satisfies Record<DataSource, unknown>;
+
+function SourcePill({ source, asOf }: { source: string; asOf: string }) {
+  // Rule 4: an UNRECOGNIZED source must not default to the most
+  // reassuring state — a renamed enum member would otherwise render a
+  // green LIVE pill.
   const meta =
-    {
-      realtime: { cls: 'realtime', label: 'LIVE', hint: 'Realtime · 5-min snapshot' },
-      eod_fallback: { cls: 'eod-fallback', label: 'EOD', hint: 'Realtime missed · using yesterday close' },
-      stale_fallback: { cls: 'stale', label: 'STALE', hint: 'EOD > 2 sessions behind' },
-      unavailable: { cls: 'stale', label: 'UNAVAILABLE', hint: 'No snapshot available' },
-      // Rule 4: an UNRECOGNIZED source must not default to the most
-      // reassuring state — the value arrives untyped over the wire (Rule 6)
-      // and a renamed enum member would otherwise render a green LIVE pill.
-    }[source] ?? { cls: 'stale', label: 'UNAVAILABLE', hint: 'Unrecognized data source' };
+    SOURCE_PILL_META[source] ?? { cls: 'stale', label: 'UNAVAILABLE', hint: 'Unrecognized data source' };
   return (
     <span className={`hs-pill ${meta.cls}`} title={meta.hint}>
       {/* the pulse animation is the live-streaming affordance, only LIVE gets it */}
@@ -249,7 +254,8 @@ function Toolbar({
   setMode: (m: Mode) => void;
   expiryFilter: string;
   setExpiryFilter: (f: string) => void;
-  source: DataSource;
+  /** GammaGridResponse.data_source — plain string per schema (Rule 6). */
+  source: string;
   asOf: string;
 }) {
   const queryClient = useQueryClient();

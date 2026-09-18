@@ -21,14 +21,17 @@
  * endpoints the Live page uses, and two copies of a 60-line indicator
  * payload is exactly the drift this module exists to remove.
  *
- * Mutation-only endpoints (POST /api/journal, POST /api/backtest/replay-trades)
- * are not wired: they fire on user action, and the specs that drive them want
- * to assert on the request body themselves.
+ * Mutation endpoints fire on user action: the journal writes live in
+ * ./journal, and POST /api/backtest/replay-trades is wired below, scored
+ * from the journal mock store so a replay session's scorecard reflects its
+ * own trades. Specs that assert on request bodies register their own
+ * handlers, which win over these tables.
  */
 import type { SignalSeriesResponse } from '@/hooks/useLiveIndicators';
+import type { ReplayTradeCard, ReplayTradesResponse } from '@/hooks/useJournalChartTrades';
 import type { SimilarResponse } from '@/hooks/useSimilarSetups';
 import type { MockRoute } from './types';
-import type { JournalTradesResponse } from './journal';
+import { selectReplayRows, type JournalTradesResponse } from './journal';
 import {
   MOCK_CANDLES,
   MOCK_LIVE_INDICATORS,
@@ -182,4 +185,89 @@ export const chartsRoutes: MockRoute[] = [
     reply: () => ({ body: MOCK_SIGNAL_SERIES }),
   },
   { pattern: /^\/api\/signals\/IWM\/similar$/, reply: () => ({ body: MOCK_SIMILAR_SETUPS }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/backtest\/replay-trades$/,
+    // Scores the CALLER'S trades (trade_ids and/or session_id, like
+    // backtest.py) out of the journal mock store — a replay session's own
+    // closes must show up in its scorecard, not a static seed-1/seed-2
+    // pair (Codex, #64 verification review). A miss is the endpoint's
+    // 404 and a selector-less body its 422 — answering the seed pair
+    // with a 200 presented fabricated results as the caller's own
+    // (Codex, #66); contract.test.ts seeds a matching session before
+    // validating the typed 200.
+    reply: (req) => {
+      const b = (req.body ?? {}) as Partial<{
+        ticker: string; trade_ids: string[]; session_id: string;
+      }>;
+      if (typeof b.ticker !== 'string' || b.ticker === '') {
+        return { status: 422, body: { detail: 'ticker is required' } };
+      }
+      const hasIds = Array.isArray(b.trade_ids) && b.trade_ids.length > 0;
+      const hasSession = typeof b.session_id === 'string' && b.session_id !== '';
+      if (!hasIds && !hasSession) {
+        return { status: 422, body: { detail: 'trade_ids or session_id is required' } };
+      }
+      const rows = selectReplayRows(b.ticker, b.trade_ids, b.session_id);
+      if (rows.length === 0) {
+        return { status: 404, body: { detail: 'no matching trades found' } };
+      }
+
+      const trades = rows.map((row): ReplayTradeCard => {
+        // Open and closed-with-uncomputable-return are DIFFERENT
+        // unavailable states: a zero-entry trade closed in the session is
+        // not "still open" (Codex, #66).
+        if (row.status === 'active' || row.exit_ts == null) {
+          return {
+            id: row.id,
+            status: 'unavailable',
+            reason: 'trade still open — nothing to score',
+          };
+        }
+        if (row.return_pct == null) {
+          return {
+            id: row.id,
+            status: 'unavailable',
+            reason: 'return unavailable for this trade — nothing to score',
+          };
+        }
+        // No bar engine behind the mock: the "actual" return is the
+        // journal's own recorded close, and every field a bar comparison
+        // would produce — fill_check included — is an honest
+        // unavailable/null, never fabricated (Rule 4; Codex, #66).
+        return {
+          id: row.id,
+          status: 'ok',
+          actual_return_pct: row.return_pct,
+          fill_check: null,
+          system_signal_at_entry: { direction: null, score: null, status: 'unavailable' },
+          system_exit: null,
+          exit_edge_bps: null,
+        };
+      });
+      const scoredReturns = trades.flatMap((t) =>
+        t.status === 'ok' && t.actual_return_pct != null ? [t.actual_return_pct] : [],
+      );
+      const scoredN = scoredReturns.length;
+      const aggregate = {
+        n: trades.length,
+        scored_n: scoredN,
+        win_rate: scoredN
+          ? Number((scoredReturns.filter((r) => r > 0).length / scoredN).toFixed(4))
+          : null,
+        avg_return_pct: scoredN
+          ? Number((scoredReturns.reduce((a, r) => a + r, 0) / scoredN).toFixed(4))
+          : null,
+        system_resolved_n: 0,
+        // "No signal" means the benchmark RAN and found no setup; every
+        // mock card is system-unavailable (it never ran), so counting
+        // them here would contradict the per-row state (Codex, #66).
+        system_no_signal_n: 0,
+        system_agreement_rate: null,
+        avg_exit_edge_bps: null,
+      };
+      const body = { trades, aggregate } satisfies ReplayTradesResponse;
+      return { body };
+    },
+  },
 ];

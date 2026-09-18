@@ -10,36 +10,36 @@ export interface SearchMatch {
 }
 
 export interface TickerInfo {
-  symbol: string | null;
-  name: string | null;
-  exchange: string | null;
-  sector: string | null;
-  industry: string | null;
-  market_cap: string | null;
-  asset_type: string | null;
-  description: string | null;
+  symbol?: string | null;
+  name?: string | null;
+  exchange?: string | null;
+  sector?: string | null;
+  industry?: string | null;
+  market_cap?: string | null;
+  asset_type?: string | null;
+  description?: string | null;
 }
 
 export interface TickerQuote {
   symbol: string;
-  open: number | null;
-  high: number | null;
-  low: number | null;
-  price: number | null;
-  volume: number | null;
-  latest_trading_day: string | null;
-  previous_close: number | null;
-  change: number | null;
-  change_percent: string | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  price?: number | null;
+  volume?: number | null;
+  latest_trading_day?: string | null;
+  previous_close?: number | null;
+  change?: number | null;
+  change_percent?: string | null;
 }
 
 export interface WatchlistAddResult {
   ticker: string;
   added: boolean;
-  info: TickerInfo | null;
-  quote: TickerQuote | null;
-  /** null when the peers lookup returned nothing. */
-  peers: string[] | null;
+  info?: TickerInfo | null;
+  quote?: TickerQuote | null;
+  /** null/absent when the peers lookup returned nothing. */
+  peers?: string[] | null;
   watchlist: string[];
 }
 
@@ -47,8 +47,13 @@ export interface WatchlistAddResult {
 // Search tickers by keyword (debounced in component)
 // ---------------------------------------------------------------------------
 
+export interface TickerSearchResult {
+  keywords: string;
+  results: SearchMatch[];
+}
+
 export function useTickerSearch(keywords: string, enabled = true) {
-  return useQuery<{ keywords: string; results: SearchMatch[] }>({
+  return useQuery<TickerSearchResult>({
     queryKey: ['ticker-search', keywords],
     queryFn: async () => {
       const r = await fetch(
@@ -72,8 +77,12 @@ export interface TickerCoverage {
   daily: boolean;
 }
 
+export interface CoverageResult {
+  coverage: Record<string, TickerCoverage>;
+}
+
 export function useTickerCoverage(symbolsCsv: string, enabled = true) {
-  return useQuery<{ coverage: Record<string, TickerCoverage> }>({
+  return useQuery<CoverageResult>({
     queryKey: ['ticker-coverage', symbolsCsv],
     queryFn: async () => {
       const r = await fetch(`/api/market/coverage?symbols=${encodeURIComponent(symbolsCsv)}`);
@@ -119,8 +128,14 @@ export function useAddToWatchlist() {
 // Remove ticker from watchlist
 // ---------------------------------------------------------------------------
 
+export interface WatchlistRemoveResult {
+  ticker: string;
+  removed: boolean;
+  watchlist: string[];
+}
+
 export function useRemoveFromWatchlist() {
-  return useMutation<{ ticker: string; removed: boolean; watchlist: string[] }, Error, string>({
+  return useMutation<WatchlistRemoveResult, Error, string>({
     mutationFn: async (ticker: string) => {
       const r = await fetch(`/api/insights/watchlist/${encodeURIComponent(ticker)}`, {
         method: 'DELETE',

@@ -6,8 +6,8 @@ import {
   seedBenchmark,
   formatEdgeBps,
   styleConditionLabel,
-  type JournalRow,
   type SeedTradeRow,
+  type PlottableJournalRow,
 } from './useJournalChartTrades';
 
 describe('epochToJournalDateTime', () => {
@@ -43,13 +43,90 @@ describe('isoNaiveToEpoch', () => {
     expect(isoNaiveToEpoch('2026-07-02T13:35:00.123456+00:00')).toBe(expected);
   });
 
+  it('parses minute-precision broker-import rows (space separator, no seconds)', () => {
+    // ImportCommitTrade.entry_ts is "YYYY-MM-DD HH:MM" (journal.py) and the
+    // shared insert path stores it VERBATIM, so a local-mode read-back is
+    // genuinely minute-precision. Requiring seconds made these rows chart
+    // as NaN — silently unplottable (Codex, #64 verification review).
+    expect(isoNaiveToEpoch('2026-07-02 13:35')).toBe(expected);
+  });
+
+  it('parses minute-precision with a "T" separator', () => {
+    expect(isoNaiveToEpoch('2026-07-02T13:35')).toBe(expected);
+  });
+
   it('returns NaN for an unparseable string', () => {
     expect(Number.isNaN(isoNaiveToEpoch('not-a-date'))).toBe(true);
+  });
+
+  it('returns NaN when the minute is truncated', () => {
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13'))).toBe(true);
+  });
+
+  it('rejects malformed partial seconds instead of silently plotting :00', () => {
+    // The optional-seconds group must not backtrack "13:35:4" into a valid
+    // 13:35 — the required-seconds regex rejected it, and accepting the
+    // prefix would plot a corrupt timestamp as a real bar (Codex, #66).
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:4'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02T13:35:4'))).toBe(true);
+    // A run-on minute is equally malformed.
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:355'))).toBe(true);
+  });
+
+  it('rejects any tail that is not seconds, a fraction, or an offset', () => {
+    // The valid suffix forms are enumerated, so corrupt tails cannot ride
+    // a valid minute prefix into the chart (Codex, #66): only end-of-
+    // string, ":ss", ":ss.ffffff" and a "+HH:MM"/"-HH:MM" offset parse.
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:x'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35junk'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35.abc'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:00garbage'))).toBe(true);
+    // The negative-offset Cloud SQL form still parses.
+    expect(isoNaiveToEpoch('2026-07-02 13:35:00-05:00')).toBe(expected);
+  });
+
+  it('rejects out-of-range fields instead of letting Date.UTC normalize them', () => {
+    // Date.UTC silently rolls "13:99" over to 14:39, plotting a corrupt
+    // timestamp on the WRONG bar rather than not at all (Codex, #66).
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:99'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 24:00'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:99'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-13-02 13:35'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-32 13:35'))).toBe(true);
+  });
+
+  it('rejects calendar-invalid days the per-field bounds cannot see', () => {
+    // Feb 29 in a non-leap year passes every independent bound but
+    // Date.UTC rolls it to Mar 1 — the wrong bar again (Codex, #66).
+    // The round-trip check catches it; real leap days still parse.
+    expect(Number.isNaN(isoNaiveToEpoch('2026-02-29 13:35'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2025-02-29 13:35'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-04-31 13:35'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-00 13:35'))).toBe(true);
+    expect(isoNaiveToEpoch('2024-02-29 13:35')).toBe(
+      Math.floor(Date.UTC(2024, 1, 29, 13, 35, 0) / 1000),
+    );
+    expect(isoNaiveToEpoch('2028-02-29 13:35')).toBe(
+      Math.floor(Date.UTC(2028, 1, 29, 13, 35, 0) / 1000),
+    );
+    expect(isoNaiveToEpoch('2026-02-28 13:35')).toBe(
+      Math.floor(Date.UTC(2026, 1, 28, 13, 35, 0) / 1000),
+    );
+  });
+
+  it('rejects malformed offsets the round-trip cannot see', () => {
+    // The offset is discarded by design (naive-ET convention), so the
+    // round-trip check never sees it — the regex itself must bound the
+    // offset fields, or "+00:99" rides a valid wall clock onto the chart
+    // (Codex, #66).
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35+00:99'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:00+24:00'))).toBe(true);
+    expect(Number.isNaN(isoNaiveToEpoch('2026-07-02 13:35:00+0:00'))).toBe(true);
   });
 });
 
 describe('journalRowToTradeEntry', () => {
-  const baseRow: JournalRow = {
+  const baseRow: PlottableJournalRow = {
     id: 'abc-123',
     ticker: 'IWM',
     direction: 'CALL',
@@ -88,7 +165,7 @@ describe('journalRowToTradeEntry', () => {
   });
 
   it('derives pnl/pnlPercent for a closed CALL from server return_pct, sign preserved', () => {
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       ...baseRow,
       exit_ts: '2026-07-02T13:40:00',
       exit_price: 224.5,
@@ -102,7 +179,7 @@ describe('journalRowToTradeEntry', () => {
   });
 
   it('derives pnl/pnlPercent for a closed PUT (return_pct already negated server-side)', () => {
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       ...baseRow,
       direction: 'PUT',
       exit_ts: '2026-07-02T13:40:00',
@@ -120,7 +197,7 @@ describe('journalRowToTradeEntry', () => {
   });
 
   it('defaults missing take_profits/stop_loss/notes/status/session_id on a legacy row', () => {
-    const legacyRow: JournalRow = {
+    const legacyRow: PlottableJournalRow = {
       id: 'legacy-1',
       ticker: 'SPY',
       direction: 'PUT',
@@ -141,7 +218,7 @@ describe('journalRowToTradeEntry', () => {
   });
 
   it('derives status from exit_ts + return_pct sign when status is absent but the trade is closed', () => {
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       id: 'legacy-2',
       ticker: 'QQQ',
       direction: 'CALL',
@@ -155,11 +232,40 @@ describe('journalRowToTradeEntry', () => {
     expect(t.status).toBe('loss');
   });
 
+  it('keeps a closed trade with an unavailable return as "closed", never breakeven', () => {
+    // journal.py's `_derive_status` (stocks #1115) returns 'closed' for an
+    // exited trade whose return could not be computed (zero entry price).
+    // Mapping that to 'breakeven' fabricates a flat result the user never
+    // had (Rule 4; Codex, #66) — both when the server says so and when a
+    // legacy row has no status and the client re-derives it.
+    const closedNull: PlottableJournalRow = {
+      id: 'zero-entry',
+      ticker: 'IWM',
+      direction: 'CALL',
+      entry_ts: '2026-06-18T10:00:00',
+      exit_ts: '2026-06-18T15:00:00',
+      entry_price: 0,
+      exit_price: 5,
+      return_pct: null,
+    };
+    const fromServer = journalRowToTradeEntry({ ...closedNull, status: 'closed' });
+    expect(fromServer.status).toBe('closed');
+    expect(fromServer.pnl).toBeUndefined();
+    expect(fromServer.pnlPercent).toBeUndefined();
+    const rederived = journalRowToTradeEntry(closedNull);
+    expect(rederived.status).toBe('closed');
+    expect(rederived.pnl).toBeUndefined();
+    // A genuine flat close is still breakeven: 0 is a real return here.
+    expect(journalRowToTradeEntry({ ...closedNull, entry_price: 5, return_pct: 0 }).status).toBe(
+      'breakeven',
+    );
+  });
+
   // task-alerts-enrichment (2026-07-12) — a matched pipeline row's
   // time_stop_minutes passes through to TradeEntry.timeStopMinutes
   // untouched (structural passthrough, not a fabricated financial value).
   it('passes through time_stop_minutes for a matched pipeline row (no stop price)', () => {
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       ...baseRow,
       source: 'pipeline',
       stop_loss: null,
@@ -191,7 +297,7 @@ describe('journalRowToTradeEntry', () => {
     const { date, time } = epochToJournalDateTime(originalEntryTime);
     // Mirrors the local-fallback entry_ts format journal.py's create_trade
     // builds: `f"{entry_date}T{entry_time}:00"`.
-    const row: JournalRow = {
+    const row: PlottableJournalRow = {
       ...baseRow,
       entry_ts: `${date}T${time}:00`,
     };

@@ -20,7 +20,7 @@ export interface SelectedContract {
   dte: number;
 }
 
-// ContractDrilldown — Flowseeker "Contract Drilldown": a contract header, a
+// ContractDrilldown — Flow "Contract Drilldown": a contract header, a
 // stats strip, a Bid↔Ask chain-ratio bar, a volume-over-time chart (bars) with
 // an overlaid average-fill price line, and a per-time-bucket detail table.
 // Built from a clearly-labeled mock (src/data/contractDrilldownMock.ts) — there

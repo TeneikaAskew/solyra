@@ -26,10 +26,15 @@ export interface MarketSnapshot {
   indicators: Indicators;
 }
 
-export type EvalResult =
-  | { status: 'met'; detail: string }
-  | { status: 'unmet'; detail: string }
-  | { status: 'unknown'; reason: string };
+/** PlaybookEvalResult on the wire: `status` is the only guaranteed key —
+ *  the schema declares `detail` and `reason` optional-nullable (model_dump
+ *  with null defaults fills whichever the evaluator produced). Render
+ *  sites treat a missing string as "no explanation", never invent one. */
+export interface EvalResult {
+  status: 'met' | 'unmet' | 'unknown';
+  detail?: string | null;
+  reason?: string | null;
+}
 
 /** Compute ORB high/low (first 30 min of RTH) from intraday bars. */
 export function computeORB(bars: Bar[]): { high: number | null; low: number | null } {
@@ -92,7 +97,7 @@ export function buildSnapshot(params: {
     orbLow: orb.low,
     lastBar: lastBar ?? null,
     minutesSinceOpen: minutesSinceOpen(lastBar ?? null),
-    stochKPrev: params.indicators.stochKPrev,
+    stochKPrev: params.indicators.stochKPrev ?? null,
     indicators: params.indicators,
   };
 }

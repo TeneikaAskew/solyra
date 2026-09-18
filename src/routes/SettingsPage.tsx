@@ -28,7 +28,7 @@ import { EMPTY_PROFILE, type UserProfile } from '@/types/profile';
 
 /** Accent swatch colors (match index.css .accent-* palettes; blue = brand). */
 const ACCENT_SWATCH: Record<Accent, string> = {
-  blue: '#8bceff', amber: '#ffb86b', violet: '#b58bff', cyan: '#5ee3e1',
+  dawn: '#ff7a4d', blue: '#8bceff', amber: '#ffb86b', violet: '#b58bff', cyan: '#5ee3e1',
   teal: '#14b8a6', pink: '#ff7eb9', magenta: '#e879f9', orange: '#fb923c',
   yellow: '#facc15', indigo: '#818cf8', rose: '#f472b6',
 };

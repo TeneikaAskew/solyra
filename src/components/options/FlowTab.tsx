@@ -13,7 +13,7 @@ import {
 } from '@/data/optionsFlowMock';
 import type { SelectedContract } from '@/components/options/ContractDrilldown';
 
-// FlowseekerTab — live-options-flow UI built entirely from clearly-labeled
+// FlowTab — live-options-flow UI built entirely from clearly-labeled
 // mock placeholder data (src/data/optionsFlowMock.ts). There is NO backend
 // flow-tape endpoint; the demo banner makes that explicit.
 
@@ -95,7 +95,7 @@ function applyFilter(rows: FlowRow[], filter: FlowFilter): FlowRow[] {
   }
 }
 
-export default function FlowseekerTab({
+export default function FlowTab({
   onSelectContract,
 }: {
   /** When provided, feed rows become clickable and drill into the contract. */

@@ -9,11 +9,16 @@ import type {
 // Brief direction surface — the premarket-brief's view of the same
 // ticker, fetched alongside the insight report so the UI can flag
 // when the two house views diverge. Audit 2026-05-08 G.P1.8.
+/** DashboardBriefResponse declares every field optional-nullable and
+ *  leaves ftfc_direction untyped — narrow at render, not here (#56). */
 export interface BriefDirection {
-  ticker: string;
-  bias: 'bullish' | 'bearish' | 'neutral';
-  signal_status: string | null;
-  ftfc_direction: 'bullish' | 'bearish' | 'mixed' | null;
+  ticker?: string | null;
+  /** 'bullish' | 'bearish' | 'neutral' today; plain string per schema. */
+  bias?: string | null;
+  /** A string today; schema says unknown — narrow at render. */
+  signal_status?: unknown;
+  /** 'bullish' | 'bearish' | 'mixed' today; schema says unknown. */
+  ftfc_direction?: unknown;
 }
 
 export function useBriefDirection(ticker: string) {

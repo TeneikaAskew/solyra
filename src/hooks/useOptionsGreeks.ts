@@ -7,14 +7,19 @@ import { useQuery } from '@tanstack/react-query';
 // The frontend never duplicates this math — if you find yourself needing
 // a number the server doesn't return, add it to the endpoint instead.
 
+/** `_OptionRecord`/`OptionContract` per the schema (#56): only `strike`
+ *  and `type` are guaranteed, `type` is a plain string ('call' | 'put'
+ *  today), and every greek/OI/volume field is optional-nullable. The
+ *  greeks REQUEST schema (`_OptionRecord`) accepts the same optionals, so
+ *  a fetched row forwards unchanged. */
 export interface OptionRecord {
-  type: 'call' | 'put';
+  type: string;
   strike: number;
-  open_interest: number | null;
-  gamma: number | null;
-  vega: number | null;
-  delta: number | null;
-  volume: number | null;
+  open_interest?: number | null;
+  gamma?: number | null;
+  vega?: number | null;
+  delta?: number | null;
+  volume?: number | null;
 }
 
 /**
@@ -58,24 +63,25 @@ export interface GEXByStrike {
 export interface OptionsMetrics {
   total_gex: number;
   total_vex: number;
-  zero_gamma: number | null;
-  max_pain: number | null;
-  implied_move: number | null;
+  zero_gamma?: number | null;
+  max_pain?: number | null;
+  implied_move?: number | null;
   put_call_ratio: number;
 }
 
 export interface StrikeNode {
-  type: 'king' | 'gatekeeper' | 'midpoint';
+  /** 'king' | 'gatekeeper' | 'midpoint' today; plain string per schema. */
+  type: string;
   strike: number;
   gamma: number;
   distance_from_spot: number;
   distance_percent: number;
-  lower_bound?: number;
-  upper_bound?: number;
+  lower_bound?: number | null;
+  upper_bound?: number | null;
 }
 
 export interface NodeResult {
-  kingNode: StrikeNode | null;
+  kingNode?: StrikeNode | null;
   gatekeepers: StrikeNode[];
   midpoints: StrikeNode[];
   allNodes: StrikeNode[];

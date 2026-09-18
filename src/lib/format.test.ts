@@ -18,6 +18,7 @@ import {
   fmtPrice,
   fmtRatioPct,
   fmtSigned,
+  fmtSignedMoney,
   toneOf,
   responseErrorMessage,
 } from './format';
@@ -29,6 +30,7 @@ describe('Rule 4 — every formatter renders missing input as the em-dash, never
     ['fmtMoney', fmtMoney],
     ['fmtPrice', fmtPrice],
     ['fmtSigned', fmtSigned],
+    ['fmtSignedMoney', fmtSignedMoney],
     ['fmtPct', fmtPct],
     ['fmtRatioPct', fmtRatioPct],
     ['fmtGex', fmtGex],
@@ -83,6 +85,14 @@ describe('fmtSigned', () => {
     expect(fmtSigned(1234)).toBe('+1,234');
     expect(fmtSigned(-56)).toBe('-56');
     expect(fmtSigned(0)).toBe('+0');
+  });
+});
+
+describe('fmtSignedMoney', () => {
+  it('puts the sign before the dollar sign, two decimals', () => {
+    expect(fmtSignedMoney(12.5)).toBe('+$12.50');
+    expect(fmtSignedMoney(-3)).toBe('-$3.00');
+    expect(fmtSignedMoney(0)).toBe('+$0.00');
   });
 });
 

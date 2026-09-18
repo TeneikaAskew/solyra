@@ -20,6 +20,7 @@ import {
   useStructureBrief,
   type StructureBriefCell,
   type StructureBriefResponse,
+  asStratClass,
 } from '@/hooks/useAdmin';
 
 // Verbatim scope statement that MUST appear above the cells. Do not
@@ -287,8 +288,8 @@ export function Cell({ cell }: { cell: StructureBriefCell }) {
 
 
 function TopCallLine({ cell }: { cell: StructureBriefCell }) {
-  if (cell.top_class == null || cell.top_prob == null) return null;
-  const cls = cell.top_class;
+  const cls = asStratClass(cell.top_class);
+  if (cls == null || cell.top_prob == null) return null;
   const pct = (cell.top_prob * 100).toFixed(0);
   return (
     <div className="mb-2 text-[var(--color-text-primary)]">

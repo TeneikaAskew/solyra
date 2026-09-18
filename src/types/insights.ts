@@ -93,25 +93,38 @@ export interface InsightReport {
 }
 
 // GET /api/insights/report/{ticker}
+// ReportEnvelope declares cost/latency/run_kind optional-nullable and
+// `report`/`model_versions` as open JSONB objects; the scalar half is
+// pair-checked in src/types/assignability.ts (report excluded there —
+// `InsightReport` is the app's structural claim over JSONB the schema
+// cannot type in either direction; render sites guard).
 export interface InsightReportEnvelope {
   ticker: string;
   as_of: string;
   report: InsightReport;
-  model_versions: Record<string, string>;
-  cost_usd: number | null;
-  latency_ms: number | null;
+  model_versions: Record<string, unknown>;
+  cost_usd?: number | null;
+  latency_ms?: number | null;
+  run_kind?: string | null;
 }
 
 // GET /api/insights/report/{ticker}/history
 /** insights.py _fetch_report_history: every field but `id` comes from a
- *  JSONB lookup that yields NULL when the stored report lacks the key. */
+ *  JSONB lookup that yields NULL when the stored report lacks the key.
+ *
+ *  Wire-claiming type (useInsights fetches straight into it), so it must
+ *  admit everything the schema permits (issue #56): the endpoint serializes
+ *  with exclude_unset, making every non-id key omittable, and the values
+ *  come from STORED report JSON — `Direction`/`Conviction` constrain what
+ *  agents write today, not what history rows may hold. The renderers
+ *  already treat both as open strings (unknown direction → neutral tag). */
 export interface InsightHistoryRow {
   id: string;
-  as_of: string | null;
-  direction: Direction | null;
-  conviction: Conviction | null;
-  thesis: string | null;
-  cost_usd: number | null;
+  as_of?: string | null;
+  direction?: string | null;
+  conviction?: string | null;
+  thesis?: string | null;
+  cost_usd?: number | null;
 }
 
 export interface InsightHistoryResponse {
@@ -128,13 +141,15 @@ export interface RefreshResponse {
 }
 
 // GET /api/insights/runs/{run_id}
+// The nullable fields are also omittable: the schema marks them optional
+// and the router serializes with exclude_unset (issue #56).
 export interface RunStatus {
   id: string;
   ticker: string;
   status: 'queued' | 'running' | 'done' | 'failed';
   trigger: string;
-  started_at: string | null;
-  finished_at: string | null;
-  error: string | null;
-  report_id: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  report_id?: string | null;
 }

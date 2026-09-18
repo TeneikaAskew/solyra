@@ -107,7 +107,7 @@ test.describe('Settings — appearance write-through', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await expect
       .poll(() => prefPuts.at(-1), { timeout: 5_000 })
-      .toEqual({ theme: 'light', nav_pattern: 'top-tabs', density: 'dense', accent: 'blue' });
+      .toEqual({ theme: 'light', nav_pattern: 'top-tabs', density: 'dense', accent: 'dawn' });
   });
 
   test('navigation toggle persists the shell choice and writes through', async ({ page }) => {
@@ -121,7 +121,7 @@ test.describe('Settings — appearance write-through', () => {
 
     await expect
       .poll(() => prefPuts.at(-1), { timeout: 5_000 })
-      .toEqual({ theme: 'dark', nav_pattern: 'sidebar', density: 'dense', accent: 'blue' });
+      .toEqual({ theme: 'dark', nav_pattern: 'sidebar', density: 'dense', accent: 'dawn' });
     const persisted = await page.evaluate(() =>
       JSON.parse(window.localStorage.getItem('platform-shell-settings') ?? '{}'),
     );
@@ -139,7 +139,7 @@ test.describe('Settings — appearance write-through', () => {
     await expect(page.locator('body')).toHaveClass(/density-comfy/);
     await expect
       .poll(() => prefPuts.at(-1), { timeout: 5_000 })
-      .toEqual({ theme: 'dark', nav_pattern: 'top-tabs', density: 'comfy', accent: 'blue' });
+      .toEqual({ theme: 'dark', nav_pattern: 'top-tabs', density: 'comfy', accent: 'dawn' });
 
     await section(page, 'Accent').getByRole('button', { name: 'violet' }).click();
     await expect(page.locator('body')).toHaveClass(/accent-violet/);

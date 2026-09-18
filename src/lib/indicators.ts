@@ -16,28 +16,32 @@ export interface Bar {
 }
 
 export interface Indicators {
-  ema9: number | null;
-  ema20: number | null;
-  ema50: number | null;
-  rsi: number | null;
-  stochK: number | null;
-  stochD: number | null;
-  atr: number | null;
-  vwap: number | null;
-  stochKPrev: number | null;
+  // Every key optional per the API schema: an omitted indicator and a null
+  // one both mean "not computable for this window".
+  ema9?: number | null;
+  ema20?: number | null;
+  ema50?: number | null;
+  rsi?: number | null;
+  stochK?: number | null;
+  stochD?: number | null;
+  atr?: number | null;
+  vwap?: number | null;
+  stochKPrev?: number | null;
 }
 
 export interface SignalCondition {
   id: string;
   label: string;
   met: boolean;
-  current: number | null;
-  threshold: number | null;
-  operator: '>' | '<';
+  current?: number | null;
+  threshold?: number | null;
+  /** '>' | '<' today; plain string per schema. */
+  operator: string;
 }
 
 export interface Signal {
-  direction: 'CALL' | 'PUT';
+  /** 'CALL' | 'PUT' today; plain string per schema. */
+  direction: string;
   conditions: SignalCondition[];
   strength: number;
   fired: boolean;

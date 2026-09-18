@@ -25,6 +25,7 @@ const ROUTES: Array<{ path: string; heading: RegExp }> = [
   { path: '/signals',   heading: /signals?/i },
   { path: '/journal',   heading: /journal/i },
   { path: '/insights',  heading: /insights?/i },
+  { path: '/settings',  heading: /settings/i },
   { path: '/help',      heading: /help/i },
 ];
 
@@ -72,6 +73,16 @@ test.describe('Navigation smoke', () => {
     await expect(page.locator('a[href="/playbook"]')).toBeVisible();
     await expect(page.locator('a[href="/reports"]')).toBeVisible();
     await expect(page.locator('a[href="/journal"]')).toBeVisible();
+  });
+
+  test('the shell is branded Solyra — wordmark and document title', async ({ page }) => {
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    // One <Brand /> component backs the shell, the sign-in screen and
+    // /auth/action, so this also guards the page a Firebase action link lands
+    // on: a reset email branded Solyra must not open a page branded anything
+    // else.
+    await expect(page.getByTestId('brand-wordmark').first()).toHaveText('Solyra');
+    await expect(page).toHaveTitle('Solyra');
   });
 
   test('market session badge is truthful — CLOSED when the market is closed', async ({ page }) => {
@@ -139,7 +150,7 @@ test.describe('Navigation smoke', () => {
 
 // ── SwingMode toolbar (options page) — Refresh must refetch the live grid,
 // Glossary must navigate to /help. The default ticker (IWM, from tickerStore)
-// and default Heatseeker/Swing mode drive the /api/options/IWM/grid live path.
+// and default Gamma Map/Swing mode drive the /api/options/IWM/grid live path.
 test.describe('SwingMode toolbar', () => {
   const MOCK_DATES = { ticker: 'IWM', dates: ['2026-04-25', '2026-04-24'] };
 
