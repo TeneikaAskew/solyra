@@ -357,8 +357,8 @@ function ReportView({
       <HeaderCard
         report={report}
         asOf={envelope.as_of}
-        costUsd={envelope.cost_usd}
-        latencyMs={envelope.latency_ms}
+        costUsd={envelope.cost_usd ?? null}
+        latencyMs={envelope.latency_ms ?? null}
       />
       <BriefVsInsightsCard
         ticker={ticker}

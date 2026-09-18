@@ -957,6 +957,20 @@ describe('API contract (stocks OpenAPI snapshot)', () => {
   });
 
   it('every mock payload for a typed 200 response matches its response schema (no undeclared fields)', () => {
+    // POST /api/backtest/replay-trades mirrors backtest.py's 404 on a
+    // miss, so its typed 200 can only be validated against a session that
+    // exists in the journal mock store — create and close one trade
+    // through the same mock routes the app drives (module state, same
+    // engine instance as the loop below).
+    const seeded = resolveMock('POST', new URL('/api/journal/trades', 'http://mock.local'), {
+      ticker: 'IWM', direction: 'CALL', entry_date: '2026-04-24',
+      entry_time: '10:00', entry_price: 218.4, source: 'replay', session_id: 'sess-1',
+    });
+    const seededId = (JSON.parse(seeded!.payload) as { id: string }).id;
+    resolveMock('PATCH', new URL(`/api/journal/trades/${seededId}`, 'http://mock.local'), {
+      exit_date: '2026-04-24', exit_time: '15:10', exit_price: 220.1,
+    });
+
     const violations: string[] = [];
     const covered: string[] = [];
     const uncovered: string[] = [];

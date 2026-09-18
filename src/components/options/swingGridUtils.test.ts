@@ -118,4 +118,16 @@ describe('estimateSpotStrikeFromDeltas', () => {
   it('returns null when no contract has a usable delta', () => {
     expect(estimateSpotStrikeFromDeltas([o(650, 'call', null), o(660, 'put', null)])).toBeNull();
   });
+  it('skips unrecognized contract types instead of scoring them as puts', () => {
+    // `type` is a plain string on the wire; a non-call/put row with a delta
+    // near -0.5 must not win the nearest-ATM pick and anchor the greeks
+    // request to a fabricated spot (Codex, #66).
+    expect(
+      estimateSpotStrikeFromDeltas([
+        { strike: 900, type: 'straddle', delta: -0.5 },
+        { strike: 718, type: 'call', delta: 0.6 },
+      ]),
+    ).toBe(718);
+    expect(estimateSpotStrikeFromDeltas([{ strike: 900, type: 'straddle', delta: -0.5 }])).toBeNull();
+  });
 });

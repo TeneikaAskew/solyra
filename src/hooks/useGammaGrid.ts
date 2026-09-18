@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { SpotEstimate, GammaRegime } from './useGammaLevels';
+import type { SpotEstimate } from './useGammaLevels';
 
 // ── Shapes returned by GET /api/options/{ticker}/grid (and /{date}/grid) ─────
 //
@@ -46,17 +46,25 @@ export type GridDataSource =
   | 'stale_fallback'
   | 'unavailable';
 
+/** GammaGridResponse per the schema (#56): the unavailable envelope nulls
+ *  snapshot/spot/balance/flip and adds `reason`, and every one of those is
+ *  optional-nullable on the wire; `data_source`/`regime` are plain strings
+ *  the consumers compare against the known values. */
 export interface GammaGridSummary {
   ticker: string;
-  snapshot_date: string | null;
-  snapshot_ts: string | null;
-  data_source: GridDataSource;
-  /** null on the unavailable envelope (routers/grid.py returns spot: None
-   *  there) — a fabricated $0 spot would read as a real quote (Rule 4). */
-  spot: SpotEstimate | null;
-  gamma_balance: number | null;
-  gamma_flip: number | null;
-  regime: GammaRegime;
+  snapshot_date?: string | null;
+  snapshot_ts?: string | null;
+  /** `GridDataSource` today; plain string per schema. */
+  data_source: string;
+  /** null/absent on the unavailable envelope (routers/grid.py returns
+   *  spot: None there) — a fabricated $0 spot would read as a real quote
+   *  (Rule 4). */
+  spot?: SpotEstimate | null;
+  gamma_balance?: number | null;
+  gamma_flip?: number | null;
+  /** `GammaRegime` today; plain string per schema — narrow with
+   *  `asGammaRegime` (useGammaLevels) where a union is needed. */
+  regime: string;
   total_gex: number;
   total_vex: number;
   cells: GammaGridCell[];
@@ -64,7 +72,7 @@ export interface GammaGridSummary {
   strikes: number[]; // ascending: row headers
   window_pct: number;
   warnings: string[];
-  reason?: string; // present on the unavailable envelope
+  reason?: string | null; // present on the unavailable envelope
 }
 
 async function parseError(r: Response, fallback: string): Promise<string> {
