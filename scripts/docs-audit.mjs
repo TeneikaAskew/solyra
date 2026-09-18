@@ -355,7 +355,15 @@ export function splitRow(line) {
 export function loadRegistry(text) {
   const rows = [];
   let inRegistry = false;
-  for (const raw of text.split('\n')) {
+  // A FENCED example of a registry row is documentation, not a rule. Without
+  // this the example registered as live -- producing missing-path findings for
+  // paths it never meant to declare -- and a heading-shaped line inside the
+  // same example could switch `inRegistry` off and skip every real row after
+  // the fence.
+  const allLines = text.split('\n');
+  const fenced = fencedLines(allLines);
+  for (const [i, raw] of allLines.entries()) {
+    if (fenced.has(i)) continue;
     const line = raw.trim();
     if (line.startsWith('#')) {
       inRegistry = line.startsWith(REGISTRY_HEADING);
@@ -645,15 +653,27 @@ export function ownedLines(text, specs) {
       // mixed Class A document left the second silently classified as
       // hand-written prose, so findings inside machine-written content were
       // routed to the wrong owner.
-      let from = 0;
-      for (;;) {
-        const lo = lines.findIndex((l, n) => n >= from && begin.test(l));
-        if (lo < 0) break;
-        const hi = lines.findIndex((l, n) => n > lo && end.test(l));
-        if (hi < 0) break;
-        for (let n = lo + 1; n <= hi + 1; n += 1) owned.add(n);
+      // Delimiter BALANCE, not first-opener-to-next-closer. A block that
+      // repeats its opener before a single closer paired the first with that
+      // closer, set `hit`, and never noticed the second -- so an `exhaustive`
+      // Class A file could report no findings at all and classify the whole
+      // malformed span as generated.
+      let open = -1;
+      let nested = false;
+      lines.forEach((l, n) => {
+        if (begin.test(l)) {
+          if (open >= 0) nested = true;
+          else open = n;
+        } else if (end.test(l) && open >= 0) {
+          for (let k = open + 1; k <= n + 1; k += 1) owned.add(k);
+          hit = true;
+          open = -1;
+        }
+      });
+      if (nested || open >= 0) {
+        orphans.push(`${spec}: ${nested ? 'a repeated opener before its closer'
+          : 'an opener with no closer'}`);
         hit = true;
-        from = hi + 1;
       }
     } else if (spec.startsWith('line:')) {
       // A registry typo is bad INPUT, not a documentation finding. new RegExp
@@ -798,7 +818,12 @@ export function markerWindow(lines, limit = 40) {
   if (h1 === null) return { from: 0, to: Math.min(limit, lines.length) };
   let stop = lines.length;
   for (let j = h1 + 1; j < Math.min(h1 + 1 + limit, lines.length); j += 1) {
-    if (lines[j].startsWith('#')) { stop = j; break; }
+    // The same optional indentation H1_RE admits. Without it, a later
+    // section written `  ## Thing` did not end the document-level window, so a
+    // marker inside that section satisfied findMarker -- suppressing the
+    // missing top-level provenance finding and making --stamp update the
+    // section's marker instead of inserting the document's.
+    if (/^ {0,3}#/.test(lines[j])) { stop = j; break; }
   }
   return { from: h1 + 1, to: Math.min(stop, h1 + 1 + limit, lines.length) };
 }
@@ -925,6 +950,25 @@ export function fencedLines(lines) {
     }
   });
   return fenced;
+}
+
+/**
+ * Every marker in the document-level window, not just the first.
+ *
+ * `findMarker` stops at the first match, which is right for READING a
+ * document's provenance and wrong for judging it: a second marker below
+ * carries a different date, owner or reviewed-against SHA and nothing said so.
+ * `--stamp` updated the first, reported success, and left the contradiction.
+ */
+export function findMarkers(lines) {
+  const { from, to } = markerWindow(lines);
+  const fenced = fencedLines(lines);
+  const out = [];
+  for (let i = from; i < to; i += 1) {
+    if (fenced.has(i) || (lines[i] && /^\s/.test(lines[i]))) continue;
+    if (MARKER_RE.test(lines[i]) || LEGACY_MARKER_RE.test(lines[i])) out.push(i);
+  }
+  return out;
 }
 
 export function findMarker(lines) {
@@ -1343,7 +1387,15 @@ export function headingAnchors(text) {
     // `## Install ##` renders as `Install`, and GitHub's anchor is `install`.
     // Passing `Install ##` to headingSlug recorded `install-`, so a valid link
     // to `#install` was reported dead.
-    const m = /^#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(line);
+    // Indented ATX, and setext (`Title` over `===` or `---`). A column-zero
+    // ATX-only scan recorded no anchor for either, so a valid link to one was
+    // emitted as a dead-anchor P2 and could fail --check.
+    const next = lines[i + 1];
+    const setext = line.trim() && !fenced.has(i + 1)
+      && /^ {0,3}(=+|-{2,})\s*$/.test(next ?? '') && !/^ {0,3}#/.test(line);
+    const m = setext
+      ? [null, line.trim()]
+      : /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(line);
     if (!m) continue;
     const base = headingSlug(m[1]);
     // Advance until the slug is unused, rather than trusting a per-base
@@ -1413,7 +1465,14 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
     const m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(\S+)/.exec(line);
-    if (m) refDefs.set(m[1].trim().toLowerCase(), { target: m[2].replace(/^<|>$/g, ''), line: i + 1 });
+    // The FIRST definition wins, as CommonMark resolves it. Overwriting with
+    // the last emitted a false dead-link when the first destination exists and
+    // the duplicate is stale, and missed the link readers follow in the
+    // reverse order.
+    const label = m && m[1].trim().toLowerCase();
+    if (m && !refDefs.has(label)) {
+      refDefs.set(label, { target: m[2].replace(/^<|>$/g, ''), line: i + 1 });
+    }
   });
 
   // One destination, validated exactly as an inline link's is: same tracked
@@ -1679,6 +1738,16 @@ export function derive(derivation, { exec = run } = {}) {
     // resolve, which took the whole audit to exit 2 before any report.
     // Exit 1 is git grep's "no matches", and a real answer. Everything else
     // aborts the run.
+    // ...and exit 1 is ALSO what a deleted or mistyped path gives, so a
+    // derivation naming one silently derived zero: a false clean result for a
+    // document claiming zero, and a fabricated count finding otherwise. The
+    // paths are checked first, so exit 1 can only mean "no matches".
+    for (const p of paths) {
+      if (!fs.existsSync(path.join(REPO, p))) {
+        throw new AuditError(`derivation path \`${p}\` does not exist, so `
+          + `\`${derivation}\` would derive 0 from a search that never ran`);
+      }
+    }
     const out = exec('git', ['grep', flag, pattern, '--', ...paths], { okExitCodes: [1] });
     return out.trim() ? out.trim().split('\n').length : 0;
   }
@@ -1738,6 +1807,14 @@ export function checkClaims(claims, { exec = run } = {}) {
     let hits = 0;
     for (const m of text.matchAll(re)) {
       hits += 1;
+      // A pattern that matches prose without group 1 made `Number(undefined)`
+      // NaN, and the audit emitted a fabricated count-claim finding with exit
+      // 1 rather than treating the registry row as invalid input with exit 2.
+      if (m[1] === undefined || !/^\d+$/.test(m[1].trim())) {
+        throw new AuditError(`claim pattern \`${pattern}\` for ${doc} matched, but capture `
+          + `group 1 is ${JSON.stringify(m[1])} rather than a number; the claim it `
+          + 'watches is whatever group 1 holds');
+      }
       const claimed = Number(m[1]);
       if (claimed !== actual) {
         const line = text.slice(0, m.index).split('\n').length;
@@ -1775,8 +1852,15 @@ const CONTRACT_GENERATED_RE =
 const GENERATED_TYPES = 'src/types/stocksOpenApi.gen.d.ts';
 
 export function checkContractSync({ spawn = spawnSync } = {}) {
+  // STOCKS_OPENAPI_FILE / _REF would point sync-api-contract at a local file
+  // or a non-main ref while this check reports the invariant as "matches
+  // stocks main" -- a clean Class A result for a snapshot that is stale
+  // against main. The audit states the upstream, so it also chooses it.
+  const env = { ...process.env };
+  delete env.STOCKS_OPENAPI_FILE;
+  delete env.STOCKS_OPENAPI_REF;
   const res = spawn('node', ['scripts/sync-api-contract.mjs', '--check'],
-    { cwd: REPO, encoding: 'utf8' });
+    { cwd: REPO, encoding: 'utf8', env });
   const why = `${res.stdout ?? ''}${res.stderr ?? ''}`.trim();
   if (res.error) throw new AuditError(`contract:check could not run: ${res.error.message}`);
   if (res.status === 0) return [];
@@ -2084,9 +2168,16 @@ export function main(argv) {
 
     if (!stampable) continue;
 
-    const prev = findMarker(text.split('\n'));
+    const docLinesForMarker = text.split('\n');
+    const prev = findMarker(docLinesForMarker);
+    const allMarkers = findMarkers(docLinesForMarker);
     if (!prev) {
       findings.push({ check: 'marker', doc, severity: 'P2', detail: 'no review marker' });
+    } else if (allMarkers.length > 1) {
+      findings.push({ check: 'marker', doc, severity: 'P2',
+        detail: `${allMarkers.length} review markers between the H1 and the next `
+              + 'section; they can disagree about date, owner or reviewed-against SHA, '
+              + 'and --stamp updates only the first' });
     } else {
       if (prev.legacy) {
         findings.push({ check: 'marker', doc, severity: 'P3',

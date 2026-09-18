@@ -49,6 +49,7 @@ import {
   derive,
   docLines,
   findMarker,
+  findMarkers,
   h1Index,
   documentSet,
   extraSegments,
@@ -1881,6 +1882,23 @@ describe('a whole run over a fixture repository', () => {
     expect(bad[0].severity).toBe('P2');
   });
 
+  it('reports two review markers through main()', () => {
+    // The helper had a test; the CALL SITE did not, and a mutation disabling
+    // the branch in main() left the suite green. It also had `lines` out of
+    // scope there, which only spawning the script could catch.
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'),
+      '# D\n\n**Last reviewed:** 2026-01-01\n**Last reviewed:** 2026-02-02\n\nbody\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const res = runAudit(dir);
+    expect(res.stdout).toBeTruthy();
+    const report = JSON.parse(res.stdout);
+    const dup = report.findings.filter((f) => /2 review markers/.test(f.detail));
+    expect(dup).toHaveLength(1);
+    expect(dup[0].severity).toBe('P2');
+  });
+
   it('reports a future last-scanned date through main()', () => {
     const dir = fixture();
     fs.writeFileSync(path.join(dir, 'docs/d.md'),
@@ -2550,5 +2568,124 @@ describe("the FRONTEND.md row's declared code paths", () => {
     for (const p of ['src/hooks', 'src/stores', 'src/lib', 'src/types', 'src/App.tsx']) {
       expect(row.codePaths).toContain(p);
     }
+  });
+});
+
+// ── round 16 (18a7b87) ──────────────────────────────────────────────────────
+
+describe('an indented section heading', () => {
+  it('ends the document-level marker window', () => {
+    // Without it, a marker inside `  ## Thing` satisfied findMarker --
+    // suppressing the missing top-level provenance finding and making --stamp
+    // update the section's marker instead of inserting the document's.
+    const lines = ['# T', 'body', '  ## Section', '**Last reviewed:** 2026-01-01', 'x'];
+    expect(markerWindow(lines).to).toBe(2);
+    expect(findMarker(lines)).toBeNull();
+  });
+});
+
+describe('heading forms other than column-zero ATX', () => {
+  it('offer anchors too', () => {
+    // A column-zero ATX-only scan recorded no anchor for an indented heading
+    // or a setext one, so a valid link to either was a dead-anchor P2.
+    expect([...headingAnchors('  ## Install\n\nOther\n=====\n')].sort())
+      .toEqual(['install', 'other']);
+  });
+
+  it('does not read a table delimiter as a setext heading', () => {
+    expect([...headingAnchors('| a |\n|---|\n')]).toEqual([]);
+  });
+});
+
+describe('two review markers in one document', () => {
+  it('are a contradiction, not a first-wins', () => {
+    const lines = ['# T', '', '**Last reviewed:** 2026-01-01',
+      '**Last reviewed:** 2026-02-02', 'body'];
+    expect(findMarkers(lines)).toEqual([2, 3]);
+  });
+
+  it('is one marker when there is one', () => {
+    expect(findMarkers(['# T', '', '**Last reviewed:** 2026-01-01', 'body'])).toEqual([2]);
+  });
+});
+
+describe('a fenced example of a registry row', () => {
+  it('is documentation, not a rule', () => {
+    // The example registered as live -- producing missing-path findings for
+    // paths it never declared -- and a heading inside it could switch
+    // `inRegistry` off and skip every real row after the fence.
+    const head = '| Class | Path glob | Declared code paths | Generated regions |\n|---|---|---|---|\n';
+    const text = `## Registry\n\n\`\`\`\n${head}| D | docs/EXAMPLE.md | src |  |\n`
+      + `\`\`\`\n\n${head}| D | docs/real.md | src |  |\n`;
+    expect(loadRegistry(text).map((r) => r.glob)).toEqual(['docs/real.md']);
+  });
+});
+
+describe('a duplicate reference-link definition', () => {
+  it('resolves against the first, as CommonMark does', () => {
+    const ctx = linkContext(new Set(['README.md']), new Set(), []);
+    const out = checkDeadLinks('d.md',
+      '# T\n\nSee [g][g].\n\n[g]: missing.md\n[g]: README.md\n', ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('missing.md');
+  });
+});
+
+describe('a claim pattern whose capture is not a number', () => {
+  it('is exit 2, not a fabricated count finding', () => {
+    // `Number(undefined)` is NaN, and the audit emitted a count-claim finding
+    // with exit 1 rather than treating the registry row as invalid input.
+    expect(() => checkClaims([{ doc: 'README.md', pattern: 'Solyra',
+      derivation: 'grep-count src x' }])).toThrow(/capture group 1/);
+  });
+});
+
+describe('a derivation naming a path that does not exist', () => {
+  it('is exit 2, not a zero', () => {
+    // `git grep` exits 1 for "no matches" AND for a bad path, so the
+    // derivation silently produced 0: a false clean result for a document
+    // claiming zero, and a fabricated finding otherwise.
+    expect(() => derive('grep-count src/nope-not-here thing')).toThrow(AuditError);
+    expect(() => derive('grep-count src/nope-not-here thing')).toThrow(/does not exist/);
+  });
+
+  it('still counts a real zero as a zero', () => {
+    expect(derive('grep-count src zzz-no-such-string-zzz')).toBe(0);
+  });
+});
+
+describe('a named region that repeats its opener', () => {
+  it('is reported rather than silently paired', () => {
+    // First-opener-to-next-closer paired the first with that closer, set
+    // `hit`, and never noticed the second -- so an `exhaustive` Class A file
+    // could report nothing and classify the whole malformed span as generated.
+    const text = ['# T', '<!-- BEGIN GEN -->', 'a', '<!-- BEGIN GEN -->', 'b',
+      '<!-- END GEN -->'].join('\n');
+    const { orphans } = ownedLines(text, ['mark:GEN']);
+    expect(orphans.join(' ')).toMatch(/repeated opener/);
+  });
+
+  it('reports an opener with no closer', () => {
+    const text = ['# T', '<!-- BEGIN GEN -->', 'a'].join('\n');
+    expect(ownedLines(text, ['mark:GEN']).orphans.join(' ')).toMatch(/no closer/);
+  });
+
+  it('is quiet for two well-formed blocks', () => {
+    const text = ['# T', '<!-- BEGIN GEN -->', 'a', '<!-- END GEN -->', 'prose',
+      '<!-- BEGIN GEN -->', 'b', '<!-- END GEN -->'].join('\n');
+    expect(ownedLines(text, ['mark:GEN']).orphans).toEqual([]);
+  });
+});
+
+describe('the contract audit subprocess', () => {
+  it('chooses the upstream it reports on', () => {
+    // STOCKS_OPENAPI_FILE / _REF would point sync-api-contract at a local file
+    // or a non-main ref while this check reports the invariant as "matches
+    // stocks main" -- a clean Class A result for a stale snapshot.
+    let passed = null;
+    checkContractSync({ spawn: (_c, _a, opts) => { passed = opts.env; return { status: 0 }; } });
+    expect(passed).toBeTruthy();
+    expect('STOCKS_OPENAPI_FILE' in passed).toBe(false);
+    expect('STOCKS_OPENAPI_REF' in passed).toBe(false);
   });
 });
