@@ -2435,3 +2435,107 @@ describe('the ref the link history is read from', () => {
     expect(checkDeadLinks('d.md', 'See `vite.config.ts`.\n', ctx)).toHaveLength(1);
   });
 });
+
+// ── round 14 (f9f1221) ──────────────────────────────────────────────────────
+
+describe('an ATX heading with up to three leading spaces', () => {
+  it('is the document H1', () => {
+    // Without it a document written that way had no H1 as far as this module
+    // was concerned, so --stamp returned `skipped-no-h1` and the
+    // missing-marker finding it reports could never be repaired.
+    expect(h1Index(['   # Guide', 'body'])).toBe(0);
+  });
+
+  it('is not a heading at four spaces, which is code', () => {
+    expect(h1Index(['    # Not a heading', 'body'])).toBeNull();
+  });
+});
+
+describe('a link destination that is not a bare path', () => {
+  const ctx = linkContext(new Set(['README.md', 'docs/guide.md']), new Set(), []);
+
+  it('resolves through angle brackets', () => {
+    // `[g](<guide.md>)` is the standard form for a destination with spaces;
+    // the brackets are delimiters, not part of the path.
+    expect(checkDeadLinks('d.md', '# T\n\n[g](<README.md>)\n', ctx)).toEqual([]);
+  });
+
+  it('resolves past a query string', () => {
+    // The tracked-file lookup searched for the literal `guide.md?plain=1`.
+    expect(checkDeadLinks('docs/d.md', '# T\n\n[s](guide.md?plain=1)\n', ctx)).toEqual([]);
+  });
+
+  it('still reports a missing target written either way', () => {
+    expect(checkDeadLinks('d.md', '# T\n\n[g](<gone.md>)\n', ctx)).toHaveLength(1);
+    expect(checkDeadLinks('d.md', '# T\n\n[g](gone.md?x=1)\n', ctx)).toHaveLength(1);
+  });
+});
+
+describe('a four-space-indented code block', () => {
+  const ctx = linkContext(new Set(['src/a.ts']), new Set(), []);
+
+  it('is an example, like a fenced one', () => {
+    expect(checkDeadLinks('d.md', '# T\n\nExample:\n\n    [x](missing.md)\n', ctx)).toEqual([]);
+  });
+
+  it('does not swallow a list continuation', () => {
+    // Indented code cannot interrupt a list, and masking list continuations
+    // would turn real findings invisible -- the worse direction.
+    const doc = '# T\n\n- item\n\n    [x](missing.md)\n';
+    expect(checkDeadLinks('d.md', doc, ctx)).toHaveLength(1);
+  });
+
+  it('does not swallow a table continuation', () => {
+    const doc = '# T\n\n| a | b |\n\n    [x](missing.md)\n';
+    expect(checkDeadLinks('d.md', doc, ctx)).toHaveLength(1);
+  });
+});
+
+describe('a marker carrying a malformed owned field', () => {
+  it('is not rewritten', () => {
+    // MARKER_RE is not end-anchored, so `**Last scanned:** bad` matches on the
+    // `Last reviewed` prefix and the malformed field lands in the tail. A
+    // restamp added a canonical `Last scanned` beside it and kept the broken
+    // one, leaving the document carrying two.
+    const doc = '# T\n\n**Last reviewed:** 2026-01-01 · **Last scanned:** bad\n';
+    const got = stamp(doc, '2026-09-18', 'scanned', 'abc1234', false);
+    expect(got.action).toBe('skipped-malformed-marker');
+    expect(got.text).toBe(doc);
+  });
+
+  it('still restamps a well-formed one', () => {
+    const doc = '# T\n\n**Last reviewed:** 2026-01-01\n';
+    expect(stamp(doc, '2026-09-18', 'scanned', 'abc1234', false).action).toBe('updated');
+  });
+});
+
+describe('a list-len pattern with no capture group', () => {
+  it('is exit 2, not a TypeError', () => {
+    expect(() => derive('list-len README.md ^#')).toThrow(AuditError);
+    expect(() => derive('list-len README.md ^#')).toThrow(/no capture group 1/);
+  });
+});
+
+describe('an anchor target that is tracked but unreadable', () => {
+  it('fails loudly rather than skipping the anchor check', () => {
+    // Storing null made the anchor check skip silently, so a link to a
+    // fragment that does not exist passed clean over a target the audit never
+    // actually inspected.
+    const ctx = linkContext(new Set(['docs/never-on-disk.md']), new Set(), []);
+    expect(() => checkDeadLinks('d.md', '# T\n\n[x](docs/never-on-disk.md#nope)\n', ctx))
+      .toThrow(/tracked but could not be read/);
+  });
+});
+
+describe("the FRONTEND.md row's declared code paths", () => {
+  it('cover the surfaces the document inventories', () => {
+    // FRONTEND.md inventories src/hooks, src/stores, src/lib and src/types and
+    // derives its routing topology from src/App.tsx, so a change to any of
+    // them must be able to trigger changed-since.
+    const row = loadRegistry(fs.readFileSync(path.join(process.cwd(), 'docs/DOC_REGISTRY.md'),
+      'utf8')).find((r) => r.glob === 'FRONTEND.md');
+    for (const p of ['src/hooks', 'src/stores', 'src/lib', 'src/types', 'src/App.tsx']) {
+      expect(row.codePaths).toContain(p);
+    }
+  });
+});

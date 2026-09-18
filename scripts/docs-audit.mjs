@@ -64,7 +64,11 @@ const LEGACY_MARKER_RE =
 const BARE_TAIL_RE = new RegExp(`^[.\\s]*(?:${DOT}\\s*\\*\\*Owner:\\*\\*[^${DOT}]*)?[.\\s]*$`);
 const OWNED_FIELDS = ['Last reviewed:', 'Depth:', 'Against:', 'Last scanned:', 'Owner:'];
 
-const H1_RE = /^#\s+\S/;
+// Up to three leading spaces is still a rendered ATX heading. Without them a
+// document written that way had no H1 as far as this module was concerned, so
+// --stamp returned `skipped-no-h1` and the missing-marker finding it reports
+// could never be repaired by the command that reports it.
+const H1_RE = /^ {0,3}#\s+\S/;
 // Whole cues, not substrings. An unbounded `blocking|blocked by|...` matched
 // inside `nonblocking` and `not blocked by`, so prose stating an issue is NOT
 // a blocker produced a P1 against it once it closed -- a finding whose own
@@ -862,6 +866,40 @@ export function checkProvenance(doc, prev) {
 }
 
 /** Lines inside a fenced code block, which are examples rather than content. */
+/**
+ * Lines inside a four-space-indented code block.
+ *
+ * CommonMark's indented code, which `fencedLines` does not see: an example
+ * written that way was inspected as live prose, so `[x](missing.md)` or a
+ * blocking citation in it could fail --check.
+ *
+ * Deliberately narrow. Indented code cannot interrupt a paragraph, and inside
+ * a list item the indentation is the list's, not a code block's -- so a run
+ * starts only after a blank line whose own preceding content is neither a list
+ * item nor a table row. Anything less careful masks list continuations and
+ * turns real findings invisible, which is the worse direction.
+ */
+export function indentedCodeLines(lines) {
+  const out = new Set();
+  let lastContent = null;
+  let blankSeen = true;
+  let inCode = false;
+  lines.forEach((line, i) => {
+    if (!line.trim()) { blankSeen = true; return; }
+    const indented = /^ {4,}\S/.test(line) || /^\t/.test(line);
+    if (inCode && indented) { out.add(i); return; }
+    inCode = false;
+    if (indented && blankSeen
+        && !(lastContent !== null && /^\s*([-*+]|\d+[.)]|\|)/.test(lastContent))) {
+      inCode = true;
+      out.add(i);
+    }
+    lastContent = line;
+    blankSeen = false;
+  });
+  return out;
+}
+
 export function fencedLines(lines) {
   const fenced = new Set();
   // The OPENING delimiter is remembered. Toggling on any fence-looking line
@@ -1037,6 +1075,15 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   // delete the prose it carries and read in the diff as a tidy one-liner.
   if (prev?.legacy && prev.bare === false) return { text, action: 'skipped-legacy-content' };
 
+  // MARKER_RE is not end-anchored, so `**Last scanned:** bad` matches on the
+  // `Last reviewed` prefix and the malformed field lands in the tail. A
+  // restamp would then add a canonical `Last scanned` beside it and keep the
+  // broken one, leaving the document carrying two. Refuse instead.
+  if (prev && !prev.legacy && extraSegments(lines[prev.idx]).some(
+    (seg) => OWNED_FIELDS.some((f) => seg.startsWith(`**${f}`)))) {
+    return { text, action: 'skipped-malformed-marker' };
+  }
+
   const owner = ownerOf(prev ? lines[prev.idx] : null) ?? 'TBD';
   let rDate;
   let rDepth;
@@ -1198,7 +1245,7 @@ export function checkClosedIssues(doc, text, states) {
   // --check gates on these findings, so a document DEMONSTRATING what a
   // blocking citation looks like failed the audit over its own example. The
   // link, heading and marker checks already skip fenced lines.
-  const fenced = fencedLines(lines);
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
     if (!hasBlockingCue(line)) return;
@@ -1327,7 +1374,15 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     if (!anchorCache.has(p)) {
       try {
         anchorCache.set(p, headingAnchors(fs.readFileSync(path.join(REPO, p), 'utf8')));
-      } catch {
+      } catch (err) {
+        // A TRACKED Markdown file that cannot be read is not a document with
+        // no headings. Storing null made the anchor check skip silently, so a
+        // link to a fragment that does not exist passed clean over a target
+        // the audit never actually inspected.
+        if (tracked.has(p)) {
+          throw new AuditError(`${doc} links into ${p}, which is tracked but could not be `
+            + `read (${err.message}); its anchors were never checked`);
+        }
         anchorCache.set(p, null);
       }
     }
@@ -1338,7 +1393,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // Markdown syntax with `[x](missing.md)`, or showing a path that has since
   // moved, was read as rendered documentation and failed --check over its own
   // teaching material. The marker and heading checks already skip these lines.
-  const fenced = fencedLines(lines);
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
 
   // Reference-style Markdown: `[guide][g]` with `[g]: docs/guide.md` further
   // down. Neither shape matches MD_LINK_RE, so a broken reference link -- the
@@ -1375,7 +1430,14 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     if (!tgt) {
       norm = doc;
     } else {
-      norm = path.posix.normalize(tgt.startsWith('/') ? tgt.slice(1) : path.posix.join(base, tgt));
+      // `[g](<guide.md>)` is the standard form for a destination with spaces,
+      // and the angle brackets are delimiters, not part of the path. A query
+      // (`guide.md?plain=1`) is not part of it either -- the tracked-file
+      // lookup searched for the literal filename including the `?`.
+      const bare = decodeURIComponent(tgt.replace(/^<(.*)>$/, '$1').split('?')[0]);
+      if (!bare) return;
+      norm = path.posix.normalize(
+        bare.startsWith('/') ? bare.slice(1) : path.posix.join(base, bare));
       if (norm.startsWith('..')) return;
       if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
         out.push({ check: 'dead-link', doc, line: lineNo, severity: 'P2', detail: what });
@@ -1632,6 +1694,13 @@ export function derive(derivation, { exec = run } = {}) {
     }
     const m = claimPattern(pattern, '', 'list-len pattern').exec(body);
     if (!m) throw new AuditError(`list-len: ${pattern} matched nothing in ${target}`);
+    // A valid regex that matches but has no group 1 left `m[1]` undefined, and
+    // `.split` on it threw a plain TypeError: a stack trace and exit 1, the
+    // status reserved for documentation findings.
+    if (m[1] === undefined) {
+      throw new AuditError(`list-len pattern \`${pattern}\` has no capture group 1; `
+        + 'the list it counts is whatever group 1 holds');
+    }
     return m[1].split(',').filter((s) => s.trim()).length;
   }
   throw new AuditError(`unknown derivation kind: ${kind}`);
