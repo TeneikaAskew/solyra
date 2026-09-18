@@ -71,7 +71,10 @@ const ISSUE_URL_RE = new RegExp(
   `github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)`,
   'g'
 );
-const MD_LINK_RE = /\[[^\]]*\]\(([^)#\s]+)(?:#[^)\s]*)?\)/g;
+// The fragment is CAPTURED, not discarded. Dropping it meant a link to a real
+// file but a heading that does not exist always passed. The Python twin had
+// the same gap, where 35 such links were measured (stocks#1121).
+const MD_LINK_RE = /\[[^\]]*\]\(([^)#\s]*)(?:#([^)\s]+))?\)/g;
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
 // slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
 // which the living docs cite constantly -- could never produce a dead-path
@@ -860,13 +863,21 @@ export function writeIssuesSnapshot(file, states) {
   }
 }
 
+export const ISSUE_PAGE_SIZE = 100;
+// A runaway guard, not a ceiling on real data: reaching it RAISES rather than
+// truncating. `page < 40` stopped at 3,900 combined issues and PRs and said
+// nothing, so every older cited blocker past that point read as "could not be
+// resolved" -- fabricated findings from a silent cap, which is the shape this
+// module refuses everywhere else.
+export const ISSUE_PAGE_GUARD = 1000;
+
 /** One paginated read per repo, never one call per reference. */
-export function fetchIssueStates(repo) {
+export function fetchIssueStates(repo, { exec = run } = {}) {
   const states = {};
-  for (let page = 1; page < 40; page += 1) {
-    const out = run('gh', [
+  for (let page = 1; ; page += 1) {
+    const out = exec('gh', [
       'api',
-      `repos/${OWNER}/${repo}/issues?state=all&per_page=100&page=${page}`,
+      `repos/${OWNER}/${repo}/issues?state=all&per_page=${ISSUE_PAGE_SIZE}&page=${page}`,
       '--jq',
       // A PR has no state_reason; whether it merged is the fact that matters
       // for a document citing it as live work, so it goes in the same column.
@@ -874,10 +885,17 @@ export function fetchIssueStates(repo) {
       + '(if .pull_request then "PR" else "ISSUE" end)] | @tsv',
     ]);
     const rows = out.trim().split('\n').filter(Boolean);
-    if (rows.length === 0) break;
     for (const row of rows) {
       const p = row.split('\t');
       if (p.length === 4) states[Number(p[0])] = { state: p[1], reason: p[2], kind: p[3] };
+    }
+    if (rows.length < ISSUE_PAGE_SIZE) break;
+    if (page >= ISSUE_PAGE_GUARD) {
+      // Loud, not silent. A guard that fires means the assumption behind it
+      // is wrong and the result cannot be trusted: exit 2, never a short
+      // answer.
+      throw new AuditError(`${repo}: still reading issues after ${ISSUE_PAGE_GUARD} pages `
+        + `(${Object.keys(states).length} so far); refusing to report on a truncated read`);
     }
   }
   if (Object.keys(states).length === 0) {
@@ -951,6 +969,35 @@ export function crossRepoCitations(line) {
 }
 
 /** Does any tracked path live under this one? Then it is a real directory. */
+/**
+ * GitHub's anchor for a heading.
+ *
+ * The ORDER is the whole point: lowercase, strip everything that is not a word
+ * character, space or hyphen, and THEN replace each space with a hyphen. Runs
+ * are not collapsed, so a heading like `A — B / C` loses the em dash and the
+ * slash and keeps the spaces either side, giving doubled hyphens. Collapsing
+ * whitespace here would reproduce the broken links' own spelling and call
+ * every one of them valid.
+ */
+export function headingSlug(heading) {
+  let s = heading.replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  s = s.replace(/[*_]/g, '').trim().toLowerCase();
+  return s.replace(/[^\w\s-]/g, '').replace(/ /g, '-');
+}
+
+/** Every anchor a document offers, duplicates numbered as GitHub numbers them. */
+export function headingAnchors(text) {
+  const seen = new Map();
+  const out = new Set();
+  for (const m of text.matchAll(/^#{1,6}\s+(.*)$/gm)) {
+    const base = headingSlug(m[1]);
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    out.add(n === 0 ? base : `${base}-${n}`);
+  }
+  return out;
+}
+
 export function isTrackedDir(tracked, norm) {
   const prefix = `${norm}/`;
   for (const p of tracked) if (p.startsWith(prefix)) return true;
@@ -961,19 +1008,50 @@ export function checkDeadLinks(doc, text, ctx) {
   const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
   const out = [];
   const base = path.posix.dirname(doc);
+  const anchorCache = new Map();
+  const anchorsOf = (p) => {
+    if (!anchorCache.has(p)) {
+      try {
+        anchorCache.set(p, headingAnchors(fs.readFileSync(path.join(REPO, p), 'utf8')));
+      } catch {
+        anchorCache.set(p, null);
+      }
+    }
+    return anchorCache.get(p);
+  };
   text.split('\n').forEach((line, i) => {
     for (const m of line.matchAll(MD_LINK_RE)) {
       const tgt = m[1];
-      if (/^(https?:|mailto:|#)/.test(tgt)) continue;
-      const norm = path.posix.normalize(tgt.startsWith('/') ? tgt.slice(1) : path.posix.join(base, tgt));
-      // Filesystem existence recognises a DIRECTORY target only. An ignored or
-      // generated file, or one recreated after a staged deletion, is present
-      // here and absent for anyone who clones the repository, so letting it
-      // satisfy the link produced a clean audit over a committed link that is
-      // broken for every reader. Directories are not tracked objects in git,
-      // so they still need the filesystem.
-      if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
-        out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `relative link -> ${tgt}` });
+      const frag = m[2];
+      if (/^(https?:|mailto:)/.test(tgt)) continue;
+      let norm;
+      if (!tgt) {
+        // `[x](#heading)` -- same document, so the anchor is still checkable
+        // even though there is no path to resolve.
+        norm = doc;
+      } else {
+        norm = path.posix.normalize(tgt.startsWith('/') ? tgt.slice(1) : path.posix.join(base, tgt));
+        // Climbs out of the repository: cross-repo prose this repo cannot
+        // resolve and must not call rot.
+        if (norm.startsWith('..')) continue;
+        // Filesystem existence recognises a DIRECTORY target only. An ignored
+        // or generated file, or one recreated after a staged deletion, is
+        // present here and absent for anyone who clones the repository, so
+        // letting it satisfy the link produced a clean audit over a committed
+        // link that is broken for every reader. Directories are not tracked
+        // objects in git, so they still need the filesystem.
+        if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
+          out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `relative link -> ${tgt}` });
+          continue;
+        }
+      }
+      // The target resolves; does the heading it names?
+      if (frag && norm.endsWith('.md')) {
+        const have = anchorsOf(norm);
+        if (have && !have.has(frag.toLowerCase())) {
+          out.push({ check: 'dead-anchor', doc, line: i + 1, severity: 'P2',
+            detail: `link -> ${tgt}#${frag}: the target has no such heading` });
+        }
       }
     }
     // A backticked path is this repo's to resolve only when nothing says

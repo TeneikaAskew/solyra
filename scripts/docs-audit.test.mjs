@@ -30,6 +30,10 @@ import {
   writeStamps,
   checkRegistryPaths,
   isTrackedDir,
+  headingSlug,
+  headingAnchors,
+  fetchIssueStates,
+  ISSUE_PAGE_SIZE,
   classAIsStampable,
   checkProvenance,
   MARKER_SHA_LEN,
@@ -754,6 +758,92 @@ describe('a link the filesystem satisfies but the repository does not', () => {
     const ctx = { tracked: new Set(['d.md', 'src/lib/a.ts']), topLevelDirs: new Set(),
       rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set() };
     expect(checkDeadLinks('d.md', 'see [x](./src/lib)\n', ctx)).toEqual([]);
+  });
+});
+
+describe('anchors', () => {
+  it('does not collapse separator runs, because GitHub does not', () => {
+    // Strip punctuation, THEN replace each space. An em dash and a slash leave
+    // DOUBLED hyphens; collapsing here would reproduce the broken links' own
+    // spelling and call them valid.
+    expect(headingSlug('FEAT-AUTH-001 — Auth / security (8 open)'))
+      .toBe('feat-auth-001--auth--security-8-open');
+    expect(headingSlug('Data Sources & Inputs')).toBe('data-sources--inputs');
+    expect(headingSlug('`code` and **bold**')).toBe('code-and-bold');
+  });
+
+  it('numbers repeated headings as GitHub numbers them', () => {
+    expect(headingAnchors('# Notes\n\n## Notes\n\n## Notes\n'))
+      .toEqual(new Set(['notes', 'notes-1', 'notes-2']));
+  });
+});
+
+describe('a link to a heading nobody has', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-a-'));
+  const ctx = (tracked) => ({ tracked: new Set(tracked), topLevelDirs: new Set(),
+    rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set() });
+
+  it('is reported when the fragment does not resolve', () => {
+    // The fragment was stripped before the target was checked, so a link to a
+    // real file and a nonexistent heading always passed.
+    fs.writeFileSync(path.join(process.cwd(), 'tmp-anchor-target.md'),
+      '# T\n\n## FEAT-AUTH-001 — Auth / security (8 open)\n');
+    try {
+      const out = checkDeadLinks('d.md',
+        'see [x](tmp-anchor-target.md#feat-auth-001-auth-security-8-open)\n',
+        ctx(['d.md', 'tmp-anchor-target.md']));
+      expect(out).toHaveLength(1);
+      expect(out[0].check).toBe('dead-anchor');
+    } finally {
+      fs.unlinkSync(path.join(process.cwd(), 'tmp-anchor-target.md'));
+    }
+  });
+
+  it('is quiet when the fragment resolves', () => {
+    fs.writeFileSync(path.join(process.cwd(), 'tmp-anchor-target.md'),
+      '# T\n\n## FEAT-AUTH-001 — Auth / security (8 open)\n');
+    try {
+      expect(checkDeadLinks('d.md',
+        'see [x](tmp-anchor-target.md#feat-auth-001--auth--security-8-open)\n',
+        ctx(['d.md', 'tmp-anchor-target.md']))).toEqual([]);
+    } finally {
+      fs.unlinkSync(path.join(process.cwd(), 'tmp-anchor-target.md'));
+    }
+  });
+
+  it('does not report an anchor on a file that is already dead', () => {
+    // One finding per broken link: a missing file cannot have a heading.
+    const out = checkDeadLinks('d.md', 'see [x](gone.md#anything)\n', ctx(['d.md']));
+    expect(out).toHaveLength(1);
+    expect(out[0].check).toBe('dead-link');
+  });
+
+  it('ignores a link that climbs out of the repository', () => {
+    expect(checkDeadLinks('d.md', 'see [x](../../elsewhere.md)\n', ctx(['d.md']))).toEqual([]);
+  });
+});
+
+describe('the issue walk', () => {
+  const page = (n) => Array.from({ length: ISSUE_PAGE_SIZE },
+    (_, k) => `${n * 1000 + k}\topen\t\tISSUE`).join('\n');
+
+  it('has no silent ceiling', () => {
+    // `page < 40` stopped at 3,900 combined issues and PRs and said nothing,
+    // so every older cited blocker past that point read as "could not be
+    // resolved" -- fabricated findings from a silent cap.
+    const exec = (_c, argv) => {
+      const n = Number(/&page=(\d+)/.exec(argv.join(' '))[1]);
+      return n <= 44 ? page(n) : '';
+    };
+    expect(Object.keys(fetchIssueStates('stocks', { exec })).length).toBeGreaterThan(4000);
+  });
+
+  it('refuses rather than truncating when the runaway guard fires', () => {
+    // A guard that fires means the assumption behind it is wrong, so the
+    // result cannot be trusted: exit 2, never a short answer.
+    const exec = (_c, argv) => page(Number(/&page=(\d+)/.exec(argv.join(' '))[1]));
+    expect(() => fetchIssueStates('stocks', { exec, }))
+      .toThrow(/truncated read/);
   });
 });
 
