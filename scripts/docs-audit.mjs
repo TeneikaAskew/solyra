@@ -65,12 +65,44 @@ const BARE_TAIL_RE = new RegExp(`^[.\\s]*(?:${DOT}\\s*\\*\\*Owner:\\*\\*[^${DOT}
 const OWNED_FIELDS = ['Last reviewed:', 'Depth:', 'Against:', 'Last scanned:', 'Owner:'];
 
 const H1_RE = /^#\s+\S/;
+// Whole cues, not substrings. An unbounded `blocking|blocked by|...` matched
+// inside `nonblocking` and `not blocked by`, so prose stating an issue is NOT
+// a blocker produced a P1 against it once it closed -- a finding whose own
+// source line says the opposite. `\b` alone stops `nonblocking`; the negator
+// scan below stops the spaced and hyphenated forms.
 const BLOCKING_CUE_RE =
-  /blocking|blocked by|open issue|still open|outstanding|in progress|not started|pending/i;
+  /\b(?:blocking|blocked by|open issue|still open|outstanding|in progress|not started|pending)\b/gi;
+// Text immediately before a cue that inverts it. `not started` is itself a
+// cue, so what precedes it is what is tested -- the leading `not` is never
+// read as negating the phrase it belongs to.
+const CUE_NEGATOR_RE = /\b(?:not|non|never|no longer|without|un)[\s-]*$/i;
+
+/**
+ * Does this line cite live work? True when at least ONE cue occurrence is not
+ * negated: a line may say one issue still blocks and another no longer does.
+ */
+export function hasBlockingCue(line) {
+  BLOCKING_CUE_RE.lastIndex = 0;
+  for (const m of line.matchAll(BLOCKING_CUE_RE)) {
+    if (!CUE_NEGATOR_RE.test(line.slice(0, m.index))) return true;
+  }
+  return false;
+}
+
+// Case-insensitive, because GitHub resolves `teneikaaskew/Solyra` to the same
+// repository and a document may cite it that way. The `i` flag ALONE would be
+// worse than the bug: the captured name would index `states['Solyra']`, miss,
+// and fabricate a "could not be resolved" P2 against a live issue. The
+// capture is lower-cased at the call site (see normaliseRepo).
 const ISSUE_URL_RE = new RegExp(
   `github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)`,
-  'g'
+  'gi'
 );
+
+/** The state map is keyed by the canonical repository names, in lower case. */
+export function normaliseRepo(repo) {
+  return repo.toLowerCase();
+}
 // The fragment is CAPTURED, not discarded. Dropping it meant a link to a real
 // file but a heading that does not exist always passed. The Python twin had
 // the same gap, where 35 such links were measured (stocks#1121).
@@ -321,10 +353,20 @@ export function checkRegistryPaths(tracked, registry) {
   }
   const out = [];
   for (const row of registry) {
-    if (!/[*?[]/.test(row.glob) && !tracked.has(row.glob)) {
+    if (!/[*?[]/.test(row.glob)) {
+      if (!tracked.has(row.glob)) {
+        out.push({ check: 'registry', doc: row.glob, severity: 'P1',
+          detail: 'registry names this document exactly, but it is not in the audited '
+                + 'tree -- it was deleted, moved, or never existed' });
+      }
+    // A wildcard row covering nothing is the same failure one step out: every
+    // document it named has been deleted, or the glob is mistyped. Nothing
+    // reaches classify(), so the declaration goes inert and the audit reports
+    // no registry finding while a whole rule quietly stops applying.
+    } else if (![...tracked].some((p) => globToRe(row.glob).test(p))) {
       out.push({ check: 'registry', doc: row.glob, severity: 'P1',
-        detail: 'registry names this document exactly, but it is not in the audited '
-              + 'tree -- it was deleted, moved, or never existed' });
+        detail: 'registry declaration matches no tracked document, so the rule it '
+              + 'carries covers nothing' });
     }
     for (const cp of row.codePaths ?? []) {
       if (!tracked.has(cp) && !dirs.has(cp)) {
@@ -919,6 +961,16 @@ export function loadIssuesSnapshot(file) {
       throw new AuditError(`--issues-snapshot ${file} has no "${repo}" entry; every ${repo} citation `
         + 'would read as unresolvable');
     }
+    // An empty map is not "a repository with no open work": fetchIssueStates
+    // refuses to report on a repository that returned zero issues, and a
+    // snapshot read may not be laxer than the live path it stands in for.
+    // Accepting `{}` turns every citation of that repo into a fabricated
+    // "could not be resolved" P2 and exits 1 for findings that do not exist.
+    if (Object.keys(entry).length === 0) {
+      throw new AuditError(`--issues-snapshot ${file} has an empty "${repo}" map; the live `
+        + 'read refuses to report on zero issues and a snapshot may not either -- every '
+        + `${repo} citation would become a fabricated "could not be resolved" finding`);
+    }
     // "It is an object" is not enough. checkClosedIssues reads st.state once
     // it has decided the row is not nullish, so a row with no state is
     // neither closed nor unresolved and a cited blocker DISAPPEARS from the
@@ -996,9 +1048,11 @@ export function fetchIssueStates(repo, { exec = run } = {}) {
 export function checkClosedIssues(doc, text, states) {
   const out = [];
   text.split('\n').forEach((line, i) => {
-    if (!BLOCKING_CUE_RE.test(line)) return;
+    if (!hasBlockingCue(line)) return;
     for (const m of line.matchAll(ISSUE_URL_RE)) {
-      const [, repo, kind, num] = m;
+      const [, rawRepo, rawKind, num] = m;
+      const repo = normaliseRepo(rawRepo);
+      const kind = rawKind.toLowerCase();
       // A pull request cited as a blocker is live work too. `/pull/` used to
       // be skipped outright, so "blocked by #60" stayed invisible after #60
       // merged, though the issue-state read already carried PR records; the
@@ -1122,47 +1176,84 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     }
     return anchorCache.get(p);
   };
-  text.split('\n').forEach((line, i) => {
+  const lines = text.split('\n');
+  // A fenced block is an EXAMPLE, not a citation. A document demonstrating
+  // Markdown syntax with `[x](missing.md)`, or showing a path that has since
+  // moved, was read as rendered documentation and failed --check over its own
+  // teaching material. The marker and heading checks already skip these lines.
+  const fenced = fencedLines(lines);
+
+  // Reference-style Markdown: `[guide][g]` with `[g]: docs/guide.md` further
+  // down. Neither shape matches MD_LINK_RE, so a broken reference link -- the
+  // form the CommonMark spec calls standard and readers see as an ordinary
+  // link -- produced a clean audit. Both halves are checked: a definition
+  // whose destination does not resolve, and a use with no definition.
+  // A footnote (`[^1]: ...`) is deliberately excluded: it defines a note, not
+  // a destination. A SHORTCUT use (`[g]` alone) is excluded too, because
+  // bracketed prose and checkbox syntax are indistinguishable from it.
+  const refDefs = new Map();
+  lines.forEach((line, i) => {
+    if (fenced.has(i)) return;
+    const m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(\S+)/.exec(line);
+    if (m) refDefs.set(m[1].trim().toLowerCase(), { target: m[2].replace(/^<|>$/g, ''), line: i + 1 });
+  });
+
+  // One destination, validated exactly as an inline link's is: same tracked
+  // paths, same anchors. A different spelling must not buy a laxer check.
+  const checkTarget = (tgt, frag, lineNo, label = null) => {
+    const what = label === null ? `relative link -> ${tgt}` : `reference link [${label}] -> ${tgt}`;
+    if (/^(https?:|mailto:)/.test(tgt)) return;
+    let norm;
+    if (!tgt) {
+      norm = doc;
+    } else {
+      norm = path.posix.normalize(tgt.startsWith('/') ? tgt.slice(1) : path.posix.join(base, tgt));
+      if (norm.startsWith('..')) return;
+      if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
+        out.push({ check: 'dead-link', doc, line: lineNo, severity: 'P2', detail: what });
+        return;
+      }
+    }
+    if (frag && norm.endsWith('.md')) {
+      const have = anchorsOf(norm);
+      if (have && !have.has(frag.toLowerCase())) {
+        out.push({ check: 'dead-anchor', doc, line: lineNo, severity: 'P2',
+          detail: `${what}#${frag}: the target has no such heading` });
+      }
+    }
+  };
+
+  for (const [label, { target, line }] of refDefs) {
+    const [tgt, frag] = target.split('#');
+    checkTarget(tgt, frag, line, label);
+  }
+  lines.forEach((line, i) => {
+    if (fenced.has(i)) return;
+    for (const m of line.matchAll(/\[([^\]]*)\]\[([^\]]*)\]/g)) {
+      const label = (m[2] || m[1]).trim().toLowerCase();
+      if (!label || refDefs.has(label)) continue;
+      out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2',
+        detail: `reference-style link [${label}] has no definition` });
+    }
+  });
+
+  lines.forEach((line, i) => {
+    if (fenced.has(i)) return;
     // Spans a backticked citation occupies purely as a Markdown link's LABEL.
     // ``[`src/gone.ts`](../src/gone.ts)`` is ONE broken link, and reporting it
     // from both passes doubles the finding and the summary count.
     const labelSpans = [...line.matchAll(/\[([^\]]*)\]\([^)\s]*\)/g)]
       .map((m) => [m.index + 1, m.index + 1 + m[1].length]);
     const inLinkLabel = (idx) => labelSpans.some(([lo, hi]) => idx >= lo && idx < hi);
-    for (const m of line.matchAll(MD_LINK_RE)) {
-      const tgt = m[1];
-      const frag = m[2];
-      if (/^(https?:|mailto:)/.test(tgt)) continue;
-      let norm;
-      if (!tgt) {
-        // `[x](#heading)` -- same document, so the anchor is still checkable
-        // even though there is no path to resolve.
-        norm = doc;
-      } else {
-        norm = path.posix.normalize(tgt.startsWith('/') ? tgt.slice(1) : path.posix.join(base, tgt));
-        // Climbs out of the repository: cross-repo prose this repo cannot
-        // resolve and must not call rot.
-        if (norm.startsWith('..')) continue;
-        // Filesystem existence recognises a DIRECTORY target only. An ignored
-        // or generated file, or one recreated after a staged deletion, is
-        // present here and absent for anyone who clones the repository, so
-        // letting it satisfy the link produced a clean audit over a committed
-        // link that is broken for every reader. Directories are not tracked
-        // objects in git, so they still need the filesystem.
-        if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
-          out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `relative link -> ${tgt}` });
-          continue;
-        }
-      }
-      // The target resolves; does the heading it names?
-      if (frag && norm.endsWith('.md')) {
-        const have = anchorsOf(norm);
-        if (have && !have.has(frag.toLowerCase())) {
-          out.push({ check: 'dead-anchor', doc, line: i + 1, severity: 'P2',
-            detail: `link -> ${tgt}#${frag}: the target has no such heading` });
-        }
-      }
-    }
+    // `[x](#heading)` carries no path, so the anchor is checked against this
+    // same document. A target that climbs out of the repository is cross-repo
+    // prose this tree cannot resolve and must not call rot. Filesystem
+    // existence answers DIRECTORY only: an ignored, generated or
+    // staged-for-deletion file is present here and absent for anyone who
+    // clones, so letting it satisfy a link produced a clean audit over a
+    // committed link broken for every reader. All of that now lives in
+    // checkTarget, shared with the reference-style definitions above.
+    for (const m of line.matchAll(MD_LINK_RE)) checkTarget(m[1], m[2], i + 1);
     // A backticked path is this repo's to resolve only when nothing says
     // otherwise: its extension is one this tree tracks, and the citation is
     // not the sibling repo's. Ownership is decided per citation, not per
@@ -1247,7 +1338,11 @@ export function driftCommits(out) {
     const status = /^([AMDRCT])(\d{3})?\t/.exec(line);
     if (!status || !current) continue;
     const [, kind, score] = status;
-    if ('AMD'.includes(kind) || (kind === 'R' && Number(score) < 100)) current.drift = true;
+    // T (the git object type changed -- a regular file became a symlink, or a
+    // submodule a file) is drift like any other: the described surface is not
+    // what it was. The uncommitted branch below already counted it, so leaving
+    // it out here made the same change invisible the moment it was committed.
+    if ('AMDT'.includes(kind) || (kind === 'R' && Number(score) < 100)) current.drift = true;
   }
   return commits.filter((c) => c.drift).map((c) => c.line);
 }
@@ -1357,18 +1452,33 @@ export function derive(derivation, { exec = run } = {}) {
   }
   if (kind === 'list-len') {
     const body = fs.readFileSync(path.join(REPO, target), 'utf8');
-    const m = new RegExp(pattern).exec(body);
+    const m = claimPattern(pattern, '', 'list-len pattern').exec(body);
     if (!m) throw new AuditError(`list-len: ${pattern} matched nothing in ${target}`);
     return m[1].split(',').filter((s) => s.trim()).length;
   }
   throw new AuditError(`unknown derivation kind: ${kind}`);
 }
 
+/**
+ * A registry pattern is INPUT. `new RegExp` throws a plain SyntaxError, which
+ * walks past the AuditError handler and exits 1 -- the status this CLI
+ * documents for documentation findings. The region path already made this
+ * split; the Claims table needs it too, so a typo there exits 2.
+ */
+function claimPattern(pattern, flags, where) {
+  try {
+    return new RegExp(pattern, flags);
+  } catch (err) {
+    throw new AuditError(`${where} \`${pattern}\` is not a valid regular expression: `
+      + err.message);
+  }
+}
+
 export function checkClaims(claims, { exec = run } = {}) {
   const out = [];
   for (const { doc, pattern, derivation } of claims) {
     const text = fs.readFileSync(path.join(REPO, doc), 'utf8');
-    const re = new RegExp(pattern, 'g');
+    const re = claimPattern(pattern, 'g', 'claim pattern');
     const actual = derive(derivation, { exec });
     let hits = 0;
     for (const m of text.matchAll(re)) {

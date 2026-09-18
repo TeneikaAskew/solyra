@@ -443,7 +443,7 @@ describe('loadIssuesSnapshot', () => {
 
   it('rejects a snapshot that lacks a repo, rather than resolving nothing', () => {
     const f = path.join(dir, 'half.json');
-    fs.writeFileSync(f, JSON.stringify({ solyra: {} }));
+    fs.writeFileSync(f, JSON.stringify({ solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/stocks/);
   });
 
@@ -451,7 +451,7 @@ describe('loadIssuesSnapshot', () => {
     // typeof [] === 'object', so an array passed the old check and then
     // resolved no issue at all.
     const f = path.join(dir, 'listed.json');
-    fs.writeFileSync(f, JSON.stringify({ stocks: [], solyra: {} }));
+    fs.writeFileSync(f, JSON.stringify({ stocks: [], solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/stocks/);
   });
 
@@ -493,13 +493,13 @@ describe('loadIssuesSnapshot', () => {
 
   it.each(['open', 'closed'])('still accepts the real state %s', (state) => {
     const f = path.join(dir, `${state}.json`);
-    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: { state, reason: '', kind: 'ISSUE' } } }));
+    fs.writeFileSync(f, JSON.stringify({ stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, solyra: { 8: { state, reason: '', kind: 'ISSUE' } } }));
     expect(loadIssuesSnapshot(f).solyra[8].state).toBe(state);
   });
 
   it('returns the states of a well-formed snapshot', () => {
     const f = path.join(dir, 'ok.json');
-    fs.writeFileSync(f, JSON.stringify({ solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, stocks: {} }));
+    fs.writeFileSync(f, JSON.stringify({ solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
     expect(loadIssuesSnapshot(f).solyra[1].state).toBe('open');
   });
 });
@@ -519,7 +519,7 @@ describe('writeIssuesSnapshot', () => {
 
   it('writes a snapshot that loads back', () => {
     const f = path.join(dir, 'out.json');
-    writeIssuesSnapshot(f, { stocks: {}, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } });
+    writeIssuesSnapshot(f, { stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } });
     expect(loadIssuesSnapshot(f).solyra[1].state).toBe('open');
   });
 });
@@ -617,8 +617,12 @@ describe('checkRegistryPaths', () => {
     expect(out).toEqual([]);
   });
 
-  it('does not report a glob row', () => {
-    expect(checkRegistryPaths(new Set(['a.md']),
+  it('does not apply the exact-name check to a glob row', () => {
+    // The row names a rule, not a document, so `tracked.has('docs/*.md')` is
+    // meaningless. What it must still do is COVER something -- see 'a registry
+    // glob that covers nothing' below, which is why the tracked set here holds
+    // a document the glob matches rather than one it does not.
+    expect(checkRegistryPaths(new Set(['docs/a.md']),
       [{ cls: 'D', glob: 'docs/*.md', codePaths: [], regions: [] }])).toEqual([]);
   });
 });
@@ -1840,7 +1844,7 @@ describe('a whole run over a fixture repository', () => {
       + '|---|---|---|---|\n| D | docs/DOC_REGISTRY.md | | |\n| D | docs/*.md | src | |\n');
     fs.writeFileSync(path.join(dir, 'src/a.ts'), 'export const a = 1;\n');
     fs.writeFileSync(path.join(dir, 'issues.json'),
-      JSON.stringify({ stocks: {}, solyra: {} }));
+      JSON.stringify({ stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
     for (const args of [['init', '-q', '-b', 'work'], ['config', 'user.email', 't@e.com'],
       ['config', 'user.name', 't'], ['config', 'commit.gpgsign', 'false'],
       ['add', '-A'], ['commit', '-qm', 'tree']]) {
@@ -1895,3 +1899,158 @@ describe('a whole run over a fixture repository', () => {
   });
 });
 
+
+// ── round 10 (ac2efaa) ──────────────────────────────────────────────────────
+
+describe('a snapshot that names both repositories but records nothing', () => {
+  it('is bad input, not a clean run', () => {
+    // fetchIssueStates refuses to report on a repository that returned zero
+    // issues; a snapshot read may not be laxer. With an empty map every cited
+    // issue becomes a fabricated "could not be resolved" P2 and --check exits
+    // 1 for findings that do not exist -- the shape Rule 4 refuses.
+    const f = path.join(os.tmpdir(), `snap-empty-${process.pid}.json`);
+    fs.writeFileSync(f, JSON.stringify({ solyra: {}, stocks: {} }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(AuditError);
+    expect(() => loadIssuesSnapshot(f)).toThrow(/empty "solyra" map/);
+    fs.unlinkSync(f);
+  });
+
+  it('still accepts a map with one validated record', () => {
+    const f = path.join(os.tmpdir(), `snap-one-${process.pid}.json`);
+    fs.writeFileSync(f, JSON.stringify({
+      solyra: { 1: { state: 'open' } }, stocks: { 2: { state: 'closed' } },
+    }));
+    expect(loadIssuesSnapshot(f).solyra['1'].state).toBe('open');
+    fs.unlinkSync(f);
+  });
+});
+
+describe('a committed change of git object type', () => {
+  it('counts as drift, as the same change already does uncommitted', () => {
+    // A regular file becoming a symlink is `T` under --diff-filter=AMDRT. The
+    // uncommitted branch counts T; the committed branch did not, so the change
+    // went invisible the moment it was committed and the document reads
+    // current over a surface that moved.
+    expect(driftCommits('abc123456789\tmsg\nT\tsrc/a.ts\n')).toEqual(['abc123456789\tmsg']);
+  });
+
+  it('still ignores a pure rename', () => {
+    expect(driftCommits('abc123456789\tmsg\nR100\tsrc/a.ts\tsrc/b.ts\n')).toEqual([]);
+  });
+});
+
+describe('a link example inside a fence', () => {
+  const ctx = linkContext(new Set(['src/a.ts']), new Set(), []);
+
+  it('is an example, not a dead link', () => {
+    // A living document showing Markdown syntax is not citing a path. The
+    // marker and heading checks already skip fenced lines; this one did not,
+    // so a syntax example failed --check.
+    const doc = '# T\n\n```md\n[x](missing.md)\n`nowhere/gone.ts`\n```\n\nSee `src/a.ts`.\n';
+    expect(checkDeadLinks('d.md', doc, ctx)).toEqual([]);
+  });
+
+  it('still flags the same link outside the fence', () => {
+    expect(checkDeadLinks('d.md', '# T\n\n[x](missing.md)\n', ctx)).toHaveLength(1);
+  });
+});
+
+describe('an issue URL in a casing GitHub accepts', () => {
+  const states = { solyra: { 8: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+
+  it('resolves against the same state map', () => {
+    // github.com/teneikaaskew/Solyra/issues/8 is the same issue. A
+    // case-sensitive match dropped the blocker entirely; adding only the `i`
+    // flag would index states['Solyra'] and fabricate "could not be resolved".
+    const out = checkClosedIssues('d.md',
+      'blocked by https://github.com/teneikaaskew/Solyra/issues/8\n', states);
+    expect(out).toHaveLength(1);
+    expect(out[0].severity).toBe('P1');
+    expect(out[0].ref).toBe('solyra#8');
+  });
+});
+
+describe('a negated blocking cue', () => {
+  const states = { solyra: { 8: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+  const cite = (prose) => checkClosedIssues('d.md',
+    `${prose} https://github.com/TeneikaAskew/solyra/issues/8\n`, states);
+
+  it('is not a citation of live work', () => {
+    // An unbounded substring match saw `blocked by` inside `not blocked by`
+    // and `blocking` inside `non-blocking`, so prose stating the opposite
+    // produced a P1 and could fail --check.
+    expect(cite('This is not blocked by')).toEqual([]);
+    expect(cite('nonblocking:')).toEqual([]);
+    expect(cite('A non-blocking note on')).toEqual([]);
+    expect(cite('No longer blocking:')).toEqual([]);
+  });
+
+  it('still reads the unnegated forms as one', () => {
+    expect(cite('blocked by')).toHaveLength(1);
+    expect(cite('Blocking:')).toHaveLength(1);
+    expect(cite('Work not started on')).toHaveLength(1);
+    expect(cite('Still open:')).toHaveLength(1);
+  });
+});
+
+describe('a malformed claim pattern', () => {
+  it('is exit 2, not a documentation finding', () => {
+    // Same input-versus-finding split the region-regex path already makes:
+    // a registry typo is bad input, and a plain SyntaxError walks past the
+    // AuditError handler and exits 1.
+    expect(() => checkClaims([{ doc: 'README.md', pattern: '[unclosed', derivation: 'x' }]))
+      .toThrow(AuditError);
+    expect(() => checkClaims([{ doc: 'README.md', pattern: '[unclosed', derivation: 'x' }]))
+      .toThrow(/not a valid regular/);
+  });
+
+  it('applies to a list-len derivation too', () => {
+    expect(() => derive('list-len README.md [unclosed')).toThrow(AuditError);
+    expect(() => derive('list-len README.md [unclosed')).toThrow(/not a valid regular/);
+  });
+});
+
+describe('reference-style Markdown links', () => {
+  const ctx = linkContext(new Set(['src/a.ts']), new Set(), []);
+
+  it('flags a definition whose destination does not exist', () => {
+    // `[guide][g]` plus `[g]: missing.md` matches neither MD_LINK_RE nor the
+    // backticked-path pass, so the audit read clean over a link that is broken
+    // for every reader.
+    const out = checkDeadLinks('d.md', '# T\n\nSee [guide][g].\n\n[g]: missing.md\n', ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('missing.md');
+  });
+
+  it('flags a use with no definition', () => {
+    const out = checkDeadLinks('d.md', '# T\n\nSee [guide][nope].\n', ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('nope');
+  });
+
+  it('is quiet when the definition resolves', () => {
+    expect(checkDeadLinks('d.md', '# T\n\nSee [guide][g].\n\n[g]: src/a.ts\n', ctx)).toEqual([]);
+  });
+
+  it('leaves a definition pointing off the web alone', () => {
+    expect(checkDeadLinks('d.md', '# T\n\nSee [g][g].\n\n[g]: https://example.com/x\n', ctx))
+      .toEqual([]);
+  });
+});
+
+describe('a registry glob that covers nothing', () => {
+  it('is a finding, as an exact declaration covering nothing already is', () => {
+    // `.claude/agents/*.md` can stop matching any tracked path -- every agent
+    // deleted, or the glob mistyped -- and no document ever reaches classify()
+    // to expose the inert declaration.
+    const rows = [{ cls: 'A', glob: '.claude/agents/*.md', codePaths: [], regions: [] }];
+    const out = checkRegistryPaths(new Set(['docs/x.md']), rows);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/matches no tracked document/);
+  });
+
+  it('is quiet when the glob covers something', () => {
+    const rows = [{ cls: 'A', glob: 'docs/*.md', codePaths: [], regions: [] }];
+    expect(checkRegistryPaths(new Set(['docs/x.md']), rows)).toEqual([]);
+  });
+});
