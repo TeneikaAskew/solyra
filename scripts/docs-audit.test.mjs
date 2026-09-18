@@ -2075,3 +2075,105 @@ describe('a registry glob that covers nothing', () => {
     expect(checkRegistryPaths(new Set(['docs/x.md']), rows)).toEqual([]);
   });
 });
+
+// ── round 11 (59395d7) ──────────────────────────────────────────────────────
+
+describe('an inline link carrying a title', () => {
+  const ctx = linkContext(new Set(['src/a.ts']), new Set(), []);
+
+  it('is still a link, and still checked', () => {
+    // `[guide](missing.md "Guide")` is standard CommonMark. Requiring `)`
+    // straight after the destination meant the pattern did not match at all,
+    // so the audit reported clean over a missing target.
+    const out = checkDeadLinks('d.md', '# T\n\n[guide](missing.md "Guide")\n', ctx);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('missing.md');
+  });
+
+  it('keeps its fragment checkable', () => {
+    const real = linkContext(new Set(['README.md']), new Set(), []);
+    const out = checkDeadLinks('d.md', "# T\n\n[x](README.md#no-such-heading 'T')\n", real);
+    expect(out).toHaveLength(1);
+    expect(out[0].check).toBe('dead-anchor');
+  });
+
+  it('is quiet when the titled target resolves', () => {
+    expect(checkDeadLinks('d.md', '# T\n\n[a](src/a.ts "The helper")\n', ctx)).toEqual([]);
+  });
+});
+
+describe('a blocker example inside a fence', () => {
+  const states = { solyra: { 8: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+
+  it('is an example, not a citation', () => {
+    // --check gates on closed-issue findings, so a document demonstrating what
+    // a blocking citation looks like failed the audit over its own example.
+    const doc = '# T\n\n```md\nBlocked by https://github.com/TeneikaAskew/solyra/issues/8\n```\n';
+    expect(checkClosedIssues('d.md', doc, states)).toEqual([]);
+  });
+
+  it('still reports the same citation outside the fence', () => {
+    const doc = '# T\n\nBlocked by https://github.com/TeneikaAskew/solyra/issues/8\n';
+    expect(checkClosedIssues('d.md', doc, states)).toHaveLength(1);
+  });
+});
+
+describe('a Claims row naming a document that cannot be read', () => {
+  it('is exit 2, not a documentation finding', () => {
+    // Same input-versus-finding split as the malformed pattern beside it: a
+    // bare readFileSync throws a filesystem Error, which the handler rethrows,
+    // and Node exits 1 with a stack trace.
+    expect(() => checkClaims([{ doc: 'docs/gone.md', pattern: '(\\d+) things',
+      derivation: 'grep-count src x' }])).toThrow(AuditError);
+    expect(() => checkClaims([{ doc: 'docs/gone.md', pattern: '(\\d+) things',
+      derivation: 'grep-count src x' }])).toThrow(/could not be read/);
+  });
+});
+
+describe('a stale generated type', () => {
+  it('is reported against the generated file, not the vendored snapshot', () => {
+    // sync-api-contract emits a `stale`/`missing` verdict for
+    // src/types/stocksOpenApi.gen.d.ts too, and routing it to the snapshot
+    // told the reader the wrong invariant had failed.
+    const spawn = () => ({ status: 1, stdout: '',
+      stderr: '[api-contract] src/types/stocksOpenApi.gen.d.ts is stale against the '
+            + 'snapshot — run: npm run contract:sync\n' });
+    const out = checkContractSync({ spawn });
+    expect(out).toHaveLength(1);
+    expect(out[0].doc).toBe('src/types/stocksOpenApi.gen.d.ts');
+    expect(out[0].detail).not.toMatch(/no longer matches stocks/);
+  });
+
+  it('still reports a stale snapshot against the snapshot', () => {
+    const spawn = () => ({ status: 1, stdout: '',
+      stderr: '[api-contract] vendored snapshot is STALE against stocks. Run: npm run '
+            + 'contract:sync\n' });
+    const out = checkContractSync({ spawn });
+    expect(out).toHaveLength(1);
+    expect(out[0].doc).toBe('tests/fixtures/stocks-openapi.json');
+  });
+});
+
+describe("the README row's declared code paths", () => {
+  it('cover the test surfaces the README documents', () => {
+    // README.md documents the Playwright layout, the e2e launcher and the
+    // three TypeScript projects. With only package.json and vite.config.ts
+    // declared, all of that could go stale under a clean freshness marker.
+    const row = loadRegistry(fs.readFileSync(path.join(process.cwd(), 'docs/DOC_REGISTRY.md'),
+      'utf8')).find((r) => r.glob === 'README.md');
+    for (const p of ['playwright.config.ts', 'scripts/e2e-server.mjs', 'tests',
+      'tsconfig.json']) {
+      expect(row.codePaths).toContain(p);
+    }
+  });
+});
+
+describe('the README table of commands', () => {
+  it('describes the scope npm test actually runs', () => {
+    // vite.config.ts includes scripts/docs-audit.test.mjs, so "only
+    // src/**/*.test.ts{,x}" and "all colocated under src/" were both false.
+    const readme = fs.readFileSync(path.join(process.cwd(), 'README.md'), 'utf8');
+    expect(readme).toMatch(/scripts\/docs-audit\.test\.mjs/);
+    expect(readme).not.toMatch(/Vitest unit tests \(`src\/\*\*\/\*\.test\.ts\{,x\}`\)/);
+  });
+});

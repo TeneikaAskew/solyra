@@ -106,7 +106,12 @@ export function normaliseRepo(repo) {
 // The fragment is CAPTURED, not discarded. Dropping it meant a link to a real
 // file but a heading that does not exist always passed. The Python twin had
 // the same gap, where 35 such links were measured (stocks#1121).
-const MD_LINK_RE = /\[[^\]]*\]\(([^)#\s]*)(?:#([^)\s]+))?\)/g;
+// The optional TITLE is admitted and discarded. `[guide](missing.md "Guide")`
+// is standard CommonMark; requiring `)` straight after the destination meant
+// the pattern did not match at all, so a missing target reported clean rather
+// than dead.
+const MD_LINK_RE =
+  /\[[^\]]*\]\(([^)#\s]*)(?:#([^)\s]+))?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g;
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
 // slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
 // which the living docs cite constantly -- could never produce a dead-path
@@ -1047,7 +1052,13 @@ export function fetchIssueStates(repo, { exec = run } = {}) {
 
 export function checkClosedIssues(doc, text, states) {
   const out = [];
-  text.split('\n').forEach((line, i) => {
+  const lines = text.split('\n');
+  // --check gates on these findings, so a document DEMONSTRATING what a
+  // blocking citation looks like failed the audit over its own example. The
+  // link, heading and marker checks already skip fenced lines.
+  const fenced = fencedLines(lines);
+  lines.forEach((line, i) => {
+    if (fenced.has(i)) return;
     if (!hasBlockingCue(line)) return;
     for (const m of line.matchAll(ISSUE_URL_RE)) {
       const [, rawRepo, rawKind, num] = m;
@@ -1239,7 +1250,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // Spans a backticked citation occupies purely as a Markdown link's LABEL.
     // ``[`src/gone.ts`](../src/gone.ts)`` is ONE broken link, and reporting it
     // from both passes doubles the finding and the summary count.
-    const labelSpans = [...line.matchAll(/\[([^\]]*)\]\([^)\s]*\)/g)]
+    const labelSpans = [...line.matchAll(/\[([^\]]*)\]\([^)\s]*(?:\s+[^)]*)?\)/g)]
       .map((m) => [m.index + 1, m.index + 1 + m[1].length]);
     const inLinkLabel = (idx) => labelSpans.some(([lo, hi]) => idx >= lo && idx < hi);
     // `[x](#heading)` carries no path, so the anchor is checked against this
@@ -1474,7 +1485,15 @@ function claimPattern(pattern, flags, where) {
 export function checkClaims(claims, { exec = run } = {}) {
   const out = [];
   for (const { doc, pattern, derivation } of claims) {
-    const text = fs.readFileSync(path.join(REPO, doc), 'utf8');
+    let text;
+    try {
+      text = fs.readFileSync(path.join(REPO, doc), 'utf8');
+    } catch (err) {
+      // Same split as claimPattern beside it: a registry row naming a moved or
+      // deleted document is bad INPUT. A bare filesystem Error walks past the
+      // AuditError handler and exits 1, the status reserved for findings.
+      throw new AuditError(`claim document \`${doc}\` could not be read: ${err.message}`);
+    }
     const re = claimPattern(pattern, 'g', 'claim pattern');
     const actual = derive(derivation, { exec });
     let hits = 0;
@@ -1509,6 +1528,12 @@ export function checkClaims(claims, { exec = run } = {}) {
  * have. A doc having an owning job is not evidence the job delivered.
  */
 const CONTRACT_STALE_RE = /^\[api-contract\] .*\b(?:stale|missing)\b/im;
+// The same run reports two different broken invariants. Naming the vendored
+// snapshot for a stale GENERATED type tells the reader the snapshot no longer
+// matches stocks when it matches fine, and points the fix at the wrong file.
+const CONTRACT_GENERATED_RE =
+  /^\[api-contract\] .*stocksOpenApi\.gen\.d\.ts\b.*\b(?:stale|missing)\b/im;
+const GENERATED_TYPES = 'src/types/stocksOpenApi.gen.d.ts';
 
 export function checkContractSync({ spawn = spawnSync } = {}) {
   const res = spawn('node', ['scripts/sync-api-contract.mjs', '--check'],
@@ -1532,10 +1557,17 @@ export function checkContractSync({ spawn = spawnSync } = {}) {
       + `or execution failure, not a verdict); the audit cannot report on the vendored `
       + `OpenAPI contract. (${why.split('\n').slice(0, 2).join(' ').slice(0, 200)})`);
   }
+  const tail = why.split('\n').slice(0, 3).join(' ').slice(0, 200);
+  if (CONTRACT_GENERATED_RE.test(res.stderr ?? '')) {
+    return [{ check: 'class-a', doc: GENERATED_TYPES, severity: 'P1',
+      detail: `contract:check is red: the generated types no longer match the vendored `
+            + `OpenAPI snapshot, so the assignability checks over them prove nothing. `
+            + `Run \`npm run contract:sync\`. (${tail})` }];
+  }
   return [{ check: 'class-a', doc: 'tests/fixtures/stocks-openapi.json', severity: 'P1',
     detail: `contract:check is red: the vendored OpenAPI snapshot no longer matches `
           + `stocks main, so every type and fixture derived from it is unverified. `
-          + `Run \`npm run contract:sync\`. (${why.split('\n').slice(0, 3).join(' ').slice(0, 200)})` }];
+          + `Run \`npm run contract:sync\`. (${tail})` }];
 }
 
 // ── cli ─────────────────────────────────────────────────────────────────────

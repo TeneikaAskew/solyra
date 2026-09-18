@@ -56,7 +56,7 @@ would then 401.
 | `npm run dev` | Vite dev server on :5173 |
 | `npm run build` | `tsc -b` across all three TS projects, then `vite build` |
 | `npm run lint` | ESLint |
-| `npm test` | Vitest unit tests (`src/**/*.test.ts{,x}`) |
+| `npm test` | Vitest unit tests: `src/**/*.test.ts{,x}` plus `scripts/docs-audit.test.mjs` |
 | `npm run e2e` | Playwright E2E (boots its own Vite on :5199) |
 
 ### TypeScript projects
@@ -69,7 +69,9 @@ mock.
 
 ## Tests
 
-**Unit** — Vitest, colocated in `src/` as `*.test.ts{,x}`.
+**Unit** — Vitest. App tests are colocated in `src/` as `*.test.ts{,x}`; the
+documentation auditor is tested beside itself at `scripts/docs-audit.test.mjs`,
+which `npm test` also runs.
 
 **E2E** — Playwright, in `tests/`. These are **hermetic**: every `/api` call is
 intercepted with `page.route`, so they need no backend and no network. Test

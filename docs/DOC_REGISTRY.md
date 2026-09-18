@@ -101,7 +101,7 @@ renames are ignored, so a file-move wave does not flag every document.
 | C | docs/expected-move-affordances-design.md | | |
 | C | docs/journal-one-stop-shop-design.md | | |
 | C | docs/solyra-landing-page-design.md | | |
-| D | README.md | package.json, vite.config.ts | |
+| D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, tests, tsconfig.json | |
 | D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows | |
 | D | FRONTEND.md | src/routes, src/components | |
 | D | docs/UI-SCREENS.md | src/routes, src/components | |
