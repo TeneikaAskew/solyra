@@ -2421,12 +2421,25 @@ describe('the ref the link history is read from', () => {
       .toBeGreaterThan(HISTORY_REF_CANDIDATES.indexOf('origin/main'));
   });
 
-  it('resolves to a different commit than HEAD on a branch ahead of main', () => {
-    // This checkout is exactly that case, so the two refs must not collapse.
-    const head = resolveBaseRef(['HEAD']);
-    const history = resolveBaseRef(HISTORY_REF_CANDIDATES);
-    expect(history).toBeTruthy();
-    expect(history).not.toBe(head);
+  // Hermetic, because the answer depends on the CHECKOUT. The first version of
+  // this asserted the history ref differs from HEAD "on a branch ahead of
+  // main", which held in a full clone and turned CI red: actions/checkout
+  // fetches the PR ref without a remote-tracking `origin/main`, so the
+  // candidate list legitimately falls through to HEAD there. The behaviour was
+  // right; the test had baked in one checkout shape.
+  const spawnWith = (available) => (_cmd, argv) => ({
+    status: available.includes(argv[argv.length - 1].replace(/\^\{tree\}$/, '')) ? 0 : 1,
+    stdout: '',
+  });
+
+  it('uses the target branch when it resolves', () => {
+    expect(resolveBaseRef(HISTORY_REF_CANDIDATES,
+      { spawn: spawnWith(['origin/main', 'main', 'HEAD']) })).toBe('origin/main');
+  });
+
+  it('falls back to this branch in a checkout with no main, as CI has', () => {
+    expect(resolveBaseRef(HISTORY_REF_CANDIDATES,
+      { spawn: spawnWith(['HEAD']) })).toBe('HEAD');
   });
 
   it('still recognises a root file the history ref had and the tree does not', () => {
