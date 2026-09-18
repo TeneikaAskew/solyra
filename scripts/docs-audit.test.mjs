@@ -7,10 +7,15 @@
  * ground; where a test exists in both, the wording is deliberately the same so
  * a divergence between the two implementations is visible in the diff.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   cell,
   checkClaims,
+  checkVerifyTargets,
+  checkClosedIssues,
   checkChangedSince,
   checkContractSync,
   checkDeadLinks,
@@ -19,6 +24,7 @@ import {
   driftCommits,
   knownRootFiles,
   linkContext,
+  loadIssuesSnapshot,
   resolveCommit,
   workingTreeFiles,
   classify,
@@ -40,6 +46,8 @@ import {
   renderMarker,
   splitRow,
   stamp,
+  stampRecord,
+  summariseStamps,
   unownedSpans,
 } from './docs-audit.mjs';
 
@@ -376,9 +384,19 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--verify', '--stamp'])).toThrow(/needs a value/);
   });
 
+  it('rejects a --date that is not a calendar day', () => {
+    // `--stamp --date bad` wrote `bad` into every marker as Last scanned; on
+    // the next run MARKER_RE stopped at the prefix, extraSegments kept the
+    // malformed field as prose, and each doc ended up with two of them.
+    expect(() => parseArgs(['--date', 'bad'])).toThrow(/calendar/);
+    expect(() => parseArgs(['--date', '2026-02-30'])).toThrow(/calendar/);
+    expect(() => parseArgs(['--date', '2026-9-1'])).toThrow(/calendar/);
+    expect(parseArgs(['--date', '2026-09-18']).date).toBe('2026-09-18');
+  });
+
   it('parses the documented options', () => {
-    const a = parseArgs(['--json', '--check', '--since', 'abc1234', '--verify', 'a.md', 'b.md']);
-    expect(a).toMatchObject({ json: true, check: true, since: 'abc1234', verify: ['a.md', 'b.md'] });
+    const a = parseArgs(['--json', '--check', '--stamp', '--since', 'abc1234', '--verify', 'a.md', 'b.md']);
+    expect(a).toMatchObject({ json: true, check: true, stamp: true, since: 'abc1234', verify: ['a.md', 'b.md'] });
   });
 
   it('has a contract-check opt-out that is not the issues-snapshot flag', () => {
@@ -386,6 +404,77 @@ describe('parseArgs', () => {
     // matter how stale the vendored OpenAPI snapshot was.
     expect(parseArgs(['--issues-snapshot', 'f.json']).contractCheck).toBeUndefined();
     expect(parseArgs(['--no-contract-check']).contractCheck).toBe(false);
+  });
+});
+
+// ── the issues snapshot ─────────────────────────────────────────────────────
+
+describe('loadIssuesSnapshot', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-'));
+
+  it('names the file and the reason when it is missing', () => {
+    // readFileSync threw ENOENT past the AuditError handler, so Node exited 1:
+    // the documented status for "findings", not for "the run failed".
+    expect(() => loadIssuesSnapshot(path.join(dir, 'nope.json'))).toThrow(/nope\.json.*ENOENT/);
+  });
+
+  it('names the file and the JSON error when it is malformed', () => {
+    const f = path.join(dir, 'bad.json');
+    fs.writeFileSync(f, '{bad');
+    expect(() => loadIssuesSnapshot(f)).toThrow(/bad\.json.*JSON/);
+  });
+
+  it('rejects a snapshot that lacks a repo, rather than resolving nothing', () => {
+    const f = path.join(dir, 'half.json');
+    fs.writeFileSync(f, JSON.stringify({ solyra: {} }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(/stocks/);
+  });
+
+  it('returns the states of a well-formed snapshot', () => {
+    const f = path.join(dir, 'ok.json');
+    fs.writeFileSync(f, JSON.stringify({ solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, stocks: {} }));
+    expect(loadIssuesSnapshot(f).solyra[1].state).toBe('open');
+  });
+});
+
+// ── stamping ────────────────────────────────────────────────────────────────
+
+describe('checkVerifyTargets', () => {
+  it('rejects a --verify path no stampable document consumed', () => {
+    // `--stamp --verify nope.md` ran to completion, stamped ten documents
+    // scan-only and exited 0, and nothing in the output said the review it
+    // was asked to record had not been.
+    expect(() => checkVerifyTargets(new Set(['nope.md', 'CLAUDE.md']), new Set(['CLAUDE.md'])))
+      .toThrow(/nope\.md/);
+  });
+
+  it('is quiet when every requested path was stamped', () => {
+    expect(() => checkVerifyTargets(new Set(['CLAUDE.md']), new Set(['CLAUDE.md', 'README.md']))).not.toThrow();
+  });
+});
+
+describe('summariseStamps', () => {
+  it('counts only the actions that wrote', () => {
+    // `skipped-legacy-content` and `skipped-no-h1` were counted as changed
+    // because only `unchanged` was excluded, so a --verify that touched
+    // nothing printed "1 changed".
+    const s = summariseStamps([
+      { action: 'inserted' }, { action: 'updated' }, { action: 'unchanged' },
+      { action: 'skipped-no-h1' }, { action: 'skipped-legacy-content' },
+    ]);
+    expect(s).toEqual({ changed: 2, unchanged: 1, skipped: 2 });
+  });
+
+  it('records no depth for a stamp that was not written', () => {
+    expect(stampRecord('a.md', { action: 'skipped-no-h1' }, true).depth).toBeNull();
+    expect(stampRecord('a.md', { action: 'updated' }, true).depth).toBe('verified');
+    expect(stampRecord('a.md', { action: 'inserted' }, false).depth).toBe('scan-only');
+  });
+});
+
+describe('parseArgs --verify', () => {
+  it('requires --stamp, since a review can only be recorded by writing', () => {
+    expect(() => parseArgs(['--verify', 'CLAUDE.md'])).toThrow(/--stamp/);
   });
 });
 
@@ -558,6 +647,24 @@ describe('checkDeadLinks', () => {
     ]);
   });
 
+  it('reads a path with a line or range suffix, which the docs use constantly', () => {
+    // `src/App.tsx:44-72`, `vite.config.ts:21,27`, `SwingMode.tsx:156`: the
+    // closing backtick had to follow the extension, so every such citation
+    // was invisible to the check.
+    // The config was renamed to .mts; Gone.tsx is gone (and, unlike App.tsx,
+    // not on this repo's disk either, which the check also consults); b.tsx
+    // keeps .tsx a tracked extension so the suffix is what is under test.
+    const suffixed = linkContext(new Set(['vite.config.mts', 'src/a.ts', 'src/b.tsx']), new Set(), []);
+    const out = checkDeadLinks('d.md',
+      'See `src/Gone.tsx:44-72` and `src/Gone.tsx:9`, then `vite.config.mts:7,45,93` and `vite.config.ts:2-3`.\n',
+      suffixed);
+    expect(out.map((f) => f.detail)).toEqual([
+      'backticked path -> src/Gone.tsx',
+      'backticked path -> src/Gone.tsx',
+      'backticked root file -> vite.config.ts',
+    ]);
+  });
+
   it('skips a path whose extension no file in this tree has', () => {
     // This repo has no Python at all, so `tests/test_e2e.py` cannot be a path
     // here whatever directory it starts with; it is the stocks repo's.
@@ -575,6 +682,46 @@ describe('checkDeadLinks', () => {
     expect(checkDeadLinks('d.md', link, linkCtx)).toEqual([]);
     expect(checkDeadLinks('d.md', word, linkCtx)).toEqual([]);
     expect(checkDeadLinks('d.md', 'Plain `src/export.ts` mention.\n', linkCtx)).toHaveLength(1);
+  });
+});
+
+// ── closed issues and pull requests ─────────────────────────────────────────
+
+describe('checkClosedIssues', () => {
+  const states = {
+    solyra: {
+      8: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+      60: { state: 'closed', reason: 'merged', kind: 'PR' },
+      61: { state: 'closed', reason: '', kind: 'PR' },
+      70: { state: 'open', reason: '', kind: 'PR' },
+    },
+  };
+  const url = (n, kind = 'issues') => `https://github.com/TeneikaAskew/solyra/${kind}/${n}`;
+
+  it('reports a merged pull request cited as a live blocker', () => {
+    // A `/pull/` URL was skipped outright, so "blocked by PR #60" stayed
+    // invisible after #60 merged even though the issue-state read already
+    // returned PR records.
+    const out = checkClosedIssues('d.md', `Blocked by ${url(60, 'pull')}.\n`, states);
+    expect(out).toHaveLength(1);
+    expect(out[0].severity).toBe('P1');
+    expect(out[0].detail).toContain('solyra#60 (PR) is CLOSED (merged)');
+  });
+
+  it('reports a closed-unmerged pull request too, saying which it was', () => {
+    const out = checkClosedIssues('d.md', `Still open: ${url(61, 'pull')}.\n`, states);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toContain('(PR) is CLOSED (closed)');
+  });
+
+  it('is quiet for an open pull request and for a PR cited with no blocking cue', () => {
+    expect(checkClosedIssues('d.md', `Blocked by ${url(70, 'pull')}.\n`, states)).toEqual([]);
+    expect(checkClosedIssues('d.md', `Landed in ${url(60, 'pull')}.\n`, states)).toEqual([]);
+  });
+
+  it('still reports a closed issue exactly as before', () => {
+    const out = checkClosedIssues('d.md', `Blocked by ${url(8)}.\n`, states);
+    expect(out[0].detail).toBe('solyra#8 is CLOSED (completed) but cited as live work');
   });
 });
 

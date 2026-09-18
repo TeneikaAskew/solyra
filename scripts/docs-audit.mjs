@@ -83,8 +83,12 @@ const MD_LINK_RE = /\[[^\]]*\]\(([^)#\s]+)(?:#[^)\s]*)?\)/g;
 // other bare files that live under a directory or in the sibling repo.
 // The extension admits six characters because `.drawio` has six, and a
 // five-character cap made both diagrams uncitable rather than unchecked.
-const BACKTICK_PATH_RE = /`([A-Za-z0-9_./-]+\/[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,6})`/g;
-const BACKTICK_ROOT_FILE_RE = /`([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[A-Za-z0-9]{1,6})`/g;
+// A citation may carry a source location after the path: `src/App.tsx:44-72`,
+// `vite.config.ts:7,45,93`, `SwingMode.tsx:156`. Requiring the closing
+// backtick right after the extension made every such citation invisible.
+const LINE_SUFFIX = '(?::\\d+(?:-\\d+)?(?:,\\d+(?:-\\d+)?)*)?';
+const BACKTICK_PATH_RE = new RegExp(`\`([A-Za-z0-9_./-]+/[A-Za-z0-9_.-]+\\.[A-Za-z0-9]{1,6})${LINE_SUFFIX}\``, 'g');
+const BACKTICK_ROOT_FILE_RE = new RegExp(`\`([A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.[A-Za-z0-9]{1,6})${LINE_SUFFIX}\``, 'g');
 // A line that names the sibling repo is citing its tree, not this one:
 // CLAUDE.md says `scripts/export_openapi.py` is a stocks file on the line
 // that cites it, and the design briefs wrap stocks paths in a
@@ -637,6 +641,28 @@ export function stamp(text, date, depth, sha, reviewed = false) {
 
 // ── github state ────────────────────────────────────────────────────────────
 
+/**
+ * Read an issues snapshot written by --write-issues-snapshot. A missing or
+ * malformed file threw past the AuditError handler and Node exited 1, which
+ * is the documented status for "findings", not for "the run could not
+ * happen"; automation could not tell bad input from stale documentation.
+ */
+export function loadIssuesSnapshot(file) {
+  let states;
+  try {
+    states = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    throw new AuditError(`--issues-snapshot ${file} could not be read: ${err.message}`);
+  }
+  for (const repo of [THIS_REPO, SIBLING_REPO]) {
+    if (!states || typeof states[repo] !== 'object' || states[repo] === null) {
+      throw new AuditError(`--issues-snapshot ${file} has no "${repo}" entry; every ${repo} citation `
+        + 'would read as unresolvable');
+    }
+  }
+  return states;
+}
+
 /** One paginated read per repo, never one call per reference. */
 export function fetchIssueStates(repo) {
   const states = {};
@@ -645,7 +671,10 @@ export function fetchIssueStates(repo) {
       'api',
       `repos/${OWNER}/${repo}/issues?state=all&per_page=100&page=${page}`,
       '--jq',
-      '.[] | [.number, .state, (.state_reason // ""), (if .pull_request then "PR" else "ISSUE" end)] | @tsv',
+      // A PR has no state_reason; whether it merged is the fact that matters
+      // for a document citing it as live work, so it goes in the same column.
+      '.[] | [.number, .state, (.state_reason // (if .pull_request.merged_at then "merged" else "" end)), '
+      + '(if .pull_request then "PR" else "ISSUE" end)] | @tsv',
     ]);
     const rows = out.trim().split('\n').filter(Boolean);
     if (rows.length === 0) break;
@@ -668,16 +697,21 @@ export function checkClosedIssues(doc, text, states) {
     if (!BLOCKING_CUE_RE.test(line)) return;
     for (const m of line.matchAll(ISSUE_URL_RE)) {
       const [, repo, kind, num] = m;
-      if (kind !== 'issues') continue;
+      // A pull request cited as a blocker is live work too. `/pull/` used to
+      // be skipped outright, so "blocked by #60" stayed invisible after #60
+      // merged, though the issue-state read already carried PR records; the
+      // blocking-cue filter above is what keeps ordinary PR lineage out.
+      const isPr = kind === 'pull';
       const st = states[repo]?.[Number(num)];
+      const label = `${repo}#${num}${isPr ? ' (PR)' : ''}`;
       if (!st) {
         out.push({ check: 'closed-issue', doc, line: i + 1, severity: 'P2',
-          detail: `${repo}#${num} could not be resolved` });
+          detail: `${label} could not be resolved` });
       } else if (st.state === 'closed') {
-        const reason = st.reason || 'completed';
+        const reason = st.reason || (isPr ? 'closed' : 'completed');
         out.push({ check: 'closed-issue', doc, line: i + 1,
           severity: reason === 'not_planned' ? 'P2' : 'P1',
-          detail: `${repo}#${num} is CLOSED (${reason}) but cited as live work`,
+          detail: `${label} is CLOSED (${reason}) but cited as live work`,
           ref: `${repo}#${num}`, reason });
       }
     }
@@ -944,6 +978,14 @@ const VALUE_FLAGS = {
  * turned the gate off without a word. Exit status is this CLI's contract with
  * automation, and a contract that a misspelling can void is not one.
  */
+/** A YYYY-MM-DD string that names a real day: `2026-02-30` rolls over. */
+export function isCalendarDate(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s ?? '');
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.toISOString().slice(0, 10) === s;
+}
+
 export function parseArgs(argv) {
   const a = { verify: [] };
   for (let i = 0; i < argv.length; i += 1) {
@@ -969,7 +1011,41 @@ export function parseArgs(argv) {
       throw new AuditError(`unknown option: ${t}`);
     }
   }
+  // `--stamp --date bad` wrote `bad` into every marker as Last scanned; on
+  // the next run MARKER_RE stopped at the prefix, extraSegments kept the
+  // malformed field as prose, and each document ended up with two.
+  if (a.date !== undefined && !isCalendarDate(a.date)) {
+    throw new AuditError(`--date ${a.date} is not a calendar day (YYYY-MM-DD)`);
+  }
+  // A review is recorded only by writing a marker; --verify without --stamp
+  // is a no-op that reads as if it had recorded one.
+  if (a.verify.length && !a.stamp) throw new AuditError('--verify requires --stamp');
   return a;
+}
+
+/**
+ * Every --verify path must have been consumed by a stampable document, or
+ * the review it was asked to record was never recorded: `--verify nope.md`
+ * used to stamp everything else scan-only and exit 0 without a word.
+ */
+export function checkVerifyTargets(verify, stampable) {
+  const missing = [...verify].filter((v) => !stampable.has(v));
+  if (missing.length) {
+    throw new AuditError(`--verify ${missing.join(', ')}: no stampable document matches `
+      + '(not a tracked doc, or Class B/C/X, or a machine-owned file with nowhere to stamp)');
+  }
+}
+
+/** What a stamp did, with a depth only when something was written. */
+export function stampRecord(doc, res, reviewed) {
+  const wrote = res.action === 'inserted' || res.action === 'updated';
+  return { doc, action: res.action, depth: wrote ? (reviewed ? 'verified' : 'scan-only') : null };
+}
+
+export function summariseStamps(stamped) {
+  const changed = stamped.filter((s) => s.action === 'inserted' || s.action === 'updated').length;
+  const unchanged = stamped.filter((s) => s.action === 'unchanged').length;
+  return { changed, unchanged, skipped: stamped.length - changed - unchanged };
 }
 
 export function main(argv) {
@@ -992,7 +1068,7 @@ export function main(argv) {
   const docs = documentSet(tracked, registry);
 
   let states;
-  if (args.issuesSnapshot) states = JSON.parse(fs.readFileSync(args.issuesSnapshot, 'utf8'));
+  if (args.issuesSnapshot) states = loadIssuesSnapshot(args.issuesSnapshot);
   else states = { [THIS_REPO]: fetchIssueStates(THIS_REPO), [SIBLING_REPO]: fetchIssueStates(SIBLING_REPO) };
   if (args.writeIssuesSnapshot) fs.writeFileSync(args.writeIssuesSnapshot, JSON.stringify(states, null, 1));
   const ctx = { states, ...linkContext(tracked, baseTracked, registry) };
@@ -1007,6 +1083,8 @@ export function main(argv) {
   if (args.contractCheck !== false) findings.push(...checkContractSync());
   findings.push(...checkClaims(loadClaims(fs.readFileSync(regPath, 'utf8'))));
   const stamped = [];
+  const stampTargets = new Set();
+  const writes = [];
   const verify = new Set(args.verify.map((v) => v.replace(/^\.\//, '')));
   const counts = { A: 0, B: 0, C: 0, D: 0, X: 0, unclassified: 0 };
 
@@ -1090,13 +1168,20 @@ export function main(argv) {
                 + `too close to the H1 on line ${h1 + 1}` });
         continue;
       }
+      stampTargets.add(doc);
       const reviewed = verify.has(doc);
       const res = stamp(text, today, reviewed ? 'verified' : 'scanned', head, reviewed);
-      if (res.action === 'inserted' || res.action === 'updated') {
-        fs.writeFileSync(path.join(REPO, doc), res.text);
-      }
-      stamped.push({ doc, action: res.action, depth: reviewed ? 'verified' : 'scan-only' });
+      const record = stampRecord(doc, res, reviewed);
+      if (record.depth) writes.push({ doc, text: res.text });
+      stamped.push(record);
     }
+  }
+
+  // Nothing is written until every requested review has a document to land
+  // on, so a misspelled --verify aborts the run instead of half of it.
+  if (args.stamp) {
+    checkVerifyTargets(verify, stampTargets);
+    for (const w of writes) fs.writeFileSync(path.join(REPO, w.doc), w.text);
   }
 
   const summary = {};
@@ -1118,8 +1203,11 @@ export function main(argv) {
       process.stdout.write(`  [${f.severity}] ${f.check}: ${f.doc}${f.line ? `:${f.line}` : ''} — ${f.detail}\n`);
     }
     if (stamped.length) {
-      const acted = stamped.filter((s) => s.action !== 'unchanged').length;
-      process.stdout.write(`  stamped: ${acted} changed, ${stamped.length - acted} unchanged\n`);
+      const { changed, unchanged, skipped } = summariseStamps(stamped);
+      process.stdout.write(`  stamped: ${changed} changed, ${unchanged} unchanged, ${skipped} skipped\n`);
+      for (const s of stamped) {
+        if (!s.depth) process.stdout.write(`    ${s.action}: ${s.doc}\n`);
+      }
     }
   }
 
