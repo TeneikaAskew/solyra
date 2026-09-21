@@ -14,6 +14,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   checkMarkerDates,
+  globSpecificity,
   headingIs,
   isCodeIndented,
   commentSpans,
@@ -1902,6 +1903,28 @@ describe('a whole run over a fixture repository', () => {
     return res;
   };
 
+  it('still emits its findings when a marker names a commit this clone lacks', () => {
+    // A syntactically valid SHA the checkout does not HOLD -- an older
+    // `Against` commit in a depth-one CI clone -- recorded its P2 and then
+    // still reached checkChangedSince, whose `git log <sha>..<baseRef>` exits
+    // 128 and raises. One unreadable marker took the WHOLE audit to exit 2
+    // with no findings emitted at all. Only spawning the script can see this:
+    // it is the interaction between two checks in main().
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'),
+      '# D\n\n**Last reviewed:** 2026-01-01 · **Depth:** verified '
+      + '· **Against:** `0123456789abcdef0123456789abcdef01234567` '
+      + '· **Last scanned:** 2026-01-01\n\nbody\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const res = runAudit(dir);
+    expect(res.status, res.stderr).not.toBe(2);
+    const report = JSON.parse(res.stdout);
+    const said = report.findings.filter(
+      (f) => /not a commit this checkout holds/.test(f.detail));
+    expect(said).toHaveLength(1);
+  });
+
   it('reports an impossible marker date through main()', () => {
     const dir = fixture();
     fs.writeFileSync(path.join(dir, 'docs/d.md'),
@@ -2446,8 +2469,14 @@ describe('an exact registry row overlapped by a longer wildcard', () => {
   });
 
   it('ranks a wildcard matching more literal characters higher', () => {
-    expect(globSpecificity('docs/api/*.md')[1])
-      .toBeGreaterThan(globSpecificity('docs/*.md')[1]);
+    // Index 2, not 1: the tuple gained a `**`-depth field ahead of the
+    // literal count so a recursive glob ranks below a single-segment one that
+    // also matches. The comparison this test makes is unchanged.
+    expect(globSpecificity('docs/api/*.md')[2])
+      .toBeGreaterThan(globSpecificity('docs/*.md')[2]);
+    // The new field, asserted directly.
+    expect(globSpecificity('docs/**/*.md')[1])
+      .toBeLessThan(globSpecificity('docs/*.md')[1]);
   });
 });
 
@@ -3502,5 +3531,135 @@ describe('a --since that the audited history does not contain', () => {
       .toBe('abcdef1234');
     // Without a verified write there is nothing to constrain.
     expect(resolveCommit('other-branch', { spawn })).toBe('abcdef1234');
+  });
+});
+
+// ── round 24 ────────────────────────────────────────────────────────────────
+
+describe('a fence opened by a list marker', () => {
+  it('masks the whole block, not just the closer', () => {
+    // A list marker is a container prefix like a blockquote. Admitting only
+    // indentation left the opener unrecognised and then misread the indented
+    // CLOSING fence as a new opener, so links inside the example were audited
+    // as live content.
+    expect([...fencedLines(['- ```md', '  [x](missing.md)', '  ```'])])
+      .toEqual([0, 1, 2]);
+    expect([...fencedLines(['1. ```md', '   x', '   ```'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('indented code directly under a heading', () => {
+  it('is masked without an intervening blank line', () => {
+    // Only a PARAGRAPH cannot be interrupted by indented code; after a heading
+    // no blank line is needed.
+    expect([...indentedCodeLines(['## Example', '    [x](missing.md)'])]).toEqual([1]);
+    expect([...indentedCodeLines(['Title', '=====', '    x'])]).toEqual([2]);
+    // A paragraph still is not interrupted.
+    expect([...indentedCodeLines(['some prose', '    continued'])]).toEqual([]);
+  });
+});
+
+describe('two markers where one is indented', () => {
+  it('are both counted', () => {
+    // findMarker accepts a marker with one to three leading spaces as a
+    // rendered paragraph, but the duplicate scan applied the anchored regex to
+    // the RAW line, so contradictory provenance was counted as one marker.
+    expect(findMarkers(['# T', '', '   **Last reviewed:** 2026-01-01',
+      '**Last reviewed:** 2026-02-01'])).toEqual([2, 3]);
+  });
+});
+
+describe('a blocker citation rendered as inline code', () => {
+  it('is an example, not a citation', () => {
+    const states = { stocks: { 1: { state: 'closed', reason: 'completed' } } };
+    const u = 'https://github.com/TeneikaAskew/stocks/issues/1';
+    expect(checkClosedIssues('d.md', `# T\n\nSee \`still open ${u}\` here.\n`, states))
+      .toHaveLength(0);
+    expect(checkClosedIssues('d.md', `# T\n\nstill open ${u}\n`, states)).toHaveLength(1);
+  });
+});
+
+describe('region delimiters rendered as inline code', () => {
+  it('are examples, not delimiters', () => {
+    // A balanced pair silently classified the prose between them as generated;
+    // a lone one produced a false P1 orphan-region finding.
+    const doc = '# T\n\nWrite `<!-- BEGIN AUTO -->` and `<!-- END AUTO -->`.\n';
+    const r = ownedLines(doc, ['mark:AUTO']);
+    expect(r.orphans).toEqual([]);
+    expect(r.unmatched).toEqual(['mark:AUTO']);
+    const real = '# T\n\n<!-- BEGIN AUTO -->\nx\n<!-- END AUTO -->\n';
+    expect(ownedLines(real, ['mark:AUTO']).unmatched).toEqual([]);
+  });
+});
+
+describe('a recursive glob against a single-segment one', () => {
+  it('loses for an immediate child and wins below it', () => {
+    // The literal-length metric ranked `docs/**/*.md` above `docs/*.md`
+    // because its extra slash counted as a literal character.
+    const reg = [{ cls: 'X', glob: 'docs/**/*.md' }, { cls: 'D', glob: 'docs/*.md' }];
+    expect(classify('docs/a.md', reg).cls).toBe('D');
+    expect(classify('docs/sub/a.md', reg).cls).toBe('X');
+    // An exact row still beats both.
+    expect(classify('docs/a.md',
+      [{ cls: 'A', glob: 'docs/a.md' }, { cls: 'D', glob: 'docs/*.md' }]).cls).toBe('A');
+  });
+});
+
+describe('a marker repeating a WELL-FORMED owned field', () => {
+  it('is reported, because the two values can disagree', () => {
+    // extraSegments strips every valid segment, so the malformed-field filter
+    // saw nothing, the parser took the first value, and --stamp collapsed the
+    // duplicate silently instead of requiring somebody to say which is true.
+    const dup = '**Last reviewed:** 2026-01-01 · **Owner:** TBD '
+      + '· **Last scanned:** 2026-02-02 · **Last scanned:** 2026-03-03';
+    const out = checkMarkerDates('d.md', { date: '2026-01-01', scanned: '2026-02-02' },
+      '2026-09-18', dup);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/carries 2 .Last scanned/);
+    const ok = '**Last reviewed:** 2026-01-01 · **Owner:** TBD · **Last scanned:** 2026-02-02';
+    expect(checkMarkerDates('d.md', { date: '2026-01-01', scanned: '2026-02-02' },
+      '2026-09-18', ok)).toEqual([]);
+  });
+});
+
+describe('citations retained inside an HTML comment', () => {
+  const ctx = () => ({ tracked: new Set(['docs/d.md']), topLevelDirs: new Set(['docs']),
+    rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.md', '.ts']),
+    basenames: new Set() });
+
+  it('does not validate a reference definition Markdown never registers', () => {
+    // A definition inside a multiline comment is not registered by Markdown at
+    // all, so validating it produced a false gating dead-link for retired
+    // content. The fenced exclusion was here; the comment one was not.
+    const doc = '# T\n\n<!--\n[old]: docs/removed.md\n-->\n\nbody\n';
+    expect(checkDeadLinks('docs/d.md', doc, ctx())).toEqual([]);
+    // Outside the comment the same definition is still checked.
+    const live = '# T\n\n[old]: docs/removed.md\n\nsee [x][old]\n';
+    expect(checkDeadLinks('docs/d.md', live, ctx()).length).toBeGreaterThan(0);
+  });
+
+  it('does not report a root file cited inside a comment', () => {
+    // The slash-path loop consulted the comment spans; this sibling root-file
+    // loop only checked link labels, cross-repo ownership and extensions.
+    // `knownRoot` has to carry the name, or the loop's weak-evidence rule
+    // skips it for a reason unrelated to comments and the test proves nothing
+    // -- which is exactly how the first version of this test passed with the
+    // fix reverted.
+    const c = { ...ctx(), knownRoot: new Set(['vite.config.ts']) };
+    const visible = '# T\n\nretired: `vite.config.ts`\n';
+    expect(checkDeadLinks('docs/d.md', visible, c)).toHaveLength(1);
+    const doc = '# T\n\n<!-- retired: `vite.config.ts` -->\n\nbody\n';
+    expect(checkDeadLinks('docs/d.md', doc, c)).toEqual([]);
+  });
+});
+
+describe('a percent-encoded anchor fragment', () => {
+  it('is decoded before it is compared', () => {
+    // headingAnchors records the RENDERED slug `café`, so comparing the raw
+    // `caf%C3%A9` reported a valid link as a gating dead anchor.
+    const anchors = headingAnchors('# Café\n\nbody\n');
+    expect(anchors.has('café')).toBe(true);
+    expect(anchors.has('caf%c3%a9')).toBe(false);
+    expect(decodeURIComponent('caf%C3%A9').toLowerCase()).toBe('café');
   });
 });

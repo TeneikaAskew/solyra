@@ -630,7 +630,16 @@ export function sameRule(a, b) {
  */
 export function globSpecificity(glob) {
   const wildcards = (glob.match(/[*?[]/g) ?? []).length;
-  return [wildcards === 0 ? 1 : 0, glob.replace(/[*?[\]]/g, '').length, -wildcards];
+  // A `**/` segment is RANKED DOWN, not counted as literal. For an immediate
+  // child like `docs/a.md` both `docs/*.md` and `docs/**/*.md` match, and
+  // the literal-length metric put the recursive one ahead because its extra
+  // slash counts as a literal character -- so a broad recursive row could
+  // outrank the narrower single-segment row it overlaps, and when the two
+  // disagree the recursive one silently won instead of the narrower rule or
+  // an ambiguity finding. Literals are counted with the `**` segments removed.
+  const recursive = (glob.match(/\*\*/g) ?? []).length;
+  const literals = glob.replace(/\*\*\//g, '').replace(/[*?[\]]/g, '').length;
+  return [wildcards === 0 ? 1 : 0, -recursive, literals, -wildcards];
 }
 
 function cmpSpecificity(a, b) {
@@ -768,8 +777,22 @@ export function ownedLines(text, specs) {
       // `hit` and the unbalanced layout passed with a supposedly valid region
       // map. `inventory:*` has always reported this shape.
       let stray = false;
-      lines.forEach((l, n) => {
+      // A delimiter inside INLINE code is an example of the syntax, not a
+      // delimiter. Masking only block fences let a Class A document that
+      // explains its own generated-region convention turn its backticked
+      // samples into real delimiters: a balanced pair silently classified the
+      // hand-written prose between them as generated, and a lone one produced
+      // a false P1 orphan-region finding.
+      const bare = (l) => {
+        const spans = codeSpans(l);
+        return spans.length
+          ? spans.reduce((acc, [lo, hi]) =>
+            acc.slice(0, lo) + ' '.repeat(hi - lo) + acc.slice(hi), l)
+          : l;
+      };
+      lines.forEach((raw, n) => {
         if (fencedHere.has(n)) return;
+        const l = bare(raw);
         if (begin.test(l)) {
           if (open >= 0) nested = true;
           else open = n;
@@ -1050,6 +1073,26 @@ export function checkMarkerDates(doc, prev, today, line = null) {
     out.push({ check: 'marker', doc, severity: 'P2',
       detail: `the marker repeats an owned field in a form it cannot parse: ${seg}` });
   }
+  // And a field repeated in a form it CAN parse, with a conflicting value --
+  // two well-formed `Last scanned` segments carrying different dates.
+  // extraSegments strips every valid segment, so the filter above saw nothing,
+  // the parser took the first value, and `--stamp` collapsed the duplicate
+  // silently instead of requiring somebody to say which date is true.
+  if (line !== null) {
+    const seen = new Map();
+    for (const raw of line.split(DOT)) {
+      const s = raw.trim();
+      const field = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`));
+      if (field) seen.set(field, (seen.get(field) ?? 0) + 1);
+    }
+    for (const [field, n] of seen) {
+      if (n > 1) {
+        out.push({ check: 'marker', doc, severity: 'P2',
+          detail: `the marker carries ${n} \`${field}\` fields; they can disagree and `
+                + 'only the first is read' });
+      }
+    }
+  }
   for (const [field, label] of [['date', 'review date'], ['scanned', 'last-scanned date']]) {
     const value = prev[field];
     if (value === undefined || value === null || value === '' || value === 'unknown') continue;
@@ -1109,18 +1152,24 @@ export function indentedCodeLines(lines) {
   let blankSeen = true;
   let floor = 4;
   let inCode = false;
+  let lastWasHeading = false;
   for (const [i, line] of lines.entries()) {
     if (!line.trim()) { blankSeen = true; continue; }
     const indent = line.startsWith('\t') ? 4 : line.length - line.replace(/^ +/, '').length;
     if (inCode && indent >= floor) { out.add(i); continue; }
     inCode = false;
-    if (indent >= floor && blankSeen) {
+    if (indent >= floor && (blankSeen || lastWasHeading)) {
+      // Only a PARAGRAPH cannot be interrupted by indented code. After a
+      // heading no blank line is needed, so `## Example` followed directly by
+      // a four-space sample left the sample unmasked and the link and blocker
+      // checks could emit gating findings from it.
       inCode = true;
       out.add(i);
     } else {
       const bullet = /^(\s*(?:[-*+]|\d+[.)])\s+)/.exec(line);
       floor = bullet ? bullet[1].length + 4 : 4;
     }
+    lastWasHeading = /^ {0,3}#{1,6}\s/.test(line) || /^ {0,3}(?:=+|-+)\s*$/.test(line);
     blankSeen = false;
   }
   return out;
@@ -1140,7 +1189,12 @@ export function fencedLines(lines) {
     // the fence rather than replacing it. `> ```md` is the shape this repo's
     // own docs use, and seeing the `>` marked none of the block as code, so
     // links and blocker citations in the sample were audited as live prose.
-    const m = /^ {0,3}(?:> ?)*\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    // A LIST MARKER is a container prefix too: `- \`\`\`md` opens a fence
+    // inside the item. Admitting only indentation and blockquotes left the
+    // opener unrecognised and then misread the indented CLOSING fence as a new
+    // opener, so links inside the example were audited as live content and the
+    // prose after the block could be masked instead.
+    const m = /^ {0,3}(?:> ?)*(?:(?:[-*+]|\d+[.)])\s+)?\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (!open) {
       // An opening ``` fence may not carry a backtick in its info string.
       if (m && !(m[1][0] === '`' && m[2].includes('`'))) {
@@ -1281,7 +1335,12 @@ export function findMarkers(lines) {
   const out = [];
   for (let i = from; i < to; i += 1) {
     if (fenced.has(i) || commented.has(i) || isCodeIndented(lines[i])) continue;
-    if (MARKER_RE.test(lines[i]) || LEGACY_MARKER_RE.test(lines[i])) out.push(i);
+    // Trimmed, exactly as findMarker parses it. The anchored regex was
+    // applied to the RAW line, so a marker with one to three leading spaces --
+    // which findMarker accepts as a rendered paragraph -- was invisible here
+    // and two contradictory markers were counted as one.
+    const line = lines[i].trim();
+    if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) out.push(i);
   }
   return out;
 }
@@ -1652,8 +1711,13 @@ export function checkClosedIssues(doc, text, states) {
   let carried = null;
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
-    const hidden = commented.get(i) ?? [];
-    // The commented spans are masked OUT before any cue is read, at the same
+    // Inline code as well as commented-out text. Inline code renders
+    // literally, never as a live citation, so a document showing what a
+    // blocker row looks like drew a gating finding once its sample issue
+    // closed -- while the fenced and indented forms of the same example were
+    // already ignored.
+    const hidden = [...(commented.get(i) ?? []), ...codeSpans(line)];
+    // The hidden spans are masked OUT before any cue is read, at the same
     // length so every offset below still lines up. Hiding only the URLs was
     // half the job: `<!-- still open --> https://.../issues/1` kept the
     // visible URL and handed the commented phrase to the classifier as live
@@ -1855,8 +1919,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // produced 79 fabricated findings there. The definition's destination is the
   // half that certainly names a path, so that is the half this checks.
   const refDefs = new Map();
+  // A definition retained inside a multiline HTML comment is not registered by
+  // Markdown at all, so validating it produced a false gating dead-link for
+  // retired content. The fenced exclusion was here; the comment one was not.
+  const commentedDefs = commentedLines(lines);
   lines.forEach((line, i) => {
-    if (fenced.has(i)) return;
+    if (fenced.has(i) || commentedDefs.has(i)) return;
     const m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(\S+)/.exec(line);
     // The FIRST definition wins, as CommonMark resolves it. Overwriting with
     // the last emitted a false dead-link when the first destination exists and
@@ -1908,7 +1976,18 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     }
     if (frag && norm.endsWith('.md')) {
       const have = anchorsOf(norm);
-      if (have && !have.has(frag.toLowerCase())) {
+      // Decoded, exactly as the destination path above is. A link may
+      // percent-encode non-ASCII -- `[Café](#caf%C3%A9)` -- while
+      // headingAnchors records the rendered slug `café`, so comparing the raw
+      // fragment reported a valid link as a gating dead anchor. An undecodable
+      // fragment is used as written, for the same reason paths are.
+      let wanted;
+      try {
+        wanted = decodeURIComponent(frag);
+      } catch {
+        wanted = frag;
+      }
+      if (have && !have.has(wanted.toLowerCase())) {
         out.push({ check: 'dead-anchor', doc, line: lineNo, severity: 'P2',
           detail: `${anchorWhat}#${frag}: the target has no such heading` });
       }
@@ -1996,7 +2075,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // file cited as ``[`vite.config.ts`](../vite.config.ts)`` was reported
       // once by the Markdown pass and again here -- one broken link, two
       // findings and a doubled summary count.
+      // And the comment spans, which this sibling loop never consulted though
+      // the slash-path loop above does: a deleted root file retained inside a
+      // comment -- `<!-- retired: \`vite.config.ts\` -->` -- drew a gating
+      // dead-link finding over content no reader can see.
       if (inLinkLabel(m.index) || crossRepo.has(m.index)
+          || hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)
           || !exts.has(path.posix.extname(f))) continue;
       // A bare name that is the basename of some tracked file is a citation
       // of that file, wherever it lives: `index.css` in the design docs is
@@ -2695,6 +2779,14 @@ export function main(argv) {
           detail: `legacy label, date ${prev.date}; normalise to Last reviewed` });
       }
       findings.push(...checkMarkerDates(doc, prev, today, docLinesForMarker[prev.idx]));
+      // Whether the drift range can be asked for at all. A syntactically
+      // valid SHA the checkout does not HOLD -- an older `Against` commit in
+      // a depth-one CI clone is the ordinary case -- recorded the P2 below and
+      // then still reached checkChangedSince, whose `git log <sha>..<baseRef>`
+      // exits 128 and raises. One unreadable marker took the whole audit to
+      // exit 2 with no findings emitted at all, which is the opposite of what
+      // a per-document finding is for.
+      let driftable = Boolean(prev.sha);
       if (prev.sha) {
         // `git merge-base --is-ancestor` reports through its EXIT STATUS and
         // prints nothing, so testing its stdout for '' treats every SHA --
@@ -2702,8 +2794,15 @@ export function main(argv) {
         const anc = spawnSync('git', ['merge-base', '--is-ancestor', prev.sha, baseRef],
           { cwd: REPO, encoding: 'utf8' });
         if (anc.status !== 0) {
+          // 128 is "no such commit", any other non-zero is "not an ancestor".
+          // Neither can support a drift range, and they are different facts,
+          // so they are reported as different findings rather than one.
           findings.push({ check: 'marker', doc, severity: 'P2',
-            detail: `reviewed-against ${prev.sha} is not an ancestor of ${baseRef}` });
+            detail: anc.status === 128
+              ? `reviewed-against ${prev.sha} is not a commit this checkout holds, `
+                + 'so drift since the review cannot be measured'
+              : `reviewed-against ${prev.sha} is not an ancestor of ${baseRef}` });
+          driftable = false;
         }
       }
       // A marker reading `unknown`, or carrying no `Against`, passes every
@@ -2716,7 +2815,7 @@ export function main(argv) {
       // worklist and must not hold a build red forever. The Python twin uses
       // the same severity for the same reason (stocks#1121).
       findings.push(...checkProvenance(doc, prev));
-      findings.push(...checkChangedSince(doc, prev.sha, codePaths, baseRef));
+      findings.push(...checkChangedSince(doc, driftable ? prev.sha : null, codePaths, baseRef));
     }
 
     if (args.stamp) {
