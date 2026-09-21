@@ -353,7 +353,7 @@ export const MARKER_SHA_LEN = 12;
  * So the round trip is the check: the rendered marker must give the value
  * back. Asserting the line merely matches would pass a four-character id.
  */
-export function resolveCommit(ref, { spawn = spawnSync } = {}) {
+export function resolveCommit(ref, { spawn = spawnSync, ancestorOf = null } = {}) {
   const r = spawn('git', ['rev-parse', '--verify', '--quiet', `--short=${MARKER_SHA_LEN}`,
     `${ref}^{commit}`], { cwd: REPO, encoding: 'utf8' });
   const sha = (r.stdout ?? '').trim();
@@ -367,12 +367,31 @@ export function resolveCommit(ref, { spawn = spawnSync } = {}) {
     throw new AuditError(`the resolved SHA '${sha}' is not a form the marker parser reads back `
       + '(expects 7-40 hex characters); refusing to write it');
   }
+  // And it has to be IN the history the audit judges against. A `--since` on
+  // an unrelated branch, or a descendant the base ref does not contain, was
+  // accepted and written into `Against:` -- and the very next ordinary run
+  // reported that marker invalid via the ancestry check. The tool was
+  // manufacturing provenance it rejects itself.
+  if (ancestorOf) {
+    const anc = spawn('git', ['merge-base', '--is-ancestor', sha, ancestorOf],
+      { cwd: REPO, encoding: 'utf8' });
+    if (anc.status !== 0) {
+      throw new AuditError(`--since ${ref} (${sha}) is not an ancestor of ${ancestorOf}, `
+        + 'so a marker written against it would be reported invalid by the next '
+        + 'ordinary audit; refusing to write it');
+    }
+  }
   return sha;
 }
 
 // ── registry ────────────────────────────────────────────────────────────────
 
 const REGISTRY_HEADING = '## Registry';
+
+/** A heading line that IS this heading, ignoring trailing `#`s and spacing. */
+export function headingIs(line, heading) {
+  return line.replace(/\s+#*\s*$/, '').trim().toLowerCase() === heading.toLowerCase();
+}
 
 /**
  * Strip markdown emphasis and code ticks without eating a trailing glob `*`.
@@ -418,7 +437,11 @@ export function loadRegistry(text) {
     if (fenced.has(i)) continue;
     const line = raw.trim();
     if (line.startsWith('#')) {
-      inRegistry = line.startsWith(REGISTRY_HEADING);
+      // EXACTLY, not by prefix: a later `## Registry examples` section
+      // re-entered registry mode and parsed its illustrative table as live
+      // classification rules -- visible explanatory prose becoming executable
+      // configuration.
+      inRegistry = headingIs(line, REGISTRY_HEADING);
       continue;
     }
     if (!inRegistry || !line.startsWith('|')) continue;
@@ -740,20 +763,31 @@ export function ownedLines(text, specs) {
       // malformed span as generated.
       let open = -1;
       let nested = false;
+      // A CLOSER with no opener was ignored outright, so a stray one before an
+      // otherwise valid pair produced no finding at all -- the later pair set
+      // `hit` and the unbalanced layout passed with a supposedly valid region
+      // map. `inventory:*` has always reported this shape.
+      let stray = false;
       lines.forEach((l, n) => {
         if (fencedHere.has(n)) return;
         if (begin.test(l)) {
           if (open >= 0) nested = true;
           else open = n;
-        } else if (end.test(l) && open >= 0) {
-          for (let k = open + 1; k <= n + 1; k += 1) owned.add(k);
-          hit = true;
-          open = -1;
+        } else if (end.test(l)) {
+          if (open < 0) {
+            stray = true;
+          } else {
+            for (let k = open + 1; k <= n + 1; k += 1) owned.add(k);
+            hit = true;
+            open = -1;
+          }
         }
       });
-      if (nested || open >= 0) {
-        orphans.push(`${spec}: ${nested ? 'a repeated opener before its closer'
-          : 'an opener with no closer'}`);
+      if (nested || open >= 0 || stray) {
+        const why = nested ? 'a repeated opener before its closer'
+          : open >= 0 ? 'an opener with no closer'
+            : 'a closer with no opener';
+        orphans.push(`${spec}: ${why}`);
         hit = true;
       }
     } else if (spec.startsWith('line:')) {
@@ -957,6 +991,18 @@ export function markerWindow(lines, limit = 40) {
       stop = j - 1;
       break;
     }
+    // docs/DOC_REGISTRY.md puts the marker at "the first paragraph after the
+    // first H1". The window ran to the next HEADING instead, so a document
+    // with an introduction paragraph and a marker somewhere below it passed,
+    // and --stamp merely refreshed the misplaced marker rather than restoring
+    // the required placement. Blank lines, fenced blocks, commented metadata
+    // and badge lines are skipped above or here; the first other rendered
+    // paragraph ends it.
+    if (!lines[j].trim()) continue;
+    if (MARKER_RE.test(lines[j].trim()) || LEGACY_MARKER_RE.test(lines[j].trim())) continue;
+    if (isCodeIndented(lines[j])) continue;
+    stop = j + 1;
+    break;
   }
   return { from: h1 + 1, to: Math.min(stop, lines.length) };
 }
@@ -990,8 +1036,20 @@ export function markerWindow(lines, limit = 40) {
  * date is the one field a machine writes, so a future value there means the
  * clock or the file is wrong.
  */
-export function checkMarkerDates(doc, prev, today) {
+export function checkMarkerDates(doc, prev, today, line = null) {
   const out = [];
+  // A marker may parse cleanly and still carry a DUPLICATE malformed owned
+  // field after the valid prefix -- `... · **Last scanned:** bad`. MARKER_RE
+  // is not end-anchored, so the dates and provenance read fine and every other
+  // check passed. Only stamp() noticed, by returning skipped-malformed-marker,
+  // and an ordinary --check never calls stamp(), so the contradiction sailed
+  // through the gate it should have held.
+  const bad = line === null ? [] : extraSegments(line).filter(
+    (seg) => OWNED_FIELDS.some((f) => seg.startsWith(`**${f}`)));
+  for (const seg of bad) {
+    out.push({ check: 'marker', doc, severity: 'P2',
+      detail: `the marker repeats an owned field in a form it cannot parse: ${seg}` });
+  }
   for (const [field, label] of [['date', 'review date'], ['scanned', 'last-scanned date']]) {
     const value = prev[field];
     if (value === undefined || value === null || value === '' || value === 'unknown') continue;
@@ -1048,22 +1106,23 @@ export function checkProvenance(doc, prev) {
  */
 export function indentedCodeLines(lines) {
   const out = new Set();
-  let lastContent = null;
   let blankSeen = true;
+  let floor = 4;
   let inCode = false;
-  lines.forEach((line, i) => {
-    if (!line.trim()) { blankSeen = true; return; }
-    const indented = /^ {4,}\S/.test(line) || /^\t/.test(line);
-    if (inCode && indented) { out.add(i); return; }
+  for (const [i, line] of lines.entries()) {
+    if (!line.trim()) { blankSeen = true; continue; }
+    const indent = line.startsWith('\t') ? 4 : line.length - line.replace(/^ +/, '').length;
+    if (inCode && indent >= floor) { out.add(i); continue; }
     inCode = false;
-    if (indented && blankSeen
-        && !(lastContent !== null && /^\s*([-*+]|\d+[.)]|\|)/.test(lastContent))) {
+    if (indent >= floor && blankSeen) {
       inCode = true;
       out.add(i);
+    } else {
+      const bullet = /^(\s*(?:[-*+]|\d+[.)])\s+)/.exec(line);
+      floor = bullet ? bullet[1].length + 4 : 4;
     }
-    lastContent = line;
     blankSeen = false;
-  });
+  }
   return out;
 }
 
@@ -1198,12 +1257,30 @@ export function commentedLines(lines) {
  * carries a different date, owner or reviewed-against SHA and nothing said so.
  * `--stamp` updated the first, reported success, and left the contradiction.
  */
+/**
+ * Is this line indented ENOUGH to be a code example rather than a paragraph?
+ *
+ * Any leading whitespace used to disqualify a marker, but one to three spaces
+ * still render as an ordinary paragraph -- CommonMark needs a tab or four
+ * spaces for indented code. Such a document was reported as missing
+ * provenance and `--stamp` inserted a SECOND marker while the visible
+ * original stayed put.
+ */
+export function isCodeIndented(line) {
+  return line ? /^(?:\t| {4,})/.test(line) : false;
+}
+
 export function findMarkers(lines) {
   const { from, to } = markerWindow(lines);
   const fenced = fencedLines(lines);
+  // A marker-shaped line inside an HTML COMMENT renders as nothing, so it is
+  // not the document's provenance. Accepting it suppressed the missing-marker
+  // finding and `--stamp` then updated the hidden line, leaving the rendered
+  // document with no visible marker at all.
+  const commented = commentedLines(lines);
   const out = [];
   for (let i = from; i < to; i += 1) {
-    if (fenced.has(i) || (lines[i] && /^\s/.test(lines[i]))) continue;
+    if (fenced.has(i) || commented.has(i) || isCodeIndented(lines[i])) continue;
     if (MARKER_RE.test(lines[i]) || LEGACY_MARKER_RE.test(lines[i])) out.push(i);
   }
   return out;
@@ -1212,13 +1289,14 @@ export function findMarkers(lines) {
 export function findMarker(lines) {
   const { from, to } = markerWindow(lines);
   const fenced = fencedLines(lines);
+  const commented = commentedLines(lines);
   for (let i = from; i < to; i += 1) {
     // An INDENTED marker-shaped line is an example, not the document's
     // provenance: trimming before parsing let a four-space code sample count
     // as the marker, suppressed the real missing-marker finding, and --stamp
     // then replaced the example with an unindented live marker, destroying
     // the example's structure. Fenced blocks are excluded for the same reason.
-    if (fenced.has(i) || /^\s/.test(lines[i])) continue;
+    if (fenced.has(i) || commented.has(i) || isCodeIndented(lines[i])) continue;
     const line = lines[i].trim();
     const m = MARKER_RE.exec(line);
     if (m) {
@@ -1574,18 +1652,26 @@ export function checkClosedIssues(doc, text, states) {
   let carried = null;
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
-    const isItem = /^\s*(?:[-*+]|\d+[.)])\s/.test(line) || /^\s*\|/.test(line);
+    const hidden = commented.get(i) ?? [];
+    // The commented spans are masked OUT before any cue is read, at the same
+    // length so every offset below still lines up. Hiding only the URLs was
+    // half the job: `<!-- still open --> https://.../issues/1` kept the
+    // visible URL and handed the commented phrase to the classifier as live
+    // prose, so a closed issue produced a false, GATING P1 from text that
+    // renders as nothing.
+    const visible = hidden.reduce(
+      (acc, [lo, hi]) => acc.slice(0, lo) + '\u0000'.repeat(hi - lo) + acc.slice(hi), line);
+    const isItem = /^\s*(?:[-*+]|\d+[.)])\s/.test(visible) || /^\s*\|/.test(visible);
     // A blank line between the label and its list is the normal spelling, so
     // it must not clear the context; any other non-item line does.
-    if (!isItem && line.trim()) {
-      carried = hasBlockingCue(line) && CUE_LABEL_RE.test(line) ? line : null;
+    if (!isItem && visible.trim()) {
+      carried = hasBlockingCue(visible) && CUE_LABEL_RE.test(visible) ? visible : null;
     }
     const context = isItem ? carried : null;
-    if (!hasBlockingCue(line) && context === null) return;
-    const hidden = commented.get(i) ?? [];
+    if (!hasBlockingCue(visible) && context === null) return;
     for (const m of line.matchAll(ISSUE_URL_RE)) {
       if (hidden.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
-      if (!citesLiveWork(line, m.index, m.index + m[0].length, { context })) continue;
+      if (!citesLiveWork(visible, m.index, m.index + m[0].length, { context })) continue;
       const [, rawRepo, rawKind, num] = m;
       const repo = normaliseRepo(rawRepo);
       const kind = rawKind.toLowerCase();
@@ -2052,7 +2138,9 @@ export function loadClaims(text) {
     if (fenced.has(i)) continue;
     const line = raw.trim();
     if (line.startsWith('#')) {
-      inClaims = line.startsWith(CLAIMS_HEADING);
+      // Exactly, for the reason given at the registry reader: `## Claims
+      // methodology` is documentation about the mechanism, not claims.
+      inClaims = headingIs(line, CLAIMS_HEADING);
       continue;
     }
     if (!inClaims || !line.startsWith('|')) continue;
@@ -2105,7 +2193,12 @@ export function derive(derivation, { exec = run } = {}) {
           + `\`${derivation}\` would derive 0 from a search that never ran`);
       }
     }
-    const out = exec('git', ['grep', flag, pattern, '--', ...paths], { okExitCodes: [1] });
+    // `-e` before the pattern, so a regex BEGINNING with `-` is read as data.
+    // Counting Markdown list items is the natural reason to write one, and in
+    // option position git grep exits 129 with an unknown-switch error rather
+    // than deriving anything -- every regex the claims grammar admits has to
+    // survive the trip.
+    const out = exec('git', ['grep', flag, '-e', pattern, '--', ...paths], { okExitCodes: [1] });
     return out.trim() ? out.trim().split('\n').length : 0;
   }
   if (kind === 'list-len') {
@@ -2458,7 +2551,11 @@ export function main(argv) {
   const baseRef = resolveBaseRef();
   // Both paths go through resolveCommit: see there for why a bare --short is
   // not safe to write into a marker.
-  const head = resolveCommit(args.since ?? baseRef);
+  // The ancestry constraint applies only when a review is being RECORDED: an
+  // ordinary scan against the base ref is trivially contained, and an explicit
+  // --since used to read drift is a question, not a claim written to disk.
+  const head = resolveCommit(args.since ?? baseRef,
+    args.since && args.verify.length ? { ancestorOf: baseRef } : {});
 
   const regPath = path.join(REPO, REGISTRY);
   if (!fs.existsSync(regPath)) {
@@ -2597,7 +2694,7 @@ export function main(argv) {
         findings.push({ check: 'marker', doc, severity: 'P3',
           detail: `legacy label, date ${prev.date}; normalise to Last reviewed` });
       }
-      findings.push(...checkMarkerDates(doc, prev, today));
+      findings.push(...checkMarkerDates(doc, prev, today, docLinesForMarker[prev.idx]));
       if (prev.sha) {
         // `git merge-base --is-ancestor` reports through its EXIT STATUS and
         // prints nothing, so testing its stdout for '' treats every SHA --

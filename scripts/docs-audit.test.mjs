@@ -14,6 +14,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   checkMarkerDates,
+  headingIs,
+  isCodeIndented,
   commentSpans,
   isSetextUnderline,
   commentedLines,
@@ -1384,7 +1386,12 @@ describe('extraSegments', () => {
 });
 
 describe('stampGuard', () => {
-  const GEN_DOC = '# T\n\nProse.\n<!-- BEGIN gen -->\n'
+  // The marker has to be the document's marker for the guard to be asked
+  // about it, so it sits where the registry requires -- the first rendered
+  // paragraph after the H1 -- and the generated region is what encloses it.
+  // With prose above it, the line is not the document's marker at all and
+  // the question the guard answers does not arise.
+  const GEN_DOC = '# T\n\n<!-- BEGIN gen -->\n'
     + '**Last reviewed:** 2026-08-31 · **Owner:** TBD\n<!-- END gen -->\nMore prose.\n';
 
   it('refuses to rewrite a marker that sits inside a generated region', () => {
@@ -1392,7 +1399,7 @@ describe('stampGuard', () => {
     // A mark:gen block starting on line 4 with the marker on line 5 passed
     // it, and stamp() then rewrote a line the registry declares machine-owned.
     const { owned } = ownedLines(GEN_DOC, ['mark:gen']);
-    expect(stampGuard(GEN_DOC, owned)).toMatch(/marker on line 5 .*generated region .*lines 4-6/);
+    expect(stampGuard(GEN_DOC, owned)).toMatch(/marker on line 4 .*generated region .*lines 3-5/);
   });
 
   it('is quiet for a marker in prose beside a region', () => {
@@ -1457,7 +1464,9 @@ describe('markerWindow', () => {
   it('does not accept a later section\'s metadata as the document marker', () => {
     const doc = '# Doc\n\nIntro.\n\n# PART A\n\n**Last reviewed:** 2026-06-05 · **Owner:** TBD\n';
     expect(findMarker(doc.split('\n'))).toBeNull();
-    expect(markerWindow(doc.split('\n'))).toEqual({ from: 1, to: 4 });
+    // 3, not 4: `Intro.` is the first rendered paragraph and the window
+    // ends with it. The heading below would have ended it anyway.
+    expect(markerWindow(doc.split('\n'))).toEqual({ from: 1, to: 3 });
   });
 });
 
@@ -1500,7 +1509,8 @@ describe('count claims', () => {
     let seen;
     derive('grep-files src,tests Rule 3\\.7', { exec: (_c, args) => { seen = args; return ''; } });
     expect(seen).not.toContain('origin/main');
-    expect(seen.slice(0, 3)).toEqual(['grep', '-lE', 'Rule 3\\.7']);
+    // `-e` before the pattern, so a regex beginning with `-` is data.
+    expect(seen.slice(0, 4)).toEqual(['grep', '-lE', '-e', 'Rule 3\\.7']);
     expect(seen.slice(-3)).toEqual(['--', 'src', 'tests']);
   });
 
@@ -2582,9 +2592,18 @@ describe('a four-space-indented code block', () => {
     expect(checkDeadLinks('d.md', doc, ctx)).toHaveLength(1);
   });
 
-  it('does not swallow a table continuation', () => {
-    const doc = '# T\n\n| a | b |\n\n    [x](missing.md)\n';
-    expect(checkDeadLinks('d.md', doc, ctx)).toHaveLength(1);
+  it('is code after a table and a blank line, not a table continuation', () => {
+    // This assertion used to be inverted. A blank line TERMINATES the table,
+    // and after it four spaces is an indented code block whatever came
+    // before -- so the example renders as code and a gating finding taken
+    // from it is false. The old rule refused to mask any run whose preceding
+    // content began with `|`, blank line or not.
+    const doc = '# T\n\n| a | b |\n|---|---|\n\n    [x](missing.md)\n';
+    expect(checkDeadLinks('d.md', doc, ctx)).toHaveLength(0);
+    // Directly under the last row, with no blank line, it is still the
+    // table's own continuation and the link is real.
+    const tight = '# T\n\n| a | b |\n|---|---|\n    [x](missing.md)\n';
+    expect(checkDeadLinks('d.md', tight, ctx)).toHaveLength(1);
   });
 });
 
@@ -2833,9 +2852,18 @@ describe('a title section longer than forty lines', () => {
     // A document opening with more than 40 lines of HTML metadata had the real
     // marker excluded from the window, so the audit reported it missing and
     // --stamp inserted a second one: contradictory provenance.
-    const lines = ['# T', ...Array(45).fill('x'), '**Last reviewed:** 2026-01-01'];
+    // Metadata, not prose: the registry puts the marker at the first
+    // rendered PARAGRAPH after the H1, and HTML comments render as nothing,
+    // so forty-five of them do not displace it. The window is bounded by
+    // what renders, never by a line count.
+    const lines = ['# T', ...Array(45).fill('<!-- meta -->'),
+      '**Last reviewed:** 2026-01-01'];
     expect(markerWindow(lines).to).toBeGreaterThan(45);
     expect(findMarker(lines)).not.toBeNull();
+    // Forty-five lines of PROSE do displace it: the marker is then not the
+    // first paragraph, which is the placement the registry requires.
+    const prose = ['# T', ...Array(45).fill('x'), '**Last reviewed:** 2026-01-01'];
+    expect(findMarker(prose)).toBeNull();
   });
 
   it('still stops at the next heading', () => {
@@ -3345,5 +3373,134 @@ describe('a future --date', () => {
     expect(() => parseArgs(['--stamp', '--date', '2099-01-01']))
       .toThrow(/in the future/);
     expect(() => parseArgs(['--date', '2099-01-01'])).not.toThrow();
+  });
+});
+
+// ── round 23 ────────────────────────────────────────────────────────────────
+
+describe('a cue that renders as nothing', () => {
+  const states = { stocks: { 861: { state: 'closed', reason: 'completed' } } };
+  const URL = 'https://github.com/TeneikaAskew/stocks/issues/861';
+
+  it('does not make a closed issue read as live work', () => {
+    // Hiding only the URLs was half the job: the visible URL survived and the
+    // commented phrase reached the classifier as live prose, so a closed issue
+    // produced a false, GATING P1 from text that renders as nothing.
+    expect(checkClosedIssues('d.md', `# T\n\n<!-- still open --> ${URL}\n`, states))
+      .toHaveLength(0);
+  });
+
+  it('still reports the same line when the cue is visible', () => {
+    expect(checkClosedIssues('d.md', `# T\n\nstill open ${URL}\n`, states))
+      .toHaveLength(1);
+  });
+});
+
+describe('a marker with one to three leading spaces', () => {
+  it('is an ordinary rendered paragraph, not a code example', () => {
+    // CommonMark needs a tab or four spaces for indented code. Rejecting any
+    // whitespace reported the document as missing provenance and --stamp
+    // inserted a second marker beside the visible original.
+    expect(isCodeIndented('   **Last reviewed:** 2026-01-01')).toBe(false);
+    expect(isCodeIndented('    **Last reviewed:** 2026-01-01')).toBe(true);
+    expect(isCodeIndented('\t**Last reviewed:** 2026-01-01')).toBe(true);
+    const lines = ['# T', '', '   **Last reviewed:** 2026-01-01'];
+    expect(findMarker(lines)?.date).toBe('2026-01-01');
+  });
+
+  it('is not the marker when it is four spaces in', () => {
+    expect(findMarker(['# T', '', '    **Last reviewed:** 2026-01-01'])).toBeNull();
+  });
+});
+
+describe('a marker-shaped line inside an HTML comment', () => {
+  it('is not the document provenance', () => {
+    // It renders as nothing, so accepting it suppressed the missing-marker
+    // finding and --stamp updated the hidden line, leaving the rendered
+    // document with no visible marker at all.
+    const lines = ['# T', '', '<!-- draft metadata',
+      '**Last reviewed:** 2026-01-01 · **Owner:** TBD', '-->'];
+    expect(findMarker(lines)).toBeNull();
+    expect(findMarkers(lines)).toEqual([]);
+  });
+});
+
+describe('a generated region with a stray closing delimiter', () => {
+  it('is reported, not silently accepted by a later valid pair', () => {
+    // The closer was handled only while an opener was live, so a stray one
+    // before a valid pair produced no finding at all: the later pair set the
+    // hit and an unbalanced machine-owned layout passed with a supposedly
+    // valid region map. `inventory:*` has always reported this shape.
+    const doc = '# T\n\n<!-- END gen -->\n<!-- BEGIN gen -->\nrows\n<!-- END gen -->\n';
+    const { orphans } = ownedLines(doc, ['mark:gen']);
+    expect(orphans).toEqual(['mark:gen: a closer with no opener']);
+  });
+
+  it('leaves a balanced region alone', () => {
+    const doc = '# T\n\n<!-- BEGIN gen -->\nrows\n<!-- END gen -->\n';
+    expect(ownedLines(doc, ['mark:gen']).orphans).toEqual([]);
+  });
+});
+
+describe('a heading that merely starts with a section name', () => {
+  it('does not re-enter registry or claims mode', () => {
+    // `## Registry examples` re-entered registry mode and parsed its
+    // illustrative table as live classification rules -- visible explanatory
+    // prose becoming executable configuration.
+    expect(headingIs('## Registry', '## Registry')).toBe(true);
+    expect(headingIs('## Registry ##', '## Registry')).toBe(true);
+    expect(headingIs('## Registry examples', '## Registry')).toBe(false);
+    const doc = '## Registry\n\n| Class | Path glob |\n|---|---|\n| D | docs/real.md |\n'
+      + '\n## Registry examples\n\n| Class | Path glob |\n|---|---|\n| A | docs/made-up.md |\n';
+    expect(loadRegistry(doc).map((r) => r.glob)).toEqual(['docs/real.md']);
+  });
+});
+
+describe('a claim pattern that begins with a hyphen', () => {
+  it('is passed to git grep as data', () => {
+    // Counting Markdown list items is the natural reason to write one, and in
+    // option position git grep exits 129 with an unknown-switch error rather
+    // than deriving anything.
+    let seen;
+    derive('grep-count src -\\s\\[', { exec: (_c, args) => { seen = args; return ''; } });
+    expect(seen.indexOf('-e')).toBe(2);
+    expect(seen[3]).toBe('-\\s\\[');
+  });
+});
+
+describe('a marker repeating an owned field it cannot parse', () => {
+  it('is reported by an ordinary check, not only by stamp', () => {
+    // MARKER_RE is not end-anchored, so the dates and provenance read fine and
+    // every other check passed. Only stamp() noticed, and an ordinary --check
+    // never calls stamp(), so the contradiction sailed through the gate.
+    const line = '**Last reviewed:** 2026-01-01 · **Owner:** TBD · **Last scanned:** bad';
+    const prev = { date: '2026-01-01', scanned: null, sha: null };
+    const out = checkMarkerDates('d.md', prev, '2026-09-18', line);
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/repeats an owned field/);
+    // A clean marker still reports nothing.
+    expect(checkMarkerDates('d.md', prev, '2026-09-18',
+      '**Last reviewed:** 2026-01-01 · **Owner:** TBD')).toEqual([]);
+  });
+});
+
+describe('a --since that the audited history does not contain', () => {
+  it('is refused before a verified review is written', () => {
+    // Accepted, it was written into `Against:` and the very next ordinary run
+    // reported that marker invalid via the ancestry check -- provenance the
+    // tool manufactures and then rejects itself.
+    const spawn = (_c, args) => (args[0] === 'merge-base'
+      ? { status: 1, stdout: '' }
+      : { status: 0, stdout: 'abcdef1234\n' });
+    expect(() => resolveCommit('other-branch', { spawn, ancestorOf: 'origin/main' }))
+      .toThrow(/not an ancestor of origin\/main/);
+    // An ancestor is accepted.
+    const ok = (_c, args) => (args[0] === 'merge-base'
+      ? { status: 0, stdout: '' }
+      : { status: 0, stdout: 'abcdef1234\n' });
+    expect(resolveCommit('HEAD~2', { spawn: ok, ancestorOf: 'origin/main' }))
+      .toBe('abcdef1234');
+    // Without a verified write there is nothing to constrain.
+    expect(resolveCommit('other-branch', { spawn })).toBe('abcdef1234');
   });
 });
