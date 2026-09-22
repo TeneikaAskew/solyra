@@ -2038,8 +2038,15 @@ function fencedScan(lines, html) {
       // Any list item sets the column, not just one that also carries a
       // fence -- the fence is normally on a LATER line of the item, which is
       // the whole case this exists for.
+      // COLUMNS, not characters. CommonMark advances a tab to the next
+      // multiple of four, so `-\titem` puts the content column at four while
+      // counting characters gives two -- and a fence indented to the real
+      // column was then rejected as four characters too deep, so the block
+      // was not code and a `[x](missing.md)` DISPLAYED inside it became a
+      // gating dead link. The sibling calculation in `markerWindow` was
+      // corrected a round ago; this copy was measured in characters still.
       const item = /^([ \t]*)((?:[-*+]|\d+[.)])\s+)/.exec(line);
-      if (item) listIndent = item[1].length + item[2].length;
+      if (item) listIndent = columnWidth(item[1] + item[2]);
       else if (!/^[ \t]/.test(line)) listIndent = 0;
     }
     // A container prefix -- a blockquote `>`, or list indentation -- precedes
@@ -3201,7 +3208,18 @@ export function checkClosedIssues(doc, text, states) {
   let paragraphCue = null;
   let paragraphDepth = 0;
   lines.forEach((line, i) => {
-    if (fenced.has(i)) { paragraphCue = null; return; }
+    // A rendered code block INTERRUPTS the list a label introduces, so the
+    // label does not reach past it. The early return skipped the block
+    // without clearing anything, and a later unrelated list item inherited
+    // the stale cue -- a gating finding on a closed issue the prose never
+    // called a blocker. `itemIndent` goes with it: a continuation measured
+    // against an item on the far side of a code block is not a continuation.
+    if (fenced.has(i)) {
+      paragraphCue = null;
+      carried = null;
+      itemIndent = null;
+      return;
+    }
     // Inline code as well as commented-out text. Inline code renders
     // literally, never as a live citation, so a document showing what a
     // blocker row looks like drew a gating finding once its sample issue
@@ -3992,6 +4010,14 @@ export function isTrackedDir(tracked, norm) {
   return false;
 }
 
+// What may follow a reference definition's destination: nothing, or an
+// optional title, to the end of the line. CommonMark renders a definition
+// with any other suffix as ORDINARY TEXT -- `[g]: missing.md garbage` and
+// `[g]: missing.md "unclosed` define nothing and link nowhere -- while a
+// prefix-only match registered the destination and reported a gating dead
+// link for a target no reader can reach.
+const REF_DEF_TAIL_RE = /^[ \t]*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\((?:\\.|[^)\\])*\))?[ \t]*$/;
+
 export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) {
   const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
   const out = [];
@@ -4119,6 +4145,11 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // reported a tracked file dead -- the false direction.
     let m = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*(?:<((?:\\.|[^<>\n\\])*)>|(\S+))/
       .exec(inItem);
+    // The REMAINDER has to be a definition too. A prefix match accepted
+    // `[g]: missing.md garbage`, which CommonMark renders as ordinary text --
+    // no definition, no link -- and reported its destination as a gating dead
+    // link for something no reader can click.
+    if (m && !REF_DEF_TAIL_RE.test(inItem.slice(m[0].length))) m = null;
     // The destination may sit on the FOLLOWING line: `[guide]:` then
     // `  missing.md` is a definition CommonMark resolves, and `[x][guide]`
     // renders as a clickable link to it. A per-line pattern could not capture

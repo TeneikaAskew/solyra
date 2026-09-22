@@ -4318,6 +4318,55 @@ describe('a registry section ended by a Setext heading', () => {
   });
 });
 
+describe('a definition-shaped line with an invalid suffix', () => {
+  it('defines nothing, so its destination is not a link', () => {
+    // CommonMark renders `[g]: missing.md garbage` as ordinary text -- no
+    // definition, no clickable link -- while a prefix-only match registered
+    // the destination and reported a gating dead link for a target no reader
+    // can reach.
+    expect(checkDeadLinks('d.md', '[g]: missing.md garbage\n', linkCtx(['d.md'])))
+      .toEqual([]);
+    expect(checkDeadLinks('d.md', '[g]: missing.md "unclosed\n', linkCtx(['d.md'])))
+      .toEqual([]);
+    // Each of the three title forms, and no title at all, are still
+    // definitions -- so this requires a valid remainder rather than an empty
+    // one.
+    for (const tail of ['', ' "t"', " 't'", ' (t)']) {
+      expect(checkDeadLinks('d.md', `[g]: missing.md${tail}\n`, linkCtx(['d.md']))
+        .map((f) => f.check)).toEqual(['dead-link']);
+    }
+  });
+});
+
+describe('a blocker label above a code block', () => {
+  it('does not reach the list below it', () => {
+    // A rendered code block INTERRUPTS the list a label introduces. The
+    // early return skipped the block without clearing the carried cue, so a
+    // later unrelated list item inherited it -- a gating finding on a closed
+    // issue the prose never called a blocker.
+    const closed = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+    const url = 'https://github.com/TeneikaAskew/solyra/issues/1';
+    const across = `Blocked by:\n\n\`\`\`\nsample\n\`\`\`\n\n- unrelated ${url}\n`;
+    expect(checkClosedIssues('d.md', across, closed)).toEqual([]);
+    // The label still reaches its OWN list, so the carry is interrupted
+    // rather than switched off.
+    expect(checkClosedIssues('d.md', `Blocked by:\n\n- ${url}\n`, closed)
+      .map((f) => f.check)).toEqual(['closed-issue']);
+  });
+});
+
+describe('a tab-indented list item holding a fence', () => {
+  it('measures the content column in columns, not characters', () => {
+    // CommonMark advances a tab to the next multiple of four, so `-\titem`
+    // puts the content column at four while counting characters gives two --
+    // and a fence indented to the real column was then rejected as four
+    // characters too deep, so the block was not code and a link DISPLAYED
+    // inside it became a gating dead link.
+    const lines = ['-\titem', '', '      ~~~', '      [x](missing.md)', '      ~~~'];
+    expect([...fencedLines(lines)]).toEqual([2, 3, 4]);
+  });
+});
+
 describe('a marker carrying two spellings of one field', () => {
   it('is a duplicate however it is cased', () => {
     // `**Owner:** Alice · **owner:** Bob` passed the duplicate count because
