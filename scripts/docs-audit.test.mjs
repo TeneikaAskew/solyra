@@ -62,6 +62,11 @@ import {
   markerSection,
   rawHtmlBlockLines,
   stripEmphasis,
+  isEscaped,
+  codeSpanLines,
+  isMarkdownPath,
+  documentSet,
+  classify,
   unescapeMarkdown,
   hasBlockingCue,
   loadRegistry,
@@ -4135,5 +4140,213 @@ describe('a backticked path with a non-ASCII character', () => {
     expect(checkDeadLinks('d.md', '# T\n\nSee `docs/café.md` here.\n', ctx)).toEqual([]);
     expect(checkDeadLinks('d.md', '# T\n\nSee `docs/gone.md` here.\n', ctx)
       .map((f) => f.detail)).toEqual(['backticked path -> docs/gone.md']);
+  });
+});
+
+// ── round 30 (f06ecc0) ──────────────────────────────────────────────────────
+
+const R30_STATES = { stocks: {}, solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+const R30_URL = 'https://github.com/TeneikaAskew/solyra/issues/1';
+
+describe('a blocker list inside a blockquote', () => {
+  it('keeps the label’s context, because the quote is a container', () => {
+    // The `>` stayed in `visible`, so the list line was not recognised as an
+    // item, the line cleared `carried`, and closed blockers in the quoted
+    // list produced no finding at all.
+    expect(checkClosedIssues('d.md', `> Blocked by:\n> - ${R30_URL}\n`, R30_STATES))
+      .toHaveLength(1);
+    // Unquoted still works, and a quoted line that is NOT a label still
+    // carries nothing -- the fix is not "always carry context".
+    expect(checkClosedIssues('d.md', `Blocked by:\n- ${R30_URL}\n`, R30_STATES))
+      .toHaveLength(1);
+    expect(checkClosedIssues('d.md', `> Some prose.\n> - ${R30_URL}\n`, R30_STATES))
+      .toEqual([]);
+  });
+});
+
+describe('an escaped link bracket', () => {
+  it('is literal text, not a link', () => {
+    // `\[x](missing.md)` renders as literal text, so a document
+    // demonstrating link syntax that way drew a gating dead-link finding for
+    // a destination no reader can follow.
+    expect(checkDeadLinks('d.md', '# T\n\nWrite \\[x](missing.md) to show.\n',
+      linkCtx(['d.md']), { backtickedPaths: false })).toEqual([]);
+    // An unescaped one is still checked, and parity matters: `\\[x](y.md)` IS
+    // a link preceded by a literal backslash.
+    expect(checkDeadLinks('d.md', '# T\n\n[x](missing.md)\n', linkCtx(['d.md']),
+      { backtickedPaths: false })).toHaveLength(1);
+    expect([isEscaped('\\[x', 1), isEscaped('\\\\[x', 2), isEscaped('a[x', 1)])
+      .toEqual([true, false, false]);
+  });
+});
+
+describe('a raw HTML block that is not raw text', () => {
+  it('is masked too, and ends at a blank line', () => {
+    // CommonMark type 6: `<div>` runs to the next BLANK line, and renders its
+    // bracket syntax literally exactly as `<pre>` does -- but only type 1 was
+    // masked, so the sample emitted a gating dead-link finding.
+    expect([...rawHtmlBlockLines(['# T', '', '<div>', '[x](m.md)', '</div>', '',
+      '[y](n.md)'])]).toEqual([2, 3, 4]);
+    // Prose mentioning the tag is not a block, an unknown tag is not a block,
+    // and an inline-only tag is not a block.
+    expect([...rawHtmlBlockLines(['# T', '', 'Use <div> in prose.', '', '[x](m.md)'])])
+      .toEqual([]);
+    expect([...rawHtmlBlockLines(['<widget>', '[x](m.md)'])]).toEqual([]);
+    expect([...rawHtmlBlockLines(['# T', '', '<span>x</span>', '', '[y](n.md)'])])
+      .toEqual([]);
+  });
+});
+
+describe('a code span that crosses a line break', () => {
+  it('is still code', () => {
+    // codeSpans is per physical line and cannot see either delimiter of a
+    // span opened on one line and closed on the next, so a sample written
+    // that way was scanned as live prose.
+    expect(checkClosedIssues('d.md', `\`still open ${R30_URL}\n\`\n`, R30_STATES))
+      .toEqual([]);
+    // A real citation is still reported.
+    expect(checkClosedIssues('d.md', `still open ${R30_URL}\n`, R30_STATES))
+      .toHaveLength(1);
+    expect([...codeSpanLines(['`a', 'b`']).keys()]).toEqual([0, 1]);
+  });
+});
+
+describe('an explicit HTML anchor', () => {
+  it('is a destination, so a link to it is not dead', () => {
+    // `<a name="legacy"></a>` and any `id="..."` are rendered destinations
+    // GitHub honours; recording only heading slugs made the dead-anchor check
+    // reject a valid link and fail --check.
+    expect([...headingAnchors('# T\n\n<a name="legacy"></a>\n\n## Real\n')])
+      .toEqual(['t', 'real', 'legacy']);
+    expect([...headingAnchors('# T\n\n<div id="sec-2">x</div>\n')]).toEqual(['t', 'sec-2']);
+    // Inside a fence or a RAW-TEXT block the tag renders literally and
+    // exposes nothing -- a type-6 block, by contrast, IS the anchor.
+    expect([...headingAnchors('# T\n\n```\n<a name="nope"></a>\n```\n')]).toEqual(['t']);
+    expect([...headingAnchors('# T\n\n<pre>\n<a name="nope"></a>\n</pre>\n')]).toEqual(['t']);
+  });
+});
+
+describe('a host-root link destination', () => {
+  it('is a URL, not a repository path', () => {
+    // `[Dashboard](/dashboard)` is a route this app serves. Stripping the
+    // slash and looking it up in `tracked` reported valid application links
+    // as dead, and would have accepted one wherever a same-named directory
+    // happened to exist.
+    expect(checkDeadLinks('d.md', '# T\n\n[Dash](/dashboard)\n', linkCtx(['d.md']),
+      { backtickedPaths: false })).toEqual([]);
+    // A relative destination is still checked.
+    expect(checkDeadLinks('d.md', '# T\n\n[x](docs/gone.md)\n',
+      linkCtx(['d.md', 'docs/a.md']), { backtickedPaths: false })).toHaveLength(1);
+  });
+});
+
+describe('a registry glob with a bracket expression', () => {
+  it('compiles, rather than being silently inert', () => {
+    // Every other reader treats `[` as a wildcard token, so escaping it here
+    // made `docs/[ab].md` match nothing at all: a P1 inert-rule finding and
+    // the documents it meant to cover left unclassified.
+    const reg = (g) => loadRegistry(
+      `# R\n\n## Registry\n\n| Class | Path |\n|---|---|\n| D | ${g} |\n`);
+    expect(classify('docs/a.md', reg('docs/[ab].md')).cls).toBe('D');
+    expect(classify('docs/c.md', reg('docs/[ab].md')).cls).toBe(null);
+    // Glob negation, and the other wildcards unaffected -- the bracket
+    // sentinel must not collide with the `**` one.
+    expect(classify('docs/b.md', reg('docs/[!a].md')).cls).toBe('D');
+    expect(classify('docs/a.md', reg('docs/[!a].md')).cls).toBe(null);
+    expect(classify('docs/z.md', reg('docs/*.md')).cls).toBe('D');
+    expect(classify('docs/s/z.md', reg('docs/**/*.md')).cls).toBe('D');
+  });
+});
+
+describe('a link destination carrying a character reference', () => {
+  it('resolves to the file the rendered link points at', () => {
+    // Markdown resolves references before constructing the link, so
+    // `[x](foo&amp;bar.md)` targets a tracked `foo&bar.md`.
+    expect(checkDeadLinks('d.md', '# T\n\n[x](foo&amp;bar.md)\n',
+      linkCtx(['foo&bar.md', 'd.md']), { backtickedPaths: false })).toEqual([]);
+  });
+});
+
+describe('a derivation naming an untracked path', () => {
+  it('is refused, because git grep would search no files', () => {
+    // `git grep` searches the INDEX, so a path that exists but is untracked
+    // made the existence check pass while the search covered no files and
+    // exited 1 -- read as a legitimate count of zero, so a zero claim passed
+    // having measured nothing. Measured: both cases exit 1.
+    expect(() => derive('grep-count node_modules foo'))
+      .toThrow(/is not tracked/);
+    // A missing path keeps its own, more specific message, and a tracked path
+    // with no matches is still a real zero.
+    expect(() => derive('grep-count nosuchdir foo')).toThrow(/does not exist/);
+    // A pattern that cannot occur in this file, which lives under `scripts/`
+    // and would otherwise count its own fixture.
+    expect(derive(`grep-count scripts qqx${'zz'}nomatch${'9'}qqx`)).toBe(0);
+  });
+});
+
+describe('a Setext-titled document', () => {
+  it('opens its marker window after the underline', () => {
+    // h1Index returns the TITLE line, so the scan started on the document's
+    // own `=====` underline, isSetextUnderline recognised it, and the window
+    // closed before it opened -- `{from: 1, to: 0}`. A correctly placed
+    // marker was reported missing and every --stamp inserted another.
+    const lines = ['Title', '=====', '', MARK('2026-01-01', 'me'), '', 'Body.'];
+    expect(markerWindow(lines)).toEqual({ from: 2, to: 6 });
+    expect(findMarker(lines).idx).toBe(3);
+    // An ATX title still behaves.
+    expect(findMarker(['# T', '', MARK('2026-01-01', 'me'), '', 'B.']).idx).toBe(2);
+  });
+});
+
+describe('a fence opener indented four spaces', () => {
+  it('is indented code, measured against its container', () => {
+    // Two indentation components side by side allowed six spaces with no
+    // container at all, and `    ``` ` is a one-line indented code block.
+    // Opening on it masked every real link and blocker below until another
+    // fence appeared -- the direction that hides findings.
+    expect([...fencedLines(['# T', '', '    ```', '[x](m.md)', '', '[y](n.md)'])])
+      .toEqual([]);
+    expect([...fencedLines(['# T', '', '   ```', 'x', '   ```'])]).toEqual([2, 3, 4]);
+    // A flat three-space cap would be wrong the other way: inside a list the
+    // fence sits at the item's content column. `- ` gives column 2, so 2..5
+    // open and 6 does not; `1. ` gives 3, so 6 does.
+    expect([...fencedLines(['- item', '', '  ```', 'x', '  ```'])]).toEqual([2, 3, 4]);
+    expect([...fencedLines(['- item', '', '     ```', 'x', '     ```'])]).toEqual([2, 3, 4]);
+    expect([...fencedLines(['- item', '', '      ```', 'x', '      ```'])]).toEqual([]);
+    expect([...fencedLines(['1. item', '', '      ```', 'x', '      ```'])]).toEqual([2, 3, 4]);
+    // And the list ends at an unindented line.
+    expect([...fencedLines(['- item', '', 'prose', '', '    ```', 'x'])]).toEqual([]);
+  });
+});
+
+describe('a Markdown document with an alternate suffix', () => {
+  it('is in the document set', () => {
+    // `.md` alone left a tracked `docs/runbook.markdown` or `README.MD` out
+    // COMPLETELY -- no unclassified finding, no marker, link or blocker
+    // check -- although documentSet claims to enumerate Markdown documents.
+    expect([isMarkdownPath('a.markdown'), isMarkdownPath('README.MD'),
+      isMarkdownPath('a.mdown'), isMarkdownPath('a.txt')])
+      .toEqual([true, true, true, false]);
+    expect(documentSet(new Set(['docs/a.markdown', 'docs/b.md', 'c.txt']), []))
+      .toEqual(['docs/a.markdown', 'docs/b.md']);
+  });
+});
+
+describe('an atomic stamp of a file with a non-default mode', () => {
+  it('keeps the mode the target had', () => {
+    // The temp file is created with default permissions and then REPLACES the
+    // original, so stamping a tracked executable Markdown file turned it from
+    // 100755 to 100644 -- an unrelated diff, and a broken consumer wherever
+    // the bit mattered.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-mode-'));
+    fs.writeFileSync(path.join(dir, 'a.md'), '# A\n');
+    fs.chmodSync(path.join(dir, 'a.md'), 0o755);
+    writeStamps([{ doc: 'a.md', text: '# A\n\nstamped\n' }], { repo: dir });
+    expect(fs.statSync(path.join(dir, 'a.md')).mode & 0o777).toBe(0o755);
+    // An ordinary file keeps its ordinary mode -- the fix is not "always 755".
+    fs.writeFileSync(path.join(dir, 'b.md'), '# B\n');
+    fs.chmodSync(path.join(dir, 'b.md'), 0o644);
+    writeStamps([{ doc: 'b.md', text: '# B\n\nstamped\n' }], { repo: dir });
+    expect(fs.statSync(path.join(dir, 'b.md')).mode & 0o777).toBe(0o644);
   });
 });

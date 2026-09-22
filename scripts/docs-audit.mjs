@@ -191,6 +191,20 @@ export function citesLiveWork(line, start, end, { context = null } = {}) {
 // whitespace (so `[g](<docs/user guide.md>)` did not match at all and a missing
 // target reported clean) and split `[tests](<README.md#tests>)` into the path
 // `<README.md` and the fragment `tests>` -- reporting a tracked README dead.
+/**
+ * Is the character at `i` escaped by an odd number of backslashes?
+ *
+ * `\[x](missing.md)` renders as literal text, so a document demonstrating
+ * link syntax that way was reported as a gating dead link for a destination
+ * no reader can follow. Parity counts, because `\\[x](y.md)` IS a link
+ * preceded by a literal backslash.
+ */
+export function isEscaped(text, i) {
+  let n = 0;
+  for (let k = i - 1; k >= 0 && text[k] === '\\'; k -= 1) n += 1;
+  return n % 2 === 1;
+}
+
 const MD_LINK_RE =
   /\[[^\]]*\]\(\s*(?:<([^<>#]*)(?:#([^>\s]+))?>|((?:[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
@@ -503,14 +517,29 @@ function globToRe(glob) {
   // `docs/sub/g.md` and NOT `docs/guide.md` -- immediate children reported
   // unclassified, or the row itself reported as matching nothing. A regression
   // from the single-star fix one round earlier, caught by Codex on the same PR.
-  const escaped = glob
+  // A BRACKET EXPRESSION compiles, rather than being escaped into a literal.
+  // Every other reader -- globSpecificity, documentSet, knownRootFiles --
+  // treats `[` as a wildcard token, so escaping it here made a row like
+  // `docs/[ab].md` match nothing at all: a P1 inert-rule finding, and the
+  // documents it meant to cover left unclassified. Held out of the escape
+  // pass by a sentinel, then translated (`[!a]` is glob's negation).
+  // `\u0002`, not `\u0001`: that one is already the `**` sentinel below, and
+  // reusing it turned a bracket expression into `.*`.
+  const held = [];
+  const withBrackets = glob.replace(/\[!?\]?[^\]]*\]/g, (b) => {
+    const neg = b[1] === '!';
+    held.push(`[${neg ? '^' : ''}${b.slice(neg ? 2 : 1, -1)}]`);
+    return '\u0002';
+  });
+  const escaped = withBrackets
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*\//g, '\u0000')
     .replace(/\*\*/g, '\u0001')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '[^/]')
     .replace(/\u0000/g, '(?:[^/]+/)*')
-    .replace(/\u0001/g, '.*');
+    .replace(/\u0001/g, '.*')
+    .replace(/\u0002/g, () => held.shift());
   return new RegExp(`^${escaped}$`);
 }
 
@@ -586,9 +615,21 @@ export function checkRegistryPaths(tracked, registry) {
   return out;
 }
 
+// Every suffix this repository treats as Markdown. `.md` alone left a tracked
+// `docs/runbook.markdown`, `guide.mdown` or `README.MD` out of the set
+// COMPLETELY -- no unclassified finding, no marker, link or blocker check --
+// although documentSet claims to enumerate the Markdown documents. Matched
+// case-insensitively, because a suffix's case is not its meaning.
+export const MARKDOWN_EXTS = ['.md', '.markdown', '.mdown', '.mkd', '.mkdn', '.mdwn'];
+
+export function isMarkdownPath(p) {
+  const lower = p.toLowerCase();
+  return MARKDOWN_EXTS.some((e) => lower.endsWith(e));
+}
+
 export function documentSet(tracked, registry) {
   const named = new Set(registry.filter((r) => !/[*?[]/.test(r.glob)).map((r) => r.glob));
-  return [...tracked].filter((p) => p.endsWith('.md') || named.has(p)).sort();
+  return [...tracked].filter((p) => isMarkdownPath(p) || named.has(p)).sort();
 }
 
 /**
@@ -1023,7 +1064,13 @@ export function isSetextUnderline(lines, i, masked = new Set()) {
  * marker missing and inserted a duplicate.
  */
 export function markerWindow(lines, limit = 40, { stopAtParagraph = true } = {}) {
-  const h1 = h1Index(lines);
+  // The whole H1, not its title line. A Setext H1 is TWO lines, so scanning
+  // from `h1Index + 1` started on the document's own `=====` underline,
+  // isSetextUnderline recognised it, and `stop = j - 1` closed the window
+  // BEFORE it opened -- `{from: 1, to: 0}`. A correctly placed marker was
+  // then reported missing and every --stamp inserted another one. The Python
+  // twin already starts from the anchor (stocks#1121); this is the parity fix.
+  const h1 = markerAnchor(lines);
   // EMPTY, not the first `limit` lines. The registry places the marker in the
   // first paragraph after the first H1, so a document with no H1 has nowhere
   // the marker may live. Falling back to a flat scan let a marker-shaped line
@@ -1296,7 +1343,20 @@ export function indentedCodeLines(lines) {
 // worse than the bug the mask was added to fix.
 const RAW_TEXT_OPEN_RE = /^ {0,3}<(pre|script|style|textarea)(?:[\s>/]|$)/i;
 
-export function rawHtmlBlockLines(lines) {
+// CommonMark HTML block type 6: a known block-level tag, opened or closed,
+// running to the next BLANK line rather than to a matching close tag. `<div>`
+// followed by `[x](missing.md)` and `</div>` with no blank line between them
+// renders the bracket syntax literally exactly as `<pre>` does, but only
+// type 1 was masked, so the sample emitted a gating dead-link finding.
+const HTML_BLOCK_TAGS = new Set(('address article aside base basefont blockquote body caption '
+  + 'center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer '
+  + 'form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main '
+  + 'menu menuitem nav noframes ol optgroup option p param search section summary table '
+  + 'tbody td tfoot th thead title tr track ul').split(' '));
+
+const HTML_BLOCK_OPEN_RE = /^ {0,3}<\/?([a-zA-Z][a-zA-Z0-9-]*)(?:[\s/>]|$)/;
+
+export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
   const out = new Set();
   const fenced = fencedLines(lines);
   // An INDENTED example of an opener is an example, not a block.
@@ -1327,7 +1387,17 @@ export function rawHtmlBlockLines(lines) {
         if (!RAW_TEXT_OPEN_RE.test(line.slice(0, c))) return;
       }
       const m = RAW_TEXT_OPEN_RE.exec(line);
-      if (!m) return;
+      if (!m) {
+        // Type 6. Sentinel rather than a tag name, because the block does not
+        // close on one -- a blank line ends it whatever tags are inside.
+        if (rawTextOnly) return;
+        const b = HTML_BLOCK_OPEN_RE.exec(line);
+        if (b && HTML_BLOCK_TAGS.has(b[1].toLowerCase())) {
+          open = '\u0000';
+          out.add(i);
+        }
+        return;
+      }
       open = m[1].toLowerCase();
       out.add(i);
       // A one-line block: `<pre>...</pre>` closes on the line it opened.
@@ -1335,6 +1405,11 @@ export function rawHtmlBlockLines(lines) {
       return;
     }
     out.add(i);
+    if (open === '\u0000') {
+      // A type-6 block ends at the next BLANK line, not at a close tag.
+      if (!line.trim()) { out.delete(i); open = null; }
+      return;
+    }
     if (new RegExp(`</${open}\\s*>`, 'i').test(line)) open = null;
   });
   return out;
@@ -1349,7 +1424,18 @@ export function fencedLines(lines) {
   // CommonMark: a fence closes only on the same character, at least as long,
   // and with no info string.
   let open = null;
+  // The enclosing list item's content column, so a fence indented to it is a
+  // fence rather than indented code. Reset by a non-blank line at column 0.
+  let listIndent = 0;
   lines.forEach((line, i) => {
+    if (!open && line.trim()) {
+      // Any list item sets the column, not just one that also carries a
+      // fence -- the fence is normally on a LATER line of the item, which is
+      // the whole case this exists for.
+      const item = /^([ \t]*)((?:[-*+]|\d+[.)])\s+)/.exec(line);
+      if (item) listIndent = item[1].length + item[2].length;
+      else if (!/^[ \t]/.test(line)) listIndent = 0;
+    }
     // A container prefix -- a blockquote `>`, or list indentation -- precedes
     // the fence rather than replacing it. `> ```md` is the shape this repo's
     // own docs use, and seeing the `>` marked none of the block as code, so
@@ -1359,17 +1445,33 @@ export function fencedLines(lines) {
     // opener unrecognised and then misread the indented CLOSING fence as a new
     // opener, so links inside the example were audited as live content and the
     // prose after the block could be masked instead.
-    const m = /^ {0,3}(?:> ?)*(?:(?:[-*+]|\d+[.)])\s+)?\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    // Indentation is measured RELATIVE to the enclosing container, which is
+    // what CommonMark's "up to three spaces" means. Two indentation
+    // components side by side allowed six spaces with no container at all --
+    // and `    \`\`\`` is a one-line indented code block, not a fence.
+    // Opening on it masked every real link and blocker below until another
+    // fence appeared, the direction that hides findings. A flat three-space
+    // cap is wrong in the other direction: a fence inside a list item sits at
+    // the item's content column, which is commonly deeper, so `listIndent`
+    // carries that column the way indentedCodeLines does.
+    const m = /^([ \t]*)((?:> ?)*)((?:[-*+]|\d+[.)])\s+)?[ \t]*(`{3,}|~{3,})(.*)$/
+      .exec(line);
+    if (m) {
+      // Relative to the container: a blockquote prefix or a list marker on
+      // THIS line is itself the container, so its own lead is the baseline.
+      const base = m[2] || m[3] ? m[1].length : listIndent;
+      if (m[1].length - base > 3) return;
+    }
     if (!open) {
       // An opening ``` fence may not carry a backtick in its info string.
-      if (m && !(m[1][0] === '`' && m[2].includes('`'))) {
-        open = m[1];
+      if (m && !(m[4][0] === '`' && m[5].includes('`'))) {
+        open = m[4];
         fenced.add(i);
       }
       return;
     }
     fenced.add(i);
-    if (m && m[1][0] === open[0] && m[1].length >= open.length && m[2].trim() === '') {
+    if (m && m[4][0] === open[0] && m[4].length >= open.length && m[5].trim() === '') {
       open = null;
     }
   });
@@ -1386,6 +1488,33 @@ export function codeSpans(line) {
   const re = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
   const out = [];
   for (const m of line.matchAll(re)) out.push([m.index, m.index + m[0].length]);
+  return out;
+}
+
+/**
+ * Code-span ranges per line index, for spans that CROSS line breaks.
+ *
+ * `codeSpans` is per physical line and so cannot see a span whose opening and
+ * closing backticks are on different lines -- a sample written that way was
+ * scanned as live prose and could emit a gating closed-issue finding. The
+ * whole document is scanned once here and the ranges split back per line, so
+ * the callers keep their per-line offsets.
+ */
+export function codeSpanLines(lines) {
+  const text = lines.join('\n');
+  const starts = [];
+  let at = 0;
+  for (const line of lines) { starts.push(at); at += line.length + 1; }
+  const out = new Map();
+  for (const [lo, hi] of codeSpans(text)) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const from = starts[i];
+      const to = from + lines[i].length;
+      if (hi <= from || lo >= to) continue;
+      if (!out.has(i)) out.set(i, []);
+      out.get(i).push([Math.max(lo - from, 0), Math.min(hi - from, lines[i].length)]);
+    }
+  }
   return out;
 }
 
@@ -1913,6 +2042,11 @@ export function checkClosedIssues(doc, text, states) {
   // losing it: the prose no longer renders, but --check still held the build
   // red over it. Raised on the Python twin (stocks#1121).
   const commented = commentSpans(lines);
+  // Code spans that CROSS line breaks. `codeSpans` is per physical line and
+  // cannot see either delimiter of a span opened on one line and closed on
+  // the next, so a sample written that way was scanned as live prose and
+  // could emit a gating closed-issue finding.
+  const wrapped = codeSpanLines(lines);
   // A cue can head a BLOCK rather than sit on the citation's own line:
   // `Blocked by:` followed by a list of issue links is the ordinary Markdown
   // form, and requiring the cue on the URL's physical line skipped every one
@@ -1929,7 +2063,8 @@ export function checkClosedIssues(doc, text, states) {
     // blocker row looks like drew a gating finding once its sample issue
     // closed -- while the fenced and indented forms of the same example were
     // already ignored.
-    const hidden = [...(commented.get(i) ?? []), ...codeSpans(line)];
+    const hidden = [...(commented.get(i) ?? []), ...codeSpans(line),
+      ...(wrapped.get(i) ?? [])];
     // The hidden spans are masked OUT before any cue is read, at the same
     // length so every offset below still lines up. Hiding only the URLs was
     // half the job: `<!-- still open --> https://.../issues/1` kept the
@@ -1938,7 +2073,13 @@ export function checkClosedIssues(doc, text, states) {
     // renders as nothing.
     const visible = hidden.reduce(
       (acc, [lo, hi]) => acc.slice(0, lo) + '\u0000'.repeat(hi - lo) + acc.slice(hi), line);
-    const isItem = /^\s*(?:[-*+]|\d+[.)])\s/.test(visible) || /^\s*\|/.test(visible);
+    // Structure is read through the CONTAINER prefix. A quoted blocker list --
+    // `> Blocked by:` then `> - <url>` -- left the `>` in `visible`, so the
+    // list line was not recognised as an item, the line cleared `carried`,
+    // and closed blockers in the list produced no finding at all. Offsets are
+    // untouched: only the structural tests read the stripped copy.
+    const bare = visible.replace(BLOCKQUOTE_PREFIX_RE, '');
+    const isItem = /^\s*(?:[-*+]|\d+[.)])\s/.test(bare) || /^\s*\|/.test(bare);
     // Emphasis is MARKUP: `is still **open**` renders as "is still open" and
     // plainly cites live work, but the classifier saw the `**` between the
     // words and found no cue at all -- so a closed issue vanished from the
@@ -1953,10 +2094,10 @@ export function checkClosedIssues(doc, text, states) {
     // and every closed issue in the list below went unreported. Offsets are
     // preserved everywhere they are used; only this one anchored test reads
     // the trimmed form.
-    const labelText = cueText.replace(/\u0000+\s*$/, '');
+    const labelText = stripEmphasis(bare).replace(/\u0000+\s*$/, '');
     // A blank line between the label and its list is the normal spelling, so
     // it must not clear the context; any other non-item line does.
-    if (!isItem && visible.trim()) {
+    if (!isItem && bare.trim()) {
       carried = hasBlockingCue(cueText) && CUE_LABEL_RE.test(labelText) ? cueText : null;
     }
     const context = isItem ? carried : null;
@@ -2212,6 +2353,24 @@ export function headingAnchors(text) {
     seen.set(base, n + 1);
     out.add(slug);
   }
+  // Explicit HTML anchors. `<a name="legacy"></a>` and any `id="..."` are
+  // rendered destinations GitHub honours, so a link to `#legacy` is valid
+  // with no heading of that name -- and recording only heading slugs made the
+  // dead-anchor check reject it and fail --check. Read from the same
+  // unmasked lines, so one inside a fence or a comment is still an example.
+  // A narrower mask than the heading scan's: a type-6 block such as `<div
+  // id="x">` IS the anchor, so masking it would discard the very thing being
+  // read. Only a RAW-TEXT block (pre/script/style/textarea) renders the tag
+  // literally and exposes nothing.
+  const literal = new Set([...fencedLines(lines), ...commentedLines(lines),
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
+  for (const [i, raw] of lines.entries()) {
+    if (literal.has(i)) continue;
+    for (const mm of raw.matchAll(/<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
+      const id = mm[2] ?? mm[3];
+      if (id) out.add(id.toLowerCase());
+    }
+  }
   return out;
 }
 
@@ -2329,7 +2488,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // that valid link as dead. Only the ASCII punctuation CommonMark
       // allows an escape before -- a backslash anywhere else is a literal
       // character and removing it would invent a different path.
-      const raw = unescapeMarkdown(tgt.replace(/^<(.*)>$/, '$1').split('?')[0]);
+      // Character references are resolved before the link is constructed, so
+      // `[x](foo&amp;bar.md)` targets a tracked `foo&bar.md`; leaving `&amp;`
+      // intact reported that valid link as dead. Decoded here for the same
+      // reason heading text is decoded before its anchor is generated.
+      const raw = decodeCharRefs(
+        unescapeMarkdown(tgt.replace(/^<(.*)>$/, '$1').split('?')[0]));
       // `100%-coverage.md` is a literal percent, and decodeURIComponent throws
       // a plain URIError on it -- a stack trace and exit 1, the status
       // reserved for documentation findings. An undecodable destination is
@@ -2341,8 +2505,13 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
         bare = raw;
       }
       if (!bare) return;
-      norm = path.posix.normalize(
-        bare.startsWith('/') ? bare.slice(1) : path.posix.join(base, bare));
+      // A slash-prefixed destination is a HOST-ROOT URL, not a repository
+      // path: `[Dashboard](/dashboard)` is a route this app serves. Stripping
+      // the slash and looking it up in `tracked` reported valid application
+      // links as dead, and would have accepted one by accident wherever a
+      // same-named directory happened to exist.
+      if (bare.startsWith('/')) return;
+      norm = path.posix.normalize(path.posix.join(base, bare));
       if (norm.startsWith('..')) return;
       if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
         out.push({ check: 'dead-link', doc, line: lineNo, severity: 'P2', detail: what });
@@ -2401,6 +2570,11 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     const codeHere = codeSpans(line);
     const hiddenHere = commentedSpans.get(i) ?? [];
     for (const m of line.matchAll(MD_LINK_RE)) {
+      // An ESCAPED opening bracket renders as literal text, so a document
+      // demonstrating link syntax as `\[x](missing.md)` was reported as a
+      // gating dead link for a destination no reader can follow. Parity
+      // matters: `\\[x](y.md)` IS a link after a literal backslash.
+      if (isEscaped(line, m.index)) continue;
       if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
       // Retired Markdown kept in an HTML comment is not rendered, so it is not
       // a citation: `<!-- [old](removed.md) -->` produced a gating dead-link
@@ -2659,10 +2833,27 @@ export function derive(derivation, { exec = run } = {}) {
     // derivation naming one silently derived zero: a false clean result for a
     // document claiming zero, and a fabricated count finding otherwise. The
     // paths are checked first, so exit 1 can only mean "no matches".
+    // TRACKED, not merely present on disk. `git grep` searches the index, so a
+    // path that exists but is untracked -- an ignored generated directory is
+    // the ordinary case -- made this existence check pass while the search
+    // covered no files and exited 1, which the caller then read as a
+    // legitimate count of zero. A zero claim passed having measured nothing,
+    // the same fabricated-result shape the existence check itself was added
+    // to close.
     for (const p of paths) {
       if (!fs.existsSync(path.join(REPO, p))) {
         throw new AuditError(`derivation path \`${p}\` does not exist, so `
           + `\`${derivation}\` would derive 0 from a search that never ran`);
+      }
+      // `run`, not the injected `exec`: this is a precondition on the
+      // REPOSITORY, the same category as the `fs.existsSync` check above it,
+      // which also reads the real tree. `exec` is injected so a test can
+      // control the MEASUREMENT, and a stub that answered this probe would be
+      // asserting about a repository it does not have.
+      if (!run('git', ['ls-files', '--', p], { okExitCodes: [1, 128] }).trim()) {
+        throw new AuditError(`derivation path \`${p}\` is not tracked, so `
+          + `\`${derivation}\` would derive 0 from a git grep that searched `
+          + 'no files');
       }
     }
     // `-e` before the pattern, so a regex BEGINNING with `-` is read as data.
@@ -3000,6 +3191,17 @@ export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
       const tmp = path.join(path.dirname(target), `.${path.basename(target)}.stamp-tmp`);
       try {
         fsImpl.writeFileSync(tmp, w.text);
+        // The temp file is created with default permissions and then REPLACES
+        // the original, so stamping a tracked executable Markdown file turned
+        // it from mode 100755 to 100644 -- an unrelated diff, and a broken
+        // consumer wherever the bit mattered. Carried over before the rename.
+        // Best effort: a filesystem that cannot report or set a mode is not a
+        // reason to refuse the stamp, and the rename below is still atomic.
+        try {
+          if (fsImpl.statSync && fsImpl.chmodSync) {
+            fsImpl.chmodSync(tmp, fsImpl.statSync(target).mode);
+          }
+        } catch { /* mode unavailable -- the write itself still stands */ }
         fsImpl.renameSync(tmp, target);
       } catch (err) {
         // Best effort, and never masking the original error: the temp file is
