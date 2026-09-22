@@ -4816,7 +4816,27 @@ export function parseArgs(argv) {
 /** The stamp actions that leave the requested review recorded on disk. */
 export const RECORDS_REVIEW = new Set(['inserted', 'updated', 'unchanged']);
 
+/**
+ * The checks a stamp does NOT answer.
+ *
+ * `--verify` writes `Depth: verified` and today's date, which says "I read
+ * this document and its claims hold". A dead link, a stale count, a closed
+ * issue cited as live work or a missing Class A stamp is a claim this audit
+ * has mechanically DISPROVEN, so writing that sentence over it is the tool
+ * lying about itself -- and `--stamp --verify docs/x.md` without `--check`
+ * exited 0 having done exactly that.
+ *
+ * `marker` and `changed-since` are deliberately absent: a missing, stale or
+ * drifted marker is precisely what the stamp resolves, so refusing on those
+ * would make `--verify` impossible on any document that needs it.
+ */
+const DISPROVEN_BY_AUDIT = new Set([
+  'dead-link', 'dead-anchor', 'closed-issue', 'count-claim', 'class-a']);
+
 const STAMP_REFUSALS = {
+  'refused-disproven': 'the audit disproved a claim the document makes, so a '
+    + 'verified stamp would record a review of prose that does not hold; fix '
+    + 'the findings for it first',
   'baseline-predates-doc': 'the reviewed-against commit does not contain the document, '
     + 'so the review would name a baseline predating it; commit it first',
   'skipped-no-h1': 'no H1 to place a marker after',
@@ -5246,6 +5266,18 @@ export function main(argv) {
       if (reviewed && !pathInCommit(head, doc)) {
         stampTargets.set(doc, 'baseline-predates-doc');
         continue;
+      }
+      // A review of prose the audit just disproved is false provenance. See
+      // DISPROVEN_BY_AUDIT: the findings for this document have all been
+      // pushed by now, so they can be asked about directly. A scan-only stamp
+      // is still written -- `Last scanned` claims only that the job ran.
+      if (reviewed) {
+        const disproven = findings.filter(
+          (f) => f.doc === doc && DISPROVEN_BY_AUDIT.has(f.check));
+        if (disproven.length) {
+          stampTargets.set(doc, 'refused-disproven');
+          continue;
+        }
       }
       const res = stamp(text, today, reviewed ? 'verified' : 'scanned', head, reviewed);
       stampTargets.set(doc, res.action);

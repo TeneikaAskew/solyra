@@ -2023,6 +2023,39 @@ describe('a whole run over a fixture repository', () => {
     expect(said).toHaveLength(1);
   });
 
+  it('refuses a verified stamp over a claim the audit disproved', () => {
+    // `--verify` writes `Depth: verified` and today's date, which says "I read
+    // this and its claims hold". A dead link is a claim this audit has
+    // mechanically DISPROVEN, so writing that sentence over it is the tool
+    // lying about itself -- and without `--check` the command exited 0 having
+    // done exactly that. Only spawning the script can see it: the refusal is
+    // an interaction between the content checks and the stamp loop in main().
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n\n[x](missing.md)\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const before = fs.readFileSync(path.join(dir, 'docs/d.md'), 'utf8');
+    const res = runAudit(dir, ['--stamp', '--verify', 'docs/d.md']);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/disproved a claim/);
+    // Nothing was written: the whole batch is refused, not half of it.
+    expect(fs.readFileSync(path.join(dir, 'docs/d.md'), 'utf8')).toBe(before);
+  });
+
+  it('still records a verified stamp when the document holds up', () => {
+    // The refusal has to be narrow. A document whose only findings are the
+    // MISSING provenance the stamp itself supplies must still be stampable,
+    // or --verify becomes impossible on exactly the documents that need it.
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n\nbody\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const res = runAudit(dir, ['--stamp', '--verify', 'docs/d.md']);
+    expect(res.stderr).not.toMatch(/disproved a claim/);
+    expect(fs.readFileSync(path.join(dir, 'docs/d.md'), 'utf8'))
+      .toMatch(/\*\*Depth:\*\* verified/);
+  });
+
   it('reports an impossible marker date through main()', () => {
     const dir = fixture();
     fs.writeFileSync(path.join(dir, 'docs/d.md'),
