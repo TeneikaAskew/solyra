@@ -2376,7 +2376,7 @@ describe('a snapshot that names both repositories but records nothing', () => {
   it('still accepts a map with one validated record', () => {
     const f = path.join(os.tmpdir(), `snap-one-${process.pid}.json`);
     fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW,
-      solyra: { 1: { state: 'open' } }, stocks: { 2: { state: 'closed' } },
+      solyra: { 1: { state: 'open', kind: 'ISSUE' } }, stocks: { 2: { state: 'closed', kind: 'ISSUE' } },
     }));
     expect(loadIssuesSnapshot(f).solyra['1'].state).toBe('open');
     fs.unlinkSync(f);
@@ -2839,7 +2839,7 @@ describe('a snapshot key that is not an issue number', () => {
     // fabricated "could not be resolved" P2.
     const f = path.join(os.tmpdir(), `snap-key-${process.pid}.json`);
     fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW,
-      solyra: { junk: { state: 'open' } }, stocks: { 1: { state: 'open' } } }));
+      solyra: { junk: { state: 'open', kind: 'ISSUE' } }, stocks: { 1: { state: 'open', kind: 'ISSUE' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/not an issue number/);
     fs.unlinkSync(f);
   });
@@ -2847,7 +2847,7 @@ describe('a snapshot key that is not an issue number', () => {
   it.each(['0', '01', '-1', '1.0'])('rejects the non-canonical key %s', (key) => {
     const f = path.join(os.tmpdir(), `snap-key2-${process.pid}.json`);
     fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW,
-      solyra: { [key]: { state: 'open' } }, stocks: { 1: { state: 'open' } } }));
+      solyra: { [key]: { state: 'open', kind: 'ISSUE' } }, stocks: { 1: { state: 'open', kind: 'ISSUE' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(AuditError);
     fs.unlinkSync(f);
   });
@@ -3645,7 +3645,7 @@ describe('a document whose registry rows disagree', () => {
       + '| D | docs/d.md | | |\n| X | docs/d.md | | |\n');
     fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n\nbody\n');
     fs.writeFileSync(path.join(dir, 'issues.json'),
-      JSON.stringify({ capturedAt: NOW, stocks: { 1: { state: 'open' } }, solyra: { 1: { state: 'open' } } }));
+      JSON.stringify({ capturedAt: NOW, stocks: { 1: { state: 'open', kind: 'ISSUE' } }, solyra: { 1: { state: 'open', kind: 'ISSUE' } } }));
     for (const args of [['init', '-q', '-b', 'work'], ['config', 'user.email', 't@e.com'],
       ['config', 'user.name', 't'], ['add', '-A'], ['commit', '-qm', 'tree']]) {
       spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
@@ -4831,6 +4831,79 @@ describe('a blocking cue and its citation on separate lines', () => {
     // And a NEGATED cue carries nothing, so the carry inherits the
     // negation rules rather than working around them.
     expect(checks(`isn't blocking\n${URL}\n`)).toEqual([]);
+  });
+});
+
+describe('a type-7 HTML opener carrying a quoted angle bracket', () => {
+  const ctx = () => ({
+    tracked: new Set(['d.md']), topLevelDirs: new Set(), rootFiles: new Set(),
+    knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+  });
+  const checks = (doc) => checkDeadLinks('d.md', doc, ctx()).map((f) => f.check);
+
+  it('is one complete tag, so it opens the block', () => {
+    // `[^<>]*?` was not the attribute grammar every other tag scan here uses.
+    // A quoted value may contain `>` -- `<x-widget title=">">` is ONE tag --
+    // and rejecting it opened no block, so the Markdown-looking lines below
+    // were audited as live content and the example became a gating dead
+    // link. Reproduced before fixing.
+    expect(checks('<x-widget title=">">\n[x](missing.md)\n')).toEqual([]);
+    expect(checks("<x-widget title='>'>\n[x](missing.md)\n")).toEqual([]);
+    // The shapes that already worked, asserted so the grammar swap cannot
+    // quietly drop one.
+    expect(checks('<x-widget>\n[x](missing.md)\n')).toEqual([]);
+    expect(checks('<x-widget data-a>\n[x](missing.md)\n')).toEqual([]);
+    expect(checks('</x-widget>\n[x](missing.md)\n')).toEqual([]);
+    // And the pattern was too LAX in the other direction: `<x-widget ===>` is
+    // not a tag CommonMark accepts, so the line below it really is live
+    // Markdown and its broken link really is a finding.
+    expect(checks('<x-widget ===>\n[x](missing.md)\n')).toEqual(['dead-link']);
+    // A real link below a real opener is still not checked, because Markdown
+    // is not parsed inside the block at all.
+    expect(checks('<x-widget title=">">\n[x](d.md)\n')).toEqual([]);
+  });
+});
+
+describe('a /pull/ citation backed by an issue record', () => {
+  const st = {
+    stocks: { 5: { state: 'open', reason: '', kind: 'ISSUE' } },
+    solyra: { 6: { state: 'open', reason: '', kind: 'PR' } },
+  };
+  const details = (line) => checkClosedIssues('d.md', `${line}\n`, st)
+    .map((f) => f.detail);
+
+  it('names no pull request, so it is unresolved', () => {
+    // GitHub's issues API returns issues and PRs from one endpoint, so the
+    // lookup found the numbered ISSUE and accepted its state -- and because
+    // that issue was open, a URL pointing at a pull request that does not
+    // exist passed the audit clean. `kind` was already collected and was the
+    // one column nothing read. Codex filed it on the Python twin.
+    expect(details('Blocked by https://github.com/TeneikaAskew/stocks/pull/5'))
+      .toEqual(['stocks#5 (PR) could not be resolved']);
+    // ONLY this direction. GitHub redirects `/issues/N` to `/pull/N` for a
+    // PR, so that spelling IS a link that resolves.
+    expect(details('Blocked by https://github.com/TeneikaAskew/solyra/issues/6'))
+      .toEqual([]);
+    expect(details('Blocked by https://github.com/TeneikaAskew/solyra/pull/6')).toEqual([]);
+    expect(details('Blocked by https://github.com/TeneikaAskew/stocks/issues/5')).toEqual([]);
+  });
+
+  it('is a check a snapshot may not switch off', () => {
+    // A snapshot row without `kind` would make the test above unreachable
+    // and the citation pass in silence -- "missing data reads as fine"
+    // wearing a different hat. The loader refuses it, as it already refuses
+    // a row with no usable state.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-kind-'));
+    const f = path.join(dir, 'nokind.json');
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW,
+      stocks: { 1: { state: 'open', reason: '' } },
+      solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
+    expect(() => loadIssuesSnapshot(f)).toThrow(/stocks#1 has no usable kind/);
+    const g = path.join(dir, 'badkind.json');
+    fs.writeFileSync(g, JSON.stringify({ capturedAt: NOW,
+      stocks: { 1: { state: 'open', reason: '', kind: 'issue' } },
+      solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
+    expect(() => loadIssuesSnapshot(g)).toThrow(/has no usable kind/);
   });
 });
 

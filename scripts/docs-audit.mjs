@@ -1824,7 +1824,17 @@ function* htmlDestinations(text) {
   }
 }
 
-const HTML_TYPE7_RE = /^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*?)?\/?>\s*$/;
+// A type-7 opener is a COMPLETE tag, and its attributes follow the same
+// grammar every other tag scan here uses. `[^<>]*?` was not that grammar: a
+// quoted value may contain `>` -- `<x-widget title=">">` is one tag -- and
+// rejecting it opened no block, so the Markdown-looking lines below it were
+// audited as live content and `[x](missing.md)` in the example became a
+// gating dead link. It was also too LAX in the other direction, accepting
+// `<x-widget ===>`, which CommonMark does not. Reusing HTML_ATTR fixes both
+// and means one grammar, not two. Codex filed it on the Python twin
+// (stocks#1121), where it is the same defect.
+const HTML_TYPE7_RE = new RegExp(
+  String.raw`^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+${HTML_ATTR})*\s*\/?>\s*$`);
 
 // An explicit fragment destination the browser honours. The unquoted form is
 // valid HTML too; an unquoted value ends at whitespace or any of `"'=<>` and a
@@ -3115,6 +3125,9 @@ export function stamp(text, date, depth, sha, reviewed = false) {
  */
 export const ISSUE_STATES = new Set(['open', 'closed']);
 
+/** What `fetchIssueStates` records in the `kind` column, and nothing else. */
+export const ISSUE_KINDS = new Set(['PR', 'ISSUE']);
+
 /**
  * Read an issues snapshot written by --write-issues-snapshot. A missing or
  * malformed file threw past the AuditError handler and Node exited 1, which
@@ -3206,6 +3219,17 @@ export function loadIssuesSnapshot(file, { now = new Date() } = {}) {
         throw new AuditError(`--issues-snapshot ${file}: ${repo}#${num} has no usable state `
           + `(${JSON.stringify(rec)}); expected one of ${[...ISSUE_STATES].join(', ')}. `
           + 'A row the audit cannot read is not a row it may report on');
+      }
+      // And `kind`, which the live read has always collected and nothing used
+      // to check. A `/pull/N` citation backed by an ISSUE record names no
+      // pull request at all, and that check reads this column -- so a
+      // snapshot without it would silently switch the check off, which is
+      // "missing data reads as fine" wearing a different hat (Rule 4).
+      if (!ISSUE_KINDS.has(rec.kind)) {
+        throw new AuditError(`--issues-snapshot ${file}: ${repo}#${num} has no usable kind `
+          + `(${JSON.stringify(rec.kind)}); expected one of ${[...ISSUE_KINDS].join(', ')}. `
+          + 'Without it a /pull/ citation backed by an issue cannot be told from a '
+          + 'real one, and the check would pass in silence');
       }
     }
   }
@@ -3610,7 +3634,9 @@ export function checkClosedIssues(doc, text, states) {
         && cLo <= v.at && v.at < cHi)) continue;
       if (!citesLiveWork(cueText, at, end, { context })) continue;
       const isPr = hit[2].toLowerCase() === 'pull';
-      const st = states[repo]?.[num];
+      // Same kind check the URL pass applies; see there.
+      const st = isPr && states[repo]?.[num]?.kind === 'ISSUE'
+        ? undefined : states[repo]?.[num];
       const label = `${repo}#${num}${isPr ? ' (PR)' : ''}`;
       if (!st) {
         out.push({ check: 'closed-issue', doc, line: i + 1, severity: 'P2',
@@ -3636,7 +3662,16 @@ export function checkClosedIssues(doc, text, states) {
       // merged, though the issue-state read already carried PR records; the
       // blocking-cue filter above is what keeps ordinary PR lineage out.
       const isPr = kind === 'pull';
-      const st = states[repo]?.[Number(num)];
+      // A `/pull/N` citation backed by an ISSUE record names no pull request
+      // at all. GitHub's issues API returns issues and PRs from one endpoint,
+      // so the lookup found the numbered ISSUE and accepted its state -- and
+      // if that issue was open, a URL pointing at a pull request that does
+      // not exist passed the audit clean. `kind` was already collected and
+      // was the one column nothing read. Codex filed it on the Python twin
+      // (stocks#1121). Only this direction: GitHub redirects `/issues/N` to
+      // `/pull/N` for a PR, so that spelling IS a link that resolves.
+      const st = isPr && states[repo]?.[Number(num)]?.kind === 'ISSUE'
+        ? undefined : states[repo]?.[Number(num)];
       const label = `${repo}#${num}${isPr ? ' (PR)' : ''}`;
       if (!st) {
         out.push({ check: 'closed-issue', doc, line: i + 1, severity: 'P2',
