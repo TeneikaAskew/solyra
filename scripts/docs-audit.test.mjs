@@ -4318,6 +4318,61 @@ describe('a registry section ended by a Setext heading', () => {
   });
 });
 
+describe('a blocking cue and its citation on separate lines', () => {
+  const closed = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+  const URL = 'https://github.com/TeneikaAskew/solyra/issues/1';
+  const checks = (doc) => checkClosedIssues('d.md', doc, closed).map((f) => f.check);
+
+  it('are one sentence when a SOFT break joins them', () => {
+    // `Blocked by` then the URL on the next line renders as one sentence, but
+    // the scan read physical lines, so the cue and the citation never met and
+    // a closed issue produced no finding at all -- the direction that hides
+    // them. The list form already carried its label; the plain paragraph did
+    // not.
+    expect(checks(`Blocked by\n${URL}\n`)).toEqual(['closed-issue']);
+    expect(checks(`Blocked by ${URL}\n`)).toEqual(['closed-issue']);
+  });
+
+  it('and are not, across a block boundary', () => {
+    // A blank line, a heading and a fence each end the paragraph, so a cue
+    // above one does not reach the text below it. Without these the carry
+    // would reach the whole document.
+    expect(checks(`Blocked by\n\n${URL}\n`)).toEqual([]);
+    expect(checks(`Blocked by\n# H\n${URL}\n`)).toEqual([]);
+    expect(checks(`Blocked by\n\`\`\`\nx\n\`\`\`\n${URL}\n`)).toEqual([]);
+    // And a NEGATED cue carries nothing, so the carry inherits the
+    // negation rules rather than working around them.
+    expect(checks(`isn't blocking\n${URL}\n`)).toEqual([]);
+  });
+});
+
+describe('a Markdown link title', () => {
+  const closed = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+
+  it('is metadata, not prose the blocker scan reads', () => {
+    // A title renders as the anchor's `title` attribute -- a tooltip, never
+    // a followable citation -- so it says nothing about live work. The scan
+    // read the cue and the URL as ordinary prose and emitted a gating P1
+    // once that issue closed.
+    const titled = '[x](README.md "Still open '
+      + 'https://github.com/TeneikaAskew/solyra/issues/1")\n';
+    expect(checkClosedIssues('d.md', titled, closed)).toEqual([]);
+  });
+
+  it('but the DESTINATION is still a citation', () => {
+    // An issue URL in the destination is a link a reader can follow, so it
+    // IS a citation -- the same split tagAttributeSpans makes for `href`.
+    const linked = 'Blocked by [issue 1]'
+      + '(https://github.com/TeneikaAskew/solyra/issues/1)\n';
+    expect(checkClosedIssues('d.md', linked, closed).map((f) => f.check))
+      .toEqual(['closed-issue']);
+    // And bare prose is unchanged.
+    expect(checkClosedIssues('d.md',
+      'Still open https://github.com/TeneikaAskew/solyra/issues/1\n', closed)
+      .map((f) => f.check)).toEqual(['closed-issue']);
+  });
+});
+
 describe('a parenthesised heading suffix', () => {
   it('is stripped only when it is a valid inline link', () => {
     // `balancedClose` answers a narrower question than the one being asked:

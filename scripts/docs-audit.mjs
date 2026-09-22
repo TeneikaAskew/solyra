@@ -330,12 +330,18 @@ function* mdLinks(text) {
         if (f) { [frag] = f; at = MD_FRAG_RE.lastIndex; }
       }
     }
+    const destEnd = at;
     MD_LINK_TAIL_RE.lastIndex = at;
     const tail = MD_LINK_TAIL_RE.exec(text);
     if (!tail) { pos = opening.index + 1; continue; }
     const end = MD_LINK_TAIL_RE.lastIndex;
     const out = [text.slice(opening.index, end), btarget, bfrag, target, frag];
     out.index = opening.index;
+    // Where the DESTINATION stopped, so a caller can tell the followable part
+    // of a link from its metadata without rescanning. `linkTitleSpans` is the
+    // one that needs it; carrying it here is what keeps that scan from
+    // becoming a second, drifting copy of this one.
+    out.destEnd = destEnd;
     yield out;
     pos = end;
   }
@@ -3084,6 +3090,35 @@ export function tagAttributeSpans(lines) {
   return out;
 }
 
+/**
+ * Offset ranges covering an inline link's TITLE, per line index.
+ *
+ * A title renders as the anchor's `title` attribute -- a tooltip, not body
+ * text, and never a followable citation. `[x](README.md "Still open
+ * https://github.com/TeneikaAskew/solyra/issues/1")` therefore says nothing
+ * about live work, but the blocker scan read the cue and the URL as ordinary
+ * prose and emitted a gating P1 once that issue closed.
+ *
+ * The DESTINATION is deliberately left visible: an issue URL written there is
+ * a link a reader can follow, so it IS a citation. That is the same split
+ * `tagAttributeSpans` makes for `href`, one syntax over.
+ */
+export function linkTitleSpans(lines) {
+  const out = new Map();
+  lines.forEach((line, i) => {
+    const spans = [];
+    for (const m of mdLinks(line)) {
+      // The tail runs from the end of the destination to the `)`. Masking it
+      // whole covers the title and the whitespace around it and nothing else.
+      const lo = m.destEnd;
+      const hi = m.index + m[0].length - 1;
+      if (hi > lo) spans.push([lo, hi]);
+    }
+    if (spans.length) out.set(i, spans);
+  });
+  return out;
+}
+
 export function checkClosedIssues(doc, text, states) {
   const out = [];
   const lines = text.split('\n');
@@ -3112,6 +3147,7 @@ export function checkClosedIssues(doc, text, states) {
   // Attribute VALUES are implementation metadata: `<div data-issue="...">`
   // shows a reader nothing clickable, so a citation there is not a blocker.
   const attrSpans = tagAttributeSpans(lines);
+  const titleSpans = linkTitleSpans(lines);
   // A cue can head a BLOCK rather than sit on the citation's own line:
   // `Blocked by:` followed by a list of issue links is the ordinary Markdown
   // form, and requiring the cue on the URL's physical line skipped every one
@@ -3127,8 +3163,17 @@ export function checkClosedIssues(doc, text, states) {
   let carriedDepth = 0;
   // Content column of the list item currently open, for its continuations.
   let itemIndent = null;
+  // The cue carried by a SOFT BREAK within one paragraph. `Blocked by` and a
+  // URL on the next line render as one sentence, but the scan read physical
+  // lines, so the cue and the citation never met and a closed issue produced
+  // no finding at all -- the direction that hides them. Separate from
+  // `carried`, which is a LABEL introducing a list and is cleared by
+  // different things; conflating the two would have made a label survive a
+  // blank line in the paragraph case, where it must not.
+  let paragraphCue = null;
+  let paragraphDepth = 0;
   lines.forEach((line, i) => {
-    if (fenced.has(i)) return;
+    if (fenced.has(i)) { paragraphCue = null; return; }
     // Inline code as well as commented-out text. Inline code renders
     // literally, never as a live citation, so a document showing what a
     // blocker row looks like drew a gating finding once its sample issue
@@ -3136,8 +3181,12 @@ export function checkClosedIssues(doc, text, states) {
     // already ignored.
     // And HTML tag ATTRIBUTES other than a link destination -- see
     // tagAttributeSpans. Internal metadata is not prose a reader sees.
+    // And a Markdown link TITLE, which renders as a tooltip rather than as
+    // body text -- see linkTitleSpans. The destination stays visible,
+    // because an issue URL written there is one a reader can follow.
     const hidden = [...(commented.get(i) ?? []), ...codeSpans(line),
-      ...(wrapped.get(i) ?? []), ...(attrSpans.get(i) ?? [])];
+      ...(wrapped.get(i) ?? []), ...(attrSpans.get(i) ?? []),
+      ...(titleSpans.get(i) ?? [])];
     // The hidden spans are masked OUT before any cue is read, at the same
     // length so every offset below still lines up. Hiding only the URLs was
     // half the job: `<!-- still open --> https://.../issues/1` kept the
@@ -3201,7 +3250,25 @@ export function checkClosedIssues(doc, text, states) {
     if (carried !== null && rendered.trim() && quoteDepth(visible) !== carriedDepth) {
       carried = null;
     }
-    const context = isItem || isContinuation ? carried : null;
+    // A heading or a thematic break is a block of its own, so a cue above one
+    // does not reach the text below it.
+    if (/^ {0,3}(?:#{1,6}(?:\s|$)|(?:\*\s*){3,}$|(?:-\s*){3,}$|(?:_\s*){3,}$)/.test(bare)) {
+      paragraphCue = null;
+    }
+    const softCue = !isItem && !isContinuation && rendered.trim() ? paragraphCue : null;
+    const context = isItem || isContinuation ? carried : softCue;
+    // The paragraph's cue is remembered for the NEXT line and dropped at any
+    // boundary: a blank line, a fence, a heading, a list, or a change of
+    // container. Same emptiness rule as the branches above -- the mask
+    // preserves length, so a wholly hidden line renders as nothing.
+    if (!rendered.trim() || isItem || isContinuation
+        || quoteDepth(visible) !== paragraphDepth) {
+      paragraphCue = null;
+    }
+    paragraphDepth = quoteDepth(visible);
+    if (!isItem && !isContinuation && rendered.trim() && hasBlockingCue(cueText)) {
+      paragraphCue = cueText;
+    }
     if (!hasBlockingCue(cueText) && context === null) return;
     for (const m of line.matchAll(ISSUE_URL_RE)) {
       if (hidden.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
