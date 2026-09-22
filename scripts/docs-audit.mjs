@@ -1327,8 +1327,12 @@ export function checkMarkerDates(doc, prev, today, line = null) {
   // check passed. Only stamp() noticed, by returning skipped-malformed-marker,
   // and an ordinary --check never calls stamp(), so the contradiction sailed
   // through the gate it should have held.
+  // Case-insensitively: a variant such as `**depth:** verified` is a field a
+  // reader recognises and this parser declines, so a case-sensitive filter let
+  // it through as prose AND let `stamp` add a canonical `**Depth:**` beside
+  // it. The Python twin has refused that since round 21.
   const bad = line === null ? [] : extraSegments(line).filter(
-    (seg) => OWNED_FIELDS.some((f) => seg.startsWith(`**${f}`)));
+    (seg) => OWNED_FIELDS.some((f) => seg.toLowerCase().startsWith(`**${f}`.toLowerCase())));
   for (const seg of bad) {
     out.push({ check: 'marker', doc, severity: 'P2',
       detail: `the marker repeats an owned field in a form it cannot parse: ${seg}` });
@@ -1640,13 +1644,21 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = 
     // renders literally, but testing the physical line saw the `>` and
     // recognised no opener -- so `> [x](missing.md)` inside the example was
     // audited as a live link and emitted a gating finding.
-    const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
+    let line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
     if (open !== null && quoteDepth(raw) < openDepth) { open = null; closer = null; }
     if (inComment) {
       if (line.includes('-->')) inComment = false;
       return;
     }
     if (open === null) {
+      // A LIST MARKER is a container prefix too, and CommonMark removes it
+      // before parsing the block: `- <pre>` opens a raw-text block whose
+      // contents display literally, so a `[x](missing.md)` inside it is an
+      // EXAMPLE and produced a gating dead-link finding for a link no reader
+      // can click. Only while nothing is open -- inside a block the line is
+      // displayed text and a leading `-` is content. Every branch below
+      // returns, so the stripped text reaches no closer test.
+      line = line.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
       // Whatever opens on THIS line opens at this line's depth. Recorded
       // before the opener tests rather than at each of the places a block can
       // start, so none of them can be missed; it is only read while a block is
@@ -1748,7 +1760,12 @@ function commentHiddenLines(lines) {
     // cycle. Ported from the Python twin (stocks#1121).
     const spans = codeSpans(line);
     let at = line.indexOf('<!--');
-    while (at !== -1 && spans.some(([lo, hi]) => lo <= at && at < hi)) {
+    // An ESCAPED opener opens nothing either: `\<!--` displays the delimiter
+    // literally and leaves the rest of the line live Markdown. Reading it as a
+    // real comment masked everything through `-->` or to EOF, suppressing the
+    // dead-link, blocker, heading and marker findings in between.
+    while (at !== -1 && (spans.some(([lo, hi]) => lo <= at && at < hi)
+        || isEscaped(line, at))) {
       at = line.indexOf('<!--', at + 1);
     }
     if (at !== -1 && !line.slice(at).includes('-->')) {
@@ -2015,6 +2032,18 @@ export function paragraphBlocks(lines, fenced = new Set()) {
     // blank. Read through the container prefix, as every other block test
     // here is.
     const bare = line.replace(BLOCKQUOTE_PREFIX_RE, '');
+    // A SETEXT UNDERLINE closes the heading it belongs to, and a heading is a
+    // block of its own exactly as an ATX one is. Without this an unmatched
+    // delimiter in the heading text paired with one in the paragraph BELOW the
+    // underline, and codeSpanLines masked a live `[x](missing.md)` between
+    // them out of the audit. Tested BEFORE the thematic break, which is what
+    // `---` under a paragraph would otherwise be read as; `isSetextUnderline`
+    // is the same predicate headingAnchors uses, so the two cannot disagree
+    // about where a heading ends.
+    if (start !== null && isSetextUnderline(lines, i, fenced)) {
+      flush(i);
+      return;
+    }
     if (ATX_HEADING_RE.test(bare) || THEMATIC_BREAK_RE.test(bare)) {
       flush(i - 1);
       blocks.push([i, i]);
@@ -2124,7 +2153,13 @@ export function commentSpans(lines) {
         if (code.has(i)) return;
         const spans = [...codeSpans(line), ...(wrappedCode.get(i) ?? [])];
         let a = line.indexOf('<!--', pos);
-        while (a >= 0 && spans.some(([lo, hi]) => lo <= a && a < hi)) {
+        // An ESCAPED opener opens nothing: `\<!--` displays the delimiter
+        // literally and the rest of the line stays live Markdown. Reading it
+        // as a comment masked content through `-->` or to EOF and suppressed
+        // the findings in between. `commentHiddenLines`, the standalone copy
+        // of this scan, carries the same rule.
+        while (a >= 0 && (spans.some(([lo, hi]) => lo <= a && a < hi)
+            || isEscaped(line, a))) {
           a = line.indexOf('<!--', a + 1);
         }
         if (a < 0) return;
@@ -2466,7 +2501,14 @@ export function extraSegments(line) {
   for (const raw of line.split(DOT)) {
     const s = raw.trim();
     if (!s) continue;
-    const field = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`));
+    const exact = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`));
+    // A CASE VARIANT of a field with no value -- Owner -- is that field: the
+    // whole segment is the value, so there is nothing to misparse, and
+    // keeping it as free text duplicated it beside the canonical spelling the
+    // rewrite adds. A variant of a field that HAS a value deliberately stays
+    // in the tail, so the malformed-field checks still see it and refuse.
+    const field = exact ?? OWNED_FIELDS.find(
+      (f) => !OWNED_VALUE_RE[f] && s.toLowerCase().startsWith(`**${f}`.toLowerCase()));
     if (!field) { out.push(s); continue; }
     const valueRe = OWNED_VALUE_RE[field];
     if (!valueRe) continue; // Owner: the whole segment is the value.
@@ -2482,7 +2524,12 @@ export function extraSegments(line) {
 }
 
 export function ownerOf(line) {
-  const m = new RegExp(`\\*\\*Owner:\\*\\*\\s*([^${DOT}]+)`).exec(line ?? '');
+  // Case-INSENSITIVELY. `**owner:** Alice` is a field every reader
+  // recognises; reading it case-sensitively returned null, `extraSegments`
+  // kept the variant as free text, and `--stamp` wrote a canonical
+  // `**Owner:** TBD` beside it -- one line asserting two different owners,
+  // reported as updated.
+  const m = new RegExp(`\\*\\*Owner:\\*\\*\\s*([^${DOT}]+)`, 'i').exec(line ?? '');
   return m ? m[1].trim() : null;
 }
 
@@ -2583,8 +2630,11 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   // `Last reviewed` prefix and the malformed field lands in the tail. A
   // restamp would then add a canonical `Last scanned` beside it and keep the
   // broken one, leaving the document carrying two. Refuse instead.
+  // Case-insensitively, for the reason `checkMarker` is: a variant this
+  // parser declines is still a field the rewrite owns.
   if (prev && !prev.legacy && extraSegments(lines[prev.idx]).some(
-    (seg) => OWNED_FIELDS.some((f) => seg.startsWith(`**${f}`)))) {
+    (seg) => OWNED_FIELDS.some(
+      (f) => seg.toLowerCase().startsWith(`**${f}`.toLowerCase())))) {
     return { text, action: 'skipped-malformed-marker' };
   }
 
@@ -3593,7 +3643,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // the definition -- and because reference USES are deliberately not
     // scanned, its broken destination produced no finding at all. The head
     // form below still matches when nothing follows, because it is anchored.
-    let m = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*(?:<([^<>\n]*)>|(\S+))/.exec(inItem);
+    // A BACKSLASH ESCAPE inside the angle-bracketed form is destination
+    // content, not the delimiter: CommonMark resolves `[g]: <a\>b.md>` to
+    // `a>b.md`. `[^<>\n]*` stopped at the escaped `>`, captured `a\` and
+    // reported a tracked file dead -- the false direction.
+    let m = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*(?:<((?:\\.|[^<>\n\\])*)>|(\S+))/
+      .exec(inItem);
     // The destination may sit on the FOLLOWING line: `[guide]:` then
     // `  missing.md` is a definition CommonMark resolves, and `[x][guide]`
     // renders as a clickable link to it. A per-line pattern could not capture
@@ -3609,7 +3664,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       if (head && j < lines.length && !fenced.has(j) && !commentedDefs.has(j)
           && !spanHidden(j)) {
         const cont = lines[j].replace(BLOCKQUOTE_PREFIX_RE, '');
-        const d = /^[ \t]*(?:<([^<>\n]*)>|(\S+))/.exec(cont);
+        const d = /^[ \t]*(?:<((?:\\.|[^<>\n\\])*)>|(\S+))/.exec(cont);
         if (d) { m = [null, head[1], d[1], d[2]]; destLine = j; }
       }
     }
@@ -3646,7 +3701,17 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // A narrow `https?:|mailto:` allowlist sent `tel:`, `ftp:`, `HTTPS:` and
     // `//example.com/x` down the repository-path branch and produced a P2 for
     // a local file that was never meant to exist.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(tgt) || tgt.startsWith('//')) return;
+    // Against the RENDERED spelling as well as the written one. A destination
+    // may encode the scheme separator as a character reference or hide it
+    // behind a backslash escape -- `[x](https&#58;//example.com)` renders as
+    // an ordinary HTTPS link -- and testing only the raw text sent it down the
+    // repository-path branch, where it became a gating dead-link finding for a
+    // file no one meant to exist locally. Percent escapes are deliberately NOT
+    // decoded here: `https%3A//x` stays percent-encoded in the href, so a
+    // browser resolves it relative to this document after all.
+    const rendered = decodeCharRefs(unescapeMarkdown(tgt));
+    if (/^[a-z][a-z0-9+.-]*:/i.test(tgt) || tgt.startsWith('//')
+      || /^[a-z][a-z0-9+.-]*:/i.test(rendered) || rendered.startsWith('//')) return;
     let norm;
     if (!tgt) {
       norm = doc;

@@ -77,6 +77,7 @@ import {
   decodeCharRefs,
   h1Index,
   extraSegments,
+  ownerOf,
   legacyTailIsBare,
   markerWindow,
   parseArgs,
@@ -5550,8 +5551,12 @@ describe('inline content', () => {
     expect(paragraphBlocks(['a ` b', '# Heading', 'c ` d']))
       .toEqual([[0, 0], [1, 1], [2, 2]]);
     expect([...codeSpanLines(['a ` b', '# Heading', 'c ` d'])]).toEqual([]);
-    // A thematic break is a block of its own for the same reason.
-    expect(paragraphBlocks(['a', '---', 'b'])).toEqual([[0, 0], [1, 1], [2, 2]]);
+    // A thematic break is a block of its own for the same reason. It needs a
+    // blank line above it to BE one: `a` over `---` is a Setext H2, which is
+    // what this case originally asserted -- the heading and its underline are
+    // one block, not two.
+    expect(paragraphBlocks(['a', '', '---', 'b'])).toEqual([[0, 0], [2, 2], [3, 3]]);
+    expect(paragraphBlocks(['a', '---', 'b'])).toEqual([[0, 1], [2, 2]]);
     // Ordinary consecutive prose is still one block.
     expect(paragraphBlocks(['a', 'b', '', 'c'])).toEqual([[0, 1], [3, 3]]);
   });
@@ -6231,5 +6236,111 @@ describe('a tabbed list marker', () => {
     // A SPACE marker really does put the floor at 6, so six spaces is code.
     expect([...indentedCodeLines(['- item', '', '      [x](missing.md)'])])
       .toEqual([2]);
+  });
+});
+
+
+describe('a raw HTML block', () => {
+  it('opens through a list marker', () => {
+    // `- <pre>` opens a raw-text block whose contents display literally, so
+    // the `[x](missing.md)` inside it is an EXAMPLE. Stripping only
+    // blockquotes left the opener unrecognised and produced a gating
+    // dead-link finding for a link no reader can click.
+    expect([...rawHtmlBlockLines(['- <pre>', '  [x](missing.md)', '  </pre>'])])
+      .toEqual([0, 1, 2]);
+    expect(checkDeadLinks('d.md', '# T\n\n- <pre>\n  [x](missing.md)\n  </pre>\n',
+      linkCtx(['d.md']))).toEqual([]);
+    // The containers it already handled are unchanged.
+    expect([...rawHtmlBlockLines(['<pre>', 'x', '</pre>'])]).toEqual([0, 1, 2]);
+    expect([...rawHtmlBlockLines(['> <pre>', '> x', '> </pre>'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('an escaped comment opener', () => {
+  it('opens no comment', () => {
+    // `\<!--` displays the delimiter literally and leaves the rest of the line
+    // live Markdown. Reading it as a real comment masked content through
+    // `-->` or to EOF, suppressing every finding in between.
+    expect([...commentSpans(['\\<!-- [x](missing.md)'])]).toEqual([]);
+    expect(checkDeadLinks('d.md', '# T\n\n\\<!-- [x](missing.md)\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    // A real opener still opens, and PARITY still decides: `\\<!--` is a
+    // literal backslash followed by a live comment.
+    expect([...commentSpans(['<!-- [x](missing.md)'])]).toEqual([[0, [[0, 20]]]]);
+    expect([...commentSpans(['\\\\<!-- x'])]).toEqual([[0, [[2, 8]]]]);
+    // Through `fencedLines`, which reads the standalone copy of this scan in
+    // `commentHiddenLines`: a false comment there swallows every later fence
+    // delimiter, so the example below it is audited as live content.
+    expect([...fencedLines(['\\<!--', '```', 'x', '```'])]).toEqual([1, 2, 3]);
+    expect([...fencedLines(['<!--', '```', 'x', '```'])]).toEqual([]);
+  });
+});
+
+describe('an escaped angle bracket', () => {
+  it('is reference destination content, not the delimiter', () => {
+    // `[g]: <a\>b.md>` resolves to `a>b.md`. `[^<>\n]*` stopped at the escaped
+    // `>`, captured `a\` and reported a tracked file dead.
+    expect(checkDeadLinks('d.md', '# T\n\n[g]: <a\\>b.md>\n',
+      linkCtx(['d.md', 'a>b.md']))).toEqual([]);
+    // The two-line form reads its destination through the same alternative.
+    expect(checkDeadLinks('d.md', '# T\n\n[g]:\n  <a\\>b.md>\n',
+      linkCtx(['d.md', 'a>b.md']))).toEqual([]);
+    // A destination with a SPACE is still what the angle form is for.
+    expect(checkDeadLinks('d.md', '# T\n\n[g]: <my guide.md>\n',
+      linkCtx(['d.md', 'my guide.md']))).toEqual([]);
+  });
+});
+
+describe('a URI scheme', () => {
+  it('is read off the rendered destination', () => {
+    // `[x](https&#58;//example.com)` renders as an ordinary HTTPS link. The
+    // scheme test ran on the encoded spelling, so the audit resolved it as a
+    // repository-relative path and emitted a gating dead-link finding.
+    expect(checkDeadLinks('d.md', '# T\n\n[x](https&#58;//example.com)\n',
+      linkCtx(['d.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '# T\n\n[x](https\\://example.com)\n',
+      linkCtx(['d.md']))).toEqual([]);
+    // A genuinely relative destination is still resolved and still checked.
+    expect(checkDeadLinks('d.md', '# T\n\n[x](missing.md)\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('a Setext underline', () => {
+  it('ends the inline-parsing block', () => {
+    // An unmatched backtick in a multiline Setext heading paired with one in
+    // the paragraph BELOW the underline, and codeSpanLines masked a live
+    // `[x](missing.md)` between them out of the audit.
+    const lines = ['Head `a', '====', '[x](missing.md) `b'];
+    expect(paragraphBlocks(lines)).toEqual([[0, 1], [2, 2]]);
+    expect([...codeSpanLines(lines)]).toEqual([]);
+    expect(checkDeadLinks('d.md', 'Head `a\n====\n[x](missing.md) `b\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    // The heading itself is still its whole paragraph.
+    expect([...headingAnchors('Head\nTwo\n===\n\npara\n')]).toEqual(['head-two']);
+    expect([...headingAnchors('Head Two\n---\n')]).toEqual(['head-two']);
+  });
+});
+
+describe('a case-variant Owner field', () => {
+  it('is read rather than duplicated', () => {
+    // `**owner:** Alice` is a field every reader recognises. Reading it
+    // case-sensitively returned null, the variant was kept as free text, and
+    // --stamp wrote a canonical `**Owner:** TBD` beside it -- one line
+    // asserting two different owners, reported as updated.
+    const line = '**Last reviewed:** 2026-01-01 · **owner:** Alice';
+    expect(ownerOf(line)).toBe('Alice');
+    expect(extraSegments(line)).toEqual([]);
+    const { text } = stamp(`# T\n\n${line}\n\nBody.\n`,
+      '2026-09-22', 'scanned', 'abc1234567ab');
+    expect(text).toContain('**Owner:** Alice');
+    expect(text).not.toContain('**Owner:** TBD');
+    expect(text.match(/wner:\*\*/g)).toHaveLength(1);
+    // The canonical spelling still reads.
+    expect(ownerOf('**Owner:** Bob')).toBe('Bob');
+    // A variant of a field that HAS a value stays in the tail, so the
+    // malformed-field checks still see it and the rewrite is refused.
+    expect(extraSegments('**Last reviewed:** 2026-01-01 · **depth:** verified'))
+      .toEqual(['**depth:** verified']);
   });
 });
