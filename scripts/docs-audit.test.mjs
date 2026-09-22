@@ -4379,6 +4379,48 @@ describe('a review marker inside a blockquote', () => {
   });
 });
 
+describe('an ordered list marker of ten digits', () => {
+  it('is paragraph text, not a container, in every scanner', () => {
+    // CommonMark caps an ordered-list marker at nine digits, so
+    // `1234567890. # Fake` is ordinary paragraph text -- while stripping it
+    // as a container let h1Index invent an H1, headingAnchors invent
+    // `#fake`, and --stamp place provenance after a heading that does not
+    // exist. Codex filed it on the Python twin (stocks#1121).
+    expect(h1Index(['1234567890. # Fake', '', 'body'])).toBeNull();
+    expect([...headingAnchors('1234567890. # Fake\n')]).toEqual([]);
+    // Nine digits is still a list, so this bounds the rule rather than
+    // removing it.
+    expect(h1Index(['123456789. # Real', '', 'body'])).toBe(0);
+    expect([...headingAnchors('123456789. # Real\n')]).toEqual(['real']);
+  });
+
+  it('and no scanner still carries the unbounded form', () => {
+    // The cap has to hold in EVERY copy: this file had twelve of
+    // `(?:[-*+]|\\d+[.)])`, one per scanner, and a rule that lives in twelve
+    // places grows twelve versions. Reading the source is how the next one
+    // gets caught, since a scanner nobody tested would otherwise keep the
+    // old form silently.
+    const src = fs.readFileSync(path.join('scripts', 'docs-audit.mjs'), 'utf8');
+    expect(src).not.toMatch(/\\d\+\[\.\)\]/);
+    expect(src.match(/\\d\{1,9\}\[\.\)\]/g)?.length).toBeGreaterThan(8);
+  });
+});
+
+describe('a reference label differing only by case', () => {
+  it('is the same label, by Unicode case folding', () => {
+    // CommonMark compares labels by case folding, under which `Stra\u00dfe`
+    // and `STRASSE` are the same label -- `toLowerCase` leaves the sharp s
+    // alone and made them two, so a heading resolving one recorded an
+    // invented anchor and a valid link to the real one was reported dead.
+    expect([...headingAnchors('## [Title][STRASSE]\n\n[Stra\u00dfe]: ok.md\n')])
+      .toEqual(['title']);
+    // Two genuinely different labels stay different, so folding is not
+    // collapsing everything.
+    expect([...headingAnchors('## [Title][guides]\n\n[guide]: ok.md\n')])
+      .toEqual(['titleguides']);
+  });
+});
+
 describe('a registry row with an unrecognised class', () => {
   it('is refused rather than silently dropped', () => {
     // `documentSet` adds a non-Markdown artefact ONLY through an exact
@@ -4394,6 +4436,22 @@ describe('a registry row with an unrecognised class', () => {
     // The HEADER and separator rows are not declarations, so recognising a
     // typo must not turn the table's own frame into an error.
     expect(loadRegistry(base).length).toBe(1);
+  });
+
+  it('and one with EXTRA cells is refused too', () => {
+    // An unescaped pipe in a value -- a `line:^foo|bar$` region pattern is
+    // the shape -- splits into a fifth cell, and the parser silently kept
+    // `line:^foo` and dropped `bar$`: a BROADER ownership map than the row
+    // displays. Refused rather than truncated, because the truncation is
+    // invisible in the rendered table.
+    const base = '# R\n\n## Registry\n\n| Class | Path glob | Declared code paths '
+      + '| Generated regions |\n|---|---|---|---|\n| D | real.md | | |\n';
+    expect(() => loadRegistry(`${base}| A | gen/y.md | lib | line:^foo|bar$ |\n`))
+      .toThrow(/5 cells where the table declares 4/);
+    // FEWER cells is a different case and still parses: the fourth column is
+    // optional and only meaningful for Class A.
+    expect(loadRegistry(`${base}| D | other.md | lib |\n`).map((r) => r.glob))
+      .toEqual(['real.md', 'other.md']);
   });
 });
 

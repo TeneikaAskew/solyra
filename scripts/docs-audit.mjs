@@ -669,6 +669,20 @@ export function loadRegistry(text) {
     if (!inRegistry || !line.startsWith('|')) continue;
     const cells = splitRow(line);
     if (cells.length < 2) continue;
+    // And no MORE than the four declared columns. An unescaped pipe in a
+    // value -- a `line:^foo|bar$` region pattern is the shape -- splits into
+    // a fifth cell, and the parser silently kept `line:^foo` and dropped
+    // `bar$`: a BROADER ownership map than the row displays, so hand-written
+    // lines routed as generated and stamping decisions came from a
+    // declaration nobody wrote. Refused rather than truncated, because the
+    // truncation is invisible in the rendered table. Codex filed it on the
+    // Python twin (stocks#1121).
+    if (cells.length > 4 && ['A', 'B', 'C', 'D', 'X'].includes(cell(cells[0]).toUpperCase())) {
+      throw new AuditError(`${REGISTRY}: a class ${cell(cells[0]).toUpperCase()} row has `
+        + `${cells.length} cells where the table declares 4 -- an unescaped \`|\` in a `
+        + 'value splits it, and the parser would read a broader declaration than the '
+        + 'row displays; escape it as `\\|`');
+    }
     const cls = cell(cells[0]).toUpperCase();
     // A HEADER or separator row is not a declaration; anything else is, and a
     // typo in its class was silently discarded. `documentSet` adds a
@@ -1367,7 +1381,7 @@ export function isSetextUnderline(lines, i, masked = new Set()) {
   // A list item is a container too: `- Example` then `---` at column 0 ends
   // the list. An underline indented to the item's CONTENT column is still an
   // underline, which is why this is an indentation test rather than a ban.
-  const item = /^(\s*)((?:[-*+]|\d+[.)])\s+)/.exec(above);
+  const item = /^(\s*)((?:[-*+]|\d{1,9}[.)])\s+)/.exec(above);
   if (item && (/^\s*/.exec(under)[0].length < item[0].length)) return false;
   return true;
 }
@@ -1666,7 +1680,7 @@ export function indentedCodeLines(lines) {
       inCode = true;
       out.add(i);
     } else {
-      const bullet = /^(\s*(?:[-*+]|\d+[.)])\s+)/.exec(line);
+      const bullet = /^(\s*(?:[-*+]|\d{1,9}[.)])\s+)/.exec(line);
       if (bullet) {
         // COLUMNS, as every other measurement here is. `-\titem` advances
         // the tab to column 4, but counting characters said 2 and set the
@@ -1865,7 +1879,7 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = 
       // can click. Only while nothing is open -- inside a block the line is
       // displayed text and a leading `-` is content. Every branch below
       // returns, so the stripped text reaches no closer test.
-      line = line.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+      line = line.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
       // Whatever opens on THIS line opens at this line's depth. Recorded
       // before the opener tests rather than at each of the places a block can
       // start, so none of them can be missed; it is only read while a block is
@@ -2073,7 +2087,7 @@ function fencedScan(lines, html) {
       // was not code and a `[x](missing.md)` DISPLAYED inside it became a
       // gating dead link. The sibling calculation in `markerWindow` was
       // corrected a round ago; this copy was measured in characters still.
-      const item = /^([ \t]*)((?:[-*+]|\d+[.)])\s+)/.exec(line);
+      const item = /^([ \t]*)((?:[-*+]|\d{1,9}[.)])\s+)/.exec(line);
       if (item) listIndent = columnWidth(item[1] + item[2]);
       else if (!/^[ \t]/.test(line)) listIndent = 0;
     }
@@ -2115,7 +2129,7 @@ function fencedScan(lines, html) {
     // genuinely inside an item. Parity with the Python twin (stocks#1121).
     if (open && openListCol && line.trim()
         && /^[ \t]*/.exec(line)[0].length < openListCol) open = null;
-    const m = /^([ \t]*)((?:> ?)*)((?:[-*+]|\d+[.)])\s+)?([ \t]*)(`{3,}|~{3,})(.*)$/
+    const m = /^([ \t]*)((?:> ?)*)((?:[-*+]|\d{1,9}[.)])\s+)?([ \t]*)(`{3,}|~{3,})(.*)$/
       .exec(line);
     if (m) {
       // Relative to the container: a blockquote prefix or a list marker on
@@ -2283,7 +2297,7 @@ export function paragraphBlocks(lines, fenced = new Set()) {
     // in separate containers were hiding live content between them.
     const depth = quoteDepth(line);
     if (start !== null && (depth !== openDepth
-        || /^[ \t]*(?:[-*+]|\d+[.)])\s+/.test(bare))) {
+        || /^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/.test(bare))) {
       flush(i - 1);
     }
     if (start === null) { start = i; openDepth = depth; }
@@ -2735,7 +2749,7 @@ export function h1Index(lines) {
     // reported no H1 and --stamp answered `skipped-no-h1`, the finding it
     // raises and then refuses to act on. The ATX test only, for the same
     // reason headingAnchors leaves the Setext branch alone.
-    if (H1_RE.test(bare.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, ''))) return i;
+    if (H1_RE.test(bare.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, ''))) return i;
     // The SETEXT branch reads the stripped copy too. `> Quoted title` over
     // `> ====` renders as an H1, and testing the raw quoted lines returned
     // null -- so the audit reported no H1 and --stamp answered
@@ -3337,7 +3351,7 @@ export function checkClosedIssues(doc, text, states) {
     // and closed blockers in the list produced no finding at all. Offsets are
     // untouched: only the structural tests read the stripped copy.
     const bare = visible.replace(BLOCKQUOTE_PREFIX_RE, '');
-    const itemM = /^(\s*)((?:[-*+]|\d+[.)])\s)/.exec(bare);
+    const itemM = /^(\s*)((?:[-*+]|\d{1,9}[.)])\s)/.exec(bare);
     const isItem = Boolean(itemM) || /^\s*\|/.test(bare);
     // A CONTINUATION line belongs to the item above it. `Blocked by:`, then
     // `- Upstream:`, then an indented line carrying the URL renders as one
@@ -3564,7 +3578,14 @@ export function decodeCharRefs(text) {
  * slugged as `see-guidemy---ref`.
  */
 function refKey(label) {
-  return label.replace(/\s+/g, ' ').trim().toLowerCase();
+  // CASE FOLDING, not lowercasing. CommonMark compares labels by Unicode
+  // case folding, under which `Stra\u00dfe` and `STRASSE` are the same label --
+  // `toLowerCase` leaves the sharp s alone and made them two, so a heading
+  // resolving one recorded an invented anchor and a valid link to the real
+  // one was reported dead. Codex filed it on the Python twin (stocks#1121).
+  return label.replace(/\s+/g, ' ').trim().toLocaleLowerCase('en').normalize('NFKC')
+    .replace(/\u00df/g, 'ss')
+    .toLocaleLowerCase('en');
 }
 
 /**
@@ -3917,7 +3938,7 @@ export function headingAnchors(text) {
   lines.forEach((raw, i) => {
     if (fenced.has(i)) return;
     const body = raw.replace(BLOCKQUOTE_PREFIX_RE, '')
-      .replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+      .replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
     let d = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*\S/.exec(body);
     // The destination may sit on the FOLLOWING line. `[g]:` over `  guide.md`
     // defines `g`, so `## See [guide][g]` renders anchored `see-guide` --
@@ -3977,7 +3998,7 @@ export function headingAnchors(text) {
     // gating dead anchor. Applied to the ATX branch only: for Setext,
     // `- Example` over `---` at column zero ENDS the list and renders a
     // thematic break, and stripping the marker there would invent a heading.
-    const atx = line.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+    const atx = line.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
     // The marker is stripped for the SETEXT branch too. `- Title` over an
     // indented `===` is a heading isSetextUnderline deliberately accepts, but
     // the raw `- Title` reached the slug and recorded `--title`. Safe
@@ -3997,7 +4018,7 @@ export function headingAnchors(text) {
       const joined = lines.slice(lo, i + 1)
         .map((ln, k) => dropSpans(ln, headingHidden.get(lo + k) ?? [])
           .replace(BLOCKQUOTE_PREFIX_RE, '').trim()).join(' ');
-      return joined.trim().replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+      return joined.trim().replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
     };
     const m = setext
       ? [null, setextText()]
@@ -4224,7 +4245,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // it needs a bracket, so such a definition went unparsed -- and because
     // reference USES are deliberately not scanned, its broken destination
     // produced no finding at all.
-    const inItem = line.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+    const inItem = line.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
     // The whitespace after the colon is OPTIONAL. CommonMark registers
     // `[g]:missing.md` and resolves `[x][g]` against it, but `\s+` skipped
     // the definition -- and because reference USES are deliberately not
