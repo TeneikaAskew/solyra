@@ -2056,6 +2056,26 @@ describe('a whole run over a fixture repository', () => {
       .toMatch(/\*\*Depth:\*\* verified/);
   });
 
+  it('matches a fragment against an anchor case-sensitively', () => {
+    // A browser matches a fragment EXACTLY. A folded fallback was added to
+    // keep `#Install` working against `<a name="Install">`, and it also
+    // accepted `#Install` against a GENERATED `install`, which does not
+    // navigate. Through main(), because the comparison needs the target
+    // document on disk to read its anchors from.
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'),
+      '# Install\n\n<a name="Keep"></a>\n\n'
+      + '[a](#install)\n[b](#Install)\n[c](#Keep)\n[d](#keep)\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const report = JSON.parse(runAudit(dir).stdout);
+    const dead = report.findings.filter((f) => f.check === 'dead-anchor')
+      .map((f) => f.detail.replace(/^.*(#[^:]*).*$/, '$1')).sort();
+    // `#install` matches the generated slug and `#Keep` the explicit anchor;
+    // the other two match neither, in the two directions the fold hid.
+    expect(dead).toEqual(['#Install', '#keep']);
+  });
+
   it('reports an impossible marker date through main()', () => {
     const dir = fixture();
     fs.writeFileSync(path.join(dir, 'docs/d.md'),
@@ -6593,5 +6613,35 @@ describe('a backslash escape', () => {
     expect(dead('[x](g.md "t")')).toEqual([]);
     expect(checkDeadLinks('d.md', '# T\n\n[x](<my guide.md>)\n',
       linkCtx(['d.md', 'my guide.md']))).toEqual([]);
+  });
+});
+
+describe('an explicit HTML anchor', () => {
+  const ids = (src) => [...headingAnchors(`${src}\n`)];
+
+  it('is read as a real tag attribute, not as text', () => {
+    // `id=` inside ANOTHER attribute's value invented an anchor a link could
+    // then resolve against, and a `>` inside a quoted value hid a real one --
+    // wrong in both directions, the invented ids being the worse half.
+    expect(ids('<div data-note=" id=fake">')).toEqual([]);
+    expect(ids('<div title=\' id="fake"\'>')).toEqual([]);
+    expect(ids('<div title="a > b" id="section">')).toEqual(['section']);
+    // `id` names a destination on any element; `name` only on an anchor.
+    expect(ids('<meta name="viewport">')).toEqual([]);
+    expect(ids('<a name="legacy"></a>')).toEqual(['legacy']);
+    // The forms it already handled are unchanged.
+    expect(ids('<div id=section>')).toEqual(['section']);
+    expect(ids('<div id="a&amp;b">')).toEqual(['a&b']);
+    expect([...headingAnchors('<div\n  id="section">\n')]).toEqual(['section']);
+    expect([...headingAnchors('<pre>\n<a id="fake"></a>\n</pre>\n')]).toEqual([]);
+  });
+
+  it('is matched case-sensitively, and so is a generated slug', () => {
+    // A browser matches an explicit id EXACTLY. A folded fallback was added
+    // here to keep `#Install` working against `<a name="Install">`, and it
+    // also accepted `#Install` against a GENERATED `install`, which does not
+    // navigate -- the false direction.
+    expect([...headingAnchors('<a name="Install"></a>\n')]).toEqual(['Install']);
+    expect([...headingAnchors('# Install\n')]).toEqual(['install']);
   });
 });

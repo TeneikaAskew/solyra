@@ -3659,71 +3659,48 @@ export function headingAnchors(text) {
   // Explicit HTML anchors. `<a name="legacy"></a>` and any `id="..."` are
   // rendered destinations GitHub honours, so a link to `#legacy` is valid
   // with no heading of that name -- and recording only heading slugs made the
-  // dead-anchor check reject it and fail --check. Read from the same
-  // unmasked lines, so one inside a fence or a comment is still an example.
-  // A narrower mask than the heading scan's: a type-6 block such as `<div
-  // id="x">` IS the anchor, so masking it would discard the very thing being
-  // read. Only a RAW-TEXT block (pre/script/style/textarea) renders the tag
-  // literally and exposes nothing.
-  const literal = new Set([...fencedLines(lines), ...commentedLines(lines),
-    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
-  // Inline code too, single-line and wrapped. A literal example --
-  // `` `<a id="fake"></a>` `` -- registered `fake` as a real destination, so a
-  // later `[x](#fake)` PASSED against an anchor the rendered document does not
-  // have. That is the invented-destination failure this whole scan exists to
-  // avoid, reintroduced by the scan itself.
+  // dead-anchor check reject it and fail --check.
+  //
+  // Tokenised through the same tag scanner the attribute mask uses, rather
+  // than by searching for `id=` in arbitrary text. A loose search invented
+  // anchors from `<div data-note=" id=fake">`, where the text sits inside
+  // ANOTHER attribute's value, and missed the real one in
+  // `<div title="a > b" id="section">`, where the `>` inside a quoted value
+  // ended the search early -- wrong in both directions at once, and the
+  // invented ids were the worse half, because a link to one PASSED.
+  //
+  // `id` exposes a fragment destination on any element. `name` does so only
+  // on an anchor: `<meta name="viewport">` is not a destination, and
+  // recording it let a link to `#viewport` pass against nothing.
+  //
+  // A NARROWER mask than the heading scan's: a type-6 or type-7 block such as
+  // `<div id="x">` IS the anchor, so masking every HTML line would discard
+  // the very thing being read. Only the raw-text kinds display their contents
+  // instead of rendering them, and only those hide an id. Comment SPANS as
+  // well as code spans, since `text <!-- <a id="fake"></a> -->` shares a line
+  // with prose and a whole-line exclusion never reached it.
+  //
+  // One scan over the joined document, so an element whose `id` sits on a
+  // LATER physical line is read as the one tag it is.
+  const literal = new Set([...rawHtmlBlockLines(lines, { rawTextOnly: true }),
+    ...fencedLines(lines), ...indentedCodeLines(lines),
+    ...frontMatterLines(lines)]);
   const wrappedSpans = codeSpanLines(lines);
   const commentRanges = commentSpans(lines);
-  for (const [i, raw] of lines.entries()) {
-    if (literal.has(i)) continue;
-    // Comment SPANS too. commentedLines is whole-line, so an anchor-shaped
-    // example sharing a line with prose -- `text <!-- <a id="fake"></a> -->`
-    // -- was never excluded and registered `fake` as a rendered destination,
-    // letting `[x](#fake)` pass against an anchor the document does not have.
-    // Same shape as the code-span case beside it, one hiding mechanism over.
-    const visible = maskSpans(raw,
-      [...codeSpans(raw), ...(wrappedSpans.get(i) ?? []),
-        ...(commentRanges.get(i) ?? [])]);
-    // The UNQUOTED attribute form too. `<div id=section>` is valid HTML and
-    // the browser exposes `section`, but recording only the quoted forms meant
-    // a valid `[x](#section)` was reported as a gating dead anchor.
-    for (const mm of visible.matchAll(HTML_ID_RE)) {
-      // NOT lowercased. A generated heading slug is lowercase by
-      // construction, but an explicit `id`/`name` is matched by the browser
-      // EXACTLY -- `<a name="Install">` is reached by `#Install` and not by
-      // `#install`. Folding the case here, with the requested fragment folded
-      // later, accepted a link that does not navigate.
-      // Character references DECODED, as the heading slug already decodes
-      // them. `<div id="a&amp;b">` exposes the id `a&b` to the browser, but
-      // the raw value was recorded, so a valid `[x](#a%26b)` was reported as
-      // a gating dead anchor while the literal `a&amp;b` nothing exposes was
-      // accepted. Case is still preserved: the browser matches an explicit id
-      // exactly.
-      const id = decodeCharRefs(mm[2] ?? mm[3] ?? mm[4] ?? '');
-      if (id) out.add(id);
-    }
-  }
-  // And an element whose `id` or `name` sits on a LATER physical line --
-  // `<div\n id="section">` still exposes `section` to the browser, and a
-  // per-line scan can never see the tag and its attribute together, so a valid
-  // `[x](#section)` was reported as a gating dead anchor. Same masking, joined
-  // once; only matches that actually CONTAIN a newline are read here, because
-  // the single-line ones belong to the loop above. An HTML tag may not span a
-  // blank line, so the scan is windowed per block exactly as the link and href
-  // scans are.
-  const idStarts = [];
-  let idAt = 0;
-  for (const l of lines) { idStarts.push(idAt); idAt += l.length + 1; }
   const idDoc = lines.map((l, i) => (literal.has(i)
     ? maskSpans(l, [[0, l.length]])
     : maskSpans(l, [...codeSpans(l), ...(wrappedSpans.get(i) ?? []),
       ...(commentRanges.get(i) ?? [])]))).join('\n');
-  for (const [bLo, bHi] of paragraphBlocks(lines, fencedLines(lines))) {
-    const from = idStarts[bLo];
-    const to = idStarts[bHi] + lines[bHi].length;
-    for (const mm of idDoc.slice(from, to).matchAll(HTML_ID_RE)) {
-      if (!mm[0].includes('\n')) continue;
-      const id = decodeCharRefs(mm[2] ?? mm[3] ?? mm[4] ?? '');
+  for (const tag of idDoc.matchAll(TAG_OPEN_RE)) {
+    const anchor = /^<a(?![a-zA-Z0-9-])/i.test(tag[0]);
+    for (const attr of tag[0].matchAll(TAG_ATTR_RE)) {
+      const key = attr[1].toLowerCase();
+      if (key !== 'id' && !(key === 'name' && anchor)) continue;
+      // Character references DECODED, as the heading slug already decodes
+      // them: `<div id="a&amp;b">` exposes `a&b`. Case is PRESERVED, because
+      // a browser matches an explicit id exactly -- `<a name="Install">` is
+      // reached by `#Install` and not by `#install`.
+      const id = decodeCharRefs(attr[2] ?? attr[3] ?? attr[4] ?? '');
       if (id) out.add(id);
     }
   }
@@ -4018,10 +3995,13 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // Two spellings, because `have` now holds two KINDS of anchor. A
       // generated heading slug is lowercase by construction, so the folded
       // form matches it; an explicit `id`/`name` keeps its spelling and the
-      // browser matches it exactly, so `#Install` must match `Install` and
-      // `#install` must not. Testing only the folded form reported the working
-      // `#Install` dead once explicit anchors stopped being lowercased.
-      if (have && !have.has(wanted) && !have.has(wanted.toLowerCase())) {
+      // browser matches it exactly, so `#Install` matches `Install` and
+      // `#install` does not. EXACTLY, against both sets at once: a folded
+      // fallback was added here to keep `#Install` working and it also
+      // accepted `#Install` against a GENERATED `install`, which does not
+      // navigate -- the false direction. The Python twin has compared
+      // exactly since it was written.
+      if (have && !have.has(wanted)) {
         out.push({ check: 'dead-anchor', doc, line: lineNo, severity: 'P2',
           detail: `${anchorWhat}#${frag}: the target has no such heading` });
       }
