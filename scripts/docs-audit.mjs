@@ -2385,7 +2385,14 @@ export function commentedPrefixLines(lines) {
 
 export function findMarkers(lines) {
   const { from, to } = markerSection(lines);
-  const fenced = fencedLines(lines);
+  // RAW HTML blocks too. Markdown inside `<pre>` or `<div>` is not parsed --
+  // `**Last reviewed:** 2026-09-01` there renders as literal characters, not
+  // as the document's provenance -- yet a marker-shaped line in one was
+  // accepted, so `--stamp --verify` could rewrite it and report the document
+  // covered while it still had no rendered marker. The fenced equivalent has
+  // been excluded since this function was written; this is the same rule one
+  // block type over. Raised on the Python twin (stocks#1121).
+  const fenced = new Set([...fencedLines(lines), ...rawHtmlBlockLines(lines)]);
   // A marker-shaped line inside an HTML COMMENT renders as nothing, so it is
   // not the document's provenance. Accepting it suppressed the missing-marker
   // finding and `--stamp` then updated the hidden line, leaving the rendered
@@ -2920,13 +2927,40 @@ const TAG_ATTR_RE = /([a-zA-Z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'\`
  * pointing at an issue IS a citation readers follow, which is why the rendered
  * -HTML blocker pass exists at all.
  */
-export function tagAttributeSpans(line) {
-  const out = [];
-  for (const tag of line.matchAll(TAG_OPEN_RE)) {
+export function tagAttributeSpans(lines) {
+  // Scanned over the JOINED document and split back per line. An opening tag
+  // may span physical lines -- `<div\n data-note="Still open .../issues/1">`
+  // is one tag -- and a per-line scan finds no opener on the second line at
+  // all, so the URL and its cue were read as visible prose and produced a
+  // gating closed-blocker finding over metadata readers never see.
+  const starts = [];
+  let at = 0;
+  for (const l of lines) { starts.push(at); at += l.length + 1; }
+  const joined = lines.join('\n');
+  const out = new Map();
+  for (const tag of joined.matchAll(TAG_OPEN_RE)) {
+    // An `href` is exempt only on an ANCHOR. `<a href>` pointing at an issue
+    // IS a citation readers follow, which is why the rendered-HTML passes
+    // exist -- but on any other element it is inert: `<div href="...">`
+    // renders no link, so exempting it there admitted exactly the hidden
+    // metadata this helper exists to hide.
+    const anchor = /^<a(?![a-zA-Z0-9-])/i.test(tag[0]);
     for (const attr of tag[0].matchAll(TAG_ATTR_RE)) {
-      if (attr[1].toLowerCase() === 'href') continue;
-      const at = attr.indices[2] ?? attr.indices[3] ?? attr.indices[4];
-      if (at) out.push([tag.index + at[0], tag.index + at[1]]);
+      if (anchor && attr[1].toLowerCase() === 'href') continue;
+      const span = attr.indices[2] ?? attr.indices[3] ?? attr.indices[4];
+      if (!span) continue;
+      const lo = tag.index + span[0];
+      const hi = tag.index + span[1];
+      // Back to per-line offsets, because every caller masks a line.
+      let i = starts.findLastIndex((s) => s <= lo);
+      for (; i < lines.length && starts[i] < hi; i += 1) {
+        const a = Math.max(lo, starts[i]) - starts[i];
+        const b = Math.min(hi, starts[i] + lines[i].length) - starts[i];
+        if (b > a) {
+          if (!out.has(i)) out.set(i, []);
+          out.get(i).push([a, b]);
+        }
+      }
     }
   }
   return out;
@@ -2957,6 +2991,9 @@ export function checkClosedIssues(doc, text, states) {
   // the next, so a sample written that way was scanned as live prose and
   // could emit a gating closed-issue finding.
   const wrapped = codeSpanLines(lines);
+  // Attribute VALUES are implementation metadata: `<div data-issue="...">`
+  // shows a reader nothing clickable, so a citation there is not a blocker.
+  const attrSpans = tagAttributeSpans(lines);
   // A cue can head a BLOCK rather than sit on the citation's own line:
   // `Blocked by:` followed by a list of issue links is the ordinary Markdown
   // form, and requiring the cue on the URL's physical line skipped every one
@@ -2982,7 +3019,7 @@ export function checkClosedIssues(doc, text, states) {
     // And HTML tag ATTRIBUTES other than a link destination -- see
     // tagAttributeSpans. Internal metadata is not prose a reader sees.
     const hidden = [...(commented.get(i) ?? []), ...codeSpans(line),
-      ...(wrapped.get(i) ?? []), ...tagAttributeSpans(line)];
+      ...(wrapped.get(i) ?? []), ...(attrSpans.get(i) ?? [])];
     // The hidden spans are masked OUT before any cue is read, at the same
     // length so every offset below still lines up. Hiding only the URLs was
     // half the job: `<!-- still open --> https://.../issues/1` kept the
@@ -4503,6 +4540,42 @@ function claimPattern(pattern, flags, where) {
   }
 }
 
+/**
+ * A document's claim-bearing prose, with everything a reader cannot see
+ * blanked and every other offset kept where it was.
+ *
+ * RAW-TEXT blocks only among the HTML kinds. A type-6 or type-7 block RENDERS
+ * its text -- `There are 3 routes` inside a `<div>` is prose a reader sees,
+ * and can be the very assertion a Claims row watches -- so masking every HTML
+ * block made the row report its pattern inert instead of comparing the
+ * number. Only `pre`/`script`/`style`/`textarea` and the delimited kinds
+ * display their contents literally. Markdown syntax inside a rendered block
+ * is still not parsed; that is a different question from whether the TEXT is
+ * visible, and the link scan answers it the other way for that reason.
+ *
+ * An HTML ATTRIBUTE value renders as nothing at all. When the only occurrence
+ * of a registered claim sat in `<div data-note="3 routes">`, the row passed
+ * while the document no longer made the assertion in prose -- or emitted a
+ * count finding against metadata a reader never sees.
+ *
+ * INLINE CODE is deliberately NOT masked here; see the caller.
+ *
+ * Named rather than inline so the rule can be exercised on its own:
+ * `checkClaims` reads a TRACKED document off disk, so a synthetic one cannot
+ * reach it, and the mask that was added last could be removed without a
+ * single test noticing.
+ */
+export function visibleClaimText(lines) {
+  const literalLines = new Set([...fencedLines(lines),
+    ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
+  const hidden = commentSpans(lines);
+  const attrs = tagAttributeSpans(lines);
+  return lines.map((l, i) => (literalLines.has(i)
+    ? maskSpans(l, [[0, l.length]])
+    : maskSpans(l, [...(hidden.get(i) ?? []), ...(attrs.get(i) ?? [])]))).join('\n');
+}
+
 export function checkClaims(claims, { exec = run } = {}) {
   const out = [];
   for (const { doc, pattern, derivation } of claims) {
@@ -4545,13 +4618,7 @@ export function checkClaims(claims, { exec = run } = {}) {
     // their contents literally. Markdown syntax inside a rendered block is
     // still not parsed; that is a different question from whether the TEXT is
     // visible, and the link scan answers it the other way for that reason.
-    const literalLines = new Set([...fencedLines(claimLines),
-      ...indentedCodeLines(claimLines),
-      ...rawHtmlBlockLines(claimLines, { rawTextOnly: true })]);
-    const claimHidden = commentSpans(claimLines);
-    const visible = claimLines.map((l, i) => (literalLines.has(i)
-      ? maskSpans(l, [[0, l.length]])
-      : maskSpans(l, claimHidden.get(i) ?? []))).join('\n');
+    const visible = visibleClaimText(claimLines);
     // INLINE CODE is not masked, and that is the one deliberate narrowing
     // here. A code span RENDERS -- `37 files under \`src/\` reference X` is a
     // real assertion that happens to spell a path as code, and this repo's own

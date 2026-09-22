@@ -21,6 +21,8 @@ import {
   commentSpans,
   isSetextUnderline,
   findMarkers,
+  tagAttributeSpans,
+  visibleClaimText,
   codeSpans,
   markerShapedLines,
   commentedLines,
@@ -6467,5 +6469,67 @@ describe('a heading slug', () => {
     // three-column limit, so it is still a heading.
     expect([...headingAnchors('<!-- x --> ## H\n')]).toEqual(['h']);
     expect([...headingAnchors('Hello\nworld\n---\n')]).toEqual(['hello-world']);
+  });
+});
+
+describe('an HTML attribute value', () => {
+  const states = { 'TeneikaAskew/solyra': { 1: { state: 'closed', reason: 'completed', kind: 'issue' } } };
+  const url = 'https://github.com/TeneikaAskew/solyra/issues/1';
+  const findings = (body) => checkClosedIssues('d.md', `# T\n\n${body}\n`, states);
+
+  it('is metadata, not a citation', () => {
+    // `<div data-issue="...">Outstanding</div>` shows a reader the word
+    // `Outstanding` and nothing else: the URL is neither visible nor
+    // clickable, and scanning it produced a gating stale-blocker finding.
+    expect(findings(`<div data-issue="${url}">Outstanding</div>`)).toEqual([]);
+    // `href` is exempt only on an ANCHOR: `<a href>` is a citation readers
+    // follow, and on any other element it renders no link at all.
+    expect(findings(`<a href="${url}">Outstanding</a>`)).not.toEqual([]);
+    expect(findings(`<div href="${url}">Outstanding</div>`)).toEqual([]);
+    // Ordinary prose is still scanned, which is what the check is for.
+    expect(findings(`Outstanding: ${url}`)).not.toEqual([]);
+  });
+
+  it('is read across a multiline opening tag', () => {
+    // `<div\n data-note="...">` is ONE tag, and a per-line scan finds no
+    // opener on the second line at all -- so the URL and its cue were read as
+    // visible prose.
+    expect([...tagAttributeSpans(['<div', '  data-note="Still open">'])])
+      .toEqual([[1, [[13, 23]]]]);
+    expect(findings(`<div\n  data-note="Still open ${url}">Text</div>`)).toEqual([]);
+  });
+});
+
+describe('a marker inside raw HTML', () => {
+  it('is not the document provenance', () => {
+    // Markdown inside `<pre>` or `<div>` is not parsed, so a marker-shaped
+    // line there renders as literal characters. Accepting it let `--stamp
+    // --verify` rewrite it and report the document covered.
+    const marker = '**Last reviewed:** 2026-09-01 · **Owner:** X';
+    for (const tag of ['pre', 'div']) {
+      expect(findMarkers(['# Real', '', `<${tag}>`, marker, `</${tag}>`, '', 'body']))
+        .toEqual([]);
+    }
+    // The fenced equivalent was already excluded, and a real marker is found.
+    expect(findMarkers(['# Real', '', '```', marker, '```'])).toEqual([]);
+    expect(findMarkers(['# Real', '', marker])).toHaveLength(1);
+  });
+});
+
+describe('claim-bearing prose', () => {
+  it('excludes HTML attribute values', () => {
+    // When the only occurrence of a registered claim sits in
+    // `<div data-note="3 routes">`, the row passed while the document no
+    // longer makes the assertion in prose -- or emitted a count finding
+    // against metadata a reader never sees.
+    expect(visibleClaimText(['<div data-note="3 routes"></div>']))
+      .not.toContain('3 routes');
+    // A RENDERED block shows its text, so a claim inside a `<div>` is still
+    // an assertion the document makes; only the raw-text kinds hide one.
+    expect(visibleClaimText(['<div>', 'There are 3 routes', '</div>']))
+      .toContain('3 routes');
+    expect(visibleClaimText(['<pre>', 'There are 3 routes', '</pre>']))
+      .not.toContain('3 routes');
+    expect(visibleClaimText(['There are 3 routes'])).toContain('3 routes');
   });
 });
