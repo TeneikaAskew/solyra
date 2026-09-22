@@ -4379,6 +4379,41 @@ describe('a review marker inside a blockquote', () => {
   });
 });
 
+describe('an HTML destination', () => {
+  it('needs a COMPLETE opening tag', () => {
+    // The pattern stopped as soon as it had the `href` value, so literal
+    // malformed text -- `<a href="missing.md"` with no `>`, which CommonMark
+    // renders verbatim -- was audited as a clickable link and a typo or an
+    // illustration produced a gating dead-link finding for something no
+    // reader can follow.
+    expect(checkDeadLinks('d.md', '<a href="missing.md">g</a>\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    expect(checkDeadLinks('d.md', '<a href="missing.md"\n', linkCtx(['d.md'])))
+      .toEqual([]);
+  });
+
+  it('covers `<img src>` as well as `<a href>`', () => {
+    // Documentation reaches for raw HTML to size an image, and
+    // `<img src="missing.png">` was never validated while the equivalent
+    // Markdown was -- so changing presentation syntax silently dropped the
+    // asset from the audit although a reader sees it missing.
+    expect(checkDeadLinks('d.md', '<img src="missing.png">\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    expect(checkDeadLinks('d.md', '<img src="ok.png">\n', linkCtx(['d.md', 'ok.png'])))
+      .toEqual([]);
+  });
+
+  it('and is found whatever the attribute ORDER', () => {
+    // Pulled out with the tag tokeniser rather than captured positionally,
+    // so an order the pattern did not anticipate cannot hide a destination.
+    expect(checkDeadLinks('d.md', '<a class="x" href="missing.md">g</a>\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    // The multiline pass shares the scanner, so it gains both rules at once.
+    expect(checkDeadLinks('d.md', '<a\n href="missing.md">g</a>\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
 describe('an ordered list marker of ten digits', () => {
   it('is paragraph text, not a container, in every scanner', () => {
     // CommonMark caps an ordered-list marker at nine digits, so

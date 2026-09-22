@@ -1770,10 +1770,38 @@ const HTML_BLOCK_OPEN_RE = /^ {0,3}<\/?([a-zA-Z][a-zA-Z0-9-]*)(?:[\s/>]|$)/;
 // The value group is NON-capturing: this pattern is spliced in FRONT of the
 // destination groups, so a capture here shifts every one of them.
 const HTML_ATTR = String.raw`[a-zA-Z_:][-\w:.]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'\`=<>]+))?`;
-const HTML_HREF_RE = new RegExp(
-  String.raw`<a(?:\s+${HTML_ATTR})*?\s+href\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'\`=<>]+))`,
+// A COMPLETE opening tag, closing `>` included. The pattern used to stop as
+// soon as it had the `href` value, so literal malformed text -- `<a
+// href="missing.md"` with no `>`, which CommonMark renders verbatim -- was
+// audited as a clickable link and a typo or an illustration produced a gating
+// dead-link finding for something no reader can follow.
+//
+// And `<img src>` as well as `<a href>`. Documentation reaches for raw HTML
+// to size an image, and `<img src="missing.png">` was never validated while
+// the equivalent Markdown was -- so changing presentation syntax silently
+// dropped the asset from the audit although a reader sees it missing.
+// The destination is pulled out with `TAG_ATTR_RE` rather than captured
+// positionally, so an attribute ORDER this pattern did not anticipate cannot
+// hide one: `<a class="x" href="y">` and `<a href="y" class="x">` are the
+// same tag.
+const HTML_DEST_TAG_RE = new RegExp(
+  String.raw`<(a|img)(?:\s+${HTML_ATTR})*\s*/?>`,
   'gi'
 );
+const HTML_DEST_ATTR = { a: 'href', img: 'src' };
+
+/** Every `<a href>` and `<img src>` destination in `text`, with its offset. */
+function* htmlDestinations(text) {
+  for (const tag of text.matchAll(HTML_DEST_TAG_RE)) {
+    const want = HTML_DEST_ATTR[tag[1].toLowerCase()];
+    TAG_ATTR_RE.lastIndex = 0;
+    for (const attr of tag[0].matchAll(TAG_ATTR_RE)) {
+      if (attr[1].toLowerCase() !== want) continue;
+      yield { value: attr[2] ?? attr[3] ?? attr[4] ?? '', index: tag.index, whole: tag[0] };
+      break;
+    }
+  }
+}
 
 const HTML_TYPE7_RE = /^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*?)?\/?>\s*$/;
 
@@ -4538,7 +4566,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       checkTarget(tgt, frag, i + 1);
     }
     if (!rawTextLines.has(i)) {
-      for (const m of line.matchAll(HTML_HREF_RE)) {
+      for (const m of htmlDestinations(line)) {
         if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
         if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
         // `\<a href="missing.md">` escapes the `<`, so CommonMark renders the
@@ -4557,8 +4585,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
         // indexOf rather than split, so a fragment carrying a second `#` is
         // not truncated. Parity with the Markdown destination pattern, which
         // consumes references the same way (stocks#1121).
-        const href = m[2] ?? m[3] ?? m[4] ?? '';
-        const [tgt, frag] = splitOutsideRefs(href, '#');
+        const [tgt, frag] = splitOutsideRefs(m.value, '#');
         if (!tgt && !frag) continue;
         checkTarget(tgt, frag, i + 1);
       }
@@ -4688,17 +4715,17 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   for (const [bLo, bHi] of paragraphBlocks(lines, fenced)) {
     const from = docStarts[bLo];
     const to = docStarts[bHi] + lines[bHi].length;
-    for (const mm of hrefDoc.slice(from, to).matchAll(HTML_HREF_RE)) {
+    for (const mm of htmlDestinations(hrefDoc.slice(from, to))) {
       // The single-line ones belong to the pass above; reporting them here
       // too would double the finding and the summary count.
-      if (!mm[0].includes('\n')) continue;
+      if (!mm.whole.includes('\n')) continue;
       // And the escape check belongs to BOTH passes. The single-line one has
       // it; this one did not, so `\<a` followed by ` href="missing.md">` --
       // text CommonMark renders literally, with nothing to click -- was
       // reported as a gating dead link. The same rule, written once in one
       // pass and not the other, is how the two disagreed.
       if (isEscaped(hrefDoc, from + mm.index)) continue;
-      const [tgt, frag] = splitOutsideRefs(mm[2] ?? mm[3] ?? mm[4] ?? '', '#');
+      const [tgt, frag] = splitOutsideRefs(mm.value, '#');
       if (!tgt && !frag) continue;
       checkTarget(tgt, frag, lineOf(from + mm.index) + 1);
     }
