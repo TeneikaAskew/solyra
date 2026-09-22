@@ -899,8 +899,17 @@ export function ownedLines(text, specs) {
         throw new AuditError(`registry region \`${spec}\` is not a valid regular `
           + `expression: ${err.message}`);
       }
+      // SPANS as well as the whole-line exclusions below. A pattern
+      // surviving only inside inline code or a partial comment still matched
+      // the raw line, so the missing-region finding stayed suppressed after
+      // the real content went away and the sample's line was routed and
+      // stamped as generated. Blanked rather than removed, since `pat` may be
+      // anchored. Parity with the Python twin (stocks#1121).
+      const spans = commentSpans(lines);
       lines.forEach((line, i) => {
-        if (pat.test(line)) { owned.add(i + 1); hit = true; }
+        const visibleLine = maskSpans(line,
+          [...(spans.get(i) ?? []), ...codeSpans(line)]);
+        if (pat.test(visibleLine)) { owned.add(i + 1); hit = true; }
       });
     } else if (spec === 'exhaustive') {
       exhaustive = true;
@@ -1415,6 +1424,33 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
   return out;
 }
 
+/**
+ * Indices wholly inside an HTML comment, computed WITHOUT the fence scan.
+ *
+ * `fencedLines` needs this and `commentedLines` cannot supply it: that one
+ * reaches `commentSpans`, which masks raw HTML blocks, which reaches back
+ * here. An HTML comment is delimited by text rather than by block structure,
+ * so a standalone scan answers the one question the fence scan asks -- is
+ * this delimiter commented out? Parity with the Python twin (stocks#1121).
+ */
+function commentHiddenLines(lines) {
+  const out = new Set();
+  let inside = false;
+  for (const [i, line] of lines.entries()) {
+    if (inside) {
+      out.add(i);
+      if (line.includes('-->')) inside = false;
+      continue;
+    }
+    const at = line.indexOf('<!--');
+    if (at !== -1 && !line.slice(at).includes('-->')) {
+      out.add(i);
+      inside = true;
+    }
+  }
+  return out;
+}
+
 export function fencedLines(lines) {
   const fenced = new Set();
   // The OPENING delimiter is remembered. Toggling on any fence-looking line
@@ -1427,7 +1463,12 @@ export function fencedLines(lines) {
   // The enclosing list item's content column, so a fence indented to it is a
   // fence rather than indented code. Reset by a non-blank line at column 0.
   let listIndent = 0;
+  // A delimiter inside an HTML COMMENT is commented-out HTML, not a fence. An
+  // unmatched ``` inside `<!-- ... -->` opened one, and every visible line
+  // after the comment was then classified as code.
+  const commentHidden = commentHiddenLines(lines);
   lines.forEach((line, i) => {
+    if (!open && commentHidden.has(i)) return;
     if (!open && line.trim()) {
       // Any list item sets the column, not just one that also carries a
       // fence -- the fence is normally on a LATER line of the item, which is
@@ -2071,8 +2112,7 @@ export function checkClosedIssues(doc, text, states) {
     // visible URL and handed the commented phrase to the classifier as live
     // prose, so a closed issue produced a false, GATING P1 from text that
     // renders as nothing.
-    const visible = hidden.reduce(
-      (acc, [lo, hi]) => acc.slice(0, lo) + '\u0000'.repeat(hi - lo) + acc.slice(hi), line);
+    const visible = maskSpans(line, hidden);
     // Structure is read through the CONTAINER prefix. A quoted blocker list --
     // `> Blocked by:` then `> - <url>` -- left the `>` in `visible`, so the
     // list line was not recognised as an item, the line cleared `carried`,
@@ -2296,6 +2336,20 @@ export function headingSlug(heading) {
  * -- an intraword `_` is a literal character, and blanking it would break
  * `API_FIELD` into two words for the cue scan.
  */
+/**
+ * The line with `spans` blanked, keeping every other offset where it was.
+ *
+ * NUL rather than deletion: the callers compute match offsets against the
+ * ORIGINAL line, so a shorter masked copy would silently shift every span
+ * that follows one. Extracted from the blocker scan, which had this inline,
+ * so the region scan masks the same way. Parity with the Python twin's
+ * `mask_spans` (stocks#1121).
+ */
+export function maskSpans(line, spans) {
+  return spans.reduce(
+    (acc, [lo, hi]) => acc.slice(0, lo) + '\u0000'.repeat(hi - lo) + acc.slice(hi), line);
+}
+
 export function stripEmphasis(line) {
   return line.replace(/\*+/g, (m) => ' '.repeat(m.length))
     .replace(/(?<!\w)_+|_+(?!\w)/g, (m) => ' '.repeat(m.length));
@@ -2317,8 +2371,13 @@ export function headingAnchors(text) {
   // exposes no anchor for it, so recording one let a broken link to `#fake`
   // pass the dead-anchor check -- the same invented-destination failure as
   // the fenced case, which the link scans around this already mask.
+  // Indented code too. `    Fake` followed by `---` is a code block and a
+  // thematic break, not a Setext heading -- omitted, isSetextUnderline
+  // recorded a `fake` anchor the rendered document does not offer and a link
+  // to it PASSED. markerWindow already excludes indented code. Parity with
+  // the Python twin (stocks#1121).
   const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
-    ...rawHtmlBlockLines(lines)]);
+    ...rawHtmlBlockLines(lines), ...indentedCodeLines(lines)]);
   for (const [i, raw] of lines.entries()) {
     if (fenced.has(i)) continue;
     // A heading may sit inside a container and still be a heading: `> ## Q`

@@ -84,6 +84,7 @@ import {
   citationClause,
   loadRegistry,
   ownedLines,
+  maskSpans,
   regionOf,
   renderMarker,
   splitRow,
@@ -4348,5 +4349,54 @@ describe('an atomic stamp of a file with a non-default mode', () => {
     fs.chmodSync(path.join(dir, 'b.md'), 0o644);
     writeStamps([{ doc: 'b.md', text: '# B\n\nstamped\n' }], { repo: dir });
     expect(fs.statSync(path.join(dir, 'b.md')).mode & 0o777).toBe(0o644);
+  });
+});
+
+// ── round 31 parity with the Python twin (stocks#1121) ──────────────────────
+
+describe('a fence delimiter inside an HTML comment', () => {
+  it('opens nothing, because it is commented-out HTML', () => {
+    // An unmatched ``` inside `<!-- ... -->` opened a fence, and every visible
+    // line after the comment was then classified as code -- dead-link,
+    // blocker, marker and heading checks all suppressed until another fence
+    // happened to occur.
+    expect([...fencedLines(['# T', '<!--', '```', '-->', '', '[x](m.md)'])])
+      .toEqual([]);
+    // A real fence still opens, and a comment INSIDE a fence is part of the
+    // example rather than a reason to stop.
+    expect([...fencedLines(['# T', '', '```', 'x', '```'])]).toEqual([2, 3, 4]);
+    expect([...fencedLines(['```', '<!-- x -->', '```'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('a line: region matching only inside inline code', () => {
+  it('claims nothing, and reports itself unmatched', () => {
+    // A pattern surviving only inside inline code still matched the raw line,
+    // so the region's claim of coverage outlived the content and the sample's
+    // line was routed and stamped as generated.
+    const hidden = ownedLines('# T\n\nExample: `https://img.shields.io/x`\n',
+      ['line:img\\.shields\\.io']);
+    expect([...hidden.owned]).toEqual([]);
+    expect(hidden.unmatched).toEqual(['line:img\\.shields\\.io']);
+    // A real badge still claims its line -- the fix is not "line: matches
+    // nothing".
+    const real = ownedLines('# T\n\n![b](https://img.shields.io/x)\n',
+      ['line:img\\.shields\\.io']);
+    expect([...real.owned]).toEqual([3]);
+    expect(real.unmatched).toEqual([]);
+    // maskSpans keeps every offset where it was, which the blocker scan that
+    // shares it depends on.
+    expect(maskSpans('abcdef', [[1, 3]])).toHaveLength(6);
+  });
+});
+
+describe('an indented code line before a thematic break', () => {
+  it('offers no heading anchor', () => {
+    // `    Fake` followed by `---` is a code block and a thematic break, not a
+    // Setext heading -- omitted from the mask, a `fake` anchor the rendered
+    // document does not offer was recorded and a link to it PASSED.
+    expect([...headingAnchors('# T\n\n    Fake\n---\n')]).toEqual(['t']);
+    // A real Setext heading still offers its anchor.
+    expect([...headingAnchors('# T\n\nSub\n---\n')]).toEqual(['t', 'sub']);
   });
 });
