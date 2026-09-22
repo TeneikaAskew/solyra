@@ -2711,6 +2711,33 @@ export function fetchIssueStates(repo, { exec = run } = {}) {
 
 // ── checks ──────────────────────────────────────────────────────────────────
 
+
+// An HTML tag's opening syntax, and the attributes inside it.
+const TAG_OPEN_RE = /<[a-zA-Z][a-zA-Z0-9-]*(?:\s+[a-zA-Z_:][-\w:.]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'\`=<>]+))?)*\s*\/?>/g;
+const TAG_ATTR_RE = /([a-zA-Z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'\`=<>]+))/gd;
+
+/**
+ * Offset ranges of attribute VALUES inside HTML tags, except link destinations.
+ *
+ * Internal metadata such as `<div data-note="still open https://.../issues/1">`
+ * is neither visible to a reader nor clickable, but the raw line carried both
+ * the cue and the URL into the blocker classifier and a closed issue produced
+ * a gating finding for it. An `href` is exempt on purpose: an `<a href>`
+ * pointing at an issue IS a citation readers follow, which is why the rendered
+ * -HTML blocker pass exists at all.
+ */
+export function tagAttributeSpans(line) {
+  const out = [];
+  for (const tag of line.matchAll(TAG_OPEN_RE)) {
+    for (const attr of tag[0].matchAll(TAG_ATTR_RE)) {
+      if (attr[1].toLowerCase() === 'href') continue;
+      const at = attr.indices[2] ?? attr.indices[3] ?? attr.indices[4];
+      if (at) out.push([tag.index + at[0], tag.index + at[1]]);
+    }
+  }
+  return out;
+}
+
 export function checkClosedIssues(doc, text, states) {
   const out = [];
   const lines = text.split('\n');
@@ -2758,8 +2785,10 @@ export function checkClosedIssues(doc, text, states) {
     // blocker row looks like drew a gating finding once its sample issue
     // closed -- while the fenced and indented forms of the same example were
     // already ignored.
+    // And HTML tag ATTRIBUTES other than a link destination -- see
+    // tagAttributeSpans. Internal metadata is not prose a reader sees.
     const hidden = [...(commented.get(i) ?? []), ...codeSpans(line),
-      ...(wrapped.get(i) ?? [])];
+      ...(wrapped.get(i) ?? []), ...tagAttributeSpans(line)];
     // The hidden spans are masked OUT before any cue is read, at the same
     // length so every offset below still lines up. Hiding only the URLs was
     // half the job: `<!-- still open --> https://.../issues/1` kept the
@@ -3316,6 +3345,15 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     return [...codeSpans(lines[i]), ...(wrappedDefs.get(i) ?? [])]
       .some(([lo, hi]) => lo <= 0 && hi >= stop);
   };
+  // A definition may not INTERRUPT a paragraph. `paragraph` then
+  // `[g]: missing.md` with no blank line between them renders LITERALLY --
+  // CommonMark registers no reference there -- yet the destination produced a
+  // gating dead-link finding for a link no reader can follow. So a definition
+  // counts only where one could begin: at the start of a block, or directly
+  // after another definition inside the same block, which is the run form
+  // CommonMark allows.
+  const defBlockStarts = new Set(paragraphBlocks(lines, fenced).map(([lo]) => lo));
+  const defLines = new Set();
   lines.forEach((raw, i) => {
     if (fenced.has(i) || commentedDefs.has(i) || spanHidden(i)) return;
     // A definition inside a blockquote still defines: `> [g]: docs/g.md`
@@ -3355,6 +3393,10 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
         if (d) { m = [null, head[1], d[1], d[2]]; destLine = j; }
       }
     }
+    // See defBlockStarts: a definition that interrupts an open paragraph is
+    // not a definition. Recorded once accepted, so a RUN of them still parses.
+    if (m && !(defBlockStarts.has(i) || defLines.has(i - 1))) m = null;
+    if (m) { defLines.add(i); defLines.add(destLine); }
     // The FIRST definition wins, as CommonMark resolves it. Overwriting with
     // the last emitted a false dead-link when the first destination exists and
     // the duplicate is stale, and missed the link readers follow in the
@@ -4022,8 +4064,17 @@ export function checkClaims(claims, { exec = run } = {}) {
     // over text nobody asserts. Masked in place rather than removed, so the
     // match offsets this loop reports still name the right place.
     const claimLines = text.split('\n');
+    // RAW-TEXT blocks only. A type-6 or type-7 block RENDERS its text --
+    // `There are 3 routes` inside a `<div>` is prose a reader sees, and can be
+    // the very assertion a Claims row watches -- so masking every HTML block
+    // made the row report its pattern inert instead of comparing the number.
+    // Only `pre`/`script`/`style`/`textarea` and the delimited kinds display
+    // their contents literally. Markdown syntax inside a rendered block is
+    // still not parsed; that is a different question from whether the TEXT is
+    // visible, and the link scan answers it the other way for that reason.
     const literalLines = new Set([...fencedLines(claimLines),
-      ...indentedCodeLines(claimLines), ...rawHtmlBlockLines(claimLines)]);
+      ...indentedCodeLines(claimLines),
+      ...rawHtmlBlockLines(claimLines, { rawTextOnly: true })]);
     const claimHidden = commentSpans(claimLines);
     const visible = claimLines.map((l, i) => (literalLines.has(i)
       ? maskSpans(l, [[0, l.length]])
@@ -4035,7 +4086,23 @@ export function checkClaims(claims, { exec = run } = {}) {
     // two true claims from being checked at all. What is an example is a match
     // that lies ENTIRELY inside one span (`\`3 living docs\``), and that is what
     // is skipped. Document-wide ranges, so a span crossing a line break counts.
-    const claimSpans = codeSpans(text);
+    // Per BLOCK, not over the whole document. Inline content cannot cross a
+    // blank line, so an unmatched backtick in one paragraph was pairing with
+    // another after a claim further down and swallowing the real assertion as
+    // an inline-code example -- reported as an inert pattern instead of
+    // compared. Same windowing `codeSpanLines` uses, mapped back to document
+    // offsets because that is what the match index below is measured in.
+    const claimStarts = [];
+    let claimAt = 0;
+    for (const l of claimLines) { claimStarts.push(claimAt); claimAt += l.length + 1; }
+    const claimSpans = [];
+    for (const [bLo, bHi] of paragraphBlocks(claimLines, fencedLines(claimLines))) {
+      const from = claimStarts[bLo];
+      const to = claimStarts[bHi] + claimLines[bHi].length;
+      for (const [a, b] of codeSpans(text.slice(from, to))) {
+        claimSpans.push([from + a, from + b]);
+      }
+    }
     let hits = 0;
     for (const m of visible.matchAll(re)) {
       if (claimSpans.some(([lo, hi]) => lo <= m.index

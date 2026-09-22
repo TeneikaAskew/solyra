@@ -5879,3 +5879,81 @@ describe('heading whitespace', () => {
     expect(headingSlug('Hello World')).toBe('hello-world');
   });
 });
+
+describe('the Claims pass over HTML and across paragraphs', () => {
+  const doc = 'tmp-claim-block-fixture.md';
+  const claim = [{ doc, pattern: '(\\d+) living docs',
+    derivation: 'grep-files src fetch\\(' }];
+  const exec = () => 'a\nb\nc\nd\ne\nf\ng\n';   // seven
+  const run = (body) => {
+    fs.writeFileSync(path.join(process.cwd(), doc), body);
+    spawnSync('git', ['add', '-N', doc], { cwd: process.cwd() });
+    try { return checkClaims(claim, { exec }); }
+    finally {
+      spawnSync('git', ['rm', '--cached', '-q', '--force', doc], { cwd: process.cwd() });
+      fs.unlinkSync(path.join(process.cwd(), doc));
+    }
+  };
+
+  it('still reads prose a rendered HTML block displays', () => {
+    // Plain text inside a `<div>` is rendered to readers and can be the
+    // assertion a row watches, but masking every HTML block made the row
+    // report its pattern inert instead of comparing the number.
+    expect(run('# C\n\n<div>\nThere are 3 living docs.\n</div>\n')[0].detail)
+      .toMatch(/claims 3, .* gives 7/);
+    // A RAW-TEXT block displays its contents literally, so it is an example.
+    expect(run('# C\n\n<pre>\nThere are 3 living docs.\n</pre>\n')[0].detail)
+      .toMatch(/matched nothing/);
+  });
+
+  it('does not pair code-span delimiters across a paragraph boundary', () => {
+    // An unmatched backtick in one paragraph was pairing with another after
+    // the claim, swallowing the real assertion as an inline-code example --
+    // reported as an inert pattern instead of compared.
+    expect(run('# C\n\nA stray ` tick.\n\nThere are 3 living docs. `\n')[0].detail)
+      .toMatch(/claims 3, .* gives 7/);
+    // Within ONE paragraph the span still wraps, and a whole match inside it
+    // is still an example.
+    expect(run('# C\n\nExample: `3 living\ndocs` here.\n')[0].detail)
+      .toMatch(/matched nothing/);
+  });
+});
+
+describe('a reference definition interrupting a paragraph', () => {
+  it('is not a definition', () => {
+    // `paragraph` then `[g]: missing.md` with no blank line between them
+    // renders literally -- CommonMark registers no reference there -- yet the
+    // destination produced a gating dead-link finding for a link no reader
+    // can follow.
+    const check = (t) => checkDeadLinks('d.md', t, linkCtx(['d.md']))
+      .map((f) => f.check);
+    expect(check('paragraph\n[g]: missing.md\n')).toEqual([]);
+    // Separated by a blank line it opens a block, so it defines.
+    expect(check('paragraph\n\n[g]: missing.md\n')).toEqual(['dead-link']);
+    // At the top of the document, and as a RUN, which CommonMark allows.
+    expect(check('[g]: missing.md\n')).toEqual(['dead-link']);
+    expect(checkDeadLinks('d.md', '[a]: ok.md\n[b]: missing.md\n',
+      linkCtx(['d.md', 'ok.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    // A heading ends the block before it, so a definition may follow one.
+    expect(check('# T\n[g]: missing.md\n')).toEqual(['dead-link']);
+  });
+});
+
+describe('an issue URL inside an HTML tag attribute', () => {
+  it('is metadata, not a blocker citation', () => {
+    // `<div data-note="still open https://.../issues/1">` is neither visible
+    // nor clickable, but the raw line carried both the cue and the URL into
+    // the classifier and a closed issue produced a gating finding for it.
+    const states = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+    const ref = (t) => checkClosedIssues('d.md', t, states).map((f) => f.ref);
+    expect(ref('<div data-note="still open https://github.com/TeneikaAskew/solyra/issues/1">'))
+      .toEqual([]);
+    // An `href` is exempt: a rendered anchor to an issue IS a citation a
+    // reader follows, which is why the rendered-HTML blocker pass exists.
+    expect(ref('Blocked by <a href="https://github.com/TeneikaAskew/solyra/issues/1">x</a>'))
+      .toEqual(['solyra#1']);
+    // And ordinary prose is untouched.
+    expect(ref('Blocked by https://github.com/TeneikaAskew/solyra/issues/1'))
+      .toEqual(['solyra#1']);
+  });
+});
