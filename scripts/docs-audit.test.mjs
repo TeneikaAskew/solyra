@@ -6193,3 +6193,43 @@ describe('a heading reference definition', () => {
       .toEqual(['guide', 't']);
   });
 });
+
+describe('a front-matter closing delimiter', () => {
+  it('sits at column zero too', () => {
+    // An indented `---` is not a delimiter, but `trim()` accepted one, so
+    // everything through that line was masked as metadata. The OPENER has
+    // required column zero since it was raised; the closer did not.
+    expect([...frontMatterLines(['---', 'a: 1', '  ---', '[x](missing.md)'])])
+      .toEqual([]);
+    expect(checkDeadLinks('d.md', '---\na: 1\n  ---\n[x](missing.md)\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    // A real closer at column zero, in both spellings, still delimits.
+    expect([...frontMatterLines(['---', 'a: 1', '---'])]).toEqual([0, 1, 2]);
+    expect([...frontMatterLines(['---', 'a: 1', '...'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('a Setext heading', () => {
+  it('is its whole paragraph, not just the last line', () => {
+    // `Hello` over `world` over `---` renders ONE heading anchored
+    // `hello-world`. Slugging the final line alone recorded `world`.
+    expect([...headingAnchors('Hello\nworld\n---\n')]).toEqual(['hello-world']);
+    // The single-line forms this grew out of are unchanged.
+    expect([...headingAnchors('Title\n===\n')]).toEqual(['title']);
+    expect([...headingAnchors('- Title\n  ===\n')]).toEqual(['title']);
+    expect([...headingAnchors('# T\n\n## Sub\n')].sort()).toEqual(['sub', 't']);
+  });
+});
+
+describe('a tabbed list marker', () => {
+  it('sets the nested-code floor in columns', () => {
+    // `-\titem` advances the tab to column 4, but counting characters said 2
+    // and set the floor to 6 -- so a six-space rendered continuation
+    // paragraph was classified as code and skipped by the audits.
+    expect([...indentedCodeLines(['-\titem', '', '      [x](missing.md)'])])
+      .toEqual([]);
+    // A SPACE marker really does put the floor at 6, so six spaces is code.
+    expect([...indentedCodeLines(['- item', '', '      [x](missing.md)'])])
+      .toEqual([2]);
+  });
+});

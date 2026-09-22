@@ -1476,7 +1476,13 @@ export function indentedCodeLines(lines) {
     } else {
       const bullet = /^(\s*(?:[-*+]|\d+[.)])\s+)/.exec(line);
       if (bullet) {
-        listIndent = bullet[1].length;
+        // COLUMNS, as every other measurement here is. `-\titem` advances
+        // the tab to column 4, but counting characters said 2 and set the
+        // nested-code floor to 6 instead of 8 -- so a six-space rendered
+        // continuation paragraph was classified as code and skipped by the
+        // dead-link and blocker audits. Parity with the Python twin
+        // (stocks#1121), which measured it this way already.
+        listIndent = columnWidth(bullet[1]);
         floor = listIndent + 4;
       } else if (listIndent > 0 && indent >= listIndent) {
         // A CONTINUATION of the item, which carries no new bullet. Resetting
@@ -1777,7 +1783,12 @@ export function frontMatterLines(lines) {
   // the audit unchecked.
   if (!lines.length || lines[0].replace(/\s+$/, '') !== '---') return new Set();
   for (let i = 1; i < lines.length; i += 1) {
-    if (lines[i].trim() === '---' || lines[i].trim() === '...') {
+    // COLUMN ZERO, as the opener already requires. An indented `---` is not
+    // a delimiter, but `trim()` accepted one -- so everything through that
+    // line was masked as metadata and a rendered link, heading or marker
+    // inside the span was silently excluded.
+    const close = lines[i].replace(/\s+$/, '');
+    if (close === '---' || close === '...') {
       return new Set(Array.from({ length: i + 1 }, (_, k) => k));
     }
   }
@@ -3285,7 +3296,11 @@ export function headingAnchors(text) {
   // the round it was raised; this collector did not, which is the same
   // two-halves-disagreeing shape as the label keying before it. The colon's
   // trailing whitespace is optional here too, for the same reason.
-  const defStarts = new Set(paragraphBlocks(lines, fenced).map(([lo]) => lo));
+  const blocks = paragraphBlocks(lines, fenced);
+  // Which line each paragraph block STARTS on, for the Setext branch below.
+  const setextStarts = new Map();
+  for (const [lo, hi] of blocks) for (let k = lo; k <= hi; k += 1) setextStarts.set(k, lo);
+  const defStarts = new Set(blocks.map(([lo]) => lo));
   const defSeen = new Set();
   const refLabels = new Set();
   lines.forEach((raw, i) => {
@@ -3341,8 +3356,19 @@ export function headingAnchors(text) {
     // the raw `- Title` reached the slug and recorded `--title`. Safe
     // precisely because that predicate already refuses the case the ATX-only
     // note above was guarding.
+    // A Setext heading is the WHOLE paragraph above its underline, not just
+    // the last line: `Hello` over `world` over `---` renders one heading
+    // anchored `hello-world`. Slugging the final line alone recorded `world`,
+    // so the real fragment was reported dead and one the page does not expose
+    // accepted. Joined with a space, which is how the soft break renders.
+    const setextText = () => {
+      const lo = setextStarts.get(i) ?? i;
+      const joined = lines.slice(lo, i + 1)
+        .map((ln) => ln.replace(BLOCKQUOTE_PREFIX_RE, '').trim()).join(' ');
+      return joined.trim().replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+    };
     const m = setext
-      ? [null, atx.trim()]
+      ? [null, setextText()]
       : /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(atx);
     if (!m) continue;
     const base = headingSlug(m[1], refLabels);
