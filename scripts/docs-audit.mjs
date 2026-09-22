@@ -5225,7 +5225,18 @@ export function loadClaims(text) {
     }
     if (!inClaims || !line.startsWith('|')) continue;
     const cells = splitRow(line).map(cell);
-    if (cells.length < 3 || cells[0] === 'Doc' || cells[0].startsWith('---')) continue;
+    if (cells[0] === 'Doc' || cells[0].startsWith('---')) continue;
+    // A row inside the Claims table that is not the header or the separator
+    // is a DECLARATION, and one missing its derivation cell was dropped in
+    // silence -- so `loadClaims` returned no entry, `main` ran no count check,
+    // and the stale numeric assertion the row exists to catch passed clean.
+    // A malformed declaration is bad input (exit 2), never one fewer check.
+    // Codex filed it (solyra#69).
+    if (cells.length < 3) {
+      throw new AuditError(`${REGISTRY}: a Claims row has ${cells.length} cells where `
+        + `the table declares 3 (${JSON.stringify(line.trim().slice(0, 80))}); a row the `
+        + 'audit cannot read is a check that silently does not run');
+    }
     rows.push({ doc: cells[0], pattern: cells[1], derivation: cells[2] });
   }
   return rows;
@@ -5245,7 +5256,7 @@ export function loadClaims(text) {
  * a search for "tests <pattern>" under `src` -- a check that ran, returned a
  * number, and measured the wrong thing.
  */
-export function derive(derivation, { exec = run } = {}) {
+export function derive(derivation, { exec = run, linkOf = symlinkedComponent } = {}) {
   // Split on RUNS of whitespace. `grep-count  src foo` made `target` the empty
   // string and folded the path into the regex, so the empty pathspec grepped
   // the whole repository and returned a plausible, wrong count.
@@ -5307,6 +5318,23 @@ export function derive(derivation, { exec = run } = {}) {
   }
   if (kind === 'list-len') {
     let body;
+    // A SYMLINK is refused before it is read, not after. `git ls-files` below
+    // confirms the symlink itself, and reading through it measures the
+    // machine's target rather than a file in this repository -- so the number
+    // differs between clones, or comes from outside the repository entirely,
+    // while the row presents it as a reproducible measurement. A
+    // non-terminating special file hangs here, which the catch below cannot
+    // catch. Same refusal the document reads carry, one derivation over.
+    // Codex filed it (solyra#69).
+    // Injectable for the same reason `exec` is: planting a real symlink in
+    // the repository to test a refusal is a side effect on the tree, and the
+    // refusal is about what the path IS, not about what the test can stage.
+    const targetLink = linkOf(target);
+    if (targetLink !== null) {
+      throw new AuditError(`list-len target \`${target}\`: ${symlinkNote(target, targetLink)} `
+        + 'is a symlink, so the count would come from its target rather than from this '
+        + 'repository and would not reproduce in another clone');
+    }
     try {
       body = fs.readFileSync(path.join(REPO, target), 'utf8');
     } catch (err) {

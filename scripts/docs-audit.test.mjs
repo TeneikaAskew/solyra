@@ -2853,6 +2853,24 @@ describe('a snapshot key that is not an issue number', () => {
   });
 });
 
+describe('a list-len target that is a symlink', () => {
+  it('is refused before it is read', () => {
+    // `git ls-files` below confirms the SYMLINK; reading through it measures
+    // the machine's target instead, so the number differs between clones or
+    // comes from outside the repository entirely -- while the registry row
+    // presents it as a reproducible measurement. A non-terminating special
+    // file hangs at the read, which the try/catch there cannot catch, so the
+    // refusal has to come first.
+    expect(() => derive('list-len docs/list.md ^(.*)$', { linkOf: () => 'docs' }))
+      .toThrow(/is a symlink/);
+    expect(() => derive('list-len docs/list.md ^(.*)$', { linkOf: () => 'docs' }))
+      .toThrow(AuditError);
+    // An ordinary path still takes the read path and its existing refusal.
+    expect(() => derive('list-len docs/gone.md ^(.*)$', { linkOf: () => null }))
+      .toThrow(/could not be read/);
+  });
+});
+
 describe('a list-len target that cannot be read', () => {
   it('is exit 2, not a documentation finding', () => {
     expect(() => derive('list-len docs/gone.md ^(.*)$')).toThrow(AuditError);
@@ -3239,6 +3257,32 @@ describe('a title section longer than forty lines', () => {
   it('still stops at the next heading', () => {
     const lines = ['# T', 'body', '## Next', '**Last reviewed:** 2026-01-01'];
     expect(markerWindow(lines).to).toBe(2);
+  });
+});
+
+describe('a malformed row in the Claims table', () => {
+  const head = '| Doc | Pattern | Derivation |\n|---|---|---|\n';
+
+  it('is bad input, not one fewer check', () => {
+    // A row inside the table that is not the header or the separator is a
+    // DECLARATION, and one missing its derivation cell was dropped in
+    // silence -- so loadClaims returned no entry, main ran no count check,
+    // and the stale numeric assertion the row exists to catch passed clean.
+    // The silent direction, which is the one this tool exists to prevent.
+    expect(() => loadClaims(`## Claims\n\n${head}| CLAUDE.md | count (\\d+) |\n`))
+      .toThrow(/a Claims row has 2 cells/);
+    expect(() => loadClaims(`## Claims\n\n${head}| CLAUDE.md |\n`))
+      .toThrow(AuditError);
+  });
+
+  it('does not refuse the rows that legitimately have other shapes', () => {
+    // The header and the separator are not declarations, and a row OUTSIDE
+    // the Claims table is not one either -- the refusal has to be scoped or
+    // every table in the document becomes audit input.
+    expect(loadClaims(`## Claims\n\n${head}| README.md | (\\d+) y | grep-count src y |\n`)
+      .map((c) => c.doc)).toEqual(['README.md']);
+    expect(() => loadClaims(`## Other\n\n| a | b |\n\n## Claims\n\n${head}`))
+      .not.toThrow();
   });
 });
 
