@@ -19,6 +19,7 @@ import {
   isCodeIndented,
   commentSpans,
   isSetextUnderline,
+  markerShapedLines,
   commentedLines,
   markerAnchor,
   indentedCodeLines,
@@ -4717,5 +4718,49 @@ describe('a claim-shaped string that is only an example', () => {
     try {
       expect(checkClaims(inline, { exec })).toEqual([]);
     } finally { fs.unlinkSync(path.join(process.cwd(), doc)); }
+  });
+});
+
+
+// ── round 35 parity (stocks#1121 `b96e9fbf`) ────────────────────────────────
+
+describe('a marker-shaped line that parses as neither form', () => {
+  it('blocks the stamp rather than gaining a second marker above it', () => {
+    // The date is not the format the marker declares, so both parsers decline
+    // and the audit concluded there was no marker at all: --stamp inserted a
+    // valid one ABOVE it and the document visibly carried two contradictory
+    // provenance lines, which the duplicate check cannot see because only one
+    // of the two parses. Codex found this on the Python twin, which has
+    // refused it since round 21; this file had no such guard at all.
+    for (const bad of ['**Last reviewed:** 2026-9-1', '**Last Updated:** 2026-9-1']) {
+      const r = stamp(`# T\n\n${bad}\n\nbody\n`, '2026-09-22', 'scanned',
+        'abc1234', { reviewed: false });
+      expect(r.action).toBe('skipped-malformed-marker');
+      expect(r.text).toBe(`# T\n\n${bad}\n\nbody\n`);
+    }
+    expect(markerShapedLines(['# T', '', '**Last reviewed:** 2026-9-1', '']))
+      .toEqual([2]);
+    // A WELL-FORMED marker of either spelling still stamps -- the fix is not
+    // "never rewrite a document that already has one".
+    expect(stamp('# T\n\n**Last updated:** 2026-01-01\n\nbody\n', '2026-09-22',
+      'scanned', 'abc1234', { reviewed: false }).action).toBe('updated');
+    expect(markerShapedLines(['# T', '', '**Last updated:** 2026-01-01', '']))
+      .toEqual([]);
+  });
+});
+
+describe('a Setext underline', () => {
+  it('must share its heading container', () => {
+    // `> Example` then an unquoted `---` ends the blockquote and renders a
+    // THEMATIC BREAK. Reading it as a heading closed markerWindow above a real
+    // marker below the break, so the audit reported the marker missing and
+    // --stamp could insert a contradictory second one.
+    expect(isSetextUnderline(['> Example', '---'], 1, new Set())).toBe(false);
+    expect(isSetextUnderline(['- Example', '---'], 1, new Set())).toBe(false);
+    // An ordinary heading is untouched, and an underline indented to a list
+    // item's CONTENT column is still an underline: this is an indentation
+    // rule, not a ban on underlines near lists.
+    expect(isSetextUnderline(['Title', '---'], 1, new Set())).toBe(true);
+    expect(isSetextUnderline(['- Example', '  ---'], 1, new Set())).toBe(true);
   });
 });

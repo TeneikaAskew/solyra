@@ -1084,7 +1084,19 @@ export function isSetextUnderline(lines, i, masked = new Set()) {
   if (i <= 0 || masked.has(i) || masked.has(i - 1)) return false;
   if (!SETEXT_UNDERLINE_RE.test(lines[i] ?? '')) return false;
   const above = lines[i - 1] ?? '';
-  return Boolean(above.trim()) && !/^ {0,3}#/.test(above);
+  if (!(Boolean(above.trim()) && !/^ {0,3}#/.test(above))) return false;
+  // The underline must sit in the SAME container block. `> Example` followed
+  // by an unquoted `---` ends the blockquote and renders a thematic break;
+  // reading it as a heading closed markerWindow above a real marker below the
+  // break, so the audit reported it missing and --stamp could insert a
+  // contradictory second one. Ported from the Python twin (stocks#1121).
+  if (quoteDepth(above) !== quoteDepth(lines[i] ?? '')) return false;
+  // A list item is a container too: `- Example` then `---` at column 0 ends
+  // the list. An underline indented to the item's CONTENT column is still an
+  // underline, which is why this is an indentation test rather than a ban.
+  const item = /^(\s*)((?:[-*+]|\d+[.)])\s+)/.exec(above);
+  if (item && (/^\s*/.exec(lines[i] ?? '')[0].length < item[0].length)) return false;
+  return true;
 }
 
 /**
@@ -1767,6 +1779,32 @@ export function findMarkers(lines) {
   return out;
 }
 
+// Both spellings, current and legacy. A line of this SHAPE whose date is not
+// the format the marker declares parses as neither form, so the audit
+// concluded there was no marker at all and --stamp inserted a valid one ABOVE
+// it: the document then visibly carried two contradictory provenance lines,
+// and the duplicate-marker check could not see it because only one of the two
+// parses. The labels are exactly the ones MARKER_RE and LEGACY_MARKER_RE
+// accept, so the three cannot drift apart.
+const MARKER_SHAPE_RE =
+  /^\*\*(?:Last reviewed|Last updated|Last refreshed|Last verified|Verified):?\*\*/i;
+
+/** Indices in the marker section that LOOK like a marker but parse as neither. */
+export function markerShapedLines(lines) {
+  const { from, to } = markerSection(lines);
+  const fenced = fencedLines(lines);
+  const commented = commentedLines(lines);
+  const out = [];
+  for (let i = from; i < to; i += 1) {
+    if (fenced.has(i) || commented.has(i) || isCodeIndented(lines[i])) continue;
+    const line = lines[i].trim();
+    if (!MARKER_SHAPE_RE.test(line)) continue;
+    if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) continue;
+    out.push(i);
+  }
+  return out;
+}
+
 export function findMarker(lines) {
   const { from, to } = markerWindow(lines);
   const fenced = fencedLines(lines);
@@ -1976,6 +2014,18 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   const eol = (line) => (crlf ? `${line}\r` : line);
 
   const prev = findMarker(lines);
+
+  // Inserting a valid marker above one that merely fails to PARSE leaves the
+  // document carrying two review claims, and the duplicate check cannot see it
+  // because only one of them is a marker as far as this script knows. ANY
+  // malformed claim in the section, not only the case where it is the sole
+  // one: with a valid marker AND a second `**Last reviewed:** 2026-1-1`, the
+  // valid one was updated, --verify counted the target as consumed, and the
+  // contradictory claim stayed on the page. Ported from the Python twin
+  // (stocks#1121), which has refused this since round 21.
+  if (markerShapedLines(lines).some((i) => !prev || i !== prev.idx)) {
+    return { text, action: 'skipped-malformed-marker' };
+  }
 
   // A content-bearing legacy line is left exactly as it is: rewriting it would
   // delete the prose it carries and read in the diff as a tidy one-liner.
