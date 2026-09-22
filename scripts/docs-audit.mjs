@@ -68,7 +68,14 @@ const OWNED_FIELDS = ['Last reviewed:', 'Depth:', 'Against:', 'Last scanned:', '
 // document written that way had no H1 as far as this module was concerned, so
 // --stamp returned `skipped-no-h1` and the missing-marker finding it reports
 // could never be repaired by the command that reports it.
-const H1_RE = /^ {0,3}#\s+\S/;
+// An EMPTY ATX heading is a heading. `#` alone renders an H1 -- CommonMark
+// allows a heading with no text -- and requiring a title character reported
+// no H1 at all, so the audit emitted a gating marker finding and `--stamp`
+// answered `skipped-no-h1`: the command refusing to repair the finding it
+// raises, which is the shape this file has hit four times now. The closing
+// hash run is part of the syntax too: `# #` is an empty heading, not one
+// titled `#`.
+const H1_RE = /^ {0,3}#(?:\s|$)/;
 // CommonMark advances a tab to the next multiple of four.
 const TAB_STOP = 4;
 // Whole cues, not substrings. An unbounded `blocking|blocked by|...` matched
@@ -82,7 +89,7 @@ const TAB_STOP = 4;
 // longer matched it: a closed issue that the prose plainly calls live
 // vanished from the audit entirely.
 const BLOCKING_CUE_RE =
-  /\b(?:blocking|blocked\s+by|open\s+issues?|still\s+open|outstanding|in\s+progress|not\s+started|pending)\b/gi;
+  /\b(?:blocking|blocked\s+(?:by|on)|blocker|blockers|open\s+issues?|still\s+open|outstanding|in\s+progress|not\s+started|pending)\b/gi;
 // Text immediately before a cue that inverts it. `not started` is itself a
 // cue, so what precedes it is what is tested -- the leading `not` is never
 // read as negating the phrase it belongs to.

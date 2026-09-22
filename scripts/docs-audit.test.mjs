@@ -4318,6 +4318,40 @@ describe('a registry section ended by a Setext heading', () => {
   });
 });
 
+describe('an empty ATX heading', () => {
+  it('is an H1 a marker can go after', () => {
+    // CommonMark allows a heading with no text, so `#` alone renders an H1.
+    // Requiring a title character reported no H1 at all, so the audit
+    // emitted a gating marker finding and --stamp answered `skipped-no-h1`:
+    // the command refusing to repair the finding it raises.
+    expect(h1Index(['#', '', 'body'])).toBe(0);
+    // The closing hash run is syntax too -- `# #` is an EMPTY heading, not
+    // one titled `#`.
+    expect(h1Index(['# #', '', 'body'])).toBe(0);
+    expect(h1Index(['# Title', '', 'body'])).toBe(0);
+    // And a hash run with no space after it is still not a heading, which is
+    // the rule that keeps `#123 is open` out.
+    expect(h1Index(['#123 open', '', 'body'])).toBeNull();
+  });
+});
+
+describe('the blocker cue vocabulary', () => {
+  it('covers `blocked on` and the noun form', () => {
+    // `Blocked on <url>` is the same statement as `blocked by`, and the cue
+    // list held only the second -- so the URL loop was skipped and the issue
+    // could close with the document still presenting it as a blocker.
+    expect(hasBlockingCue('blocked on something')).toBe(true);
+    expect(hasBlockingCue('a blocker remains')).toBe(true);
+    expect(hasBlockingCue('two blockers remain')).toBe(true);
+    // The negation rules reach the new spellings, rather than the vocabulary
+    // growing a hole beside them.
+    expect(hasBlockingCue('not blocked on anything')).toBe(false);
+    expect(hasBlockingCue("isn't a blocker")).toBe(false);
+    // And a word that merely CONTAINS one is still not a cue.
+    expect(hasBlockingCue('nonblocking by design')).toBe(false);
+  });
+});
+
 describe('a definition-shaped line with an invalid suffix', () => {
   it('defines nothing, so its destination is not a link', () => {
     // CommonMark renders `[g]: missing.md garbage` as ordinary text -- no
