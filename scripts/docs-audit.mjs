@@ -2545,7 +2545,16 @@ export function h1Index(lines) {
     // Setext level one (`Title` over `===`). Without it the audit reported a
     // missing marker on such a document while --stamp answered
     // `skipped-no-h1`, so the command could not repair its own finding.
-    if (bare.trim() && !/^ {0,3}#/.test(bare) && !fenced.has(i + 1)
+    // Through `isSetextUnderline`, not a third inline copy of the test. That
+    // predicate carries the CONTAINER rules this one lacked: `> Title` over
+    // an unquoted `===` is a quote that ENDS, and `- Title` over a
+    // column-zero `===` is a list that ends -- neither renders a heading, yet
+    // both returned line 0 here, so the audit found an H1 the document does
+    // not have and --stamp wrote provenance after it. Level ONE only, which
+    // is the question this function asks; the predicate accepts either
+    // underline.
+    if (bare.trim() && !/^ {0,3}#/.test(bare)
+        && isSetextUnderline(lines, i + 1, fenced)
         && /^ {0,3}=+\s*$/.test(under)) return i;
   }
   return null;
@@ -2569,10 +2578,13 @@ export function markerAnchor(lines) {
   // underline and destroyed the rendered H1 it was meant to annotate.
   // Depth is compared on the RAW lines so an UNQUOTED `====` below a quoted
   // title -- a different block -- is not adopted as its underline.
-  const raw = lines[h1 + 1] ?? '';
-  const sameBlock = quoteDepth(lines[h1] ?? '') === quoteDepth(raw);
-  const under = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
-  return (sameBlock && /^ {0,3}=+\s*$/.test(under)) ? h1 + 1 : h1;
+  // Through `isSetextUnderline`, which is where the container rules live:
+  // this carried its own quote-depth test and none of the list ones, and a
+  // local copy of a rule is how the two halves drift. Level ONE only, as in
+  // `h1Index`; the predicate accepts either underline.
+  const under = (lines[h1 + 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
+  return (isSetextUnderline(lines, h1 + 1) && /^ {0,3}=+\s*$/.test(under))
+    ? h1 + 1 : h1;
 }
 
 /**

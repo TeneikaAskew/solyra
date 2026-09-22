@@ -5332,8 +5332,21 @@ describe('a quoted Setext underline', () => {
     expect(markerAnchor(['Title', '====', '', 'body'])).toBe(1);
     expect(markerAnchor(['# Title', '', 'body'])).toBe(0);
     // An UNQUOTED underline below a quoted title is a different block, so it
-    // is not adopted: the depth comparison runs on the raw lines.
-    expect(markerAnchor(['> Quoted title', '====', '', 'body'])).toBe(0);
+    // is not adopted. This once expected 0 -- `> Quoted title` treated as a
+    // one-line H1 -- which followed `h1Index` returning 0 for it. That was
+    // the defect: the quote ENDS at the unquoted `====`, so the document
+    // renders no H1 at all and there is nothing to anchor a marker to.
+    // `--stamp` answers `skipped-no-h1`, which is the honest refusal.
+    expect(h1Index(['> Quoted title', '====', '', 'body'])).toBeNull();
+    expect(markerAnchor(['> Quoted title', '====', '', 'body'])).toBeNull();
+    // A list container behaves the same way: a column-zero `===` ends it,
+    // while an underline indented to the item's content column is still one.
+    expect(h1Index(['- Title', '===', '', 'body'])).toBeNull();
+    expect(h1Index(['- Title', '  ===', '', 'body'])).toBe(0);
+    // An ATX H1 followed by a line of `===` does not own it: the underline
+    // needs a PARAGRAPH above, and a heading is not one. Anchoring past it
+    // would put the marker below a stray paragraph rather than after the H1.
+    expect(markerAnchor(['# Title', '===', '', 'body'])).toBe(0);
   });
 });
 
