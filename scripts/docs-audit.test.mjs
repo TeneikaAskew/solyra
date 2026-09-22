@@ -79,6 +79,7 @@ import {
   unescapeMarkdown,
   loadRegistry,
   decodeCharRefs,
+  decodeWithMap,
   h1Index,
   extraSegments,
   ownerOf,
@@ -4137,6 +4138,20 @@ describe('a heading carrying a character reference', () => {
     // And a name the old curated map did not carry, which is the whole
     // point of generating it: `## A &colon; B` renders `A : B`.
     expect(decodeCharRefs('A &colon; B')).toBe('A : B');
+    // An INVALID numeric reference is not left as text -- CommonMark renders
+    // U+FFFD for NUL, for a surrogate, and for a code point past Unicode.
+    // Keeping the source spelling slugged `## A&#0;B` as `a0b`, so the `#ab`
+    // a reader's link carries was reported dead and `#a0b`, which the page
+    // exposes nowhere, was accepted. Both directions wrong, and the Python
+    // twin was already right (stocks#1121).
+    expect(decodeCharRefs('A&#0;B')).toBe('A\uFFFDB');
+    expect(decodeCharRefs('A&#x0;B')).toBe('A\uFFFDB');
+    expect(decodeCharRefs('A&#xD800;B')).toBe('A\uFFFDB');
+    expect(decodeCharRefs('A&#1114112;B')).toBe('A\uFFFDB');
+    expect(headingSlug('A&#0;B')).toBe('ab');
+    // A VALID one is still the character it names, including one whose code
+    // point needs a surrogate pair to spell in UTF-16.
+    expect(decodeCharRefs('A&#x1F600;B')).toBe('A\u{1F600}B');
     // The table is GENERATED from the WHATWG list, so its size is a fact
     // about that list rather than about who has needed a name. A truncated
     // or partially written file would otherwise degrade quietly back to the
@@ -4717,6 +4732,57 @@ describe('a blocking cue and its citation on separate lines', () => {
     // And a NEGATED cue carries nothing, so the carry inherits the
     // negation rules rather than working around them.
     expect(checks(`isn't blocking\n${URL}\n`)).toEqual([]);
+  });
+});
+
+describe('an issue URL spelled with a character reference', () => {
+  const closed = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+  const checks = (doc) => checkClosedIssues('d.md', doc, closed).map((f) => f.check);
+
+  it('is the citation a reader follows, so the scan decodes it first', () => {
+    // A destination is decoded before the browser resolves it, so
+    // `github&#46;com/.../issues/1` IS a link to the real issue. The scan
+    // read the SOURCE spelling, where that is not `github.com`, and a stale
+    // blocker written this way passed the audit clean -- the silent
+    // direction. Both the bare and the linked spellings.
+    expect(checks('Still open: https://github&#46;com/TeneikaAskew/solyra/issues/1\n'))
+      .toEqual(['closed-issue']);
+    expect(checks('Blocked by [issue 1]'
+      + '(https://github&#46;com/TeneikaAskew/solyra/issues/1)\n'))
+      .toEqual(['closed-issue']);
+    // Hex and the numeric form of the slash resolve the same way.
+    expect(checks('Still open: https://github&#x2E;com/TeneikaAskew/solyra&#47;issues/1\n'))
+      .toEqual(['closed-issue']);
+  });
+
+  it('and the mapped offsets still read the source line', () => {
+    // The decoded index is SHORTER than the source one by the width every
+    // reference before it collapsed, and both remaining gates index the
+    // source: the hidden-span test and the clause the citation sits in.
+    // Four references earlier on the line shift the citation 16 columns, far
+    // enough to leave the comment and to cross a sentence boundary -- so
+    // dropping the map turns both of these into gating findings against text
+    // no reader can see, and against a clause that says the opposite.
+    const pad = 'https://example&#46;com&#47;a&#47;b&#47;c';
+    const URL = 'https://github.com/TeneikaAskew/solyra/issues/1';
+    expect(checks(`Still open ${pad} <!-- ${URL} -->\n`)).toEqual([]);
+    expect(checks(`Still open ${pad} now. ${URL} is no longer blocking.\n`))
+      .toEqual([]);
+  });
+
+  it('maps every decoded unit back to where the reader points', () => {
+    const r = decodeWithMap('ab&#46;cd&amp;e');
+    expect(r.text).toBe('ab.cd&e');
+    // A reference collapses to its OPENING index, and the sentinel is the
+    // source length so an exclusive end is mappable.
+    expect(r.map).toEqual([0, 1, 2, 7, 8, 9, 14, 15]);
+    // An astral character occupies two UTF-16 units and needs two entries,
+    // or every offset after it slides by one.
+    expect(decodeWithMap('a&#x1F600;b').map).toEqual([0, 1, 1, 10, 11]);
+    // Nothing to decode is the identity, signalled by a null map rather
+    // than a copied array.
+    expect(decodeWithMap('plain').map).toBe(null);
+    expect(decodeWithMap('AT&T Corp').map).toBe(null);
   });
 });
 

@@ -3449,9 +3449,18 @@ export function checkClosedIssues(doc, text, states) {
       paragraphCue = cueText;
     }
     if (!hasBlockingCue(cueText) && context === null) return;
-    for (const m of line.matchAll(ISSUE_URL_RE)) {
-      if (hidden.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
-      if (!citesLiveWork(cueText, m.index, m.index + m[0].length, { context })) continue;
+    // The DECODED line, because a destination is decoded before a reader
+    // follows it: `https://github&#46;com/.../issues/1` is a link to the real
+    // issue, and scanning the source spelling missed it entirely -- a stale
+    // blocker cited that way passed clean. Every offset below is mapped back
+    // to the source line, because that is what `hidden` and `cueText` index.
+    const scan = decodeWithMap(line);
+    const srcAt = (k) => (scan.map ? scan.map[k] : k);
+    for (const m of scan.text.matchAll(ISSUE_URL_RE)) {
+      const at = srcAt(m.index);
+      const end = srcAt(m.index + m[0].length);
+      if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      if (!citesLiveWork(cueText, at, end, { context })) continue;
       const [, rawRepo, rawKind, num] = m;
       const repo = normaliseRepo(rawRepo);
       const kind = rawKind.toLowerCase();
@@ -3587,12 +3596,56 @@ export function decodeCharRefs(text) {
   return text.replace(CHAR_REF_RE, (whole, dec, hex, name) => {
     if (name !== undefined) return NAMED_CHAR_REFS.get(name) ?? whole;
     const cp = Number.parseInt(dec ?? hex, dec !== undefined ? 10 : 16);
-    // A reference outside Unicode, or to a surrogate, is not a character.
-    // CommonMark renders those as U+FFFD; leaving the source text alone is
-    // the same non-fabricating choice as an unknown name above.
-    if (!Number.isFinite(cp) || cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return whole;
+    // A reference outside Unicode, or to a surrogate, or to NUL, is not a
+    // character -- and CommonMark does not leave it as text either: it
+    // renders U+FFFD. Returning the SOURCE here was the wrong half of that
+    // sentence, borrowed from the unknown-name case above where leaving the
+    // text alone IS what a renderer does. `## A&#0;B` renders `A\uFFFDB`
+    // and GitHub anchors it `ab`, while this recorded `a0b` -- so the
+    // fragment a reader follows was reported dead and an anchor the page
+    // exposes nowhere was accepted. The Python twin has been right the whole
+    // time, because `html.unescape` substitutes the replacement character
+    // itself (stocks#1121). Codex filed it here.
+    if (!Number.isFinite(cp) || cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return '\uFFFD';
     return String.fromCodePoint(cp);
   });
+}
+
+/**
+ * The text with character references decoded, plus a map back to the source.
+ *
+ * A destination is decoded before the reader's browser ever sees it, so
+ * `https://github&#46;com/TeneikaAskew/solyra/issues/1` is a link to the real
+ * issue -- but `ISSUE_URL_RE` scanned the SOURCE, where `github&#46;com` is
+ * not `github.com`, and a stale blocker cited that way passed the audit
+ * clean. Decoding alone is not enough: every offset the caller then uses --
+ * the hidden-span test, the clause the citation sits in -- is an offset into
+ * the source line, so the decoded index has to come back.
+ *
+ * `map[i]` is the source index of decoded unit `i`; a reference collapses to
+ * its OPENING index, so a citation spelled with one reports the position a
+ * reader would point at. `map[out.length]` is the end sentinel, which is what
+ * makes a match's exclusive end mappable. A line with no `&` in it cannot
+ * carry a reference, and returns a null map meaning "identity".
+ */
+export function decodeWithMap(text) {
+  if (!text.includes('&')) return { text, map: null };
+  let out = '';
+  const map = [];
+  let last = 0;
+  for (const m of text.matchAll(CHAR_REF_RE)) {
+    for (let k = last; k < m.index; k += 1) { out += text[k]; map.push(k); }
+    const rep = decodeCharRefs(m[0]);
+    // UTF-16 UNITS, not code points: `out` is indexed in units, so an astral
+    // character contributes two and needs two map entries or every offset
+    // after it slides by one.
+    for (let k = 0; k < rep.length; k += 1) { out += rep[k]; map.push(m.index); }
+    last = m.index + m[0].length;
+  }
+  if (!map.length) return { text, map: null };
+  for (let k = last; k < text.length; k += 1) { out += text[k]; map.push(k); }
+  map.push(text.length);
+  return { text: out, map };
 }
 
 /**
