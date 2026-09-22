@@ -6633,6 +6633,32 @@ describe('an anchor whose tag spans a line break', () => {
     expect(checkDeadLinks('d.md', '\\<a\n href="missing.md">g</a>\n',
       linkCtx(['d.md']))).toEqual([]);
   });
+
+  it('is found INSIDE the HTML block it usually lives in', () => {
+    // The window for this pass came from `fenced`, which makes every
+    // raw-HTML line a boundary -- so a type-6 block formed no window at all
+    // and the tag was scanned by NEITHER pass: the per-line one cannot see
+    // the tag and its href together, and this one never looked. An HTML
+    // block is exactly where an href lives, and `<div>` wrapping a wrapped
+    // `<a>` is the ordinary shape of it.
+    expect(checkDeadLinks('d.md', '<div>\n<a\n href="missing.md">g</a>\n</div>\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    // A tracked destination in the same shape is still not a finding.
+    expect(checkDeadLinks('d.md', '<div>\n<a\n href="docs/a.md">g</a>\n</div>\n',
+      linkCtx(['d.md', 'docs/a.md']))).toEqual([]);
+    // `<img src>` rides the same scanner, so it gains the same reach.
+    expect(checkDeadLinks('d.md', '<div>\n<img\n src="missing.png">\n</div>\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    // Nothing unsafe widened with it. A raw-TEXT block still displays its
+    // tags, a fence is still an example, a tag still may not span a blank
+    // line, and an escaped opener is still text.
+    expect(checkDeadLinks('d.md', '<pre>\n<a\n href="missing.md">g</a>\n</pre>\n',
+      linkCtx(['d.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '```\n<a\n href="missing.md">g</a>\n```\n',
+      linkCtx(['d.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '<div>\n\\<a\n href="missing.md">g</a>\n</div>\n',
+      linkCtx(['d.md']))).toEqual([]);
+  });
 });
 
 describe('a character reference', () => {

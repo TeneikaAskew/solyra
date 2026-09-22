@@ -5004,7 +5004,18 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     return maskSpans(l, [...codeSpans(l), ...(wrappedCodeSpans.get(i) ?? []),
       ...(commentedSpans.get(i) ?? [])]);
   }).join('\n');
-  for (const [bLo, bHi] of paragraphBlocks(lines, fenced)) {
+  // Windowed WITHOUT the HTML-block lines as boundaries, unlike every other
+  // scan here. `fenced` makes each of them a boundary, so a type-6 block
+  // formed no window at all and `<div>` then `<a` then ` href="missing.md">`
+  // -- a clickable link a reader follows -- was scanned by neither pass: the
+  // per-line one cannot see the tag and its href together, and this one never
+  // looked. An HTML block is exactly where an href lives. Nothing unsafe
+  // widens with it: every line this pass may not read is already blanked in
+  // `hrefDoc` above, and a blank line still ends both a paragraph and a
+  // type-6 block, which is the constraint that matters. Codex filed it on the
+  // Python twin (stocks#1121), where it is the same defect.
+  const hrefBounds = new Set([...fenceOnly, ...frontMatterLines(lines)]);
+  for (const [bLo, bHi] of paragraphBlocks(lines, hrefBounds)) {
     const from = docStarts[bLo];
     const to = docStarts[bHi] + lines[bHi].length;
     for (const mm of htmlDestinations(hrefDoc.slice(from, to))) {
