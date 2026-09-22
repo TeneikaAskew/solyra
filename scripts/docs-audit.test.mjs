@@ -5957,3 +5957,81 @@ describe('an issue URL inside an HTML tag attribute', () => {
       .toEqual(['solyra#1']);
   });
 });
+
+describe('HTML anchor attributes in any case', () => {
+  it('still declare their fragment', () => {
+    // Attribute names are case-insensitive and the browser exposes the
+    // fragment either way, but without the `i` flag neither `<DIV ID="x">`
+    // nor `<A NAME="y">` was recorded, so a valid link was a dead anchor.
+    expect([...headingAnchors('<DIV ID="section">x</DIV>\n')]).toEqual(['section']);
+    expect([...headingAnchors('<A NAME="legacy"></A>\n')]).toEqual(['legacy']);
+    // The VALUE's case is still preserved; only the names are folded.
+    expect([...headingAnchors('<div ID="Install">x</div>\n')]).toEqual(['Install']);
+  });
+});
+
+describe('YAML front matter', () => {
+  it('is metadata rather than body links', () => {
+    // GitHub renders front matter as a metadata table, so a Markdown-shaped
+    // value there is not a link a reader can click.
+    const check = (t) => checkDeadLinks('d.md', t, linkCtx(['d.md']))
+      .map((f) => f.check);
+    expect(check('---\ntitle: "[guide](missing.md)"\n---\n\n# T\n')).toEqual([]);
+    expect(check('---\n[g]: missing.md\n---\n\n# T\n')).toEqual([]);
+    // The same link in the BODY is still a real link.
+    expect(check('# T\n\n[guide](missing.md)\n')).toEqual(['dead-link']);
+  });
+});
+
+describe('a reference label', () => {
+  it('collapses internal whitespace when matched', () => {
+    // CommonMark collapses it, so `[foo bar]` and `[foo   bar]` are the same
+    // label and the first definition wins. Keying on the raw text validated
+    // the second independently and reported a destination no reference
+    // resolves to.
+    expect(checkDeadLinks('d.md', '[foo bar]: ok.md\n\n[foo   bar]: missing.md\n',
+      linkCtx(['d.md', 'ok.md']))).toEqual([]);
+    // Genuinely distinct labels are still both checked.
+    expect(checkDeadLinks('d.md', '[a]: ok.md\n\n[b]: missing.md\n',
+      linkCtx(['d.md', 'ok.md'])).map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('a heading link', () => {
+  it('keeps its label whatever the destination contains', () => {
+    // The destination is scanned rather than matched, so parentheses inside
+    // it cannot end it early: `## See [x](a(b).md) now` renders "See x now".
+    expect(headingSlug('See [x](a(b).md) now')).toBe('see-x-now');
+    expect(headingSlug('See [x](a(b(c)).md) now')).toBe('see-x-now');
+    // An ESCAPED bracket makes no link, and an ordinary one still loses its
+    // destination -- the controls from the rounds that shaped this.
+    expect(headingSlug('Literal \\[x](guide.md)')).toBe('literal-xguidemd');
+    expect(headingSlug('Real [x](guide.md)')).toBe('real-x');
+  });
+
+  it('resolves a defined reference to its visible label', () => {
+    // `## See [guide][g]` with `[g]` defined renders as "See guide".
+    // Definedness decides it: CommonMark renders an undefined reference
+    // literally and the slug keeps both labels.
+    expect([...headingAnchors('# T\n\n## See [guide][g]\n\n[g]: guide.md\n')].sort())
+      .toEqual(['see-guide', 't']);
+    expect([...headingAnchors('# T\n\n## See [guide][g]\n')].sort())
+      .toEqual(['see-guideg', 't']);
+    // A definition inside a fence defines nothing.
+    expect([...headingAnchors('# T\n\n## See [guide][g]\n\n```\n[g]: guide.md\n```\n')].sort())
+      .toEqual(['see-guideg', 't']);
+  });
+});
+
+describe('a Setext heading opening a list item', () => {
+  it('drops its marker before slugging', () => {
+    // `- Title` over an indented `===` is a heading isSetextUnderline
+    // deliberately accepts, but the raw `- Title` reached the slug and
+    // recorded `--title`.
+    expect([...headingAnchors('- Title\n  ===\n')]).toEqual(['title']);
+    // The case the ATX-only rule guards is still refused: `- Example` over a
+    // column-zero `---` ends the list and renders a thematic break.
+    expect([...headingAnchors('- Example\n---\n')]).toEqual([]);
+    expect([...headingAnchors('Title\n===\n')]).toEqual(['title']);
+  });
+});

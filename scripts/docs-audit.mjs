@@ -1569,8 +1569,13 @@ const HTML_TYPE7_RE = /^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*?)?\/?>\s*$/;
 // valid HTML too; an unquoted value ends at whitespace or any of `"'=<>` and a
 // backtick. `[^>]*?` crosses a line break, which is what lets the joined scan
 // see an element whose attribute sits on a later physical line.
+// CASE-INSENSITIVE. HTML attribute names are, and the browser exposes the
+// fragment for `<DIV ID="section">` exactly as for the lowercase spelling --
+// but without the `i` flag neither anchor was recorded, so a valid link to
+// `#section` was a gating dead anchor. The VALUE's case is still preserved;
+// only the tag and attribute NAMES are folded.
 const HTML_ID_RE =
-  /<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/g;
+  /<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/gi;
 
 // CommonMark HTML block types 3, 4 and 5 -- processing instruction, document
 // declaration and CDATA. Each runs raw to its own closer, over as many lines
@@ -3018,7 +3023,76 @@ export function decodeCharRefs(text) {
   });
 }
 
-export function headingSlug(heading) {
+/**
+ * Index just past the `)` that closes the `(` at `at`, or -1.
+ *
+ * CommonMark allows a destination to carry balanced parentheses to any depth,
+ * and the pattern that handled it stopped at the first `)` -- so
+ * `[x](a(b).md)` left `.md)` in the slug. A scan has no depth limit to get
+ * wrong. A backslash escapes the character after it, there as everywhere.
+ */
+function balancedClose(text, at) {
+  let depth = 0;
+  for (let i = at; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '\\') { i += 1; continue; }
+    if (ch === '(') depth += 1;
+    else if (ch === ')') { depth -= 1; if (depth === 0) return i + 1; }
+  }
+  return -1;
+}
+
+/**
+ * A heading's visible text, with link syntax removed but labels kept.
+ *
+ * `## See [x](guide.md) now` renders as "See x now". Two shapes were wrong: a
+ * destination containing parentheses ended the old pattern early, and a
+ * REFERENCE link (`[guide][g]` with `[g]` defined) was not recognised at all,
+ * so its second label survived as `guideg`. Both were wrong in the same two
+ * directions -- a working fragment reported dead, and one the page does not
+ * expose accepted.
+ *
+ * A SHORTCUT reference (`[guide]` alone) is deliberately not resolved: this
+ * corpus is full of bracketed prose indistinguishable from one, which is the
+ * same reason reference USES are not scanned in the link pass.
+ */
+function stripHeadingLinks(s, refLabels) {
+  const out = [];
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    // An escaped bracket is literal text, so it opens nothing.
+    if (ch === '\\' && i + 1 < s.length) { out.push(s.slice(i, i + 2)); i += 2; continue; }
+    if (ch !== '[') { out.push(ch); i += 1; continue; }
+    let depth = 0;
+    let end = -1;
+    for (let j = i; j < s.length; j += 1) {
+      if (s[j] === '\\') { j += 1; continue; }
+      if (s[j] === '[') depth += 1;
+      else if (s[j] === ']') { depth -= 1; if (depth === 0) { end = j; break; } }
+    }
+    if (end === -1) { out.push(ch); i += 1; continue; }
+    const label = s.slice(i + 1, end);
+    const k = end + 1;
+    if (s[k] === '(') {
+      const close = balancedClose(s, k);
+      if (close !== -1) { out.push(label); i = close; continue; }
+    }
+    if (s[k] === '[') {
+      const shut = s.indexOf(']', k);
+      if (shut !== -1) {
+        // A COLLAPSED reference (`[guide][]`) names itself.
+        const ref = (s.slice(k + 1, shut).trim() || label.trim()).toLowerCase();
+        if (refLabels.has(ref)) { out.push(label); i = shut + 1; continue; }
+      }
+    }
+    out.push(ch);
+    i += 1;
+  }
+  return out.join('');
+}
+
+export function headingSlug(heading, refLabels = new Set()) {
   // Inline HTML is MARKUP: GitHub renders `## Use <code>foo</code>` as
   // "Use foo" and anchors it `use-foo`, while keeping the tag names recorded
   // `use-codefoocode` -- a valid link reported dead and a nonexistent slug
@@ -3039,8 +3113,10 @@ export function headingSlug(heading) {
   // destination unconditionally recorded `literal-x`: a working fragment
   // reported dead AND an anchor the page does not expose accepted. Parity with
   // the Python twin (stocks#1121).
-  s = s.replace(/\[([^\]]*)\]\([^)]*\)/g,
-    (whole, text, at, src) => (isEscaped(src, at) ? whole : text));
+  // See stripHeadingLinks: the destination is SCANNED rather than matched, so
+  // parentheses inside it cannot end it early, and a DEFINED reference link
+  // resolves to its visible label. Parity with the Python twin (stocks#1121).
+  s = stripHeadingLinks(s, refLabels);
   // Emphasis MARKUP only. Stripping every underscore turned `## API_FIELD`
   // into `apifield`, so a valid link to `#api_field` read as a dead anchor
   // while an incorrect `#apifield` was accepted. CommonMark does not treat an
@@ -3119,6 +3195,20 @@ export function headingAnchors(text) {
     // than as Markdown -- a `# note` inside it exposes no anchor, and
     // recording one let a link to it pass.
     ...frontMatterLines(lines)]);
+  // The reference labels this document DEFINES, so a heading carrying
+  // `[guide][g]` can resolve to its visible label. Undefined ones must NOT
+  // resolve: CommonMark renders `[guide][g]` literally when `[g]` is not
+  // defined, and the slug keeps both labels. Read through the same exclusions
+  // as everything else here -- a definition inside a fence defines nothing --
+  // and keyed the way the link scan keys them, internal whitespace collapsed.
+  const refLabels = new Set();
+  lines.forEach((raw, i) => {
+    if (fenced.has(i)) return;
+    const body = raw.replace(BLOCKQUOTE_PREFIX_RE, '')
+      .replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+    const d = /^ {0,3}\[([^\]^][^\]]*)\]:\s+\S/.exec(body);
+    if (d) refLabels.add(d[1].trim().toLowerCase().replace(/\s+/g, ' '));
+  });
   // A comment INSIDE a rendered heading is not part of its text. The blanket
   // tag strip used to remove it as a side effect; now that only real tags are
   // stripped, the comment has to be masked explicitly or `## <!-- note --> Real`
@@ -3158,11 +3248,16 @@ export function headingAnchors(text) {
     // `- Example` over `---` at column zero ENDS the list and renders a
     // thematic break, and stripping the marker there would invent a heading.
     const atx = line.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+    // The marker is stripped for the SETEXT branch too. `- Title` over an
+    // indented `===` is a heading isSetextUnderline deliberately accepts, but
+    // the raw `- Title` reached the slug and recorded `--title`. Safe
+    // precisely because that predicate already refuses the case the ATX-only
+    // note above was guarding.
     const m = setext
-      ? [null, line.trim()]
+      ? [null, atx.trim()]
       : /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(atx);
     if (!m) continue;
-    const base = headingSlug(m[1]);
+    const base = headingSlug(m[1], refLabels);
     // Advance until the slug is unused, rather than trusting a per-base
     // counter. `## Notes`, `## Notes-1`, `## Notes` gave `notes` and
     // `notes-1` twice and never emitted `notes-2`, which is what GitHub
@@ -3304,7 +3399,13 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // Markdown syntax with `[x](missing.md)`, or showing a path that has since
   // moved, was read as rendered documentation and failed --check over its own
   // teaching material. The marker and heading checks already skip these lines.
-  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines), ...rawHtmlBlockLines(lines)]);
+  // And YAML FRONT MATTER, which GitHub renders as a metadata table rather
+  // than as body text: `title: "[guide](missing.md)"` is not a link a reader
+  // can click, so the destination produced a gating finding over nothing. The
+  // heading and marker scans already exclude these lines. Parity with the
+  // Python twin (stocks#1121).
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
   // Markdown is not PARSED inside a type-6 or type-7 HTML block, but the HTML
   // is rendered: `<div>` then `<a href="missing.md">` is a link a reader
   // clicks. Excluding every raw-block line skipped the href pass along with
@@ -3401,7 +3502,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // the last emitted a false dead-link when the first destination exists and
     // the duplicate is stale, and missed the link readers follow in the
     // reverse order.
-    const label = m && m[1].trim().toLowerCase();
+    // Internal whitespace COLLAPSED, as CommonMark collapses it when matching
+    // labels. `[foo bar]` and `[foo   bar]` are the same label, so the second
+    // spelling is a duplicate definition the first wins over -- but keying on
+    // the raw text validated it independently and emitted a gating dead-link
+    // finding for a destination no rendered reference resolves to.
+    const label = m && m[1].trim().toLowerCase().replace(/\s+/g, ' ');
     // Group 2 is the angle-bracketed form, group 3 the bare one. Group 2 can
     // legitimately be the EMPTY string (`[x]: <>`), so the branch tests for
     // `undefined` rather than truthiness -- `m[2] || m[3]` would fall through
