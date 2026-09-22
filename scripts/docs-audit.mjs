@@ -30,6 +30,11 @@
  *   node scripts/docs-audit.mjs --write-issues-snapshot issues.json
  *   node scripts/docs-audit.mjs --issues-snapshot issues.json --json
  *
+ * A snapshot carries the time it was captured and EXPIRES: reading one more
+ * than ISSUE_SNAPSHOT_MAX_AGE_DAYS old is exit 2, not a clean run. Issue
+ * state moves, and a report dated today off a week-old capture is a
+ * fabricated clean bill of health -- the outcome this tool exists to stop.
+ *
  * Exit: 0 clean, 1 findings (with --check), 2 the run itself failed. A failed
  * `gh` read is exit 2, never a silent empty result (CLAUDE.md Rule 4).
  */
@@ -3093,12 +3098,54 @@ export const ISSUE_STATES = new Set(['open', 'closed']);
  * is the documented status for "findings", not for "the run could not
  * happen"; automation could not tell bad input from stale documentation.
  */
-export function loadIssuesSnapshot(file) {
+export const ISSUE_SNAPSHOT_MAX_AGE_DAYS = 1;
+
+export function loadIssuesSnapshot(file, { now = new Date() } = {}) {
   let states;
   try {
     states = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (err) {
     throw new AuditError(`--issues-snapshot ${file} could not be read: ${err.message}`);
+  }
+  // WHEN the states were read, before what they say. Every other guard in
+  // this function asks whether a row is usable; none of them asked whether
+  // the file still describes reality, so a snapshot of any age was accepted
+  // as current. An issue open when it was written and closed since reported
+  // no stale-blocker finding at all, under a report dated today -- a
+  // fabricated clean bill of health, which is the one outcome this whole
+  // tool exists to prevent (CLAUDE.md Rule 4). Refused rather than flagged:
+  // a finding is a claim about the documents, and "I cannot tell" is not
+  // one of those.
+  // `isCalendarDate` on the day, not just `Date.parse` on the whole string:
+  // V8 rolls `2026-02-30T00:00:00Z` over to March 2 rather than rejecting
+  // it, and a stamp naming a day that does not exist is the shape a
+  // hand-edited one takes. The function is declared below and hoisted.
+  const captured = states?.capturedAt;
+  if (typeof captured !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(captured)
+      || !isCalendarDate(captured.slice(0, 10)) || Number.isNaN(Date.parse(captured))) {
+    throw new AuditError(`--issues-snapshot ${file} has no usable "capturedAt" `
+      + `(${JSON.stringify(captured)}); without a capture time an arbitrarily old `
+      + 'snapshot reads as current and a blocker that has since closed goes unreported');
+  }
+  // Against the WALL CLOCK, not against `--date`. "Is this issue state still
+  // current" is a question about now; a report dated in the past does not
+  // make month-old issue data accurate, and keying the window to `--date`
+  // would let one flag switch the guard off. UTC calendar days on both
+  // sides, which is the unit the rest of this tool dates things in.
+  const day = captured.slice(0, 10);
+  const on = now.toISOString().slice(0, 10);
+  const age = Math.round((Date.parse(`${on}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`))
+    / 86400000);
+  if (age < 0) {
+    throw new AuditError(`--issues-snapshot ${file} is stamped ${day}, which is after `
+      + `today (${on}); a capture that has not happened yet describes nothing, and a `
+      + 'hand-edited stamp is how an expired snapshot would be made to pass');
+  }
+  if (age > ISSUE_SNAPSHOT_MAX_AGE_DAYS) {
+    throw new AuditError(`--issues-snapshot ${file} was captured ${day}, ${age} days ago `
+      + `(limit ${ISSUE_SNAPSHOT_MAX_AGE_DAYS}); an issue that closed in between would `
+      + 'be reported as live work, or a blocker that has closed would not be reported at '
+      + 'all -- rewrite it with --write-issues-snapshot');
   }
   for (const repo of [THIS_REPO, SIBLING_REPO]) {
     const entry = states?.[repo];
@@ -3139,7 +3186,11 @@ export function loadIssuesSnapshot(file) {
       }
     }
   }
-  return states;
+  // Only the repository maps, so what a snapshot run hands downstream is the
+  // SAME shape a live read hands it. Returning the metadata beside them
+  // would put a string where every consumer expects an issue map, and the
+  // difference would show up in whichever consumer iterated the keys first.
+  return { [THIS_REPO]: states[THIS_REPO], [SIBLING_REPO]: states[SIBLING_REPO] };
 }
 
 /**
@@ -3148,9 +3199,15 @@ export function loadIssuesSnapshot(file) {
  * bottom of this file. An unwritable path, a missing parent directory or a
  * full disk all mean the run did not happen, not that the docs have findings.
  */
-export function writeIssuesSnapshot(file, states) {
+export function writeIssuesSnapshot(file, states, { now = new Date() } = {}) {
   try {
-    fs.writeFileSync(file, JSON.stringify(states, null, 1));
+    // The capture time leads the file, so a reader looking at it sees how
+    // old it is before reading a single issue state -- and so does the
+    // loader, which refuses anything past ISSUE_SNAPSHOT_MAX_AGE_DAYS. It is
+    // written BESIDE the repository maps rather than inside one, because
+    // every consumer of a states map expects its values to be issue maps.
+    fs.writeFileSync(file, JSON.stringify(
+      { capturedAt: now.toISOString(), ...states }, null, 1));
   } catch (err) {
     throw new AuditError(`--write-issues-snapshot ${file} could not be written: ${err.message}`);
   }

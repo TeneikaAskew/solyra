@@ -45,6 +45,7 @@ import {
   driftCommits,
   knownRootFiles,
   linkContext,
+  ISSUE_SNAPSHOT_MAX_AGE_DAYS,
   loadIssuesSnapshot,
   writeIssuesSnapshot,
   symlinkedComponent,
@@ -102,6 +103,12 @@ import {
   summariseStamps,
   unownedSpans,
 } from './docs-audit.mjs';
+
+// Every snapshot fixture carries a capture time, because loadIssuesSnapshot
+// refuses one it cannot date: a snapshot of any age used to read as current,
+// so an issue that closed after it was written produced no stale-blocker
+// finding under a report dated today.
+const NOW = new Date().toISOString();
 
 // ── registry parsing ────────────────────────────────────────────────────────
 
@@ -478,7 +485,7 @@ describe('loadIssuesSnapshot', () => {
 
   it('rejects a snapshot that lacks a repo, rather than resolving nothing', () => {
     const f = path.join(dir, 'half.json');
-    fs.writeFileSync(f, JSON.stringify({ solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/stocks/);
   });
 
@@ -486,7 +493,7 @@ describe('loadIssuesSnapshot', () => {
     // typeof [] === 'object', so an array passed the old check and then
     // resolved no issue at all.
     const f = path.join(dir, 'listed.json');
-    fs.writeFileSync(f, JSON.stringify({ stocks: [], solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, stocks: [], solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/stocks/);
   });
 
@@ -496,7 +503,7 @@ describe('loadIssuesSnapshot', () => {
     // blocker DISAPPEARS from the report -- a clean bill of health produced
     // by a malformed file.
     const f = path.join(dir, 'nostate.json');
-    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: {} } }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, stocks: {}, solyra: { 8: {} } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
   });
 
@@ -505,13 +512,13 @@ describe('loadIssuesSnapshot', () => {
     // branch, so a live issue is reported as unresolvable and the audit
     // FABRICATES a finding (Rule 4).
     const f = path.join(dir, 'nullrow.json');
-    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: null } }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, stocks: {}, solyra: { 8: null } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
   });
 
   it('rejects a state that is not a string', () => {
     const f = path.join(dir, 'numstate.json');
-    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: { state: 7 } } }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, stocks: {}, solyra: { 8: { state: 7 } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
   });
 
@@ -522,20 +529,86 @@ describe('loadIssuesSnapshot', () => {
     // DISAPPEARS. Reproduced against the string-only validator: the row loaded
     // and checkClosedIssues returned [] for a line citing it as blocking.
     const f = path.join(dir, 'bogus.json');
-    fs.writeFileSync(f, JSON.stringify({ stocks: {}, solyra: { 8: { state: 'bogus' } } }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, stocks: {}, solyra: { 8: { state: 'bogus' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/solyra#8/);
   });
 
   it.each(['open', 'closed'])('still accepts the real state %s', (state) => {
     const f = path.join(dir, `${state}.json`);
-    fs.writeFileSync(f, JSON.stringify({ stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, solyra: { 8: { state, reason: '', kind: 'ISSUE' } } }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, solyra: { 8: { state, reason: '', kind: 'ISSUE' } } }));
     expect(loadIssuesSnapshot(f).solyra[8].state).toBe(state);
   });
 
   it('returns the states of a well-formed snapshot', () => {
     const f = path.join(dir, 'ok.json');
-    fs.writeFileSync(f, JSON.stringify({ solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
     expect(loadIssuesSnapshot(f).solyra[1].state).toBe('open');
+  });
+});
+
+describe('an issues snapshot the audit cannot date', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-age-'));
+  const rows = { stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } },
+    solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } };
+  const write = (name, extra) => {
+    const f = path.join(dir, name);
+    fs.writeFileSync(f, JSON.stringify({ ...extra, ...rows }));
+    return f;
+  };
+  const day = (offset) => new Date(Date.now() + offset * 86400000).toISOString();
+
+  it('is refused, because an undateable snapshot reads as current', () => {
+    // Every other guard here asks whether a ROW is usable; none asked whether
+    // the file still describes reality. An issue open when it was written and
+    // closed since produced no stale-blocker finding at all, under a report
+    // dated today -- a fabricated clean bill of health, which is the one
+    // outcome this tool exists to prevent.
+    expect(() => loadIssuesSnapshot(write('nometa.json')))
+      .toThrow(/no usable "capturedAt"/);
+    expect(() => loadIssuesSnapshot(write('badmeta.json', { capturedAt: 'yesterday' })))
+      .toThrow(/no usable "capturedAt"/);
+    // A well-formed date that names no instant is not a capture time either.
+    expect(() => loadIssuesSnapshot(write('nonsense.json', { capturedAt: '2026-02-30T00:00:00Z' })))
+      .toThrow(/no usable "capturedAt"/);
+    expect(() => loadIssuesSnapshot(write('num.json', { capturedAt: 1758585600000 })))
+      .toThrow(/no usable "capturedAt"/);
+  });
+
+  it('is refused once it is older than the window', () => {
+    const f = write('old.json', { capturedAt: day(-(ISSUE_SNAPSHOT_MAX_AGE_DAYS + 1)) });
+    expect(() => loadIssuesSnapshot(f)).toThrow(AuditError);
+    expect(() => loadIssuesSnapshot(f)).toThrow(/days ago \(limit 1\)/);
+    // The boundary itself still loads: a snapshot written before midnight and
+    // read after it is the ordinary case, not a stale one.
+    expect(loadIssuesSnapshot(write('edge.json',
+      { capturedAt: day(-ISSUE_SNAPSHOT_MAX_AGE_DAYS) })).solyra[1].state).toBe('open');
+    expect(loadIssuesSnapshot(write('fresh.json', { capturedAt: day(0) }))
+      .solyra[1].state).toBe('open');
+  });
+
+  it('is refused when its stamp is in the future', () => {
+    // A hand-edited stamp is how an expired snapshot would be made to pass,
+    // and a capture that has not happened yet describes nothing either way.
+    expect(() => loadIssuesSnapshot(write('ahead.json', { capturedAt: day(1) })))
+      .toThrow(/after today/);
+  });
+
+  it('is dated against the wall clock, not against --date', () => {
+    // Keying the window to the report date would let one flag switch the
+    // guard off: `--date 2020-01-01` would accept a 2020 snapshot. "Is this
+    // issue state still current" is a question about now.
+    const f = write('clock.json', { capturedAt: day(-5) });
+    expect(() => loadIssuesSnapshot(f, { now: new Date() })).toThrow(/days ago/);
+    expect(loadIssuesSnapshot(f, { now: new Date(Date.parse(day(-5)) + 1000) })
+      .solyra[1].state).toBe('open');
+  });
+
+  it('hands downstream the same shape a live read hands it', () => {
+    // The metadata sits BESIDE the repository maps, and the loader returns
+    // only the maps -- so no consumer of a states map ever finds a string
+    // where it expects issue rows.
+    expect(Object.keys(loadIssuesSnapshot(write('shape.json', { capturedAt: day(0) })))
+      .sort()).toEqual(['solyra', 'stocks']);
   });
 });
 
@@ -2071,7 +2144,7 @@ describe('a whole run over a fixture repository', () => {
       + '|---|---|---|---|\n| D | docs/DOC_REGISTRY.md | | |\n| D | docs/*.md | src | |\n');
     fs.writeFileSync(path.join(dir, 'src/a.ts'), 'export const a = 1;\n');
     fs.writeFileSync(path.join(dir, 'issues.json'),
-      JSON.stringify({ stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
+      JSON.stringify({ capturedAt: NOW, stocks: { 1: { state: 'open', reason: '', kind: 'ISSUE' } }, solyra: { 1: { state: 'open', reason: '', kind: 'ISSUE' } } }));
     for (const args of [['init', '-q', '-b', 'work'], ['config', 'user.email', 't@e.com'],
       ['config', 'user.name', 't'], ['config', 'commit.gpgsign', 'false'],
       ['add', '-A'], ['commit', '-qm', 'tree']]) {
@@ -2294,7 +2367,7 @@ describe('a snapshot that names both repositories but records nothing', () => {
     // issue becomes a fabricated "could not be resolved" P2 and --check exits
     // 1 for findings that do not exist -- the shape Rule 4 refuses.
     const f = path.join(os.tmpdir(), `snap-empty-${process.pid}.json`);
-    fs.writeFileSync(f, JSON.stringify({ solyra: {}, stocks: {} }));
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW, solyra: {}, stocks: {} }));
     expect(() => loadIssuesSnapshot(f)).toThrow(AuditError);
     expect(() => loadIssuesSnapshot(f)).toThrow(/empty "solyra" map/);
     fs.unlinkSync(f);
@@ -2302,7 +2375,7 @@ describe('a snapshot that names both repositories but records nothing', () => {
 
   it('still accepts a map with one validated record', () => {
     const f = path.join(os.tmpdir(), `snap-one-${process.pid}.json`);
-    fs.writeFileSync(f, JSON.stringify({
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW,
       solyra: { 1: { state: 'open' } }, stocks: { 2: { state: 'closed' } },
     }));
     expect(loadIssuesSnapshot(f).solyra['1'].state).toBe('open');
@@ -2765,7 +2838,7 @@ describe('a snapshot key that is not an issue number', () => {
     // resolved no citation at all, so every numeric reference became a
     // fabricated "could not be resolved" P2.
     const f = path.join(os.tmpdir(), `snap-key-${process.pid}.json`);
-    fs.writeFileSync(f, JSON.stringify({
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW,
       solyra: { junk: { state: 'open' } }, stocks: { 1: { state: 'open' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(/not an issue number/);
     fs.unlinkSync(f);
@@ -2773,7 +2846,7 @@ describe('a snapshot key that is not an issue number', () => {
 
   it.each(['0', '01', '-1', '1.0'])('rejects the non-canonical key %s', (key) => {
     const f = path.join(os.tmpdir(), `snap-key2-${process.pid}.json`);
-    fs.writeFileSync(f, JSON.stringify({
+    fs.writeFileSync(f, JSON.stringify({ capturedAt: NOW,
       solyra: { [key]: { state: 'open' } }, stocks: { 1: { state: 'open' } } }));
     expect(() => loadIssuesSnapshot(f)).toThrow(AuditError);
     fs.unlinkSync(f);
@@ -3572,7 +3645,7 @@ describe('a document whose registry rows disagree', () => {
       + '| D | docs/d.md | | |\n| X | docs/d.md | | |\n');
     fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n\nbody\n');
     fs.writeFileSync(path.join(dir, 'issues.json'),
-      JSON.stringify({ stocks: { 1: { state: 'open' } }, solyra: { 1: { state: 'open' } } }));
+      JSON.stringify({ capturedAt: NOW, stocks: { 1: { state: 'open' } }, solyra: { 1: { state: 'open' } } }));
     for (const args of [['init', '-q', '-b', 'work'], ['config', 'user.email', 't@e.com'],
       ['config', 'user.name', 't'], ['add', '-A'], ['commit', '-qm', 'tree']]) {
       spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
