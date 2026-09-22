@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   checkMarkerDates,
   globSpecificity,
@@ -593,6 +593,46 @@ describe('writeStamps', () => {
       { repo: dir, fsImpl })).toThrow(AuditError);
     expect(() => writeStamps([{ doc: 'a.md', text: 'x' }, { doc: 'b.md', text: 'y' }],
       { repo: dir, fsImpl })).toThrow(/1 of 2 documents were already stamped \(a\.md\)/);
+  });
+
+  it('refuses a symlink sitting at the temp path', () => {
+    // The symlink refusal covers the DOCUMENT; it did not cover the path the
+    // temp file is written to. `writeFileSync` follows a symlink found there,
+    // so a checkout carrying that name as a link could have --stamp truncate
+    // a file anywhere writable and then rename the link itself into place as
+    // the document. Codex filed this as a P1.
+    fs.writeFileSync(path.join(dir, 'a.md'), '# A\n');
+    const canary = path.join(dir, 'canary.txt');
+    fs.writeFileSync(canary, 'do not touch\n');
+    // The temp name carries a random suffix, so the attack is reproduced by
+    // capturing the name one run picks and pre-creating THAT path as a link
+    // on the next, with the randomness pinned.
+    let captured = null;
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.4242424242);
+    try {
+      writeStamps([{ doc: 'a.md', text: 'first\n' }], {
+        repo: dir,
+        fsImpl: {
+          constants: fs.constants,
+          accessSync: () => {},
+          writeFileSync: (p, ...rest) => { captured = p; fs.writeFileSync(p, ...rest); },
+          statSync: fs.statSync,
+          chmodSync: fs.chmodSync,
+          renameSync: fs.renameSync,
+          unlinkSync: fs.unlinkSync,
+        },
+      });
+      expect(captured).not.toBeNull();
+      expect(path.basename(captured)).not.toBe('.a.md.stamp-tmp');
+      fs.symlinkSync(canary, captured);
+      expect(() => writeStamps([{ doc: 'a.md', text: 'second\n' }], { repo: dir }))
+        .toThrow(/EEXIST|--stamp failed/);
+    } finally {
+      spy.mockRestore();
+    }
+    // The canary is untouched and the document still holds the first stamp.
+    expect(fs.readFileSync(canary, 'utf8')).toBe('do not touch\n');
+    expect(fs.readFileSync(path.join(dir, 'a.md'), 'utf8')).toBe('first\n');
   });
 
   it('writes through a temp file so a failed stamp leaves the original intact', () => {
@@ -6378,5 +6418,54 @@ describe('a heading label', () => {
       .toEqual(['see-guide']);
     // An UNDEFINED label still keeps both halves, which is how it renders.
     expect([...headingAnchors('## See [guide][g]\n')]).toEqual(['see-guideg']);
+  });
+});
+
+describe('a heading slug', () => {
+  it('renders a code span without its boundary spaces', () => {
+    // CommonMark strips ONE leading and trailing space when a span's content
+    // begins and ends with one, so `## A ` foo ` B` anchors `a-foo-b`.
+    // Appending the raw capture recorded `a--foo--b`.
+    expect(headingSlug('A ` foo ` B')).toBe('a-foo-b');
+    // Content that is ENTIRELY spaces is the rule's own exception.
+    expect(headingSlug('a `  ` b')).toBe('a----b');
+    expect(headingSlug('A `x` B')).toBe('a-x-b');
+  });
+
+  it('keeps an escaped emphasis character as text', () => {
+    // `## \_foo` renders `_foo` and GitHub's id keeps the underscore.
+    // Unescaping before the boundary rule ran recorded `foo`.
+    expect(headingSlug('\\_foo')).toBe('_foo');
+    expect(headingSlug('foo\\_')).toBe('foo_');
+    // The intraword case this grew out of, and genuine emphasis, are as they were.
+    expect(headingSlug('API\\_FIELD')).toBe('api_field');
+    expect(headingSlug('API_FIELD')).toBe('api_field');
+    expect(headingSlug('_emphasis_')).toBe('emphasis');
+  });
+
+  it('strips only HTML the source actually wrote', () => {
+    // `## \<em>foo` and `## &lt;em&gt;foo` both render the characters
+    // `<em>foo`, whose id is `emfoo`. Stripping the tag-shaped run regardless
+    // of the escape, and after decoding, recorded `foo`.
+    expect(headingSlug('\\<em>foo')).toBe('emfoo');
+    expect(headingSlug('&lt;em&gt;foo')).toBe('emfoo');
+    // Real inline HTML is still markup; an autolink is still not a tag; a
+    // quoted attribute value may still contain `>`.
+    expect(headingSlug('Hello <em>world</em>')).toBe('hello-world');
+    expect(headingSlug('<https://example.com>')).toBe('httpsexamplecom');
+    expect(headingSlug('<span data-x="a>b">Hello</span>')).toBe('hello');
+  });
+
+  it('removes a comment from heading text rather than blanking it', () => {
+    // A slug does not collapse whitespace runs, so blanking a comment to keep
+    // offsets recorded `hello---------------real` where GitHub exposes
+    // `hello--real`. The Setext branch reread the raw line and did not mask
+    // at all, recording `hello----note---`.
+    expect([...headingAnchors('Hello <!-- note -->\n---\n')]).toEqual(['hello']);
+    expect([...headingAnchors('## Hello <!-- note --> Real\n')]).toEqual(['hello--real']);
+    // A comment BEFORE the `#` no longer pushes the heading past the
+    // three-column limit, so it is still a heading.
+    expect([...headingAnchors('<!-- x --> ## H\n')]).toEqual(['h']);
+    expect([...headingAnchors('Hello\nworld\n---\n')]).toEqual(['hello-world']);
   });
 });

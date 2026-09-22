@@ -3305,16 +3305,57 @@ const CODE_SPAN_RUN_RE = /(?<!`)(`+)(?!`)([\s\S]+?)(?<!`)\1(?!`)/g;
  * heading text and LITERAL characters inside a code span, so each runs per
  * part rather than over the whole heading.
  */
+// One complete HTML tag: a name, optional attributes whose quoted values may
+// contain `>`, and the close. An AUTOLINK is not a tag: `## <https://x>`
+// renders as the URL and derives a real anchor from it, so only a tag NAME is
+// matched, never a `<scheme:...>`.
+const HTML_TAG_RE = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\/?>/y;
+
+/**
+ * Inline HTML removed from heading text, escapes left as they are.
+ *
+ * An ESCAPED `<` opens nothing: CommonMark renders `## \<em>foo` as the
+ * literal text `<em>foo`, whose id is `emfoo`, and an unconditional
+ * substitution removed the tag-shaped run and recorded `foo` -- a working
+ * `#emfoo` link rejected and a nonexistent `#foo` accepted.
+ */
+function stripHeadingTags(s) {
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === '\\' && i + 1 < s.length) { out += s.slice(i, i + 2); i += 2; continue; }
+    HTML_TAG_RE.lastIndex = i;
+    const m = HTML_TAG_RE.exec(s);
+    if (m) { i = HTML_TAG_RE.lastIndex; continue; }
+    out += s[i];
+    i += 1;
+  }
+  return out;
+}
+
 function headingMarkup(part, refLabels) {
-  // An AUTOLINK is not a tag: `## <https://x>` renders as the URL and derives
-  // a real anchor from it, so only a tag NAME is stripped. Quoted attribute
-  // values may CONTAIN `>`, so they are walked rather than excluded.
-  const bare = decodeCharRefs(part.replace(
-    /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\/?>/g, ''));
+  // Tags BEFORE character references are decoded. A `<` that a reference
+  // PRODUCES is literal text, not markup: `## &lt;em&gt;foo` renders the
+  // characters `<em>foo` and anchors `emfoo`.
+  const bare = decodeCharRefs(stripHeadingTags(part));
   // See stripHeadingLinks: the destination is SCANNED rather than matched, so
   // parentheses inside it cannot end it early, and a DEFINED reference link
   // resolves to its visible label.
   return stripHeadingLinks(bare, refLabels);
+}
+
+/**
+ * A code span's contents as they RENDER.
+ *
+ * CommonMark strips one leading AND trailing space when the content begins
+ * and ends with one and is not all spaces, so `` ` foo ` `` renders `foo` and
+ * anchors `a-foo-b` rather than `a--foo--b`. Line endings inside a span
+ * render as spaces for the same reason the surrounding text's do.
+ */
+function codeSpanText(body) {
+  const flat = body.replace(/\r\n|\r|\n/g, ' ');
+  return (flat.length >= 2 && flat.startsWith(' ') && flat.endsWith(' ') && flat.trim())
+    ? flat.slice(1, -1) : flat;
 }
 
 export function headingSlug(heading, refLabels = new Set()) {
@@ -3327,7 +3368,7 @@ export function headingSlug(heading, refLabels = new Set()) {
   let at = 0;
   for (const mm of heading.matchAll(CODE_SPAN_RUN_RE)) {
     parts.push(headingMarkup(heading.slice(at, mm.index), refLabels));
-    parts.push(mm[2]);
+    parts.push(codeSpanText(mm[2]));
     at = mm.index + mm[0].length;
   }
   parts.push(headingMarkup(heading.slice(at), refLabels));
@@ -3352,8 +3393,18 @@ export function headingSlug(heading, refLabels = new Set()) {
   // recorded `apifield`: a valid link to `#api_field` rejected AND a
   // nonexistent `#apifield` accepted. The escape is markup either way, so
   // removing it before the classification loses nothing.
+  // An ESCAPED underscore is literal text and must survive the strip below.
+  // Unescaping first was right for the INTRAWORD case and wrong at a
+  // boundary: `## \_foo` renders `_foo`, whose GitHub id keeps the
+  // underscore, but the escape was gone by the time the boundary rule ran and
+  // the audit recorded `foo`. It is parked out of the pattern's reach
+  // instead, which leaves the intraword case exactly as it was. Only the
+  // underscore: an asterisk is stripped by the slug rule below whether or not
+  // the emphasis pass removed it, so protecting one would change no output.
+  s = s.replace(/\\_/g, '\u0000');
   s = unescapeMarkdown(s);
-  s = s.replace(/\*/g, '').replace(/(?<!\w)_+|_+(?!\w)/g, '').trim().toLowerCase();
+  s = s.replace(/\*/g, '').replace(/(?<!\w)_+|_+(?!\w)/g, '');
+  s = s.replace(/\u0000/g, '_').trim().toLowerCase();
   // `\w` is ASCII-only in JavaScript, so `## Café` produced `caf` -- a valid
   // link to `#café` read as a dead anchor while the nonexistent `#caf` was
   // accepted, wrong in both directions at once. `\p{L}\p{N}_` is what `\w`
@@ -3393,6 +3444,26 @@ export function stripEmphasis(line) {
 }
 
 /** Every anchor a document offers, duplicates numbered as GitHub numbers them. */
+/**
+ * The line with `spans` REMOVED rather than blanked.
+ *
+ * `maskSpans` keeps every other offset where it was, which is what a scanner
+ * reporting positions needs. A heading's SLUG is whitespace sensitive -- runs
+ * are not collapsed -- so blanking turned `## Hello <!-- note --> Real` into
+ * `hello---------------real` where GitHub exposes `hello--real`, and pushed a
+ * comment sitting before the `#` past the three-column limit so the heading
+ * stopped matching at all. Nothing downstream of this reads an offset.
+ */
+function dropSpans(line, spans) {
+  let out = '';
+  let at = 0;
+  for (const [lo, hi] of [...spans].sort((a, b) => a[0] - b[0])) {
+    if (lo > at) out += line.slice(at, lo);
+    at = Math.max(at, hi);
+  }
+  return out + line.slice(at);
+}
+
 export function headingAnchors(text) {
   const seen = new Map();
   const out = new Set();
@@ -3478,7 +3549,7 @@ export function headingAnchors(text) {
     // valid local link produced a gating dead-anchor finding. The prefix is
     // consumed for the heading test exactly as `fencedLines` and
     // `indentedCodeLines` consume it for theirs.
-    const line = maskSpans(raw, headingHidden.get(i) ?? [], ' ')
+    const line = dropSpans(raw, headingHidden.get(i) ?? [])
       .replace(BLOCKQUOTE_PREFIX_RE, '');
     // `## Install ##` renders as `Install`, and GitHub's anchor is `install`.
     // Passing `Install ##` to headingSlug recorded `install-`, so a valid link
@@ -3515,8 +3586,13 @@ export function headingAnchors(text) {
     // accepted. Joined with a space, which is how the soft break renders.
     const setextText = () => {
       const lo = setextStarts.get(i) ?? i;
+      // Each line read through the SAME comment mask the ATX branch applies.
+      // This branch rereads the raw text, so `Hello <!-- note -->` over `---`
+      // slugged `hello----note---`: the valid `#hello` fragment reported dead
+      // and an anchor the page does not expose accepted.
       const joined = lines.slice(lo, i + 1)
-        .map((ln) => ln.replace(BLOCKQUOTE_PREFIX_RE, '').trim()).join(' ');
+        .map((ln, k) => dropSpans(ln, headingHidden.get(lo + k) ?? [])
+          .replace(BLOCKQUOTE_PREFIX_RE, '').trim()).join(' ');
       return joined.trim().replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
     };
     const m = setext
@@ -4766,9 +4842,19 @@ export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
       // was untouched. A rename within a directory is atomic, so a failed
       // stamp leaves the original intact and the error tells the truth.
       const target = path.join(repo, w.doc);
-      const tmp = path.join(path.dirname(target), `.${path.basename(target)}.stamp-tmp`);
+      // A UNIQUE name, created EXCLUSIVELY. The symlink refusal above checks
+      // the document; it does not check this path, and `writeFileSync`
+      // follows a symlink found here -- so a checkout carrying
+      // `.README.md.stamp-tmp` as a link could have `--stamp` truncate a file
+      // anywhere writable and then rename the link itself into place as the
+      // document. `wx` is O_CREAT|O_EXCL, which fails on an existing path,
+      // symlink included; the suffix keeps a stale temp file from a
+      // hard-killed run from turning that refusal into a permanent one.
+      // Codex filed this as a P1.
+      const tmp = path.join(path.dirname(target),
+        `.${path.basename(target)}.${process.pid}-${Math.random().toString(36).slice(2, 10)}.stamp-tmp`);
       try {
-        fsImpl.writeFileSync(tmp, w.text);
+        fsImpl.writeFileSync(tmp, w.text, { flag: 'wx' });
         // The temp file is created with default permissions and then REPLACES
         // the original, so stamping a tracked executable Markdown file turned
         // it from mode 100755 to 100644 -- an unrelated diff, and a broken
