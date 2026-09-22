@@ -4318,6 +4318,87 @@ describe('a registry section ended by a Setext heading', () => {
   });
 });
 
+describe('a marker carrying two spellings of one field', () => {
+  it('is a duplicate however it is cased', () => {
+    // `**Owner:** Alice · **owner:** Bob` passed the duplicate count because
+    // it was case-SENSITIVE while the malformed-field filter beside it and
+    // `ownerOf` both read labels case-insensitively. The parser took Alice
+    // and `--stamp` then deleted Bob silently, so conflicting provenance was
+    // lost rather than reported and refused.
+    const line = '**Last reviewed:** 2026-01-01 · **Owner:** Alice · **owner:** Bob';
+    expect(checkMarkerDates('d.md', { date: '2026-01-01', scanned: null },
+      '2026-09-18', line).map((f) => f.detail))
+      .toEqual(['the marker carries 2 `Owner:` fields; they can disagree and '
+        + 'only the first is read']);
+    // One field is still one field.
+    expect(checkMarkerDates('d.md', { date: '2026-01-01', scanned: null },
+      '2026-09-18', '**Last reviewed:** 2026-01-01 · **Owner:** Alice')).toEqual([]);
+  });
+
+  it('and --stamp refuses it rather than picking one', () => {
+    const doc = '# T\n\n**Last reviewed:** 2026-01-01 · **Owner:** Alice '
+      + '· **owner:** Bob · **Last scanned:** 2026-01-01\n\nbody\n';
+    expect(stamp(doc, '2026-09-18', 'scanned', 'abc1234', false).action)
+      .toBe('skipped-duplicate-marker-field');
+  });
+});
+
+describe('two review markers in the opening section', () => {
+  it('stop --stamp rather than being half rewritten', () => {
+    // `findMarker` picks the first and the update path rewrote only that
+    // line, so `--stamp --verify` returned `updated` and exited successfully
+    // while leaving a second, contradictory date and SHA in place -- a
+    // document the same run had already reported as carrying duplicates. The
+    // INSERTION path has refused a misplaced marker for rounds on exactly
+    // this reasoning; the update path had no such check.
+    const two = '# T\n\n**Last reviewed:** 2026-01-01 · **Depth:** scanned '
+      + '· **Last scanned:** 2026-01-01\n**Last reviewed:** 2026-02-02 '
+      + '· **Depth:** scanned · **Last scanned:** 2026-02-02\n\nbody\n';
+    const res = stamp(two, '2026-09-18', 'scanned', 'abc1234', false);
+    expect(res.action).toBe('skipped-duplicate-marker');
+    expect(res.text).toBe(two);
+    // One marker is still updated, so this refuses a specific shape rather
+    // than switching the update path off.
+    const one = '# T\n\n**Last reviewed:** 2026-01-01 · **Depth:** scanned '
+      + '· **Last scanned:** 2026-01-01\n\nbody\n';
+    expect(stamp(one, '2026-09-18', 'scanned', 'abc1234', false).action)
+      .toBe('updated');
+  });
+});
+
+describe('a fragment written as a character reference', () => {
+  it('is the fragment, not part of the filename', () => {
+    // `&#35;` resolves to `#` when the link is constructed, so
+    // `[x](README.md&#35;tests)` gives the href `README.md#tests` and the
+    // browser splits there -- while the audit looked for a tracked file
+    // literally named `README.md#tests` and reported a gating dead link
+    // against one that exists. The caller's split consumes references as
+    // UNITS, deliberately, so it cannot see this one.
+    const target = 'docs-audit-frag-anchor.md';
+    fs.writeFileSync(target, '# Target\n\n## Tests\n\nbody\n');
+    try {
+      const ctxWith = linkCtx(['d.md', target]);
+      expect(checkDeadLinks('d.md', `[x](${target}&#35;tests)\n`, ctxWith)).toEqual([]);
+      // And the anchor is CHECKED, rather than merely skipped: a fragment
+      // naming nothing is still reported.
+      expect(checkDeadLinks('d.md', `[x](${target}&#35;gone)\n`, ctxWith)
+        .map((f) => f.check)).toEqual(['dead-anchor']);
+    } finally {
+      fs.unlinkSync(target);
+    }
+  });
+
+  it('and a BACKSLASH-escaped hash is left alone', () => {
+    // Whether CommonMark percent-encodes an escaped `#` is a question I have
+    // not put to a reference implementation, and two existing assertions say
+    // `[x](a\\#b.md)` targets the tracked `a#b.md`. The split is therefore on
+    // the decoded reference only -- which is why the decode happens in two
+    // steps: references, split, then escapes.
+    expect(checkDeadLinks('d.md', '[x](a\\#b.md)\n', linkCtx(['d.md', 'a#b.md'])))
+      .toEqual([]);
+  });
+});
+
 describe('tag-shaped text that is not a tag', () => {
   it('is left in the heading slug', () => {
     // `## A <span ???>B` renders the tag-shaped text LITERALLY and anchors

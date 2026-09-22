@@ -1497,10 +1497,16 @@ export function checkMarkerDates(doc, prev, today, line = null) {
   // the parser took the first value, and `--stamp` collapsed the duplicate
   // silently instead of requiring somebody to say which date is true.
   if (line !== null) {
+    // Case-INSENSITIVELY, as the filter above and `ownerOf` already read
+    // them. `**Owner:** Alice · **owner:** Bob` passed this count, the
+    // parser took Alice, and `--stamp` then deleted Bob silently -- so
+    // conflicting provenance was lost rather than reported and refused. The
+    // two halves of this function disagreeing about what a field label is
+    // is what made one of them reachable and the other not.
     const seen = new Map();
     for (const raw of line.split(DOT)) {
-      const s = raw.trim();
-      const field = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`));
+      const s = raw.trim().toLowerCase();
+      const field = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`.toLowerCase()));
       if (field) seen.set(field, (seen.get(field) ?? 0) + 1);
     }
     for (const [field, n] of seen) {
@@ -2869,8 +2875,21 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   if (prev && !prev.legacy) {
     const segs = lines[prev.idx].split(DOT).map((s) => s.trim()).filter(Boolean);
     const dup = OWNED_FIELDS.find(
-      (f) => segs.filter((s) => s.startsWith(`**${f}`)).length > 1);
+      (f) => segs.filter(
+        (s) => s.toLowerCase().startsWith(`**${f}`.toLowerCase())).length > 1);
     if (dup) return { text, action: 'skipped-duplicate-marker-field' };
+  }
+
+  // TWO valid markers in the opening section. `findMarker` picks the first
+  // and this path rewrites only that line, so `--stamp --verify` returned
+  // `updated` and exited successfully while leaving a second, contradictory
+  // date, owner and SHA in place -- a document the same run had already
+  // reported as carrying duplicate markers. The insertion path below has
+  // refused a misplaced marker for rounds on exactly this reasoning; the
+  // UPDATE path had no such check, so the refusal was a property of which
+  // branch the document happened to take.
+  if (prev && findMarkers(lines).length > 1) {
+    return { text, action: 'skipped-duplicate-marker' };
   }
 
   const owner = ownerOf(prev ? lines[prev.idx] : null) ?? 'TBD';
@@ -4164,6 +4183,9 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     if (/^[a-z][a-z0-9+.-]*:/i.test(tgt) || tgt.startsWith('//')
       || /^[a-z][a-z0-9+.-]*:/i.test(rendered) || rendered.startsWith('//')) return;
     let norm;
+    // A fragment the DESTINATION carried as a character reference, which the
+    // caller's reference-aware split could not separate.
+    let decodedFrag = null;
     if (!tgt) {
       norm = doc;
     } else {
@@ -4187,8 +4209,28 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // decoded, a gating dead link against a tracked file. Percent decoding
       // stays AFTER, because `%3F` is not a delimiter either: a file really
       // named with a percent-escaped `?` would otherwise lose its name.
-      const raw = decodeCharRefs(
-        unescapeMarkdown(tgt.replace(/^<(.*)>$/, '$1'))).split('?')[0];
+      // A decoded `#` IS the fragment delimiter. `&#35;` resolves to `#` when
+      // the link is constructed, so `[x](README.md&#35;tests)` gives the href
+      // `README.md#tests` and the browser splits there -- while this looked
+      // for a tracked file literally named `README.md#tests` and reported a
+      // gating dead link against one that exists. The caller's split consumes
+      // references as UNITS, deliberately, so it cannot see this one; the
+      // split has to happen after decoding.
+      //
+      // Only a reference, not a BACKSLASH escape. `[x](a\#b.md)` is asserted
+      // elsewhere to target the tracked `a#b.md`, and whether CommonMark
+      // percent-encodes that `#` is a question I have not put to a reference
+      // implementation -- so the escape is left alone rather than changed on
+      // an argument. That is why decoding happens in two steps here: the
+      // references first, the split, then the escapes.
+      const decoded = decodeCharRefs(tgt.replace(/^<(.*)>$/, '$1'));
+      let cut = -1;
+      for (let k = 0; k < decoded.length; k += 1) {
+        if (decoded[k] === '#' && !isEscaped(decoded, k)) { cut = k; break; }
+      }
+      if (cut !== -1) decodedFrag = decoded.slice(cut + 1) || null;
+      const raw = unescapeMarkdown(
+        cut === -1 ? decoded : decoded.slice(0, cut)).split('?')[0];
       // `100%-coverage.md` is a literal percent, and decodeURIComponent throws
       // a plain URIError on it -- a stack trace and exit 1, the status
       // reserved for documentation findings. An undecodable destination is
@@ -4229,7 +4271,8 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // admitted a round ago, a tracked `guide.markdown` or `README.MD` passed
     // the path check and never reached anchorsOf, so `[x](guide.markdown#gone)`
     // let a broken anchor through -- my own regression, one gate behind.
-    if (frag && isMarkdownPath(norm)) {
+    const wantFrag = frag ?? decodedFrag;
+    if (wantFrag && isMarkdownPath(norm)) {
       const have = anchorsOf(norm);
       // Decoded, exactly as the destination path above is. A link may
       // percent-encode non-ASCII -- `[Café](#caf%C3%A9)` -- while
@@ -4246,7 +4289,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // uses: escapes, then references, then percent-decoding, which is the
       // browser's and comes last.
       let wanted;
-      const rendered = decodeCharRefs(unescapeMarkdown(frag));
+      const rendered = decodeCharRefs(unescapeMarkdown(wantFrag));
       try {
         wanted = decodeURIComponent(rendered);
       } catch {
@@ -4263,7 +4306,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // exactly since it was written.
       if (have && !have.has(wanted)) {
         out.push({ check: 'dead-anchor', doc, line: lineNo, severity: 'P2',
-          detail: `${anchorWhat}#${frag}: the target has no such heading` });
+          detail: `${anchorWhat}#${wantFrag}: the target has no such heading` });
       }
     }
   };
@@ -5099,6 +5142,10 @@ const STAMP_REFUSALS = {
   'skipped-misplaced-marker': 'a marker outside the first paragraph after the H1; '
     + 'move it there rather than adding a second',
   'skipped-legacy-content': 'a legacy marker carrying prose that rewriting would delete',
+  'skipped-duplicate-marker-field': 'a marker repeating an owned field; say which '
+    + 'value is true rather than letting a rewrite pick one',
+  'skipped-duplicate-marker': 'two review markers in the opening section; rewriting '
+    + 'one would leave the other contradicting it',
 };
 
 /**
