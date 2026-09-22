@@ -331,7 +331,7 @@ function mdLinkOpen(text, pos) {
 // `a>b.md`, and stopping at the escaped `>` left the candidate unmatched
 // altogether, so a missing target produced no finding. Consumed as a unit
 // before the fragment split, so `\#` stays in the path as well.
-const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|\\[^\r\n]|[^<>#\\\r\n])*)(?:#([^>\s]+))?>/y;
+const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|\\[^\r\n]|[^<>#\\\r\n])*)(?:#([^>\s]*))?>/y;
 // One atom of a BARE destination. A character reference is matched as a UNIT
 // before the fragment split, so the `#` inside `&#38;` is not read as the
 // separator: `[x](foo&#38;bar.md)` renders as a link to `foo&bar.md` and was
@@ -345,7 +345,13 @@ const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|\\[^\r\n]|[^<>#\\\r\n])*)(?
 // finding for prose no reader can click. Codex filed it on the Python twin
 // (stocks#1121).
 const MD_DEST_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\[!-/:-@[-`{-~]|[^()#\s]/y;
-const MD_FRAG_RE = /[^)\s]+/y;
+// `*`, not `+`. An EMPTY fragment is legal: `[x](missing.md#)` renders a link
+// the browser follows to the top of `missing.md`, and requiring one character
+// after the `#` meant the whole candidate did not match -- so the missing
+// target passed the audit clean. The anchor check below is guarded on the
+// fragment being non-empty, so an empty one asks about the PATH only, which
+// is what it means. Codex filed it on the Python twin (stocks#1121).
+const MD_FRAG_RE = /[^)\s]*/y;
 // A TITLE may contain its own delimiter when the delimiter is escaped:
 // `[x](missing.md "a \" quote")` is a valid link. Stopping at the escaped
 // quote left the whole candidate unmatched, so the missing destination

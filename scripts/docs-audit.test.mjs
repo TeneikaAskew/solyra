@@ -3308,6 +3308,42 @@ describe('a link label with nested brackets', () => {
   });
 });
 
+describe('a link with an EMPTY fragment', () => {
+  const ctx = (extra = []) => ({
+    tracked: new Set(['d.md', ...extra]), topLevelDirs: new Set(), rootFiles: new Set(),
+    knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+  });
+  const checks = (doc, extra) => checkDeadLinks('d.md', doc, ctx(extra)).map((f) => f.check);
+
+  it('is still a link, so its PATH is still checked', () => {
+    // `[x](missing.md#)` renders a link the browser follows to the top of
+    // `missing.md`. Requiring one character after the `#` meant the whole
+    // candidate did not match, so the missing target passed clean -- the
+    // hiding direction, out of a quantifier.
+    expect(checks('[x](missing.md#)\n')).toEqual(['dead-link']);
+    // The ANGLE form needs its own assertion, and on the DETAIL rather than
+    // the check: with `+` there it still reported a dead link, but for the
+    // path `<missing.md` -- the angle branch failed, the bare branch took
+    // over, and the finding named a path with a bracket in it. A test on the
+    // check alone passed under that mutation and proved nothing.
+    expect(checkDeadLinks('d.md', '[x](<missing.md#>)\n', ctx()).map((f) => f.detail))
+      .toEqual(['relative link -> missing.md']);
+    // And a destination with a SPACE is the whole reason the angle form
+    // exists: with `+` the candidate did not match at all there.
+    expect(checkDeadLinks('d.md', '[x](<missing file.md#>)\n', ctx()).map((f) => f.detail))
+      .toEqual(['relative link -> missing file.md']);
+    expect(checks('[x](<there file.md#>)\n', ['there file.md'])).toEqual([]);
+    // A tracked target with an empty fragment is NOT a finding: an empty
+    // fragment asks about the path only, so there is no anchor to miss.
+    expect(checks('[x](there.md#)\n', ['there.md'])).toEqual([]);
+    // The shapes that already worked.
+    expect(checks('[x](missing.md#sec)\n')).toEqual(['dead-link']);
+    expect(checks('[x](missing.md)\n')).toEqual(['dead-link']);
+    // A bare `#` is the top of THIS page and names no target at all.
+    expect(checks('[x](#)\n')).toEqual([]);
+  });
+});
+
 describe('a backtick hidden in an HTML comment', () => {
   const claim = (text) => checkClaims(
     [{ doc: 'd.md', pattern: 'There are (\\d+) routes', derivation: 'grep-files src x' }],
