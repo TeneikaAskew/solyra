@@ -17,6 +17,7 @@ import {
   globSpecificity,
   headingIs,
   isCodeIndented,
+  indentColumns,
   commentSpans,
   isSetextUnderline,
   markerShapedLines,
@@ -1122,10 +1123,13 @@ describe('workingTreeFiles', () => {
     // docs/DOC_REGISTRY.md itself, on the branch that introduced it -- and
     // keeps a branch-deleted one, which readFileSync then aborts on.
     const calls = [];
+    // NUL-separated, because the command now passes `-z`: this stub stands in
+    // for git's wire format, and that format changed with the flag. See
+    // "a tracked path with a non-ASCII byte" for why the flag is there.
     const exec = (_c, args) => {
       calls.push(args);
-      if (args.includes('--deleted')) return 'docs/gone.md\n';
-      return 'README.md\ndocs/DOC_REGISTRY.md\ndocs/gone.md\nsrc/a.ts\n';
+      if (args.includes('--deleted')) return 'docs/gone.md\0';
+      return 'README.md\0docs/DOC_REGISTRY.md\0docs/gone.md\0src/a.ts\0';
     };
     const files = workingTreeFiles({ exec });
     expect(calls.every((a) => a[0] === 'ls-files')).toBe(true);
@@ -4762,5 +4766,125 @@ describe('a Setext underline', () => {
     // rule, not a ban on underlines near lists.
     expect(isSetextUnderline(['Title', '---'], 1, new Set())).toBe(true);
     expect(isSetextUnderline(['- Example', '  ---'], 1, new Set())).toBe(true);
+  });
+});
+
+
+// ── round 36 (03fbbe9) ──────────────────────────────────────────────────────
+
+describe('a hash-prefixed line that is not a heading', () => {
+  it('does not end a registry section', () => {
+    // `#123 remains open` renders as ordinary prose -- a hash run needs
+    // whitespace after it -- and it switched section mode off, so every
+    // declaration below it was silently dropped. A row that vanishes takes its
+    // class, its code paths and its region ownership with it, and nothing
+    // reports the skip.
+    const rg = '## Registry\n\n| Class | Path glob | Declared code paths |\n'
+      + '|---|---|---|\n| D | docs/a.md | src |\n\n#123 remains open\n\n'
+      + '| D | docs/b.md | src |\n';
+    expect(loadRegistry(rg).map((r) => r.glob)).toEqual(['docs/a.md', 'docs/b.md']);
+    // A REAL heading still ends it, which is what the gate is for.
+    const ended = '## Registry\n\n| Class | Path glob | Declared code paths |\n'
+      + '|---|---|---|\n| D | docs/a.md | src |\n\n## Examples\n\n'
+      + '| D | docs/b.md | src |\n';
+    expect(loadRegistry(ended).map((r) => r.glob)).toEqual(['docs/a.md']);
+  });
+});
+
+describe('indentation mixing spaces and a tab', () => {
+  it('is measured in columns', () => {
+    // A tab counted as four only in column zero and as nothing elsewhere, so
+    // ` \t[x](missing.md)` measured 1 -- CommonMark advances the tab to column
+    // 4 and renders the line as code, so the link and blocker scans inspected
+    // an example as live prose and could emit a gating finding.
+    expect(indentColumns(' \tx')).toBe(4);
+    expect(indentColumns('\tx')).toBe(4);
+    expect(indentColumns('   x')).toBe(3);
+    expect(isCodeIndented(' \tx')).toBe(true);
+    expect([...indentedCodeLines(['# T', '', ' \t[x](missing.md)', ''])]).toEqual([2]);
+    // Three spaces is still a paragraph, not code.
+    expect(isCodeIndented('   x')).toBe(false);
+  });
+});
+
+describe('an H1 inside a blockquote', () => {
+  it('is the document H1', () => {
+    // `> # Quoted title` RENDERS as an H1 and headingAnchors already reads it
+    // that way, but h1Index tested the raw line -- so the document was
+    // reported as having no H1 while --stamp answered `skipped-no-h1`, leaving
+    // the command unable to repair its own finding.
+    expect(h1Index(['> # Quoted title', '', 'body'])).toBe(0);
+    expect([...headingAnchors('> # Quoted title\n')]).toEqual(['quoted-title']);
+    // An unquoted document is unaffected, and a quoted heading hidden in a
+    // fence is still not the H1.
+    expect(h1Index(['# Real', '', 'body'])).toBe(0);
+    expect(h1Index(['```', '> # Fake', '```', '', '# Real'])).toBe(4);
+  });
+});
+
+describe('an inventory marker shown as an inline example', () => {
+  it('is not a delimiter', () => {
+    // Both examples were read as real delimiters, so every hand-written line
+    // between them was marked generated: findings misrouted, and with
+    // `exhaustive` the unowned-content finding suppressed outright.
+    const doc = ['<!-- a -->', '`<!-- inventory:x:start -->`', 'hand written prose',
+      '`<!-- inventory:x:end -->`'].join('\n');
+    expect([...ownedLines(doc, ['inventory:*']).owned]).toEqual([]);
+    // Real delimiters still own their block.
+    const real = ['<!-- inventory:x:start -->', 'generated', '<!-- inventory:x:end -->']
+      .join('\n');
+    expect([...ownedLines(real, ['inventory:*']).owned]).toEqual([1, 2, 3]);
+  });
+});
+
+describe('a tracked path with a non-ASCII byte', () => {
+  it('is read without git quoting', () => {
+    // Under the default core.quotePath, `docs/café.md` arrives as
+    // `"docs/caf\303\251.md"`, which no longer ends `.md` -- so documentSet
+    // dropped it and the document got no classification, marker, link or
+    // blocker check at all, with nothing reporting the skip.
+    const calls = [];
+    const exec = (_c, a) => {
+      calls.push(a.join(' '));
+      return a.includes('--deleted') ? '' : 'docs/café.md\u0000README.md\u0000';
+    };
+    expect([...workingTreeFiles({ exec })]).toEqual(['docs/café.md', 'README.md']);
+    expect(calls.every((a) => a.includes('-z'))).toBe(true);
+    // A deleted path is still removed, which is what the second read is for.
+    const exec2 = (_c, a) => (a.includes('--deleted')
+      ? 'README.md\u0000' : 'docs/a.md\u0000README.md\u0000');
+    expect([...workingTreeFiles({ exec: exec2 })]).toEqual(['docs/a.md']);
+  });
+});
+
+describe('a link inside a code span that crosses lines', () => {
+  it('is an example, not a citation', () => {
+    // On an interior physical line of the span, codeSpans sees neither
+    // delimiter, so a literal link inside the example was scanned as live and
+    // emitted a gating dead-link finding.
+    const ctx = linkContext(new Set(['d.md']), new Set(), []);
+    expect(checkDeadLinks('d.md', '`open\n[x](missing.md)\nclose`\n', ctx,
+      { backtickedPaths: false })).toEqual([]);
+    expect(checkDeadLinks('d.md', '`open\n<a href="missing.md">g</a>\nclose`\n', ctx,
+      { backtickedPaths: false })).toEqual([]);
+    // An unwrapped broken link is still reported.
+    expect(checkDeadLinks('d.md', '[x](missing.md)\n', ctx,
+      { backtickedPaths: false }).map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('a link label with nested brackets', () => {
+  it('is still a link', () => {
+    // CommonMark allows balanced brackets in link text; the label branch
+    // stopped at the first `]` and matched nothing at all, so a broken
+    // rendered link was reported clean.
+    const ctx = linkContext(new Set(['d.md']), new Set(), []);
+    expect(checkDeadLinks('d.md', '[outer [inner]](missing.md)\n', ctx,
+      { backtickedPaths: false }).map((f) => f.check)).toEqual(['dead-link']);
+    // An ordinary label and an escaped bracket both still parse.
+    expect(checkDeadLinks('d.md', '[plain](missing.md)\n', ctx,
+      { backtickedPaths: false }).map((f) => f.check)).toEqual(['dead-link']);
+    expect(checkDeadLinks('d.md', '[esc\\]aped](missing.md)\n', ctx,
+      { backtickedPaths: false }).map((f) => f.check)).toEqual(['dead-link']);
   });
 });

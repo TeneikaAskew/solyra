@@ -69,6 +69,8 @@ const OWNED_FIELDS = ['Last reviewed:', 'Depth:', 'Against:', 'Last scanned:', '
 // --stamp returned `skipped-no-h1` and the missing-marker finding it reports
 // could never be repaired by the command that reports it.
 const H1_RE = /^ {0,3}#\s+\S/;
+// CommonMark advances a tab to the next multiple of four.
+const TAB_STOP = 4;
 // Whole cues, not substrings. An unbounded `blocking|blocked by|...` matched
 // inside `nonblocking` and `not blocked by`, so prose stating an issue is NOT
 // a blocker produced a P1 against it once it closed -- a finding whose own
@@ -205,8 +207,13 @@ export function isEscaped(text, i) {
   return n % 2 === 1;
 }
 
+// The label admits ONE level of nesting and escapes: CommonMark allows
+// balanced brackets in link text, and `[outer [inner]](missing.md)` stopped at
+// the first `]` and matched nothing at all -- so a broken rendered link was
+// reported clean. One level, not arbitrary depth: a recursive shape is not
+// expressible here, and deeper nesting does not occur in this corpus.
 const MD_LINK_RE =
-  /\[[^\]]*\]\(\s*(?:<([^<>#]*)(?:#([^>\s]+))?>|((?:[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+  /\[(?:\\.|[^\\\[\]]|\[(?:\\.|[^\\\[\]])*\])*\]\(\s*(?:<([^<>#]*)(?:#([^>\s]+))?>|((?:[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
 // slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
 // which the living docs cite constantly -- could never produce a dead-path
@@ -348,9 +355,15 @@ export function resolveBaseRef(candidates = BASE_REF_CANDIDATES, { spawn = spawn
  * it -- and kept a branch-deleted one for readFileSync to abort on.
  */
 export function workingTreeFiles({ exec = run } = {}) {
-  const cached = exec('git', ['ls-files', '--cached']).trim().split('\n').filter(Boolean);
-  const deleted = new Set(exec('git', ['ls-files', '--deleted']).trim().split('\n').filter(Boolean));
-  return new Set(cached.filter((p) => !deleted.has(p)));
+  // `-z`, because git C-quotes any path with a non-ASCII byte under the
+  // default core.quotePath: `docs/café.md` arrives as `"docs/caf\303\251.md"`,
+  // which no longer ends `.md`, so documentSet dropped it and the document got
+  // no classification, marker, link or blocker check at all -- with nothing
+  // reporting that it had been skipped. The Python twin has read these
+  // NUL-separated since stocks#1121.
+  const paths = (a) => exec('git', ['ls-files', '-z', ...a]).split('\0').filter(Boolean);
+  const deleted = new Set(paths(['--deleted']));
+  return new Set(paths(['--cached']).filter((p) => !deleted.has(p)));
 }
 
 /**
@@ -475,7 +488,12 @@ export function loadRegistry(text) {
       inRegistry = false;
       continue;
     }
-    if (line.startsWith('#')) {
+    // ATX SYNTAX, not a leading '#'. A hash run needs whitespace or an end of
+    // line after it to render as a heading, so `#123 remains open` is ordinary
+    // prose -- and it switched section mode off, silently dropping every
+    // declaration below it. A row that vanishes takes its class, its code
+    // paths and its region ownership with it, and nothing reports the skip.
+    if (/^#{1,6}(?:\s|$)/.test(line)) {
       // EXACTLY, not by prefix: a later `## Registry examples` section
       // re-entered registry mode and parsed its illustrative table as live
       // classification rules -- visible explanatory prose becoming executable
@@ -834,8 +852,16 @@ export function ownedLines(text, specs) {
       hit = lines.length > 0;
     } else if (spec === 'inventory:*') {
       const openAt = new Map();
-      lines.forEach((line, i) => {
+      const inlineSpans = codeSpanLines(lines);
+      lines.forEach((rawLine, i) => {
         if (fencedHere.has(i)) return;
+        // A document DEMONSTRATING the syntax inline had both examples read as
+        // real delimiters, so every hand-written line between them was marked
+        // generated: findings misrouted, and with `exhaustive` the
+        // unowned-content finding suppressed outright. The `mark:` and
+        // `fence:` scanners already mask spans; this one did not.
+        const line = maskSpans(rawLine,
+          [...codeSpans(rawLine), ...(inlineSpans.get(i) ?? [])]);
         const m = INVENTORY_RE.exec(line);
         if (!m) return;
         if (m[2] === 'start') {
@@ -1334,7 +1360,12 @@ export function indentedCodeLines(lines) {
     // and the two views would disagree about where a block starts.
     const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
     if (!line.trim()) { blankSeen = true; continue; }
-    const indent = line.startsWith('\t') ? 4 : line.length - line.replace(/^ +/, '').length;
+    // COLUMNS, with tab stops. A tab only in column zero counted as four and
+    // anything else as its space count, so ` \t[x](missing.md)` measured 1 --
+    // CommonMark advances the tab to column 4 and renders the line as code, so
+    // the link and blocker scans inspected an example as live prose and could
+    // emit a gating finding from a document's own teaching material.
+    const indent = indentColumns(line);
     if (inCode && indent >= floor) { out.add(i); continue; }
     inCode = false;
     if (indent >= floor && (blankSeen || lastWasHeading)) {
@@ -1738,8 +1769,18 @@ export function commentedLines(lines) {
  * provenance and `--stamp` inserted a SECOND marker while the visible
  * original stayed put.
  */
+export function indentColumns(line) {
+  let col = 0;
+  for (const ch of line ?? '') {
+    if (ch === ' ') col += 1;
+    else if (ch === '\t') col += TAB_STOP - (col % TAB_STOP);
+    else break;
+  }
+  return col;
+}
+
 export function isCodeIndented(line) {
-  return line ? /^(?:\t| {4,})/.test(line) : false;
+  return line ? indentColumns(line) >= 4 : false;
 }
 
 /**
@@ -1865,7 +1906,14 @@ export function h1Index(lines) {
   const hiddenSpans = commentSpans(lines);
   for (let i = 0; i < lines.length; i += 1) {
     if (fenced.has(i)) continue;
-    if (H1_RE.test(maskSpans(lines[i], hiddenSpans.get(i) ?? []))) return i;
+    // The blockquote container is stripped first: `> # Quoted title` RENDERS
+    // as an H1 and headingAnchors already reads it that way, but this tested
+    // the raw line -- so such a document was reported as having no H1 while
+    // --stamp answered `skipped-no-h1`, leaving the command unable to repair
+    // its own finding. The mask is applied first so offsets still line up.
+    const bare = maskSpans(lines[i], hiddenSpans.get(i) ?? [])
+      .replace(BLOCKQUOTE_PREFIX_RE, '');
+    if (H1_RE.test(bare)) return i;
     // Setext level one (`Title` over `===`). Without it the audit reported a
     // missing marker on such a document while --stamp answered
     // `skipped-no-h1`, so the command could not repair its own finding.
@@ -2786,6 +2834,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // comments and code spans are excluded per span, exactly as the Markdown
   // pass below excludes them.
   const rawTextLines = rawHtmlBlockLines(lines, { rawTextOnly: true });
+  const wrappedCodeSpans = codeSpanLines(lines);
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
     // Spans a backticked citation occupies purely as a Markdown link's LABEL.
@@ -2807,7 +2856,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // over a document's own syntax examples. Only THIS pass is masked -- the
     // backtick pass below needs code spans, because a backticked path IS its
     // subject. The Python twin masks the same way (stocks#1121).
-    const codeHere = codeSpans(line);
+    // Wrapped spans too: on an interior physical line of a span that crosses
+    // line breaks, codeSpans sees neither delimiter, so a literal
+    // `[x](missing.md)` or `<a href="missing.md">` inside the example was
+    // scanned as a live link and emitted a gating dead-link finding. The
+    // blocker and comment scanners already read these ranges.
+    const codeHere = [...codeSpans(line), ...(wrappedCodeSpans.get(i) ?? [])];
     const hiddenHere = commentedSpans.get(i) ?? [];
     for (const m of line.matchAll(MD_LINK_RE)) {
       // An ESCAPED opening bracket renders as literal text, so a document
@@ -3032,7 +3086,12 @@ export function loadClaims(text) {
       inClaims = false;
       continue;
     }
-    if (line.startsWith('#')) {
+    // ATX SYNTAX, not a leading '#'. A hash run needs whitespace or an end of
+    // line after it to render as a heading, so `#123 remains open` is ordinary
+    // prose -- and it switched section mode off, silently dropping every
+    // declaration below it. A row that vanishes takes its class, its code
+    // paths and its region ownership with it, and nothing reports the skip.
+    if (/^#{1,6}(?:\s|$)/.test(line)) {
       // Exactly, for the reason given at the registry reader: `## Claims
       // methodology` is documentation about the mechanism, not claims.
       inClaims = headingIs(line, CLAIMS_HEADING);
@@ -3561,8 +3620,14 @@ export function main(argv) {
   // path deleted on the branch is still recognised as this repo's. Falls back
   // to baseRef in a checkout with no main, where there is no history to read.
   const historyRef = resolveBaseRef(HISTORY_REF_CANDIDATES);
+  // `-z` here too, for the same quoting reason as workingTreeFiles above. Not
+  // in the report Codex filed, which named only that one, but it is the same
+  // defect: a C-quoted non-ASCII path does not compare equal to the decoded
+  // spelling, so a document that exists on the history ref would look
+  // branch-new and the cross-repo path rules would read the wrong answer.
   const baseTracked = new Set(
-    run('git', ['ls-tree', '-r', historyRef, '--name-only']).trim().split('\n'));
+    run('git', ['ls-tree', '-r', '-z', historyRef, '--name-only'])
+      .split('\0').filter(Boolean));
   const docs = documentSet(tracked, registry);
 
   let states;
