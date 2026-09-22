@@ -6344,3 +6344,39 @@ describe('a case-variant Owner field', () => {
       .toEqual(['**depth:** verified']);
   });
 });
+
+describe('an inline link destination', () => {
+  it('nests parentheses to any depth', () => {
+    // `docs/a(b(c(d))).md` is a destination CommonMark resolves, and a
+    // fixed-depth alternative could not match such a link at all -- so a
+    // deleted target spelled that way produced no finding.
+    for (const dest of ['docs/a(b).md', 'docs/a(b(c)).md', 'docs/a(b(c(d))).md']) {
+      expect(checkDeadLinks('d.md', `# T\n\n[x](${dest})\n`,
+        linkCtx(['d.md'])).map((f) => f.detail)).toEqual([`relative link -> ${dest}`]);
+    }
+    // An escaped hash stays in the PATH; a character reference is a unit.
+    expect(checkDeadLinks('d.md', '# T\n\n[x](a\\#b.md)\n',
+      linkCtx(['d.md', 'a#b.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '# T\n\n[x](foo&#38;bar.md)\n',
+      linkCtx(['d.md', 'foo&bar.md']))).toEqual([]);
+    // The angle form still admits a space, and a title still closes the link.
+    expect(checkDeadLinks('d.md', '# T\n\n[x](<docs/my guide.md>)\n',
+      linkCtx(['d.md', 'docs/my guide.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '# T\n\n[x](docs/g.md "title")\n',
+      linkCtx(['d.md'])).map((f) => f.detail)).toEqual(['relative link -> docs/g.md']);
+  });
+});
+
+describe('a heading label', () => {
+  it('reads the two-line reference definition form', () => {
+    // `[g]:` over `  guide.md` defines `g`, so `## See [guide][g]` renders
+    // anchored `see-guide`. Reading only the single-line form recorded
+    // `see-guideg` and reported a working fragment link dead.
+    expect([...headingAnchors('[g]:\n  guide.md\n\n## See [guide][g]\n')])
+      .toEqual(['see-guide']);
+    expect([...headingAnchors('[g]: guide.md\n\n## See [guide][g]\n')])
+      .toEqual(['see-guide']);
+    // An UNDEFINED label still keeps both halves, which is how it renders.
+    expect([...headingAnchors('## See [guide][g]\n')]).toEqual(['see-guideg']);
+  });
+});

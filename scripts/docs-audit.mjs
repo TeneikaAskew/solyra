@@ -226,18 +226,99 @@ export function isEscaped(text, i) {
   return n % 2 === 1;
 }
 
-// A character reference is matched as a UNIT before the fragment split, so
-// the `#` inside `&#38;` is not read as the separator: `[x](foo&#38;bar.md)`
-// renders as a link to `foo&bar.md` and was split into the path `foo&` and
-// the fragment `38;bar.md`, reporting a tracked file dead. decodeCharRefs
-// runs downstream and cannot help a split that already happened.
+// A Markdown inline link, scanned rather than matched by one pattern. The
+// destination may nest parentheses to ANY depth -- `docs/a(b(c(d))).md` is a
+// valid destination CommonMark resolves -- and a fixed-depth alternative
+// could not match such a link at all, so a deleted target spelled that way
+// produced no finding. JavaScript regexes have no recursion, so the balance
+// is walked with the same `balancedClose` the heading-link stripper uses; one
+// scanner, so the depth limit cannot come back in one caller and not another.
+//
 // The label admits ONE level of nesting and escapes: CommonMark allows
 // balanced brackets in link text, and `[outer [inner]](missing.md)` stopped at
 // the first `]` and matched nothing at all -- so a broken rendered link was
-// reported clean. One level, not arbitrary depth: a recursive shape is not
-// expressible here, and deeper nesting does not occur in this corpus.
-const MD_LINK_RE =
-  /\[(?:\\.|[^\\\[\]]|\[(?:\\.|[^\\\[\]])*\])*\]\(\s*(?:<((?:&#?[0-9A-Za-z]{1,32};|[^<>#\r\n])*)(?:#([^>\s]+))?>|((?:&#?[0-9A-Za-z]{1,32};|[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+// reported clean. One level, not arbitrary depth: deeper nesting in link TEXT
+// does not occur in this corpus, and the destination is where the depth
+// mattered.
+const MD_LINK_OPEN_RE = /\[(?:\\.|[^\\\[\]]|\[(?:\\.|[^\\\[\]])*\])*\]\(\s*/g;
+// `<...>` is a distinct destination form: it is how CommonMark writes a
+// destination containing a space, and the bare form rejects whitespace. NO
+// line endings -- CommonMark forbids a newline there, so `[x](<missing\n.md>)`
+// is literal text.
+const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|[^<>#\r\n])*)(?:#([^>\s]+))?>/y;
+// One atom of a BARE destination. A character reference is matched as a UNIT
+// before the fragment split, so the `#` inside `&#38;` is not read as the
+// separator: `[x](foo&#38;bar.md)` renders as a link to `foo&bar.md` and was
+// split into the path `foo&` and the fragment `38;bar.md`. An escaped hash is
+// part of the PATH for the same reason.
+const MD_DEST_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\.|[^()#\s]/y;
+const MD_FRAG_RE = /[^)\s]+/y;
+const MD_LINK_TAIL_RE = /(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/y;
+
+/**
+ * End of the balanced bare destination starting at `i`.
+ *
+ * A parenthesised run is consumed whole, however deeply it nests. CommonMark
+ * forbids ASCII whitespace anywhere in an unbracketed destination, inside the
+ * parentheses included, so a run carrying any is not part of it.
+ */
+function bareDestination(text, i) {
+  let j = i;
+  while (j < text.length) {
+    MD_DEST_ATOM_RE.lastIndex = j;
+    const m = MD_DEST_ATOM_RE.exec(text);
+    if (m) { j = MD_DEST_ATOM_RE.lastIndex; continue; }
+    if (text[j] === '(') {
+      const k = balancedClose(text, j);
+      if (k === -1 || /\s/.test(text.slice(j, k))) return j;
+      j = k;
+      continue;
+    }
+    break;
+  }
+  return j;
+}
+
+/**
+ * Every inline link in `text`, left to right, shaped like a RegExp match:
+ * `[full, btarget, bfrag, target, frag]` with `.index`.
+ *
+ * A failed completion restarts one character past the opening `[` rather than
+ * past the whole candidate, which is what a single pattern's backtracking did.
+ */
+function* mdLinks(text) {
+  let pos = 0;
+  while (pos < text.length) {
+    MD_LINK_OPEN_RE.lastIndex = pos;
+    const opening = MD_LINK_OPEN_RE.exec(text);
+    if (!opening) return;
+    let at = MD_LINK_OPEN_RE.lastIndex;
+    let btarget; let bfrag; let target; let frag;
+    MD_LINK_ANGLE_RE.lastIndex = at;
+    const angle = MD_LINK_ANGLE_RE.exec(text);
+    if (angle) {
+      [, btarget, bfrag] = angle;
+      at = MD_LINK_ANGLE_RE.lastIndex;
+    } else {
+      const stop = bareDestination(text, at);
+      target = text.slice(at, stop);
+      at = stop;
+      if (text[at] === '#') {
+        MD_FRAG_RE.lastIndex = at + 1;
+        const f = MD_FRAG_RE.exec(text);
+        if (f) { [frag] = f; at = MD_FRAG_RE.lastIndex; }
+      }
+    }
+    MD_LINK_TAIL_RE.lastIndex = at;
+    const tail = MD_LINK_TAIL_RE.exec(text);
+    if (!tail) { pos = opening.index + 1; continue; }
+    const end = MD_LINK_TAIL_RE.lastIndex;
+    const out = [text.slice(opening.index, end), btarget, bfrag, target, frag];
+    out.index = opening.index;
+    yield out;
+    pos = end;
+  }
+}
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
 // slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
 // which the living docs cite constantly -- could never produce a dead-path
@@ -2004,7 +2085,7 @@ const THEMATIC_BREAK_RE = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*
  */
 export function splitOutsideRefs(text, delim) {
   // A backslash ESCAPE is a unit as well as a character reference, which is
-  // how MD_LINK_RE's destination class already reads both: `[g]: a\#b.md`
+  // how the inline-link destination scan already reads both: `[g]: a\#b.md`
   // targets the tracked `a#b.md`, and splitting at the `#` inside the escape
   // reported the path `a\` dead. The escape alternative comes first so a
   // `\&` is consumed as the escape it is. Parity with the Python twin
@@ -3362,9 +3443,25 @@ export function headingAnchors(text) {
     if (fenced.has(i)) return;
     const body = raw.replace(BLOCKQUOTE_PREFIX_RE, '')
       .replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
-    const d = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*\S/.exec(body);
+    let d = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*\S/.exec(body);
+    // The destination may sit on the FOLLOWING line. `[g]:` over `  guide.md`
+    // defines `g`, so `## See [guide][g]` renders anchored `see-guide` --
+    // and reading only the single-line form recorded `see-guideg` and
+    // reported a working fragment link dead. The dead-link scan has read both
+    // forms since it was raised; this collector read one, which is the same
+    // two-halves shape as the block-start rule it sits beside.
+    let last = i;
+    if (!d) {
+      const head = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*$/.exec(body);
+      const j = i + 1;
+      if (head && j < lines.length && !fenced.has(j)
+          && /^[ \t]*\S/.test(lines[j].replace(BLOCKQUOTE_PREFIX_RE, ''))) {
+        d = head;
+        last = j;
+      }
+    }
     if (!d || !(defStarts.has(i) || defSeen.has(i - 1))) return;
-    defSeen.add(i);
+    defSeen.add(last);
     refLabels.add(refKey(d[1]));
   });
   // A comment INSIDE a rendered heading is not part of its text. The blanket
@@ -3584,7 +3681,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   const htmlBlock = rawHtmlBlockLines(lines);
 
   // Reference-style Markdown: `[guide][g]` with `[g]: docs/guide.md` further
-  // down. Neither shape matches MD_LINK_RE, so a broken reference link -- the
+  // down. Neither shape is an inline link, so a broken reference link -- the
   // form the CommonMark spec calls standard and readers see as an ordinary
   // link -- produced a clean audit. The DEFINITION's destination is validated
   // exactly as an inline link's is.
@@ -3870,7 +3967,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // (stocks#1121).
     const nested = (mm) => codeHere.some(
       ([lo, hi]) => lo < mm.index && hi > mm.index + mm[0].length);
-    for (const m of htmlOnly ? [] : line.matchAll(MD_LINK_RE)) {
+    for (const m of htmlOnly ? [] : mdLinks(line)) {
       // An ESCAPED opening bracket renders as literal text, so a document
       // demonstrating link syntax as `\[x](missing.md)` was reported as a
       // gating dead link for a destination no reader can follow. Parity
@@ -3978,7 +4075,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // and lets whitespace follow the opening parenthesis, so `[long\nlabel](x)`
   // and `[x](\nmissing.md)` both render as clickable links -- and a per-line
   // scan can never see either, so their broken destinations passed clean.
-  // MD_LINK_RE already admits both shapes; what it never had was a subject
+  // `mdLinks` already admits both shapes; what it never had was a subject
   // spanning more than one physical line.
   //
   // The document is masked LINE BY LINE first, at the same lengths, so every
@@ -4016,7 +4113,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   for (const [bLo, bHi] of paragraphBlocks(lines, fenced)) {
     const from = docStarts[bLo];
     const to = docStarts[bHi] + lines[bHi].length;
-    for (const mm of visibleDoc.slice(from, to).matchAll(MD_LINK_RE)) {
+    for (const mm of mdLinks(visibleDoc.slice(from, to))) {
       if (!mm[0].includes('\n')) continue;
       if (isEscaped(visibleDoc, from + mm.index)) continue;
       const [tgt, frag] = mm[1] !== undefined ? [mm[1], mm[2]] : [mm[3], mm[4]];
