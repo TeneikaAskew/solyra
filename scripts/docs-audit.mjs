@@ -2040,7 +2040,12 @@ export function paragraphBlocks(lines, fenced = new Set()) {
     // `---` under a paragraph would otherwise be read as; `isSetextUnderline`
     // is the same predicate headingAnchors uses, so the two cannot disagree
     // about where a heading ends.
-    if (start !== null && isSetextUnderline(lines, i, fenced)) {
+    // The cheap shape test first: `isSetextUnderline` strips the container
+    // again and reads the line above, and this runs on every non-blank line
+    // of every block scan. Same pattern the predicate applies, against the
+    // copy already stripped here, so the guard cannot disagree with it.
+    if (start !== null && SETEXT_UNDERLINE_RE.test(bare)
+        && isSetextUnderline(lines, i, fenced)) {
       flush(i);
       return;
     }
