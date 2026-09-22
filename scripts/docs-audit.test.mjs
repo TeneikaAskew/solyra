@@ -46,6 +46,7 @@ import {
   linkContext,
   loadIssuesSnapshot,
   writeIssuesSnapshot,
+  symlinkedComponent,
   writeStamps,
   checkRegistryPaths,
   isTrackedDir,
@@ -1513,6 +1514,85 @@ describe('stampGuard', () => {
     // The message changed in round 12: the guard names where the marker WOULD
     // LAND rather than the earliest owned line. The invariant is the same.
     expect(stampGuard(doc, owned)).toMatch(/would land on line 3, inside a generated/);
+  });
+});
+
+describe('an inline code span at a fenced block', () => {
+  it('does not pair its delimiters across the block', () => {
+    // A fenced code block interrupts a paragraph exactly as a blank line
+    // does, so an inline span cannot pair across one. `codeSpanLines` windowed
+    // its scan by paragraph but with NO fence set, so an unmatched backtick
+    // above a fence paired with one below it and masked everything between --
+    // including a live `[x](missing.md)`, which the gating dead-link check
+    // then never saw: a broken link reported clean.
+    const doc = 'a ` tick\n```\nfenced\n```\n[x](missing.md) ` tail\n';
+    expect(checkDeadLinks('d.md', doc, linkCtx(['d.md'])).map((f) => f.check))
+      .toEqual(['dead-link']);
+    // The boundary is real, not "fences disable masking": a span opened and
+    // closed on the SAME side of the fence still masks its contents.
+    const sameSide = 'a ` tick [x](missing.md) tail `\n```\nfenced\n```\n';
+    expect(checkDeadLinks('d.md', sameSide, linkCtx(['d.md']))).toEqual([]);
+  });
+});
+
+describe('a comment opener shown as an example', () => {
+  it('does not hide a later raw-text block from the block scan', () => {
+    // `` `<!--` `` in prose is inline code and `\\<!--` is an escaped
+    // delimiter; neither opens a comment. Read as real, either one made this
+    // scan treat everything after it as commented out -- so the `<pre>`
+    // below was never recognised as a raw-text block, and the link it
+    // DISPLAYS became a gating dead-link finding for something no reader can
+    // click. The other comment scanners have carried this rule for rounds.
+    const withSpan = 'The opener is `<!--`.\n\n<pre>\n[x](missing.md)\n</pre>\n';
+    expect(checkDeadLinks('d.md', withSpan, linkCtx(['d.md']))).toEqual([]);
+    const withEscape = 'The opener is \\<!-- here.\n\n<pre>\n[x](missing.md)\n</pre>\n';
+    expect(checkDeadLinks('d.md', withEscape, linkCtx(['d.md']))).toEqual([]);
+    // A REAL unclosed opener still hides what follows, so the rule has both
+    // directions and this is not simply "never believe an opener".
+    const real = 'Before <!-- opened\n\n<pre>\n[x](missing.md)\n</pre>\n';
+    expect(checkDeadLinks('d.md', real, linkCtx(['d.md']))).toEqual([]);
+    // And the link is live when nothing hides it at all.
+    expect(checkDeadLinks('d.md', 'prose\n\n[x](missing.md)\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('an ESCAPED generated-region delimiter', () => {
+  it('is text a reader sees, not a region boundary', () => {
+    // `\\<!-- BEGIN gen -->` renders literally -- it is how a Class A document
+    // shows its own convention OUTSIDE a code span. Reading the pair as real
+    // classified every hand-written line between them as generated, and under
+    // `exhaustive` that suppressed the warning that regeneration would
+    // discard that prose. The comment and link scanners have applied the
+    // escape rule for rounds; these two scanners had their own copy without
+    // it.
+    const doc = '# T\n\n\\<!-- BEGIN gen -->\nhand written\n\\<!-- END gen -->\n';
+    const { owned, unmatched } = ownedLines(doc, ['mark:gen']);
+    expect([...owned]).toEqual([]);
+    expect(unmatched).toEqual(['mark:gen']);
+    // And the real pair is still a region, so the rule has both directions.
+    const real = '# T\n\n<!-- BEGIN gen -->\ngenerated\n<!-- END gen -->\n';
+    expect([...ownedLines(real, ['mark:gen']).owned]).toEqual([3, 4, 5]);
+  });
+
+  it('applies to the inventory scanner beside it', () => {
+    const doc = '# T\n\n\\<!-- inventory:x:start -->\nhand written\n\\<!-- inventory:x:end -->\n';
+    const { owned, orphans } = ownedLines(doc, ['inventory:*']);
+    expect([...owned]).toEqual([]);
+    expect(orphans).toEqual([]);
+  });
+
+  it('and every delimiter on a line is read, not just the first', () => {
+    // `.exec` returned one match, so a complete pair written on ONE line read
+    // as a start with no end -- and an orphan sharing a line with a real
+    // delimiter was hidden from the balance check entirely. The Python twin
+    // (stocks#1121) reads them all; this copy did not.
+    const pair = '# T\n\n<!-- inventory:x:start --><!-- inventory:x:end -->\n';
+    expect(ownedLines(pair, ['inventory:*']).orphans).toEqual([]);
+    const orphan = '# T\n\n<!-- inventory:x:start --><!-- inventory:y:end -->\n';
+    expect(ownedLines(orphan, ['inventory:*']).orphans)
+      .toEqual(['inventory:y ends at line 3 with no start',
+        'inventory:x starts at line 3 with no end']);
   });
 });
 
@@ -3230,6 +3310,44 @@ describe('a negated blocking cue with a modifier in between', () => {
     expect(hasBlockingCue('not done yet; the api rewrite is still open')).toBe(true);
     expect(hasBlockingCue('still blocking')).toBe(true);
   });
+
+  it('is a negation when it is contracted', () => {
+    // `isn't blocking release` says exactly what `is not blocking release`
+    // says. The negator list held only the spelled-out form, so the
+    // contracted sentence read as live work and a closed issue produced a P1
+    // whose own source line states the opposite.
+    expect(hasBlockingCue("isn't blocking release")).toBe(false);
+    expect(hasBlockingCue("wasn't blocking")).toBe(false);
+    expect(hasBlockingCue("aren't open issues")).toBe(false);
+    // A curly apostrophe is the same word; a document written either way
+    // renders the same sentence.
+    expect(hasBlockingCue('wasn\u2019t blocking')).toBe(false);
+  });
+
+  it('is NOT a negation when the sentence says `not only`', () => {
+    // `not only X but also Y` AFFIRMS X. The generic `not` branch read it as
+    // a negation, so an issue the prose calls blocking was dropped from the
+    // audit once it closed -- the direction that HIDES a finding.
+    expect(hasBlockingCue('is not only blocking release but also deploys')).toBe(true);
+    // And the ordinary `not` is untouched, so this is a carve-out rather
+    // than a hole.
+    expect(hasBlockingCue('is not blocking release')).toBe(false);
+  });
+});
+
+describe('a Setext underline of a single hyphen', () => {
+  it('is an H2, so its anchor exists', () => {
+    // CommonMark resolves the ambiguity with an empty list item in the
+    // underline's favour: `Title` over `-` renders an H2. Requiring two or
+    // more rejected it, so the `title` anchor was missing and a working
+    // `[x](#title)` was reported as a gating dead-anchor finding. The Python
+    // twin (stocks#1121) has accepted `-+` since it was written.
+    expect([...headingAnchors('# T\n\nTitle\n-\n')].sort()).toEqual(['t', 'title']);
+    // A real LIST is untouched, because an underline needs a PARAGRAPH above
+    // it and a list opening a block has none. That container rule, not the
+    // delimiter count, is what keeps them apart.
+    expect([...headingAnchors('# T\n\n-\n- item\n')]).toEqual(['t']);
+  });
 });
 
 describe('a document titled with a Setext H1', () => {
@@ -3473,6 +3591,28 @@ describe('a tracked Markdown symlink', () => {
     expect(() => writeStamps([{ doc: 'docs/link.md', text: '# X\n' }], { repo: dir }))
       .toThrow(/a tracked symlink/);
     expect(fs.readFileSync(outside, 'utf8')).toBe('# Outside\n\nuntouched\n');
+  });
+
+  it('is refused when an ANCESTOR directory is the link', () => {
+    // The final-component check reports an ordinary file here: the kernel has
+    // already resolved `docs` before it ever looks at `d.md`. So a checkout
+    // that replaces a tracked DIRECTORY with a link to somewhere writable had
+    // --stamp create its temp file and rename it through that link, landing
+    // the write outside the repository with the document-level guard passing
+    // the whole way. Codex filed this as a P1.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-anc-'));
+    const outside = path.join(dir, 'elsewhere');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'd.md'), '# Outside\n\nuntouched\n');
+    fs.symlinkSync(outside, path.join(dir, 'docs'));
+    // The hole itself, asserted rather than described: the old check saw a
+    // regular file.
+    expect(fs.lstatSync(path.join(dir, 'docs/d.md')).isSymbolicLink()).toBe(false);
+    expect(symlinkedComponent('docs/d.md', { repo: dir })).toBe('docs');
+    expect(() => writeStamps([{ doc: 'docs/d.md', text: '# X\n' }], { repo: dir }))
+      .toThrow(/through docs/);
+    expect(fs.readFileSync(path.join(outside, 'd.md'), 'utf8'))
+      .toBe('# Outside\n\nuntouched\n');
   });
 
   it('and an ordinary document is still written', () => {
@@ -4123,6 +4263,71 @@ describe('a registry section ended by a Setext heading', () => {
     const reg = '# R\n\n## Registry\n\n| Class | Path |\n|---|---|\n| D | real.md |\n'
       + '\n    | D | indented.md |\n';
     expect(loadRegistry(reg).map((r) => r.glob)).toEqual(['real.md']);
+  });
+});
+
+describe('a marker-shaped example in a raw HTML block', () => {
+  it('is not counted as a malformed marker', () => {
+    // `<div>` around `**Last reviewed:** bad` SHOWS the shape without writing
+    // a marker. `findMarkers` excludes raw HTML blocks and this did not, so
+    // the valid-marker path correctly found none while this path counted it:
+    // `stamp()` returned `skipped-malformed-marker`, and the document
+    // demonstrating a bad marker could never be given a good one.
+    const lines = ['# T', '', '<div>', '**Last reviewed:** bad', '</div>', '', 'Body.'];
+    expect(markerShapedLines(lines)).toEqual([]);
+    // Outside the block the same line IS malformed, so the exclusion is about
+    // the container rather than about the text.
+    expect(markerShapedLines(['# T', '', '**Last reviewed:** bad'])).toEqual([2]);
+  });
+});
+
+describe('a repeated anchor attribute', () => {
+  it('keeps only the first occurrence, as HTML parsing does', () => {
+    // `<div id="real" id="fake">` offers `real` and nothing else; recording
+    // both let a link to `#fake` pass the dead-anchor check against a
+    // destination the page does not have.
+    expect([...headingAnchors('<div id="real" id="fake">\n')]).toEqual(['real']);
+    expect([...headingAnchors('<a name="real" name="fake"></a>\n')]).toEqual(['real']);
+    // Two DIFFERENT tags each keep their own, so the rule is per tag.
+    expect([...headingAnchors('<div id="a"><div id="b">\n')].sort()).toEqual(['a', 'b']);
+  });
+});
+
+describe('a registry row shown inside a raw HTML block', () => {
+  it('is displayed, not executed as a rule', () => {
+    // `<pre>` renders `| D | fake.md |` literally. The collector's exclusion
+    // set had fences, comments and indented examples and NOT this fourth
+    // way of showing a row, so the example became a live rule -- a
+    // fabricated missing-path finding, or a classification silently applied
+    // to a real path.
+    const reg = '# R\n\n## Registry\n\n| Class | Path |\n|---|---|\n| D | real.md |\n'
+      + '\n<pre>\n| D | fake.md |\n</pre>\n';
+    expect(loadRegistry(reg).map((r) => r.glob)).toEqual(['real.md']);
+    // A RENDERED block is not the same thing: `<div>` shows a table as a
+    // table, so a row there is not an example. Both directions, so this is
+    // not "ignore anything near a tag".
+    const rendered = '# R\n\n## Registry\n\n| Class | Path |\n|---|---|\n| D | real.md |\n'
+      + '\n<div>\n\n| D | live.md |\n\n</div>\n';
+    expect(loadRegistry(rendered).map((r) => r.glob)).toEqual(['real.md', 'live.md']);
+  });
+});
+
+describe('a generated-region delimiter shown as an example', () => {
+  it('is not registered as the region itself', () => {
+    // A Class A document that has LOST its real region but demonstrates the
+    // pair inside `<pre>`, or as an indented sample, had the EXAMPLE counted
+    // as the region: the declared region read as matched, the missing-region
+    // finding was suppressed, and the sample's own lines routed to the
+    // renderer as generated. The fenced case was covered; these two were not.
+    const raw = '# T\n\n<pre>\n<!-- inventory:x:start -->\nsample\n<!-- inventory:x:end -->\n</pre>\n';
+    const fromRaw = ownedLines(raw, ['inventory:*']);
+    expect([...fromRaw.owned]).toEqual([]);
+    expect(fromRaw.unmatched).toEqual(['inventory:*']);
+    const indented = '# T\n\n    <!-- inventory:x:start -->\n    sample\n    <!-- inventory:x:end -->\n';
+    expect([...ownedLines(indented, ['inventory:*']).owned]).toEqual([]);
+    // The real pair is still the region.
+    const real = '# T\n\n<!-- inventory:x:start -->\nr\n<!-- inventory:x:end -->\n';
+    expect([...ownedLines(real, ['inventory:*']).owned]).toEqual([3, 4, 5]);
   });
 });
 
@@ -5612,6 +5817,11 @@ describe('an anchor whose tag spans a line break', () => {
       linkCtx(['d.md']))).toEqual([]);
     expect(checkDeadLinks('d.md', '<a\n\n href="missing.md">g</a>\n',
       linkCtx(['d.md']))).toEqual([]);
+    // And an ESCAPED opener is text in THIS pass too. The single-line href
+    // pass has checked that for rounds; this one did not, so the same escape
+    // was clean on one line and a gating dead link across two.
+    expect(checkDeadLinks('d.md', '\\<a\n href="missing.md">g</a>\n',
+      linkCtx(['d.md']))).toEqual([]);
   });
 });
 
@@ -6647,6 +6857,15 @@ describe('an explicit HTML anchor', () => {
     expect(ids('<div id="a&amp;b">')).toEqual(['a&b']);
     expect([...headingAnchors('<div\n  id="section">\n')]).toEqual(['section']);
     expect([...headingAnchors('<pre>\n<a id="fake"></a>\n</pre>\n')]).toEqual([]);
+    // An ESCAPED opener is not an element. CommonMark renders the `<` in
+    // `\\<div id="fake">` literally, so `#fake` reaches nothing -- but the
+    // tokeniser parsed it like any other tag and registered the id, which is
+    // how a link to a destination the document does not offer PASSED. A doc
+    // demonstrating tag syntax escapes it exactly this way.
+    expect(ids('\\<div id="fake">')).toEqual([]);
+    // An escaped BACKSLASH is a literal backslash, so the tag below it is
+    // real -- the escape rule has a false direction too.
+    expect(ids('\\\\<div id="real">')).toEqual(['real']);
   });
 
   it('is matched case-sensitively, and so is a generated slug', () => {

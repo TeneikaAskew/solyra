@@ -91,8 +91,19 @@ const BLOCKING_CUE_RE =
 // negator to sit flush against it read them as live work and emitted a P1
 // saying the opposite of the sentence. The window is bounded to two such words
 // so a negation cannot reach across a clause it does not govern.
+// CONTRACTIONS too. `isn't blocking release` says exactly what `is not
+// blocking release` says, and the negator list held only the spelled-out
+// form -- so the contracted sentence was read as live work and a closed issue
+// produced a P1 whose own source line states the opposite. The apostrophe may
+// be typed or curly; a document written in either renders the same word.
 const CUE_NEGATOR_RE =
-  /\b(?:not|non|never|no longer|without|un)[\s-]*(?:\w+[\s-]+){0,2}$/i;
+  /\b(?:not|non|never|no longer|without|un|\w+n['\u2019]t)[\s-]*(?:\w+[\s-]+){0,2}$/i;
+// `not only X but also Y` AFFIRMS X. The generic `not` branch read it as a
+// negation, so an issue the prose calls blocking was dropped from the audit
+// once it closed -- the direction that HIDES a finding. Tested against the
+// same text the negator is, and it wins: a suffix ending in `not only ` is
+// not a negation however the two-word window reads it.
+const NOT_ONLY_RE = /\bnot\s+only[\s-]*(?:\w+[\s-]+){0,2}$/i;
 
 /**
  * Does this line cite live work? True when at least ONE cue occurrence is not
@@ -101,7 +112,8 @@ const CUE_NEGATOR_RE =
 export function hasBlockingCue(line) {
   BLOCKING_CUE_RE.lastIndex = 0;
   for (const m of line.matchAll(BLOCKING_CUE_RE)) {
-    if (!CUE_NEGATOR_RE.test(line.slice(0, m.index))) return true;
+    const before = line.slice(0, m.index);
+    if (NOT_ONLY_RE.test(before) || !CUE_NEGATOR_RE.test(before)) return true;
   }
   return false;
 }
@@ -605,8 +617,14 @@ export function loadRegistry(text) {
   // back into an executable declaration: `    | D | fake.md | | |` produced a
   // gating missing-path finding, and an indented heading in the same example
   // could end the section and skip every real row below it.
+  // And a RAW-TEXT HTML block, the fourth way a document shows a row without
+  // declaring it: `<pre>` renders `| D | fake.md | | |` literally, but the
+  // collector executed it as a live rule -- a fabricated missing-path finding
+  // or, worse, a classification for a real path. The exclusion set had the
+  // other three and not this one.
   const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines),
-    ...indentedCodeLines(allLines)]);
+    ...indentedCodeLines(allLines),
+    ...rawHtmlBlockLines(allLines, { rawTextOnly: true })]);
   for (const [i, raw] of allLines.entries()) {
     if (fenced.has(i)) continue;
     const line = raw.trim();
@@ -927,7 +945,7 @@ export function classify(doc, registry) {
 
 // ── generated regions (Class A) ─────────────────────────────────────────────
 
-const INVENTORY_RE = /<!--\s*inventory:([\w.-]+):(start|end)\s*-->/;
+const INVENTORY_RE = /<!--\s*inventory:([\w.-]+):(start|end)\s*-->/g;
 
 /**
  * Lines as `wc -l` counts them: a trailing newline does not add a line.
@@ -976,7 +994,15 @@ export function ownedLines(text, specs) {
   // real delimiters is owned whether or not it is fenced, which it usually is,
   // and `line:` matches generated lines that are frequently inside a fence.
   // Raised on the Python twin (stocks#1121).
-  const fencedHere = fencedLines(lines);
+  // INDENTED and RAW-TEXT examples are the other two ways a document shows a
+  // delimiter without declaring one. A Class A file that has LOST its real
+  // region but demonstrates the pair inside `<pre>` or as an indented sample
+  // had the example registered as the region: the declared region counted as
+  // matched, the missing-region P1 was suppressed, and the sample's own lines
+  // were routed to the renderer as generated. The fenced case was covered and
+  // these two were not.
+  const fencedHere = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
   const owned = new Set();
   const unmatched = [];
   const orphans = [];
@@ -1000,19 +1026,28 @@ export function ownedLines(text, specs) {
         // `fence:` scanners already mask spans; this one did not.
         const line = maskSpans(rawLine,
           [...codeSpans(rawLine), ...(inlineSpans.get(i) ?? [])]);
-        const m = INVENTORY_RE.exec(line);
-        if (!m) return;
-        if (m[2] === 'start') {
-          if (openAt.has(m[1])) {
-            orphans.push(`inventory:${m[1]} opened twice (lines ${openAt.get(m[1])} and ${i + 1})`);
+        // EVERY visible delimiter on the line, not the first. `.exec` read
+        // `<!-- inventory:x:start --><!-- inventory:x:end -->` -- a complete
+        // pair on one line -- as a start with no end, and hid a duplicate or
+        // orphan sharing a line with a real delimiter from the balance check.
+        // The Python twin (stocks#1121) reads them all; this copy did not.
+        for (const m of line.matchAll(INVENTORY_RE)) {
+          // An ESCAPED opener renders as TEXT and is no delimiter. It is the
+          // way a document shows the convention OUTSIDE a code span, and
+          // reading the pair as real marked the prose between them generated.
+          if (isEscaped(line, m.index)) continue;
+          if (m[2] === 'start') {
+            if (openAt.has(m[1])) {
+              orphans.push(`inventory:${m[1]} opened twice (lines ${openAt.get(m[1])} and ${i + 1})`);
+            }
+            openAt.set(m[1], i + 1);
+          } else if (openAt.has(m[1])) {
+            for (let n = openAt.get(m[1]); n <= i + 1; n += 1) owned.add(n);
+            openAt.delete(m[1]);
+            hit = true;
+          } else {
+            orphans.push(`inventory:${m[1]} ends at line ${i + 1} with no start`);
           }
-          openAt.set(m[1], i + 1);
-        } else if (openAt.has(m[1])) {
-          for (let n = openAt.get(m[1]); n <= i + 1; n += 1) owned.add(n);
-          openAt.delete(m[1]);
-          hit = true;
-        } else {
-          orphans.push(`inventory:${m[1]} ends at line ${i + 1} with no start`);
         }
       });
       for (const [name, n] of [...openAt.entries()].sort((a, b) => a[1] - b[1])) {
@@ -1060,13 +1095,24 @@ export function ownedLines(text, specs) {
             acc.slice(0, lo) + ' '.repeat(hi - lo) + acc.slice(hi), l)
           : l;
       };
+      // An ESCAPED opener is not a delimiter either. `\\<!-- LOVABLE:BEGIN -->`
+      // renders as TEXT, which is how a Class A document shows its own
+      // convention outside a code span -- and reading the pair as real
+      // classified every hand-written line between them as generated, which
+      // under `exhaustive` suppressed the P1 saying regeneration would discard
+      // that prose. Same rule the comment and link scanners apply; this was
+      // the copy that did not have it.
+      const unescapedMatch = (re, l) => {
+        const m = re.exec(l);
+        return m !== null && !isEscaped(l, m.index);
+      };
       lines.forEach((raw, n) => {
         if (fencedHere.has(n)) return;
         const l = bare(raw, n);
-        if (begin.test(l)) {
+        if (unescapedMatch(begin, l)) {
           if (open >= 0) nested = true;
           else open = n;
-        } else if (end.test(l)) {
+        } else if (unescapedMatch(end, l)) {
           if (open < 0) {
             stray = true;
           } else {
@@ -1247,9 +1293,17 @@ export function legacyTailIsBare(rest) {
   return BARE_TAIL_RE.test(rest || '');
 }
 
-// `-` needs two or more: a single `-` under text is a list bullet's sibling
-// far more often than a heading, and CommonMark's own `---` case is covered.
-const SETEXT_UNDERLINE_RE = /^ {0,3}(?:=+|-{2,})\s*$/;
+// A SINGLE `-` counts. `Title` over `-` is an H2: CommonMark resolves the
+// ambiguity with an empty list item in the underline's favour, and the
+// document renders a `title` anchor. Requiring two or more rejected it, so
+// `headingAnchors` omitted that anchor and a working `[x](#title)` was
+// reported as a gating dead-anchor finding. The comment here used to argue a
+// lone `-` is "a list bullet's sibling far more often than a heading" -- a
+// belief about frequency standing in for the rule, and the Python twin
+// (stocks#1121) has accepted `-+` since it was written. What keeps a real
+// list from matching is the CONTAINER check in `isSetextUnderline`: an
+// underline needs a PARAGRAPH above it, and a list opening a block has none.
+const SETEXT_UNDERLINE_RE = /^ {0,3}(?:=+|-+)\s*$/;
 
 /**
  * Does line `i` underline a Setext heading written on line `i - 1`?
@@ -1689,6 +1743,25 @@ const HTML_RAW_DELIMITED = [
   [/^ {0,3}<![A-Za-z]/, '>'],
 ];
 
+/**
+ * Offset of the first `<!--` a reader sees as a comment opener, or -1.
+ *
+ * Line-local `codeSpans` only, and no wrapped-span map: `codeSpanLines`
+ * reaches `fencedLines`, which reaches `rawHtmlBlockLines`, which calls this.
+ * An opener inside a span that OPENS on another line is therefore still read
+ * here; that is the cycle's price, and the single-line form is the one
+ * documents actually write.
+ */
+function visibleCommentOpen(line) {
+  const spans = codeSpans(line);
+  let at = line.indexOf('<!--');
+  while (at !== -1 && (spans.some(([lo, hi]) => lo <= at && at < hi)
+    || isEscaped(line, at))) {
+    at = line.indexOf('<!--', at + 1);
+  }
+  return at;
+}
+
 export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = null } = {}) {
   const out = new Set();
   // `fencedLines` passes its PROVISIONAL set, computed without HTML, and
@@ -1757,7 +1830,14 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = 
       if (indented.has(i)) return;
       // A comment OPENING on this line hides anything after it, including a
       // `<pre>` on a later line of the same comment.
-      const c = line.indexOf('<!--');
+      // An opener shown as `` `<!--` `` or escaped as `\\<!--` opens nothing:
+      // the first is inline code, the second displays the delimiter
+      // literally. Read as real, either one hid a later `<pre>` from this
+      // scan, so the raw-text block was never recognised and a
+      // `[x](missing.md)` DISPLAYED inside it became a gating dead-link
+      // finding for a link no reader can click. The other comment scanners
+      // have carried this rule for rounds; this copy did not.
+      const c = visibleCommentOpen(line);
       if (c !== -1 && !line.slice(c).includes('-->')) {
         inComment = true;
         // The text before the opener is still live, so an opener there still
@@ -2161,7 +2241,7 @@ export function paragraphBlocks(lines, fenced = new Set()) {
   return blocks;
 }
 
-export function codeSpanLines(lines) {
+export function codeSpanLines(lines, fenced = new Set()) {
   const text = lines.join('\n');
   const starts = [];
   let at = 0;
@@ -2173,7 +2253,16 @@ export function codeSpanLines(lines) {
   // between and silently dropping their findings. The scan WINDOW is the
   // block; masking the blank line instead is not equivalent, because it has
   // no characters to mask and the paragraphs stay adjacent.
-  for (const [bLo, bHi] of paragraphBlocks(lines)) {
+  // A FENCED BLOCK interrupts a paragraph exactly as a blank line does, so an
+  // unmatched delimiter above a fence paired with one below it and masked
+  // everything in between -- including a live `[x](missing.md)`, which the
+  // gating dead-link check then never saw. The set is a PARAMETER rather than
+  // computed here: this function also runs UNDERNEATH `fencedLines` (through
+  // `commentSpans`), and computing one there would be a cycle. Callers that
+  // already hold a fence set pass it; the ones below the fence scan pass
+  // nothing and keep today's behaviour, which is the honest shape of the
+  // constraint rather than a claim the cycle does not exist.
+  for (const [bLo, bHi] of paragraphBlocks(lines, fenced)) {
     const base = starts[bLo];
     const end = starts[bHi] + lines[bHi].length;
     for (const [lo0, hi0] of codeSpans(text.slice(base, end))) {
@@ -2444,10 +2533,18 @@ export function markerShapedLines(lines) {
   const spanned = spanHiddenLines(lines);
   // And one whose marker PREFIX is commented out -- see commentedPrefixLines.
   const prefixHidden = commentedPrefixLines(lines);
+  // And a RAW HTML BLOCK. `findMarkers` beside this one has excluded them for
+  // rounds and this scan did not: `<div>` around `**Last reviewed:** bad`
+  // shows the shape without writing a marker, so the valid-marker path
+  // correctly found none while this path counted it -- `stamp()` returned
+  // `skipped-malformed-marker`, which meant the document demonstrating a bad
+  // marker could never be given a good one.
+  const rawBlock = rawHtmlBlockLines(lines);
   const out = [];
   for (let i = from; i < to; i += 1) {
     if (fenced.has(i) || commented.has(i) || spanned.has(i)
-      || prefixHidden.has(i) || isCodeIndented(lines[i])) continue;
+      || prefixHidden.has(i) || rawBlock.has(i)
+      || isCodeIndented(lines[i])) continue;
     const line = lines[i].trim();
     if (!MARKER_SHAPE_RE.test(line)) continue;
     if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) continue;
@@ -3704,9 +3801,23 @@ export function headingAnchors(text) {
     : maskSpans(l, [...codeSpans(l), ...(wrappedSpans.get(i) ?? []),
       ...(commentRanges.get(i) ?? [])]))).join('\n');
   for (const tag of idDoc.matchAll(TAG_OPEN_RE)) {
+    // An ESCAPED opener is not an element. CommonMark renders the `<` in
+    // `\<div id="fake">` literally and creates nothing, so `#fake` reaches
+    // nowhere -- but the scan parsed it like any other tag and registered the
+    // id, which made a link to a destination the document does not offer
+    // PASS. Documents that demonstrate tag syntax escape it exactly this way,
+    // so the invented anchors land in the docs most likely to cite them.
+    if (isEscaped(idDoc, tag.index)) continue;
     const anchor = /^<a(?![a-zA-Z0-9-])/i.test(tag[0]);
+    // The FIRST occurrence of a repeated attribute is the one that exists.
+    // HTML parsing drops the later duplicates, so `<div id="real" id="fake">`
+    // offers only `real` -- and recording both let a link to `#fake` pass the
+    // dead-anchor check against a destination the page does not have.
+    const seen = new Set();
     for (const attr of tag[0].matchAll(TAG_ATTR_RE)) {
       const key = attr[1].toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
       if (key !== 'id' && !(key === 'name' && anchor)) continue;
       // Character references DECODED, as the heading slug already decodes
       // them: `<div id="a&amp;b">` exposes `a&b`. Case is PRESERVED, because
@@ -3750,10 +3861,11 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // collect its headings -- and one pointing at a non-terminating special
       // file hangs or exhausts memory here, which the catch below cannot
       // catch. Parity with the Python twin (stocks#1121).
-      if (fs.lstatSync(path.join(REPO, p), { throwIfNoEntry: false })?.isSymbolicLink()) {
-        throw new AuditError(`${p} is a tracked symlink, so reading it would audit `
-          + 'its target rather than a document in this repository; the result '
-          + 'would not reproduce in another clone');
+      const pLink = symlinkedComponent(p);
+      if (pLink !== null) {
+        throw new AuditError(`${symlinkNote(p, pLink)} is a tracked symlink, so `
+          + 'reading it would audit its target rather than a document in this '
+          + 'repository; the result would not reproduce in another clone');
       }
       try {
         anchorCache.set(p, headingAnchors(fs.readFileSync(path.join(REPO, p), 'utf8')));
@@ -3781,7 +3893,8 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // can click, so the destination produced a gating finding over nothing. The
   // heading and marker scans already exclude these lines. Parity with the
   // Python twin (stocks#1121).
-  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+  const fenceOnly = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
+  const fenced = new Set([...fenceOnly,
     ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
   // Markdown is not PARSED inside a type-6 or type-7 HTML block, but the HTML
   // is rendered: `<div>` then `<a href="missing.md">` is a link a reader
@@ -3816,7 +3929,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // line covers this one whole, and `[g]: missing.md` displayed inside such a
   // span was validated as a live destination. Parity with the Python twin
   // (stocks#1121).
-  const wrappedDefs = codeSpanLines(lines);
+  const wrappedDefs = codeSpanLines(lines, fenceOnly);
   const spanHidden = (i) => {
     const stop = lines[i].replace(/\s+$/, '').length;
     if (!stop) return false;
@@ -4039,7 +4152,11 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // comments and code spans are excluded per span, exactly as the Markdown
   // pass below excludes them.
   const rawTextLines = rawHtmlBlockLines(lines, { rawTextOnly: true });
-  const wrappedCodeSpans = codeSpanLines(lines);
+  // The CODE-BLOCK boundaries, not the whole `fenced` set. A fenced or
+  // indented code block interrupts a paragraph, so an inline span cannot pair
+  // across one; a rendered HTML block does not end a paragraph the same way,
+  // so the wider set is not the right boundary here.
+  const wrappedCodeSpans = codeSpanLines(lines, fenceOnly);
   lines.forEach((line, i) => {
     // A line whose only reason to be excluded is that it sits in a non-raw-text
     // HTML block still gets the href pass; everything else about it is skipped.
@@ -4254,6 +4371,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // The single-line ones belong to the pass above; reporting them here
       // too would double the finding and the summary count.
       if (!mm[0].includes('\n')) continue;
+      // And the escape check belongs to BOTH passes. The single-line one has
+      // it; this one did not, so `\<a` followed by ` href="missing.md">` --
+      // text CommonMark renders literally, with nothing to click -- was
+      // reported as a gating dead link. The same rule, written once in one
+      // pass and not the other, is how the two disagreed.
+      if (isEscaped(hrefDoc, from + mm.index)) continue;
       const [tgt, frag] = splitOutsideRefs(mm[2] ?? mm[3] ?? mm[4] ?? '', '#');
       if (!tgt && !frag) continue;
       checkTarget(tgt, frag, lineOf(from + mm.index) + 1);
@@ -4384,8 +4507,14 @@ export function loadClaims(text) {
   // back into an executable declaration: `    | D | fake.md | | |` produced a
   // gating missing-path finding, and an indented heading in the same example
   // could end the section and skip every real row below it.
+  // And a RAW-TEXT HTML block, the fourth way a document shows a row without
+  // declaring it: `<pre>` renders `| D | fake.md | | |` literally, but the
+  // collector executed it as a live rule -- a fabricated missing-path finding
+  // or, worse, a classification for a real path. The exclusion set had the
+  // other three and not this one.
   const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines),
-    ...indentedCodeLines(allLines)]);
+    ...indentedCodeLines(allLines),
+    ...rawHtmlBlockLines(allLines, { rawTextOnly: true })]);
   for (const [i, raw] of allLines.entries()) {
     if (fenced.has(i)) continue;
     const line = raw.trim();
@@ -4886,6 +5015,40 @@ export function stampRecord(doc, res, reviewed) {
  * uid, which under root calls a mode-444 file writable. So the loop reports how
  * far it got instead of pretending the operation was atomic.
  */
+/**
+ * The first component of `doc` that is a symlink, or null.
+ *
+ * EVERY component, not just the last one. `lstatSync` on the full path answers
+ * for the final name after the kernel has already resolved each parent, so a
+ * checkout replacing a tracked DIRECTORY -- `docs/` -> some writable path
+ * outside the repository -- reported the document as an ordinary file, and
+ * both the read guards and `--stamp`'s temp-file-and-rename went straight
+ * through it. Codex filed that as a P1, after the final-component check had
+ * been in place for rounds: the hole was that the check answered a narrower
+ * question than the one being asked.
+ *
+ * Walking components is deliberate over comparing `realpathSync(parent)`
+ * against `realpathSync(repo)`: a repository root is legitimately reached
+ * through a symlink on some platforms (`/tmp` on macOS, a worktree under a
+ * linked path), and a root comparison rejects those checkouts wholesale. What
+ * is being refused is a link INSIDE the tree.
+ */
+export function symlinkedComponent(doc, { repo = REPO, fsImpl = fs } = {}) {
+  const parts = doc.split('/').filter(Boolean);
+  for (let i = 1; i <= parts.length; i += 1) {
+    const partial = parts.slice(0, i).join('/');
+    try {
+      if (fsImpl.lstatSync(path.join(repo, partial)).isSymbolicLink()) return partial;
+    } catch { /* absent or unreadable -- not this guard's question */ }
+  }
+  return null;
+}
+
+/** `doc`, naming the ancestor link when the link is not `doc` itself. */
+function symlinkNote(doc, link) {
+  return link === doc ? doc : `${doc} (through ${link})`;
+}
+
 export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
   const unwritable = writes
     .map((w) => w.doc)
@@ -4907,14 +5070,9 @@ export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
   // anywhere writable, inside the checkout or outside it. Checked before any
   // write, so one bad path stops the whole batch rather than half of it.
   const links = writes
-    .map((w) => w.doc)
-    .filter((doc) => {
-      try {
-        return fsImpl.lstatSync(path.join(repo, doc)).isSymbolicLink();
-      } catch {
-        return false;
-      }
-    });
+    .map((w) => [w.doc, symlinkedComponent(w.doc, { repo, fsImpl })])
+    .filter(([, link]) => link !== null)
+    .map(([doc, link]) => symlinkNote(doc, link));
   if (links.length) {
     throw new AuditError(`--stamp refuses ${links.sort().join(', ')}: a tracked `
       + 'symlink, so the write would land on its target rather than a document '
@@ -5029,10 +5187,11 @@ export function main(argv) {
   // machine-local classification and ownership rules for the whole run, and one
   // pointing at a non-terminating special file hangs here. Parity with the
   // Python twin (stocks#1121).
-  if (fs.lstatSync(regPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
-    throw new AuditError(`${REGISTRY} is a tracked symlink, so reading it would `
-      + 'audit its target rather than a document in this repository; the result '
-      + 'would not reproduce in another clone');
+  const regLink = symlinkedComponent(REGISTRY);
+  if (regLink !== null) {
+    throw new AuditError(`${symlinkNote(REGISTRY, regLink)} is a tracked symlink, `
+      + 'so reading it would audit its target rather than a document in this '
+      + 'repository; the result would not reproduce in another clone');
   }
   let registryText;
   try {
@@ -5125,10 +5284,11 @@ export function main(argv) {
     // the refusal a property of the command rather than of the tree.
     let text;
     try {
-      if (fs.lstatSync(path.join(REPO, doc)).isSymbolicLink()) {
-        throw new AuditError(`${doc} is a tracked symlink, so reading it would audit `
-          + 'its target rather than a document in this repository; the result would '
-          + 'not reproduce in another clone');
+      const docLink = symlinkedComponent(doc);
+      if (docLink !== null) {
+        throw new AuditError(`${symlinkNote(doc, docLink)} is a tracked symlink, so `
+          + 'reading it would audit its target rather than a document in this '
+          + 'repository; the result would not reproduce in another clone');
       }
       text = fs.readFileSync(path.join(REPO, doc), 'utf8');
     } catch (err) {
