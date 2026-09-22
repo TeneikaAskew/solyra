@@ -66,6 +66,8 @@ import {
   stripEmphasis,
   isEscaped,
   codeSpanLines,
+  paragraphBlocks,
+  commentedPrefixLines,
   isMarkdownPath,
   documentSet,
   unescapeMarkdown,
@@ -4340,10 +4342,20 @@ describe('a fence opener indented four spaces', () => {
     // A flat three-space cap would be wrong the other way: inside a list the
     // fence sits at the item's content column. `- ` gives column 2, so 2..5
     // open and 6 does not; `1. ` gives 3, so 6 does.
-    expect([...fencedLines(['- item', '', '  ```', 'x', '  ```'])]).toEqual([2, 3, 4]);
-    expect([...fencedLines(['- item', '', '     ```', 'x', '     ```'])]).toEqual([2, 3, 4]);
-    expect([...fencedLines(['- item', '', '      ```', 'x', '      ```'])]).toEqual([]);
-    expect([...fencedLines(['1. item', '', '      ```', 'x', '      ```'])]).toEqual([2, 3, 4]);
+    // The sample lines are indented INTO the item, because a column-zero line
+    // ends the item and the fence with it -- see the case below. What this
+    // block measures is the opener's cap, not where the block ends.
+    expect([...fencedLines(['- item', '', '  ```', '  x', '  ```'])]).toEqual([2, 3, 4]);
+    expect([...fencedLines(['- item', '', '     ```', '     x', '     ```'])]).toEqual([2, 3, 4]);
+    expect([...fencedLines(['- item', '', '      ```', '      x', '      ```'])]).toEqual([]);
+    expect([...fencedLines(['1. item', '', '      ```', '      x', '      ```'])]).toEqual([2, 3, 4]);
+    // A column-zero line ENDS the item, so the fence ends with it and the
+    // closing delimiter opens a new block. This assertion used to read
+    // [2, 3, 4] and was wrong: rendered through marked, `x` comes out as its
+    // own <p> OUTSIDE the <pre>, and the trailing delimiter opens a second,
+    // empty code block. Fence-ends-with-its-list-item was raised by review on
+    // this file; the correction to this expectation is part of that fix.
+    expect([...fencedLines(['- item', '', '  ```', 'x', '  ```'])]).toEqual([2, 4]);
     // And the list ends at an unindented line.
     expect([...fencedLines(['- item', '', 'prose', '', '    ```', 'x'])]).toEqual([]);
   });
@@ -5135,5 +5147,279 @@ describe('a list-len derivation target', () => {
     // A TRACKED target still derives: this very file is tracked.
     expect(() => derive('list-len package.json "name": "(.*)"', { exec: () => '' }))
       .not.toThrow(/not tracked/);
+  });
+});
+
+
+
+describe('a code span', () => {
+  it('does not pair across a paragraph boundary', () => {
+    // Inline content cannot cross a blank line, so an unmatched backtick in
+    // one paragraph paired with another far below it -- masking every live
+    // link in between and silently dropping their findings. Masking the blank
+    // line is not equivalent: it contributes no characters to mask, so the
+    // paragraphs stay adjacent in the joined subject and pair regardless.
+    expect([...codeSpanLines(['a ` b', '', 'c ` d'])]).toEqual([]);
+    // Within one paragraph it still wraps.
+    expect([...codeSpanLines(['a ` b', 'c ` d'])]).toHaveLength(2);
+    expect(paragraphBlocks(['a', '', 'b', 'c', '', 'd']))
+      .toEqual([[0, 0], [2, 3], [5, 5]]);
+    // A fence is a boundary too, when the caller passes one.
+    expect(paragraphBlocks(['a', 'b', 'c'], new Set([1]))).toEqual([[0, 0], [2, 2]]);
+  });
+});
+
+describe('an escaped backtick', () => {
+  it('does not consume the real span opener', () => {
+    // Filtering escaped openers AFTER the scan cannot recover the opener the
+    // rejected match already ate: the escaped tick paired with the real
+    // opener, the pair was discarded, and the genuine span went unmasked --
+    // so the example link inside it was reported dead.
+    const line = '\\` literal ` [x](y.md) `';
+    expect(codeSpans(line)).toEqual([[11, 24]]);
+    expect(line.slice(11, 24)).toBe('` [x](y.md) `');
+  });
+});
+
+describe('a fence opened in a list item', () => {
+  it('ends with the item, closing fence or not', () => {
+    // CommonMark closes the code block where the item ends. Holding it open
+    // classified every remaining line as code and suppressed the dead links,
+    // blockers, headings and markers below it. Confirmed against marked: `x`
+    // renders as its own paragraph outside the <pre>.
+    expect([...fencedLines(['- item', '  ```', '  code', '', 'after [x](m.md)'])])
+      .toEqual([1, 2, 3]);
+    // A blank line does NOT end the item, so indented content after one stays
+    // inside the block.
+    expect([...fencedLines(['- item', '  ```', '  code', '', '  more', '  ```', 'after'])])
+      .toEqual([1, 2, 3, 4, 5]);
+    // A legally indented TOP-LEVEL fence, whose content may sit at column
+    // zero, is untouched: there is no list container, so the rule is off.
+    expect([...fencedLines([' ```', 'code', ' ```', 'after'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('a quoted Setext underline', () => {
+  it('stays with its title, and a quoted break does not', () => {
+    // Matching the raw underline always failed on the `>`, so a quoted Setext
+    // heading exposed no anchor and markerAnchor pointed at the TITLE --
+    // `--stamp` then inserted the marker between the title and its underline
+    // and destroyed the rendered H1 it was meant to annotate.
+    expect(isSetextUnderline(['> Title', '> ==='], 1)).toBe(true);
+    expect(isSetextUnderline(['> Example', '---'], 1)).toBe(false);
+    expect([...headingAnchors('> Title\n> ===\n')]).toEqual(['title']);
+    expect(markerAnchor(['> Quoted title', '> ====', '', 'body'])).toBe(1);
+    expect(markerAnchor(['Title', '====', '', 'body'])).toBe(1);
+    expect(markerAnchor(['# Title', '', 'body'])).toBe(0);
+    // An UNQUOTED underline below a quoted title is a different block, so it
+    // is not adopted: the depth comparison runs on the raw lines.
+    expect(markerAnchor(['> Quoted title', '====', '', 'body'])).toBe(0);
+  });
+});
+
+describe('an autolink in a heading', () => {
+  it('is text, not markup to strip', () => {
+    // The blanket `<[^>]+>` strip deleted `<https://example.com>` and recorded
+    // an EMPTY slug, so a valid link to the URL-derived fragment was reported
+    // dead. Only a tag NAME, optionally with attributes, is markup -- and now
+    // that the strip is narrow, a comment inside a heading has to be masked
+    // explicitly or it would slug as `---note----real`.
+    expect(headingSlug('Hello <em>world</em>')).toBe('hello-world');
+    expect(headingSlug('A <span class="x">tag</span>')).toBe('a-tag');
+    expect([...headingAnchors('## <https://example.com>\n')]).toEqual(['httpsexamplecom']);
+    expect([...headingAnchors('## <!-- note --> Real\n')]).toEqual(['real']);
+    // A character reference that RENDERS as a tag is still text.
+    expect(headingSlug('&lt;code&gt;')).toBe('code');
+  });
+});
+
+describe('a heading introduced by a list marker', () => {
+  it('is a heading, and a list item over a break is not', () => {
+    // `- # Install` renders a real heading and GitHub exposes its anchor, but
+    // stripping only the blockquote prefix left the marker in front of the ATX
+    // syntax -- so a valid link to `#install` was a gating dead anchor.
+    expect([...headingAnchors('- # Install\n')]).toEqual(['install']);
+    expect([...headingAnchors('1. ## Setup\n')]).toEqual(['setup']);
+    // The Setext branch now asks isSetextUnderline rather than an inline
+    // pattern of its own: `- Example` over a column-zero `---` is a list item
+    // that ENDS and a thematic break, and the inline copy recorded the
+    // fabricated anchor `--example` for it.
+    expect([...headingAnchors('- Example\n---\n')]).toEqual([]);
+    expect([...headingAnchors('Title\n---\n')]).toEqual(['title']);
+  });
+});
+
+describe('a quoted type-7 HTML block', () => {
+  it('opens after a quoted blank line', () => {
+    // Inside a blockquote the blank line is spelled `>`, which is nonempty
+    // raw -- so the interruption check saw a paragraph still open, the custom
+    // tag started nothing, and `[x](missing.md)` inside the block was audited
+    // as a live link.
+    expect([...rawHtmlBlockLines(['> prose', '>', '> <x-widget>', '> [x](m.md)'])])
+      .toEqual([2, 3]);
+  });
+});
+
+describe('the remaining CommonMark HTML block types', () => {
+  it('mask their contents like every other raw block', () => {
+    // A processing instruction, a declaration and a CDATA section each run raw
+    // to their own closer, so Markdown inside one renders literally. None was
+    // recognised, and `[x](missing.md)` in such a block produced a false
+    // gating dead-link finding over content displayed verbatim.
+    expect([...rawHtmlBlockLines(['<?php', '[x](m.md)', '?>', '# Real'])]).toEqual([0, 1, 2]);
+    expect([...rawHtmlBlockLines(['<![CDATA[', '[x](m.md)', ']]>', '# Real'])]).toEqual([0, 1, 2]);
+    // A declaration that closes on its own line is a one-line block.
+    expect([...rawHtmlBlockLines(['<!DOCTYPE html>', '[x](m.md)'])]).toEqual([0]);
+  });
+});
+
+describe('an HTML href', () => {
+  it('resolves character references and the unquoted form', () => {
+    // HTML decodes the attribute before anything else sees it, so
+    // `foo&#38;bar.md` IS `foo&bar.md` -- and splitting the raw attribute at
+    // the `#` INSIDE the reference gave the target `foo&` and the fragment
+    // `38;bar.md`, a gating dead-link finding against a tracked file.
+    expect(checkDeadLinks('d.md', '<a href="foo&#38;bar.md">g</a>\n',
+      linkCtx(['d.md', 'foo&bar.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '<a href="gone&#38;bar.md">g</a>\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    // `<a href=guide.md>` is valid HTML and renders a real link; recording
+    // only the quoted forms left its destination unchecked entirely.
+    expect(checkDeadLinks('d.md', '<a href=missing.md>g</a>\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+    expect(checkDeadLinks('d.md', '<a href=docs/a.md>g</a>\n',
+      linkCtx(['d.md', 'docs/a.md']))).toEqual([]);
+  });
+});
+
+describe('an unquoted HTML id attribute', () => {
+  it('declares an anchor, like the quoted forms', () => {
+    // `<div id=section>` is valid HTML and the browser exposes `section`, but
+    // recording only the quoted forms meant a valid `[x](#section)` was
+    // reported as a gating dead anchor.
+    expect([...headingAnchors('<div id=section>\n\ntext\n')]).toEqual(['section']);
+    expect([...headingAnchors('<a name="legacy"></a>\n\ntext\n')]).toEqual(['legacy']);
+  });
+});
+
+describe('a blocker citation inside a rendered HTML block', () => {
+  it('is still checked, unlike one in a raw-text block', () => {
+    // A `<div>` around `Blocked by <a href=".../issues/1">#1</a>` produces a
+    // clickable citation a reader acts on, and masking the whole block meant a
+    // closed issue cited there produced no finding at all. Only pre/script/
+    // style/textarea display their contents literally.
+    const states = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } }, stocks: {} };
+    const rendered = '<div>\nBlocked by <a href="https://github.com/TeneikaAskew/solyra/issues/1">#1</a>\n</div>\n';
+    expect(checkClosedIssues('d.md', rendered, states).map((f) => f.ref)).toEqual(['solyra#1']);
+    const raw = '<pre>\nBlocked by https://github.com/TeneikaAskew/solyra/issues/1\n</pre>\n';
+    expect(checkClosedIssues('d.md', raw, states)).toEqual([]);
+  });
+});
+
+describe('a reference definition', () => {
+  it('may put its destination on the next line, and respects its container', () => {
+    // `[guide]:` then `  missing.md` is a definition CommonMark resolves, and
+    // a per-line pattern could not capture it -- so, because reference USES
+    // are deliberately not scanned, the broken destination produced no finding
+    // at all. The finding is reported against the destination's line.
+    const multi = checkDeadLinks('d.md', '[guide]:\n  missing.md\n', linkCtx(['d.md']));
+    expect(multi.map((f) => [f.check, f.line])).toEqual([['dead-link', 2]]);
+    expect(checkDeadLinks('d.md', '[guide]:\n  ok.md\n', linkCtx(['d.md', 'ok.md']))).toEqual([]);
+    // A label with a BLANK line after it defines nothing.
+    expect(checkDeadLinks('d.md', '[g]:\n\nmissing.md\n', linkCtx(['d.md']))).toEqual([]);
+    // A quoted definition still defines; the anchored pattern saw `>` where it
+    // needs a bracket, so every one went unchecked.
+    expect(checkDeadLinks('d.md', '> [g]: missing.md\n', linkCtx(['d.md']))
+      .map((f) => f.detail)).toEqual(['reference link [g] -> missing.md']);
+    expect(checkDeadLinks('d.md', '> [g]: ok.md\n', linkCtx(['d.md', 'ok.md']))).toEqual([]);
+    // One inside a wrapped code span is an EXAMPLE, not a definition.
+    expect(checkDeadLinks('d.md', '`a\n[g]: missing.md\nb`\n', linkCtx(['d.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '[g]: missing.md\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('an issue URL', () => {
+  it('must sit at a host boundary', () => {
+    // Unanchored, any other site whose PATH embeds the string matched, so a
+    // link to example.com produced a stale-blocker finding against solyra#861.
+    // The bare-host spelling is still accepted -- documents here write it.
+    const states = { solyra: { 861: { state: 'closed', reason: 'completed', kind: 'ISSUE' } }, stocks: {} };
+    const embedded = 'Blocking issues: https://example.com/archive/github.com/TeneikaAskew/solyra/issues/861';
+    expect(checkClosedIssues('d.md', embedded, states)).toEqual([]);
+    const bare = 'Blocking issues: github.com/TeneikaAskew/solyra/issues/861';
+    expect(checkClosedIssues('d.md', bare, states).map((f) => f.ref)).toEqual(['solyra#861']);
+  });
+});
+
+describe('a marker hidden in a partly commented line', () => {
+  it('is not the document provenance', () => {
+    // A comment closed PART WAY through a line leaves visible text after the
+    // `-->`, so the line is not wholly commented -- and trimming it put the
+    // hidden marker prefix first, where MARKER_RE matched and the `-->` landed
+    // harmlessly in the tail. --stamp would then rewrite it inside the comment.
+    const hidden = ['# T', '<!-- retired',
+      '**Last reviewed:** 2026-09-20 (depth: full) --> tail'];
+    expect(findMarkers(hidden)).toEqual([]);
+    expect(findMarker(hidden)).toBeNull();
+    expect(findMarkers(['# T', '**Last reviewed:** 2026-09-20 (depth: full)'])).toEqual([1]);
+    expect([...commentedPrefixLines(['a', '<!-- x', 'y --> visible'])]).toEqual([1, 2]);
+  });
+});
+
+describe('a link', () => {
+  it('does not pair across a paragraph boundary', () => {
+    // A `[` in one paragraph and a `](missing.md)` in the next render as
+    // literal brackets. Scanning the whole document as one string paired them
+    // and reported a destination no reader can click.
+    expect(checkDeadLinks('d.md', 'text [label\n\nmore](missing.md)\n',
+      linkCtx(['d.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', 'text [label\nmore](missing.md)\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('a query-only destination', () => {
+  it('still has its fragment checked', () => {
+    // Stripping the query empties the path, and returning there skipped the
+    // anchor check entirely -- so `[x](?plain=1#missing)`, which navigates
+    // within THIS document exactly as `#missing` does, passed.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qf-'));
+    const rel = path.relative(process.cwd(), dir);
+    try {
+      fs.writeFileSync(path.join(dir, 'd.md'), '# Real\n\nsee [x](?plain=1#missing)\n');
+      const text = fs.readFileSync(path.join(dir, 'd.md'), 'utf8');
+      const doc = path.posix.join(rel.split(path.sep).join('/'), 'd.md');
+      expect(checkDeadLinks(doc, text, linkCtx([doc])).map((f) => f.check))
+        .toEqual(['dead-anchor']);
+      fs.writeFileSync(path.join(dir, 'd.md'), '# Real\n\nsee [x](?plain=1#real)\n');
+      const ok = fs.readFileSync(path.join(dir, 'd.md'), 'utf8');
+      expect(checkDeadLinks(doc, ok, linkCtx([doc]))).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a link to a tracked symlink', () => {
+  it('is refused before its headings are read', () => {
+    // The preflight guards the document being SCANNED, not the ones it cites.
+    // Collecting a linked document's headings opened it directly, so a link to
+    // a tracked symlink audited the target's machine-local bytes -- and one
+    // pointing at a non-terminating special file hangs here.
+    const real = 'docs-audit-symlink-real.md';
+    const link = 'docs-audit-symlink-link.md';
+    try {
+      fs.writeFileSync(real, '# Real\n');
+      fs.symlinkSync(real, link);
+      expect(() => checkDeadLinks('d.md', `see [x](${link}#real)\n`,
+        linkCtx(['d.md', link]))).toThrow(/tracked symlink/);
+      // A regular file is read as before.
+      expect(checkDeadLinks('d.md', `see [x](${real}#real)\n`,
+        linkCtx(['d.md', real]))).toEqual([]);
+    } finally {
+      fs.rmSync(link, { force: true });
+      fs.rmSync(real, { force: true });
+    }
   });
 });

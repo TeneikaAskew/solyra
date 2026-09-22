@@ -111,8 +111,15 @@ export function hasBlockingCue(line) {
 // worse than the bug: the captured name would index `states['Solyra']`, miss,
 // and fabricate a "could not be resolved" P2 against a live issue. The
 // capture is lower-cased at the call site (see normaliseRepo).
+// Anchored to a HOST boundary. Unanchored, any other site whose PATH embeds
+// the string matched: `https://example.com/archive/github.com/<owner>/solyra/
+// issues/1` produced a stale-blocker finding against solyra#1 although the
+// document links only to example.com. The bare-host spelling (`github.com/...`
+// with no scheme) is deliberately still accepted -- documents here write it --
+// so the boundary is "start, whitespace/bracket, or a scheme's `//`", not
+// "https:// only". Parity with the Python twin (stocks#1121).
 const ISSUE_URL_RE = new RegExp(
-  `github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)`,
+  `(?:(?<=^)|(?<=[\\s(\\[<])|(?<=//))github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)`,
   'gi'
 );
 
@@ -1136,20 +1143,30 @@ const SETEXT_UNDERLINE_RE = /^ {0,3}(?:=+|-{2,})\s*$/;
  */
 export function isSetextUnderline(lines, i, masked = new Set()) {
   if (i <= 0 || masked.has(i) || masked.has(i - 1)) return false;
-  if (!SETEXT_UNDERLINE_RE.test(lines[i] ?? '')) return false;
-  const above = lines[i - 1] ?? '';
+  // The blockquote container is stripped from BOTH lines for the PATTERN
+  // tests. `> Title` over `> ===` renders as a heading, and matching the raw
+  // underline always failed on the `>` -- so headingAnchors omitted the
+  // rendered anchor and a working fragment was reported dead. Parity with the
+  // Python twin (stocks#1121).
+  const under = (lines[i] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
+  if (!SETEXT_UNDERLINE_RE.test(under)) return false;
+  const above = (lines[i - 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
   if (!(Boolean(above.trim()) && !/^ {0,3}#/.test(above))) return false;
   // The underline must sit in the SAME container block. `> Example` followed
   // by an unquoted `---` ends the blockquote and renders a thematic break;
   // reading it as a heading closed markerWindow above a real marker below the
   // break, so the audit reported it missing and --stamp could insert a
   // contradictory second one. Ported from the Python twin (stocks#1121).
-  if (quoteDepth(above) !== quoteDepth(lines[i] ?? '')) return false;
+  // Compared on the RAW lines: the stripped copies above are for the pattern
+  // tests only, and depth read off them is 0 for every line, which both
+  // accepts `> Example` over an unquoted `---` and rejects the quoted heading
+  // the strip exists to admit.
+  if (quoteDepth(lines[i - 1] ?? '') !== quoteDepth(lines[i] ?? '')) return false;
   // A list item is a container too: `- Example` then `---` at column 0 ends
   // the list. An underline indented to the item's CONTENT column is still an
   // underline, which is why this is an indentation test rather than a ban.
   const item = /^(\s*)((?:[-*+]|\d+[.)])\s+)/.exec(above);
-  if (item && (/^\s*/.exec(lines[i] ?? '')[0].length < item[0].length)) return false;
+  if (item && (/^\s*/.exec(under)[0].length < item[0].length)) return false;
   return true;
 }
 
@@ -1475,9 +1492,26 @@ const HTML_BLOCK_OPEN_RE = /^ {0,3}<\/?([a-zA-Z][a-zA-Z0-9-]*)(?:[\s/>]|$)/;
 // is not accepted, because telling its end from the next attribute needs a
 // parser and guessing would invent destinations -- the failure this whole
 // check exists to avoid.
-const HTML_HREF_RE = /<a\s[^>]*?href\s*=\s*("([^"]*)"|'([^']*)')/gi;
+// The UNQUOTED attribute form as well. `<a href=guide.md>` is valid HTML and
+// renders a real link, so recording only the quoted forms left its destination
+// unchecked -- a deleted target cited that way produced no finding at all.
+// The unquoted value ends at whitespace or any of `"'=<>`` `, which is what
+// HTML says delimits it.
+const HTML_HREF_RE = /<a\s[^>]*?href\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/gi;
 
 const HTML_TYPE7_RE = /^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*?)?\/?>\s*$/;
+
+// CommonMark HTML block types 3, 4 and 5 -- processing instruction, document
+// declaration and CDATA. Each runs raw to its own closer, over as many lines
+// as it takes, so Markdown inside one renders literally; none of them was
+// recognised, and `[x](missing.md)` in such a block produced a false gating
+// dead-link finding over content displayed verbatim. Type 2 is the HTML
+// comment, which this scanner already tracks separately.
+const HTML_RAW_DELIMITED = [
+  [/^ {0,3}<\?/, '?>'],
+  [/^ {0,3}<!\[CDATA\[/, ']]>'],
+  [/^ {0,3}<![A-Za-z]/, '>'],
+];
 
 export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
   const out = new Set();
@@ -1492,6 +1526,9 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
   // tracking it beside the others costs nothing.
   let inComment = false;
   let open = null;
+  // The closer a type-3/4/5 block waits for (`?>`, `]]>`, `>`). Null for the
+  // tag-closed and blank-line-closed kinds.
+  let closer = null;
   lines.forEach((raw, i) => {
     if (fenced.has(i)) return;
     // The CONTAINER prefix is stripped, as the fence and indented-code
@@ -1517,6 +1554,16 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
       }
       const m = RAW_TEXT_OPEN_RE.exec(line);
       if (!m) {
+        // Types 3, 4 and 5 -- processing instruction, declaration, CDATA --
+        // before the rawTextOnly gate, because each renders its contents
+        // literally exactly as `<pre>` does: an `id=` inside one is displayed,
+        // not exposed as an anchor.
+        const delim = HTML_RAW_DELIMITED.find(([re]) => re.test(line));
+        if (delim) {
+          out.add(i);
+          if (!line.includes(delim[1])) { open = '\u0001'; [, closer] = delim; }
+          return;
+        }
         // Type 6. Sentinel rather than a tag name, because the block does not
         // close on one -- a blank line ends it whatever tags are inside.
         if (rawTextOnly) return;
@@ -1529,7 +1576,13 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
         // Type 7, same sentinel: it also ends at a blank line. Only where a
         // paragraph is not already open, so a bare tag on a continuation line
         // is inline HTML rather than the start of a block.
-        if (HTML_TYPE7_RE.test(line) && (i === 0 || !(lines[i - 1] ?? '').trim())) {
+        // The previous line is read THROUGH its container, as this line
+        // already is. Inside a blockquote the blank line is spelled `>`, which
+        // is nonempty raw -- so a quoted `<x-widget>` after a quoted blank
+        // opened nothing and a `[x](missing.md)` inside the block was audited
+        // as a live link.
+        const prev = (lines[i - 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
+        if (HTML_TYPE7_RE.test(line) && (i === 0 || !prev.trim())) {
           open = '\u0000';
           out.add(i);
         }
@@ -1542,6 +1595,10 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
       return;
     }
     out.add(i);
+    if (closer !== null) {
+      if (line.includes(closer)) { open = null; closer = null; }
+      return;
+    }
     if (open === '\u0000') {
       // A type-6 block ends at the next BLANK line, not at a close tag.
       if (!line.trim()) { out.delete(i); open = null; }
@@ -1605,6 +1662,9 @@ export function fencedLines(lines) {
   // and with no info string.
   let open = null;
   let openDepth = 0;
+  // The content column of the list item the OPEN fence sits in, captured when
+  // it opens. Zero means it is not in one, which disables the rule below.
+  let openListCol = 0;
   // The enclosing list item's content column, so a fence indented to it is a
   // fence rather than indented code. Reset by a non-blank line at column 0.
   let listIndent = 0;
@@ -1650,6 +1710,16 @@ export function fencedLines(lines) {
     // opens at depth 0 and nothing is below 0, so it is untouched. Ported from
     // the Python twin (stocks#1121), which had the same defect.
     if (open && quoteDepth(line) < openDepth) open = null;
+    // A fence opened inside a LIST ITEM ends with that item, closing fence or
+    // not, exactly as a quoted one ends with its quote. The item ends at the
+    // first non-blank line left of its content column, so holding the fence
+    // open past that classified every remaining line as code and suppressed
+    // the dead links, blockers, headings and markers below it. A fence
+    // indented one to three columns at the TOP level is legal and its content
+    // may sit at column zero, which is why this arms only when the fence is
+    // genuinely inside an item. Parity with the Python twin (stocks#1121).
+    if (open && openListCol && line.trim()
+        && /^[ \t]*/.exec(line)[0].length < openListCol) open = null;
     const m = /^([ \t]*)((?:> ?)*)((?:[-*+]|\d+[.)])\s+)?([ \t]*)(`{3,}|~{3,})(.*)$/
       .exec(line);
     if (m) {
@@ -1669,6 +1739,7 @@ export function fencedLines(lines) {
       if (m && !(m[5][0] === '`' && m[6].includes('`'))) {
         open = m[5];
         openDepth = quoteDepth(line);
+        openListCol = listIndent;
         fenced.add(i);
       }
       return;
@@ -1695,9 +1766,21 @@ export function codeSpans(line) {
   // made the dead-link and blocker passes skip a real citation -- the hiding
   // direction. Parity via isEscaped, so `\\\`` (a literal backslash) still
   // opens a span. Ported from the Python twin (stocks#1121).
-  for (const m of line.matchAll(re)) {
-    if (isEscaped(line, m.index)) continue;
+  // Skipped while SCANNING, not filtered afterwards. A post-hoc filter cannot
+  // recover an opener the rejected match already consumed: on
+  // `` \` literal ` [x](y.md) ` `` the escaped tick paired with the real
+  // opener, the pair was then discarded, and the genuine span went unmasked --
+  // so the example link inside it was reported dead. Restarting the search one
+  // character past a rejected opener is what lets the real one pair. Parity
+  // with the Python twin (stocks#1121).
+  re.lastIndex = 0;
+  for (let m = re.exec(line); m !== null; m = re.exec(line)) {
+    if (isEscaped(line, m.index)) {
+      re.lastIndex = m.index + 1;
+      continue;
+    }
     out.push([m.index, m.index + m[0].length]);
+    re.lastIndex = m.index + m[0].length;
   }
   return out;
 }
@@ -1711,19 +1794,53 @@ export function codeSpans(line) {
  * whole document is scanned once here and the ranges split back per line, so
  * the callers keep their per-line offsets.
  */
+/**
+ * Runs of consecutive lines that can hold ONE paragraph, as [first, last].
+ *
+ * A blank line ends a paragraph and a fence interrupts it, so inline syntax
+ * may not pair across either. Callers that scan the joined document need the
+ * boundary as a scan WINDOW rather than as masking: a blank line has no
+ * characters to mask, so masking leaves the neighbouring paragraphs adjacent
+ * in the subject and the pairing happens regardless -- measured. Parity with
+ * the Python twin (stocks#1121).
+ */
+export function paragraphBlocks(lines, fenced = new Set()) {
+  const blocks = [];
+  let start = null;
+  lines.forEach((line, i) => {
+    if (!line.trim() || fenced.has(i)) {
+      if (start !== null) { blocks.push([start, i - 1]); start = null; }
+    } else if (start === null) start = i;
+  });
+  if (start !== null) blocks.push([start, lines.length - 1]);
+  return blocks;
+}
+
 export function codeSpanLines(lines) {
   const text = lines.join('\n');
   const starts = [];
   let at = 0;
   for (const line of lines) { starts.push(at); at += line.length + 1; }
   const out = new Map();
-  for (const [lo, hi] of codeSpans(text)) {
-    for (let i = 0; i < lines.length; i += 1) {
-      const from = starts[i];
-      const to = from + lines[i].length;
-      if (hi <= from || lo >= to) continue;
-      if (!out.has(i)) out.set(i, []);
-      out.get(i).push([Math.max(lo - from, 0), Math.min(hi - from, lines[i].length)]);
+  // PER PARAGRAPH, not across the whole document. Inline content cannot span
+  // a blank line, so joining everything let an unmatched backtick in one
+  // paragraph pair with another far below it -- masking every live link in
+  // between and silently dropping their findings. The scan WINDOW is the
+  // block; masking the blank line instead is not equivalent, because it has
+  // no characters to mask and the paragraphs stay adjacent.
+  for (const [bLo, bHi] of paragraphBlocks(lines)) {
+    const base = starts[bLo];
+    const end = starts[bHi] + lines[bHi].length;
+    for (const [lo0, hi0] of codeSpans(text.slice(base, end))) {
+      const lo = lo0 + base;
+      const hi = hi0 + base;
+      for (let i = bLo; i <= bHi; i += 1) {
+        const from = starts[i];
+        const to = from + lines[i].length;
+        if (hi <= from || lo >= to) continue;
+        if (!out.has(i)) out.set(i, []);
+        out.get(i).push([Math.max(lo - from, 0), Math.min(hi - from, lines[i].length)]);
+      }
     }
   }
   return out;
@@ -1885,6 +2002,29 @@ export function spanHiddenLines(lines) {
   return out;
 }
 
+/**
+ * Lines whose FIRST visible character sits inside an HTML comment.
+ *
+ * Whole-line commenting is not the only way a marker hides. A comment opened
+ * on an earlier line and closed PART WAY through this one leaves visible text
+ * after the `-->`, so `commentedLines` does not exclude it -- and trimming the
+ * line puts the hidden marker prefix first, where MARKER_RE matches it and the
+ * `-->` lands harmlessly in the tail. The document then passes the
+ * missing-marker check carrying no rendered provenance, and `--stamp` rewrites
+ * the line still inside the comment. The OFFSET is what decides it, so this
+ * reads the spans rather than the line set. Parity with the Python twin
+ * (stocks#1121).
+ */
+export function commentedPrefixLines(lines) {
+  const spans = commentSpans(lines);
+  const out = new Set();
+  lines.forEach((line, i) => {
+    const col = line.length - line.trimStart().length;
+    if ((spans.get(i) ?? []).some(([lo, hi]) => lo <= col && col < hi)) out.add(i);
+  });
+  return out;
+}
+
 export function findMarkers(lines) {
   const { from, to } = markerSection(lines);
   const fenced = fencedLines(lines);
@@ -1895,10 +2035,12 @@ export function findMarkers(lines) {
   const commented = commentedLines(lines);
   // And a line a code SPAN covers entirely -- see spanHiddenLines.
   const spanned = spanHiddenLines(lines);
+  // And one whose marker PREFIX is commented out -- see commentedPrefixLines.
+  const prefixHidden = commentedPrefixLines(lines);
   const out = [];
   for (let i = from; i < to; i += 1) {
     if (fenced.has(i) || commented.has(i) || spanned.has(i)
-      || isCodeIndented(lines[i])) continue;
+      || prefixHidden.has(i) || isCodeIndented(lines[i])) continue;
     // Trimmed, exactly as findMarker parses it. The anchored regex was
     // applied to the RAW line, so a marker with one to three leading spaces --
     // which findMarker accepts as a rendered paragraph -- was invisible here
@@ -1926,10 +2068,12 @@ export function markerShapedLines(lines) {
   const commented = commentedLines(lines);
   // And a line a code SPAN covers entirely -- see spanHiddenLines.
   const spanned = spanHiddenLines(lines);
+  // And one whose marker PREFIX is commented out -- see commentedPrefixLines.
+  const prefixHidden = commentedPrefixLines(lines);
   const out = [];
   for (let i = from; i < to; i += 1) {
     if (fenced.has(i) || commented.has(i) || spanned.has(i)
-      || isCodeIndented(lines[i])) continue;
+      || prefixHidden.has(i) || isCodeIndented(lines[i])) continue;
     const line = lines[i].trim();
     if (!MARKER_SHAPE_RE.test(line)) continue;
     if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) continue;
@@ -1944,6 +2088,8 @@ export function findMarker(lines) {
   const commented = commentedLines(lines);
   // And a line a code SPAN covers entirely -- see spanHiddenLines.
   const spanned = spanHiddenLines(lines);
+  // And one whose marker PREFIX is commented out -- see commentedPrefixLines.
+  const prefixHidden = commentedPrefixLines(lines);
   for (let i = from; i < to; i += 1) {
     // An INDENTED marker-shaped line is an example, not the document's
     // provenance: trimming before parsing let a four-space code sample count
@@ -1951,7 +2097,7 @@ export function findMarker(lines) {
     // then replaced the example with an unindented live marker, destroying
     // the example's structure. Fenced blocks are excluded for the same reason.
     if (fenced.has(i) || commented.has(i) || spanned.has(i)
-      || isCodeIndented(lines[i])) continue;
+      || prefixHidden.has(i) || isCodeIndented(lines[i])) continue;
     const line = lines[i].trim();
     const m = MARKER_RE.exec(line);
     if (m) {
@@ -2035,7 +2181,16 @@ export function h1Index(lines) {
 export function markerAnchor(lines) {
   const h1 = h1Index(lines);
   if (h1 === null) return null;
-  return /^ {0,3}=+\s*$/.test(lines[h1 + 1] ?? '') ? h1 + 1 : h1;
+  // The underline is read THROUGH its container, exactly as h1Index reads the
+  // title. `> Quoted title` over `> ====` left this branch seeing `>` where
+  // it needs `=`, so --stamp inserted the marker BETWEEN the title and its
+  // underline and destroyed the rendered H1 it was meant to annotate.
+  // Depth is compared on the RAW lines so an UNQUOTED `====` below a quoted
+  // title -- a different block -- is not adopted as its underline.
+  const raw = lines[h1 + 1] ?? '';
+  const sameBlock = quoteDepth(lines[h1] ?? '') === quoteDepth(raw);
+  const under = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
+  return (sameBlock && /^ {0,3}=+\s*$/.test(under)) ? h1 + 1 : h1;
 }
 
 /**
@@ -2375,7 +2530,16 @@ export function checkClosedIssues(doc, text, states) {
   // --check gates on these findings, so a document DEMONSTRATING what a
   // blocking citation looks like failed the audit over its own example. The
   // link, heading and marker checks already skip fenced lines.
-  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines), ...rawHtmlBlockLines(lines)]);
+  // RAW-TEXT blocks only among the HTML kinds. A type-6 or type-7 block is
+  // RENDERED -- `<div>` around `Blocked by <a href=".../issues/1">#1</a>`
+  // produces a clickable blocker citation that a reader acts on -- and
+  // masking the whole block meant a closed issue cited there produced no
+  // finding at all. Only `<pre>`/`<script>`/`<style>`/`<textarea>` (and the
+  // PI/declaration/CDATA kinds this option also covers) display their
+  // contents literally, so only those suppress the scan. Same distinction the
+  // explicit-anchor scan already draws.
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
   // And text commented OUT, which is how a blocker list is retired without
   // losing it: the prose no longer renders, but --check still held the build
   // red over it. Raised on the Python twin (stocks#1121).
@@ -2632,7 +2796,12 @@ export function headingSlug(heading) {
   // AFTER the tag strip, not before: `&lt;code&gt;` is literal text that
   // renders as `<code>`, and decoding first would turn it into a tag for the
   // strip above to delete -- removing content GitHub keeps.
-  let s = decodeCharRefs(heading.replace(/<[^>]+>/g, '')
+  // A TAG, not every angle-bracketed run. An AUTOLINK is text: `## <https://x>`
+  // renders as the URL and GitHub derives a nonempty anchor from it, while the
+  // blanket strip deleted it and recorded an EMPTY slug -- so a valid link to
+  // that fragment was reported dead. Only a tag NAME, optionally with
+  // attributes, is markup. Parity with the Python twin (stocks#1121).
+  let s = decodeCharRefs(heading.replace(/<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>/g, '')
     .replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'));
   // Emphasis MARKUP only. Stripping every underscore turned `## API_FIELD`
   // into `apifield`, so a valid link to `#api_field` read as a dead anchor
@@ -2663,9 +2832,9 @@ export function headingSlug(heading) {
  * so the region scan masks the same way. Parity with the Python twin's
  * `mask_spans` (stocks#1121).
  */
-export function maskSpans(line, spans) {
+export function maskSpans(line, spans, fill = '\u0000') {
   return spans.reduce(
-    (acc, [lo, hi]) => acc.slice(0, lo) + '\u0000'.repeat(hi - lo) + acc.slice(hi), line);
+    (acc, [lo, hi]) => acc.slice(0, lo) + fill.repeat(hi - lo) + acc.slice(hi), line);
 }
 
 export function stripEmphasis(line) {
@@ -2696,6 +2865,13 @@ export function headingAnchors(text) {
   // the Python twin (stocks#1121).
   const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
     ...rawHtmlBlockLines(lines), ...indentedCodeLines(lines)]);
+  // A comment INSIDE a rendered heading is not part of its text. The blanket
+  // tag strip used to remove it as a side effect; now that only real tags are
+  // stripped, the comment has to be masked explicitly or `## <!-- note --> Real`
+  // would slug as `---note----real` -- the fabricated anchor accepted and the
+  // valid link to `#real` reported dead. SPACES, not the default NUL: the slug
+  // trims whitespace but not NUL, which would leave a leading hyphen.
+  const headingHidden = commentSpans(lines);
   for (const [i, raw] of lines.entries()) {
     if (fenced.has(i)) continue;
     // A heading may sit inside a container and still be a heading: `> ## Q`
@@ -2703,7 +2879,8 @@ export function headingAnchors(text) {
     // valid local link produced a gating dead-anchor finding. The prefix is
     // consumed for the heading test exactly as `fencedLines` and
     // `indentedCodeLines` consume it for theirs.
-    const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
+    const line = maskSpans(raw, headingHidden.get(i) ?? [], ' ')
+      .replace(BLOCKQUOTE_PREFIX_RE, '');
     // `## Install ##` renders as `Install`, and GitHub's anchor is `install`.
     // Passing `Install ##` to headingSlug recorded `install-`, so a valid link
     // to `#install` was reported dead.
@@ -2712,12 +2889,24 @@ export function headingAnchors(text) {
     // emitted as a dead-anchor P2 and could fail --check.
     // The underline is read through the same container prefix, or a quoted
     // Setext heading would lose its underline and stop being one.
-    const next = (lines[i + 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
-    const setext = line.trim() && !fenced.has(i + 1)
-      && /^ {0,3}(=+|-{2,})\s*$/.test(next) && !/^ {0,3}#/.test(line);
+    // The underline test is `isSetextUnderline`, not an inline pattern. The
+    // inline copy had none of that predicate's container rules, so `- Example`
+    // over a column-zero `---` -- a list item that ENDS and a thematic break --
+    // recorded the fabricated anchor `--example`, which a link could then
+    // resolve against. The Python twin has asked the predicate since
+    // stocks#1121; this is the parity port.
+    const setext = isSetextUnderline(lines, i + 1, fenced);
+    // A LIST MARKER is a container prefix too. `- # Install` and `1. ## Setup`
+    // render real headings and GitHub exposes their anchors, but stripping
+    // only the blockquote prefix left the marker in front of the ATX syntax --
+    // so the anchor was omitted and a valid link to it was reported as a
+    // gating dead anchor. Applied to the ATX branch only: for Setext,
+    // `- Example` over `---` at column zero ENDS the list and renders a
+    // thematic break, and stripping the marker there would invent a heading.
+    const atx = line.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
     const m = setext
       ? [null, line.trim()]
-      : /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(line);
+      : /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(atx);
     if (!m) continue;
     const base = headingSlug(m[1]);
     // Advance until the slug is unused, rather than trusting a per-base
@@ -2758,8 +2947,12 @@ export function headingAnchors(text) {
     const visible = maskSpans(raw,
       [...codeSpans(raw), ...(wrappedSpans.get(i) ?? []),
         ...(commentRanges.get(i) ?? [])]);
-    for (const mm of visible.matchAll(/<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
-      const id = mm[2] ?? mm[3];
+    // The UNQUOTED attribute form too. `<div id=section>` is valid HTML and
+    // the browser exposes `section`, but recording only the quoted forms meant
+    // a valid `[x](#section)` was reported as a gating dead anchor.
+    for (const mm of visible.matchAll(
+      /<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/g)) {
+      const id = mm[2] ?? mm[3] ?? mm[4];
       if (id) out.add(id.toLowerCase());
     }
   }
@@ -2791,6 +2984,17 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   const anchorCache = new Map();
   const anchorsOf = (p) => {
     if (!anchorCache.has(p)) {
+      // The LINKED document gets the same refusal the audited one does. The
+      // preflight guards the doc being scanned, not the ones it cites, so a
+      // link to a tracked symlink read the target's machine-local bytes to
+      // collect its headings -- and one pointing at a non-terminating special
+      // file hangs or exhausts memory here, which the catch below cannot
+      // catch. Parity with the Python twin (stocks#1121).
+      if (fs.lstatSync(path.join(REPO, p), { throwIfNoEntry: false })?.isSymbolicLink()) {
+        throw new AuditError(`${p} is a tracked symlink, so reading it would audit `
+          + 'its target rather than a document in this repository; the result '
+          + 'would not reproduce in another clone');
+      }
       try {
         anchorCache.set(p, headingAnchors(fs.readFileSync(path.join(REPO, p), 'utf8')));
       } catch (err) {
@@ -2840,14 +3044,51 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // Markdown at all, so validating it produced a false gating dead-link for
   // retired content. The fenced exclusion was here; the comment one was not.
   const commentedDefs = commentedLines(lines);
-  lines.forEach((line, i) => {
-    if (fenced.has(i) || commentedDefs.has(i)) return;
+  // A definition-shaped line inside a code span is an EXAMPLE of one. The
+  // single-line form cannot match anyway -- the opening backtick sits where
+  // the anchored pattern needs a bracket -- but a span opened on an earlier
+  // line covers this one whole, and `[g]: missing.md` displayed inside such a
+  // span was validated as a live destination. Parity with the Python twin
+  // (stocks#1121).
+  const wrappedDefs = codeSpanLines(lines);
+  const spanHidden = (i) => {
+    const stop = lines[i].replace(/\s+$/, '').length;
+    if (!stop) return false;
+    return [...codeSpans(lines[i]), ...(wrappedDefs.get(i) ?? [])]
+      .some(([lo, hi]) => lo <= 0 && hi >= stop);
+  };
+  lines.forEach((raw, i) => {
+    if (fenced.has(i) || commentedDefs.has(i) || spanHidden(i)) return;
+    // A definition inside a blockquote still defines: `> [g]: docs/g.md`
+    // renders as a working reference for uses inside that quote, and the
+    // anchored pattern saw `>` where it needs a bracket -- so every quoted
+    // definition went unchecked. Parity with the Python twin (stocks#1121).
+    const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
     // `<...>` is the standard destination form and the ONLY one that may
     // contain a space, which is exactly why an author reaches for it.
     // `\S+` stopped at the space, so `[guide]: <docs/user guide.md>` captured
     // `<docs/user` and a tracked file was reported dead. The inline-link
     // parser already accepts this form; the definition parser did not.
-    const m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(?:<([^<>\n]*)>|(\S+))/.exec(line);
+    let m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(?:<([^<>\n]*)>|(\S+))/.exec(line);
+    // The destination may sit on the FOLLOWING line: `[guide]:` then
+    // `  missing.md` is a definition CommonMark resolves, and `[x][guide]`
+    // renders as a clickable link to it. A per-line pattern could not capture
+    // that, and because reference USES are deliberately not scanned, the
+    // broken destination produced no finding at all. The continuation is read
+    // through the same exclusions as any other line, and the finding is
+    // reported against the line the destination is on, which is where a fix
+    // goes.
+    let destLine = i;
+    if (!m) {
+      const head = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*$/.exec(line);
+      const j = i + 1;
+      if (head && j < lines.length && !fenced.has(j) && !commentedDefs.has(j)
+          && !spanHidden(j)) {
+        const cont = lines[j].replace(BLOCKQUOTE_PREFIX_RE, '');
+        const d = /^[ \t]*(?:<([^<>\n]*)>|(\S+))/.exec(cont);
+        if (d) { m = [null, head[1], d[1], d[2]]; destLine = j; }
+      }
+    }
     // The FIRST definition wins, as CommonMark resolves it. Overwriting with
     // the last emitted a false dead-link when the first destination exists and
     // the duplicate is stale, and missed the link readers follow in the
@@ -2859,7 +3100,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // to an undefined bare group and throw on the replace below.
     const dest = m && (m[2] !== undefined ? m[2] : m[3]);
     if (m && !refDefs.has(label)) {
-      refDefs.set(label, { target: dest, line: i + 1 });
+      refDefs.set(label, { target: dest, line: destLine + 1 });
     }
   });
 
@@ -2903,18 +3144,26 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       } catch {
         bare = raw;
       }
-      if (!bare) return;
-      // A slash-prefixed destination is a HOST-ROOT URL, not a repository
-      // path: `[Dashboard](/dashboard)` is a route this app serves. Stripping
-      // the slash and looking it up in `tracked` reported valid application
-      // links as dead, and would have accepted one by accident wherever a
-      // same-named directory happened to exist.
-      if (bare.startsWith('/')) return;
-      norm = path.posix.normalize(path.posix.join(base, bare));
-      if (norm.startsWith('..')) return;
-      if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
-        out.push({ check: 'dead-link', doc, line: lineNo, severity: 'P2', detail: what });
-        return;
+      // Stripping the query can empty the path outright -- `[x](?plain=1#h)`
+      // is a link to THIS document carrying a query string. Returning on an
+      // empty path skipped the fragment check entirely, so a dead anchor
+      // spelled that way passed; it is the same same-document case as `#h`.
+      // Parity with the Python twin (stocks#1121).
+      if (!bare) {
+        norm = doc;
+      } else {
+        // A slash-prefixed destination is a HOST-ROOT URL, not a repository
+        // path: `[Dashboard](/dashboard)` is a route this app serves.
+        // Stripping the slash and looking it up in `tracked` reported valid
+        // application links as dead, and would have accepted one by accident
+        // wherever a same-named directory happened to exist.
+        if (bare.startsWith('/')) return;
+        norm = path.posix.normalize(path.posix.join(base, bare));
+        if (norm.startsWith('..')) return;
+        if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
+          out.push({ check: 'dead-link', doc, line: lineNo, severity: 'P2', detail: what });
+          return;
+        }
       }
     }
     // The same predicate documentSet uses. After alternate suffixes were
@@ -3011,7 +3260,22 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       for (const m of line.matchAll(HTML_HREF_RE)) {
         if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
         if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
-        const [tgt, frag] = (m[2] ?? m[3] ?? '').split('#');
+        // A character reference is consumed as a UNIT before the fragment
+        // delimiter is sought. HTML decodes the attribute first, so
+        // `<a href="foo&#38;bar.md">` links to `foo&bar.md` -- and splitting
+        // the raw attribute at the `#` INSIDE the reference gave the target
+        // `foo&` and the fragment `38;bar.md`, a gating dead-link finding
+        // against a tracked file. The search runs over a copy with each
+        // reference blanked to the same length, so the index still applies to
+        // the original and checkTarget decodes exactly what it decoded before.
+        // indexOf rather than split, so a fragment carrying a second `#` is
+        // not truncated. Parity with the Markdown destination pattern, which
+        // consumes references the same way (stocks#1121).
+        const href = m[2] ?? m[3] ?? m[4] ?? '';
+        const probe = href.replace(/&#?[0-9A-Za-z]{1,32};/g, (r) => '_'.repeat(r.length));
+        const at = probe.indexOf('#');
+        const tgt = at === -1 ? href : href.slice(0, at);
+        const frag = at === -1 ? undefined : href.slice(at + 1);
         if (!tgt && !frag) continue;
         checkTarget(tgt, frag, i + 1);
       }
@@ -3106,11 +3370,23 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     }
     return lo;
   };
-  for (const mm of visibleDoc.matchAll(MD_LINK_RE)) {
-    if (!mm[0].includes('\n')) continue;
-    if (isEscaped(visibleDoc, mm.index)) continue;
-    const [tgt, frag] = mm[1] !== undefined ? [mm[1], mm[2]] : [mm[3], mm[4]];
-    checkTarget(tgt, frag, lineOf(mm.index) + 1);
+  // Inline content does not cross a paragraph boundary. A blank line ends the
+  // paragraph, so a `[` in one and a `](missing.md)` in the next render as
+  // literal brackets -- and scanning the whole document as one string paired
+  // them and reported a destination no reader can click. A fence interrupts a
+  // paragraph the same way. Masking the blank line is not equivalent: it has
+  // no characters to mask, so the paragraphs stay adjacent in the subject and
+  // pair regardless. The scan is therefore windowed to one block at a time.
+  // Parity with the Python twin (stocks#1121).
+  for (const [bLo, bHi] of paragraphBlocks(lines, fenced)) {
+    const from = docStarts[bLo];
+    const to = docStarts[bHi] + lines[bHi].length;
+    for (const mm of visibleDoc.slice(from, to).matchAll(MD_LINK_RE)) {
+      if (!mm[0].includes('\n')) continue;
+      if (isEscaped(visibleDoc, from + mm.index)) continue;
+      const [tgt, frag] = mm[1] !== undefined ? [mm[1], mm[2]] : [mm[3], mm[4]];
+      checkTarget(tgt, frag, lineOf(from + mm.index) + 1);
+    }
   }
   return out;
 }
