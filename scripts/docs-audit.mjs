@@ -1532,7 +1532,19 @@ function commentHiddenLines(lines) {
       if (line.includes('-->')) inside = false;
       continue;
     }
-    const at = line.indexOf('<!--');
+    // An inline EXAMPLE opens nothing: `` `<!--` `` in prose was read as a
+    // real unclosed comment, so fencedLines ignored every later fence
+    // delimiter -- a heading inside the fenced example could then terminate
+    // markerWindow before the real marker and --stamp inserted a second,
+    // contradictory one. commentSpans learned this a round ago; this
+    // standalone helper, which exists to break the recursion between the two,
+    // did not. codeSpans is line-local, so using it here reintroduces no
+    // cycle. Ported from the Python twin (stocks#1121).
+    const spans = codeSpans(line);
+    let at = line.indexOf('<!--');
+    while (at !== -1 && spans.some(([lo, hi]) => lo <= at && at < hi)) {
+      at = line.indexOf('<!--', at + 1);
+    }
     if (at !== -1 && !line.slice(at).includes('-->')) {
       out.add(i);
       inside = true;
@@ -1634,7 +1646,15 @@ export function fencedLines(lines) {
 export function codeSpans(line) {
   const re = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
   const out = [];
-  for (const m of line.matchAll(re)) out.push([m.index, m.index + m[0].length]);
+  // An ESCAPED run is a literal backtick, not a delimiter. `` \` [x](y.md) \` ``
+  // renders two backticks and a LIVE link, and masking the range between them
+  // made the dead-link and blocker passes skip a real citation -- the hiding
+  // direction. Parity via isEscaped, so `\\\`` (a literal backslash) still
+  // opens a span. Ported from the Python twin (stocks#1121).
+  for (const m of line.matchAll(re)) {
+    if (isEscaped(line, m.index)) continue;
+    out.push([m.index, m.index + m[0].length]);
+  }
   return out;
 }
 
@@ -1799,6 +1819,28 @@ export function markerSection(lines) {
   return markerWindow(lines, Infinity, { stopAtParagraph: false });
 }
 
+/**
+ * Lines a code span covers ENTIRELY, single-line or wrapped.
+ *
+ * A marker-shaped line inside a span that opens above it and closes below is
+ * an EXAMPLE of a marker. Accepting it suppressed the missing-marker finding
+ * and `--stamp` then rewrote the example, leaving the document with no
+ * rendered provenance at all -- the same failure the fenced and commented
+ * exclusions beside it exist to prevent, a third hiding mechanism over. The
+ * content checks gained wrapped spans a round before marker discovery did.
+ * Ported from the Python twin (stocks#1121).
+ */
+export function spanHiddenLines(lines) {
+  const wrapped = codeSpanLines(lines);
+  const out = new Set();
+  lines.forEach((line, i) => {
+    const spans = [...codeSpans(line), ...(wrapped.get(i) ?? [])];
+    const stop = line.replace(/\s+$/, '').length;
+    if (stop && spans.some(([lo, hi]) => lo <= 0 && hi >= stop)) out.add(i);
+  });
+  return out;
+}
+
 export function findMarkers(lines) {
   const { from, to } = markerSection(lines);
   const fenced = fencedLines(lines);
@@ -1807,9 +1849,12 @@ export function findMarkers(lines) {
   // finding and `--stamp` then updated the hidden line, leaving the rendered
   // document with no visible marker at all.
   const commented = commentedLines(lines);
+  // And a line a code SPAN covers entirely -- see spanHiddenLines.
+  const spanned = spanHiddenLines(lines);
   const out = [];
   for (let i = from; i < to; i += 1) {
-    if (fenced.has(i) || commented.has(i) || isCodeIndented(lines[i])) continue;
+    if (fenced.has(i) || commented.has(i) || spanned.has(i)
+      || isCodeIndented(lines[i])) continue;
     // Trimmed, exactly as findMarker parses it. The anchored regex was
     // applied to the RAW line, so a marker with one to three leading spaces --
     // which findMarker accepts as a rendered paragraph -- was invisible here
@@ -1835,9 +1880,12 @@ export function markerShapedLines(lines) {
   const { from, to } = markerSection(lines);
   const fenced = fencedLines(lines);
   const commented = commentedLines(lines);
+  // And a line a code SPAN covers entirely -- see spanHiddenLines.
+  const spanned = spanHiddenLines(lines);
   const out = [];
   for (let i = from; i < to; i += 1) {
-    if (fenced.has(i) || commented.has(i) || isCodeIndented(lines[i])) continue;
+    if (fenced.has(i) || commented.has(i) || spanned.has(i)
+      || isCodeIndented(lines[i])) continue;
     const line = lines[i].trim();
     if (!MARKER_SHAPE_RE.test(line)) continue;
     if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) continue;
@@ -1850,13 +1898,16 @@ export function findMarker(lines) {
   const { from, to } = markerWindow(lines);
   const fenced = fencedLines(lines);
   const commented = commentedLines(lines);
+  // And a line a code SPAN covers entirely -- see spanHiddenLines.
+  const spanned = spanHiddenLines(lines);
   for (let i = from; i < to; i += 1) {
     // An INDENTED marker-shaped line is an example, not the document's
     // provenance: trimming before parsing let a four-space code sample count
     // as the marker, suppressed the real missing-marker finding, and --stamp
     // then replaced the example with an unindented live marker, destroying
     // the example's structure. Fenced blocks are excluded for the same reason.
-    if (fenced.has(i) || commented.has(i) || isCodeIndented(lines[i])) continue;
+    if (fenced.has(i) || commented.has(i) || spanned.has(i)
+      || isCodeIndented(lines[i])) continue;
     const line = lines[i].trim();
     const m = MARKER_RE.exec(line);
     if (m) {

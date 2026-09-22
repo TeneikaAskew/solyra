@@ -20,6 +20,8 @@ import {
   indentColumns,
   commentSpans,
   isSetextUnderline,
+  findMarkers,
+  codeSpans,
   markerShapedLines,
   commentedLines,
   markerAnchor,
@@ -59,7 +61,6 @@ import {
   derive,
   docLines,
   findMarker,
-  findMarkers,
   markerSection,
   rawHtmlBlockLines,
   stripEmphasis,
@@ -4886,5 +4887,50 @@ describe('a link label with nested brackets', () => {
       { backtickedPaths: false }).map((f) => f.check)).toEqual(['dead-link']);
     expect(checkDeadLinks('d.md', '[esc\\]aped](missing.md)\n', ctx,
       { backtickedPaths: false }).map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+
+// ── round 37 parity (stocks#1121 `e0e82caa`) ────────────────────────────────
+
+describe('a marker inside a code span that crosses lines', () => {
+  it('is an example, not the document provenance', () => {
+    // A span that opens above the marker-shaped line and closes below makes it
+    // an EXAMPLE. Accepting it suppressed the missing-marker finding and
+    // --stamp then rewrote the example, leaving the document with no rendered
+    // provenance -- the third hiding mechanism, after fenced and commented.
+    const mk = '**Last reviewed:** 2026-09-01 · **Owner:** TBD';
+    expect(findMarkers(['# T', '', '`open', mk, 'close`', ''])).toEqual([]);
+    expect(findMarkers(['# T', '', '```', mk, '```', ''])).toEqual([]);
+    // A real marker is still found.
+    expect(findMarkers(['# T', '', mk, '']).length).toBe(1);
+  });
+});
+
+describe('an escaped backtick', () => {
+  it('does not open a code span', () => {
+    // `` \` [x](y.md) \` `` renders two literal backticks and a LIVE link, and
+    // masking the range between them made the dead-link and blocker passes
+    // skip a real citation -- the hiding direction.
+    expect(codeSpans('\\` [guide](missing.md) \\`')).toEqual([]);
+    expect(codeSpans('a `code` b')).toEqual([[2, 8]]);
+    const ctx = linkContext(new Set(['d.md']), new Set(), []);
+    expect(checkDeadLinks('d.md', '\\` [guide](missing.md) \\`\n', ctx,
+      { backtickedPaths: false }).map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('an inline comment example before a fence', () => {
+  it('opens no comment for the fence scan', () => {
+    // `` `<!--` `` in prose was read as a real unclosed comment, so fencedLines
+    // ignored every later fence delimiter -- a heading inside the fenced
+    // example could then terminate markerWindow before the real marker and
+    // --stamp inserted a second, contradictory one. commentSpans learned this
+    // a round ago; this standalone helper, which exists to break the recursion
+    // between the two, did not.
+    expect([...fencedLines(['# T', '', 'see `<!--` here', '', '```', '# Fake',
+      '```', '', '# Real'])]).toEqual([4, 5, 6]);
+    // A REAL unclosed comment still hides what follows it, fence included.
+    expect([...fencedLines(['# T', '<!-- open', '```', 'x', '```'])]).toEqual([]);
   });
 });
