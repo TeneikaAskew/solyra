@@ -4659,6 +4659,32 @@ describe('a tab-indented list item holding a fence', () => {
     const lines = ['-\titem', '', '      ~~~', '      [x](missing.md)', '      ~~~'];
     expect([...fencedLines(lines)]).toEqual([2, 3, 4]);
   });
+
+  it('measures the ITEM BOUNDARY in columns too', () => {
+    // The other half of the same rule, and it was still in characters:
+    // `openListCol` is a column, and the check that ends the item compared
+    // it against a raw character count. A tab-indented continuation of
+    // ``-\t``` `` measured 1 against a content column of 4, so the item read
+    // as ended, the fence closed while CommonMark keeps it open, and the
+    // link DISPLAYED inside the block became a gating dead link -- while the
+    // real closing fence was misread as a NEW opener.
+    const ctx = {
+      tracked: new Set(['d.md']), topLevelDirs: new Set(), rootFiles: new Set(),
+      knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+    };
+    const tabbed = '-\t```\n\t[x](missing.md)\n\t```\n';
+    expect([...fencedLines(tabbed.split('\n'))]).toEqual([0, 1, 2]);
+    expect(checkDeadLinks('d.md', tabbed, ctx)).toEqual([]);
+    // The SPACE spelling of the same document, which already worked. The two
+    // must agree: a reader sees one code block either way.
+    const spaced = '-   ```\n    [x](missing.md)\n    ```\n';
+    expect([...fencedLines(spaced.split('\n'))]).toEqual([0, 1, 2]);
+    expect(checkDeadLinks('d.md', spaced, ctx)).toEqual([]);
+    // And the rule still ENDS the fence when the item really ends, or the
+    // block would swallow every finding below it.
+    expect([...fencedLines('-\t```\n\t[x](a.md)\nout\n[y](missing.md)\n'.split('\n'))])
+      .toEqual([0, 1]);
+  });
 });
 
 describe('a marker carrying two spellings of one field', () => {

@@ -2176,8 +2176,15 @@ function fencedScan(lines, html) {
     // indented one to three columns at the TOP level is legal and its content
     // may sit at column zero, which is why this arms only when the fence is
     // genuinely inside an item. Parity with the Python twin (stocks#1121).
+    // COLUMNS on BOTH sides. `openListCol` is a column (listIndent runs
+    // through columnWidth); this compared it against a CHARACTER count, so a
+    // tab-indented continuation of `-\t```` measured 1 against a content
+    // column of 4, the item read as ended, and the fence closed while
+    // CommonMark keeps it open -- the links DISPLAYED inside the block then
+    // became gating dead links, and the real closing fence was misread as a
+    // new opener. Codex filed it (solyra#69).
     if (open && openListCol && line.trim()
-        && /^[ \t]*/.exec(line)[0].length < openListCol) open = null;
+        && columnWidth(/^[ \t]*/.exec(line)[0]) < openListCol) open = null;
     const m = /^([ \t]*)((?:> ?)*)((?:[-*+]|\d{1,9}[.)])\s+)?([ \t]*)(`{3,}|~{3,})(.*)$/
       .exec(line);
     if (m) {
