@@ -830,6 +830,14 @@ export function ownedLines(text, specs) {
     } else if (spec === 'exhaustive') {
       exhaustive = true;
       hit = true;
+    } else if (spec.startsWith('prose:') && prompt !== null && spec.slice(6) !== prompt) {
+      // A second, DIFFERENT prose owner. The later assignment replaced the
+      // first silently, so the region map reported itself valid, the
+      // complement was suppressed, and every prose finding was routed to one
+      // prompt while the registry claimed two. Parity with the Python twin,
+      // where Codex filed this as stocks#1121.
+      unmatched.push(spec);
+      continue;
     } else if (spec.startsWith('prose:')) {
       prompt = spec.slice(6);
       hit = true;

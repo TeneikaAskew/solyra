@@ -3663,3 +3663,19 @@ describe('a percent-encoded anchor fragment', () => {
     expect(decodeURIComponent('caf%C3%A9').toLowerCase()).toBe('café');
   });
 });
+
+describe('two different prose owners on one Class A row', () => {
+  it('are an invalid region declaration, reported once', () => {
+    // The later assignment replaced the first silently, so the region map
+    // reported itself valid, the complement was suppressed, and every prose
+    // finding was routed to one prompt while the registry claimed two.
+    // Parity with the Python twin (stocks#1121).
+    const r = ownedLines('# T\n\nprose\n', ['prose:a.md', 'prose:b.md']);
+    expect(r.unmatched).toEqual(['prose:b.md']);
+    expect(r.prompt).toBe('a.md');
+    // The same owner named twice is not a contradiction.
+    expect(ownedLines('# T\n\nprose\n', ['prose:a.md', 'prose:a.md']).unmatched)
+      .toEqual([]);
+    expect(ownedLines('# T\n\nprose\n', ['prose:a.md']).prompt).toBe('a.md');
+  });
+});
