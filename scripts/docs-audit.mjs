@@ -118,8 +118,14 @@ export function hasBlockingCue(line) {
 // with no scheme) is deliberately still accepted -- documents here write it --
 // so the boundary is "start, whitespace/bracket, or a scheme's `//`", not
 // "https:// only". Parity with the Python twin (stocks#1121).
+// The number ENDS where the number ends. Without a trailing boundary,
+// `.../issues/1foo` captured the numeric prefix and was read as a citation of
+// issue 1 -- so a closed issue 1 produced a gating stale-blocker finding for a
+// URL that identifies no issue at all. A query, a fragment, punctuation and
+// whitespace are all legitimate suffixes, so the boundary is "not another
+// digit or a word character", not "end of string".
 const ISSUE_URL_RE = new RegExp(
-  `(?:(?<=^)|(?<=[\\s(\\[<])|(?<=//))github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)`,
+  `(?:(?<=^)|(?<=[\\s(\\[<])|(?<=//))github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)(?![\\w-])`,
   'gi'
 );
 
@@ -1530,6 +1536,13 @@ const HTML_HREF_RE = /<a\s[^>]*?href\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/
 
 const HTML_TYPE7_RE = /^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*?)?\/?>\s*$/;
 
+// An explicit fragment destination the browser honours. The unquoted form is
+// valid HTML too; an unquoted value ends at whitespace or any of `"'=<>` and a
+// backtick. `[^>]*?` crosses a line break, which is what lets the joined scan
+// see an element whose attribute sits on a later physical line.
+const HTML_ID_RE =
+  /<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/g;
+
 // CommonMark HTML block types 3, 4 and 5 -- processing instruction, document
 // declaration and CDATA. Each runs raw to its own closer, over as many lines
 // as it takes, so Markdown inside one renders literally; none of them was
@@ -1553,6 +1566,12 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
   // exactly what happened, and the stack overflow is the only reason it was
   // not a silent wrong answer. An HTML comment is itself a raw-text block, so
   // tracking it beside the others costs nothing.
+  // Where a paragraph could START. A type-7 block may not INTERRUPT one, but
+  // it may begin right after a completed block -- `# Title` then `<x-widget>`
+  // -- and the blank-previous-line proxy missed exactly that, so the example
+  // below it was audited as live prose. A heading and a thematic break are
+  // blocks of their own here, so the line after either starts a new block.
+  const blockStarts = new Set(paragraphBlocks(lines, fenced).map(([lo]) => lo));
   let inComment = false;
   let open = null;
   // The closer a type-3/4/5 block waits for (`?>`, `]]>`, `>`). Null for the
@@ -1611,7 +1630,8 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
         // opened nothing and a `[x](missing.md)` inside the block was audited
         // as a live link.
         const prev = (lines[i - 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
-        if (HTML_TYPE7_RE.test(line) && (i === 0 || !prev.trim())) {
+        if (HTML_TYPE7_RE.test(line)
+            && (i === 0 || !prev.trim() || blockStarts.has(i))) {
           open = '\u0000';
           out.add(i);
         }
@@ -2941,6 +2961,14 @@ export function headingSlug(heading) {
   // into `apifield`, so a valid link to `#api_field` read as a dead anchor
   // while an incorrect `#apifield` was accepted. CommonMark does not treat an
   // intraword `_` as emphasis and GitHub's anchor keeps it.
+  // UNESCAPED first. CommonMark removes the escape and renders `## API\_FIELD`
+  // as `API_FIELD`, whose slug keeps the intraword underscore -- but the raw
+  // backslash sat between the letter and the `_`, so the lookbehind saw no
+  // word character, the underscore was stripped as emphasis and the audit
+  // recorded `apifield`: a valid link to `#api_field` rejected AND a
+  // nonexistent `#apifield` accepted. The escape is markup either way, so
+  // removing it before the classification loses nothing.
+  s = unescapeMarkdown(s);
   s = s.replace(/\*/g, '').replace(/(?<!\w)_+|_+(?!\w)/g, '').trim().toLowerCase();
   // `\w` is ASCII-only in JavaScript, so `## Café` produced `caf` -- a valid
   // link to `#café` read as a dead anchor while the nonexistent `#caf` was
@@ -3088,13 +3116,36 @@ export function headingAnchors(text) {
     // The UNQUOTED attribute form too. `<div id=section>` is valid HTML and
     // the browser exposes `section`, but recording only the quoted forms meant
     // a valid `[x](#section)` was reported as a gating dead anchor.
-    for (const mm of visible.matchAll(
-      /<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/g)) {
+    for (const mm of visible.matchAll(HTML_ID_RE)) {
       // NOT lowercased. A generated heading slug is lowercase by
       // construction, but an explicit `id`/`name` is matched by the browser
       // EXACTLY -- `<a name="Install">` is reached by `#Install` and not by
       // `#install`. Folding the case here, with the requested fragment folded
       // later, accepted a link that does not navigate.
+      const id = mm[2] ?? mm[3] ?? mm[4];
+      if (id) out.add(id);
+    }
+  }
+  // And an element whose `id` or `name` sits on a LATER physical line --
+  // `<div\n id="section">` still exposes `section` to the browser, and a
+  // per-line scan can never see the tag and its attribute together, so a valid
+  // `[x](#section)` was reported as a gating dead anchor. Same masking, joined
+  // once; only matches that actually CONTAIN a newline are read here, because
+  // the single-line ones belong to the loop above. An HTML tag may not span a
+  // blank line, so the scan is windowed per block exactly as the link and href
+  // scans are.
+  const idStarts = [];
+  let idAt = 0;
+  for (const l of lines) { idStarts.push(idAt); idAt += l.length + 1; }
+  const idDoc = lines.map((l, i) => (literal.has(i)
+    ? maskSpans(l, [[0, l.length]])
+    : maskSpans(l, [...codeSpans(l), ...(wrappedSpans.get(i) ?? []),
+      ...(commentRanges.get(i) ?? [])]))).join('\n');
+  for (const [bLo, bHi] of paragraphBlocks(lines, fencedLines(lines))) {
+    const from = idStarts[bLo];
+    const to = idStarts[bHi] + lines[bHi].length;
+    for (const mm of idDoc.slice(from, to).matchAll(HTML_ID_RE)) {
+      if (!mm[0].includes('\n')) continue;
       const id = mm[2] ?? mm[3] ?? mm[4];
       if (id) out.add(id);
     }
@@ -3212,7 +3263,14 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // `\S+` stopped at the space, so `[guide]: <docs/user guide.md>` captured
     // `<docs/user` and a tracked file was reported dead. The inline-link
     // parser already accepts this form; the definition parser did not.
-    let m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(?:<([^<>\n]*)>|(\S+))/.exec(line);
+    // A LIST MARKER is a container prefix too: `- [g]: missing.md` is the
+    // first content of an item, and CommonMark resolves a use of `[g]` inside
+    // that item as a clickable link. The anchored pattern saw the marker where
+    // it needs a bracket, so such a definition went unparsed -- and because
+    // reference USES are deliberately not scanned, its broken destination
+    // produced no finding at all.
+    const inItem = line.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+    let m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(?:<([^<>\n]*)>|(\S+))/.exec(inItem);
     // The destination may sit on the FOLLOWING line: `[guide]:` then
     // `  missing.md` is a definition CommonMark resolves, and `[x][guide]`
     // renders as a clickable link to it. A per-line pattern could not capture
@@ -3223,7 +3281,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // goes.
     let destLine = i;
     if (!m) {
-      const head = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*$/.exec(line);
+      const head = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*$/.exec(inItem);
       const j = i + 1;
       if (head && j < lines.length && !fenced.has(j) && !commentedDefs.has(j)
           && !spanHidden(j)) {

@@ -5684,3 +5684,79 @@ describe('an escaped link in a heading', () => {
     expect(headingSlug('Use `foo`')).toBe('use-foo');
   });
 });
+
+// ── round 43 ────────────────────────────────────────────────────────────────
+
+describe('an issue URL', () => {
+  it('ends where its number ends', () => {
+    // Without a trailing boundary `.../issues/1foo` captured the numeric
+    // prefix and was read as a citation of issue 1, so a closed issue 1
+    // produced a gating stale-blocker finding for a URL that identifies no
+    // issue at all.
+    expect(checkClosedIssues('d.md', `Blocked by ${R30_URL}foo\n`, R30_STATES))
+      .toEqual([]);
+    expect(checkClosedIssues('d.md', `Blocked by ${R30_URL}\n`, R30_STATES)
+      .map((f) => f.ref)).toEqual(['solyra#1']);
+    // A fragment and a query are legitimate suffixes and still resolve.
+    expect(checkClosedIssues('d.md', `Blocked by ${R30_URL}#issuecomment-5\n`,
+      R30_STATES).map((f) => f.ref)).toEqual(['solyra#1']);
+  });
+});
+
+describe('an escaped underscore in a heading', () => {
+  it('is kept, because the rendered text keeps it', () => {
+    // CommonMark removes the escape and renders `## API\_FIELD` as
+    // `API_FIELD`, whose slug keeps the intraword underscore -- but the raw
+    // backslash sat between the letter and the `_`, so the lookbehind saw no
+    // word character, the underscore was stripped as emphasis and the audit
+    // recorded `apifield`: a valid link to `#api_field` rejected AND a
+    // nonexistent `#apifield` accepted.
+    expect(headingSlug(String.raw`API\_FIELD`)).toBe('api_field');
+    expect(headingSlug('API_FIELD')).toBe('api_field');
+    // Real emphasis is still markup.
+    expect(headingSlug('_stress_ test')).toBe('stress-test');
+  });
+});
+
+describe('a type-7 HTML block', () => {
+  it('may begin after a completed block, not only after a blank line', () => {
+    // A type-7 block may not INTERRUPT a paragraph, but it may begin right
+    // after a completed one -- `# Title` then `<x-widget>` -- and the
+    // blank-previous-line proxy missed exactly that, so the example below it
+    // was audited as live prose.
+    expect([...rawHtmlBlockLines(['# Title', '<x-widget>', '[x](m.md)'])])
+      .toEqual([1, 2]);
+    // It still may not interrupt an open paragraph.
+    expect([...rawHtmlBlockLines(['prose', '<x-widget>', '[x](m.md)'])]).toEqual([]);
+    expect([...rawHtmlBlockLines(['prose', '', '<x-widget>', '[x](m.md)'])])
+      .toEqual([2, 3]);
+  });
+});
+
+describe('an HTML element whose id sits on a later line', () => {
+  it('still declares its anchor', () => {
+    // `<div\n id="section">` exposes `section` to the browser, and a per-line
+    // scan can never see the tag and its attribute together -- so a valid
+    // `[x](#section)` was reported as a gating dead anchor.
+    expect([...headingAnchors('<div\n id="section">\n\ntext\n')]).toEqual(['section']);
+    expect([...headingAnchors('<div id="section">\n\ntext\n')]).toEqual(['section']);
+    // An example inside a fence declares nothing, as before.
+    expect([...headingAnchors('```\n<div\n id="fake">\n```\n')]).toEqual([]);
+  });
+});
+
+describe('a reference definition opening a list item', () => {
+  it('still defines', () => {
+    // `- [g]: missing.md` is the first content of an item, and CommonMark
+    // resolves a use of `[g]` inside that item as a clickable link. The
+    // anchored pattern saw the marker where it needs a bracket, so the
+    // definition went unparsed -- and because reference USES are deliberately
+    // not scanned, its broken destination produced no finding at all.
+    expect(checkDeadLinks('d.md', '- [g]: missing.md\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    expect(checkDeadLinks('d.md', '- [g]: ok.md\n', linkCtx(['d.md', 'ok.md'])))
+      .toEqual([]);
+    expect(checkDeadLinks('d.md', '[g]: missing.md\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
