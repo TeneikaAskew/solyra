@@ -6533,3 +6533,32 @@ describe('claim-bearing prose', () => {
     expect(visibleClaimText(['There are 3 routes'])).toContain('3 routes');
   });
 });
+
+describe('a backslash escape', () => {
+  it('survives every link delimiter', () => {
+    // Three delimiters stopped at an ESCAPED copy of themselves, and each
+    // failure left the whole link unmatched -- so a missing destination
+    // produced no finding at all, which is the hiding direction.
+    const ctx = linkCtx(['d.md', 'a>b.md', 'g.md']);
+    const dead = (body) => checkDeadLinks('d.md', `# T\n\n${body}\n`, ctx)
+      .map((f) => f.detail);
+    // An angle-bracketed destination: `[x](<a\>b.md>)` resolves to `a>b.md`.
+    expect(dead('[x](<a\\>b.md>)')).toEqual([]);
+    expect(checkDeadLinks('d.md', '# T\n\n[x](<a\\>b.md>)\n', linkCtx(['d.md'])))
+      .not.toEqual([]);
+    // A title may carry its own delimiter when escaped, in all three forms.
+    expect(dead('[x](g.md "a \\" quote")')).toEqual([]);
+    expect(dead("[x](g.md 'a \\' quote')")).toEqual([]);
+    expect(dead('[x](g.md (a \\) title))')).toEqual([]);
+    expect(dead('[x](missing.md "a \\" quote")')).toEqual(['relative link -> missing.md']);
+    // A reference label may carry an escaped bracket.
+    expect(dead('[x\\]]: missing.md')).toEqual(['reference link [x\\]] -> missing.md']);
+    // And the forms these grew out of are unchanged: a footnote still defines
+    // no destination, a plain title still closes a link, and the angle form
+    // still admits a space.
+    expect([...headingAnchors('[^1]: note\n\n## [G][^1]\n')]).toEqual(['g1']);
+    expect(dead('[x](g.md "t")')).toEqual([]);
+    expect(checkDeadLinks('d.md', '# T\n\n[x](<my guide.md>)\n',
+      linkCtx(['d.md', 'my guide.md']))).toEqual([]);
+  });
+});

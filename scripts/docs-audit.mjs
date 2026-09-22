@@ -245,7 +245,11 @@ const MD_LINK_OPEN_RE = /\[(?:\\.|[^\\\[\]]|\[(?:\\.|[^\\\[\]])*\])*\]\(\s*/g;
 // destination containing a space, and the bare form rejects whitespace. NO
 // line endings -- CommonMark forbids a newline there, so `[x](<missing\n.md>)`
 // is literal text.
-const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|[^<>#\r\n])*)(?:#([^>\s]+))?>/y;
+// A BACKSLASH ESCAPE is destination content: `[x](<a\>b.md>)` resolves to
+// `a>b.md`, and stopping at the escaped `>` left the candidate unmatched
+// altogether, so a missing target produced no finding. Consumed as a unit
+// before the fragment split, so `\#` stays in the path as well.
+const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|\\[^\r\n]|[^<>#\\\r\n])*)(?:#([^>\s]+))?>/y;
 // One atom of a BARE destination. A character reference is matched as a UNIT
 // before the fragment split, so the `#` inside `&#38;` is not read as the
 // separator: `[x](foo&#38;bar.md)` renders as a link to `foo&bar.md` and was
@@ -253,7 +257,12 @@ const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|[^<>#\r\n])*)(?:#([^>\s]+))
 // part of the PATH for the same reason.
 const MD_DEST_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\.|[^()#\s]/y;
 const MD_FRAG_RE = /[^)\s]+/y;
-const MD_LINK_TAIL_RE = /(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/y;
+// A TITLE may contain its own delimiter when the delimiter is escaped:
+// `[x](missing.md "a \" quote")` is a valid link. Stopping at the escaped
+// quote left the whole candidate unmatched, so the missing destination
+// passed the audit -- the hiding direction. Each of the three title forms
+// consumes escapes as units, exactly as the destination scan does.
+const MD_LINK_TAIL_RE = /(?:\s+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\((?:\\.|[^)\\])*\)))?\s*\)/y;
 
 /**
  * End of the balanced bare destination starting at `i`.
@@ -3551,7 +3560,7 @@ export function headingAnchors(text) {
     if (fenced.has(i)) return;
     const body = raw.replace(BLOCKQUOTE_PREFIX_RE, '')
       .replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
-    let d = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*\S/.exec(body);
+    let d = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*\S/.exec(body);
     // The destination may sit on the FOLLOWING line. `[g]:` over `  guide.md`
     // defines `g`, so `## See [guide][g]` renders anchored `see-guide` --
     // and reading only the single-line form recorded `see-guideg` and
@@ -3560,7 +3569,7 @@ export function headingAnchors(text) {
     // two-halves shape as the block-start rule it sits beside.
     let last = i;
     if (!d) {
-      const head = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*$/.exec(body);
+      const head = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*$/.exec(body);
       const j = i + 1;
       if (head && j < lines.length && !fenced.has(j)
           && /^[ \t]*\S/.test(lines[j].replace(BLOCKQUOTE_PREFIX_RE, ''))) {
@@ -3862,7 +3871,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // content, not the delimiter: CommonMark resolves `[g]: <a\>b.md>` to
     // `a>b.md`. `[^<>\n]*` stopped at the escaped `>`, captured `a\` and
     // reported a tracked file dead -- the false direction.
-    let m = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*(?:<((?:\\.|[^<>\n\\])*)>|(\S+))/
+    let m = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*(?:<((?:\\.|[^<>\n\\])*)>|(\S+))/
       .exec(inItem);
     // The destination may sit on the FOLLOWING line: `[guide]:` then
     // `  missing.md` is a definition CommonMark resolves, and `[x][guide]`
@@ -3874,7 +3883,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // goes.
     let destLine = i;
     if (!m) {
-      const head = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*$/.exec(inItem);
+      const head = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*$/.exec(inItem);
       const j = i + 1;
       if (head && j < lines.length && !fenced.has(j) && !commentedDefs.has(j)
           && !spanHidden(j)) {
