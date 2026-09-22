@@ -6164,3 +6164,32 @@ describe('a heading reference label', () => {
       .toEqual(['see-guideg', 't']);
   });
 });
+
+describe('a code span in a heading', () => {
+  it('keeps its contents literal', () => {
+    // A code span renders its contents LITERALLY, so link and tag syntax
+    // inside one is text. Unwrapping the span before the markup passes handed
+    // it to the link stripper, which discarded the destination.
+    expect(headingSlug('`[x](y)`')).toBe('xy');
+    // The RUN form is one span too; a single-backtick pattern saw none.
+    expect(headingSlug('``[x](missing.md)``')).toBe('xmissingmd');
+    // Outside a span all three passes still apply.
+    expect(headingSlug('Real [x](guide.md)')).toBe('real-x');
+    expect(headingSlug('Hello <em>world</em>')).toBe('hello-world');
+    expect([...headingAnchors('# T\n\n## AT&amp;T\n')].sort()).toEqual(['att', 't']);
+  });
+});
+
+describe('a heading reference definition', () => {
+  it('must open a block to define anything', () => {
+    // `paragraph` then `[g]: x.md` renders literally, so collecting it let
+    // `## [Guide][g]` resolve to `guide` when the page exposes `guideg`.
+    expect([...headingAnchors('paragraph\n[g]: README.md\n\n## [Guide][g]\n')])
+      .toEqual(['guideg']);
+    // One that DOES open a block still defines, colon space or not.
+    expect([...headingAnchors('# T\n\n[g]: README.md\n\n## [Guide][g]\n')].sort())
+      .toEqual(['guide', 't']);
+    expect([...headingAnchors('# T\n\n[g]:README.md\n\n## [Guide][g]\n')].sort())
+      .toEqual(['guide', 't']);
+  });
+});

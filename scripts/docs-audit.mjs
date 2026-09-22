@@ -3148,26 +3148,43 @@ function stripHeadingLinks(s, refLabels) {
   return out.join('');
 }
 
+// A code span delimited by a matching RUN of backticks, contents in group 2.
+const CODE_SPAN_RUN_RE = /(?<!`)(`+)(?!`)([\s\S]+?)(?<!`)\1(?!`)/g;
+
+/**
+ * The markup passes that must NOT see code-span contents.
+ *
+ * Character references, inline HTML and link syntax are markup in ordinary
+ * heading text and LITERAL characters inside a code span, so each runs per
+ * part rather than over the whole heading.
+ */
+function headingMarkup(part, refLabels) {
+  // An AUTOLINK is not a tag: `## <https://x>` renders as the URL and derives
+  // a real anchor from it, so only a tag NAME is stripped. Quoted attribute
+  // values may CONTAIN `>`, so they are walked rather than excluded.
+  const bare = decodeCharRefs(part.replace(
+    /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\/?>/g, ''));
+  // See stripHeadingLinks: the destination is SCANNED rather than matched, so
+  // parentheses inside it cannot end it early, and a DEFINED reference link
+  // resolves to its visible label.
+  return stripHeadingLinks(bare, refLabels);
+}
+
 export function headingSlug(heading, refLabels = new Set()) {
-  // Inline HTML is MARKUP: GitHub renders `## Use <code>foo</code>` as
-  // "Use foo" and anchors it `use-foo`, while keeping the tag names recorded
-  // `use-codefoocode` -- a valid link reported dead and a nonexistent slug
-  // accepted, wrong in both directions.
-  // AFTER the tag strip, not before: `&lt;code&gt;` is literal text that
-  // renders as `<code>`, and decoding first would turn it into a tag for the
-  // strip above to delete -- removing content GitHub keeps.
-  // A TAG, not every angle-bracketed run. An AUTOLINK is text: `## <https://x>`
-  // renders as the URL and GitHub derives a nonempty anchor from it, while the
-  // blanket strip deleted it and recorded an EMPTY slug -- so a valid link to
-  // that fragment was reported dead. Only a tag NAME, optionally with
-  // attributes, is markup. Parity with the Python twin (stocks#1121).
-  // Quoted attribute values may CONTAIN `>`. `[^<>]*` stopped at the one
-  // inside `data-x="a>b"` and left `b">` to be slugged as visible text, so
-  // `## <span data-x="a>b">Hello</span>` recorded `bhello` -- the valid
-  // fragment rejected and one the page does not expose accepted.
-  let s = decodeCharRefs(heading.replace(
-    /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\/?>/g, '')
-    .replace(/`([^`]*)`/g, '$1'));
+  // Tokenised on a matching backtick RUN, and the parts processed separately.
+  // A code span renders its contents LITERALLY, so unwrapping it first handed
+  // `` `[x](y)` `` to the link stripper, which discarded the destination and
+  // recorded `x` where GitHub exposes `xy`. The run form matters too --
+  // `` ``[x](y)`` `` is one span, and a single-backtick pattern saw none.
+  const parts = [];
+  let at = 0;
+  for (const mm of heading.matchAll(CODE_SPAN_RUN_RE)) {
+    parts.push(headingMarkup(heading.slice(at, mm.index), refLabels));
+    parts.push(mm[2]);
+    at = mm.index + mm[0].length;
+  }
+  parts.push(headingMarkup(heading.slice(at), refLabels));
+  let s = parts.join('');
   // Only where the opening bracket is NOT escaped. `## Literal \[x](guide.md)`
   // renders the brackets and the destination as TEXT -- CommonMark makes no
   // link -- so GitHub's anchor includes `xguidemd`, while stripping the
@@ -3177,7 +3194,6 @@ export function headingSlug(heading, refLabels = new Set()) {
   // See stripHeadingLinks: the destination is SCANNED rather than matched, so
   // parentheses inside it cannot end it early, and a DEFINED reference link
   // resolves to its visible label. Parity with the Python twin (stocks#1121).
-  s = stripHeadingLinks(s, refLabels);
   // Emphasis MARKUP only. Stripping every underscore turned `## API_FIELD`
   // into `apifield`, so a valid link to `#api_field` read as a dead anchor
   // while an incorrect `#apifield` was accepted. CommonMark does not treat an
@@ -3262,13 +3278,24 @@ export function headingAnchors(text) {
   // defined, and the slug keeps both labels. Read through the same exclusions
   // as everything else here -- a definition inside a fence defines nothing --
   // and keyed the way the link scan keys them, internal whitespace collapsed.
+  // And only where a definition may BEGIN. `paragraph` then `[g]: x.md`
+  // renders literally -- CommonMark registers no reference there -- so
+  // collecting it let `## [Guide][g]` resolve to `guide` when the page
+  // actually exposes `guideg`. The dead-link scan has applied this rule since
+  // the round it was raised; this collector did not, which is the same
+  // two-halves-disagreeing shape as the label keying before it. The colon's
+  // trailing whitespace is optional here too, for the same reason.
+  const defStarts = new Set(paragraphBlocks(lines, fenced).map(([lo]) => lo));
+  const defSeen = new Set();
   const refLabels = new Set();
   lines.forEach((raw, i) => {
     if (fenced.has(i)) return;
     const body = raw.replace(BLOCKQUOTE_PREFIX_RE, '')
       .replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
-    const d = /^ {0,3}\[([^\]^][^\]]*)\]:\s+\S/.exec(body);
-    if (d) refLabels.add(refKey(d[1]));
+    const d = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*\S/.exec(body);
+    if (!d || !(defStarts.has(i) || defSeen.has(i - 1))) return;
+    defSeen.add(i);
+    refLabels.add(refKey(d[1]));
   });
   // A comment INSIDE a rendered heading is not part of its text. The blanket
   // tag strip used to remove it as a side effect; now that only real tags are
