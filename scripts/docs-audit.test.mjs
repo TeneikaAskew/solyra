@@ -6071,3 +6071,79 @@ describe('inline content at a container boundary', () => {
     expect(paragraphBlocks(['- one', '  two'], new Set())).toEqual([[0, 1]]);
   });
 });
+
+describe('a reference definition with no space after its colon', () => {
+  it('still defines', () => {
+    // CommonMark registers `[g]:missing.md` and resolves `[x][g]` against it,
+    // but `\s+` skipped the definition -- and because reference USES are
+    // deliberately not scanned, its broken destination produced no finding.
+    const check = (t) => checkDeadLinks('d.md', t, linkCtx(['d.md']))
+      .map((f) => f.check);
+    expect(check('[g]:missing.md\n')).toEqual(['dead-link']);
+    expect(check('[g]: missing.md\n')).toEqual(['dead-link']);
+    // A colon with NOTHING after it is still the two-line head form.
+    expect(check('[g]:\n\nmissing.md\n')).toEqual([]);
+  });
+});
+
+describe('an escaped HTML anchor', () => {
+  it('is literal text, not a link', () => {
+    // `\<a href="missing.md">` escapes the `<`, so CommonMark renders the tag
+    // as text. The Markdown pass has applied this check for rounds; the href
+    // pass did not, so the same escape produced a gating finding there.
+    const check = (t) => checkDeadLinks('d.md', t, linkCtx(['d.md']))
+      .map((f) => f.check);
+    expect(check('\\<a href="missing.md">x</a>\n')).toEqual([]);
+    expect(check('<a href="missing.md">x</a>\n')).toEqual(['dead-link']);
+  });
+});
+
+describe('a fence opener', () => {
+  it('has its indentation measured in columns', () => {
+    // CommonMark expands a tab to four columns, so `\t```` is an indented
+    // code line rather than a fence opener. The column-zero fence on the last
+    // line then opens one that runs to the end of the document.
+    expect([...fencedLines(['\t```', 'x', '```'])]).toEqual([2]);
+    // Three SPACES are a legal opener; four are indented code.
+    expect([...fencedLines(['   ```', 'x', '```'])]).toEqual([0, 1, 2]);
+    expect([...fencedLines(['    ```', 'x', '```'])]).toEqual([2]);
+    // A quoted fence is measured inside its container, so it still opens.
+    expect([...fencedLines(['> ```', '> x', '> ```'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('an angle-bracket destination', () => {
+  it('may not span physical lines', () => {
+    // `<...>` may hold a space, which is why an author reaches for it, but
+    // CommonMark forbids a line ending there, so this is literal text.
+    expect(checkDeadLinks('d.md', '[x](<missing\n.md>)\n', linkCtx(['d.md'])))
+      .toEqual([]);
+    // On ONE line the space is still allowed, which is the form this is for.
+    expect(checkDeadLinks('d.md', '[x](<my missing.md>)\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('front-matter delimiters', () => {
+  it('are recognised only at column zero', () => {
+    // An indented `---` is a thematic break, so trimming the line excluded
+    // every line between two of them as metadata and let a rendered link
+    // between them pass unchecked.
+    expect([...frontMatterLines(['  ---', '[x](missing.md)', '  ---'])]).toEqual([]);
+    expect(checkDeadLinks('d.md', '  ---\n[x](missing.md)\n  ---\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // A real opener at column zero still delimits metadata.
+    expect([...frontMatterLines(['---', 'a: 1', '---'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('a heading tag with a quoted greater-than sign', () => {
+  it('is stripped whole', () => {
+    // `[^<>]*` stopped at the `>` inside `data-x="a>b"` and left `b">` to be
+    // slugged as visible text, recording `bhello`.
+    expect(headingSlug('<span data-x="a>b">Hello</span>')).toBe('hello');
+    expect(headingSlug('Hello <em>world</em>')).toBe('hello-world');
+    // An AUTOLINK is text, not a tag, and must survive.
+    expect(headingSlug('<https://example.com>')).not.toBe('');
+  });
+});

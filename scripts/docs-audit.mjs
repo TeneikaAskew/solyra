@@ -237,7 +237,7 @@ export function isEscaped(text, i) {
 // reported clean. One level, not arbitrary depth: a recursive shape is not
 // expressible here, and deeper nesting does not occur in this corpus.
 const MD_LINK_RE =
-  /\[(?:\\.|[^\\\[\]]|\[(?:\\.|[^\\\[\]])*\])*\]\(\s*(?:<((?:&#?[0-9A-Za-z]{1,32};|[^<>#])*)(?:#([^>\s]+))?>|((?:&#?[0-9A-Za-z]{1,32};|[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+  /\[(?:\\.|[^\\\[\]]|\[(?:\\.|[^\\\[\]])*\])*\]\(\s*(?:<((?:&#?[0-9A-Za-z]{1,32};|[^<>#\r\n])*)(?:#([^>\s]+))?>|((?:&#?[0-9A-Za-z]{1,32};|[^()#\s]|\([^()\s]*\))*)(?:#([^)\s]+))?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 // Two shapes: a path with a slash, and a bare root-level filename. Requiring a
 // slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
 // which the living docs cite constantly -- could never produce a dead-path
@@ -1771,7 +1771,11 @@ export function quoteDepth(line) {
  * twin (stocks#1121).
  */
 export function frontMatterLines(lines) {
-  if (!lines.length || lines[0].trim() !== '---') return new Set();
+  // COLUMN ZERO. An indented `---` is a thematic break, not a front-matter
+  // opener, but trimming accepted it -- so every line to the next indented
+  // `---` was excluded as metadata and a rendered link between them passed
+  // the audit unchecked.
+  if (!lines.length || lines[0].replace(/\s+$/, '') !== '---') return new Set();
   for (let i = 1; i < lines.length; i += 1) {
     if (lines[i].trim() === '---' || lines[i].trim() === '...') {
       return new Set(Array.from({ length: i + 1 }, (_, k) => k));
@@ -1867,14 +1871,19 @@ function fencedScan(lines, html) {
     if (m) {
       // Relative to the container: a blockquote prefix or a list marker on
       // THIS line is itself the container, so its own lead is the baseline.
-      const base = m[2] || m[3] ? m[1].length : listIndent;
-      if (m[1].length - base > 3) return;
+      // COLUMNS, not characters. CommonMark expands a tab to four columns,
+      // so `\t\`\`\`` is an indented code line rather than a fence opener --
+      // counting the tab as one of three allowed characters opened a false
+      // fence that held across live paragraphs and suppressed their findings.
+      // Every other indentation measurement here is already in columns.
+      const base = m[2] || m[3] ? columnWidth(m[1]) : listIndent;
+      if (columnWidth(m[1]) - base > 3) return;
       // Inside a blockquote the container is the QUOTE, so the indentation
       // that counts is what follows the `>` marker -- and it was not measured
       // at all. `>     \`\`\`` is an indented code line containing literal
       // backticks, and opening a fence on it masked a live link on the next
       // quoted line so its missing target went unreported.
-      if (m[2] && m[4].length > 3) return;
+      if (m[2] && columnWidth(m[4]) > 3) return;
     }
     if (!open) {
       // An opening ``` fence may not carry a backtick in its info string.
@@ -2160,6 +2169,13 @@ export function commentedLines(lines) {
  * provenance and `--stamp` inserted a SECOND marker while the visible
  * original stayed put.
  */
+/** Width of `text` in COLUMNS, expanding tabs to the next stop. */
+function columnWidth(text) {
+  let col = 0;
+  for (const ch of text) col += ch === '\t' ? TAB_STOP - (col % TAB_STOP) : 1;
+  return col;
+}
+
 export function indentColumns(line) {
   let col = 0;
   for (const ch of line ?? '') {
@@ -3131,7 +3147,12 @@ export function headingSlug(heading, refLabels = new Set()) {
   // blanket strip deleted it and recorded an EMPTY slug -- so a valid link to
   // that fragment was reported dead. Only a tag NAME, optionally with
   // attributes, is markup. Parity with the Python twin (stocks#1121).
-  let s = decodeCharRefs(heading.replace(/<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>/g, '')
+  // Quoted attribute values may CONTAIN `>`. `[^<>]*` stopped at the one
+  // inside `data-x="a>b"` and left `b">` to be slugged as visible text, so
+  // `## <span data-x="a>b">Hello</span>` recorded `bhello` -- the valid
+  // fragment rejected and one the page does not expose accepted.
+  let s = decodeCharRefs(heading.replace(
+    /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\/?>/g, '')
     .replace(/`([^`]*)`/g, '$1'));
   // Only where the opening bracket is NOT escaped. `## Literal \[x](guide.md)`
   // renders the brackets and the destination as TEXT -- CommonMark makes no
@@ -3500,7 +3521,12 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // reference USES are deliberately not scanned, its broken destination
     // produced no finding at all.
     const inItem = line.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
-    let m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(?:<([^<>\n]*)>|(\S+))/.exec(inItem);
+    // The whitespace after the colon is OPTIONAL. CommonMark registers
+    // `[g]:missing.md` and resolves `[x][g]` against it, but `\s+` skipped
+    // the definition -- and because reference USES are deliberately not
+    // scanned, its broken destination produced no finding at all. The head
+    // form below still matches when nothing follows, because it is anchored.
+    let m = /^ {0,3}\[([^\]^][^\]]*)\]:[ \t]*(?:<([^<>\n]*)>|(\S+))/.exec(inItem);
     // The destination may sit on the FOLLOWING line: `[guide]:` then
     // `  missing.md` is a definition CommonMark resolves, and `[x][guide]`
     // renders as a clickable link to it. A per-line pattern could not capture
@@ -3729,6 +3755,11 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       for (const m of line.matchAll(HTML_HREF_RE)) {
         if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
         if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+        // `\<a href="missing.md">` escapes the `<`, so CommonMark renders the
+        // tag as TEXT and there is no clickable link -- the Markdown pass has
+        // applied this check for rounds and the href pass did not, so the
+        // same escape produced a gating finding here.
+        if (isEscaped(line, m.index)) continue;
         // A character reference is consumed as a UNIT before the fragment
         // delimiter is sought. HTML decodes the attribute first, so
         // `<a href="foo&#38;bar.md">` links to `foo&bar.md` -- and splitting
