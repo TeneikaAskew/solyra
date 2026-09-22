@@ -5760,3 +5760,49 @@ describe('a reference definition opening a list item', () => {
       .map((f) => f.check)).toEqual(['dead-link']);
   });
 });
+
+describe('a line: region pattern', () => {
+  it('is read through a wrapped code span', () => {
+    // A pattern surviving only inside a span that opens above it and closes
+    // below still matched the raw line, so the region's claim of coverage
+    // outlived the real generated content: no unmatched-region finding, and
+    // the example's line routed to the renderer as though generated.
+    const spec = ['line:img\\.shields\\.io'];
+    const hidden = ownedLines('# T\n\n`a\nhttps://img.shields.io/x\nb`\n', spec);
+    expect([...hidden.owned]).toEqual([]);
+    expect(hidden.unmatched).toEqual(spec);
+    // Real generated content still matches and still counts as covered.
+    const live = ownedLines('# T\n\nhttps://img.shields.io/x\n', spec);
+    expect([...live.owned]).toEqual([3]);
+    expect(live.unmatched).toEqual([]);
+  });
+});
+
+describe('a fence delimiter inside a raw HTML block', () => {
+  it('opens nothing', () => {
+    // CommonMark does not parse Markdown inside an HTML block, so a literal
+    // ``` between `<div>` and `</div>` is displayed text. Opening on it left
+    // a fence that outlived the block's terminating blank line and swallowed
+    // every later link, blocker, heading and marker as "code".
+    const doc = ['<div>', '```', '</div>', '', '[x](missing.md)'];
+    expect([...fencedLines(doc)]).toEqual([]);
+    expect([...rawHtmlBlockLines(doc)].sort((a, b) => a - b)).toEqual([0, 1, 2]);
+    expect(checkDeadLinks('d.md', `${doc.join('\n')}\n`, linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+  });
+
+  it('is not confused with an HTML opener inside a real fence', () => {
+    // The other direction, and the reason the fence scan runs twice rather
+    // than once against an HTML set computed without fences: a `<div>` inside
+    // a fenced EXAMPLE must not open a block, because a block there would
+    // suppress the next real fence and route its contents back to live prose.
+    const doc = ['```text', '<div>', '```', 'prose', '```py', 'code', '```', '',
+      '[x](missing.md)'];
+    expect([...fencedLines(doc)].sort((a, b) => a - b)).toEqual([0, 1, 2, 4, 5, 6]);
+    expect(checkDeadLinks('d.md', `${doc.join('\n')}\n`, linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // And the ordinary cases the two passes must leave exactly as they were.
+    expect([...fencedLines(['```', 'x', '```', 'y'])]).toEqual([0, 1, 2]);
+    expect([...fencedLines(['~~~', '```', '~~~', 'y'])]).toEqual([0, 1, 2]);
+  });
+});

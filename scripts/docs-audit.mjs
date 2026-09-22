@@ -1005,9 +1005,17 @@ export function ownedLines(text, specs) {
       // stamped as generated. Blanked rather than removed, since `pat` may be
       // anchored. Parity with the Python twin (stocks#1121).
       const spans = commentSpans(lines);
+      // Spans that OPEN on an earlier line too. `codeSpans` is line-local, so
+      // a sample surviving only inside a wrapped span -- a
+      // `https://img.shields.io/x` between a backtick above it and one below
+      // -- still matched the raw line. The region's claim of coverage then
+      // outlived the real generated content: no unmatched-region finding, and
+      // the example's line routed to the renderer as though generated. Parity
+      // with the Python twin (stocks#1121).
+      const wrapped = codeSpanLines(lines);
       lines.forEach((line, i) => {
         const visibleLine = maskSpans(line,
-          [...(spans.get(i) ?? []), ...codeSpans(line)]);
+          [...(spans.get(i) ?? []), ...codeSpans(line), ...(wrapped.get(i) ?? [])]);
         if (pat.test(visibleLine)) { owned.add(i + 1); hit = true; }
       });
     } else if (spec === 'exhaustive') {
@@ -1555,9 +1563,12 @@ const HTML_RAW_DELIMITED = [
   [/^ {0,3}<![A-Za-z]/, '>'],
 ];
 
-export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
+export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = null } = {}) {
   const out = new Set();
-  const fenced = fencedLines(lines);
+  // `fencedLines` passes its PROVISIONAL set, computed without HTML, and
+  // relies on this scan to correct it -- so taking it as a parameter is what
+  // keeps the two from recursing.
+  const fenced = given ?? fencedLines(lines);
   // An INDENTED example of an opener is an example, not a block.
   const indented = indentedCodeLines(lines);
   // Comment state is tracked in THIS pass rather than read from
@@ -1578,7 +1589,12 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
   // tag-closed and blank-line-closed kinds.
   let closer = null;
   lines.forEach((raw, i) => {
-    if (fenced.has(i)) return;
+    // Only while NOTHING is open. Inside a block, Markdown is not parsed, so
+    // a line the fence scan called fenced is displayed text and the block
+    // walks straight through it -- that is how the provisional set's false
+    // fence gets corrected. An opener sitting inside a REAL fence is still
+    // skipped, because there no block is open.
+    if (!open && !inComment && fenced.has(i)) return;
     // The CONTAINER prefix is stripped, as the fence and indented-code
     // scanners already do: `> <pre>` opens a raw-text block whose Markdown
     // renders literally, but testing the physical line saw the `>` and
@@ -1725,6 +1741,20 @@ export function frontMatterLines(lines) {
 }
 
 export function fencedLines(lines) {
+  // Two passes, because a fence and an HTML block can each hide the other. A
+  // literal ``` inside `<div>...</div>` is displayed text, not a fence -- but
+  // the scan that would know it is inside an HTML block needs a fence set to
+  // run. So: scan once ignoring HTML, use that provisional set to find the
+  // blocks, then scan again refusing to OPEN a fence inside one. A fence that
+  // really is a fence is unaffected: an HTML opener inside one is still
+  // skipped, because there no block is open to walk through. Parity with the
+  // Python twin (stocks#1121).
+  const provisional = fencedScan(lines, new Set());
+  return fencedScan(lines, rawHtmlBlockLines(lines, { fenced: provisional }));
+}
+
+/** One fence pass, refusing to open a fence on a line inside `html`. */
+function fencedScan(lines, html) {
   const fenced = new Set();
   // The OPENING delimiter is remembered. Toggling on any fence-looking line
   // meant a `~~~` inside a ``` example closed the block, so the rest of the
@@ -1808,7 +1838,11 @@ export function fencedLines(lines) {
     }
     if (!open) {
       // An opening ``` fence may not carry a backtick in its info string.
-      if (m && !(m[5][0] === '`' && m[6].includes('`'))) {
+      // And a delimiter inside a raw HTML block is displayed text: CommonMark
+      // does not parse Markdown there, so opening on it left a fence that
+      // outlived the block and swallowed every later link, blocker, heading
+      // and marker as "code".
+      if (m && !html.has(i) && !(m[5][0] === '`' && m[6].includes('`'))) {
         open = m[5];
         openDepth = quoteDepth(line);
         openListCol = listIndent;
