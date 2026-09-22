@@ -5420,7 +5420,7 @@ export function visibleClaimText(lines) {
     : maskSpans(l, [...(hidden.get(i) ?? []), ...(attrs.get(i) ?? [])]))).join('\n');
 }
 
-export function checkClaims(claims, { exec = run } = {}) {
+export function checkClaims(claims, { exec = run, readDoc = null } = {}) {
   const out = [];
   for (const { doc, pattern, derivation } of claims) {
     // TRACKED, not merely readable -- the same precondition every derivation
@@ -5430,13 +5430,20 @@ export function checkClaims(claims, { exec = run } = {}) {
     // for everyone else. `run` rather than the injected `exec`, because this
     // is a property of the REPOSITORY and a stub that answered it would be
     // asserting about a tree it does not have.
-    if (!run('git', ['ls-files', '--', doc], { okExitCodes: [1, 128] }).trim()) {
+    // `readDoc` is a TEST seam, like `exec` beside it: what this pass does to
+    // prose -- which spans are code, which text is visible -- cannot be
+    // exercised without a document to put that prose in, and planting one in
+    // the repository to assert a masking rule is a side effect on the tree.
+    // When it is supplied the tracked-file precondition does not apply,
+    // because the document is the caller's, not this repository's.
+    if (readDoc === null
+        && !run('git', ['ls-files', '--', doc], { okExitCodes: [1, 128] }).trim()) {
       throw new AuditError(`claim document \`${doc}\` is not tracked, so its prose `
         + 'is not what another clone would read');
     }
     let text;
     try {
-      text = fs.readFileSync(path.join(REPO, doc), 'utf8');
+      text = readDoc === null ? fs.readFileSync(path.join(REPO, doc), 'utf8') : readDoc(doc);
     } catch (err) {
       // Same split as claimPattern beside it: a registry row naming a moved or
       // deleted document is bad INPUT. A bare filesystem Error walks past the
@@ -5483,7 +5490,13 @@ export function checkClaims(claims, { exec = run } = {}) {
     for (const [bLo, bHi] of paragraphBlocks(claimLines, fencedLines(claimLines))) {
       const from = claimStarts[bLo];
       const to = claimStarts[bHi] + claimLines[bHi].length;
-      for (const [a, b] of codeSpans(text.slice(from, to))) {
+      // `visible`, not the raw `text`. A backtick inside an HTML comment is
+      // not a delimiter a reader sees, and pairing it with a visible one put
+      // the REAL numeric assertion inside a span -- so the claim was skipped
+      // and the row reported inert instead of compared. The mask preserves
+      // length, so the same offsets index both and the match index below
+      // still names the right place. Codex filed it (solyra#69).
+      for (const [a, b] of codeSpans(visible.slice(from, to))) {
         claimSpans.push([from + a, from + b]);
       }
     }

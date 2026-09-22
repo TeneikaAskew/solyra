@@ -3260,6 +3260,34 @@ describe('a title section longer than forty lines', () => {
   });
 });
 
+describe('a backtick hidden in an HTML comment', () => {
+  const claim = (text) => checkClaims(
+    [{ doc: 'd.md', pattern: 'There are (\\d+) routes', derivation: 'grep-files src x' }],
+    { exec: () => 'f\n'.repeat(3), readDoc: () => text }).map((f) => f.detail);
+
+  it('is not a delimiter the claim scan may pair with', () => {
+    // A backtick inside a comment is not one a reader sees. Pairing it with a
+    // visible one put the REAL numeric assertion inside a code span, so the
+    // claim was skipped and the row reported INERT -- which reads as "the
+    // prose was reworded", not as "the number is wrong". Reproduced against
+    // the raw-text version before fixing:
+    //
+    //   <!-- ` retired -->\nThere are 9 routes `   ->  "matched nothing"
+    //   same document, spans from `visible`         ->  "claims 9, gives 3"
+    expect(claim('<!-- ` retired -->\nThere are 9 routes `\n'))
+      .toEqual(['claims 9, `grep-files src x` gives 3']);
+    expect(claim('<!-- ` retired --> There are 9 routes `\n'))
+      .toEqual(['claims 9, `grep-files src x` gives 3']);
+    // A REAL code span is still an example and still skipped -- this narrows
+    // which delimiters pair, it does not stop them pairing.
+    expect(claim('`There are 9 routes`\n')[0]).toMatch(/matched nothing/);
+    // And an ordinary stale claim is unaffected.
+    expect(claim('There are 9 routes here.\n'))
+      .toEqual(['claims 9, `grep-files src x` gives 3']);
+    expect(claim('There are 3 routes here.\n')).toEqual([]);
+  });
+});
+
 describe('a malformed row in the Claims table', () => {
   const head = '| Doc | Pattern | Derivation |\n|---|---|---|\n';
 
