@@ -4318,6 +4318,35 @@ describe('a registry section ended by a Setext heading', () => {
   });
 });
 
+describe('a parenthesised heading suffix', () => {
+  it('is stripped only when it is a valid inline link', () => {
+    // `balancedClose` answers a narrower question than the one being asked:
+    // it finds a matching parenthesis, not a link. A destination may not
+    // carry whitespace unbracketed, and an unclosed title is not a title --
+    // CommonMark renders each of these sources literally, so the stripper
+    // removed VISIBLE text, recorded `x`, and rejected a link to the real
+    // anchor while accepting a `#x` the page does not expose.
+    expect(headingSlug('[x](foo bar)')).toBe('xfoo-bar');
+    expect(headingSlug('[x](foo "unclosed)')).toBe('xfoo-unclosed');
+    // The real shapes are still stripped, so this narrows the rule to what
+    // CommonMark accepts rather than switching it off.
+    expect(headingSlug('[x](foo.md)')).toBe('x');
+    expect(headingSlug('[x](foo.md "t")')).toBe('x');
+    expect(headingSlug('Real [x](guide.md)')).toBe('real-x');
+  });
+
+  it('and a reference label may carry an escaped bracket', () => {
+    // `indexOf(']')` stops at an ESCAPED bracket, so `## [Guide][my\\]ref]`
+    // with a matching definition failed to resolve and slugged as
+    // `guidemyref` while the page exposes `guide`. The label walk beside
+    // this one already skipped escapes; this second scan did not.
+    expect(headingSlug('[Guide][my\\]ref]', new Set(['my\\]ref']))).toBe('guide');
+    // An UNDEFINED label is still literal text, which is the rule that keeps
+    // bracketed prose from being read as a reference.
+    expect(headingSlug('[Guide][my\\]ref]', new Set())).toBe('guidemyref');
+  });
+});
+
 describe('a combining mark in a heading', () => {
   it('stays in the slug', () => {
     // An NFD heading -- `Cafe` + U+0301 -- renders as `Café` and GitHub's

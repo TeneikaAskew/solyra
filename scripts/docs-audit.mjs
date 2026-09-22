@@ -3415,11 +3415,11 @@ function stripHeadingLinks(s, refLabels) {
     const label = s.slice(i + 1, end);
     const k = end + 1;
     if (s[k] === '(') {
-      const close = balancedClose(s, k);
+      const close = inlineLinkEnd(s, k);
       if (close !== -1) { out.push(label); i = close; continue; }
     }
     if (s[k] === '[') {
-      const shut = s.indexOf(']', k);
+      const shut = labelClose(s, k);
       if (shut !== -1) {
         // A COLLAPSED reference (`[guide][]`) names itself.
         const ref = refKey(s.slice(k + 1, shut) || label);
@@ -3430,6 +3430,53 @@ function stripHeadingLinks(s, refLabels) {
     i += 1;
   }
   return out.join('');
+}
+
+/**
+ * Index just past the `)` of a VALID inline-link suffix starting at `at`
+ * (which must be the `(`), or -1.
+ *
+ * `balancedClose` alone answers a narrower question: it finds a matching
+ * parenthesis, not a link. `## [x](foo bar)` and `## [x](foo "unclosed)`
+ * both have one, and CommonMark renders each source literally -- so the
+ * heading stripper removed a suffix that is visible text, recorded `x`, and
+ * rejected a link to the real anchor while accepting a `#x` the page does not
+ * expose. The destination and title rules live in `mdLinks`; this shares them
+ * rather than restating them, so the two cannot come to disagree about what a
+ * link is.
+ */
+function inlineLinkEnd(text, at) {
+  if (text[at] !== '(') return -1;
+  let j = at + 1;
+  while (j < text.length && /\s/.test(text[j])) j += 1;
+  MD_LINK_ANGLE_RE.lastIndex = j;
+  if (MD_LINK_ANGLE_RE.exec(text)) {
+    j = MD_LINK_ANGLE_RE.lastIndex;
+  } else {
+    j = bareDestination(text, j);
+    if (text[j] === '#') {
+      MD_FRAG_RE.lastIndex = j + 1;
+      if (MD_FRAG_RE.exec(text)) j = MD_FRAG_RE.lastIndex;
+    }
+  }
+  MD_LINK_TAIL_RE.lastIndex = j;
+  return MD_LINK_TAIL_RE.exec(text) ? MD_LINK_TAIL_RE.lastIndex : -1;
+}
+
+/**
+ * Index of the `]` closing the `[` at `at`, honouring escapes, or -1.
+ *
+ * `indexOf(']')` stops at an ESCAPED bracket, so `## [Guide][my\]ref]` with a
+ * matching `[my\]ref]: README.md` definition failed to resolve and slugged as
+ * `guidemyref`, while the page exposes `guide`. The label walk above this one
+ * already skipped escapes; this second scan did not.
+ */
+function labelClose(text, at) {
+  for (let j = at + 1; j < text.length; j += 1) {
+    if (text[j] === '\\') { j += 1; continue; }
+    if (text[j] === ']') return j;
+  }
+  return -1;
 }
 
 // A code span delimited by a matching RUN of backticks, contents in group 2.
