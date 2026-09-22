@@ -5806,3 +5806,76 @@ describe('a fence delimiter inside a raw HTML block', () => {
     expect([...fencedLines(['~~~', '```', '~~~', 'y'])]).toEqual([0, 1, 2]);
   });
 });
+
+describe('an href attribute', () => {
+  it('is matched only as a whole attribute name', () => {
+    // `<a data-href="missing.md">` is not a clickable link, but the pattern
+    // matched the `href` suffix and emitted a gating dead-link finding for a
+    // destination no reader can reach. The same held for an `href=` written
+    // inside another attribute's VALUE.
+    const check = (t) => checkDeadLinks('d.md', t, linkCtx(['d.md']))
+      .map((f) => f.check);
+    expect(check('<a data-href="missing.md">x</a>\n')).toEqual([]);
+    expect(check('<a title="href=missing.md">x</a>\n')).toEqual([]);
+    // A real href is still a real link, quoted or not, and so is one that
+    // follows other attributes.
+    expect(check('<a href="missing.md">x</a>\n')).toEqual(['dead-link']);
+    expect(check('<a href=missing.md>x</a>\n')).toEqual(['dead-link']);
+    expect(check('<a class="c" data-x=\'1\' href="missing.md">x</a>\n'))
+      .toEqual(['dead-link']);
+  });
+});
+
+describe('an explicit anchor value', () => {
+  it('has its character references decoded', () => {
+    // `<div id="a&amp;b">` exposes the id `a&b` to the browser, but the raw
+    // value was recorded, so a valid link to that fragment was reported as a
+    // gating dead anchor while the literal `a&amp;b` was accepted.
+    expect([...headingAnchors('<div id="a&amp;b">x</div>\n')]).toEqual(['a&b']);
+    // Case is still preserved: the browser matches an explicit id exactly.
+    expect([...headingAnchors('<a name="Install"></a>\n')]).toEqual(['Install']);
+  });
+});
+
+describe('a destination beginning with two dots', () => {
+  it('is only traversal when the dots are a parent component', () => {
+    // `..missing.md` is a legal repository filename that normalizes to
+    // itself, and treating it as traversal meant a deleted or misspelled
+    // dot-prefixed target was never reported at all.
+    expect(checkDeadLinks('d.md', '[x](..missing.md)\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // A real parent component still leaves the repository and is exempt.
+    expect(checkDeadLinks('d.md', '[x](../outside.md)\n', linkCtx(['d.md'])))
+      .toEqual([]);
+    // And a tracked dot-prefixed file is not a finding.
+    expect(checkDeadLinks('d.md', '[x](..missing.md)\n',
+      linkCtx(['d.md', '..missing.md']))).toEqual([]);
+  });
+});
+
+describe('the GitHub host boundary', () => {
+  it('belongs to the URL scheme, not to any double slash', () => {
+    // Any `//` satisfied the lookbehind, so a URL whose host is example.com
+    // read as a citation of Solyra issue 1 and a closed issue 1 produced a
+    // gating stale-blocker finding for it.
+    const states = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+    const ref = (t) => checkClosedIssues('d.md', t, states).map((f) => f.ref);
+    expect(ref('Blocked by https://example.com//github.com/TeneikaAskew/solyra/issues/1'))
+      .toEqual([]);
+    // The real URL, and the bare-host spelling this repo's docs use, both still count.
+    expect(ref('Blocked by https://github.com/TeneikaAskew/solyra/issues/1'))
+      .toEqual(['solyra#1']);
+    expect(ref('Blocked by github.com/TeneikaAskew/solyra/issues/1'))
+      .toEqual(['solyra#1']);
+  });
+});
+
+describe('heading whitespace', () => {
+  it('becomes a hyphen whatever kind it is', () => {
+    // `## Hello\tWorld` anchors as `hello-world` on GitHub, but keeping the
+    // tab recorded an unusable slug -- so a valid `#hello-world` link was a
+    // gating dead anchor while the tab-bearing spelling was accepted.
+    expect(headingSlug('Hello\tWorld')).toBe('hello-world');
+    expect(headingSlug('Hello World')).toBe('hello-world');
+  });
+});

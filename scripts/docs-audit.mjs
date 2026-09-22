@@ -125,7 +125,13 @@ export function hasBlockingCue(line) {
 // whitespace are all legitimate suffixes, so the boundary is "not another
 // digit or a word character", not "end of string".
 const ISSUE_URL_RE = new RegExp(
-  `(?:(?<=^)|(?<=[\\s(\\[<])|(?<=//))github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)(?![\\w-])`,
+  // The `//` must be the SCHEME's. Any double slash satisfied the old
+  // lookbehind, so `https://example.com//github.com/TeneikaAskew/solyra/issues/1`
+  // read as a citation of Solyra issue 1 and a closed issue 1 produced a
+  // gating stale-blocker finding for a URL whose host is example.com. The
+  // bare-host spelling this repo's docs use is still admitted, by the
+  // start/whitespace/bracket alternatives beside it.
+  `(?:(?<=^)|(?<=[\\s(\\[<])|(?<=://))github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)(?![\\w-])`,
   'gi'
 );
 
@@ -1540,7 +1546,22 @@ const HTML_BLOCK_OPEN_RE = /^ {0,3}<\/?([a-zA-Z][a-zA-Z0-9-]*)(?:[\s/>]|$)/;
 // unchecked -- a deleted target cited that way produced no finding at all.
 // The unquoted value ends at whitespace or any of `"'=<>`` `, which is what
 // HTML says delimits it.
-const HTML_HREF_RE = /<a\s[^>]*?href\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/gi;
+// `href` must be a whole ATTRIBUTE NAME, not a suffix of one and not text
+// inside another attribute's value. `[^>]*?` matched the `href` in
+// `<a data-href="missing.md">`, which is not a clickable link, and would match
+// one written inside `<a title="href=x.md">` too -- both produced a gating
+// dead-link finding for a destination no reader can reach. Each attribute is
+// preceded by whitespace, and so is `href`; without that separator the name
+// backtracks to the `data-` of `data-href` and matches the rest as a real
+// attribute, which is the very case this rejects. Parity with the Python twin
+// (stocks#1121).
+// The value group is NON-capturing: this pattern is spliced in FRONT of the
+// destination groups, so a capture here shifts every one of them.
+const HTML_ATTR = String.raw`[a-zA-Z_:][-\w:.]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'\`=<>]+))?`;
+const HTML_HREF_RE = new RegExp(
+  String.raw`<a(?:\s+${HTML_ATTR})*?\s+href\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'\`=<>]+))`,
+  'gi'
+);
 
 const HTML_TYPE7_RE = /^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*?)?\/?>\s*$/;
 
@@ -3009,7 +3030,11 @@ export function headingSlug(heading) {
   // accepted, wrong in both directions at once. `\p{L}\p{N}_` is what `\w`
   // means in the Python twin, whose `re` module is Unicode by default; `_` has
   // to be named because it is not a letter or a number.
-  return s.replace(/[^\p{L}\p{N}_\s-]/gu, '').replace(/ /g, '-');
+  // EVERY run of rendered whitespace, not only the literal space. `## Hello\tWorld`
+  // anchors as `hello-world` on GitHub, but keeping the tab recorded an
+  // unusable slug -- so a valid `#hello-world` link was a gating dead anchor
+  // while the tab-bearing spelling nothing exposes was accepted.
+  return s.replace(/[^\p{L}\p{N}_\s-]/gu, '').replace(/\s/g, '-');
 }
 
 /**
@@ -3156,7 +3181,13 @@ export function headingAnchors(text) {
       // EXACTLY -- `<a name="Install">` is reached by `#Install` and not by
       // `#install`. Folding the case here, with the requested fragment folded
       // later, accepted a link that does not navigate.
-      const id = mm[2] ?? mm[3] ?? mm[4];
+      // Character references DECODED, as the heading slug already decodes
+      // them. `<div id="a&amp;b">` exposes the id `a&b` to the browser, but
+      // the raw value was recorded, so a valid `[x](#a%26b)` was reported as
+      // a gating dead anchor while the literal `a&amp;b` nothing exposes was
+      // accepted. Case is still preserved: the browser matches an explicit id
+      // exactly.
+      const id = decodeCharRefs(mm[2] ?? mm[3] ?? mm[4] ?? '');
       if (id) out.add(id);
     }
   }
@@ -3180,7 +3211,7 @@ export function headingAnchors(text) {
     const to = idStarts[bHi] + lines[bHi].length;
     for (const mm of idDoc.slice(from, to).matchAll(HTML_ID_RE)) {
       if (!mm[0].includes('\n')) continue;
-      const id = mm[2] ?? mm[3] ?? mm[4];
+      const id = decodeCharRefs(mm[2] ?? mm[3] ?? mm[4] ?? '');
       if (id) out.add(id);
     }
   }
@@ -3400,7 +3431,11 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
         // wherever a same-named directory happened to exist.
         if (bare.startsWith('/')) return;
         norm = path.posix.normalize(path.posix.join(base, bare));
-        if (norm.startsWith('..')) return;
+        // A PARENT component, not any name that starts with two dots.
+        // `..missing.md` is a legal repository filename that normalizes to
+        // itself, and treating it as traversal meant a deleted or misspelled
+        // dot-prefixed target was never reported at all.
+        if (norm === '..' || norm.startsWith('../')) return;
         if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
           out.push({ check: 'dead-link', doc, line: lineNo, severity: 'P2', detail: what });
           return;
