@@ -25,6 +25,7 @@ import {
   visibleClaimText,
   codeSpans,
   markerShapedLines,
+  namedCharRefCount,
   commentedLines,
   markerAnchor,
   indentedCodeLines,
@@ -2059,6 +2060,11 @@ describe('a whole run over a fixture repository', () => {
     fs.mkdirSync(path.join(dir, 'src'));
     fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit.mjs'),
       path.join(dir, 'scripts/docs-audit.mjs'));
+    // The character-reference table ships WITH the script and is read at
+    // import time, so a fixture that copies one and not the other is a
+    // broken install rather than a test tree.
+    fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit-entities.json'),
+      path.join(dir, 'scripts/docs-audit-entities.json'));
     fs.writeFileSync(path.join(dir, 'docs/DOC_REGISTRY.md'),
       '# Registry\n\n## Registry\n\n| Class | Path glob | Declared code paths | Generated regions |\n'
       + '|---|---|---|---|\n| D | docs/DOC_REGISTRY.md | | |\n| D | docs/*.md | src | |\n');
@@ -3554,6 +3560,11 @@ describe('a document whose registry rows disagree', () => {
     fs.mkdirSync(path.join(dir, 'docs'));
     fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit.mjs'),
       path.join(dir, 'scripts/docs-audit.mjs'));
+    // The character-reference table ships WITH the script and is read at
+    // import time, so a fixture that copies one and not the other is a
+    // broken install rather than a test tree.
+    fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit-entities.json'),
+      path.join(dir, 'scripts/docs-audit-entities.json'));
     fs.writeFileSync(path.join(dir, 'docs/DOC_REGISTRY.md'),
       '# Registry\n\n## Registry\n\n| Class | Path glob | Declared code paths | Generated regions |\n'
       + '|---|---|---|---|\n| D | docs/DOC_REGISTRY.md | | |\n'
@@ -3646,6 +3657,11 @@ describe('content hidden in an HTML comment', () => {
     fs.mkdirSync(path.join(dir, 'docs'));
     fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit.mjs'),
       path.join(dir, 'scripts/docs-audit.mjs'));
+    // The character-reference table ships WITH the script and is read at
+    // import time, so a fixture that copies one and not the other is a
+    // broken install rather than a test tree.
+    fs.copyFileSync(path.join(process.cwd(), 'scripts/docs-audit-entities.json'),
+      path.join(dir, 'scripts/docs-audit-entities.json'));
     // A DIRECTORY at the registry's path: `existsSync` says yes, so the
     // not-found guard above this read lets it through, and `readFileSync`
     // throws EISDIR. A chmod would not fail at all running as root, and a
@@ -4113,7 +4129,19 @@ describe('a heading carrying a character reference', () => {
     expect(decodeCharRefs('A&#x26;B')).toBe('A&B');
     // An unrecognised name is literal text, which is what CommonMark does
     // with an invalid one -- decoding a guess would invent an anchor.
-    expect(decodeCharRefs('A&hearts;B')).toBe('A&hearts;B');
+    // `&hearts;` used to be the example here, which was a statement about
+    // the hand-written map rather than about HTML5: it is a real name and
+    // now decodes. A name that exists in no table is the honest case.
+    expect(decodeCharRefs('A&nosuchname;B')).toBe('A&nosuchname;B');
+    expect(decodeCharRefs('A&hearts;B')).toBe('A\u2665B');
+    // And a name the old curated map did not carry, which is the whole
+    // point of generating it: `## A &colon; B` renders `A : B`.
+    expect(decodeCharRefs('A &colon; B')).toBe('A : B');
+    // The table is GENERATED from the WHATWG list, so its size is a fact
+    // about that list rather than about who has needed a name. A truncated
+    // or partially written file would otherwise degrade quietly back to the
+    // curated behaviour this replaced.
+    expect(namedCharRefCount()).toBe(2125);
     // Entity-escaped markup is CONTENT; a real tag is still markup.
     expect(headingSlug('Use &lt;code&gt;')).toBe('use-code');
     expect(headingSlug('Use <code>foo</code>')).toBe('use-foo');

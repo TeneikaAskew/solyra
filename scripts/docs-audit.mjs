@@ -3291,57 +3291,39 @@ export function crossRepoCitations(line) {
  * does with a genuinely invalid one, and the safe direction, since decoding a
  * name got wrong would invent an anchor. Numeric references need no table.
  */
-// U+00A0..U+00FF in order, so the whole Latin-1 block is one list rather than
-// ninety-six hand-written pairs that could each be wrong.
-const LATIN1_NAMES = (
-  'nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr '
-  + 'deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 '
-  + 'frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute '
-  + 'Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml '
-  + 'times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc '
-  + 'atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml '
-  + 'eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml '
-  + 'yacute thorn yuml'
-).split(' ');
+// The COMPLETE WHATWG list, generated rather than curated:
+// `scripts/docs-audit-entities.json` holds the 2,125 names that HTML5 defines
+// with a trailing semicolon, which is the set CommonMark accepts. The map
+// here used to be hand-written -- the Latin-1 block plus the punctuation and
+// Greek names someone had needed -- and an unlisted name stayed literal, so
+// `## A &colon; B` was anchored `a-colon-b` while the page offers `a--b`:
+// a working link rejected AND a nonexistent one accepted, the same
+// both-directions shape the decoder exists to prevent. A curated list cannot
+// be finished, so it is no longer curated.
+//
+// Read from disk rather than inlined because 33 KB of data in the middle of
+// this file would bury the rules around it. The file sits beside the script
+// and ships with it; a missing or unreadable table is a broken install, not a
+// documentation finding, so it throws rather than degrading to a partial map
+// that would silently reintroduce exactly the defect above.
+const ENTITIES_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)), 'docs-audit-entities.json');
+const NAMED_CHAR_REFS = (() => {
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(ENTITIES_PATH, 'utf8'));
+  } catch (err) {
+    throw new Error(`${ENTITIES_PATH} is missing or unreadable (${err.message}); `
+      + 'it ships with this script and every anchor derived from a character '
+      + 'reference depends on it');
+  }
+  return new Map(Object.entries(raw));
+})();
 
-const NAMED_CHAR_REFS = new Map([
-  ...LATIN1_NAMES.map((name, i) => [name, String.fromCodePoint(0xa0 + i)]),
-  ...Object.entries({
-    // The five XML names, which are not in the Latin-1 block.
-    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
-    // Punctuation, symbols and Greek that occur in headings.
-    ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', lsquo: '\u2018',
-    rsquo: '\u2019', ldquo: '\u201c', rdquo: '\u201d', sbquo: '\u201a',
-    bdquo: '\u201e', dagger: '\u2020', Dagger: '\u2021', bull: '\u2022',
-    permil: '\u2030', prime: '\u2032', Prime: '\u2033', lsaquo: '\u2039',
-    rsaquo: '\u203a', oline: '\u203e', frasl: '\u2044', euro: '\u20ac',
-    trade: '\u2122', larr: '\u2190', uarr: '\u2191', rarr: '\u2192',
-    darr: '\u2193', harr: '\u2194', lArr: '\u21d0', uArr: '\u21d1',
-    rArr: '\u21d2', dArr: '\u21d3', hArr: '\u21d4', minus: '\u2212',
-    lowast: '\u2217', radic: '\u221a', infin: '\u221e', asymp: '\u2248',
-    ne: '\u2260', equiv: '\u2261', le: '\u2264', ge: '\u2265',
-    sum: '\u2211', prod: '\u220f', part: '\u2202', int: '\u222b',
-    forall: '\u2200', exist: '\u2203', empty: '\u2205', nabla: '\u2207',
-    isin: '\u2208', notin: '\u2209', cap: '\u2229', cup: '\u222a',
-    sub: '\u2282', sup: '\u2283', sube: '\u2286', supe: '\u2287',
-    and: '\u2227', or: '\u2228', there4: '\u2234', loz: '\u25ca',
-    OElig: '\u0152', oelig: '\u0153', Scaron: '\u0160', scaron: '\u0161',
-    Yuml: '\u0178', fnof: '\u0192', circ: '\u02c6', tilde: '\u02dc',
-    Alpha: '\u0391', Beta: '\u0392', Gamma: '\u0393', Delta: '\u0394',
-    Epsilon: '\u0395', Zeta: '\u0396', Eta: '\u0397', Theta: '\u0398',
-    Iota: '\u0399', Kappa: '\u039a', Lambda: '\u039b', Mu: '\u039c',
-    Nu: '\u039d', Xi: '\u039e', Omicron: '\u039f', Pi: '\u03a0',
-    Rho: '\u03a1', Sigma: '\u03a3', Tau: '\u03a4', Upsilon: '\u03a5',
-    Phi: '\u03a6', Chi: '\u03a7', Psi: '\u03a8', Omega: '\u03a9',
-    alpha: '\u03b1', beta: '\u03b2', gamma: '\u03b3', delta: '\u03b4',
-    epsilon: '\u03b5', zeta: '\u03b6', eta: '\u03b7', theta: '\u03b8',
-    iota: '\u03b9', kappa: '\u03ba', lambda: '\u03bb', mu: '\u03bc',
-    nu: '\u03bd', xi: '\u03be', omicron: '\u03bf', pi: '\u03c0',
-    rho: '\u03c1', sigmaf: '\u03c2', sigma: '\u03c3', tau: '\u03c4',
-    upsilon: '\u03c5', phi: '\u03c6', chi: '\u03c7', psi: '\u03c8',
-    omega: '\u03c9',
-  }),
-]);
+/** How many named references the shipped table carries. */
+export function namedCharRefCount() {
+  return NAMED_CHAR_REFS.size;
+}
 
 const CHAR_REF_RE = /&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z][a-zA-Z0-9]{1,31}));/g;
 
