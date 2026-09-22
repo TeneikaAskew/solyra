@@ -1611,6 +1611,14 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = 
   const blockStarts = new Set(paragraphBlocks(lines, fenced).map(([lo]) => lo));
   let inComment = false;
   let open = null;
+  // The quote depth the OPEN block started at. A raw HTML block opened inside
+  // a blockquote ends with that quote, closing tag or not: CommonMark ends the
+  // nested block where its container ends. Holding it open added every later
+  // line to the block, so the dead-link, heading, marker and blocker scans
+  // suppressed live body content, potentially through EOF. The fence scanner
+  // has had this rule for rounds; this is the same rule one construct over. An
+  // unquoted block opens at depth 0 and nothing is below 0, so it is untouched.
+  let openDepth = 0;
   // The closer a type-3/4/5 block waits for (`?>`, `]]>`, `>`). Null for the
   // tag-closed and blank-line-closed kinds.
   let closer = null;
@@ -1627,11 +1635,17 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = 
     // recognised no opener -- so `> [x](missing.md)` inside the example was
     // audited as a live link and emitted a gating finding.
     const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
+    if (open !== null && quoteDepth(raw) < openDepth) { open = null; closer = null; }
     if (inComment) {
       if (line.includes('-->')) inComment = false;
       return;
     }
     if (open === null) {
+      // Whatever opens on THIS line opens at this line's depth. Recorded
+      // before the opener tests rather than at each of the places a block can
+      // start, so none of them can be missed; it is only read while a block is
+      // open, so a line that opens nothing leaves a stale value nothing reads.
+      openDepth = quoteDepth(raw);
       if (indented.has(i)) return;
       // A comment OPENING on this line hides anything after it, including a
       // `<pre>` on a later line of the same comment.
@@ -1966,6 +1980,7 @@ export function splitOutsideRefs(text, delim) {
 export function paragraphBlocks(lines, fenced = new Set()) {
   const blocks = [];
   let start = null;
+  let openDepth = 0;
   const flush = (end) => {
     if (start !== null && end >= start) blocks.push([start, end]);
     start = null;
@@ -1985,7 +2000,18 @@ export function paragraphBlocks(lines, fenced = new Set()) {
       blocks.push([i, i]);
       return;
     }
-    if (start === null) start = i;
+    // A CONTAINER transition ends the block too. A new list item opens its own
+    // paragraph, and so does a change of blockquote depth: `a \` b` over
+    // `- [x](missing.md) \`` is a paragraph and a separate list, not one
+    // block, and joining them paired the two backticks and masked the broken
+    // link completely. The same grouping feeds codeSpanLines, where delimiters
+    // in separate containers were hiding live content between them.
+    const depth = quoteDepth(line);
+    if (start !== null && (depth !== openDepth
+        || /^[ \t]*(?:[-*+]|\d+[.)])\s+/.test(bare))) {
+      flush(i - 1);
+    }
+    if (start === null) { start = i; openDepth = depth; }
   });
   flush(lines.length - 1);
   return blocks;

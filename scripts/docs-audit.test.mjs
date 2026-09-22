@@ -6035,3 +6035,39 @@ describe('a Setext heading opening a list item', () => {
     expect([...headingAnchors('Title\n===\n')]).toEqual(['title']);
   });
 });
+
+describe('a raw HTML block opened inside a blockquote', () => {
+  it('ends with its container', () => {
+    // CommonMark ends a nested block where its container ends, so `> <pre>`
+    // is closed by the quote whether or not a `</pre>` ever arrives. Holding
+    // it open added every later line to the block, suppressing live body
+    // content through EOF.
+    const doc = ['> <pre>', '> sample', '', '[x](missing.md)'];
+    expect([...rawHtmlBlockLines(doc)].sort((a, b) => a - b)).toEqual([0, 1]);
+    expect(checkDeadLinks('d.md', `${doc.join('\n')}\n`, linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // An UNQUOTED block opens at depth 0 and nothing is below 0, so it still
+    // runs to its closing tag across blank lines.
+    expect([...rawHtmlBlockLines(['<pre>', 'a', '', 'b', '</pre>'])]
+      .sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
+describe('inline content at a container boundary', () => {
+  it('does not pair across a new list item or a quote-depth change', () => {
+    // A new list item opens its own paragraph, and so does a change of
+    // blockquote depth. Grouping them into one block paired delimiters across
+    // the boundary and masked a live broken link completely.
+    expect(paragraphBlocks(['a ` b', '- [x](missing.md) `'], new Set()))
+      .toEqual([[0, 0], [1, 1]]);
+    expect(checkDeadLinks('d.md', 'a ` b\n- [x](missing.md) `\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // The other direction: two items must not pair into one link.
+    expect(checkDeadLinks('d.md', '- [open\n- label](missing.md)\n',
+      linkCtx(['d.md']))).toEqual([]);
+    expect(paragraphBlocks(['> a ` b', 'c ` d'], new Set()))
+      .toEqual([[0, 0], [1, 1]]);
+    // A CONTINUATION of an item carries no marker and stays in its block.
+    expect(paragraphBlocks(['- one', '  two'], new Set())).toEqual([[0, 1]]);
+  });
+});
