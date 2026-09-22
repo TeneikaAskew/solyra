@@ -68,6 +68,7 @@ import {
   codeSpanLines,
   paragraphBlocks,
   frontMatterLines,
+  splitOutsideRefs,
   commentedPrefixLines,
   isMarkdownPath,
   documentSet,
@@ -2325,8 +2326,14 @@ describe('a Claims row naming a document that cannot be read', () => {
     // and Node exits 1 with a stack trace.
     expect(() => checkClaims([{ doc: 'docs/gone.md', pattern: '(\\d+) things',
       derivation: 'grep-count src x' }])).toThrow(AuditError);
+    // The MESSAGE changed when claim documents gained the tracked
+    // precondition every derivation target already had: a document that is
+    // gone is refused for not being tracked, one step earlier than the read.
+    // Both are exit 2 rather than a finding, which is what this test is for;
+    // the read error still covers a document that IS tracked and cannot be
+    // read.
     expect(() => checkClaims([{ doc: 'docs/gone.md', pattern: '(\\d+) things',
-      derivation: 'grep-count src x' }])).toThrow(/could not be read/);
+      derivation: 'grep-count src x' }])).toThrow(/not tracked/);
   });
 });
 
@@ -4700,10 +4707,19 @@ describe('a claim-shaped string that is only an example', () => {
     const claim = [{ doc, pattern: '(\\d+) living docs',
       derivation: 'grep-files src fetch\\(' }];
     const exec = () => 'a\nb\nc\nd\ne\nf\ng\n';   // seven
+    // `git add -N` so the fixture really IS tracked for the duration:
+    // checkClaims now refuses an untracked claim document, because prose a
+    // clean clone does not have is not prose this repository asserts. The
+    // probe reads the real index by design, so the fixture has to enter it
+    // rather than be stubbed past.
+    const track = () => spawnSync('git', ['add', '-N', doc], { cwd: process.cwd() });
+    const untrack = () => spawnSync('git', ['rm', '--cached', '-q', '--force', doc],
+      { cwd: process.cwd() });
     const run = (body) => {
       fs.writeFileSync(path.join(process.cwd(), doc), body);
+      track();
       try { return checkClaims(claim, { exec }); }
-      finally { fs.unlinkSync(path.join(process.cwd(), doc)); }
+      finally { untrack(); fs.unlinkSync(path.join(process.cwd(), doc)); }
     };
     // Matching the derivation, the example kept the row passing after the real
     // assertion had been deleted. It now reports the row inert.
@@ -4733,8 +4749,15 @@ describe('a claim-shaped string that is only an example', () => {
     const inline = [{ doc, pattern: '(\\d+) files under `src/`',
       derivation: 'grep-files src fetch\\(' }];
     fs.writeFileSync(path.join(process.cwd(), doc), '# C\n\n7 files under `src/` do.\n');
+    track();
     try {
       expect(checkClaims(inline, { exec })).toEqual([]);
+    } finally { untrack(); fs.unlinkSync(path.join(process.cwd(), doc)); }
+    // And the precondition itself: an UNTRACKED claim document is refused
+    // rather than measured, the same rule each derivation target carries.
+    fs.writeFileSync(path.join(process.cwd(), doc), '# C\n\n7 living docs\n');
+    try {
+      expect(() => checkClaims(claim, { exec })).toThrow(/not tracked/);
     } finally { fs.unlinkSync(path.join(process.cwd(), doc)); }
   });
 });
@@ -5457,5 +5480,158 @@ describe('a marker recording no review', () => {
     const ok = line.replace('unknown', '2026-08-31');
     expect(checkMarkerDates('d.md', findMarker(['# T', '', ok]), '2026-09-22', ok))
       .toEqual([]);
+  });
+});
+
+// ── round 41 ────────────────────────────────────────────────────────────────
+
+describe('an anchor whose tag spans a line break', () => {
+  it('is still a link with a destination to check', () => {
+    // `<a\n href="missing.md">` renders a clickable link, and the per-line
+    // scan could never see the opening tag and its href together -- so a
+    // missing destination produced no finding at all.
+    expect(checkDeadLinks('d.md', '<a\n href="missing.md">g</a>\n', linkCtx(['d.md']))
+      .map((f) => [f.check, f.line])).toEqual([['dead-link', 1]]);
+    expect(checkDeadLinks('d.md', '<a\n href="docs/a.md">g</a>\n',
+      linkCtx(['d.md', 'docs/a.md']))).toEqual([]);
+    // The single-line form is reported ONCE, by the per-line pass.
+    expect(checkDeadLinks('d.md', '<a href="missing.md">g</a>\n', linkCtx(['d.md'])))
+      .toHaveLength(1);
+    // A raw-TEXT block displays the tag rather than rendering it, and a tag
+    // may not span a blank line.
+    expect(checkDeadLinks('d.md', '<pre>\n<a\n href="missing.md">g</a>\n</pre>\n',
+      linkCtx(['d.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '<a\n\n href="missing.md">g</a>\n',
+      linkCtx(['d.md']))).toEqual([]);
+  });
+});
+
+describe('a character reference', () => {
+  it('is consumed whole before a query or a fragment is separated', () => {
+    // `&#63;` IS a `?`, so `[x](foo&#63;v=1)` renders a URL whose PATH is
+    // `foo` -- splitting the raw destination first left the nonexistent path
+    // `foo?v=1` once decoded. And `[g]: foo&#38;bar.md` links to the tracked
+    // `foo&bar.md`; splitting at the `#` inside the reference gave the path
+    // `foo&` and the fragment `38;bar.md`.
+    expect(checkDeadLinks('d.md', '[x](foo&#63;v=1)\n', linkCtx(['d.md', 'foo'])))
+      .toEqual([]);
+    expect(checkDeadLinks('d.md', '[x](gone&#63;v=1)\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    expect(checkDeadLinks('d.md', '[g]: foo&#38;bar.md\n',
+      linkCtx(['d.md', 'foo&bar.md']))).toEqual([]);
+    expect(checkDeadLinks('d.md', '[g]: gone&#38;bar.md\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // An ordinary query is still removed, and the helper is honest about a
+    // delimiter that really is one.
+    expect(checkDeadLinks('d.md', '[x](guide.md?plain=1)\n',
+      linkCtx(['d.md', 'guide.md']))).toEqual([]);
+    expect(splitOutsideRefs('foo&#38;bar.md', '#')).toEqual(['foo&#38;bar.md', undefined]);
+    expect(splitOutsideRefs('a.md#frag', '#')).toEqual(['a.md', 'frag']);
+  });
+});
+
+describe('a heading introduced by a list marker', () => {
+  it('is the document H1 too, not only an anchor', () => {
+    // headingAnchors reads through the marker, so `- # Title` exposes its
+    // anchor -- while h1Index saw the marker where it needs a `#` and the
+    // audit reported no H1, with --stamp answering `skipped-no-h1`: the
+    // finding it raises and then refuses to act on.
+    expect(h1Index(['- # Title', '', 'body'])).toBe(0);
+    expect(h1Index(['1. # Title', '', 'body'])).toBe(0);
+    expect(h1Index(['- not a heading', '', 'body'])).toBeNull();
+  });
+});
+
+describe('inline content', () => {
+  it('ends at a heading, not only at a blank line', () => {
+    // CommonMark ends the paragraph at the heading, so an unmatched backtick
+    // above it cannot pair with one below -- and pairing them masked the live
+    // broken link in between out of the audit.
+    expect(paragraphBlocks(['a ` b', '# Heading', 'c ` d']))
+      .toEqual([[0, 0], [1, 1], [2, 2]]);
+    expect([...codeSpanLines(['a ` b', '# Heading', 'c ` d'])]).toEqual([]);
+    // A thematic break is a block of its own for the same reason.
+    expect(paragraphBlocks(['a', '---', 'b'])).toEqual([[0, 0], [1, 1], [2, 2]]);
+    // Ordinary consecutive prose is still one block.
+    expect(paragraphBlocks(['a', 'b', '', 'c'])).toEqual([[0, 1], [3, 3]]);
+  });
+});
+
+describe('a blocker label', () => {
+  it('does not carry out of its blockquote', () => {
+    // Stripping the quote prefix is what made a quoted blocker list
+    // recognisable, and it also erased the boundary: `> Blocked by:`, a quoted
+    // blank, then an UNQUOTED list applied the quoted label to the outside
+    // list and reported a neutral closed-issue link as live work.
+    const url = R30_URL;
+    expect(checkClosedIssues('d.md', `> Blocked by:\n>\n- see ${url}\n`, R30_STATES))
+      .toEqual([]);
+    expect(checkClosedIssues('d.md', `> Blocked by:\n>\n> - see ${url}\n`, R30_STATES)
+      .map((f) => f.ref)).toEqual(['solyra#1']);
+    expect(checkClosedIssues('d.md', `Blocked by:\n\n- see ${url}\n`, R30_STATES)
+      .map((f) => f.ref)).toEqual(['solyra#1']);
+  });
+});
+
+describe('an explicit HTML anchor', () => {
+  it('keeps its case, unlike a generated heading slug', () => {
+    // The browser matches an `id`/`name` exactly, so `<a name="Install">` is
+    // reached by `#Install` and not by `#install`. Lowercasing it here, with
+    // the requested fragment folded later, accepted a link that does not
+    // navigate.
+    expect([...headingAnchors('<a name="Install"></a>\n\n# Real\n')].sort())
+      .toEqual(['Install', 'real']);
+  });
+});
+
+describe('a heading inside a raw HTML block', () => {
+  it('does not end the marker window', () => {
+    // A `<pre>` sample carrying `## Fake` above an existing marker ended the
+    // window at the sample, so findMarker missed the real marker below the
+    // block and --stamp inserted a second one near the H1.
+    const doc = ['# T', '<pre>', '## Fake', '</pre>', '',
+      '**Last reviewed:** 2026-09-20 · **Depth:** scanned · **Owner:** TBD',
+      '', '## Next'];
+    expect(findMarkers(doc)).toEqual([5]);
+    expect(findMarker(doc).idx).toBe(5);
+  });
+});
+
+describe('a backticked path', () => {
+  it('may carry a space in every segment, not only the filename', () => {
+    // `docs/user guides/old.md` and a spaced root file `old guide.md` matched
+    // neither scanner, so a deleted citation written that way was reported
+    // clean -- the hiding direction, and the same gap the filename fix closed
+    // one segment over.
+    const ctx = {
+      tracked: new Set(['d.md']), topLevelDirs: new Set(['docs']),
+      rootFiles: new Set(), knownRoot: new Set(['old guide.md']),
+      exts: new Set(['.md']), basenames: new Set(),
+    };
+    expect(checkDeadLinks('d.md', 'see `docs/user guides/old.md`\n', ctx)
+      .map((f) => f.detail)).toEqual(['backticked path -> docs/user guides/old.md']);
+    expect(checkDeadLinks('d.md', 'see `old guide.md`\n', ctx)
+      .map((f) => f.detail)).toEqual(['backticked root file -> old guide.md']);
+    // A live spaced path stays quiet, and the plain form is unchanged.
+    const live = { ...ctx, tracked: new Set(['d.md', 'docs/user guides/live.md']) };
+    expect(checkDeadLinks('d.md', 'see `docs/user guides/live.md`\n', live)).toEqual([]);
+    expect(checkDeadLinks('d.md', 'see `docs/gone.md`\n', ctx)
+      .map((f) => f.detail)).toEqual(['backticked path -> docs/gone.md']);
+  });
+});
+
+describe('a comment inside a rendered HTML block', () => {
+  it('still hides what it contains', () => {
+    // Masking every HTML-block line made commentSpans ignore the delimiters
+    // there, so `<div>` containing a commented-out anchor handed retired
+    // markup to the href pass as visible content. Inside `<pre>` the
+    // delimiters are displayed rather than parsed, which is why those still
+    // suppress comment parsing.
+    expect(checkDeadLinks('d.md',
+      '<div>\n<!-- <a href="missing.md">old</a> -->\n</div>\n', linkCtx(['d.md'])))
+      .toEqual([]);
+    // The same anchor NOT commented out is still checked.
+    expect(checkDeadLinks('d.md', '<div>\n<a href="missing.md">old</a>\n</div>\n',
+      linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
   });
 });
