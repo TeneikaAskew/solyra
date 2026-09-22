@@ -1872,7 +1872,13 @@ const THEMATIC_BREAK_RE = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*
  * the caller decodes exactly what it decoded before.
  */
 export function splitOutsideRefs(text, delim) {
-  const probe = text.replace(/&#?[0-9A-Za-z]{1,32};/g, (r) => '_'.repeat(r.length));
+  // A backslash ESCAPE is a unit as well as a character reference, which is
+  // how MD_LINK_RE's destination class already reads both: `[g]: a\#b.md`
+  // targets the tracked `a#b.md`, and splitting at the `#` inside the escape
+  // reported the path `a\` dead. The escape alternative comes first so a
+  // `\&` is consumed as the escape it is. Parity with the Python twin
+  // (stocks#1121).
+  const probe = text.replace(/\\.|&#?[0-9A-Za-z]{1,32};/g, (r) => '_'.repeat(r.length));
   const at = probe.indexOf(delim);
   return at === -1 ? [text, undefined] : [text.slice(0, at), text.slice(at + 1)];
 }
@@ -2922,7 +2928,15 @@ export function headingSlug(heading) {
   // that fragment was reported dead. Only a tag NAME, optionally with
   // attributes, is markup. Parity with the Python twin (stocks#1121).
   let s = decodeCharRefs(heading.replace(/<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>/g, '')
-    .replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'));
+    .replace(/`([^`]*)`/g, '$1'));
+  // Only where the opening bracket is NOT escaped. `## Literal \[x](guide.md)`
+  // renders the brackets and the destination as TEXT -- CommonMark makes no
+  // link -- so GitHub's anchor includes `xguidemd`, while stripping the
+  // destination unconditionally recorded `literal-x`: a working fragment
+  // reported dead AND an anchor the page does not expose accepted. Parity with
+  // the Python twin (stocks#1121).
+  s = s.replace(/\[([^\]]*)\]\([^)]*\)/g,
+    (whole, text, at, src) => (isEscaped(src, at) ? whole : text));
   // Emphasis MARKUP only. Stripping every underscore turned `## API_FIELD`
   // into `apifield`, so a valid link to `#api_field` read as a dead anchor
   // while an incorrect `#apifield` was accepted. CommonMark does not treat an
@@ -3383,6 +3397,15 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // blocker and comment scanners already read these ranges.
     const codeHere = [...codeSpans(line), ...(wrappedCodeSpans.get(i) ?? [])];
     const hiddenHere = commentedSpans.get(i) ?? [];
+    // A citation nested inside a WIDER code span is sample text, not a
+    // citation: ``example `scripts/missing.py` here`` renders the inner
+    // backticks and the path literally, and reporting it failed the audit over
+    // a document's own illustration. STRICT enclosure, because an ordinary
+    // single-backtick citation IS its own span -- testing mere overlap would
+    // skip every backticked path in the corpus. Parity with the Python twin
+    // (stocks#1121).
+    const nested = (mm) => codeHere.some(
+      ([lo, hi]) => lo < mm.index && hi > mm.index + mm[0].length);
     for (const m of htmlOnly ? [] : line.matchAll(MD_LINK_RE)) {
       // An ESCAPED opening bracket renders as literal text, so a document
       // demonstrating link syntax as `\[x](missing.md)` was reported as a
@@ -3431,7 +3454,8 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     if (!backtickedPaths || htmlOnly) return;
     const crossRepo = crossRepoCitations(line);
     for (const m of line.matchAll(BACKTICK_PATH_RE)) {
-      if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+      if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)
+          || nested(m)) continue;
       const cited = m[1];
       // `./src/removed.ts` and `docs/../src/live.ts` name the same files as
       // their plain spellings. Comparing the raw string meant the first hid a
@@ -3463,7 +3487,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // the slash-path loop above does: a deleted root file retained inside a
       // comment -- `<!-- retired: \`vite.config.ts\` -->` -- drew a gating
       // dead-link finding over content no reader can see.
-      if (inLinkLabel(m.index) || crossRepo.has(m.index)
+      if (inLinkLabel(m.index) || crossRepo.has(m.index) || nested(m)
           || hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)
           || !exts.has(path.posix.extname(f))) continue;
       // A bare name that is the basename of some tracked file is a citation

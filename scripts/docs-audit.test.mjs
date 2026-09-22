@@ -5635,3 +5635,52 @@ describe('a comment inside a rendered HTML block', () => {
       linkCtx(['d.md'])).map((f) => f.check)).toEqual(['dead-link']);
   });
 });
+
+// ── round 42 parity (stocks#1121 `6048592a`) ────────────────────────────────
+
+describe('a backticked path nested in a wider code span', () => {
+  it('is sample text, not a citation', () => {
+    // ``example `scripts/missing.py` here`` renders the inner backticks and
+    // the path literally, so reporting it failed the audit over a document's
+    // own illustration. STRICT enclosure, because an ordinary single-backtick
+    // citation IS its own span -- mere overlap would skip every one.
+    const ctx = {
+      tracked: new Set(['d.md']), topLevelDirs: new Set(['scripts']),
+      rootFiles: new Set(), knownRoot: new Set(['old.md']),
+      exts: new Set(['.md', '.py']), basenames: new Set(),
+    };
+    const c = (t) => checkDeadLinks('d.md', t, ctx).map((f) => f.detail);
+    expect(c('see ``example `scripts/missing.py` here``\n')).toEqual([]);
+    expect(c('see `scripts/missing.py`\n'))
+      .toEqual(['backticked path -> scripts/missing.py']);
+    // The root-file scanner beside it gets the same rule.
+    expect(c('see ``example `old.md` here``\n')).toEqual([]);
+    expect(c('see `old.md`\n')).toEqual(['backticked root file -> old.md']);
+  });
+});
+
+describe('a backslash escape in a destination', () => {
+  it('is a unit, like a character reference', () => {
+    // `[g]: a\#b.md` targets the tracked `a#b.md`; splitting at the `#` inside
+    // the escape reported the path `a\` dead. MD_LINK_RE's destination class
+    // already read both as units, and this helper read only one of them.
+    expect(checkDeadLinks('d.md', String.raw`[g]: a\#b.md` + '\n',
+      linkCtx(['d.md', 'a#b.md']))).toEqual([]);
+    expect(splitOutsideRefs(String.raw`a\#b.md`, '#'))
+      .toEqual([String.raw`a\#b.md`, undefined]);
+    expect(splitOutsideRefs('a.md#frag', '#')).toEqual(['a.md', 'frag']);
+  });
+});
+
+describe('an escaped link in a heading', () => {
+  it('keeps its destination in the slug', () => {
+    // `## Literal \[x](guide.md)` renders the brackets and the destination as
+    // TEXT -- CommonMark makes no link -- so GitHub's anchor includes
+    // `xguidemd`, while stripping it unconditionally recorded `literal-x`: a
+    // working fragment reported dead AND an anchor the page does not expose
+    // accepted.
+    expect(headingSlug(String.raw`Literal \[x](guide.md)`)).toBe('literal-xguidemd');
+    expect(headingSlug('Real [x](guide.md)')).toBe('real-x');
+    expect(headingSlug('Use `foo`')).toBe('use-foo');
+  });
+});
