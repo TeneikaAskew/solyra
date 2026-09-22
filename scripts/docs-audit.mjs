@@ -670,7 +670,20 @@ export function loadRegistry(text) {
     const cells = splitRow(line);
     if (cells.length < 2) continue;
     const cls = cell(cells[0]).toUpperCase();
-    if (!['A', 'B', 'C', 'D', 'X'].includes(cls)) continue;
+    // A HEADER or separator row is not a declaration; anything else is, and a
+    // typo in its class was silently discarded. `documentSet` adds a
+    // non-Markdown artefact ONLY through an exact registry row, so
+    // `| E | generated.json | | |` dropped that artefact from classification
+    // and from every region and content check WITHOUT an unclassified
+    // finding -- the registry quietly meaning something other than what it
+    // displays. Bad input is refused, as a bad `line:` pattern already is.
+    if (!['A', 'B', 'C', 'D', 'X'].includes(cls)) {
+      if (/^-+$/.test(cls) || cls === 'CLASS' || !cls) continue;
+      throw new AuditError(`${REGISTRY}: a row declares class \`${cell(cells[0])}\` for `
+        + `\`${cell(cells[1]) || '(no path)'}\`, which is not one of A, B, C, D or X; `
+        + 'the row would be dropped and its document left unclassified with '
+        + 'nothing reporting the skip');
+    }
     const glob = cell(cells[1]);
     if (!glob) continue;
     // A space is valid in a git path, so the EXTENSION decides nothing. The
@@ -1423,7 +1436,15 @@ export function markerWindow(lines, limit = 40, { stopAtParagraph = true } = {})
     // closed the section, so a SECOND marker below it was outside the window:
     // findMarkers saw only the first, --stamp updated it, and the
     // contradictory duplicate stayed on the page with nothing to report it.
-    if (/^ {0,3}#{1,6}(?:\s|$)/.test(lines[j])) { stop = j; break; }
+    // Read through the CONTAINER prefix, as h1Index already is. A document
+    // with a blockquoted H1 keeps its marker in the same quote, and `>` on
+    // its own is the quoted spelling of a BLANK line -- but `lines[j].trim()`
+    // saw `>` as rendered prose and closed the window before the marker. The
+    // audit reported the visible marker missing and --stamp inserted a second
+    // unquoted one beside it: contradictory provenance, and the shape this
+    // window exists to prevent.
+    const bare = lines[j].replace(BLOCKQUOTE_PREFIX_RE, '');
+    if (/^ {0,3}#{1,6}(?:\s|$)/.test(bare)) { stop = j; break; }
     // Setext is a section heading too, and its underline marks the heading on
     // the line ABOVE -- so the section starts there, not at the underline.
     // Reading only `#` let a `Last reviewed` inside that section stand in for
@@ -1439,8 +1460,8 @@ export function markerWindow(lines, limit = 40, { stopAtParagraph = true } = {})
     // the required placement. Blank lines, fenced blocks, commented metadata
     // and badge lines are skipped above or here; the first other rendered
     // paragraph ends it.
-    if (!lines[j].trim()) continue;
-    if (MARKER_RE.test(lines[j].trim()) || LEGACY_MARKER_RE.test(lines[j].trim())) continue;
+    if (!bare.trim()) continue;
+    if (MARKER_RE.test(bare.trim()) || LEGACY_MARKER_RE.test(bare.trim())) continue;
     if (isCodeIndented(lines[j])) continue;
     // Duplicate detection asks a different question and needs the wider span:
     // see markerSection.
@@ -2513,6 +2534,8 @@ export function commentedPrefixLines(lines) {
 
 export function findMarkers(lines) {
   const { from, to } = markerSection(lines);
+  const h1 = h1Index(lines);
+  const h1Depth = h1 === null ? 0 : quoteDepth(lines[h1]);
   // RAW HTML blocks too. Markdown inside `<pre>` or `<div>` is not parsed --
   // `**Last reviewed:** 2026-09-01` there renders as literal characters, not
   // as the document's provenance -- yet a marker-shaped line in one was
@@ -2538,7 +2561,13 @@ export function findMarkers(lines) {
     // applied to the RAW line, so a marker with one to three leading spaces --
     // which findMarker accepts as a rendered paragraph -- was invisible here
     // and two contradictory markers were counted as one.
-    const line = lines[i].trim();
+    // Through the CONTAINER prefix too, for the same reason: a quoted marker
+    // that findMarker now reads has to be countable here, or a document with
+    // one quoted and one plain marker reports a single marker and --stamp
+    // rewrites it with the other still contradicting it.
+    const own = markerText(lines, i, h1Depth);
+    if (own === null) continue;
+    const { text: line } = own;
     if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) out.push(i);
   }
   return out;
@@ -2557,6 +2586,8 @@ const MARKER_SHAPE_RE =
 /** Indices in the marker section that LOOK like a marker but parse as neither. */
 export function markerShapedLines(lines) {
   const { from, to } = markerSection(lines);
+  const h1 = h1Index(lines);
+  const h1Depth = h1 === null ? 0 : quoteDepth(lines[h1]);
   const fenced = fencedLines(lines);
   const commented = commentedLines(lines);
   // And a line a code SPAN covers entirely -- see spanHiddenLines.
@@ -2575,7 +2606,11 @@ export function markerShapedLines(lines) {
     if (fenced.has(i) || commented.has(i) || spanned.has(i)
       || prefixHidden.has(i) || rawBlock.has(i)
       || isCodeIndented(lines[i])) continue;
-    const line = lines[i].trim();
+    // Through the container prefix, at the H1's depth, as findMarker and
+    // findMarkers both are.
+    const own = markerText(lines, i, h1Depth);
+    if (own === null) continue;
+    const { text: line } = own;
     if (!MARKER_SHAPE_RE.test(line)) continue;
     if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) continue;
     out.push(i);
@@ -2583,8 +2618,36 @@ export function markerShapedLines(lines) {
   return out;
 }
 
+/**
+ * The marker line's own text, or null when its container is not the H1's.
+ *
+ * A quoted marker under a quoted H1 IS the document's provenance: the quote
+ * is the document's own top-level container, and reading the raw line left
+ * the `>` in front of `**Last reviewed:**` so the visible marker was
+ * reported missing and --stamp inserted a second, unquoted one.
+ *
+ * A quoted line under an UNQUOTED H1 is an aside, and reading it as the
+ * marker is worse than missing it. FRONTEND.md in this repo opens with an
+ * unquoted H1, its real marker, and then a `> **Companion to** ...` note
+ * carrying `> **Last refreshed:** 2026-05-22.` -- a fact about the OTHER
+ * document. Reading markers through any container turned that into a second
+ * review marker and produced a P2 saying the two can disagree. Measured on
+ * this corpus, which is how the over-broad first version was caught.
+ *
+ * So the depth has to MATCH, not merely be stripped.
+ */
+function markerText(lines, i, depth) {
+  const prefix = (/^((?:\s*>)+\s?)/.exec(lines[i]) ?? ['', ''])[1];
+  if (quoteDepth(lines[i]) !== depth) return null;
+  return { prefix, text: lines[i].slice(prefix.length).trim() };
+}
+
 export function findMarker(lines) {
   const { from, to } = markerWindow(lines);
+  // The H1's container depth: the marker belongs to the document, so it sits
+  // where the document's title does.
+  const h1 = h1Index(lines);
+  const h1Depth = h1 === null ? 0 : quoteDepth(lines[h1]);
   const fenced = fencedLines(lines);
   const commented = commentedLines(lines);
   // And a line a code SPAN covers entirely -- see spanHiddenLines.
@@ -2599,18 +2662,27 @@ export function findMarker(lines) {
     // the example's structure. Fenced blocks are excluded for the same reason.
     if (fenced.has(i) || commented.has(i) || spanned.has(i)
       || prefixHidden.has(i) || isCodeIndented(lines[i])) continue;
-    const line = lines[i].trim();
+    // Through the CONTAINER prefix, which `markerWindow` and `h1Index` both
+    // read through. A document with a blockquoted H1 keeps its marker in the
+    // same quote, and parsing the raw line left the `>` in front of the
+    // `**Last reviewed:**` so the visible marker was reported missing and
+    // --stamp inserted a second, unquoted one beside it. The prefix is
+    // CARRIED, because a rewrite that drops it moves the marker out of the
+    // quote -- which is the corruption this fix would otherwise trade for.
+    const own = markerText(lines, i, h1Depth);
+    if (own === null) continue;
+    const { prefix, text: line } = own;
     const m = MARKER_RE.exec(line);
     if (m) {
       // Captured HERE rather than re-derived at each call site: `checkProvenance`
       // took only the parsed fields and so could not see the owner at all, and a
       // current-format marker omitting `Owner` passed every provenance check
       // although the registry's marker format requires it.
-      return { idx: i, date: m[1], depth: m[2] ?? null, sha: m[3] ?? null, scanned: m[4] ?? null, owner: ownerOf(line), legacy: false };
+      return { idx: i, prefix, date: m[1], depth: m[2] ?? null, sha: m[3] ?? null, scanned: m[4] ?? null, owner: ownerOf(line), legacy: false };
     }
     const l = LEGACY_MARKER_RE.exec(line);
     if (l) {
-      return { idx: i, date: l[1], depth: null, sha: null, scanned: null, owner: ownerOf(line), legacy: true, bare: legacyTailIsBare(l[2]) };
+      return { idx: i, prefix, date: l[1], depth: null, sha: null, scanned: null, owner: ownerOf(line), legacy: true, bare: legacyTailIsBare(l[2]) };
     }
   }
   return null;
@@ -2873,7 +2945,12 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   // broken one, leaving the document carrying two. Refuse instead.
   // Case-insensitively, for the reason `checkMarker` is: a variant this
   // parser declines is still a field the rewrite owns.
-  if (prev && !prev.legacy && extraSegments(lines[prev.idx]).some(
+  // The marker's own text, with the container prefix removed. Every read
+  // below used the RAW line, so a quoted marker's `>` was parsed as part of
+  // the provenance -- it surfaced as an extra segment and a rewrite copied it
+  // into the middle of the line.
+  const prevLine = prev ? lines[prev.idx].slice((prev.prefix ?? '').length) : null;
+  if (prev && !prev.legacy && extraSegments(prevLine).some(
     (seg) => OWNED_FIELDS.some(
       (f) => seg.toLowerCase().startsWith(`**${f}`.toLowerCase())))) {
     return { text, action: 'skipped-malformed-marker' };
@@ -2887,7 +2964,7 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   // the other date -- destroying the only evidence of which provenance was
   // right. Refusing leaves both on disk for a human to reconcile.
   if (prev && !prev.legacy) {
-    const segs = lines[prev.idx].split(DOT).map((s) => s.trim()).filter(Boolean);
+    const segs = prevLine.split(DOT).map((s) => s.trim()).filter(Boolean);
     const dup = OWNED_FIELDS.find(
       (f) => segs.filter(
         (s) => s.toLowerCase().startsWith(`**${f}`.toLowerCase())).length > 1);
@@ -2906,7 +2983,7 @@ export function stamp(text, date, depth, sha, reviewed = false) {
     return { text, action: 'skipped-duplicate-marker' };
   }
 
-  const owner = ownerOf(prev ? lines[prev.idx] : null) ?? 'TBD';
+  const owner = ownerOf(prevLine) ?? 'TBD';
   let rDate;
   let rDepth;
   let rSha;
@@ -2917,12 +2994,19 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   } else {
     [rDate, rDepth, rSha] = ['unknown', null, null];
   }
-  const extras = prev && !prev.legacy ? extraSegments(lines[prev.idx]) : [];
+  const extras = prev && !prev.legacy ? extraSegments(prevLine) : [];
   const marker = renderMarker(rDate, rDepth, rSha, date, owner, extras);
 
   if (prev) {
-    if (lines[prev.idx].trim() === marker) return { text, action: 'unchanged' };
-    lines[prev.idx] = eol(marker);
+    // With the container prefix the marker was READ through, so a quoted
+    // marker stays inside its quote. Dropping it would move the provenance
+    // out of the block it belongs to -- a corruption, where the old miss was
+    // merely a false finding.
+    const kept = (prev.prefix ?? '') + marker;
+    if (lines[prev.idx].trimEnd() === kept || lines[prev.idx].trim() === marker) {
+      if (lines[prev.idx].trimEnd() === kept) return { text, action: 'unchanged' };
+    }
+    lines[prev.idx] = eol(kept);
     return { text: lines.join('\n'), action: 'updated' };
   }
   // The line the marker goes AFTER. For a Setext H1 that is the `===`

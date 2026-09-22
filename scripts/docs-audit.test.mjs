@@ -4318,6 +4318,85 @@ describe('a registry section ended by a Setext heading', () => {
   });
 });
 
+describe('a review marker inside a blockquote', () => {
+  const QUOTED = '> # Title\n>\n> **Last reviewed:** 2026-01-01 · **Depth:** scanned '
+    + '· **Last scanned:** 2026-01-01\n';
+
+  it('is found rather than reported missing', () => {
+    // `h1Index` reads through the container and this did not, so `>` on its
+    // own -- the quoted spelling of a BLANK line -- looked like rendered
+    // prose and closed the window before the marker. The audit reported the
+    // visible marker missing and --stamp inserted a second, unquoted one.
+    const lines = QUOTED.split('\n');
+    expect(h1Index(lines)).toBe(0);
+    expect(findMarker(lines)?.date).toBe('2026-01-01');
+  });
+
+  it('and is rewritten INSIDE its quote', () => {
+    // The half that makes the first safe: reading a quoted marker without
+    // carrying its prefix would have moved the provenance out of the block
+    // on the next --stamp. That is a corruption, where the old miss was only
+    // a false finding.
+    const res = stamp(QUOTED, '2026-09-18', 'scanned', 'abc1234', false);
+    expect(res.action).toBe('updated');
+    expect(res.text.split('\n')[2]).toBe('> **Last reviewed:** 2026-01-01 '
+      + '· **Depth:** scanned · **Last scanned:** 2026-09-18 · **Owner:** TBD');
+    // Idempotent, which is what proves the prefix is not accumulating.
+    expect(stamp(res.text, '2026-09-18', 'scanned', 'abc1234', false).action)
+      .toBe('unchanged');
+    // And an unquoted document is untouched by any of it.
+    const plain = '# Title\n\n**Last reviewed:** 2026-01-01 · **Depth:** scanned '
+      + '· **Last scanned:** 2026-01-01\n';
+    expect(stamp(plain, '2026-09-18', 'scanned', 'abc1234', false).text.split('\n')[2])
+      .toBe('**Last reviewed:** 2026-01-01 · **Depth:** scanned '
+        + '· **Last scanned:** 2026-09-18 · **Owner:** TBD');
+  });
+
+  it('and counts toward the duplicate check at its own depth', () => {
+    // A marker findMarker now reads has to be COUNTABLE, or a document with
+    // two of them reports one and --stamp rewrites it with the other still
+    // contradicting it. Both live at the H1's depth here.
+    const two = ['> # Title', '>', '> **Last reviewed:** 2026-01-01 · **Depth:** scanned '
+      + '· **Last scanned:** 2026-01-01',
+    '> **Last reviewed:** 2026-02-02 · **Depth:** scanned · **Last scanned:** 2026-02-02'];
+    expect(findMarkers(two)).toEqual([2, 3]);
+    expect(markerShapedLines(['> # T', '>', '> **Last reviewed:** bad'])).toEqual([2]);
+  });
+
+  it('but a quoted ASIDE under an unquoted H1 is not a marker', () => {
+    // The depth has to MATCH, not merely be stripped. FRONTEND.md in this
+    // repo opens with an unquoted H1, its real marker, and then a
+    // `> **Companion to** ...` note carrying `> **Last refreshed:** ...` --
+    // a fact about the OTHER document. Reading markers through any container
+    // turned that into a second review marker and produced a P2 saying the
+    // two can disagree. The corpus caught it: the first version of this fix
+    // moved the run from 25 findings to 26, and the 26th was false.
+    const aside = ['# Title', '',
+      '**Last reviewed:** 2026-01-01 · **Depth:** scanned · **Last scanned:** 2026-01-01',
+      '', '> **Companion to** x', '> **Last refreshed:** 2026-05-22.'];
+    expect(findMarkers(aside)).toEqual([2]);
+    expect(findMarker(aside)?.date).toBe('2026-01-01');
+  });
+});
+
+describe('a registry row with an unrecognised class', () => {
+  it('is refused rather than silently dropped', () => {
+    // `documentSet` adds a non-Markdown artefact ONLY through an exact
+    // registry row, so `| E | generated.json | | |` dropped that artefact
+    // from classification and from every region and content check WITHOUT an
+    // unclassified finding -- the registry quietly meaning something other
+    // than what it displays.
+    const base = '# R\n\n## Registry\n\n| Class | Path glob | Declared code paths '
+      + '| Generated regions |\n|---|---|---|---|\n| D | real.md | | |\n';
+    expect(loadRegistry(base).map((r) => r.glob)).toEqual(['real.md']);
+    expect(() => loadRegistry(`${base}| E | generated.json | | |\n`))
+      .toThrow(/not one of A, B, C, D or X/);
+    // The HEADER and separator rows are not declarations, so recognising a
+    // typo must not turn the table's own frame into an error.
+    expect(loadRegistry(base).length).toBe(1);
+  });
+});
+
 describe('an empty ATX heading', () => {
   it('is an H1 a marker can go after', () => {
     // CommonMark allows a heading with no text, so `#` alone renders an H1.
