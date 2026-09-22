@@ -4808,6 +4808,68 @@ describe('a blocking cue and its citation on separate lines', () => {
   });
 });
 
+describe('a repository-qualified shorthand citation', () => {
+  const st = {
+    solyra: { 8: { state: 'closed', reason: 'completed', kind: 'ISSUE' } },
+    stocks: { 861: { state: 'closed', reason: 'completed', kind: 'ISSUE' } },
+  };
+  const U8 = 'https://github.com/TeneikaAskew/solyra/issues/8';
+  const refs = (line) => checkClosedIssues('d.md', `${line}\n`, st).map((f) => f.ref);
+
+  it('is resolved, because it names everything needed to resolve it', () => {
+    // The scan recognised only full URLs, so `Blocked by stocks#861` -- a
+    // form GitHub itself renders as a link, and one this corpus uses -- went
+    // unreported after 861 closed. The state map was already loaded; only the
+    // spelling was unrecognised.
+    expect(refs('Blocked by stocks#861.')).toEqual(['stocks#861']);
+    expect(refs('Pending solyra#8.')).toEqual(['solyra#8']);
+    // `owner/repo#num` is the same citation.
+    expect(refs('Blocked by TeneikaAskew/stocks#861.')).toEqual(['stocks#861']);
+    // An unresolvable one IS reported, unlike a bare number: the qualified
+    // form can only be an issue, so a number naming none is a defect in the
+    // document rather than an ambiguous match.
+    expect(checkClosedIssues('d.md', 'Blocked by stocks#99999.\n', st)
+      .map((f) => f.detail)).toEqual(['stocks#99999 could not be resolved']);
+  });
+
+  it('is ONE citation when the URL sits beside it', () => {
+    // `[solyra#8](.../issues/8)` carries both spellings of one citation, and
+    // this is the shape the corpus actually uses -- measured: every
+    // cue-bearing qualified shorthand in either repository already has its
+    // URL on the same line, so a missing dedup would have doubled four real
+    // findings rather than adding one.
+    expect(refs(`Blocked by [solyra#8](${U8}).`)).toEqual(['solyra#8']);
+    expect(refs(`Blocked by solyra#8 ${U8}.`)).toEqual(['solyra#8']);
+    // Scoped to the CLAUSE, not the line: two clauses can say different
+    // things about the same number, and a line-wide set would suppress the
+    // live one. Here the shorthand is cited as blocking and the URL is not,
+    // so the shorthand is its own citation and must still be reported.
+    expect(refs(`Blocked by solyra#8. Landed in ${U8}.`)).toEqual(['solyra#8']);
+  });
+
+  it('is only the QUALIFIED form, and only outside a path or a URL', () => {
+    // A bare `#123` may be a section number, a column header or a count, and
+    // this corpus uses it that way -- the Python twin reports it only under a
+    // much stricter clause rule. Here it is not a citation at all.
+    expect(refs('Blocked by solyra #8.')).toEqual([]);
+    // A path component is not a repository qualifier.
+    expect(refs('Blocked by docs/stocks#861.')).toEqual([]);
+    // Nor is a fragment inside a destination a citation of its own. The
+    // QUERY spelling, not `.../x/stocks#861`: the path one is already
+    // refused by the lookbehind, so it would have tested nothing and the
+    // URL-span guard would have read as dead code.
+    expect(refs('Blocked by https://example.com/?q=stocks#861 now.')).toEqual([]);
+    // And the cue rules are the URL pass's rules, not looser ones.
+    expect(refs('Landed in stocks#861.')).toEqual([]);
+    expect(refs('stocks#861 is no longer blocking.')).toEqual([]);
+    expect(refs('Blocked by <!-- stocks#861 -->.')).toEqual([]);
+    // Per CLAUSE, not per line: a settled citation beside a live one keeps
+    // its own verdict. A line-level cue test would report both.
+    expect(refs('stocks#861 is resolved. Still blocked by solyra#8.'))
+      .toEqual(['solyra#8']);
+  });
+});
+
 describe('an issue URL spelled with a character reference', () => {
   const closed = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
   const checks = (doc) => checkClosedIssues('d.md', doc, closed).map((f) => f.check);
@@ -6527,6 +6589,35 @@ describe('a heading introduced by a list marker', () => {
 });
 
 describe('inline content', () => {
+  it('ends at a raw HTML block too', () => {
+    // An HTML block of types 1 through 6 INTERRUPTS a paragraph, and type 7
+    // only opens where one is not already running -- so every line
+    // rawHtmlBlockLines returns is a block boundary. The reading here was
+    // that a rendered HTML block does not end a paragraph, so an unmatched
+    // backtick above `<pre></pre>` paired with one below it and masked the
+    // live broken link in between out of the audit. The hiding direction,
+    // and the same shape as the fence and heading boundaries beside it.
+    const ctx = {
+      tracked: new Set(['d.md']), topLevelDirs: new Set(), rootFiles: new Set(),
+      knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+    };
+    expect(checkDeadLinks('d.md', '` unmatched\n<pre></pre>\n[x](missing.md) `\n', ctx)
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // The blank-line spelling of the same document, which already worked --
+    // the two must agree, because a reader sees the same broken link.
+    expect(checkDeadLinks('d.md', '` unmatched\n\n[x](missing.md) `\n', ctx)
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // A REAL code span on one line is still a code span: this widens a
+    // boundary set, it does not stop masking.
+    expect(checkDeadLinks('d.md', '`[x](missing.md)`\n', ctx)).toEqual([]);
+    // And a type-6 block runs to the blank line, so the third line here is
+    // still INSIDE it -- its Markdown is not parsed and there is nothing to
+    // report. Asserted so the boundary is not mistaken for "every HTML line
+    // is its own block".
+    expect(checkDeadLinks('d.md', '` unmatched\n<div></div>\n[x](missing.md) `\n', ctx))
+      .toEqual([]);
+  });
+
   it('ends at a heading, not only at a blank line', () => {
     // CommonMark ends the paragraph at the heading, so an unmatched backtick
     // above it cannot pair with one below -- and pairing them masked the live

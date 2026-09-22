@@ -179,7 +179,7 @@ const URL_RE = /https?:\/\/[^\s|]*[^\s|.,;:!?)\]]/g;
  * `.` or `/` inside `github.com` does not split the clause the citation sits
  * in, and offsets stay valid.
  */
-export function citationClause(line, start, end) {
+export function clauseBounds(line, start, end) {
   const masked = line.replace(URL_RE, (u) => '\u0000'.repeat(u.length));
   let lo = 0;
   for (const m of masked.matchAll(CLAUSE_SPLIT_RE)) {
@@ -189,8 +189,24 @@ export function citationClause(line, start, end) {
   for (const m of masked.matchAll(CLAUSE_SPLIT_RE)) {
     if (m.index >= end) { hi = m.index; break; }
   }
+  return [lo, hi];
+}
+
+export function citationClause(line, start, end) {
+  const [lo, hi] = clauseBounds(line, start, end);
   return line.slice(lo, hi);
 }
+
+// `stocks#861` and `solyra#8`: repository-qualified shorthand, which GitHub
+// renders as a link to that issue and which carries everything needed to
+// resolve it. Only the QUALIFIED form -- a bare `#123` may be a section
+// number, a column header or a count, and this repo's documents use it that
+// way. The owner prefix is optional because `TeneikaAskew/stocks#861` is the
+// same citation. The lookbehind refuses a path component (`docs/stocks#861`)
+// and a second `#`; the lookahead refuses `stocks#8x`. Codex filed it
+// (solyra#69).
+const QUALIFIED_ISSUE_RE =
+  new RegExp(String.raw`(?<![\w#/-])(?:${OWNER}/)?(solyra|stocks)#(\d{1,6})(?![\w-])`, 'gi');
 
 /**
  * Is THIS citation cited as live work?
@@ -3513,6 +3529,50 @@ export function checkClosedIssues(doc, text, states) {
     // to the source line, because that is what `hidden` and `cueText` index.
     const scan = decodeWithMap(line);
     const srcAt = (k) => (scan.map ? scan.map[k] : k);
+    // What the URL pass will name, and where. `[solyra#8](.../issues/8)`
+    // carries BOTH spellings of ONE citation, and reporting it twice would
+    // double the finding and the summary count. Scoped to the CLAUSE, not to
+    // the line: on `stocks#1 is still open; <.../issues/2> is resolved` the
+    // two clauses say different things, and a line-wide set would suppress a
+    // live citation because its number appears somewhere else. Same split
+    // citesLiveWork makes, so "one citation" means the same thing to the
+    // dedup and to the cue analysis.
+    const urlHere = [];
+    // And the URL SPANS, so the shorthand scan does not re-read a
+    // `.../stocks#861` sitting inside a destination as a citation of its own.
+    const urlSpans = [];
+    for (const m of scan.text.matchAll(ISSUE_URL_RE)) {
+      const at = srcAt(m.index);
+      if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      urlHere.push({ at, repo: normaliseRepo(m[1]), num: Number(m[3]) });
+    }
+    for (const m of scan.text.matchAll(URL_RE)) {
+      urlSpans.push([srcAt(m.index), srcAt(m.index + m[0].length)]);
+    }
+    for (const m of scan.text.matchAll(QUALIFIED_ISSUE_RE)) {
+      const at = srcAt(m.index);
+      const end = srcAt(m.index + m[0].length);
+      if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      if (urlSpans.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      const repo = normaliseRepo(m[1]);
+      const num = Number(m[2]);
+      const [cLo, cHi] = clauseBounds(cueText, at, end);
+      if (urlHere.some((u) => u.repo === repo && u.num === num
+        && cLo <= u.at && u.at < cHi)) continue;
+      if (!citesLiveWork(cueText, at, end, { context })) continue;
+      const st = states[repo]?.[num];
+      const label = `${repo}#${num}`;
+      if (!st) {
+        out.push({ check: 'closed-issue', doc, line: i + 1, severity: 'P2',
+          detail: `${label} could not be resolved` });
+      } else if (st.state === 'closed') {
+        const reason = st.reason || 'completed';
+        out.push({ check: 'closed-issue', doc, line: i + 1,
+          severity: reason === 'not_planned' ? 'P2' : 'P1',
+          detail: `${label} is CLOSED (${reason}) but cited as live work`,
+          ref: `${repo}#${num}`, reason });
+      }
+    }
     for (const m of scan.text.matchAll(ISSUE_URL_RE)) {
       const at = srcAt(m.index);
       const end = srcAt(m.index + m[0].length);
@@ -4349,7 +4409,9 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // line covers this one whole, and `[g]: missing.md` displayed inside such a
   // span was validated as a live destination. Parity with the Python twin
   // (stocks#1121).
-  const wrappedDefs = codeSpanLines(lines, fenceOnly);
+  // The same boundary set the inline scan below uses: a definition displayed
+  // inside a span that CANNOT reach this line is not displayed at all.
+  const wrappedDefs = codeSpanLines(lines, fenced);
   const spanHidden = (i) => {
     const stop = lines[i].replace(/\s+$/, '').length;
     if (!stop) return false;
@@ -4611,11 +4673,16 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // comments and code spans are excluded per span, exactly as the Markdown
   // pass below excludes them.
   const rawTextLines = rawHtmlBlockLines(lines, { rawTextOnly: true });
-  // The CODE-BLOCK boundaries, not the whole `fenced` set. A fenced or
-  // indented code block interrupts a paragraph, so an inline span cannot pair
-  // across one; a rendered HTML block does not end a paragraph the same way,
-  // so the wider set is not the right boundary here.
-  const wrappedCodeSpans = codeSpanLines(lines, fenceOnly);
+  // Every BLOCK boundary, not just the code ones. The earlier reading here
+  // was that a rendered HTML block does not end a paragraph -- it does:
+  // CommonMark lets an HTML block of types 1 through 6 interrupt one, and
+  // type 7 only opens where a paragraph is not already running, which
+  // `rawHtmlBlockLines` already enforces. So an unmatched backtick above
+  // `<pre></pre>` paired with one below it and masked a live
+  // `[x](missing.md)` in between out of the audit -- the hiding direction,
+  // and the same shape as the fence and heading boundaries already here.
+  // Codex filed it (solyra#69).
+  const wrappedCodeSpans = codeSpanLines(lines, fenced);
   lines.forEach((line, i) => {
     // A line whose only reason to be excluded is that it sits in a non-raw-text
     // HTML block still gets the href pass; everything else about it is skipped.
