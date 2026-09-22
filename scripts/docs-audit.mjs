@@ -212,8 +212,15 @@ const MD_LINK_RE =
 // `vite.config.ts:7,45,93`, `SwingMode.tsx:156`. Requiring the closing
 // backtick right after the extension made every such citation invisible.
 const LINE_SUFFIX = '(?::\\d+(?:-\\d+)?(?:,\\d+(?:-\\d+)?)*)?';
-const BACKTICK_PATH_RE = new RegExp(`\`([A-Za-z0-9_./-]+/[A-Za-z0-9_.-]+\\.[A-Za-z0-9]{1,10})${LINE_SUFFIX}\``, 'g');
-const BACKTICK_ROOT_FILE_RE = new RegExp(`\`([A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.[A-Za-z0-9]{1,10})${LINE_SUFFIX}\``, 'g');
+// `\p{L}\p{N}_` rather than `A-Za-z0-9_`, with the `u` flag: a tracked path may
+// hold a non-ASCII character, and the ASCII-only class never recognised a
+// citation of one -- so deleting or renaming that file produced no dead-link
+// finding, while the git inventory preserves such filenames and the
+// percent-encoded Markdown link IS checked. The extension stays ASCII,
+// because a suffix is. Parity with the Python twin (stocks#1121).
+const PW = '[\\p{L}\\p{N}_]';
+const BACKTICK_PATH_RE = new RegExp(`\`((?:${PW}|[./-])+/(?:${PW}|[.-])+\\.[A-Za-z0-9]{1,10})${LINE_SUFFIX}\``, 'gu');
+const BACKTICK_ROOT_FILE_RE = new RegExp(`\`((?:${PW}|-)+(?:\\.(?:${PW}|-)+)*\\.[A-Za-z0-9]{1,10})${LINE_SUFFIX}\``, 'gu');
 // A line that names the sibling repo is citing its tree, not this one:
 // CLAUDE.md says `scripts/export_openapi.py` is a stocks file on the line
 // that cites it, and the design briefs wrap stocks paths in a
@@ -1028,7 +1035,13 @@ export function markerWindow(lines, limit = 40, { stopAtParagraph = true } = {})
   if (h1 === null) return { from: 0, to: 0 };
   const fencedHere = fencedLines(lines);
   const commentedHere = commentedLines(lines);
-  const masked = new Set([...fencedHere, ...commentedHere]);
+  // Indented code too. An indented line followed by `---` is a code block and
+  // a thematic break, not a Setext heading -- omitted, isSetextUnderline read
+  // it as one, closed the window above a real marker below it, and --stamp
+  // inserted a second contradictory marker. Parity with the Python twin
+  // (stocks#1121).
+  const masked = new Set([...fencedHere, ...commentedHere,
+    ...indentedCodeLines(lines)]);
   let stop = lines.length;
   // To the next HEADING, with no additional line cap. A document opening with
   // more than 40 lines of HTML metadata before its marker had the real marker
@@ -1216,6 +1229,7 @@ export function indentedCodeLines(lines) {
   const out = new Set();
   let blankSeen = true;
   let floor = 4;
+  let listIndent = 0;
   let inCode = false;
   let lastWasHeading = false;
   for (const [i, raw] of lines.entries()) {
@@ -1240,7 +1254,19 @@ export function indentedCodeLines(lines) {
       out.add(i);
     } else {
       const bullet = /^(\s*(?:[-*+]|\d+[.)])\s+)/.exec(line);
-      floor = bullet ? bullet[1].length + 4 : 4;
+      if (bullet) {
+        listIndent = bullet[1].length;
+        floor = listIndent + 4;
+      } else if (listIndent > 0 && indent >= listIndent) {
+        // A CONTINUATION of the item, which carries no new bullet. Resetting
+        // the floor to four here meant the next four-space line after a blank
+        // read as a code block, although a `- ` item needs six to open one --
+        // so rendered continuation content was skipped by the dead-link and
+        // closed-issue checks. Parity with the Python twin (stocks#1121).
+      } else {
+        listIndent = 0;
+        floor = 4;
+      }
     }
     lastWasHeading = /^ {0,3}#{1,6}\s/.test(line) || /^ {0,3}(?:=+|-+)\s*$/.test(line);
     blankSeen = false;
@@ -1733,6 +1759,14 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   // left the document with no H1 at all -- worse than the `skipped-no-h1` the
   // recognizer replaced, because it corrupts rather than declines. The null
   // case is refused at the top of this function.
+  // A visible marker the canonical window did not select -- one below the
+  // opening paragraph, which is where the registry does NOT allow it. It is
+  // misplaced, not missing, and inserting here gave the document TWO
+  // contradictory markers: the audit reported "no review marker" and --stamp
+  // then made the report true of neither. `findMarkers` reads the whole
+  // opening section, so the information to refuse was already in hand.
+  if (findMarkers(lines).length) return { text, action: 'skipped-misplaced-marker' };
+
   const h1 = markerAnchor(lines);
   // Target shape: "# Title" / "" / marker / "" / body.
   if (h1 + 1 < lines.length && lines[h1 + 1].trim() === '') lines.splice(h1 + 2, 0, eol(marker), eol(''));
@@ -2865,6 +2899,8 @@ const STAMP_REFUSALS = {
   'baseline-predates-doc': 'the reviewed-against commit does not contain the document, '
     + 'so the review would name a baseline predating it; commit it first',
   'skipped-no-h1': 'no H1 to place a marker after',
+  'skipped-misplaced-marker': 'a marker outside the first paragraph after the H1; '
+    + 'move it there rather than adding a second',
   'skipped-legacy-content': 'a legacy marker carrying prose that rewriting would delete',
 };
 
@@ -3158,6 +3194,14 @@ export function main(argv) {
       findings.push({ check: 'marker', doc, severity: 'P2',
         detail: 'no H1, so there is nowhere a review marker may live; the registry '
               + 'places it in the first paragraph after the first H1' });
+    } else if (!prev && allMarkers.length) {
+      // Misplaced, not missing. Reporting "no review marker" sent someone to
+      // add one, and --stamp then refuses -- or, before it refused, inserted
+      // a second beside the visible original.
+      findings.push({ check: 'marker', doc, severity: 'P2',
+        detail: `a review marker sits on line ${allMarkers[0] + 1}, outside the first `
+              + 'paragraph after the H1 where the registry places it; move it there '
+              + 'rather than adding a second' });
     } else if (!prev) {
       findings.push({ check: 'marker', doc, severity: 'P2', detail: 'no review marker' });
     } else if (allMarkers.length > 1) {

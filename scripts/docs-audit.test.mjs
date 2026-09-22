@@ -4062,3 +4062,78 @@ describe('a link destination carrying backslash escapes', () => {
     expect(unescapeMarkdown('a\\qb')).toBe('a\\qb');
   });
 });
+
+// ── round 29 parity with the Python twin (stocks#1121) ──────────────────────
+
+describe('an indented code line in the opening section', () => {
+  it('is not read as a Setext heading', () => {
+    // An indented line followed by `---` is a code block and a thematic
+    // break. Omitted from the mask, isSetextUnderline read it as a heading
+    // and `stop = j - 1` cut the window short of the code block entirely.
+    const lines = ['# T', '', '    sample code', '---', '', MARK('2026-01-01', 'me'),
+      '', 'Body.'];
+    expect(markerWindow(lines).to).toBe(4);
+    // findMarkers reads the wider section and now SEES the marker below it,
+    // which is what lets the misplaced case below be reported rather than
+    // silently duplicated.
+    expect(findMarkers(lines)).toEqual([5]);
+    // A real Setext heading still closes the window.
+    expect(markerWindow(['# T', '', 'Sub', '---', '', MARK('2026-01-01', 'me'), '', 'B.'])
+      .to).toBe(3);
+  });
+});
+
+describe('a marker below the opening paragraph', () => {
+  it('is misplaced, and stamp refuses rather than adding a second', () => {
+    // findMarker did not select it (the registry puts the marker in the first
+    // paragraph), so the audit reported "no review marker" and --stamp
+    // inserted one ABOVE it -- leaving the document with two contradictory
+    // markers, which is the failure the whole marker machinery exists to
+    // prevent. findMarkers had the information all along.
+    const lines = ['# T', '', 'Intro paragraph.', '', MARK('2026-01-01', 'me'), '', 'Body.'];
+    expect(findMarker(lines)).toBe(null);
+    expect(findMarkers(lines)).toEqual([4]);
+    const out = stamp(lines.join('\n'), '2026-03-03', null, null);
+    expect(out.action).toBe('skipped-misplaced-marker');
+    expect(out.text.match(/Last reviewed/g)).toHaveLength(1);
+    // A document with NO marker still gets one, and a properly placed marker
+    // is still updated -- the refusal is not "never stamp".
+    expect(stamp('# T\n\nBody.\n', '2026-03-03', null, null).action).toBe('inserted');
+    expect(stamp(['# T', '', MARK('2026-01-01', 'me'), '', 'B.'].join('\n'),
+      '2026-03-03', null, null).action).toBe('updated');
+  });
+});
+
+describe('a list continuation line', () => {
+  it('keeps the item’s code floor for the lines after it', () => {
+    // Resetting the floor to four on a continuation meant the next four-space
+    // line after a blank read as a code block, although a `- ` item needs six
+    // -- so rendered continuation content was skipped by the link and blocker
+    // checks. Parity with the Python twin.
+    const doc = ['# T', '', '- item text', '', '    continuation', '',
+      '    [x](missing.md) still in the item', ''];
+    expect([...indentedCodeLines(doc)]).toEqual([]);
+    // Six spaces inside the item IS code; a four-space block outside a list
+    // still is; and the list ENDS at an unindented line.
+    expect([...indentedCodeLines(['# T', '', '- item', '', '      cont', '',
+      '      code', ''])]).toEqual([4, 6]);
+    expect([...indentedCodeLines(['# T', '', '    code'])]).toEqual([2]);
+    expect([...indentedCodeLines(['# T', '', '- item', '', 'back to prose', '',
+      '    code', ''])]).toEqual([6]);
+  });
+});
+
+describe('a backticked path with a non-ASCII character', () => {
+  it('is checked like any other citation', () => {
+    // The ASCII-only class never recognised it, so deleting or renaming that
+    // file produced no dead-link finding -- while the git inventory preserves
+    // such filenames and the percent-encoded Markdown link IS checked.
+    const ctx = linkCtx(['docs/café.md', 'd.md']);
+    const out = checkDeadLinks('d.md', '# T\n\nSee `docs/goneé.md` here.\n', ctx);
+    expect(out.map((f) => f.detail)).toEqual(['backticked path -> docs/goneé.md']);
+    // A tracked non-ASCII path is satisfied, and ASCII behaves as before.
+    expect(checkDeadLinks('d.md', '# T\n\nSee `docs/café.md` here.\n', ctx)).toEqual([]);
+    expect(checkDeadLinks('d.md', '# T\n\nSee `docs/gone.md` here.\n', ctx)
+      .map((f) => f.detail)).toEqual(['backticked path -> docs/gone.md']);
+  });
+});
