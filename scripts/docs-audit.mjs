@@ -314,6 +314,7 @@ function* mdLinks(text) {
     const opening = MD_LINK_OPEN_RE.exec(text);
     if (!opening) return;
     let at = MD_LINK_OPEN_RE.lastIndex;
+    const destStart = at;
     let btarget; let bfrag; let target; let frag;
     MD_LINK_ANGLE_RE.lastIndex = at;
     const angle = MD_LINK_ANGLE_RE.exec(text);
@@ -342,6 +343,9 @@ function* mdLinks(text) {
     // one that needs it; carrying it here is what keeps that scan from
     // becoming a second, drifting copy of this one.
     out.destEnd = destEnd;
+    // And where it BEGAN, so a caller can mask a link's metadata -- its
+    // destination and title -- while keeping the visible label.
+    out.destStart = destStart;
     yield out;
     pos = end;
   }
@@ -3103,14 +3107,19 @@ export function tagAttributeSpans(lines) {
  * a link a reader can follow, so it IS a citation. That is the same split
  * `tagAttributeSpans` makes for `href`, one syntax over.
  */
-export function linkTitleSpans(lines) {
+export function linkTitleSpans(lines, { titleOnly = true } = {}) {
   const out = new Map();
   lines.forEach((line, i) => {
     const spans = [];
     for (const m of mdLinks(line)) {
       // The tail runs from the end of the destination to the `)`. Masking it
       // whole covers the title and the whitespace around it and nothing else.
-      const lo = m.destEnd;
+      // With `titleOnly` off the DESTINATION goes too: the anchor scan wants
+      // both, because tag-shaped text in either renders as part of a `title`
+      // attribute or a URL rather than as an element -- so
+      // `[x](README.md "<div id=fake>")` was registering an anchor that
+      // exists nowhere and a link to `#fake` passed against it.
+      const lo = titleOnly ? m.destEnd : m.destStart;
       const hi = m.index + m[0].length - 1;
       if (hi > lo) spans.push([lo, hi]);
     }
@@ -3560,7 +3569,18 @@ const CODE_SPAN_RUN_RE = /(?<!`)(`+)(?!`)([\s\S]+?)(?<!`)\1(?!`)/g;
 // contain `>`, and the close. An AUTOLINK is not a tag: `## <https://x>`
 // renders as the URL and derives a real anchor from it, so only a tag NAME is
 // matched, never a `<scheme:...>`.
-const HTML_TAG_RE = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\/?>/y;
+// The attribute grammar CommonMark actually specifies, not "anything that is
+// not an angle bracket". `## A <span ???>B` renders the tag-shaped text
+// LITERALLY and anchors `a-span-b`, but the permissive form matched it and
+// recorded `a-b` -- a valid fragment link rejected and a nonexistent one
+// accepted, the usual pair. An attribute is a name, optionally followed by a
+// value that is unquoted, single-quoted or double-quoted.
+const HTML_TAG_RE = new RegExp(
+  '<[A-Za-z][A-Za-z0-9-]*'
+  + '(?:\\s+[A-Za-z_:][A-Za-z0-9_.:-]*'
+  + '(?:\\s*=\\s*(?:[^\\s"\'=<>`]+|\'[^\']*\'|"[^"]*"))?)*'
+  + '\\s*/?>'
+  + '|</[A-Za-z][A-Za-z0-9-]*\\s*>', 'y');
 
 /**
  * Inline HTML removed from heading text, escapes left as they are.
@@ -3897,10 +3917,14 @@ export function headingAnchors(text) {
     ...frontMatterLines(lines)]);
   const wrappedSpans = codeSpanLines(lines);
   const commentRanges = commentSpans(lines);
+  // A link's DESTINATION and TITLE are metadata: tag-shaped text in either
+  // renders inside a URL or a `title` attribute, never as an element, and
+  // reading it as one invented an anchor a link could then resolve against.
+  const linkMeta = linkTitleSpans(lines, { titleOnly: false });
   const idDoc = lines.map((l, i) => (literal.has(i)
     ? maskSpans(l, [[0, l.length]])
     : maskSpans(l, [...codeSpans(l), ...(wrappedSpans.get(i) ?? []),
-      ...(commentRanges.get(i) ?? [])]))).join('\n');
+      ...(commentRanges.get(i) ?? []), ...(linkMeta.get(i) ?? [])]))).join('\n');
   for (const tag of idDoc.matchAll(TAG_OPEN_RE)) {
     // An ESCAPED opener is not an element. CommonMark renders the `<` in
     // `\<div id="fake">` literally and creates nothing, so `#fake` reaches

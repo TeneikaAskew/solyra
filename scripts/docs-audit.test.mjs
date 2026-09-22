@@ -4318,6 +4318,44 @@ describe('a registry section ended by a Setext heading', () => {
   });
 });
 
+describe('tag-shaped text that is not a tag', () => {
+  it('is left in the heading slug', () => {
+    // `## A <span ???>B` renders the tag-shaped text LITERALLY and anchors
+    // `a-span-b`, but a pattern that accepted "anything that is not an angle
+    // bracket" after the name matched it and recorded `a-b` -- a valid
+    // fragment link rejected and a nonexistent one accepted, the usual pair.
+    // The attribute grammar CommonMark specifies is a name plus an optional
+    // unquoted, single-quoted or double-quoted value.
+    expect(headingSlug('A <span ???>B')).toBe('a-span-b');
+    // The real forms are still markup, so this narrows the pattern to the
+    // spec rather than switching it off.
+    expect(headingSlug('Hello <em>world</em>')).toBe('hello-world');
+    expect(headingSlug('A <span class="x">B')).toBe('a-b');
+    expect(headingSlug('A <span data-x=1>B')).toBe('a-b');
+    expect(headingSlug('A <br/> B')).toBe('a--b');
+    // And an AUTOLINK is still not a tag: it renders as the URL.
+    expect(headingSlug('A <https://example.com> B')).toBe('a-httpsexamplecom-b');
+  });
+});
+
+describe('a tag inside a link destination or title', () => {
+  it('creates no element, so it offers no anchor', () => {
+    // A link's destination and title are metadata: tag-shaped text in either
+    // renders inside a URL or a `title` attribute, never as an element. The
+    // scan read it as one and registered `fake`, so a later `[y](#fake)`
+    // passed against a destination that exists nowhere.
+    expect([...headingAnchors('# T\n\n[x](README.md "<div id=fake>")\n')])
+      .toEqual(['t']);
+    expect([...headingAnchors('# T\n\n[x](<div id=fake>)\n')]).toEqual(['t']);
+    // A real tag OUTSIDE a link, and one in the visible LABEL, are both
+    // still elements -- the mask covers the metadata and nothing else.
+    expect([...headingAnchors('# T\n\n<div id=real>\n')].sort())
+      .toEqual(['real', 't']);
+    expect([...headingAnchors('# T\n\n[<div id=inlabel>](README.md)\n')].sort())
+      .toEqual(['inlabel', 't']);
+  });
+});
+
 describe('a blocking cue and its citation on separate lines', () => {
   const closed = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
   const URL = 'https://github.com/TeneikaAskew/solyra/issues/1';
