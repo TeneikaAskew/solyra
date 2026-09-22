@@ -280,7 +280,49 @@ export function isEscaped(text, i) {
 // reported clean. One level, not arbitrary depth: deeper nesting in link TEXT
 // does not occur in this corpus, and the destination is where the depth
 // mattered.
-const MD_LINK_OPEN_RE = /\[(?:\\.|[^\\\[\]]|\[(?:\\.|[^\\\[\]])*\])*\]\(\s*/g;
+// A SCAN, not a fixed nesting depth. The pattern here handled one level of
+// nested brackets and nothing deeper -- so `[a [b [c]]](missing.md)`, a link
+// CommonMark renders, did not match AT ALL and its deleted target passed the
+// audit clean. The hiding direction, and a depth limit is the kind of number
+// that is wrong again the moment someone writes one more bracket. Codex filed
+// it on the Python twin (stocks#1121), where it is the same defect.
+const MD_LINK_PAREN_RE = /\(\s*/y;
+
+/**
+ * The next `[label](` at or after `pos`, as `{ index, end }`, or null.
+ *
+ * The label is walked with a depth counter rather than matched, so nesting has
+ * no limit to get wrong; a backslash escapes the character after it, there as
+ * everywhere. An unbalanced or unfollowed `[` is not an opening, and the walk
+ * resumes one character past it -- the same restart `mdLinks` already makes
+ * when a candidate fails to complete.
+ */
+function mdLinkOpen(text, pos) {
+  let i = pos;
+  while (i < text.length) {
+    const start = text.indexOf('[', i);
+    if (start === -1) return null;
+    let depth = 0;
+    let k = start;
+    let close = -1;
+    while (k < text.length) {
+      const ch = text[k];
+      if (ch === '\\') { k += 2; continue; }
+      if (ch === '[') depth += 1;
+      else if (ch === ']') {
+        depth -= 1;
+        if (depth === 0) { close = k; break; }
+      }
+      k += 1;
+    }
+    if (close === -1) { i = start + 1; continue; }
+    MD_LINK_PAREN_RE.lastIndex = close + 1;
+    const paren = MD_LINK_PAREN_RE.exec(text);
+    if (!paren) { i = start + 1; continue; }
+    return { index: start, end: MD_LINK_PAREN_RE.lastIndex };
+  }
+  return null;
+}
 // `<...>` is a distinct destination form: it is how CommonMark writes a
 // destination containing a space, and the bare form rejects whitespace. NO
 // line endings -- CommonMark forbids a newline there, so `[x](<missing\n.md>)`
@@ -295,7 +337,14 @@ const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|\\[^\r\n]|[^<>#\\\r\n])*)(?
 // separator: `[x](foo&#38;bar.md)` renders as a link to `foo&bar.md` and was
 // split into the path `foo&` and the fragment `38;bar.md`. An escaped hash is
 // part of the PATH for the same reason.
-const MD_DEST_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\.|[^()#\s]/y;
+// The escape is restricted to ASCII PUNCTUATION, which is the only thing
+// CommonMark lets a backslash escape. `\\.` consumed a backslash-space, so
+// `[x](missing\ file.md)` matched as one destination -- but CommonMark does
+// not escape the space there, the bare destination ends at it, and the whole
+// spelling renders as literal text. The audit emitted a gating dead-link
+// finding for prose no reader can click. Codex filed it on the Python twin
+// (stocks#1121).
+const MD_DEST_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\[!-/:-@[-`{-~]|[^()#\s]/y;
 const MD_FRAG_RE = /[^)\s]+/y;
 // A TITLE may contain its own delimiter when the delimiter is escaped:
 // `[x](missing.md "a \" quote")` is a valid link. Stopping at the escaped
@@ -338,10 +387,9 @@ function bareDestination(text, i) {
 function* mdLinks(text) {
   let pos = 0;
   while (pos < text.length) {
-    MD_LINK_OPEN_RE.lastIndex = pos;
-    const opening = MD_LINK_OPEN_RE.exec(text);
+    const opening = mdLinkOpen(text, pos);
     if (!opening) return;
-    let at = MD_LINK_OPEN_RE.lastIndex;
+    let at = opening.end;
     const destStart = at;
     let btarget; let bfrag; let target; let frag;
     MD_LINK_ANGLE_RE.lastIndex = at;

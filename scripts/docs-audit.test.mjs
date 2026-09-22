@@ -3260,6 +3260,54 @@ describe('a title section longer than forty lines', () => {
   });
 });
 
+describe('a link label with nested brackets', () => {
+  const ctx = () => ({
+    tracked: new Set(['d.md']), topLevelDirs: new Set(), rootFiles: new Set(),
+    knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+  });
+  const checks = (doc) => checkDeadLinks('d.md', doc, ctx()).map((f) => f.check);
+
+  it('nests to any depth, because a depth limit is a number to get wrong', () => {
+    // The opening pattern handled ONE level and nothing deeper, so
+    // `[a [b [c]]](missing.md)` -- a link CommonMark renders -- did not match
+    // at all and its deleted target passed clean. The label is walked with a
+    // depth counter now rather than matched.
+    expect(checks('[a [b [c]]](missing.md)\n')).toEqual(['dead-link']);
+    expect(checks('[a [b]](missing.md)\n')).toEqual(['dead-link']);
+    expect(checks('[`P["g"]`](missing.md)\n')).toEqual(['dead-link']);
+    expect(checks('[x](missing.md)\n')).toEqual(['dead-link']);
+    // An UNBALANCED `[` is not an opening and the walk resumes one character
+    // past it, so the inner `[b](missing.md)` -- the link CommonMark renders
+    // here -- is still found.
+    expect(checks('[a [b](missing.md)\n')).toEqual(['dead-link']);
+    // A label with no `(` after it is not a link, or every bracketed phrase
+    // in the corpus becomes a citation.
+    expect(checks('[a b] (missing.md)\n')).toEqual([]);
+    // And the walk does not stop after the first link.
+    expect(checks('[x](missing.md) and [y](gone.md)\n'))
+      .toEqual(['dead-link', 'dead-link']);
+  });
+
+  it('and a destination escapes ASCII punctuation only', () => {
+    // `\\.` consumed a backslash-space, so `[x](missing\ file.md)` matched as
+    // one destination -- but CommonMark escapes only ASCII punctuation, the
+    // bare destination ends at that space, and the whole spelling renders as
+    // literal text. A gating dead-link finding for prose nobody can click.
+    expect(checks('[x](missing\\ file.md)\n')).toEqual([]);
+    // The escapes that ARE punctuation still work, and are what the atom was
+    // widened for: an escaped `#` stays in the path rather than splitting off
+    // a fragment.
+    expect(checkDeadLinks('d.md', '[x](a\\#b.md)\n', {
+      tracked: new Set(['d.md', 'a#b.md']), topLevelDirs: new Set(),
+      rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.md']),
+      basenames: new Set(),
+    })).toEqual([]);
+    expect(checks('[x](missing\\(1\\).md)\n')).toEqual(['dead-link']);
+    // A space inside `<...>` is still a space, which is why an author uses it.
+    expect(checks('[x](<missing file.md>)\n')).toEqual(['dead-link']);
+  });
+});
+
 describe('a backtick hidden in an HTML comment', () => {
   const claim = (text) => checkClaims(
     [{ doc: 'd.md', pattern: 'There are (\\d+) routes', derivation: 'grep-files src x' }],
