@@ -988,9 +988,17 @@ export function isSetextUnderline(lines, i, masked = new Set()) {
  * file with more than 40 lines of front matter, so the next run reported the
  * marker missing and inserted a duplicate.
  */
-export function markerWindow(lines, limit = 40) {
+export function markerWindow(lines, limit = 40, { stopAtParagraph = true } = {}) {
   const h1 = h1Index(lines);
-  if (h1 === null) return { from: 0, to: Math.min(limit, lines.length) };
+  // EMPTY, not the first `limit` lines. The registry places the marker in the
+  // first paragraph after the first H1, so a document with no H1 has nowhere
+  // the marker may live. Falling back to a flat scan let a marker-shaped line
+  // floating in a headingless document satisfy findMarker, which suppressed
+  // the missing-marker finding while nothing reported the missing H1 either --
+  // the document passed --check carrying provenance in a place the registry
+  // does not recognise. The missing H1 is reported on its own; `stamp` refuses
+  // rather than writing into a shape it cannot place.
+  if (h1 === null) return { from: 0, to: 0 };
   const fencedHere = fencedLines(lines);
   const commentedHere = commentedLines(lines);
   const masked = new Set([...fencedHere, ...commentedHere]);
@@ -1032,6 +1040,9 @@ export function markerWindow(lines, limit = 40) {
     if (!lines[j].trim()) continue;
     if (MARKER_RE.test(lines[j].trim()) || LEGACY_MARKER_RE.test(lines[j].trim())) continue;
     if (isCodeIndented(lines[j])) continue;
+    // Duplicate detection asks a different question and needs the wider span:
+    // see markerSection.
+    if (!stopAtParagraph) continue;
     stop = j + 1;
     break;
   }
@@ -1136,6 +1147,15 @@ export function checkProvenance(doc, prev) {
     missing.push('no Last scanned date, so nothing records when the mechanical '
       + 'checks last ran');
   }
+  // `Owner` is in the registry's required marker format, and it is the field
+  // that says who answers for the claims. A marker carrying valid review,
+  // depth, SHA and scan fields but no owner parsed cleanly and neither
+  // checkMarkerDates nor this function said a word, so an ordinary --check
+  // accepted provenance the registry does not consider complete. A legacy
+  // marker predates the field and is reported as legacy instead.
+  if (!prev.legacy && !prev.owner) {
+    missing.push('no Owner, so nothing records who answers for the claims');
+  }
   if (!missing.length) return [];
   return [{ check: 'marker', doc, severity: 'P3',
     detail: `incomplete provenance: ${missing.join('; ')}` }];
@@ -1155,13 +1175,31 @@ export function checkProvenance(doc, prev) {
  * item nor a table row. Anything less careful masks list continuations and
  * turns real findings invisible, which is the worse direction.
  */
+/**
+ * A blockquote's container prefix: `>` with up to three spaces of lead and one
+ * optional space after, repeatable for nesting.
+ *
+ * `fencedLines` already strips this, for the same reason. Markdown removes the
+ * prefix and interprets what remains, so `>     [x](missing.md)` is a
+ * four-space indented code example inside a quote.
+ */
+const BLOCKQUOTE_PREFIX_RE = /^(?: {0,3}> ?)+/;
+
 export function indentedCodeLines(lines) {
   const out = new Set();
   let blankSeen = true;
   let floor = 4;
   let inCode = false;
   let lastWasHeading = false;
-  for (const [i, line] of lines.entries()) {
+  for (const [i, raw] of lines.entries()) {
+    // Every measurement below reads the CONTENT, not the raw line. Counting
+    // indentation on the raw line returned zero for a quoted example, so the
+    // link and closed-issue scanners inspected it as live prose and could emit
+    // a gating finding from a document's own teaching material. Measuring only
+    // the indent and leaving the blank/heading/list tracking on the raw line
+    // would be worse than either: `>` alone is a blank line inside the quote,
+    // and the two views would disagree about where a block starts.
+    const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
     if (!line.trim()) { blankSeen = true; continue; }
     const indent = line.startsWith('\t') ? 4 : line.length - line.replace(/^ +/, '').length;
     if (inCode && indent >= floor) { out.add(i); continue; }
@@ -1180,6 +1218,42 @@ export function indentedCodeLines(lines) {
     lastWasHeading = /^ {0,3}#{1,6}\s/.test(line) || /^ {0,3}(?:=+|-+)\s*$/.test(line);
     blankSeen = false;
   }
+  return out;
+}
+
+/**
+ * Lines inside a raw-text HTML block, whose bracket syntax renders literally.
+ *
+ * CommonMark's HTML block type 1: `<pre>`, `<script>`, `<style>` or
+ * `<textarea>` opens it and the line carrying the matching close tag ends it.
+ * Everything between is raw text, so `[x](missing.md)` inside a `<pre>` is an
+ * EXAMPLE exactly as it would be inside a fence -- but only fenced and
+ * indented code was masked, so such a sample emitted a gating dead-link.
+ *
+ * The block runs to the closing tag's own line inclusive, and an unclosed
+ * block runs to the end of the document, both as the spec says. A fence wins
+ * where the two overlap, because inside a fence the tag is itself an example.
+ */
+const RAW_TEXT_OPEN_RE = /<(pre|script|style|textarea)(?:[\s>]|$)/i;
+
+export function rawHtmlBlockLines(lines) {
+  const out = new Set();
+  const fenced = fencedLines(lines);
+  let open = null;
+  lines.forEach((line, i) => {
+    if (fenced.has(i)) return;
+    if (open === null) {
+      const m = RAW_TEXT_OPEN_RE.exec(line);
+      if (!m) return;
+      open = m[1].toLowerCase();
+      out.add(i);
+      // A one-line block: `<pre>...</pre>` closes on the line it opened.
+      if (new RegExp(`</${open}\\s*>`, 'i').test(line.slice(m.index + m[0].length))) open = null;
+      return;
+    }
+    out.add(i);
+    if (new RegExp(`</${open}\\s*>`, 'i').test(line)) open = null;
+  });
   return out;
 }
 
@@ -1257,7 +1331,7 @@ export function commentSpans(lines) {
   // is a sample -- but it can close one, because inside a comment nothing is
   // code. An unmatched `<!--` in a fence therefore comments nothing, and a
   // comment that encloses a fence still covers it.
-  const code = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
+  const code = new Set([...fencedLines(lines), ...indentedCodeLines(lines), ...rawHtmlBlockLines(lines)]);
   const out = new Map();
   const add = (i, a, b) => {
     if (a >= b) return;
@@ -1332,8 +1406,24 @@ export function isCodeIndented(line) {
   return line ? /^(?:\t| {4,})/.test(line) : false;
 }
 
+/**
+ * The whole opening SECTION: after the H1, to the next heading.
+ *
+ * `markerWindow` stops at the first rendered paragraph because that is where
+ * the registry requires the canonical marker to sit, and stopping there is
+ * what makes a misplaced marker visible as "no marker". Duplicate detection
+ * is the opposite question -- what a reader can SEE contradicting the first
+ * marker -- and the narrow window answered it wrongly: a second marker below
+ * an introduction paragraph was excluded, so the audit reported one marker,
+ * `--stamp` refreshed only the first, and the stale one stayed on the page
+ * with nothing to report it.
+ */
+export function markerSection(lines) {
+  return markerWindow(lines, Infinity, { stopAtParagraph: false });
+}
+
 export function findMarkers(lines) {
-  const { from, to } = markerWindow(lines);
+  const { from, to } = markerSection(lines);
   const fenced = fencedLines(lines);
   // A marker-shaped line inside an HTML COMMENT renders as nothing, so it is
   // not the document's provenance. Accepting it suppressed the missing-marker
@@ -1367,11 +1457,15 @@ export function findMarker(lines) {
     const line = lines[i].trim();
     const m = MARKER_RE.exec(line);
     if (m) {
-      return { idx: i, date: m[1], depth: m[2] ?? null, sha: m[3] ?? null, scanned: m[4] ?? null, legacy: false };
+      // Captured HERE rather than re-derived at each call site: `checkProvenance`
+      // took only the parsed fields and so could not see the owner at all, and a
+      // current-format marker omitting `Owner` passed every provenance check
+      // although the registry's marker format requires it.
+      return { idx: i, date: m[1], depth: m[2] ?? null, sha: m[3] ?? null, scanned: m[4] ?? null, owner: ownerOf(line), legacy: false };
     }
     const l = LEGACY_MARKER_RE.exec(line);
     if (l) {
-      return { idx: i, date: l[1], depth: null, sha: null, scanned: null, legacy: true, bare: legacyTailIsBare(l[2]) };
+      return { idx: i, date: l[1], depth: null, sha: null, scanned: null, owner: ownerOf(line), legacy: true, bare: legacyTailIsBare(l[2]) };
     }
   }
   return null;
@@ -1523,6 +1617,26 @@ export function stampGuard(text, owned) {
 
 export function stamp(text, date, depth, sha, reviewed = false) {
   const lines = text.split('\n');
+
+  // BEFORE the update path below, not after it. The `prev` branch returned
+  // `updated` without ever consulting markerAnchor, so a document with NO H1
+  // but a marker-shaped line in its opening lines had that line refreshed as
+  // though it were the document's provenance -- and because findMarker
+  // accepted it, the audit reported neither a missing marker nor the missing
+  // H1. The registry places the marker in the first paragraph after the first
+  // H1; a document with no H1 has nowhere it may live, and that is a refusal,
+  // not a write.
+  if (markerAnchor(lines) === null) return { text, action: 'skipped-no-h1' };
+
+  // A CRLF document splits on '\n' with the '\r' still attached to every line,
+  // so a marker written without one leaves the file mixed-EOL -- noisy in a
+  // Windows checkout's diff and enough to break tools that expect a single
+  // convention. Lines this function WRITES take the document's ending; lines
+  // it does not touch keep exactly the bytes they had, so the diff stays
+  // marker-only even in a file that was already inconsistent.
+  const crlf = lines.some((l) => l.endsWith('\r'));
+  const eol = (line) => (crlf ? `${line}\r` : line);
+
   const prev = findMarker(lines);
 
   // A content-bearing legacy line is left exactly as it is: rewriting it would
@@ -1554,23 +1668,23 @@ export function stamp(text, date, depth, sha, reviewed = false) {
 
   if (prev) {
     if (lines[prev.idx].trim() === marker) return { text, action: 'unchanged' };
-    lines[prev.idx] = marker;
+    lines[prev.idx] = eol(marker);
     return { text: lines.join('\n'), action: 'updated' };
   }
   // The line the marker goes AFTER. For a Setext H1 that is the `===`
   // underline, not the title: inserting between them split the heading and
   // left the document with no H1 at all -- worse than the `skipped-no-h1` the
-  // recognizer replaced, because it corrupts rather than declines.
+  // recognizer replaced, because it corrupts rather than declines. The null
+  // case is refused at the top of this function.
   const h1 = markerAnchor(lines);
-  if (h1 === null) return { text, action: 'skipped-no-h1' };
   // Target shape: "# Title" / "" / marker / "" / body.
-  if (h1 + 1 < lines.length && lines[h1 + 1].trim() === '') lines.splice(h1 + 2, 0, marker, '');
+  if (h1 + 1 < lines.length && lines[h1 + 1].trim() === '') lines.splice(h1 + 2, 0, eol(marker), eol(''));
   // Both blanks, not just the leading one. An H1 followed straight by body
   // text gave `# Title` / '' / marker / body, and Markdown renders the marker
   // and the opening sentence as a SINGLE paragraph -- not the first-paragraph
   // marker shape this promises, and it changes how the opening content reads.
   // The Python twin already inserts both (stocks#1121).
-  else lines.splice(h1 + 1, 0, '', marker, '');
+  else lines.splice(h1 + 1, 0, eol(''), eol(marker), eol(''));
   return { text: lines.join('\n'), action: 'inserted' };
 }
 
@@ -1703,7 +1817,7 @@ export function checkClosedIssues(doc, text, states) {
   // --check gates on these findings, so a document DEMONSTRATING what a
   // blocking citation looks like failed the audit over its own example. The
   // link, heading and marker checks already skip fenced lines.
-  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines), ...rawHtmlBlockLines(lines)]);
   // And text commented OUT, which is how a blocker list is retired without
   // losing it: the prose no longer renders, but --check still held the build
   // red over it. Raised on the Python twin (stocks#1121).
@@ -1814,13 +1928,56 @@ export function crossRepoCitations(line) {
  * whitespace here would reproduce the broken links' own spelling and call
  * every one of them valid.
  */
+/**
+ * The named character references that appear in headings in practice.
+ *
+ * Deliberately NOT the full HTML5 list of ~2,000 names. An unrecognised name
+ * is left as literal text, which is both what CommonMark does for a genuinely
+ * invalid name and the conservative direction here: leaving `&hearts;` alone
+ * keeps today's behaviour for it, while decoding a name we got wrong would
+ * invent an anchor. Numeric references need no table.
+ */
+const NAMED_CHAR_REFS = new Map(Object.entries({
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0',
+  ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', middot: '\u00b7',
+  copy: '\u00a9', reg: '\u00ae', trade: '\u2122', deg: '\u00b0',
+  times: '\u00d7', rarr: '\u2192', larr: '\u2190', bull: '\u2022',
+}));
+
+const CHAR_REF_RE = /&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z][a-zA-Z0-9]{1,31}));/g;
+
+/**
+ * Markdown decodes a character reference BEFORE the anchor is derived.
+ *
+ * `## Dogs &amp; Cats` renders as "Dogs & Cats" and GitHub anchors it
+ * `dogs--cats`. Passing the raw text to the slugger recorded `dogs-amp-cats`
+ * instead, so the link a reader follows was reported dead while a link to the
+ * literal-entity slug -- an anchor that exists nowhere -- was accepted. Wrong
+ * in both directions, the same shape as the inline-HTML and `\w`-ASCII bugs
+ * `headingSlug` already carries.
+ */
+export function decodeCharRefs(text) {
+  return text.replace(CHAR_REF_RE, (whole, dec, hex, name) => {
+    if (name !== undefined) return NAMED_CHAR_REFS.get(name) ?? whole;
+    const cp = Number.parseInt(dec ?? hex, dec !== undefined ? 10 : 16);
+    // A reference outside Unicode, or to a surrogate, is not a character.
+    // CommonMark renders those as U+FFFD; leaving the source text alone is
+    // the same non-fabricating choice as an unknown name above.
+    if (!Number.isFinite(cp) || cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return whole;
+    return String.fromCodePoint(cp);
+  });
+}
+
 export function headingSlug(heading) {
   // Inline HTML is MARKUP: GitHub renders `## Use <code>foo</code>` as
   // "Use foo" and anchors it `use-foo`, while keeping the tag names recorded
   // `use-codefoocode` -- a valid link reported dead and a nonexistent slug
   // accepted, wrong in both directions.
-  let s = heading.replace(/<[^>]+>/g, '')
-    .replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  // AFTER the tag strip, not before: `&lt;code&gt;` is literal text that
+  // renders as `<code>`, and decoding first would turn it into a tag for the
+  // strip above to delete -- removing content GitHub keeps.
+  let s = decodeCharRefs(heading.replace(/<[^>]+>/g, '')
+    .replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'));
   // Emphasis MARKUP only. Stripping every underscore turned `## API_FIELD`
   // into `apifield`, so a valid link to `#api_field` read as a dead anchor
   // while an incorrect `#apifield` was accepted. CommonMark does not treat an
@@ -1910,7 +2067,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // Markdown syntax with `[x](missing.md)`, or showing a path that has since
   // moved, was read as rendered documentation and failed --check over its own
   // teaching material. The marker and heading checks already skip these lines.
-  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines), ...rawHtmlBlockLines(lines)]);
 
   // Reference-style Markdown: `[guide][g]` with `[g]: docs/guide.md` further
   // down. Neither shape matches MD_LINK_RE, so a broken reference link -- the
@@ -1933,14 +2090,24 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   const commentedDefs = commentedLines(lines);
   lines.forEach((line, i) => {
     if (fenced.has(i) || commentedDefs.has(i)) return;
-    const m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(\S+)/.exec(line);
+    // `<...>` is the standard destination form and the ONLY one that may
+    // contain a space, which is exactly why an author reaches for it.
+    // `\S+` stopped at the space, so `[guide]: <docs/user guide.md>` captured
+    // `<docs/user` and a tracked file was reported dead. The inline-link
+    // parser already accepts this form; the definition parser did not.
+    const m = /^ {0,3}\[([^\]^][^\]]*)\]:\s+(?:<([^<>\n]*)>|(\S+))/.exec(line);
     // The FIRST definition wins, as CommonMark resolves it. Overwriting with
     // the last emitted a false dead-link when the first destination exists and
     // the duplicate is stale, and missed the link readers follow in the
     // reverse order.
     const label = m && m[1].trim().toLowerCase();
+    // Group 2 is the angle-bracketed form, group 3 the bare one. Group 2 can
+    // legitimately be the EMPTY string (`[x]: <>`), so the branch tests for
+    // `undefined` rather than truthiness -- `m[2] || m[3]` would fall through
+    // to an undefined bare group and throw on the replace below.
+    const dest = m && (m[2] !== undefined ? m[2] : m[3]);
     if (m && !refDefs.has(label)) {
-      refDefs.set(label, { target: m[2].replace(/^<|>$/g, ''), line: i + 1 });
+      refDefs.set(label, { target: dest, line: i + 1 });
     }
   });
 
@@ -2291,7 +2458,14 @@ export function derive(derivation, { exec = run } = {}) {
     // than deriving anything -- every regex the claims grammar admits has to
     // survive the trip.
     const out = exec('git', ['grep', flag, '-e', pattern, '--', ...paths], { okExitCodes: [1] });
-    return out.trim() ? out.trim().split('\n').length : 0;
+    // RECORDS, not trimmed content. A derivation may deliberately match
+    // whitespace -- `[[:space:]]+` is the natural way to count indentation --
+    // and `git grep -o` then emits one whitespace-only line per match.
+    // Trimming the whole result collapsed those to the empty string and
+    // returned 0, so an incorrect zero claim passed and a correct nonzero one
+    // was reported stale. Only the single trailing newline git appends is
+    // removed; every other line is a match.
+    return out ? out.replace(/\n$/, '').split('\n').length : 0;
   }
   if (kind === 'list-len') {
     let body;
@@ -2774,13 +2948,22 @@ export function main(argv) {
     const docLinesForMarker = text.split('\n');
     const prev = findMarker(docLinesForMarker);
     const allMarkers = findMarkers(docLinesForMarker);
-    if (!prev) {
+    if (h1Index(docLinesForMarker) === null) {
+      // Reported in its own right, and BEFORE the missing-marker case, because
+      // it is the reason the marker has nowhere to go. Saying only "no review
+      // marker" sends someone to add one, and --stamp then refuses with
+      // `skipped-no-h1` and no explanation of what to do instead.
+      findings.push({ check: 'marker', doc, severity: 'P2',
+        detail: 'no H1, so there is nowhere a review marker may live; the registry '
+              + 'places it in the first paragraph after the first H1' });
+    } else if (!prev) {
       findings.push({ check: 'marker', doc, severity: 'P2', detail: 'no review marker' });
     } else if (allMarkers.length > 1) {
       findings.push({ check: 'marker', doc, severity: 'P2',
-        detail: `${allMarkers.length} review markers between the H1 and the next `
-              + 'section; they can disagree about date, owner or reviewed-against SHA, '
-              + 'and --stamp updates only the first' });
+        detail: `${allMarkers.length} review markers in the opening section `
+              + `(lines ${allMarkers.map((n) => n + 1).join(', ')}); they can disagree `
+              + 'about date, owner or reviewed-against SHA, and --stamp updates only '
+              + 'the first' });
     } else {
       if (prev.legacy) {
         findings.push({ check: 'marker', doc, severity: 'P3',

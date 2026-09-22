@@ -59,6 +59,9 @@ import {
   docLines,
   findMarker,
   findMarkers,
+  markerSection,
+  rawHtmlBlockLines,
+  decodeCharRefs,
   h1Index,
   documentSet,
   extraSegments,
@@ -734,7 +737,7 @@ describe('checkProvenance', () => {
 
   it('reports a reviewed document that supports no drift check', () => {
     const out = checkProvenance('d.md',
-      { date: '2026-09-01', sha: null, depth: 'verified', scanned: '2026-09-18' });
+      { date: '2026-09-01', sha: null, depth: 'verified', scanned: '2026-09-18', owner: 'me' });
     expect(out[0].detail).toBe('incomplete provenance: no reviewed-against SHA, '
       + 'so drift cannot be checked');
   });
@@ -764,7 +767,7 @@ describe('checkProvenance', () => {
 
   it('is quiet on a complete verified marker', () => {
     expect(checkProvenance('d.md', { date: '2026-09-01', sha: 'abc1234',
-      depth: 'verified', scanned: '2026-09-18' })).toEqual([]);
+      depth: 'verified', scanned: '2026-09-18', owner: 'me' })).toEqual([]);
   });
 
   it('reports a current marker carrying no Last scanned date', () => {
@@ -3677,5 +3680,183 @@ describe('two different prose owners on one Class A row', () => {
     expect(ownedLines('# T\n\nprose\n', ['prose:a.md', 'prose:a.md']).unmatched)
       .toEqual([]);
     expect(ownedLines('# T\n\nprose\n', ['prose:a.md']).prompt).toBe('a.md');
+  });
+});
+
+
+const MARK = (d, o) => `**Last reviewed:** ${d} · **Depth:** scanned · **Against:** `
+  + `\`abc123def456\` · **Last scanned:** ${d} · **Owner:** ${o}`;
+
+const linkCtx = (tracked) => ({
+  tracked: new Set(tracked), topLevelDirs: new Set([...tracked].filter((p) => p.includes('/')).map((p) => p.split('/')[0])),
+  rootFiles: new Set(), knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+});
+
+describe('a document with no H1', () => {
+  it('offers no window a marker can live in, and is reported for the H1', () => {
+    // The fallback scanned the first 40 lines, so a marker-shaped line
+    // floating in a headingless document satisfied findMarker: the
+    // missing-marker finding was suppressed and nothing reported the missing
+    // H1 either, so the document passed --check carrying provenance in a
+    // place the registry does not recognise.
+    const lines = ['Intro prose with no heading at all.', '', MARK('2026-01-01', 'me'), '', 'Body.'];
+    expect(markerWindow(lines)).toEqual({ from: 0, to: 0 });
+    expect(findMarker(lines)).toBe(null);
+    expect(findMarkers(lines)).toEqual([]);
+  });
+
+  it('is refused by stamp before the update path, not after it', () => {
+    // `if (prev)` returned `updated` without ever consulting markerAnchor, so
+    // the floating line was refreshed as though it were the document's
+    // provenance. The refusal has to come FIRST.
+    const lines = ['Intro prose.', '', MARK('2026-01-01', 'me'), '', 'Body.'];
+    expect(stamp(lines.join('\n'), '2026-03-03', null, null).action).toBe('skipped-no-h1');
+    // And the fix is not "never stamp": a document WITH an H1 still stamps.
+    expect(stamp('# T\n\nBody.\n', '2026-03-03', null, null).action).toBe('inserted');
+  });
+});
+
+describe('a second marker below the opening paragraph', () => {
+  it('is counted as a duplicate although the canonical window stops earlier', () => {
+    // markerWindow stops at the first rendered paragraph because that is
+    // where the registry requires the marker. findMarkers inherited that
+    // stop, so a contradictory second marker further down the SAME section
+    // was invisible: the audit reported one marker and --stamp refreshed only
+    // the first, leaving the stale one on the page.
+    const lines = ['# T', '', MARK('2026-01-01', 'me'), '', 'Intro paragraph.', '',
+      MARK('2020-01-01', 'old'), '', '## Next'];
+    expect(findMarkers(lines)).toEqual([2, 6]);
+    // The canonical selection is unchanged -- the two boundaries answer
+    // different questions and both are still asked.
+    expect(findMarker(lines).idx).toBe(2);
+    expect(markerWindow(lines).to).toBe(5);
+    expect(markerSection(lines).to).toBe(8);
+  });
+
+  it('does not swallow a marker belonging to a LATER section', () => {
+    // The wider boundary must still stop at the next heading, or a section's
+    // own metadata would be reported as the document's duplicate provenance.
+    const lines = ['# T', '', MARK('2026-01-01', 'me'), '', '## Next', '', MARK('2020-01-01', 'old')];
+    expect(findMarkers(lines)).toEqual([2]);
+  });
+});
+
+describe('a reference definition whose destination is angle-bracketed', () => {
+  it('keeps the spaces the brackets exist to allow', () => {
+    // `\S+` stopped at the space, so `[g]: <docs/user guide.md>` captured
+    // `<docs/user` and a tracked file was reported dead -- while the inline
+    // link parser accepted the same destination form.
+    const ctx = linkCtx(['docs/user guide.md', 'd.md']);
+    expect(checkDeadLinks('d.md', '# T\n\n[guide][g]\n\n[g]: <docs/user guide.md>\n',
+      ctx, { backtickedPaths: false })).toEqual([]);
+    // Not "any bracketed destination passes": a missing one is still dead.
+    const dead = checkDeadLinks('d.md', '# T\n\n[guide][g]\n\n[g]: <docs/no such file.md>\n',
+      ctx, { backtickedPaths: false });
+    expect(dead).toHaveLength(1);
+    expect(dead[0].detail).toMatch(/no such file\.md/);
+    // An empty destination is legal and must not throw on the bracket strip.
+    expect(Array.isArray(checkDeadLinks('d.md', '# T\n\n[guide][g]\n\n[g]: <>\n',
+      ctx, { backtickedPaths: false }))).toBe(true);
+  });
+});
+
+describe('a heading carrying a character reference', () => {
+  it('is slugged from the rendered text, not the entity spelling', () => {
+    // Markdown decodes `&amp;` before GitHub derives the anchor, so the
+    // reader's link is `#dogs--cats`. Slugging the raw text recorded
+    // `dogs-amp-cats`: the working link reported dead, and a link to a slug
+    // that exists nowhere accepted. Wrong in both directions.
+    expect(headingSlug('Dogs &amp; Cats')).toBe('dogs--cats');
+    expect(decodeCharRefs('A&#38;B')).toBe('A&B');
+    expect(decodeCharRefs('A&#x26;B')).toBe('A&B');
+    // An unrecognised name is literal text, which is what CommonMark does
+    // with an invalid one -- decoding a guess would invent an anchor.
+    expect(decodeCharRefs('A&hearts;B')).toBe('A&hearts;B');
+    // Entity-escaped markup is CONTENT; a real tag is still markup.
+    expect(headingSlug('Use &lt;code&gt;')).toBe('use-code');
+    expect(headingSlug('Use <code>foo</code>')).toBe('use-foo');
+    // An ordinary heading is untouched.
+    expect(headingSlug('Plain Thing')).toBe('plain-thing');
+  });
+});
+
+describe('a marker that omits the owner', () => {
+  it('is incomplete provenance, not a clean pass', () => {
+    // `Owner` is in the registry's required marker format and names who
+    // answers for the claims. A marker with valid review, depth, SHA and scan
+    // fields but no owner parsed cleanly and neither checkMarkerDates nor
+    // checkProvenance said a word, so --check accepted it.
+    const lines = ['# T', '', '**Last reviewed:** 2026-01-01 · **Depth:** verified · '
+      + '**Against:** `abc123def456` · **Last scanned:** 2026-02-02', '', 'Body.'];
+    const prev = findMarker(lines);
+    expect(prev.owner).toBe(null);
+    expect(checkProvenance('d.md', prev).some((f) => /no Owner/.test(f.detail))).toBe(true);
+    // And a complete marker is still silent -- the check cannot be satisfied
+    // by reporting every marker.
+    const full = findMarker(['# T', '', MARK('2026-01-01', 'me').replace('scanned', 'verified'), '', 'B.']);
+    expect(full.owner).toBe('me');
+    expect(checkProvenance('d.md', full)).toEqual([]);
+  });
+});
+
+describe('stamping a document that uses CRLF', () => {
+  it('writes the document’s own line ending, leaving no mixed file', () => {
+    // Splitting on '\n' leaves '\r' attached to every original line while an
+    // inserted marker carries none, so --stamp in a Windows checkout wrote a
+    // mixed-EOL document.
+    const out = stamp(['# T', '', 'Body.'].join('\r\n'), '2026-03-03', null, null);
+    expect(out.action).toBe('inserted');
+    expect(out.text.split('\n').slice(0, -1).every((l) => l.endsWith('\r'))).toBe(true);
+    // An UPDATE takes the same ending.
+    const upd = stamp(['# T', '', MARK('2026-01-01', 'me'), '', 'Body.'].join('\r\n'),
+      '2026-03-03', null, null);
+    expect(upd.action).toBe('updated');
+    expect(upd.text.split('\n').slice(0, -1).every((l) => l.endsWith('\r'))).toBe(true);
+    // And an LF document gains no carriage returns -- the fix is not "always
+    // write CRLF".
+    expect(stamp('# T\n\nBody.\n', '2026-03-03', null, null).text).not.toContain('\r');
+  });
+});
+
+describe('a raw-text HTML block', () => {
+  it('is an example, masked exactly as a fence is', () => {
+    // `<pre>` renders its bracket syntax literally, so `[x](missing.md)`
+    // inside one is a sample. Only fenced and indented code were masked, so
+    // the sample emitted a gating dead-link finding.
+    const doc = '# T\n\n<pre>\n[x](missing.md)\n</pre>\n\n[y](also-missing.md)\n';
+    expect([...rawHtmlBlockLines(doc.split('\n'))]).toEqual([2, 3, 4]);
+    const out = checkDeadLinks('d.md', doc, linkCtx(['d.md']), { backtickedPaths: false });
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/also-missing/);
+    // A one-line block closes on its own line, and prose after it is live.
+    expect([...rawHtmlBlockLines(['<pre>a</pre>', '[x](m.md)'])]).toEqual([0]);
+  });
+});
+
+describe('an indented code example inside a blockquote', () => {
+  it('is code, because Markdown removes the container prefix first', () => {
+    // The raw line starts with `>`, so the indentation count returned zero
+    // and the link and closed-issue scanners read the example as live prose.
+    expect(indentedCodeLines(['# T', '', '>     [x](missing.md)']).has(2)).toBe(true);
+    const out = checkDeadLinks('d.md', '# T\n\n>     [x](missing.md)\n\n[y](also-missing.md)\n',
+      linkCtx(['d.md']), { backtickedPaths: false });
+    expect(out).toHaveLength(1);
+    expect(out[0].detail).toMatch(/also-missing/);
+    // Quoted PROSE is still prose -- the fix is not "mask every blockquote".
+    expect(indentedCodeLines(['# T', '', '> [x](missing.md)']).has(2)).toBe(false);
+    expect(indentedCodeLines(['# T', '', '    [x](missing.md)']).has(2)).toBe(true);
+  });
+});
+
+describe('a grep derivation that matches whitespace', () => {
+  it('counts the records rather than the trimmed text', () => {
+    // `git grep -o` emits one whitespace-only line per match, and trimming
+    // the whole result collapsed them to the empty string and returned 0 --
+    // so an incorrect zero claim passed and a correct nonzero one was
+    // reported stale.
+    expect(derive('grep-count scripts [[:space:]]+', { exec: () => '  \n \n   \n' })).toBe(3);
+    expect(derive('grep-count scripts x', { exec: () => '' })).toBe(0);
+    expect(derive('grep-count scripts x', { exec: () => 'a\nb\n' })).toBe(2);
+    expect(derive('grep-count scripts x', { exec: () => '\n' })).toBe(1);
   });
 });

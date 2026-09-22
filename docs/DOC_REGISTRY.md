@@ -80,8 +80,14 @@ only the mechanical checks ran, and is the honest default. A document nobody
 has reviewed reads `unknown`, never today's date: a review date bumped without
 a re-read is a freshness badge on an unread document. `Last reviewed` moves
 only when someone confirms the claims; `Last scanned` moves every run.
-`Against:` pins the `origin/main` commit reviewed against, so the next run
-diffs from a commit rather than guessing from a date.
+`Against:` pins the commit reviewed against, so the next run diffs from a
+commit rather than guessing from a date. Which commit that is follows the ref
+the run audits against: `--since <ref>` when given, otherwise the first of
+`HEAD`, `origin/main`, `main` this checkout can resolve. On a feature branch
+that is **`HEAD`** — the branch commit, not a mainline one — because
+hard-coding `origin/main` aborts every run in a detached HEAD or a shallow
+single-branch CI clone, where no such ref exists. Pass `--since origin/main`
+when the recorded provenance has to name a mainline commit.
 
 Placement is "the first paragraph after the first H1", never a fixed line
 number: seven living docs here open with an HTML comment block and carry their
