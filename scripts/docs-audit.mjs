@@ -4111,11 +4111,21 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // headingAnchors records the rendered slug `café`, so comparing the raw
       // fragment reported a valid link as a gating dead anchor. An undecodable
       // fragment is used as written, for the same reason paths are.
+      //
+      // And EXACTLY as the destination is, which this was not: a Markdown
+      // escape and a character reference are both resolved when the link is
+      // rendered, so `[x](#foo\:bar)` reaches `id="foo:bar"` and
+      // `[x](#a&amp;b)` reaches `id="a&b"` -- while `headingAnchors` records
+      // the decoded id and this compared the source spelling, reporting both
+      // working links as gating dead anchors. Same order the destination
+      // uses: escapes, then references, then percent-decoding, which is the
+      // browser's and comes last.
       let wanted;
+      const rendered = decodeCharRefs(unescapeMarkdown(frag));
       try {
-        wanted = decodeURIComponent(frag);
+        wanted = decodeURIComponent(rendered);
       } catch {
-        wanted = frag;
+        wanted = rendered;
       }
       // Two spellings, because `have` now holds two KINDS of anchor. A
       // generated heading slug is lowercase by construction, so the folded

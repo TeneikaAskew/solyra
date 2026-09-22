@@ -3983,6 +3983,30 @@ describe('a percent-encoded anchor fragment', () => {
     expect(anchors.has('caf%c3%a9')).toBe(false);
     expect(decodeURIComponent('caf%C3%A9').toLowerCase()).toBe('café');
   });
+
+  it('and so are Markdown escapes and character references', () => {
+    // Both are resolved when the link is RENDERED, so `[x](#foo\\:bar)`
+    // reaches `id="foo:bar"` and `[x](#a&amp;b)` reaches `id="a&b"`.
+    // `headingAnchors` records the decoded id and this compared the source
+    // spelling, so both working links were gating dead anchors.
+    // A REAL file, because a fragment check reads the target's headings off
+    // disk -- the same reason the tracked-symlink test writes one.
+    const target = 'docs-audit-frag-target.md';
+    fs.writeFileSync(target,
+      '# Target\n\n<a id="foo:bar"></a>\n<a id="a&amp;b"></a>\n');
+    try {
+      const ctxWith = linkCtx(['d.md', target]);
+      const doc = `# T\n\n[x](${target}#foo\\:bar) and [y](${target}#a&amp;b)\n`;
+      expect(checkDeadLinks('d.md', doc, ctxWith)).toEqual([]);
+      // A fragment that names nothing is still reported, so this is not
+      // "decode until something matches".
+      const broken = `# T\n\n[x](${target}#foo\\:baz)\n`;
+      expect(checkDeadLinks('d.md', broken, ctxWith).map((f) => f.check))
+        .toEqual(['dead-anchor']);
+    } finally {
+      fs.unlinkSync(target);
+    }
+  });
 });
 
 describe('two different prose owners on one Class A row', () => {
