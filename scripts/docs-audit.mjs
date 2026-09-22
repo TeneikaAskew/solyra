@@ -1451,6 +1451,10 @@ function commentHiddenLines(lines) {
   return out;
 }
 
+export function quoteDepth(line) {
+  return (/^ {0,3}((?:> ?)*)/.exec(line)[1].match(/>/g) ?? []).length;
+}
+
 export function fencedLines(lines) {
   const fenced = new Set();
   // The OPENING delimiter is remembered. Toggling on any fence-looking line
@@ -1460,6 +1464,7 @@ export function fencedLines(lines) {
   // CommonMark: a fence closes only on the same character, at least as long,
   // and with no info string.
   let open = null;
+  let openDepth = 0;
   // The enclosing list item's content column, so a fence indented to it is a
   // fence rather than indented code. Reset by a non-blank line at column 0.
   let listIndent = 0;
@@ -1495,6 +1500,16 @@ export function fencedLines(lines) {
     // cap is wrong in the other direction: a fence inside a list item sits at
     // the item's content column, which is commonly deeper, so `listIndent`
     // carries that column the way indentedCodeLines does.
+    // A fence opened INSIDE a blockquote ends with its container, closing
+    // fence or not: CommonMark ends the quoted code block where the quote
+    // ends. Holding it open classified every line after the quote as code, so
+    // dead links, blocker citations, headings and markers below it were all
+    // silently skipped until some later line happened to look like a matching
+    // fence. A blank line drops to depth 0 and ends the quote, which is why
+    // this is a depth comparison rather than a `>` test; an unquoted fence
+    // opens at depth 0 and nothing is below 0, so it is untouched. Ported from
+    // the Python twin (stocks#1121), which had the same defect.
+    if (open && quoteDepth(line) < openDepth) open = null;
     const m = /^([ \t]*)((?:> ?)*)((?:[-*+]|\d+[.)])\s+)?[ \t]*(`{3,}|~{3,})(.*)$/
       .exec(line);
     if (m) {
@@ -1507,6 +1522,7 @@ export function fencedLines(lines) {
       // An opening ``` fence may not carry a backtick in its info string.
       if (m && !(m[4][0] === '`' && m[5].includes('`'))) {
         open = m[4];
+        openDepth = quoteDepth(line);
         fenced.add(i);
       }
       return;
@@ -1746,9 +1762,17 @@ export function h1Index(lines) {
   // corrupting the example. Same failure as the fenced case it sits beside.
   const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
     ...rawHtmlBlockLines(lines)]);
+  // SPANS too, not only whole lines. A comment that closes partway through a
+  // heading-shaped line -- `<!--` then `# Fake --> visible` -- leaves the line
+  // with a visible suffix, so commentedLines does not exclude it while H1_RE
+  // still matches the hidden `# Fake` prefix. --stamp then inserted the marker
+  // after a heading no reader can see and above the document's real H1,
+  // putting provenance outside the opening section. Ported from the Python
+  // twin (stocks#1121), which had the same defect.
+  const hiddenSpans = commentSpans(lines);
   for (let i = 0; i < lines.length; i += 1) {
     if (fenced.has(i)) continue;
-    if (H1_RE.test(lines[i])) return i;
+    if (H1_RE.test(maskSpans(lines[i], hiddenSpans.get(i) ?? []))) return i;
     // Setext level one (`Title` over `===`). Without it the audit reported a
     // missing marker on such a document while --stamp answered
     // `skipped-no-h1`, so the command could not repair its own finding.

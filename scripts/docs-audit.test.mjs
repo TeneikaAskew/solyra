@@ -4499,3 +4499,41 @@ describe('an HTML anchor inside a code span', () => {
     expect([...headingAnchors('# T\n\n`<a id="a"\nid="b"></a>`\n')]).toEqual(['t']);
   });
 });
+
+
+// ── round 33 parity (stocks#1121 `3b70d46c`) ────────────────────────────────
+
+describe('a fence opened inside a blockquote', () => {
+  it('closes with the quote that contains it', () => {
+    // CommonMark ends a quoted code block with its container, closing fence or
+    // not. Holding it open classified everything after the quote as code, so
+    // the dead link, the heading and any marker below it were silently skipped
+    // -- the hiding direction, which is the worse one. Codex found this on the
+    // Python twin; the same defect was live here and is not in this PR's
+    // review.
+    expect([...fencedLines(['# T', '', '> ```', '> sample', '',
+      '[guide](missing.md)', '', '## Real'])]).toEqual([2, 3]);
+    // An ordinary fence opens at depth 0 and nothing is below 0, so its blank
+    // lines and its content still read as code.
+    expect([...fencedLines(['# T', '```', 'code', '', 'more', '```', 'after'])])
+      .toEqual([1, 2, 3, 4, 5]);
+    // And a quoted fence that DOES close normally still closes at its own
+    // delimiter rather than running to the end of the quote.
+    expect([...fencedLines(['# T', '> ```', '> s', '> ```', '> prose'])])
+      .toEqual([1, 2, 3]);
+  });
+});
+
+describe('an H1 hidden in a partial comment', () => {
+  it('is not the document H1', () => {
+    // A comment closing partway through a heading-shaped line leaves a visible
+    // suffix, so commentedLines does not exclude the line while H1_RE still
+    // matches the hidden prefix. --stamp then inserted the marker after a
+    // heading no reader can see and above the document's real H1.
+    expect(h1Index(['<!--', '# Fake --> visible', '', '# Real Title', ''])).toBe(3);
+    // Plain and fenced documents still behave: a change to H1 selection is
+    // dangerous in both directions.
+    expect(h1Index(['# Real', '', 'body'])).toBe(0);
+    expect(h1Index(['```', '# Fake', '```', '', '# Real'])).toBe(4);
+  });
+});
