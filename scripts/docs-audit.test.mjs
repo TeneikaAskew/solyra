@@ -4934,3 +4934,206 @@ describe('an inline comment example before a fence', () => {
     expect([...fencedLines(['# T', '<!-- open', '```', 'x', '```'])]).toEqual([]);
   });
 });
+
+
+// ── round 38 (2cd73fa) ──────────────────────────────────────────────────────
+
+const ctx38 = (t) => linkContext(new Set(t), new Set(), []);
+
+describe('a character reference in a link destination', () => {
+  it('is not split as a fragment', () => {
+    // The `#` inside `&#38;` was read as the fragment separator BEFORE
+    // decodeCharRefs ran, so `[x](foo&#38;bar.md)` -- a link to tracked
+    // `foo&bar.md` -- was split into the path `foo&` and the fragment
+    // `38;bar.md` and reported dead. A downstream decoder cannot undo a split
+    // that already happened.
+    const ctx = ctx38(['foo&bar.md', 'd.md']);
+    expect(checkDeadLinks('d.md', '[x](foo&#38;bar.md)\n', ctx,
+      { backtickedPaths: false })).toEqual([]);
+    // A destination that really is missing is still reported, and a REAL
+    // fragment is still a fragment.
+    expect(checkDeadLinks('d.md', '[x](gone&#38;bar.md)\n', ctx,
+      { backtickedPaths: false }).map((f) => f.check)).toEqual(['dead-link']);
+  });
+});
+
+describe('a glob bracket expression', () => {
+  it('counts as one position, not as its contents', () => {
+    // Counting the characters inside made ADDING alternatives raise
+    // specificity, so `docs/[ab].md` outranked `docs/[a].md` for `docs/a.md`
+    // -- and where the broader row is Class X and the narrower is Class D,
+    // classify silently chose X and suppressed every check on the document.
+    expect(globSpecificity('docs/[ab].md')).toEqual(globSpecificity('docs/[a].md'));
+    // A plain literal still beats a bracket, and a bracket still beats `*`.
+    const cmp = (a, b) => {
+      const x = globSpecificity(a);
+      const y = globSpecificity(b);
+      for (let i = 0; i < x.length; i += 1) if (x[i] !== y[i]) return x[i] - y[i];
+      return 0;
+    };
+    expect(cmp('docs/a.md', 'docs/[a].md')).toBeGreaterThan(0);
+    expect(cmp('docs/[a].md', 'docs/*.md')).toBeGreaterThan(0);
+  });
+});
+
+describe('a Setext H1 inside a blockquote', () => {
+  it('is the document H1', () => {
+    // The ATX test read the stripped copy and the Setext branch still tested
+    // the raw quoted lines, so `> Quoted title` over `> ====` returned null:
+    // the audit reported no H1 and --stamp answered `skipped-no-h1`.
+    expect(h1Index(['> Quoted title', '> ====', '', 'body'])).toBe(0);
+    expect(h1Index(['Title', '====', '', 'body'])).toBe(0);
+    expect(h1Index(['> # Quoted', '', 'body'])).toBe(0);
+    // An indented H1 is a code block, not a heading.
+    expect(h1Index(['    # Indented', '', '# Real'])).toBe(2);
+  });
+});
+
+describe('an href inside a non-raw-text HTML block', () => {
+  it('is still validated', () => {
+    // Markdown is not PARSED inside a type-6 or type-7 block, but the HTML
+    // renders: `<div>` then `<a href="missing.md">` is a link a reader clicks.
+    // Excluding every raw-block line skipped the href pass with the Markdown
+    // one, so those links were never checked at all.
+    const ctx = ctx38(['d.md', 'docs/a.md']);
+    const run = (t) => checkDeadLinks('d.md', t, ctx, { backtickedPaths: false })
+      .map((f) => f.check);
+    expect(run('<div>\n<a href="missing.md">g</a>\n</div>\n')).toEqual(['dead-link']);
+    expect(run('<div>\n<a href="docs/a.md">g</a>\n</div>\n')).toEqual([]);
+    // A RAW-TEXT block makes its tags literal, and Markdown inside an HTML
+    // block is not parsed -- both still hold.
+    expect(run('<pre>\n<a href="missing.md">g</a>\n</pre>\n')).toEqual([]);
+    expect(run('<div>\n[x](missing.md)\n</div>\n')).toEqual([]);
+  });
+});
+
+describe('a generated-region delimiter inside a wrapped code span', () => {
+  it('is an example, not a delimiter', () => {
+    // The `mark:` and `fence:` scanners masked only single-line spans, so a
+    // span holding sample BEGIN/END lines across a line break had both read as
+    // real delimiters and the hand-written prose between them classified as
+    // generated.
+    const doc = ['<!-- a -->', '`example:', '<!-- BEGIN X -->', 'hand written',
+      '<!-- END X -->', '`'].join('\n');
+    expect([...ownedLines(doc, ['mark:X']).owned]).toEqual([]);
+    // Real delimiters still own their block.
+    const real = ['<!-- BEGIN X -->', 'generated', '<!-- END X -->'].join('\n');
+    expect([...ownedLines(real, ['mark:X']).owned]).toEqual([1, 2, 3]);
+  });
+});
+
+describe('a hash-prefixed line that is not a heading, in the marker section', () => {
+  it('does not close the section', () => {
+    // `#123 remains open` renders as prose and closed the section, so a SECOND
+    // marker below it fell outside the window: findMarkers saw only the first,
+    // --stamp updated it, and the contradictory duplicate stayed on the page.
+    const doc = ['# T', '', '**Last reviewed:** 2026-01-01 · **Owner:** TBD', '',
+      '#123 remains open', '', '**Last reviewed:** 2026-02-01 · **Owner:** TBD', ''];
+    expect(markerSection(doc).to).toBeGreaterThan(6);
+    expect(findMarkers(doc).length).toBe(2);
+    // A REAL heading still closes it.
+    expect(markerSection(['# T', '', '**Last reviewed:** 2026-01-01 · **Owner:** TBD',
+      '', '## Next', '', 'x']).to).toBe(4);
+  });
+});
+
+describe('a fence opener indented inside a blockquote', () => {
+  it('opens no fence', () => {
+    // The whitespace AFTER the `>` was never measured, so `>     ``` ` -- an
+    // indented code line containing literal backticks -- opened a fence and
+    // masked a live link on the next quoted line.
+    expect([...fencedLines(['# T', '>', '>     ```', '> [x](missing.md)', '>'])])
+      .toEqual([]);
+    // An ordinary quoted fence still opens and still closes.
+    expect([...fencedLines(['# T', '> ```', '> s', '> ```', '> prose'])])
+      .toEqual([1, 2, 3]);
+    expect([...fencedLines(['# T', '```', 'code', '```', 'after'])]).toEqual([1, 2, 3]);
+  });
+});
+
+describe('a blocker list continuation line', () => {
+  it('keeps its item context', () => {
+    // `Blocked by:`, then `- Upstream:`, then an indented line carrying the URL
+    // renders as ONE list item, but only a fresh marker counted as "in the
+    // list" -- so the continuation cleared the carried label and the closed
+    // blocker on it was silently omitted.
+    const u = 'https://github.com/TeneikaAskew/solyra/issues/1';
+    const st = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } },
+      stocks: {} };
+    expect(checkClosedIssues('d.md', `Blocked by:\n- Upstream:\n  ${u}\n`, st))
+      .toHaveLength(1);
+    expect(checkClosedIssues('d.md', `Blocked by:\n- ${u}\n`, st)).toHaveLength(1);
+    // Real prose still clears the context, and an UNindented line is not a
+    // continuation -- the fix is an indentation rule, not "never clear".
+    expect(checkClosedIssues('d.md', `Blocked by:\nSome prose.\n- ${u}\n`, st))
+      .toEqual([]);
+    expect(checkClosedIssues('d.md', `Blocked by:\n- Upstream:\n${u}\n`, st))
+      .toEqual([]);
+  });
+});
+
+describe('a raw HTML block inside a blockquote', () => {
+  it('is recognised', () => {
+    // The scanner tested the physical line, so `> <pre>` saw the `>` and
+    // recognised no opener -- and `> [x](missing.md)` inside the example was
+    // audited as a live link.
+    expect([...rawHtmlBlockLines(['# T', '', '> <pre>', '> [x](missing.md)',
+      '> </pre>', ''])]).toEqual([2, 3, 4]);
+    expect([...rawHtmlBlockLines(['# T', '', '<pre>', '[x](missing.md)',
+      '</pre>', ''])]).toEqual([2, 3, 4]);
+  });
+});
+
+describe('a backticked repository path with a space', () => {
+  it('is still checked', () => {
+    // Git paths admit a space and the exact registry declarations already do,
+    // so `` `docs/old guide.md` `` was never checked and the audit reported
+    // clean while the documentation pointed readers at a nonexistent path.
+    const ctx = ctx38(['d.md', 'docs/kept.md']);
+    const run = (t) => checkDeadLinks('d.md', t, ctx, { backtickedPaths: true })
+      .map((f) => f.check);
+    expect(run('see `docs/old guide.md` here\n')).toHaveLength(1);
+    expect(run('see `docs/gone.md` here\n')).toHaveLength(1);
+    // Backticked PROSE is not a path: the first segment must still be a
+    // directory this tree has, which is what keeps a sentence from matching.
+    expect(run('see `the docs/kept.md file` here\n')).toEqual([]);
+  });
+});
+
+describe('a Markdown link that crosses a line break', () => {
+  it('is still a link', () => {
+    // CommonMark lets a label run over a newline and lets whitespace follow
+    // the opening parenthesis, so both shapes render as clickable links -- and
+    // a per-line scan can never see either.
+    const ctx = ctx38(['d.md', 'docs/a.md']);
+    const run = (t) => checkDeadLinks('d.md', t, ctx, { backtickedPaths: false })
+      .map((f) => f.check);
+    expect(run('[long\nlabel](missing.md)\n')).toEqual(['dead-link']);
+    expect(run('[x](\nmissing.md)\n')).toEqual(['dead-link']);
+    // A single-line link is reported ONCE, not by both passes.
+    expect(run('[x](missing.md)\n')).toEqual(['dead-link']);
+    // A resolving one stays quiet, and the exclusions still apply.
+    expect(run('[long\nlabel](docs/a.md)\n')).toEqual([]);
+    expect(run('```\n[long\nlabel](missing.md)\n```\n')).toEqual([]);
+    expect(run('`[long\nlabel](missing.md)`\n')).toEqual([]);
+  });
+});
+
+describe('a list-len derivation target', () => {
+  it('must be tracked, like the grep ones', () => {
+    // The grep derivations reject an untracked path because a search over one
+    // measures nothing; this branch read the file directly, so it produced a
+    // real number from content a clean clone does not have.
+    // A file that really EXISTS in this checkout and really is not tracked,
+    // the same standard the grep test beside it uses: node_modules is present
+    // after `npm ci` here and in CI, and git confirms it is untracked. A
+    // temporary directory would not exercise the probe, which reads REPO.
+    const untracked = 'node_modules/vitest/package.json';
+    expect(fs.existsSync(path.join(process.cwd(), untracked))).toBe(true);
+    expect(() => derive(`list-len ${untracked} "version": "(.*)"`, { exec: () => '' }))
+      .toThrow(/not tracked/);
+    // A TRACKED target still derives: this very file is tracked.
+    expect(() => derive('list-len package.json "name": "(.*)"', { exec: () => '' }))
+      .not.toThrow(/not tracked/);
+  });
+});
