@@ -2047,16 +2047,40 @@ describe('a whole run over a fixture repository', () => {
     // A tracked document the audit cannot open threw a plain filesystem error
     // that the handler rethrew, so Node exited 1 -- the status this CLI
     // documents for FINDINGS. Automation could not tell "this documentation
-    // has problems" from "the audit never ran". A dangling symlink is the
-    // deterministic way to reproduce it: git tracks it, readFileSync throws
-    // ENOENT, and unlike a chmod it still fails when the tests run as root.
+    // has problems" from "the audit never ran".
+    //
+    // A DIRECTORY at the committed path, not a dangling symlink. The symlink
+    // was the original mechanism and is now intercepted by the symlink
+    // refusal below -- a different, correct exit 2 that would have left this
+    // test passing for the wrong reason. Committing the file first and then
+    // replacing it on disk keeps it in the inventory, and readFileSync throws
+    // EISDIR regardless of uid, which is what the symlink was chosen for.
     const dir = fixture();
-    fs.symlinkSync('nowhere.md', path.join(dir, 'docs/d.md'));
+    fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    fs.rmSync(path.join(dir, 'docs/d.md'));
+    fs.mkdirSync(path.join(dir, 'docs/d.md'));
+    const res = runAudit(dir);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/cannot be read/);
+    expect(res.stderr).not.toMatch(/at Object|at Module/);
+  });
+
+  it('refuses a tracked symlink on READ, not only when stamping', () => {
+    // Following one audits the target's machine-local bytes as though they
+    // were committed under this path: a clean result another clone does not
+    // reproduce, and a read that can leave the checkout entirely. writeStamps
+    // already refused them, which made the refusal a property of the COMMAND
+    // rather than of the tree -- an ordinary --check had no guard at all.
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/real.md'), '# Real\n');
+    fs.symlinkSync('real.md', path.join(dir, 'docs/d.md'));
     spawnSync('git', ['add', '-A'], { cwd: dir });
     spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
     const res = runAudit(dir);
     expect(res.status).toBe(2);
-    expect(res.stderr).toMatch(/cannot be read/);
+    expect(res.stderr).toMatch(/tracked symlink/);
     expect(res.stderr).not.toMatch(/at Object|at Module/);
   });
 
@@ -4398,5 +4422,80 @@ describe('an indented code line before a thematic break', () => {
     expect([...headingAnchors('# T\n\n    Fake\n---\n')]).toEqual(['t']);
     // A real Setext heading still offers its anchor.
     expect([...headingAnchors('# T\n\nSub\n---\n')]).toEqual(['t', 'sub']);
+  });
+});
+
+// ── round 32 (1d19c46) ──────────────────────────────────────────────────────
+
+describe('a fragment on a document with an alternate suffix', () => {
+  it('is validated like any other', () => {
+    // MY REGRESSION. Alternate suffixes joined the document set a round ago
+    // and this gate still tested lowercase `.md`, so a tracked
+    // `guide.markdown` passed the path check and never reached anchorsOf --
+    // `[x](guide.markdown#gone)` let a broken anchor through.
+    // Driven through checkDeadLinks with the target on disk, because the
+    // defect is the GATE, not the predicate -- a test asserting only
+    // isMarkdownPath passes with the gate still reading `.md`.
+    const target = path.join(process.cwd(), 'tmp-frag-target.markdown');
+    fs.writeFileSync(target, '# Real Heading\n');
+    try {
+      const ctx = linkCtx(['d.md', 'tmp-frag-target.markdown']);
+      const out = checkDeadLinks('d.md',
+        'see [x](tmp-frag-target.markdown#nope)\n', ctx, { backtickedPaths: false });
+      expect(out).toHaveLength(1);
+      expect(out[0].check).toBe('dead-anchor');
+      // And a fragment that DOES resolve is still quiet.
+      expect(checkDeadLinks('d.md',
+        'see [x](tmp-frag-target.markdown#real-heading)\n', ctx,
+        { backtickedPaths: false })).toEqual([]);
+    } finally {
+      fs.unlinkSync(target);
+    }
+    expect([isMarkdownPath('README.MD'), isMarkdownPath('notes.txt')])
+      .toEqual([true, false]);
+  });
+});
+
+describe('a heading inside a raw HTML block before the real title', () => {
+  it('is not the document H1', () => {
+    // A document opening with `<pre>` containing a sample `# Fake` had the
+    // sample chosen as its H1, so the real title then closed the marker
+    // window, an existing marker was reported missing, and --stamp wrote a
+    // live marker INSIDE the `<pre>` -- invisible, and corrupting the example.
+    expect(h1Index(['<pre>', '# Fake', '</pre>', '', '# Real Title', ''])).toBe(4);
+    // A plain document is unaffected, and the fenced case still behaves.
+    expect(h1Index(['# Real', '', 'body'])).toBe(0);
+    expect(h1Index(['```', '# Fake', '```', '', '# Real'])).toBe(4);
+  });
+});
+
+describe('a comment-only line between a blocker label and its list', () => {
+  it('does not clear the carried context', () => {
+    // MY REGRESSION, from the hidden-suffix fix. The mask preserves length by
+    // design, so a wholly hidden line masks to NULs, `bare.trim()` is
+    // non-empty, and the label's context was reset -- closed issues in the
+    // rendered list silently skipped. Emptiness has to be tested against the
+    // mask character, not the string.
+    const U = 'https://github.com/TeneikaAskew/solyra/issues/1';
+    const st = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } }, stocks: {} };
+    expect(checkClosedIssues('d.md', `Blocked by:\n<!-- note -->\n- ${U}\n`, st))
+      .toHaveLength(1);
+    // Real prose between them still clears it -- the fix is not "never clear".
+    expect(checkClosedIssues('d.md', `Blocked by:\nSome prose.\n- ${U}\n`, st))
+      .toEqual([]);
+  });
+});
+
+describe('an HTML anchor inside a code span', () => {
+  it('is an example, not a destination', () => {
+    // MY REGRESSION, from adding explicit-anchor collection. A literal
+    // `` `<a id="fake"></a>` `` registered `fake` as a real destination, so a
+    // later `[x](#fake)` PASSED against an anchor the rendered document does
+    // not have -- the invented-destination failure the scan exists to avoid,
+    // reintroduced by the scan itself.
+    expect([...headingAnchors('# T\n\nExample: `<a id="fake"></a>`\n')]).toEqual(['t']);
+    // A real anchor is still collected, and a wrapped code span is masked too.
+    expect([...headingAnchors('# T\n\n<a name="legacy"></a>\n')]).toEqual(['t', 'legacy']);
+    expect([...headingAnchors('# T\n\n`<a id="a"\nid="b"></a>`\n')]).toEqual(['t']);
   });
 });

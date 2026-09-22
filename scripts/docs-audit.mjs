@@ -1739,7 +1739,13 @@ export function h1Index(lines) {
   // `<!-- # Old title -->` above its real one had the hidden heading chosen,
   // so --stamp wrote the marker INSIDE the comment, reported success, and left
   // the rendered document with no provenance at all.
-  const fenced = new Set([...fencedLines(lines), ...commentedLines(lines)]);
+  // And a RAW HTML block. A document opening with `<pre>` containing a sample
+  // `# Fake` had the sample chosen as its H1, so the real title then closed
+  // the marker window, an existing marker was reported missing, and --stamp
+  // wrote a live marker INSIDE the `<pre>` -- invisible to readers and
+  // corrupting the example. Same failure as the fenced case it sits beside.
+  const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
+    ...rawHtmlBlockLines(lines)]);
   for (let i = 0; i < lines.length; i += 1) {
     if (fenced.has(i)) continue;
     if (H1_RE.test(lines[i])) return i;
@@ -2137,7 +2143,13 @@ export function checkClosedIssues(doc, text, states) {
     const labelText = stripEmphasis(bare).replace(/\u0000+\s*$/, '');
     // A blank line between the label and its list is the normal spelling, so
     // it must not clear the context; any other non-item line does.
-    if (!isItem && bare.trim()) {
+    // A line that is ENTIRELY hidden renders as nothing, so it must not clear
+    // the carried label -- `Blocked by:` / `<!-- note -->` / the list was
+    // losing its context because masking leaves NUL characters and
+    // `bare.trim()` is therefore non-empty. My own regression from the
+    // hidden-suffix fix: the mask preserves length by design, so emptiness
+    // has to be tested against the mask character rather than the string.
+    if (!isItem && bare.replace(/\u0000/g, '').trim()) {
       carried = hasBlockingCue(cueText) && CUE_LABEL_RE.test(labelText) ? cueText : null;
     }
     const context = isItem ? carried : null;
@@ -2423,9 +2435,17 @@ export function headingAnchors(text) {
   // literally and exposes nothing.
   const literal = new Set([...fencedLines(lines), ...commentedLines(lines),
     ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
+  // Inline code too, single-line and wrapped. A literal example --
+  // `` `<a id="fake"></a>` `` -- registered `fake` as a real destination, so a
+  // later `[x](#fake)` PASSED against an anchor the rendered document does not
+  // have. That is the invented-destination failure this whole scan exists to
+  // avoid, reintroduced by the scan itself.
+  const wrappedSpans = codeSpanLines(lines);
   for (const [i, raw] of lines.entries()) {
     if (literal.has(i)) continue;
-    for (const mm of raw.matchAll(/<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
+    const visible = maskSpans(raw,
+      [...codeSpans(raw), ...(wrappedSpans.get(i) ?? [])]);
+    for (const mm of visible.matchAll(/<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
       const id = mm[2] ?? mm[3];
       if (id) out.add(id.toLowerCase());
     }
@@ -2577,7 +2597,11 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
         return;
       }
     }
-    if (frag && norm.endsWith('.md')) {
+    // The same predicate documentSet uses. After alternate suffixes were
+    // admitted a round ago, a tracked `guide.markdown` or `README.MD` passed
+    // the path check and never reached anchorsOf, so `[x](guide.markdown#gone)`
+    // let a broken anchor through -- my own regression, one gate behind.
+    if (frag && isMarkdownPath(norm)) {
       const have = anchorsOf(norm);
       // Decoded, exactly as the destination path above is. A link may
       // percent-encode non-ASCII -- `[Café](#caf%C3%A9)` -- while
@@ -3407,10 +3431,22 @@ export function main(argv) {
     // plain filesystem error that the handler rethrew -- Node then exited 1,
     // the status this CLI documents for FINDINGS, so automation could not tell
     // "this documentation has problems" from "the audit never ran".
+    // A SYMLINK is refused before it is read, not only before it is written.
+    // Following one audits the target's machine-local bytes as though they
+    // were committed under this path: a clean result another clone does not
+    // reproduce, and a read that can leave the checkout entirely. writeStamps
+    // already refuses them; a read-only --check had no such guard, which made
+    // the refusal a property of the command rather than of the tree.
     let text;
     try {
+      if (fs.lstatSync(path.join(REPO, doc)).isSymbolicLink()) {
+        throw new AuditError(`${doc} is a tracked symlink, so reading it would audit `
+          + 'its target rather than a document in this repository; the result would '
+          + 'not reproduce in another clone');
+      }
       text = fs.readFileSync(path.join(REPO, doc), 'utf8');
     } catch (err) {
+      if (err instanceof AuditError) throw err;
       throw new AuditError(`${doc} is in the audited tree but cannot be read `
         + `(${err.message}); the audit cannot report on a document it could not open`);
     }
