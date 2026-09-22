@@ -1319,6 +1319,21 @@ export function checkMarkerDates(doc, prev, today, line = null) {
       }
     }
   }
+  // A marker that CONTRADICTS itself. `Last reviewed: unknown` says no review
+  // has happened; a `Depth` or an `Against` beside it claims one at a named
+  // baseline. Every field parses, so nothing above reported it and the run
+  // emitted only the non-gating P3 for the unknown date -- so it passed --check
+  // while a drift calculation ran off provenance `stamp` never writes. A
+  // combination the writer cannot produce is malformed on read. Parity with the
+  // Python twin (stocks#1121).
+  const claims = [['Depth', prev.depth], ['Against', prev.sha]]
+    .filter(([, v]) => v).map(([f]) => f);
+  if (prev.date === 'unknown' && claims.length) {
+    out.push({ check: 'marker', doc, severity: 'P2',
+      detail: `the marker records no review (\`unknown\`) and still carries `
+            + `${claims.join(' and ')}; those claim a review that the same line `
+            + 'says did not happen' });
+  }
   for (const [field, label] of [['date', 'review date'], ['scanned', 'last-scanned date']]) {
     const value = prev[field];
     if (value === undefined || value === null || value === '' || value === 'unknown') continue;
@@ -1650,6 +1665,29 @@ function commentHiddenLines(lines) {
 
 export function quoteDepth(line) {
   return (/^ {0,3}((?:> ?)*)/.exec(line)[1].match(/>/g) ?? []).length;
+}
+
+/**
+ * Indices of a leading YAML front-matter block, delimiters included.
+ *
+ * GitHub renders front matter as a metadata table, not as Markdown, so a
+ * `# note` comment inside it is not a heading. Treating one as the document H1
+ * put `--stamp`'s marker and its surrounding blank lines INSIDE the `---`
+ * delimiters: the front matter is corrupted and the real H1 left unstamped.
+ *
+ * An UNTERMINATED opener is not front matter -- GitHub renders a lone `---` as
+ * a thematic break -- so this returns nothing rather than masking the whole
+ * document, which would hide every finding below it. Parity with the Python
+ * twin (stocks#1121).
+ */
+export function frontMatterLines(lines) {
+  if (!lines.length || lines[0].trim() !== '---') return new Set();
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === '---' || lines[i].trim() === '...') {
+      return new Set(Array.from({ length: i + 1 }, (_, k) => k));
+    }
+  }
+  return new Set();
 }
 
 export function fencedLines(lines) {
@@ -2135,8 +2173,10 @@ export function h1Index(lines) {
   // the marker window, an existing marker was reported missing, and --stamp
   // wrote a live marker INSIDE the `<pre>` -- invisible to readers and
   // corrupting the example. Same failure as the fenced case it sits beside.
+  // Front matter too: a `# note` comment inside it is metadata, not a heading,
+  // and taking it as the H1 made --stamp write inside the `---` delimiters.
   const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
-    ...rawHtmlBlockLines(lines)]);
+    ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
   // SPANS too, not only whole lines. A comment that closes partway through a
   // heading-shaped line -- `<!--` then `# Fake --> visible` -- leaves the line
   // with a visible suffix, so commentedLines does not exclude it while H1_RE
@@ -2864,7 +2904,11 @@ export function headingAnchors(text) {
   // to it PASSED. markerWindow already excludes indented code. Parity with
   // the Python twin (stocks#1121).
   const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
-    ...rawHtmlBlockLines(lines), ...indentedCodeLines(lines)]);
+    ...rawHtmlBlockLines(lines), ...indentedCodeLines(lines),
+    // And YAML front matter, which GitHub renders as a metadata table rather
+    // than as Markdown -- a `# note` inside it exposes no anchor, and
+    // recording one let a link to it pass.
+    ...frontMatterLines(lines)]);
   // A comment INSIDE a rendered heading is not part of its text. The blanket
   // tag strip used to remove it as a side effect; now that only real tags are
   // stripped, the comment has to be masked explicitly or `## <!-- note --> Real`
@@ -4056,6 +4100,17 @@ export function main(argv) {
   // Exit 2, matching the audited-document reads. A registry that exists but
   // cannot be read is an audit that could not run, not a documentation
   // finding, and a bare throw here exited 1 with a stack trace.
+  // The registry is a tracked document and gets the same refusal they do. This
+  // read happens BEFORE the per-document loop, so the guard there is not
+  // reached late but not at all: a symlinked DOC_REGISTRY.md supplied
+  // machine-local classification and ownership rules for the whole run, and one
+  // pointing at a non-terminating special file hangs here. Parity with the
+  // Python twin (stocks#1121).
+  if (fs.lstatSync(regPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    throw new AuditError(`${REGISTRY} is a tracked symlink, so reading it would `
+      + 'audit its target rather than a document in this repository; the result '
+      + 'would not reproduce in another clone');
+  }
   let registryText;
   try {
     registryText = fs.readFileSync(regPath, 'utf8');

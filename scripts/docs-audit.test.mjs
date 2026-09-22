@@ -67,6 +67,7 @@ import {
   isEscaped,
   codeSpanLines,
   paragraphBlocks,
+  frontMatterLines,
   commentedPrefixLines,
   isMarkdownPath,
   documentSet,
@@ -5421,5 +5422,40 @@ describe('a link to a tracked symlink', () => {
       fs.rmSync(link, { force: true });
       fs.rmSync(real, { force: true });
     }
+  });
+});
+
+describe('YAML front matter', () => {
+  it('is not where the H1 lives', () => {
+    // GitHub renders front matter as a metadata table, not as Markdown, so a
+    // `# note` comment inside it is not a heading. Treating one as the H1 put
+    // --stamp's marker and its blank lines INSIDE the `---` delimiters,
+    // corrupting the front matter and leaving the real H1 unstamped.
+    const lines = ['---', 'title: x', '# note', '---', '', '# Real title', ''];
+    expect([...frontMatterLines(lines)]).toEqual([0, 1, 2, 3]);
+    expect(h1Index(lines)).toBe(5);
+    expect([...headingAnchors(lines.join('\n'))]).toEqual(['real-title']);
+    // An UNTERMINATED opener is a thematic break, not front matter: masking
+    // the whole document would hide every finding below it.
+    expect([...frontMatterLines(['---', 'a', 'b'])]).toEqual([]);
+  });
+});
+
+describe('a marker recording no review', () => {
+  it('cannot also carry a depth or a baseline', () => {
+    // `Last reviewed: unknown` says no review happened; a Depth or an Against
+    // beside it claims one at a named baseline. Every field parses, so nothing
+    // reported it and the run emitted only the non-gating P3 -- so it passed
+    // --check while a drift calculation ran off provenance stamp never writes.
+    const line = '**Last reviewed:** unknown · **Depth:** verified · '
+      + '**Against:** `abc1234` · **Last scanned:** 2026-09-18 · **Owner:** TBD';
+    const prev = findMarker(['# T', '', line]);
+    const out = checkMarkerDates('d.md', prev, '2026-09-22', line);
+    expect(out.map((f) => f.severity)).toEqual(['P2']);
+    expect(out[0].detail).toMatch(/did not happen/);
+    // A real review date carrying the same fields is fine.
+    const ok = line.replace('unknown', '2026-08-31');
+    expect(checkMarkerDates('d.md', findMarker(['# T', '', ok]), '2026-09-22', ok))
+      .toEqual([]);
   });
 });
