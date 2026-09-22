@@ -489,7 +489,21 @@ export function loadRegistry(text) {
     const cls = cell(cells[0]).toUpperCase();
     if (!['A', 'B', 'C', 'D', 'X'].includes(cls)) continue;
     const glob = cell(cells[1]);
-    if (!glob || (glob.includes(' ') && !glob.endsWith('.md'))) continue;
+    if (!glob) continue;
+    // A space is valid in a git path, so the EXTENSION decides nothing. The
+    // old rule kept a spaced glob only when it ended `.md`, which silently
+    // dropped every other real path carrying one: a Class A
+    // `Frontend diagram.drawio` fell through to a broader rule and lost its
+    // code paths and region ownership with no finding anywhere -- and
+    // documentSet adds a non-Markdown artefact ONLY through an exact registry
+    // row, so dropping the row drops the artefact from the audit entirely.
+    // What the row must still look like is a PATH, which is what this tests.
+    // Ported from the Python twin (stocks#1121).
+    if (glob.includes(' ') && !(glob.includes('/') || glob.includes('.'))) {
+      throw new AuditError(`${REGISTRY}: a class ${cls} row declares \`${glob}\`, which `
+        + 'carries a space but has neither a directory nor an extension, so it cannot '
+        + 'be a path glob; the registry table takes paths, not prose');
+    }
     const codePaths =
       cells.length > 2 && !['', '—', '-'].includes(cell(cells[2]))
         ? cells[2].split(',').map(cell).filter(Boolean)
@@ -540,7 +554,17 @@ function globToRe(glob) {
     .replace(/\u0000/g, '(?:[^/]+/)*')
     .replace(/\u0001/g, '.*')
     .replace(/\u0002/g, () => held.shift());
-  return new RegExp(`^${escaped}$`);
+  try {
+    return new RegExp(`^${escaped}$`);
+  } catch (err) {
+    // A bracket range the engine rejects -- `docs/[z-a].md` -- threw a plain
+    // SyntaxError past the AuditError handler, so the CLI exited 1 with a
+    // stack trace. 1 is the status this tool documents for "the audit ran and
+    // found problems"; a registry it cannot compile is the documented exit 2,
+    // "the run itself failed". Automation could not tell the two apart.
+    throw new AuditError(`registry glob \`${glob}\` is not a valid pattern `
+      + `(${err.message}); the audit cannot classify documents against it`);
+  }
 }
 
 /**
@@ -1365,6 +1389,21 @@ const HTML_BLOCK_TAGS = new Set(('address article aside base basefont blockquote
 
 const HTML_BLOCK_OPEN_RE = /^ {0,3}<\/?([a-zA-Z][a-zA-Z0-9-]*)(?:[\s/>]|$)/;
 
+// Type 7: a line that is a COMPLETE open or closing tag and nothing else. The
+// tag name is unrestricted, which is the whole point -- a custom element like
+// `<x-widget>` is not in HTML_BLOCK_TAGS and so opened nothing, leaving a
+// `[x](missing.md)` inside it audited as live prose and reported as a gating
+// dead link over an example that renders literally. It ends at a blank line,
+// like type 6, and per CommonMark it cannot INTERRUPT a paragraph, which is
+// the condition that keeps it from swallowing ordinary prose.
+// A rendered anchor's destination. Double or single quoted; an unquoted href
+// is not accepted, because telling its end from the next attribute needs a
+// parser and guessing would invent destinations -- the failure this whole
+// check exists to avoid.
+const HTML_HREF_RE = /<a\s[^>]*?href\s*=\s*("([^"]*)"|'([^']*)')/gi;
+
+const HTML_TYPE7_RE = /^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*?)?\/?>\s*$/;
+
 export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
   const out = new Set();
   const fenced = fencedLines(lines);
@@ -1402,6 +1441,14 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false } = {}) {
         if (rawTextOnly) return;
         const b = HTML_BLOCK_OPEN_RE.exec(line);
         if (b && HTML_BLOCK_TAGS.has(b[1].toLowerCase())) {
+          open = '\u0000';
+          out.add(i);
+          return;
+        }
+        // Type 7, same sentinel: it also ends at a blank line. Only where a
+        // paragraph is not already open, so a bare tag on a continuation line
+        // is inline HTML rather than the start of a block.
+        if (HTML_TYPE7_RE.test(line) && (i === 0 || !(lines[i - 1] ?? '').trim())) {
           open = '\u0000';
           out.add(i);
         }
@@ -1601,6 +1648,14 @@ export function commentSpans(lines) {
   // code. An unmatched `<!--` in a fence therefore comments nothing, and a
   // comment that encloses a fence still covers it.
   const code = new Set([...fencedLines(lines), ...indentedCodeLines(lines), ...rawHtmlBlockLines(lines)]);
+  // Code spans that CROSS a line break, as well as the per-line ones below. A
+  // valid span opened on one line, carrying a literal `<!--` on the next and
+  // closing on a third, had that opener read as live: the scanner then masked
+  // everything through EOF and a real `[x](missing.md)` below it was silently
+  // dropped from the dead-link audit -- the hiding direction. codeSpanLines
+  // depends on nothing here, so this is not the recursion rawHtmlBlockLines
+  // has to avoid.
+  const wrappedCode = codeSpanLines(lines);
   const out = new Map();
   const add = (i, a, b) => {
     if (a >= b) return;
@@ -1613,7 +1668,7 @@ export function commentSpans(lines) {
     for (;;) {
       if (openAt === null) {
         if (code.has(i)) return;
-        const spans = codeSpans(line);
+        const spans = [...codeSpans(line), ...(wrappedCode.get(i) ?? [])];
         let a = line.indexOf('<!--', pos);
         while (a >= 0 && spans.some(([lo, hi]) => lo <= a && a < hi)) {
           a = line.indexOf('<!--', a + 1);
@@ -1933,6 +1988,20 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   if (prev && !prev.legacy && extraSegments(lines[prev.idx]).some(
     (seg) => OWNED_FIELDS.some((f) => seg.startsWith(`**${f}`)))) {
     return { text, action: 'skipped-malformed-marker' };
+  }
+
+  // A field that appears TWICE, both copies well formed, is the case the
+  // refusal above cannot see: extraSegments CONSUMES a parseable owned value
+  // and pushes only its tail, so a second `**Last scanned:** <date>` produced
+  // no extra segment at all. The ordinary audit reports the contradiction and
+  // --stamp then rewrote the line with one canonical value, silently deleting
+  // the other date -- destroying the only evidence of which provenance was
+  // right. Refusing leaves both on disk for a human to reconcile.
+  if (prev && !prev.legacy) {
+    const segs = lines[prev.idx].split(DOT).map((s) => s.trim()).filter(Boolean);
+    const dup = OWNED_FIELDS.find(
+      (f) => segs.filter((s) => s.startsWith(`**${f}`)).length > 1);
+    if (dup) return { text, action: 'skipped-duplicate-marker-field' };
   }
 
   const owner = ownerOf(prev ? lines[prev.idx] : null) ?? 'TBD';
@@ -2465,10 +2534,17 @@ export function headingAnchors(text) {
   // have. That is the invented-destination failure this whole scan exists to
   // avoid, reintroduced by the scan itself.
   const wrappedSpans = codeSpanLines(lines);
+  const commentRanges = commentSpans(lines);
   for (const [i, raw] of lines.entries()) {
     if (literal.has(i)) continue;
+    // Comment SPANS too. commentedLines is whole-line, so an anchor-shaped
+    // example sharing a line with prose -- `text <!-- <a id="fake"></a> -->`
+    // -- was never excluded and registered `fake` as a rendered destination,
+    // letting `[x](#fake)` pass against an anchor the document does not have.
+    // Same shape as the code-span case beside it, one hiding mechanism over.
     const visible = maskSpans(raw,
-      [...codeSpans(raw), ...(wrappedSpans.get(i) ?? [])]);
+      [...codeSpans(raw), ...(wrappedSpans.get(i) ?? []),
+        ...(commentRanges.get(i) ?? [])]);
     for (const mm of visible.matchAll(/<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
       const id = mm[2] ?? mm[3];
       if (id) out.add(id.toLowerCase());
@@ -2653,6 +2729,13 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   // is not rendered, so it is not a citation. Spans rather than whole lines,
   // matching checkClosedIssues, so a visible link beside a comment still counts.
   const commentedSpans = commentSpans(lines);
+  // `<a href="...">` is a link a reader can follow and click, so a broken one
+  // is the same defect as a broken `[x](y)` -- and only the Markdown syntax
+  // was scanned, so the audit reported clean over it. Raw-TEXT blocks are
+  // excluded because a tag inside `<pre>` is shown rather than rendered;
+  // comments and code spans are excluded per span, exactly as the Markdown
+  // pass below excludes them.
+  const rawTextLines = rawHtmlBlockLines(lines, { rawTextOnly: true });
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
     // Spans a backticked citation occupies purely as a Markdown link's LABEL.
@@ -2693,6 +2776,15 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // because it admits a space, and both name the same thing here.
       const [tgt, frag] = m[1] !== undefined ? [m[1], m[2]] : [m[3], m[4]];
       checkTarget(tgt, frag, i + 1);
+    }
+    if (!rawTextLines.has(i)) {
+      for (const m of line.matchAll(HTML_HREF_RE)) {
+        if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+        if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+        const [tgt, frag] = (m[2] ?? m[3] ?? '').split('#');
+        if (!tgt && !frag) continue;
+        checkTarget(tgt, frag, i + 1);
+      }
     }
     // A backticked path is this repo's to resolve only when nothing says
     // otherwise: its extension is one this tree tracks, and the citation is
@@ -3031,8 +3123,33 @@ export function checkClaims(claims, { exec = run } = {}) {
     }
     const re = claimPattern(pattern, 'g', 'claim pattern');
     const actual = derive(derivation, { exec });
+    // RENDERED prose only. A claim-shaped string inside a fenced or indented
+    // example, inline code, an HTML comment or a raw HTML block is not an
+    // assertion the document makes, and matching it was wrong in both
+    // directions at once: an example whose number happens to equal the
+    // derivation kept a Claims row passing after the real assertion had been
+    // deleted, and one whose number differs produced a gating count finding
+    // over text nobody asserts. Masked in place rather than removed, so the
+    // match offsets this loop reports still name the right place.
+    const claimLines = text.split('\n');
+    const literalLines = new Set([...fencedLines(claimLines),
+      ...indentedCodeLines(claimLines), ...rawHtmlBlockLines(claimLines)]);
+    const claimHidden = commentSpans(claimLines);
+    const visible = claimLines.map((l, i) => (literalLines.has(i)
+      ? maskSpans(l, [[0, l.length]])
+      : maskSpans(l, claimHidden.get(i) ?? []))).join('\n');
+    // INLINE CODE is not masked, and that is the one deliberate narrowing
+    // here. A code span RENDERS -- `37 files under \`src/\` reference X` is a
+    // real assertion that happens to spell a path as code, and this repo's own
+    // live Claims row is exactly that shape, so masking spans wholesale stopped
+    // two true claims from being checked at all. What is an example is a match
+    // that lies ENTIRELY inside one span (`\`3 living docs\``), and that is what
+    // is skipped. Document-wide ranges, so a span crossing a line break counts.
+    const claimSpans = codeSpans(text);
     let hits = 0;
-    for (const m of text.matchAll(re)) {
+    for (const m of visible.matchAll(re)) {
+      if (claimSpans.some(([lo, hi]) => lo <= m.index
+          && m.index + m[0].length <= hi)) continue;
       hits += 1;
       // A pattern that matches prose without group 1 made `Number(undefined)`
       // NaN, and the audit emitted a fabricated count-claim finding with exit

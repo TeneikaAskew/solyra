@@ -44,7 +44,6 @@ import {
   checkRegistryPaths,
   isTrackedDir,
   headingSlug,
-  globSpecificity,
   checkExitCode,
   headingAnchors,
   fetchIssueStates,
@@ -66,13 +65,10 @@ import {
   codeSpanLines,
   isMarkdownPath,
   documentSet,
-  classify,
   unescapeMarkdown,
-  hasBlockingCue,
   loadRegistry,
   decodeCharRefs,
   h1Index,
-  documentSet,
   extraSegments,
   legacyTailIsBare,
   markerWindow,
@@ -82,7 +78,6 @@ import {
   run,
   loadClaims,
   citationClause,
-  loadRegistry,
   ownedLines,
   maskSpans,
   regionOf,
@@ -4216,7 +4211,11 @@ describe('a raw HTML block that is not raw text', () => {
     // and an inline-only tag is not a block.
     expect([...rawHtmlBlockLines(['# T', '', 'Use <div> in prose.', '', '[x](m.md)'])])
       .toEqual([]);
-    expect([...rawHtmlBlockLines(['<widget>', '[x](m.md)'])]).toEqual([]);
+    // An unknown tag on a line of its OWN is a CommonMark type-7 block and
+    // does open one -- this assertion said otherwise and was wrong against the
+    // spec, which is the defect Codex reported on `bd0126a`. Prose merely
+    // MENTIONING a tag still opens nothing, which is the assertion above.
+    expect([...rawHtmlBlockLines(['<widget>', '[x](m.md)'])]).toEqual([0, 1]);
     expect([...rawHtmlBlockLines(['# T', '', '<span>x</span>', '', '[y](n.md)'])])
       .toEqual([]);
   });
@@ -4535,5 +4534,188 @@ describe('an H1 hidden in a partial comment', () => {
     // dangerous in both directions.
     expect(h1Index(['# Real', '', 'body'])).toBe(0);
     expect(h1Index(['```', '# Fake', '```', '', '# Real'])).toBe(4);
+  });
+});
+
+
+// ── round 34 (bd0126a) ──────────────────────────────────────────────────────
+
+describe('this test module', () => {
+  it('has no duplicate named imports', () => {
+    // It had five -- `globSpecificity`, `classify`, `hasBlockingCue`,
+    // `documentSet`, `loadRegistry` -- which makes the file invalid ESM.
+    // `npm test` did not notice: Vitest transforms through esbuild, which
+    // dedupes them, so it ran 878 tests green while `node --input-type=module`
+    // refused the file outright. A test suite that only loads under one
+    // loader is a trap for the next person who reaches for another.
+    const src = fs.readFileSync(
+      path.join(process.cwd(), 'scripts/docs-audit.test.mjs'), 'utf8');
+    const block = /^import \{$([\s\S]*?)^\} from/m.exec(src);
+    const names = block[1].split('\n').map((l) => l.trim().replace(/,$/, ''))
+      .filter(Boolean);
+    expect(names.length).toBe(new Set(names).size);
+  });
+});
+
+describe('a CommonMark type-7 HTML block', () => {
+  it('masks its contents', () => {
+    // A complete custom tag on a line of its own opens a block that runs to
+    // the next blank line. `x-widget` is not in HTML_BLOCK_TAGS, so nothing
+    // was masked and the example inside it was emitted as a gating dead link.
+    expect([...rawHtmlBlockLines(
+      ['# T', '', '<x-widget>', '[x](missing.md)', '</x-widget>', ''])])
+      .toEqual([2, 3, 4]);
+    // It cannot INTERRUPT a paragraph, which is what keeps it off ordinary
+    // prose -- the direction that would hide real findings.
+    expect([...rawHtmlBlockLines(
+      ['# T', '', 'some paragraph', '<x-widget>', '[x](missing.md)', ''])])
+      .toEqual([]);
+    expect([...rawHtmlBlockLines(['# T', '', 'ordinary prose', ''])]).toEqual([]);
+  });
+});
+
+describe('a comment opener inside a code span that crosses lines', () => {
+  it('opens no comment', () => {
+    // The comment scanner masked only same-line code spans, so a literal
+    // `<!--` on the middle line of a valid wrapped span read as live: it then
+    // masked everything through EOF and a real link below was silently
+    // dropped from the dead-link audit.
+    expect([...commentSpans(
+      ['# T', '', '`opening', 'x <!--', 'closing`', '', '[x](missing.md)', ''])])
+      .toEqual([]);
+    // A real inline comment is still a comment.
+    expect([...commentSpans(['# T', '', 'text <!-- hidden -->', ''])])
+      .toEqual([[2, [[5, 20]]]]);
+  });
+});
+
+describe('an HTML anchor inside a partial comment', () => {
+  it('is not a rendered destination', () => {
+    // commentedLines is whole-line, so an anchor sharing a line with prose was
+    // never excluded and `fake` registered as real -- letting `[x](#fake)`
+    // pass against an anchor the document does not have.
+    expect([...headingAnchors('# T\n\nprose <!-- <a id="fake"></a> -->\n')])
+      .toEqual(['t']);
+    expect([...headingAnchors('# T\n\n<a name="legacy"></a>\n')])
+      .toEqual(['t', 'legacy']);
+  });
+});
+
+describe('a rendered HTML link', () => {
+  it('has its destination validated like a Markdown one', () => {
+    const ctx = linkContext(new Set(['docs/a.md', 'd.md']), new Set(), []);
+    const run = (t) => checkDeadLinks('d.md', t, ctx, { backtickedPaths: false });
+    expect(run('see <a href="missing.md">guide</a>\n').map((f) => f.check))
+      .toEqual(['dead-link']);
+    expect(run('see <a href="docs/a.md">g</a>\n')).toEqual([]);
+    // The same three exclusions the Markdown pass makes: a comment, a code
+    // span, and a raw-text block are all shown rather than rendered.
+    expect(run('<!-- <a href="missing.md">g</a> -->\n')).toEqual([]);
+    expect(run('ex `<a href="missing.md">g</a>`\n')).toEqual([]);
+    expect(run('<pre>\n<a href="missing.md">g</a>\n</pre>\n')).toEqual([]);
+  });
+});
+
+describe('a marker carrying one owned field twice', () => {
+  it('is refused rather than silently collapsed', () => {
+    // extraSegments CONSUMES a parseable owned value and pushes only its tail,
+    // so a second well-formed `Last scanned` produced no extra segment and the
+    // malformed-field refusal could not see it. --stamp then wrote one
+    // canonical value over both, destroying the evidence of which was right.
+    const dup = '**Last reviewed:** 2026-01-01 · **Depth:** scanned '
+      + '· **Last scanned:** 2026-01-01 · **Last scanned:** 2026-09-01 '
+      + '· **Owner:** TBD';
+    expect(extraSegments(dup)).toEqual([]);
+    const r = stamp(`# T\n\n${dup}\n\nbody\n`, '2026-09-22', 'scanned', 'abc1234',
+      { reviewed: false });
+    expect(r.action).toBe('skipped-duplicate-marker-field');
+    expect(r.text).toContain('2026-09-01');
+    // A marker with each field once still stamps -- the fix is not "never
+    // stamp a document that already has one".
+    const ok = '**Last reviewed:** 2026-01-01 · **Depth:** scanned '
+      + '· **Last scanned:** 2026-01-01 · **Owner:** TBD';
+    expect(stamp(`# T\n\n${ok}\n\nbody\n`, '2026-09-22', 'scanned', 'abc1234',
+      { reviewed: false }).action).toBe('updated');
+  });
+});
+
+describe('a registry glob the regex engine rejects', () => {
+  it('is bad input, not a crash', () => {
+    // `new RegExp` threw a plain SyntaxError past the AuditError handler, so
+    // the CLI exited 1 with a stack trace -- the status it documents for "the
+    // audit ran and found problems" rather than the exit 2 for "the run
+    // itself failed".
+    expect(() => classify('docs/a.md',
+      [{ cls: 'D', glob: 'docs/[z-a].md', codePaths: [], regions: [] }]))
+      .toThrow(AuditError);
+    // An ordinary bracket expression still compiles and still matches.
+    expect(classify('docs/a.md',
+      [{ cls: 'D', glob: 'docs/[a-z].md', codePaths: [], regions: [] }]).cls)
+      .toBe('D');
+  });
+});
+
+describe('a registered artefact whose path carries a space', () => {
+  it('stays in the registry', () => {
+    // A space is valid in a git path, so the extension decides nothing. The
+    // old rule kept a spaced glob only when it ended `.md`, and documentSet
+    // adds a non-Markdown artefact ONLY through an exact registry row -- so
+    // dropping the row dropped the artefact from the audit entirely, with no
+    // finding anywhere saying so.
+    const RG = '## Registry\n\n| Class | Path glob | Declared code paths |\n'
+      + '|---|---|---|\n';
+    const rows = loadRegistry(`${RG}| A | Frontend diagram.drawio | src |\n`);
+    expect(rows.map((r) => r.glob)).toEqual(['Frontend diagram.drawio']);
+    expect(documentSet(new Set(['README.md', 'Frontend diagram.drawio']), rows))
+      .toContain('Frontend diagram.drawio');
+    // What the row must still look like is a PATH. Prose in the glob column is
+    // the case the old rule was reaching for, and it is now said out loud.
+    expect(() => loadRegistry(`${RG}| A | some prose row | src |\n`))
+      .toThrow(AuditError);
+  });
+});
+
+describe('a claim-shaped string that is only an example', () => {
+  it('is not read as an assertion', () => {
+    const doc = 'tmp-claim-fixture.md';
+    const claim = [{ doc, pattern: '(\\d+) living docs',
+      derivation: 'grep-files src fetch\\(' }];
+    const exec = () => 'a\nb\nc\nd\ne\nf\ng\n';   // seven
+    const run = (body) => {
+      fs.writeFileSync(path.join(process.cwd(), doc), body);
+      try { return checkClaims(claim, { exec }); }
+      finally { fs.unlinkSync(path.join(process.cwd(), doc)); }
+    };
+    // Matching the derivation, the example kept the row passing after the real
+    // assertion had been deleted. It now reports the row inert.
+    //
+    // An INDENTED example and a COMMENT come first deliberately. A fenced one
+    // proves nothing about the mask: three backticks are a backtick run, so
+    // codeSpans sees the whole fence as one span and the whole-span rule below
+    // skips it either way -- a version of this test built only on fenced and
+    // inline examples passed with the masking reverted. These two carry no
+    // backticks, so only the mask can exclude them.
+    expect(run('# C\n\n    7 living docs\n')[0].detail).toMatch(/matched nothing/);
+    expect(run('# C\n\n<!-- 7 living docs -->\n')[0].detail).toMatch(/matched nothing/);
+    expect(run('# C\n\n```\n7 living docs\n```\n')[0].detail)
+      .toMatch(/matched nothing/);
+    // A whole match inside ONE inline span is an example too -- that is the
+    // code-span rule rather than the mask, and it is narrow on purpose: see
+    // the assertion below for the claim shape it must NOT break.
+    expect(run('# C\n\nExample: `3 living docs`\n')[0].detail)
+      .toMatch(/matched nothing/);
+    // A real assertion is still checked, in both outcomes.
+    expect(run('# C\n\nThere are 3 living docs.\n')[0].detail)
+      .toMatch(/claims 3, .* gives 7/);
+    expect(run('# C\n\nThere are 7 living docs.\n')).toEqual([]);
+    // And an assertion that SPELLS part of itself as inline code is still a
+    // real assertion. This repo's own live Claims row is exactly this shape,
+    // and masking code spans wholesale stopped it being checked at all.
+    const inline = [{ doc, pattern: '(\\d+) files under `src/`',
+      derivation: 'grep-files src fetch\\(' }];
+    fs.writeFileSync(path.join(process.cwd(), doc), '# C\n\n7 files under `src/` do.\n');
+    try {
+      expect(checkClaims(inline, { exec })).toEqual([]);
+    } finally { fs.unlinkSync(path.join(process.cwd(), doc)); }
   });
 });
