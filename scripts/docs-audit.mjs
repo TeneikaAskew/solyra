@@ -3370,6 +3370,14 @@ export function linkTitleSpans(lines, { titleOnly = true } = {}) {
 export function checkClosedIssues(doc, text, states) {
   const out = [];
   const lines = text.split('\n');
+  // Reference-style citations: `Blocked by [#1][issue]` with `[issue]:` and
+  // the URL further down. That renders as a clickable issue link, and neither
+  // half alone carries both pieces -- the cue line has no URL and the
+  // definition line has no cue -- so a closed issue cited the standard
+  // CommonMark way passed the audit clean. The SAME builder the dead-link
+  // scan uses, rather than a second copy of the definition rules. Codex filed
+  // it twice (solyra#69).
+  const refDefs = referenceDefinitions(lines);
   // --check gates on these findings, so a document DEMONSTRATING what a
   // blocking citation looks like failed the audit over its own example. The
   // link, heading and marker checks already skip fenced lines.
@@ -3574,6 +3582,41 @@ export function checkClosedIssues(doc, text, states) {
           detail: `${label} could not be resolved` });
       } else if (st.state === 'closed') {
         const reason = st.reason || 'completed';
+        out.push({ check: 'closed-issue', doc, line: i + 1,
+          severity: reason === 'not_planned' ? 'P2' : 'P1',
+          detail: `${label} is CLOSED (${reason}) but cited as live work`,
+          ref: `${repo}#${num}`, reason });
+      }
+    }
+    for (const u of referenceUses(scan.text)) {
+      const def = refDefs.get(refKey(u.label));
+      if (!def) continue;
+      // The destination as a READER resolves it: angle brackets off, escapes
+      // and character references decoded, the same order every other
+      // destination here is read in.
+      const dest = decodeCharRefs(unescapeMarkdown(
+        String(def.target).replace(/^<([\s\S]*)>$/, '$1')));
+      const hit = [...dest.matchAll(ISSUE_URL_RE)][0];
+      if (!hit) continue;
+      const at = srcAt(u.at);
+      const end = srcAt(u.end);
+      if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      const repo = normaliseRepo(hit[1]);
+      const num = Number(hit[3]);
+      // One citation, however many spellings of it share the clause -- the
+      // same dedup the qualified shorthand uses, for the same reason.
+      const [cLo, cHi] = clauseBounds(cueText, at, end);
+      if (urlHere.some((v) => v.repo === repo && v.num === num
+        && cLo <= v.at && v.at < cHi)) continue;
+      if (!citesLiveWork(cueText, at, end, { context })) continue;
+      const isPr = hit[2].toLowerCase() === 'pull';
+      const st = states[repo]?.[num];
+      const label = `${repo}#${num}${isPr ? ' (PR)' : ''}`;
+      if (!st) {
+        out.push({ check: 'closed-issue', doc, line: i + 1, severity: 'P2',
+          detail: `${label} could not be resolved` });
+      } else if (st.state === 'closed') {
+        const reason = st.reason || (isPr ? 'closed' : 'completed');
         out.push({ check: 'closed-issue', doc, line: i + 1,
           severity: reason === 'not_planned' ? 'P2' : 'P1',
           detail: `${label} is CLOSED (${reason}) but cited as live work`,
@@ -4335,62 +4378,67 @@ export function isTrackedDir(tracked, norm) {
 // link for a target no reader can reach.
 const REF_DEF_TAIL_RE = /^[ \t]*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\((?:\\.|[^)\\])*\))?[ \t]*$/;
 
-export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) {
-  const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
-  const out = [];
-  const base = path.posix.dirname(doc);
-  const anchorCache = new Map();
-  const anchorsOf = (p) => {
-    if (!anchorCache.has(p)) {
-      // The LINKED document gets the same refusal the audited one does. The
-      // preflight guards the doc being scanned, not the ones it cites, so a
-      // link to a tracked symlink read the target's machine-local bytes to
-      // collect its headings -- and one pointing at a non-terminating special
-      // file hangs or exhausts memory here, which the catch below cannot
-      // catch. Parity with the Python twin (stocks#1121).
-      const pLink = symlinkedComponent(p);
-      if (pLink !== null) {
-        throw new AuditError(`${symlinkNote(p, pLink)} is a tracked symlink, so `
-          + 'reading it would audit its target rather than a document in this '
-          + 'repository; the result would not reproduce in another clone');
-      }
-      try {
-        anchorCache.set(p, headingAnchors(fs.readFileSync(path.join(REPO, p), 'utf8')));
-      } catch (err) {
-        // A TRACKED Markdown file that cannot be read is not a document with
-        // no headings. Storing null made the anchor check skip silently, so a
-        // link to a fragment that does not exist passed clean over a target
-        // the audit never actually inspected.
-        if (tracked.has(p)) {
-          throw new AuditError(`${doc} links into ${p}, which is tracked but could not be `
-            + `read (${err.message}); its anchors were never checked`);
-        }
-        anchorCache.set(p, null);
-      }
+/**
+ * Reference-style link USES in one line: `[text][label]`, `[label][]`, `[label]`.
+ *
+ * Yielded with the offsets of the whole use, because that is where a reader
+ * sees the citation and what every gate around it indexes.
+ *
+ * The dead-link scan deliberately does NOT check uses -- measured on the
+ * stocks twin, 204 bracket pairs against 1 definition, nearly all of them
+ * issue-title tags like `[P0][Replay]`, and checking them produced 79
+ * fabricated findings. That reasoning does not carry here: a use is acted on
+ * ONLY when its label resolves to a definition whose destination is an issue
+ * URL, and a title tag resolves to nothing.
+ */
+export function* referenceUses(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== '[' || isEscaped(text, i)) continue;
+    const close = labelClose(text, i);
+    if (close === -1) continue;
+    const after = text[close + 1];
+    // An INLINE link is not a reference use: without this, `[issue](x.md)`
+    // reads as a shortcut use of `issue` and invents a citation the document
+    // does not make. That half is asserted.
+    //
+    // The `:` half is NOT, and saying so is the honest version: a definition
+    // is not a use of itself, but every input that reaches this branch
+    // (`[g]: <url> "still open"`, the only definition shape carrying a cue)
+    // is already collapsed to one finding by the clause dedup below, so no
+    // test can pin it -- measured, identical output with the branch removed.
+    // Kept because reading a definition as a use is wrong about the grammar
+    // rather than merely redundant, and the dedup that currently hides it is
+    // not the thing guaranteeing it.
+    if (after === '(' || after === ':') { i = close; continue; }
+    let label = text.slice(i + 1, close);
+    let end = close + 1;
+    if (after === '[') {
+      const close2 = labelClose(text, close + 1);
+      if (close2 === -1) { i = close; continue; }
+      const second = text.slice(close + 2, close2);
+      // FULL form takes the second label; COLLAPSED (`[label][]`) keeps the
+      // first, which is what CommonMark resolves it by.
+      if (second.trim()) label = second;
+      end = close2 + 1;
     }
-    return anchorCache.get(p);
-  };
-  const lines = text.split('\n');
-  // A fenced block is an EXAMPLE, not a citation. A document demonstrating
-  // Markdown syntax with `[x](missing.md)`, or showing a path that has since
-  // moved, was read as rendered documentation and failed --check over its own
-  // teaching material. The marker and heading checks already skip these lines.
-  // And YAML FRONT MATTER, which GitHub renders as a metadata table rather
-  // than as body text: `title: "[guide](missing.md)"` is not a link a reader
-  // can click, so the destination produced a gating finding over nothing. The
-  // heading and marker scans already exclude these lines. Parity with the
-  // Python twin (stocks#1121).
-  const fenceOnly = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
-  const fenced = new Set([...fenceOnly,
-    ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
-  // Markdown is not PARSED inside a type-6 or type-7 HTML block, but the HTML
-  // is rendered: `<div>` then `<a href="missing.md">` is a link a reader
-  // clicks. Excluding every raw-block line skipped the href pass along with
-  // the Markdown one, so those links were never checked at all. Only a
-  // RAW-TEXT block (`<pre>`, `<script>`, ...) makes its tags literal, and
-  // rawTextLines below already identifies exactly those.
-  const htmlBlock = rawHtmlBlockLines(lines);
+    yield { at: i, end, label };
+    i = end - 1;
+  }
+}
 
+/**
+ * Every reference definition in the document, keyed by its normalised label.
+ *
+ * ONE implementation, because two consumers now ask the same question and a
+ * second copy is how the two would drift: the dead-link scan validates a
+ * definition's destination, and the blocker scan resolves a reference USE to
+ * see whether it cites an issue. A definition is registered only where
+ * CommonMark registers one, and every exclusion below is a case where it does
+ * not.
+ */
+export function referenceDefinitions(lines) {
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
   // Reference-style Markdown: `[guide][g]` with `[g]: docs/guide.md` further
   // down. Neither shape is an inline link, so a broken reference link -- the
   // form the CommonMark spec calls standard and readers see as an ordinary
@@ -4511,6 +4559,66 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       refDefs.set(label, { target: dest, line: destLine + 1 });
     }
   });
+  return refDefs;
+}
+
+export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) {
+  const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
+  const out = [];
+  const base = path.posix.dirname(doc);
+  const anchorCache = new Map();
+  const anchorsOf = (p) => {
+    if (!anchorCache.has(p)) {
+      // The LINKED document gets the same refusal the audited one does. The
+      // preflight guards the doc being scanned, not the ones it cites, so a
+      // link to a tracked symlink read the target's machine-local bytes to
+      // collect its headings -- and one pointing at a non-terminating special
+      // file hangs or exhausts memory here, which the catch below cannot
+      // catch. Parity with the Python twin (stocks#1121).
+      const pLink = symlinkedComponent(p);
+      if (pLink !== null) {
+        throw new AuditError(`${symlinkNote(p, pLink)} is a tracked symlink, so `
+          + 'reading it would audit its target rather than a document in this '
+          + 'repository; the result would not reproduce in another clone');
+      }
+      try {
+        anchorCache.set(p, headingAnchors(fs.readFileSync(path.join(REPO, p), 'utf8')));
+      } catch (err) {
+        // A TRACKED Markdown file that cannot be read is not a document with
+        // no headings. Storing null made the anchor check skip silently, so a
+        // link to a fragment that does not exist passed clean over a target
+        // the audit never actually inspected.
+        if (tracked.has(p)) {
+          throw new AuditError(`${doc} links into ${p}, which is tracked but could not be `
+            + `read (${err.message}); its anchors were never checked`);
+        }
+        anchorCache.set(p, null);
+      }
+    }
+    return anchorCache.get(p);
+  };
+  const lines = text.split('\n');
+  // A fenced block is an EXAMPLE, not a citation. A document demonstrating
+  // Markdown syntax with `[x](missing.md)`, or showing a path that has since
+  // moved, was read as rendered documentation and failed --check over its own
+  // teaching material. The marker and heading checks already skip these lines.
+  // And YAML FRONT MATTER, which GitHub renders as a metadata table rather
+  // than as body text: `title: "[guide](missing.md)"` is not a link a reader
+  // can click, so the destination produced a gating finding over nothing. The
+  // heading and marker scans already exclude these lines. Parity with the
+  // Python twin (stocks#1121).
+  const fenceOnly = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
+  const fenced = new Set([...fenceOnly,
+    ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
+  // Markdown is not PARSED inside a type-6 or type-7 HTML block, but the HTML
+  // is rendered: `<div>` then `<a href="missing.md">` is a link a reader
+  // clicks. Excluding every raw-block line skipped the href pass along with
+  // the Markdown one, so those links were never checked at all. Only a
+  // RAW-TEXT block (`<pre>`, `<script>`, ...) makes its tags literal, and
+  // rawTextLines below already identifies exactly those.
+  const htmlBlock = rawHtmlBlockLines(lines);
+
+  const refDefs = referenceDefinitions(lines);
 
   // One destination, validated exactly as an inline link's is: same tracked
   // paths, same anchors. A different spelling must not buy a laxer check.

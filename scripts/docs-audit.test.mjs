@@ -4834,6 +4834,63 @@ describe('a blocking cue and its citation on separate lines', () => {
   });
 });
 
+describe('a reference-style blocker citation', () => {
+  const st = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+  const U = 'https://github.com/TeneikaAskew/solyra/issues/1';
+  const D = `\n\n[issue]: ${U}\n`;
+  const refs = (doc) => checkClosedIssues('d.md', doc, st).map((f) => f.ref);
+
+  it('is resolved through its definition', () => {
+    // `Blocked by [#1][issue]` renders as a clickable issue link, and NEITHER
+    // half carries both pieces: the cue line has no URL and the definition
+    // line has no cue. So a closed issue cited the standard CommonMark way
+    // passed the audit clean -- the hiding direction. Codex filed it twice.
+    expect(refs(`Blocked by [#1][issue].${D}`)).toEqual(['solyra#1']);
+    // All three use forms CommonMark defines.
+    expect(refs(`Still blocked by [issue].${D}`)).toEqual(['solyra#1']);
+    expect(refs(`Blocked by [issue][].${D}`)).toEqual(['solyra#1']);
+    // And the destination is read as a reader resolves it.
+    expect(refs(`Blocked by [#1][issue].\n\n[issue]: <${U}>\n`)).toEqual(['solyra#1']);
+  });
+
+  it('does not invent one from a label that resolves to nothing', () => {
+    // The dead-link scan deliberately does not check reference USES: measured
+    // on the stocks twin, 204 bracket pairs against 1 definition, nearly all
+    // of them issue-title tags like `[P0][Replay]`, and checking them
+    // produced 79 fabricated findings. That reasoning does not carry here
+    // only because a use is acted on ONLY when its label resolves to a
+    // definition whose destination is an issue URL.
+    expect(refs(`Blocked by [P0][Replay].${D}`)).toEqual([]);
+    expect(refs('Blocked by [#1][g].\n\n[g]: https://example.com/x\n')).toEqual([]);
+    // A definition inside a fence defines nothing, so the use resolves to
+    // nothing -- the same exclusions the dead-link scan applies, because it
+    // is now literally the same builder.
+    expect(refs(`Blocked by [#1][issue].\n\n\`\`\`\n[issue]: ${U}\n\`\`\`\n`)).toEqual([]);
+  });
+
+  it('carries the cue rules, and is ONE citation with its URL', () => {
+    expect(refs(`Landed in [#1][issue].${D}`)).toEqual([]);
+    expect(refs(`[#1][issue] is no longer blocking.${D}`)).toEqual([]);
+    expect(refs(`Blocked by <!-- [#1][issue] -->.${D}`)).toEqual([]);
+    expect(refs(`\`\`\`\nBlocked by [#1][issue].\n\`\`\`${D}`)).toEqual([]);
+    // The URL spelled out beside the reference is the same citation.
+    expect(refs(`Blocked by [#1][issue] ${U}.${D}`)).toEqual(['solyra#1']);
+    // An INLINE link is not a reference use, and must not be counted twice by
+    // the two passes. The second spelling is the one that TESTS that: a
+    // shortcut `[issue]` reading of `[issue](README.md)` resolves to the
+    // definition and invents a citation the document does not make, while
+    // `[#1](url)` has a label that resolves to nothing either way.
+    expect(refs(`Blocked by [#1](${U}).${D}`)).toEqual(['solyra#1']);
+    expect(refs(`Blocked by [issue](README.md).${D}`)).toEqual([]);
+    // The clause decides, not the line: a settled citation beside live work
+    // elsewhere on the line keeps its own verdict. `[#1][issue] is resolved.`
+    // ALONE would be stopped by the line-level precheck instead, so it tests
+    // nothing about this filter.
+    expect(refs(`Still blocked by other work. [#1][issue] is resolved.${D}`))
+      .toEqual([]);
+  });
+});
+
 describe('a repository-qualified shorthand citation', () => {
   const st = {
     solyra: { 8: { state: 'closed', reason: 'completed', kind: 'ISSUE' } },
