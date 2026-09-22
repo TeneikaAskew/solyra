@@ -74,8 +74,13 @@ const H1_RE = /^ {0,3}#\s+\S/;
 // a blocker produced a P1 against it once it closed -- a finding whose own
 // source line says the opposite. `\b` alone stops `nonblocking`; the negator
 // scan below stops the spaced and hyphenated forms.
+// `\s+` between the words, not a literal space. Emphasis is stripped by
+// blanking its delimiters in place -- offsets have to survive -- so
+// `still **open**` arrives as `still   open` and a single-space cue no
+// longer matched it: a closed issue that the prose plainly calls live
+// vanished from the audit entirely.
 const BLOCKING_CUE_RE =
-  /\b(?:blocking|blocked by|open issues?|still open|outstanding|in progress|not started|pending)\b/gi;
+  /\b(?:blocking|blocked\s+by|open\s+issues?|still\s+open|outstanding|in\s+progress|not\s+started|pending)\b/gi;
 // Text immediately before a cue that inverts it. `not started` is itself a
 // cue, so what precedes it is what is tested -- the leading `not` is never
 // read as negating the phrase it belongs to.
@@ -432,10 +437,23 @@ export function loadRegistry(text) {
   // claim is retired without losing it: it still registered as live, and a
   // heading-shaped line in the same comment could switch the section flag
   // off and skip every real row below it.
-  const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines)]);
+  // And an INDENTED example, which `trim()` on the next line turns straight
+  // back into an executable declaration: `    | D | fake.md | | |` produced a
+  // gating missing-path finding, and an indented heading in the same example
+  // could end the section and skip every real row below it.
+  const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines),
+    ...indentedCodeLines(allLines)]);
   for (const [i, raw] of allLines.entries()) {
     if (fenced.has(i)) continue;
     const line = raw.trim();
+    // A SETEXT heading ends the section too. Neither `Examples` nor its
+    // `--------` underline starts with `#`, so section mode stayed on and an
+    // illustrative table below it was executed as live configuration. The
+    // heading is the line ABOVE the underline, so the section ends there.
+    if (isSetextUnderline(allLines, i, fenced)) {
+      inRegistry = false;
+      continue;
+    }
     if (line.startsWith('#')) {
       // EXACTLY, not by prefix: a later `## Registry examples` section
       // re-entered registry mode and parsed its illustrative table as live
@@ -639,7 +657,16 @@ export function globSpecificity(glob) {
   // an ambiguity finding. Literals are counted with the `**` segments removed.
   const recursive = (glob.match(/\*\*/g) ?? []).length;
   const literals = glob.replace(/\*\*\//g, '').replace(/[*?[\]]/g, '').length;
-  return [wildcards === 0 ? 1 : 0, -recursive, literals, -wildcards];
+  // `?` matches EXACTLY one character, so it constrains the name where `*`
+  // does not: `docs/??.md` is strictly narrower than `docs/*.md`, yet counting
+  // wildcard TOKENS ranked the broader rule first because it has fewer of
+  // them. When the two rows disagree -- an `X` on `docs/*.md` beside a living
+  // `docs/??.md` -- the broad rule silently won and suppressed the checks.
+  // Fixed-width wildcards are counted with the literals they stand in for;
+  // only open-ended ones count as breadth.
+  const fixed = (glob.match(/[?[]/g) ?? []).length;
+  const stars = wildcards - fixed;
+  return [wildcards === 0 ? 1 : 0, -recursive, literals + fixed, -stars, -wildcards];
 }
 
 function cmpSpecificity(a, b) {
@@ -1234,15 +1261,45 @@ export function indentedCodeLines(lines) {
  * block runs to the end of the document, both as the spec says. A fence wins
  * where the two overlap, because inside a fence the tag is itself an example.
  */
-const RAW_TEXT_OPEN_RE = /<(pre|script|style|textarea)(?:[\s>]|$)/i;
+// ANCHORED, after at most three spaces of container indentation. CommonMark
+// starts an HTML block only on a line that BEGINS with the opener; unanchored,
+// any prose mentioning `<pre>` -- including ``Use `<pre>` for examples`` -- was
+// read as a block opener, and with no closing tag on that line the mask ran to
+// the end of the document and every real dead link and closed blocker below it
+// was silently skipped. That is the direction that hides findings, so it is
+// worse than the bug the mask was added to fix.
+const RAW_TEXT_OPEN_RE = /^ {0,3}<(pre|script|style|textarea)(?:[\s>/]|$)/i;
 
 export function rawHtmlBlockLines(lines) {
   const out = new Set();
   const fenced = fencedLines(lines);
+  // An INDENTED example of an opener is an example, not a block.
+  const indented = indentedCodeLines(lines);
+  // Comment state is tracked in THIS pass rather than read from
+  // `commentedLines`. It cannot be read from there: `commentSpans` already
+  // masks raw blocks, so calling it here is mutual recursion -- which is
+  // exactly what happened, and the stack overflow is the only reason it was
+  // not a silent wrong answer. An HTML comment is itself a raw-text block, so
+  // tracking it beside the others costs nothing.
+  let inComment = false;
   let open = null;
   lines.forEach((line, i) => {
     if (fenced.has(i)) return;
+    if (inComment) {
+      if (line.includes('-->')) inComment = false;
+      return;
+    }
     if (open === null) {
+      if (indented.has(i)) return;
+      // A comment OPENING on this line hides anything after it, including a
+      // `<pre>` on a later line of the same comment.
+      const c = line.indexOf('<!--');
+      if (c !== -1 && !line.slice(c).includes('-->')) {
+        inComment = true;
+        // The text before the opener is still live, so an opener there still
+        // starts a block.
+        if (!RAW_TEXT_OPEN_RE.test(line.slice(0, c))) return;
+      }
       const m = RAW_TEXT_OPEN_RE.exec(line);
       if (!m) return;
       open = m[1].toLowerCase();
@@ -1848,16 +1905,31 @@ export function checkClosedIssues(doc, text, states) {
     const visible = hidden.reduce(
       (acc, [lo, hi]) => acc.slice(0, lo) + '\u0000'.repeat(hi - lo) + acc.slice(hi), line);
     const isItem = /^\s*(?:[-*+]|\d+[.)])\s/.test(visible) || /^\s*\|/.test(visible);
+    // Emphasis is MARKUP: `is still **open**` renders as "is still open" and
+    // plainly cites live work, but the classifier saw the `**` between the
+    // words and found no cue at all -- so a closed issue vanished from the
+    // audit entirely, which is the direction that hides findings. Replaced
+    // with spaces rather than removed, because every offset below is an
+    // offset into this line.
+    const cueText = stripEmphasis(visible);
+    // The label terminator is tested against the text with the hidden tail
+    // REMOVED, not masked. `Blocked by: <!-- note -->` renders as a label
+    // ending in `:`, but the equal-length mask leaves NULs after the colon
+    // and the anchored `:\s*$` fails -- so the carried context was cleared
+    // and every closed issue in the list below went unreported. Offsets are
+    // preserved everywhere they are used; only this one anchored test reads
+    // the trimmed form.
+    const labelText = cueText.replace(/\u0000+\s*$/, '');
     // A blank line between the label and its list is the normal spelling, so
     // it must not clear the context; any other non-item line does.
     if (!isItem && visible.trim()) {
-      carried = hasBlockingCue(visible) && CUE_LABEL_RE.test(visible) ? visible : null;
+      carried = hasBlockingCue(cueText) && CUE_LABEL_RE.test(labelText) ? cueText : null;
     }
     const context = isItem ? carried : null;
-    if (!hasBlockingCue(visible) && context === null) return;
+    if (!hasBlockingCue(cueText) && context === null) return;
     for (const m of line.matchAll(ISSUE_URL_RE)) {
       if (hidden.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
-      if (!citesLiveWork(visible, m.index, m.index + m[0].length, { context })) continue;
+      if (!citesLiveWork(cueText, m.index, m.index + m[0].length, { context })) continue;
       const [, rawRepo, rawKind, num] = m;
       const repo = normaliseRepo(rawRepo);
       const kind = rawKind.toLowerCase();
@@ -1929,20 +2001,71 @@ export function crossRepoCitations(line) {
  * every one of them valid.
  */
 /**
- * The named character references that appear in headings in practice.
+ * The named character references, as HTML 4.01 defines them.
  *
- * Deliberately NOT the full HTML5 list of ~2,000 names. An unrecognised name
- * is left as literal text, which is both what CommonMark does for a genuinely
- * invalid name and the conservative direction here: leaving `&hearts;` alone
- * keeps today's behaviour for it, while decoding a name we got wrong would
- * invent an anchor. Numeric references need no table.
+ * A closed, complete list of 252: the whole Latin-1 block, the five XML
+ * names, and the symbol, arrow, maths and Greek sets. An 18-entry whitelist
+ * was not enough and was wrong in the same two directions the decoder exists
+ * to fix -- `Caf&eacute;` slugged `cafeacute`, so the reader's link to
+ * `#café` read as dead and a nonexistent source-spelling anchor was accepted.
+ *
+ * Not the full HTML5 list of ~2,231, which is mostly aliases and mathematical
+ * names that do not appear in a heading, and which is too large to carry
+ * correctly by hand. An unrecognised name stays literal -- what CommonMark
+ * does with a genuinely invalid one, and the safe direction, since decoding a
+ * name got wrong would invent an anchor. Numeric references need no table.
  */
-const NAMED_CHAR_REFS = new Map(Object.entries({
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0',
-  ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', middot: '\u00b7',
-  copy: '\u00a9', reg: '\u00ae', trade: '\u2122', deg: '\u00b0',
-  times: '\u00d7', rarr: '\u2192', larr: '\u2190', bull: '\u2022',
-}));
+// U+00A0..U+00FF in order, so the whole Latin-1 block is one list rather than
+// ninety-six hand-written pairs that could each be wrong.
+const LATIN1_NAMES = (
+  'nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr '
+  + 'deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 '
+  + 'frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute '
+  + 'Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml '
+  + 'times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc '
+  + 'atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml '
+  + 'eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml '
+  + 'yacute thorn yuml'
+).split(' ');
+
+const NAMED_CHAR_REFS = new Map([
+  ...LATIN1_NAMES.map((name, i) => [name, String.fromCodePoint(0xa0 + i)]),
+  ...Object.entries({
+    // The five XML names, which are not in the Latin-1 block.
+    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+    // Punctuation, symbols and Greek that occur in headings.
+    ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', lsquo: '\u2018',
+    rsquo: '\u2019', ldquo: '\u201c', rdquo: '\u201d', sbquo: '\u201a',
+    bdquo: '\u201e', dagger: '\u2020', Dagger: '\u2021', bull: '\u2022',
+    permil: '\u2030', prime: '\u2032', Prime: '\u2033', lsaquo: '\u2039',
+    rsaquo: '\u203a', oline: '\u203e', frasl: '\u2044', euro: '\u20ac',
+    trade: '\u2122', larr: '\u2190', uarr: '\u2191', rarr: '\u2192',
+    darr: '\u2193', harr: '\u2194', lArr: '\u21d0', uArr: '\u21d1',
+    rArr: '\u21d2', dArr: '\u21d3', hArr: '\u21d4', minus: '\u2212',
+    lowast: '\u2217', radic: '\u221a', infin: '\u221e', asymp: '\u2248',
+    ne: '\u2260', equiv: '\u2261', le: '\u2264', ge: '\u2265',
+    sum: '\u2211', prod: '\u220f', part: '\u2202', int: '\u222b',
+    forall: '\u2200', exist: '\u2203', empty: '\u2205', nabla: '\u2207',
+    isin: '\u2208', notin: '\u2209', cap: '\u2229', cup: '\u222a',
+    sub: '\u2282', sup: '\u2283', sube: '\u2286', supe: '\u2287',
+    and: '\u2227', or: '\u2228', there4: '\u2234', loz: '\u25ca',
+    OElig: '\u0152', oelig: '\u0153', Scaron: '\u0160', scaron: '\u0161',
+    Yuml: '\u0178', fnof: '\u0192', circ: '\u02c6', tilde: '\u02dc',
+    Alpha: '\u0391', Beta: '\u0392', Gamma: '\u0393', Delta: '\u0394',
+    Epsilon: '\u0395', Zeta: '\u0396', Eta: '\u0397', Theta: '\u0398',
+    Iota: '\u0399', Kappa: '\u039a', Lambda: '\u039b', Mu: '\u039c',
+    Nu: '\u039d', Xi: '\u039e', Omicron: '\u039f', Pi: '\u03a0',
+    Rho: '\u03a1', Sigma: '\u03a3', Tau: '\u03a4', Upsilon: '\u03a5',
+    Phi: '\u03a6', Chi: '\u03a7', Psi: '\u03a8', Omega: '\u03a9',
+    alpha: '\u03b1', beta: '\u03b2', gamma: '\u03b3', delta: '\u03b4',
+    epsilon: '\u03b5', zeta: '\u03b6', eta: '\u03b7', theta: '\u03b8',
+    iota: '\u03b9', kappa: '\u03ba', lambda: '\u03bb', mu: '\u03bc',
+    nu: '\u03bd', xi: '\u03be', omicron: '\u03bf', pi: '\u03c0',
+    rho: '\u03c1', sigmaf: '\u03c2', sigma: '\u03c3', tau: '\u03c4',
+    upsilon: '\u03c5', phi: '\u03c6', chi: '\u03c7', psi: '\u03c8',
+    omega: '\u03c9',
+  }),
+]);
 
 const CHAR_REF_RE = /&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z][a-zA-Z0-9]{1,31}));/g;
 
@@ -1991,6 +2114,18 @@ export function headingSlug(heading) {
   return s.replace(/[^\p{L}\p{N}_\s-]/gu, '').replace(/ /g, '-');
 }
 
+/**
+ * Emphasis delimiters blanked, every other offset left where it was.
+ *
+ * `*` in both spellings, and `_` only where CommonMark treats it as emphasis
+ * -- an intraword `_` is a literal character, and blanking it would break
+ * `API_FIELD` into two words for the cue scan.
+ */
+export function stripEmphasis(line) {
+  return line.replace(/\*+/g, (m) => ' '.repeat(m.length))
+    .replace(/(?<!\w)_+|_+(?!\w)/g, (m) => ' '.repeat(m.length));
+}
+
 /** Every anchor a document offers, duplicates numbered as GitHub numbers them. */
 export function headingAnchors(text) {
   const seen = new Map();
@@ -2003,18 +2138,31 @@ export function headingAnchors(text) {
   // dead-anchor check. Marker parsing already excludes fenced lines; this is
   // the same rule for the same reason.
   const lines = text.split('\n');
-  const fenced = new Set([...fencedLines(lines), ...commentedLines(lines)]);
-  for (const [i, line] of lines.entries()) {
+  // Raw-text HTML blocks too. `<pre>` renders `## Fake` literally and GitHub
+  // exposes no anchor for it, so recording one let a broken link to `#fake`
+  // pass the dead-anchor check -- the same invented-destination failure as
+  // the fenced case, which the link scans around this already mask.
+  const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
+    ...rawHtmlBlockLines(lines)]);
+  for (const [i, raw] of lines.entries()) {
     if (fenced.has(i)) continue;
+    // A heading may sit inside a container and still be a heading: `> ## Q`
+    // renders with the anchor `q`. Matching the raw line omitted it, so a
+    // valid local link produced a gating dead-anchor finding. The prefix is
+    // consumed for the heading test exactly as `fencedLines` and
+    // `indentedCodeLines` consume it for theirs.
+    const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
     // `## Install ##` renders as `Install`, and GitHub's anchor is `install`.
     // Passing `Install ##` to headingSlug recorded `install-`, so a valid link
     // to `#install` was reported dead.
     // Indented ATX, and setext (`Title` over `===` or `---`). A column-zero
     // ATX-only scan recorded no anchor for either, so a valid link to one was
     // emitted as a dead-anchor P2 and could fail --check.
-    const next = lines[i + 1];
+    // The underline is read through the same container prefix, or a quoted
+    // Setext heading would lose its underline and stop being one.
+    const next = (lines[i + 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
     const setext = line.trim() && !fenced.has(i + 1)
-      && /^ {0,3}(=+|-{2,})\s*$/.test(next ?? '') && !/^ {0,3}#/.test(line);
+      && /^ {0,3}(=+|-{2,})\s*$/.test(next) && !/^ {0,3}#/.test(line);
     const m = setext
       ? [null, line.trim()]
       : /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(line);
@@ -2031,6 +2179,18 @@ export function headingAnchors(text) {
     out.add(slug);
   }
   return out;
+}
+
+/**
+ * CommonMark backslash escapes removed, as rendering removes them.
+ *
+ * Only before ASCII punctuation, which is the whole set CommonMark allows an
+ * escape before. A backslash anywhere else is a literal character, and
+ * dropping it would turn one path into a different one -- inventing a
+ * destination rather than resolving the real one.
+ */
+export function unescapeMarkdown(text) {
+  return text.replace(/\\([!-/:-@[-`{-~])/g, '$1');
 }
 
 export function isTrackedDir(tracked, norm) {
@@ -2129,7 +2289,13 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
       // and the angle brackets are delimiters, not part of the path. A query
       // (`guide.md?plain=1`) is not part of it either -- the tracked-file
       // lookup searched for the literal filename including the `?`.
-      const raw = tgt.replace(/^<(.*)>$/, '$1').split('?')[0];
+      // And a backslash escape is MARKUP: Markdown removes it when the
+      // destination renders, so `[x](docs/foo\(bar\).md)` links to the
+      // tracked file `docs/foo(bar).md`. Keeping the backslashes reported
+      // that valid link as dead. Only the ASCII punctuation CommonMark
+      // allows an escape before -- a backslash anywhere else is a literal
+      // character and removing it would invent a different path.
+      const raw = unescapeMarkdown(tgt.replace(/^<(.*)>$/, '$1').split('?')[0]);
       // `100%-coverage.md` is a literal percent, and decodeURIComponent throws
       // a plain URIError on it -- a stack trace and exit 1, the status
       // reserved for documentation findings. An undecodable destination is
@@ -2392,10 +2558,23 @@ export function loadClaims(text) {
   // claim is retired without losing it: it still registered as live, and a
   // heading-shaped line in the same comment could switch the section flag
   // off and skip every real row below it.
-  const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines)]);
+  // And an INDENTED example, which `trim()` on the next line turns straight
+  // back into an executable declaration: `    | D | fake.md | | |` produced a
+  // gating missing-path finding, and an indented heading in the same example
+  // could end the section and skip every real row below it.
+  const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines),
+    ...indentedCodeLines(allLines)]);
   for (const [i, raw] of allLines.entries()) {
     if (fenced.has(i)) continue;
     const line = raw.trim();
+    // A SETEXT heading ends the section too. Neither `Examples` nor its
+    // `--------` underline starts with `#`, so section mode stayed on and an
+    // illustrative table below it was executed as live configuration. The
+    // heading is the line ABOVE the underline, so the section ends there.
+    if (isSetextUnderline(allLines, i, fenced)) {
+      inClaims = false;
+      continue;
+    }
     if (line.startsWith('#')) {
       // Exactly, for the reason given at the registry reader: `## Claims
       // methodology` is documentation about the mechanism, not claims.
@@ -2775,10 +2954,33 @@ export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
   const done = [];
   for (const w of writes) {
     try {
-      fsImpl.writeFileSync(path.join(repo, w.doc), w.text);
+      // Temp file in the SAME directory, then rename. `writeFileSync` opens
+      // with O_TRUNC, so a failure part-way through -- a full disk is the
+      // ordinary cause -- leaves the document truncated while the error
+      // reports only the previously completed entries and implies this one
+      // was untouched. A rename within a directory is atomic, so a failed
+      // stamp leaves the original intact and the error tells the truth.
+      const target = path.join(repo, w.doc);
+      const tmp = path.join(path.dirname(target), `.${path.basename(target)}.stamp-tmp`);
+      try {
+        fsImpl.writeFileSync(tmp, w.text);
+        fsImpl.renameSync(tmp, target);
+      } catch (err) {
+        // Best effort, and never masking the original error: the temp file is
+        // this function's litter, and failing to remove it is not the failure
+        // worth reporting.
+        try { fsImpl.unlinkSync(tmp); } catch { /* cleanup only */ }
+        throw err;
+      }
     } catch (err) {
+      // `${w.doc} is unchanged` is now true, and was not before: the write
+      // goes to a temp file and is renamed into place, so a failure leaves
+      // the original document byte-for-byte as it was. The earlier wording
+      // said only "the tree is partially stamped", which left a reader
+      // unable to tell whether the named document had been truncated.
       throw new AuditError(`--stamp failed writing ${w.doc}: ${err.message}. `
-        + `${done.length} of ${writes.length} documents were already stamped`
+        + `${w.doc} is unchanged; ${done.length} of ${writes.length} documents `
+        + 'were already stamped'
         + (done.length ? ` (${done.join(', ')})` : '')
         + '; the tree is partially stamped.');
     }

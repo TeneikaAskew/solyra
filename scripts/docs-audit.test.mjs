@@ -61,6 +61,10 @@ import {
   findMarkers,
   markerSection,
   rawHtmlBlockLines,
+  stripEmphasis,
+  unescapeMarkdown,
+  hasBlockingCue,
+  loadRegistry,
   decodeCharRefs,
   h1Index,
   documentSet,
@@ -565,15 +569,52 @@ describe('writeStamps', () => {
     // The pre-flight narrows the window but cannot close it: a full disk fails
     // mid-loop, and accessSync answers for the calling uid, which under root
     // calls a mode-444 file writable.
+    // The write goes to a temp file and is renamed into place, so the stub
+    // has to carry both calls; ENOSPC is raised on the temp write for b.md,
+    // which is where a full disk actually bites.
+    const renamed = [];
     const fsImpl = {
       constants: fs.constants,
       accessSync: () => {},
-      writeFileSync: (p) => { if (p.endsWith('b.md')) throw new Error('ENOSPC'); },
+      writeFileSync: (p) => { if (p.includes('b.md')) throw new Error('ENOSPC'); },
+      renameSync: (from, to) => { renamed.push(to); },
+      unlinkSync: () => {},
     };
     expect(() => writeStamps([{ doc: 'a.md', text: 'x' }, { doc: 'b.md', text: 'y' }],
       { repo: dir, fsImpl })).toThrow(AuditError);
     expect(() => writeStamps([{ doc: 'a.md', text: 'x' }, { doc: 'b.md', text: 'y' }],
       { repo: dir, fsImpl })).toThrow(/1 of 2 documents were already stamped \(a\.md\)/);
+  });
+
+  it('writes through a temp file so a failed stamp leaves the original intact', () => {
+    // writeFileSync opens with O_TRUNC, so a failure part-way through left the
+    // document truncated while the error implied it was untouched. A rename
+    // within a directory is atomic.
+    const wrote = [];
+    const renamed = [];
+    const fsImpl = {
+      constants: fs.constants,
+      accessSync: () => {},
+      writeFileSync: (p, t) => { wrote.push(p); },
+      renameSync: (from, to) => { renamed.push([from, to]); },
+      unlinkSync: () => {},
+    };
+    writeStamps([{ doc: 'a.md', text: 'x' }], { repo: dir, fsImpl });
+    // Nothing was written to the document itself, only to a sibling temp.
+    expect(wrote).toHaveLength(1);
+    expect(wrote[0]).not.toBe(path.join(dir, 'a.md'));
+    expect(path.dirname(wrote[0])).toBe(dir);
+    expect(renamed).toEqual([[wrote[0], path.join(dir, 'a.md')]]);
+    // And the error names the document as unchanged, which is now true.
+    const boom = {
+      constants: fs.constants,
+      accessSync: () => {},
+      writeFileSync: () => { throw new Error('ENOSPC'); },
+      renameSync: () => {},
+      unlinkSync: () => {},
+    };
+    expect(() => writeStamps([{ doc: 'a.md', text: 'x' }], { repo: dir, fsImpl: boom }))
+      .toThrow(/a\.md is unchanged/);
   });
 
   it('writes every marker when all targets are writable', () => {
@@ -3858,5 +3899,166 @@ describe('a grep derivation that matches whitespace', () => {
     expect(derive('grep-count scripts x', { exec: () => '' })).toBe(0);
     expect(derive('grep-count scripts x', { exec: () => 'a\nb\n' })).toBe(2);
     expect(derive('grep-count scripts x', { exec: () => '\n' })).toBe(1);
+  });
+});
+
+
+// ── round 28 (400263b) ──────────────────────────────────────────────────────
+
+describe('a raw HTML opener that is not at the line start', () => {
+  it('does not open a block, so the rest of the document stays audited', () => {
+    // MY REGRESSION, from the raw-HTML mask one round earlier. Unanchored,
+    // any prose mentioning `<pre>` opened a block, and with no closing tag on
+    // that line the mask ran to the end of the document -- every real dead
+    // link and closed blocker below it silently skipped. That is the
+    // direction that HIDES findings, so it is worse than the bug the mask
+    // was added to fix.
+    expect([...rawHtmlBlockLines(['# T', '', 'Use `<pre>` for examples.', '',
+      '[x](missing.md)'])]).toEqual([]);
+    expect([...rawHtmlBlockLines(['# T', '<!-- <pre> -->', '[x](m.md)'])]).toEqual([]);
+    // A real block-level opener still opens one.
+    expect([...rawHtmlBlockLines(['# T', '', '<pre>', '[x](m.md)', '</pre>', '',
+      '[y](n.md)'])]).toEqual([2, 3, 4]);
+    expect([...rawHtmlBlockLines(['<pre>a</pre>', '[x](m.md)'])]).toEqual([0]);
+    // Three spaces of container indentation is still block level; four is code.
+    expect([...rawHtmlBlockLines(['   <pre>', 'x', '</pre>'])]).toEqual([0, 1, 2]);
+  });
+});
+
+describe('a heading inside a raw HTML block', () => {
+  it('offers no anchor, because Markdown renders it literally', () => {
+    // headingAnchors masked fenced and commented lines but not raw blocks, so
+    // `<pre>` + `## Fake` recorded `fake` and a broken link to `#fake` passed
+    // the dead-anchor audit -- an invented destination, the same failure the
+    // fenced exclusion exists to stop.
+    expect([...headingAnchors('# T\n\n<pre>\n## Fake\n</pre>\n')]).toEqual(['t']);
+    // A real heading after the block still counts.
+    expect([...headingAnchors('# T\n\n<pre>\n## Fake\n</pre>\n\n## Real\n')])
+      .toEqual(['t', 'real']);
+  });
+});
+
+describe('a heading inside a blockquote', () => {
+  it('is a heading, and offers its anchor', () => {
+    // `> ## Quoted Heading` renders as a heading with the anchor
+    // `quoted-heading`; matching the raw line omitted it, so a valid local
+    // link produced a gating dead-anchor finding.
+    expect([...headingAnchors('# T\n\n> ## Quoted Heading\n')])
+      .toEqual(['t', 'quoted-heading']);
+    // Setext inside a quote too -- the underline is read through the same
+    // prefix, or the heading above it stops being one.
+    expect([...headingAnchors('# T\n\n> Sub\n> ---\n')]).toEqual(['t', 'sub']);
+  });
+});
+
+describe('a named character reference outside the old whitelist', () => {
+  it('is decoded, because the reader sees the character', () => {
+    // An 18-entry whitelist was wrong in the same two directions the decoder
+    // exists to fix: `Caf&eacute;` slugged `cafeacute`, so the reader's link
+    // to `#café` read as dead and a nonexistent source-spelling anchor was
+    // accepted.
+    expect(headingSlug('Caf&eacute;')).toBe('café');
+    expect(decodeCharRefs('&Aacute;&ntilde;&ouml;&Ouml;')).toBe('ÁñöÖ');
+    expect(decodeCharRefs('&alpha;&Omega;')).toBe('αΩ');
+    expect(decodeCharRefs('&mdash;&hellip;&euro;')).toBe('—…€');
+    // The whole Latin-1 block is present and correctly ordered.
+    expect(decodeCharRefs('&nbsp;')).toBe(' ');
+    expect(decodeCharRefs('&yuml;')).toBe('ÿ');
+    // An unlisted HTML5-only name is still literal, which is the safe
+    // direction -- decoding a guess would invent an anchor.
+    expect(decodeCharRefs('A&nosuchname;B')).toBe('A&nosuchname;B');
+  });
+});
+
+describe('a registry section ended by a Setext heading', () => {
+  it('stops parsing, so an examples table is not executed as rules', () => {
+    // Neither `Examples` nor its `--------` underline starts with `#`, so
+    // section mode stayed on and an illustrative table below it became live
+    // classification rules -- visible prose turning into configuration.
+    const reg = '# R\n\n## Registry\n\n| Class | Path |\n|---|---|\n| D | real.md |\n'
+      + '\nExamples\n--------\n\n| D | fake.md |\n';
+    expect(loadRegistry(reg).map((r) => r.glob)).toEqual(['real.md']);
+  });
+
+  it('ignores an indented example row for the same reason', () => {
+    // The mask omitted indentedCodeLines, and the `trim()` on the next line
+    // turned the example straight back into an executable declaration.
+    const reg = '# R\n\n## Registry\n\n| Class | Path |\n|---|---|\n| D | real.md |\n'
+      + '\n    | D | indented.md |\n';
+    expect(loadRegistry(reg).map((r) => r.glob)).toEqual(['real.md']);
+  });
+});
+
+describe('a fixed-width glob against a star glob', () => {
+  it('ranks the one that constrains the name higher', () => {
+    // `?` matches EXACTLY one character, so `docs/??.md` is strictly narrower
+    // than `docs/*.md` -- but counting wildcard TOKENS ranked the broader
+    // rule first because it has fewer of them, and an `X` row on `docs/*.md`
+    // could silently suppress a living `docs/??.md`.
+    const q = globSpecificity('docs/??.md');
+    const star = globSpecificity('docs/*.md');
+    const cmp = (a, b) => { for (let i = 0; i < a.length; i += 1) { if (a[i] !== b[i]) return b[i] - a[i]; } return 0; };
+    expect(cmp(q, star)).toBeLessThan(0);
+    // An exact row still beats both, and the recursive ranking is unchanged.
+    expect(cmp(globSpecificity('docs/ab.md'), q)).toBeLessThan(0);
+    expect(cmp(globSpecificity('docs/*.md'), globSpecificity('docs/**/*.md')))
+      .toBeLessThan(0);
+  });
+});
+
+describe('a blocker label whose line ends in a hidden comment', () => {
+  it('still carries its context to the list below', () => {
+    // The equal-length mask leaves NULs after the colon, so the anchored
+    // `:\s*$` failed, the carried context was cleared, and every closed issue
+    // in the list below went unreported.
+    const U = (n) => `https://github.com/TeneikaAskew/stocks/issues/${n}`;
+    const states = { stocks: { 861: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+    expect(checkClosedIssues('d.md', `Blocked by: <!-- note -->\n\n- ${U(861)}\n`, states))
+      .toHaveLength(1);
+    // A plain label still works, and a line that is NOT a label still carries
+    // nothing -- the fix is not "always carry context".
+    expect(checkClosedIssues('d.md', `Blocked by:\n\n- ${U(861)}\n`, states)).toHaveLength(1);
+    expect(checkClosedIssues('d.md', `Some prose.\n\n- ${U(861)}\n`, states)).toEqual([]);
+  });
+});
+
+describe('a blocker cue split by emphasis', () => {
+  it('is read from the rendered text, not the raw markup', () => {
+    // `is still **open**` renders as "is still open" and plainly cites live
+    // work, but the classifier saw the `**` between the words and found no
+    // cue -- so a closed issue vanished from the audit entirely.
+    expect(hasBlockingCue(stripEmphasis('Issue is still **open**'))).toBe(true);
+    expect(hasBlockingCue(stripEmphasis('Issue is **blocked** by #1'))).toBe(true);
+    // Offsets survive, which everything downstream depends on.
+    expect(stripEmphasis('a **b** c')).toHaveLength('a **b** c'.length);
+    // An intraword underscore is a literal character, not emphasis.
+    expect(stripEmphasis('API_FIELD')).toBe('API_FIELD');
+    // And prose with no cue still has none.
+    expect(hasBlockingCue(stripEmphasis('Issue **merged** last April'))).toBe(false);
+    const U = (n) => `https://github.com/TeneikaAskew/stocks/issues/${n}`;
+    const states = { stocks: { 861: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+    expect(checkClosedIssues('d.md', `Issue is still **open**: ${U(861)}\n`, states))
+      .toHaveLength(1);
+  });
+});
+
+describe('a link destination carrying backslash escapes', () => {
+  it('resolves to the file the rendered link points at', () => {
+    // Markdown removes the escapes when the destination renders, so
+    // `[x](docs/foo\(bar\).md)` links to the tracked `docs/foo(bar).md`;
+    // keeping them reported a valid link as dead.
+    const ctx = linkCtx(['docs/foo(bar).md', 'd.md']);
+    expect(checkDeadLinks('d.md', '# T\n\n[x](docs/foo\\(bar\\).md)\n', ctx,
+      { backtickedPaths: false })).toEqual([]);
+    // A reference definition goes through the same check.
+    expect(checkDeadLinks('d.md', '# T\n\n[x][g]\n\n[g]: docs/foo\\(bar\\).md\n', ctx,
+      { backtickedPaths: false })).toEqual([]);
+    // A genuinely missing one is still dead.
+    expect(checkDeadLinks('d.md', '# T\n\n[x](docs/nope\\(y\\).md)\n', ctx,
+      { backtickedPaths: false })).toHaveLength(1);
+    // Only ASCII punctuation is unescaped -- a backslash elsewhere is a
+    // literal character and dropping it would name a different path.
+    expect(unescapeMarkdown('a\\(b\\)c')).toBe('a(b)c');
+    expect(unescapeMarkdown('a\\qb')).toBe('a\\qb');
   });
 });
