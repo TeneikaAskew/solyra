@@ -4318,6 +4318,22 @@ describe('a registry section ended by a Setext heading', () => {
   });
 });
 
+describe('a combining mark in a heading', () => {
+  it('stays in the slug', () => {
+    // An NFD heading -- `Cafe` + U+0301 -- renders as `Café` and GitHub's
+    // identifier keeps the mark. `\\p{M}` was missing from the allowlist, so
+    // the slug came out `cafe`: the working encoded fragment rejected AND a
+    // `#cafe` the page does not expose accepted, wrong in both directions.
+    // NFD in, NFD out -- GitHub does not normalise either, so a `#café`
+    // written NFC against an NFD heading genuinely does not navigate.
+    expect(headingSlug('Cafe\u0301')).toBe('cafe\u0301');
+    expect(headingSlug('Caf\u00e9')).toBe('caf\u00e9');
+    // Ordinary punctuation is still stripped, so this widens the allowlist
+    // by exactly one category rather than loosening it.
+    expect(headingSlug('Dogs & Cats')).toBe('dogs--cats');
+  });
+});
+
 describe('a marker-shaped example in a raw HTML block', () => {
   it('is not counted as a malformed marker', () => {
     // `<div>` around `**Last reviewed:** bad` SHOWS the shape without writing

@@ -3551,7 +3551,12 @@ export function headingSlug(heading, refLabels = new Set()) {
   // anchors as `hello-world` on GitHub, but keeping the tab recorded an
   // unusable slug -- so a valid `#hello-world` link was a gating dead anchor
   // while the tab-bearing spelling nothing exposes was accepted.
-  return s.replace(/[^\p{L}\p{N}_\s-]/gu, '').replace(/\s/g, '-');
+  // And a COMBINING MARK is part of the letter before it, not punctuation. An
+  // NFD heading -- `Cafe` + U+0301 -- renders as `Café` and GitHub's
+  // identifier keeps the mark, while dropping it recorded `cafe`: the working
+  // encoded fragment rejected AND a `#cafe` the page does not expose
+  // accepted, wrong in both directions at once.
+  return s.replace(/[^\p{L}\p{M}\p{N}_\s-]/gu, '').replace(/\s/g, '-');
 }
 
 /**
