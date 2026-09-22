@@ -6147,3 +6147,20 @@ describe('a heading tag with a quoted greater-than sign', () => {
     expect(headingSlug('<https://example.com>')).not.toBe('');
   });
 });
+
+describe('a heading reference label', () => {
+  it('is keyed the same way a definition is', () => {
+    // CommonMark collapses internal whitespace when matching labels, so
+    // `[guide][my   ref]` resolves against `[my ref]:`. Normalising only the
+    // DEFINITIONS left the use unmatched, so the reference stayed literal
+    // bracket syntax and slugged as `see-guidemy---ref`.
+    expect([...headingAnchors('# T\n\n## See [guide][my   ref]\n\n[my ref]: guide.md\n')]
+      .sort()).toEqual(['see-guide', 't']);
+    // Both sides go through the same key, so the exact spelling still works
+    // and an UNDEFINED label is still left literal.
+    expect([...headingAnchors('# T\n\n## See [guide][g]\n\n[g]: guide.md\n')].sort())
+      .toEqual(['see-guide', 't']);
+    expect([...headingAnchors('# T\n\n## See [guide][g]\n')].sort())
+      .toEqual(['see-guideg', 't']);
+  });
+});

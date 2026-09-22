@@ -3066,6 +3066,20 @@ export function decodeCharRefs(text) {
 }
 
 /**
+ * A reference label reduced to what CommonMark compares.
+ *
+ * Case-folded, trimmed, and with internal whitespace collapsed to one space --
+ * `[foo bar]` and `[foo   bar]` are the SAME label. Every place that keys a
+ * label goes through here so the definition side and the use side cannot
+ * drift apart: normalising only the definitions left `[guide][my   ref]`
+ * unmatched in a heading, so the reference stayed literal bracket syntax and
+ * slugged as `see-guidemy---ref`.
+ */
+function refKey(label) {
+  return label.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
  * Index just past the `)` that closes the `(` at `at`, or -1.
  *
  * CommonMark allows a destination to carry balanced parentheses to any depth,
@@ -3124,7 +3138,7 @@ function stripHeadingLinks(s, refLabels) {
       const shut = s.indexOf(']', k);
       if (shut !== -1) {
         // A COLLAPSED reference (`[guide][]`) names itself.
-        const ref = (s.slice(k + 1, shut).trim() || label.trim()).toLowerCase();
+        const ref = refKey(s.slice(k + 1, shut) || label);
         if (refLabels.has(ref)) { out.push(label); i = shut + 1; continue; }
       }
     }
@@ -3254,7 +3268,7 @@ export function headingAnchors(text) {
     const body = raw.replace(BLOCKQUOTE_PREFIX_RE, '')
       .replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
     const d = /^ {0,3}\[([^\]^][^\]]*)\]:\s+\S/.exec(body);
-    if (d) refLabels.add(d[1].trim().toLowerCase().replace(/\s+/g, ' '));
+    if (d) refLabels.add(refKey(d[1]));
   });
   // A comment INSIDE a rendered heading is not part of its text. The blanket
   // tag strip used to remove it as a side effect; now that only real tags are
@@ -3559,7 +3573,7 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // spelling is a duplicate definition the first wins over -- but keying on
     // the raw text validated it independently and emitted a gating dead-link
     // finding for a destination no rendered reference resolves to.
-    const label = m && m[1].trim().toLowerCase().replace(/\s+/g, ' ');
+    const label = m && refKey(m[1]);
     // Group 2 is the angle-bracketed form, group 3 the bare one. Group 2 can
     // legitimately be the EMPTY string (`[x]: <>`), so the branch tests for
     // `undefined` rather than truthiness -- `m[2] || m[3]` would fall through
