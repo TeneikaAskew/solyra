@@ -181,6 +181,12 @@ const CLAUSE_SPLIT_RE = /[.;|]/g;
 // twin: it ends the sentence, not the URL.
 const URL_RE = /https?:\/\/[^\s|]*[^\s|.,;:!?)\]]/g;
 
+// A word that turns a clause against itself. Used ONLY to separate a settled
+// half from a blocking half inside one clause, never as a general split.
+// Ported from the Python twin (stocks#1121).
+const CONTRAST_RE = new RegExp(String.raw`\b(?:while|whilst|whereas|but|though`
+  + String.raw`|although|however|with|without|except|apart from|other than)\b`, 'gi');
+
 /**
  * The prose around ONE citation. URLs are masked at equal length first, so a
  * `.` or `/` inside `github.com` does not split the clause the citation sits
@@ -195,6 +201,55 @@ export function clauseBounds(line, start, end) {
   let hi = line.length;
   for (const m of masked.matchAll(CLAUSE_SPLIT_RE)) {
     if (m.index >= end) { hi = m.index; break; }
+  }
+  // One clause may still carry BOTH verdicts, and then the first one read wins
+  // for every citation in it: `<issues/8> is resolved but <issues/9> is still
+  // open` settled #9 off #8's half, so a closed issue still described as open
+  // produced no finding at all -- measured on this tree, where the semicolon
+  // spelling of the same sentence reports and the `but` and `,` spellings do
+  // not. A contrast word is a boundary the sentence split does not see, so it
+  // is applied ONLY in that ambiguous case: splitting on `with` unconditionally
+  // would shred ordinary prose and lose findings whose cue sits before one.
+  //
+  // In the BOUNDS rather than in citationClause, which is the whole point of
+  // the twin's shape: the deduplication that asks "are these two spellings of
+  // one citation" reads these bounds, and the cue analysis reads the slice, so
+  // a split visible to one and not the other suppresses a live shorthand and
+  // then skips the settled URL beside it. Codex filed that half on the Python
+  // twin (stocks#1121); this side had neither half.
+  const span = line.slice(lo, hi);
+  SETTLED_CUE_RE.lastIndex = 0;
+  BLOCKING_CUE_RE.lastIndex = 0;
+  if (SETTLED_CUE_RE.test(span) && BLOCKING_CUE_RE.test(span)) {
+    const rel = start - lo;
+    // A COMMA is a boundary here too: `#8 is resolved, #9 is still open`
+    // carries no contrast word, so the whole sentence was returned for both
+    // citations and each was settled by the first `resolved` it saw.
+    //
+    // Only a comma that SEPARATES TWO CITATIONS, which is the narrowest rule
+    // that fixes it. Splitting on every comma in this branch settles nothing
+    // and breaks the opposite shape: `#8 was still open, now resolved` is one
+    // statement about one citation, where the comma introduces the resolution
+    // -- and that is the direction that INVENTS a finding.
+    const at = [];
+    ISSUE_URL_RE.lastIndex = 0;
+    for (const m of span.matchAll(ISSUE_URL_RE)) at.push(m.index);
+    QUALIFIED_ISSUE_RE.lastIndex = 0;
+    for (const m of span.matchAll(QUALIFIED_ISSUE_RE)) at.push(m.index);
+    const cuts = new Set([0, span.length]);
+    CONTRAST_RE.lastIndex = 0;
+    for (const m of span.matchAll(CONTRAST_RE)) cuts.add(m.index);
+    for (const m of span.matchAll(/,/g)) {
+      if (at.some((c) => c < m.index) && at.some((c) => c > m.index)) {
+        cuts.add(m.index + 1);
+      }
+    }
+    const bounds = [...cuts].sort((a, b) => a - b);
+    for (let k = 0; k + 1 < bounds.length; k += 1) {
+      if (bounds[k] <= rel && rel < bounds[k + 1]) {
+        return [lo + bounds[k], lo + bounds[k + 1]];
+      }
+    }
   }
   return [lo, hi];
 }
@@ -1605,6 +1660,22 @@ export function markerWindow(lines, limit = 40, { stopAtParagraph = true } = {})
   // (stocks#1121).
   const masked = new Set([...fencedHere, ...commentedHere,
     ...indentedCodeLines(lines), ...rawHere]);
+  // Where each Setext heading STARTS, not where its underline is. A Setext
+  // heading's text is the whole paragraph the underline promotes, and that
+  // paragraph may be several lines: `**Last reviewed:** ...` / `More title` /
+  // `---` is ONE H2 whose first line is the marker-shaped one (CommonMark
+  // example 93). Reaching the underline and stopping at `j - 1` left that
+  // line inside the document window, so a line belonging to the next
+  // section's HEADING stood in for the whole document's provenance and
+  // `--stamp` would rewrite heading text instead of inserting a marker. Here
+  // the paragraph rule below reached it first, which is the same defect by a
+  // different route. `paragraphBlocks` already closes a block ON the
+  // underline, so the block's first line is the answer and the two cannot
+  // disagree about where a heading begins. Codex filed it on the Python twin
+  // (stocks#1121).
+  const setextStarts = new Set(paragraphBlocks(lines, masked)
+    .filter(([lo, hi]) => hi > lo && isSetextUnderline(lines, hi, masked))
+    .map(([lo]) => lo));
   let stop = lines.length;
   // To the next HEADING, with no additional line cap. A document opening with
   // more than 40 lines of HTML metadata before its marker had the real marker
@@ -1641,8 +1712,8 @@ export function markerWindow(lines, limit = 40, { stopAtParagraph = true } = {})
     // the line ABOVE -- so the section starts there, not at the underline.
     // Reading only `#` let a `Last reviewed` inside that section stand in for
     // the whole document's provenance. Ported from the Python twin.
-    if (isSetextUnderline(lines, j, masked)) {
-      stop = j - 1;
+    if (setextStarts.has(j)) {
+      stop = j;
       break;
     }
     // docs/DOC_REGISTRY.md puts the marker at "the first paragraph after the
@@ -2566,7 +2637,17 @@ export function paragraphBlocks(lines, fenced = new Set()) {
       flush(i);
       return;
     }
-    if (ATX_HEADING_RE.test(bare) || THEMATIC_BREAK_RE.test(bare)) {
+    // A LIST MARKER is a container prefix too, and CommonMark removes it
+    // before parsing the block inside the item: `- # Heading` opens an ATX
+    // heading as the item's first block. The prefix hid it, so an unmatched
+    // backtick in that heading paired with one in the paragraph below and
+    // `codeSpanLines` masked a live `[x](missing.md)` between them out of the
+    // audit -- the hiding direction. Stripped for the BLOCK tests only: the
+    // container-transition test below has to keep seeing the marker, since a
+    // new item is a new paragraph. Codex filed it on the Python twin
+    // (stocks#1121), where it is the same defect.
+    const inner = bare.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
+    if (ATX_HEADING_RE.test(inner) || THEMATIC_BREAK_RE.test(inner)) {
       flush(i - 1);
       blocks.push([i, i]);
       return;
@@ -2944,9 +3025,48 @@ export function markerShapedLines(lines) {
  * So the depth has to MATCH, not merely be stripped.
  */
 function markerText(lines, i, depth) {
-  const prefix = (/^((?:\s*>)+\s?)/.exec(lines[i]) ?? ['', ''])[1];
+  const quoted = (/^((?:\s*>)+\s?)/.exec(lines[i]) ?? ['', ''])[1];
+  // A LIST ITEM's indentation is a container prefix too, and the rewrite
+  // writes `prefix + marker` back. Reading only the quote dragged an item's
+  // indented marker to column zero on every refresh, which ends the item and
+  // leaves the text below it outside the list -- `--stamp` restructuring the
+  // document while reporting only that it refreshed a date. `isCodeIndented`
+  // above still excludes four columns or more, so this is the one-to-three
+  // space band CommonMark renders as an ordinary paragraph. Parity with the
+  // Python twin (stocks#1121), where Codex filed the insertion half.
+  const rest = lines[i].slice(quoted.length);
+  const prefix = quoted + rest.slice(0, rest.length - rest.trimStart().length);
   if (quoteDepth(lines[i]) !== depth) return null;
   return { prefix, text: lines[i].slice(prefix.length).trim() };
+}
+
+/**
+ * What an INSERTED line needs to stay inside the H1's container.
+ *
+ * An H1 may sit inside a blockquote or a list item -- `> # Title`,
+ * `- # Title` -- and CommonMark ends that container at the first line lacking
+ * the prefix. Inserting a bare marker and bare blank lines after one moved the
+ * document's existing introduction OUT of the quote or the item: `--stamp`
+ * changing structure rather than only adding provenance. Codex filed it on the
+ * Python twin (stocks#1121).
+ *
+ * TWO prefixes, because they are not the same string. A list item's
+ * continuation is indented to the marker's width and a blank line inside one
+ * is genuinely blank -- indenting it would add nothing but trailing
+ * whitespace. A blockquote's continuation is `> `, and a blank line inside one
+ * must still carry `>` or the quote ends there.
+ */
+export function containerPrefix(line) {
+  const head = (/^((?:\s*>)+\s?)/.exec(line) ?? ['', ''])[1];
+  const rest = line.slice(head.length);
+  const item = /^(\s*(?:[-*+]|\d{1,9}[.)])\s+)/.exec(rest);
+  // The marker is replaced by SPACES of its own width, which is the column
+  // CommonMark parses the item's content at -- not stripped, which would put
+  // a second list marker at column zero.
+  const body = item ? ' '.repeat(item[1].length)
+    : rest.slice(0, rest.length - rest.trimStart().length);
+  const lead = head + body;
+  return [lead, lead.replace(/\s+$/, '')];
 }
 
 export function findMarker(lines) {
@@ -3330,14 +3450,22 @@ export function stamp(text, date, depth, sha, reviewed = false) {
   if (findMarkers(lines).length) return { text, action: 'skipped-misplaced-marker' };
 
   const h1 = markerAnchor(lines);
-  // Target shape: "# Title" / "" / marker / "" / body.
-  if (h1 + 1 < lines.length && lines[h1 + 1].trim() === '') lines.splice(h1 + 2, 0, eol(marker), eol(''));
+  // Target shape: "# Title" / "" / marker / "" / body -- each line carrying
+  // whatever container the H1 sits in, so an H1 inside a quote or a list item
+  // keeps the body that follows it inside the same container.
+  const [lead, blank] = containerPrefix(lines[h1]);
+  // Reuse the blank line the H1 already has rather than adding a second one.
+  // Read through the container here too: a quoted document's blank line is
+  // `>`, which is not '' and made the reuse branch miss every time.
+  const next = h1 + 1 < lines.length
+    ? lines[h1 + 1].replace(BLOCKQUOTE_PREFIX_RE, '') : null;
+  if (next !== null && next.trim() === '') lines.splice(h1 + 2, 0, eol(lead + marker), eol(blank));
   // Both blanks, not just the leading one. An H1 followed straight by body
   // text gave `# Title` / '' / marker / body, and Markdown renders the marker
   // and the opening sentence as a SINGLE paragraph -- not the first-paragraph
   // marker shape this promises, and it changes how the opening content reads.
   // The Python twin already inserts both (stocks#1121).
-  else lines.splice(h1 + 1, 0, eol(''), eol(marker), eol(''));
+  else lines.splice(h1 + 1, 0, eol(blank), eol(lead + marker), eol(blank));
   return { text: lines.join('\n'), action: 'inserted' };
 }
 
@@ -5228,8 +5356,23 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
     // single-backtick citation IS its own span -- testing mere overlap would
     // skip every backticked path in the corpus. Parity with the Python twin
     // (stocks#1121).
+    // Strict enclosure ALONE was not the rule, though. A span written with
+    // two or more backticks pads its own content, so `BACKTICK_PATH_RE`
+    // matches from the second opening tick to the first closing one --
+    // strictly inside -- and ``scripts/missing.py`` produced no finding at
+    // all when the file was deleted. Comparing the span's BODY with the
+    // candidate is the distinction the enclosure test was standing in for: a
+    // span whose body IS the path is a citation, and a span with prose around
+    // the path is still a demonstration. Codex filed it on the Python twin
+    // (stocks#1121).
+    const spanBody = (lo, hi) => {
+      const raw = line.slice(lo, hi);
+      const run = raw.length - raw.replace(/^`+/, '').length;
+      return run ? raw.slice(run, raw.length - run) : raw;
+    };
     const nested = (mm) => codeHere.some(
-      ([lo, hi]) => lo < mm.index && hi > mm.index + mm[0].length);
+      ([lo, hi]) => lo < mm.index && hi > mm.index + mm[0].length
+        && spanBody(lo, hi).trim() !== mm[0].replace(/^`+|`+$/g, '').trim());
     for (const m of htmlOnly ? [] : mdLinks(line)) {
       // An ESCAPED opening bracket renders as literal text, so a document
       // demonstrating link syntax as `\[x](missing.md)` was reported as a

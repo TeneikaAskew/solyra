@@ -92,6 +92,7 @@ import {
   run,
   historyTree,
   loadClaims,
+  clauseBounds,
   citationClause,
   ownedLines,
   maskSpans,
@@ -3795,6 +3796,180 @@ describe('a review recorded against a commit that predates the document', () => 
   });
 });
 
+describe('a padded multi-backtick code span', () => {
+  const ctx = {
+    tracked: new Set(['d.md']), topLevelDirs: new Set(['scripts']),
+    rootFiles: new Set(), knownRoot: new Set(),
+    exts: new Set(['.md', '.py']), basenames: new Set(),
+  };
+  const dl = (t) => checkDeadLinks('d.md', t, ctx).map((f) => f.detail);
+  const dead = ['backticked path -> scripts/missing.py'];
+
+  it('holding only a path is a citation, not a demonstration', () => {
+    // Two or more backticks pad the span's content, so BACKTICK_PATH_RE
+    // matches from the second opening tick to the first closing one --
+    // strictly inside the span -- and the enclosure test read the citation as
+    // sample text. Measured before the fix: the single-tick spelling reported
+    // and these two did not. Codex filed it on the Python twin (stocks#1121).
+    expect(dl('``scripts/missing.py``\n')).toEqual(dead);
+    expect(dl('```scripts/missing.py```\n')).toEqual(dead);
+    // The spelling that always worked.
+    expect(dl('`scripts/missing.py`\n')).toEqual(dead);
+  });
+
+  it('with prose around the path is still a demonstration', () => {
+    // The distinction the enclosure test was standing in for: a span whose
+    // body IS the path is a citation, one carrying an illustration is not.
+    expect(dl('``example `scripts/missing.py` here``\n')).toEqual([]);
+  });
+});
+
+describe('a marker written into a container', () => {
+  const st = (t) => stamp(t, '2026-09-23', 'full', 'abc1234', false);
+
+  it('keeps the container its H1 sits in', () => {
+    // An H1 inside a blockquote or a list item ends at the first line lacking
+    // the prefix, so inserting a bare marker and bare blanks after one moved
+    // the document's existing introduction OUT of the quote or the item --
+    // `--stamp` changing structure rather than only adding provenance. Codex
+    // filed it on the Python twin (stocks#1121).
+    expect(st('- # Title\n  Intro\n').text.split('\n')).toEqual([
+      '- # Title', '',
+      '  **Last reviewed:** unknown · **Last scanned:** 2026-09-23 · **Owner:** TBD',
+      '', '  Intro', '']);
+    // A blockquote's blank line is `>`, not '': a truly empty line would end
+    // the quote, which is the same corruption one character smaller.
+    expect(st('> # Title\n> Intro\n').text.split('\n')).toEqual([
+      '> # Title', '>',
+      '> **Last reviewed:** unknown · **Last scanned:** 2026-09-23 · **Owner:** TBD',
+      '>', '> Intro', '']);
+    // A quoted SETEXT H1 too: markerAnchor returns the underline, and the
+    // container is read off whichever line it returns.
+    expect(st('> Title\n> =====\n> Intro\n').text.split('\n')[2]).toBe('>');
+    // Unprefixed documents are untouched by this.
+    expect(st('# Title\nIntro\n').text.split('\n')).toEqual([
+      '# Title', '',
+      '**Last reviewed:** unknown · **Last scanned:** 2026-09-23 · **Owner:** TBD',
+      '', 'Intro', '']);
+  });
+
+  it('is stable on a second run', () => {
+    // Three reads have to agree: findMarkers has to SEE the marker it just
+    // wrote, the rewrite has to keep the prefix, and the field readers have to
+    // be given the line without it.
+    for (const doc of ['- # Title\n  Intro\n', '> # Title\n> Intro\n',
+      '> Title\n> =====\n> Intro\n', '# Title\nIntro\n']) {
+      const once = st(doc);
+      const twice = st(once.text);
+      expect([doc, once.action]).toEqual([doc, 'inserted']);
+      expect([doc, twice.action, twice.text]).toEqual([doc, 'unchanged', once.text]);
+    }
+  });
+
+  it('refreshes an existing marker without unindenting it', () => {
+    // A list item's indentation is a container prefix too, and markerText read
+    // only the quote -- so every refresh dragged an item's marker to column
+    // zero, ending the item and leaving the text below it outside the list.
+    const listed = '- # T\n\n  **Last reviewed:** 2026-01-01 · '
+      + '**Last scanned:** 2026-01-01 · **Owner:** x\n\n  Intro\n';
+    const out = st(listed);
+    expect(out.action).toBe('updated');
+    expect(out.text.split('\n')[2]).toBe(
+      '  **Last reviewed:** 2026-01-01 · **Last scanned:** 2026-09-23 · **Owner:** x');
+    const quoted = '> # T\n>\n> **Last reviewed:** 2026-01-01 · '
+      + '**Last scanned:** 2026-01-01 · **Owner:** x\n>\n> Intro\n';
+    expect(st(quoted).text.split('\n')[2]).toBe(
+      '> **Last reviewed:** 2026-01-01 · **Last scanned:** 2026-09-23 · **Owner:** x');
+  });
+});
+
+describe('a clause that carries both verdicts', () => {
+  const states = { solyra: {
+    8: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+    9: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+  } };
+  const u = (n) => `https://github.com/TeneikaAskew/solyra/issues/${n}`;
+  const refs = (t) => checkClosedIssues('d.md', t, states).map((f) => f.ref);
+
+  it('is split at the word that turns it, not read whole', () => {
+    // `#8 is resolved but #9 is still open` states two opposite things. The
+    // settled pass reads the clause first and wins, so BOTH citations were
+    // skipped and a closed issue still described as open produced no finding.
+    // Measured on this tree before the fix: the semicolon spelling reported
+    // and these two did not, which is the sentence split seeing a boundary
+    // the prose does not put there.
+    expect(refs(`${u(8)} is resolved but ${u(9)} is still open\n`)).toEqual(['solyra#9']);
+    expect(refs(`${u(8)} is resolved, ${u(9)} is still open\n`)).toEqual(['solyra#9']);
+    // The spelling that always worked, unchanged.
+    expect(refs(`${u(8)} is resolved; ${u(9)} is still open\n`)).toEqual(['solyra#9']);
+  });
+
+  it('does not split a single statement that a comma merely continues', () => {
+    // `was still open, now resolved` is ONE statement about ONE citation: the
+    // comma introduces the resolution rather than separating two claims. Only
+    // a comma with a citation on either side is a boundary, which is what
+    // keeps this direction -- the one that INVENTS a finding -- quiet.
+    expect(refs(`${u(9)} was still open, now resolved\n`)).toEqual([]);
+    // And the citation's own half still decides: sitting before the contrast
+    // word, #9 is read against `was blocking`. Same answer the Python twin
+    // gives for the same sentence, measured on both trees.
+    expect(refs(`${u(9)} was blocking but is now resolved\n`)).toEqual(['solyra#9']);
+  });
+
+  it('leaves a clause carrying only one verdict alone', () => {
+    // The split is applied ONLY when both vocabularies are present. Splitting
+    // on `with` unconditionally would shred ordinary prose and lose findings
+    // whose cue sits before one.
+    expect(refs(`Blocked by ${u(9)} with no workaround\n`)).toEqual(['solyra#9']);
+    expect(refs(`Landed in ${u(8)}\n`)).toEqual([]);
+  });
+
+  it('gives the bounds and the slice the same split', () => {
+    // The deduplication that asks "are these two spellings of one citation"
+    // reads clauseBounds, and the cue analysis reads citationClause. A split
+    // visible to one and not the other suppresses a live citation and then
+    // skips the settled one beside it, which is the defect Codex filed on the
+    // Python twin (stocks#1121).
+    const line = `${u(8)} is resolved but ${u(9)} is still open`;
+    const at = line.indexOf(u(9));
+    const [lo, hi] = clauseBounds(line, at, at + u(9).length);
+    expect(line.slice(lo, hi)).toBe(citationClause(line, at, at + u(9).length));
+    expect(line.slice(lo, hi)).not.toContain('resolved');
+  });
+});
+
+describe('a heading inside a list item', () => {
+  const ctx = {
+    tracked: new Set(['d.md']), topLevelDirs: new Set(), rootFiles: new Set(),
+    knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+  };
+  const dl = (text) => checkDeadLinks('d.md', text, ctx).map((f) => f.detail);
+
+  it('is still a block boundary', () => {
+    // CommonMark removes the list marker before parsing the block inside the
+    // item, so `- # Heading` opens an ATX heading. The prefix hid it from the
+    // boundary test, an unmatched backtick in that heading paired with one in
+    // the paragraph below, and `codeSpanLines` masked a live
+    // `[x](missing.md)` between them out of the audit -- the hiding
+    // direction. Codex filed it on the Python twin (stocks#1121), where it is
+    // the same defect.
+    expect(paragraphBlocks(['- # H `', '  [x](missing.md) `'], new Set()))
+      .toEqual([[0, 0], [1, 1]]);
+    expect(dl('- # Heading `\n  [x](missing.md) `\n'))
+      .toEqual(['relative link -> missing.md']);
+    // A thematic break inside an item is a block of its own for the same
+    // reason, and the unprefixed spellings are unchanged.
+    expect(dl('- ---\n  [x](missing.md)\n')).toEqual(['relative link -> missing.md']);
+    expect(dl('# Heading `\n[x](missing.md) `\n'))
+      .toEqual(['relative link -> missing.md']);
+    // The marker is stripped for the BLOCK tests only. The container
+    // transition still sees it, so two items are still two paragraphs and
+    // `[open` / `label](missing.md)` is not one link.
+    expect(dl('- [open\n- label](missing.md)\n')).toEqual([]);
+    expect(paragraphBlocks(['- one', '  two'], new Set())).toEqual([[0, 1]]);
+  });
+});
+
 describe('the tree "before this branch"', () => {
   it('is the branch point, not the mainline tip', () => {
     // On a long-lived branch the tip is the wrong tree. If BOTH sides deleted
@@ -4329,10 +4504,25 @@ describe('content hidden in an HTML comment', () => {
 });
 
 describe('a setext section heading after the H1', () => {
-  it('ends the marker window', () => {
+  it('ends the marker window at the heading, not at its last line', () => {
+    // `body` / `Section` / `---` is ONE H2 whose text is "body\nSection"
+    // (CommonMark example 93), so the section starts at `body`. This read
+    // `.to === 2` until Codex filed it on the Python twin (stocks#1121): a
+    // marker written on that first line was accepted as the whole document's
+    // provenance, and `--stamp` would rewrite section heading text rather
+    // than insert a document marker.
     const lines = ['# T', 'body', 'Section', '---', '**Last reviewed:** 2026-01-01'];
-    expect(markerWindow(lines).to).toBe(2);
+    expect(markerWindow(lines).to).toBe(1);
     expect(findMarker(lines)).toBeNull();
+    // A blank line between them makes `body` its own paragraph again, so only
+    // `Section` belongs to the heading. Asserted with the first-paragraph rule
+    // OFF, because that rule reaches `body` first and would answer 2 whatever
+    // the Setext boundary said -- which is what makes it a poor witness here.
+    // The Python twin has no such rule and answers 3 directly.
+    expect(markerWindow(['# T', 'body', '', 'Section', '---', 'x'], 40,
+      { stopAtParagraph: false }).to).toBe(3);
+    expect(markerWindow(['# T', 'body', 'Section', '---', 'x'], 40,
+      { stopAtParagraph: false }).to).toBe(1);
   });
 
   it('but a thematic break and a table delimiter are not headings', () => {
@@ -5889,9 +6079,10 @@ describe('an indented code line in the opening section', () => {
     // which is what lets the misplaced case below be reported rather than
     // silently duplicated.
     expect(findMarkers(lines)).toEqual([5]);
-    // A real Setext heading still closes the window.
+    // A real Setext heading still closes the window -- at the line its TEXT
+    // starts on, which is `Sub` rather than the `---` below it.
     expect(markerWindow(['# T', '', 'Sub', '---', '', MARK('2026-01-01', 'me'), '', 'B.'])
-      .to).toBe(3);
+      .to).toBe(2);
   });
 });
 
