@@ -5474,7 +5474,7 @@ export function visibleClaimText(lines) {
     : maskSpans(l, [...(hidden.get(i) ?? []), ...(attrs.get(i) ?? [])]))).join('\n');
 }
 
-export function checkClaims(claims, { exec = run, readDoc = null } = {}) {
+export function checkClaims(claims, { exec = run, readDoc = null, linkOf = symlinkedComponent } = {}) {
   const out = [];
   for (const { doc, pattern, derivation } of claims) {
     // TRACKED, not merely readable -- the same precondition every derivation
@@ -5494,6 +5494,23 @@ export function checkClaims(claims, { exec = run, readDoc = null } = {}) {
         && !run('git', ['ls-files', '--', doc], { okExitCodes: [1, 128] }).trim()) {
       throw new AuditError(`claim document \`${doc}\` is not tracked, so its prose `
         + 'is not what another clone would read');
+    }
+    // And not through a SYMLINK. The tracked check above confirms the symlink
+    // itself; reading through it evaluates the claim against bytes outside
+    // this repository, so the number differs between clones -- and a
+    // non-terminating special file hangs at the read, which the catch below
+    // cannot catch. Same refusal the audited-document read carries, and the
+    // same ordering reason as the `list-len` target one derivation over.
+    // Injectable like `derive`'s, and for the same reason: planting a real
+    // symlink in the repository to exercise a refusal is a side effect on the
+    // tree. A path that does not exist is not a symlink, so the default
+    // answers null for a `readDoc` document and the check is a no-op there
+    // rather than a special case. Codex filed it (solyra#69).
+    const docLink = linkOf(doc);
+    if (docLink !== null) {
+      throw new AuditError(`claim document \`${doc}\`: ${symlinkNote(doc, docLink)} is a `
+        + 'symlink, so the claim would be read from its target rather than from this '
+        + 'repository and would not reproduce in another clone');
     }
     let text;
     try {

@@ -2853,6 +2853,30 @@ describe('a snapshot key that is not an issue number', () => {
   });
 });
 
+describe('a claim document that is a symlink', () => {
+  const row = [{ doc: 'd.md', pattern: 'There are (\\d+) routes', derivation: 'grep-files src x' }];
+
+  it('is refused before it is read', () => {
+    // The tracked check confirms the SYMLINK; reading through it evaluates
+    // the claim against bytes outside this repository, so the number differs
+    // between clones -- and a non-terminating special file hangs at the read,
+    // which the catch there cannot catch. The refusal comes first for the
+    // same reason the `list-len` one does, one derivation over.
+    expect(() => checkClaims(row, {
+      exec: () => 'f\n', readDoc: () => 'There are 1 routes\n', linkOf: () => 'docs',
+    })).toThrow(/is a symlink/);
+    expect(() => checkClaims(row, {
+      exec: () => 'f\n', readDoc: () => 'There are 1 routes\n', linkOf: () => 'docs',
+    })).toThrow(AuditError);
+    // An ordinary document is unaffected: a path that does not exist is not a
+    // symlink, so the default answers null and the check is a no-op rather
+    // than a special case around `readDoc`.
+    expect(checkClaims(row, {
+      exec: () => 'f\n', readDoc: () => 'There are 1 routes\n',
+    })).toEqual([]);
+  });
+});
+
 describe('a list-len target that is a symlink', () => {
   it('is refused before it is read', () => {
     // `git ls-files` below confirms the SYMLINK; reading through it measures
