@@ -3368,6 +3368,71 @@ describe('a link with an EMPTY fragment', () => {
   });
 });
 
+describe('a backtick inside an HTML tag', () => {
+  const ctx = {
+    tracked: new Set(['d.md']), topLevelDirs: new Set(), rootFiles: new Set(),
+    knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+  };
+  const dl = (text) => checkDeadLinks('d.md', text, ctx).map((f) => f.detail);
+
+  it('is not a delimiter, because the tag begins first', () => {
+    // CommonMark gives code spans, raw HTML and autolinks equal precedence
+    // and lets whichever BEGINS FIRST win, so in `<span title="`">` the tag
+    // owns its quoted backtick. Pairing it with a later one masked a live
+    // `[x](missing.md)` out of the audit and the missing target passed clean
+    // -- the hiding direction. Codex filed it on the Python twin
+    // (stocks#1121), where it is the same defect.
+    const line = 'see <span title="`"> [x](missing.md) ` tail`';
+    expect(codeSpans(line)).toEqual([[37, 44]]);
+    expect(dl(`${line}\n`)).toEqual(['relative link -> missing.md']);
+    // Across a soft break too. `codeSpanLines` scans the joined paragraph
+    // through this same function, so one rule covers both -- on the Python
+    // twin they were two implementations and had already drifted.
+    const wrapped = ['see <span title="`">', '[x](missing.md) ` tail`'];
+    expect([...codeSpanLines(wrapped)]).toEqual([[1, [[16, 23]]]]);
+    expect(dl(`${wrapped.join('\n')}\n`)).toEqual(['relative link -> missing.md']);
+    // A tag that opens INSIDE a running span is literal text, which is the
+    // same rule read from the other side -- so the span still wins here.
+    expect(codeSpans('`<span title="`"> [x](missing.md)`')).toEqual([[0, 15]]);
+    // An ordinary span, a multi-backtick run and an ESCAPED tag are all
+    // unchanged: this narrows the delimiter scan by exactly one construct.
+    expect(codeSpans('a `code` b')).toEqual([[2, 8]]);
+    expect(codeSpans('``a ` b``')).toEqual([[0, 9]]);
+    expect(dl('see \\<span title="`"> [x](missing.md) ` tail`\n')).toEqual([]);
+  });
+});
+
+describe('a raw-text block with an id on its own opening tag', () => {
+  const a = (text) => [...headingAnchors(text)].sort();
+
+  it('still offers that id, while its contents stay literal', () => {
+    // `<pre id="sample">code</pre>` DISPLAYS `code` and RENDERS the `<pre>`,
+    // so `#sample` is a destination the page offers. The raw-text exclusion
+    // masked the whole line, tag included, and the working link was reported
+    // as a gating dead anchor -- the false direction. Codex filed it on the
+    // Python twin (stocks#1121), where it is the same defect.
+    expect(a('# T\n\n<pre id="sample">code</pre>\n')).toEqual(['sample', 't']);
+    // Every raw-text kind, and the multi-line spelling where the content is
+    // not even on the tag's line.
+    expect(a('# T\n\n<pre id="sample">\ncode\n</pre>\n')).toEqual(['sample', 't']);
+    expect(a('# T\n\n<script id="s">var a = 1;</script>\n')).toEqual(['s', 't']);
+    // Through a container, because the opener column is recorded against the
+    // RAW line while the scan reads the stripped one.
+    expect(a('# T\n\n> <pre id="q">x</pre>\n')).toEqual(['q', 't']);
+    expect(a('# T\n\n- <pre id="l">x</pre>\n')).toEqual(['l', 't']);
+    // The CONTENTS are still literal, which is the rule the exclusion exists
+    // for -- including on the opener's own line, where only the text after
+    // the tag is masked. An invented anchor is the worse half: a link to one
+    // PASSES.
+    expect(a('# T\n\n<pre>\n<a id="fake"></a>\n</pre>\n')).toEqual(['t']);
+    expect(a('# T\n\n<pre><a id="fake"></a></pre>\n')).toEqual(['t']);
+    expect(a('# T\n\n<pre id="real"><a id="fake"></a></pre>\n')).toEqual(['real', 't']);
+    // A NON-raw-text block was never masked here and still is not: `<div>`
+    // renders, so its id is a destination.
+    expect(a('# T\n\n<div id="d">\n\ntext\n')).toEqual(['d', 't']);
+  });
+});
+
 describe('a bare fragment carrying balanced parentheses', () => {
   const ctx = (extra = []) => ({
     tracked: new Set(['d.md', ...extra]), topLevelDirs: new Set(), rootFiles: new Set(),

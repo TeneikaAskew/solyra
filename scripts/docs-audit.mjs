@@ -1967,7 +1967,8 @@ function visibleCommentOpen(line) {
   return at;
 }
 
-export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = null } = {}) {
+export function rawHtmlBlockLines(lines,
+  { rawTextOnly = false, fenced: given = null, openers = null } = {}) {
   const out = new Set();
   // `fencedLines` passes its PROVISIONAL set, computed without HTML, and
   // relies on this scan to correct it -- so taking it as a parameter is what
@@ -2088,6 +2089,18 @@ export function rawHtmlBlockLines(lines, { rawTextOnly = false, fenced: given = 
       }
       open = m[1].toLowerCase();
       out.add(i);
+      // `openers`, when the caller passes a Map, receives `line index ->
+      // column the opening tag STARTS at`. The tag itself is RENDERED --
+      // `<pre id="sample">` offers the id `sample` -- while everything after
+      // it on that line displays literally, so a caller masking whole lines
+      // threw the id away with the content and reported a working link to
+      // `#sample` as a gating dead anchor. The START rather than the end,
+      // because where a tag ENDS is a question the tag scanner already
+      // answers and this scan must not answer a second way. In RAW
+      // coordinates: `line` has had its blockquote and list prefixes
+      // stripped, and both are prefixes, so the length difference is the
+      // offset. Codex filed it on the Python twin (stocks#1121).
+      if (openers !== null) openers.set(i, (raw.length - line.length) + m.index);
       // A one-line block: `<pre>...</pre>` closes on the line it opened.
       if (new RegExp(`</${open}\\s*>`, 'i').test(line.slice(m.index + m[0].length))) open = null;
       return;
@@ -2330,9 +2343,39 @@ function fencedScan(lines, html) {
  * A run of N backticks opens a span that only a run of exactly N closes, so
  * `` ``a ` b`` `` is one span rather than two.
  */
+/**
+ * Offsets of the COMPLETE HTML tags in `text`, escaped openers excluded.
+ *
+ * A backtick inside a tag is part of that tag, not a code-span delimiter:
+ * CommonMark gives code spans, raw HTML and autolinks equal precedence and
+ * lets whichever BEGINS FIRST win. Ported from the Python twin
+ * (stocks#1121), where Codex filed it.
+ */
+function htmlTagSpans(text) {
+  if (!text.includes('<')) return [];
+  TAG_OPEN_RE.lastIndex = 0;
+  const out = [];
+  for (let m = TAG_OPEN_RE.exec(text); m !== null; m = TAG_OPEN_RE.exec(text)) {
+    if (!isEscaped(text, m.index)) out.push([m.index, m.index + m[0].length]);
+  }
+  TAG_OPEN_RE.lastIndex = 0;
+  return out;
+}
+
 export function codeSpans(line) {
   const re = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
   const out = [];
+  // A backtick inside a COMPLETE HTML tag is part of that tag. In
+  // `<span title="`"> [x](missing.md) ` tail` the tag begins at column 0 and
+  // owns its quoted backtick, while pairing it with the trailing one masked a
+  // live link out of the audit and the missing target passed clean. Only a
+  // tag beginning at or after the committed scan position counts: one opening
+  // inside an already-running span is literal text, which is the same
+  // "begins first wins" rule read from the other side.
+  const tags = htmlTagSpans(line);
+  // The COMMITTED scan position, which the tag rule reads. `re.lastIndex` is
+  // rewound on a rejected escaped opener and so does not answer it.
+  let pos = 0;
   // An ESCAPED run is a literal backtick, not a delimiter. `` \` [x](y.md) \` ``
   // renders two backticks and a LIVE link, and masking the range between them
   // made the dead-link and blocker passes skip a real citation -- the hiding
@@ -2351,8 +2394,15 @@ export function codeSpans(line) {
       re.lastIndex = m.index + 1;
       continue;
     }
+    const covering = tags.find(([lo, hi]) => pos <= lo && lo <= m.index && m.index < hi);
+    if (covering !== undefined) {
+      [, pos] = covering;
+      re.lastIndex = pos;
+      continue;
+    }
     out.push([m.index, m.index + m[0].length]);
-    re.lastIndex = m.index + m[0].length;
+    pos = m.index + m[0].length;
+    re.lastIndex = pos;
   }
   return out;
 }
@@ -4433,9 +4483,25 @@ export function headingAnchors(text) {
   //
   // One scan over the joined document, so an element whose `id` sits on a
   // LATER physical line is read as the one tag it is.
-  const literal = new Set([...rawHtmlBlockLines(lines, { rawTextOnly: true }),
+  // The raw-text OPENERS are held back from the whole-line mask: the opening
+  // tag is rendered, so `<pre id="sample">code</pre>` offers `sample` while
+  // only `code` is literal. The content after the tag is still masked, so a
+  // `<pre><a id="fake"></a></pre>` written on one line invents nothing.
+  const rawOpen = new Map();
+  const literal = new Set([
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true, openers: rawOpen }),
     ...fencedLines(lines), ...indentedCodeLines(lines),
     ...frontMatterLines(lines)]);
+  const literalSpan = (i, l) => {
+    const start = rawOpen.get(i);
+    if (start === undefined) return [[0, l.length]];
+    TAG_OPEN_RE.lastIndex = start;
+    const tag = TAG_OPEN_RE.exec(l);
+    TAG_OPEN_RE.lastIndex = 0;
+    // An unparseable opener offers no id anyway, so the whole tag is masked
+    // with its contents; text BEFORE it is live prose either way.
+    return [[tag !== null && tag.index === start ? start + tag[0].length : start, l.length]];
+  };
   const wrappedSpans = codeSpanLines(lines);
   const commentRanges = commentSpans(lines);
   // A link's DESTINATION and TITLE are metadata: tag-shaped text in either
@@ -4443,7 +4509,7 @@ export function headingAnchors(text) {
   // reading it as one invented an anchor a link could then resolve against.
   const linkMeta = linkTitleSpans(lines, { titleOnly: false });
   const idDoc = lines.map((l, i) => (literal.has(i)
-    ? maskSpans(l, [[0, l.length]])
+    ? maskSpans(l, literalSpan(i, l))
     : maskSpans(l, [...codeSpans(l), ...(wrappedSpans.get(i) ?? []),
       ...(commentRanges.get(i) ?? []), ...(linkMeta.get(i) ?? [])]))).join('\n');
   for (const tag of idDoc.matchAll(TAG_OPEN_RE)) {
