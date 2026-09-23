@@ -345,13 +345,6 @@ const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|\\[^\r\n]|[^<>#\\\r\n])*)(?
 // finding for prose no reader can click. Codex filed it on the Python twin
 // (stocks#1121).
 const MD_DEST_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\[!-/:-@[-`{-~]|[^()#\s]/y;
-// `*`, not `+`. An EMPTY fragment is legal: `[x](missing.md#)` renders a link
-// the browser follows to the top of `missing.md`, and requiring one character
-// after the `#` meant the whole candidate did not match -- so the missing
-// target passed the audit clean. The anchor check below is guarded on the
-// fragment being non-empty, so an empty one asks about the PATH only, which
-// is what it means. Codex filed it on the Python twin (stocks#1121).
-const MD_FRAG_RE = /[^)\s]*/y;
 // A TITLE may contain its own delimiter when the delimiter is escaped:
 // `[x](missing.md "a \" quote")` is a valid link. Stopping at the escaped
 // quote left the whole candidate unmatched, so the missing destination
@@ -372,6 +365,40 @@ function bareDestination(text, i) {
     MD_DEST_ATOM_RE.lastIndex = j;
     const m = MD_DEST_ATOM_RE.exec(text);
     if (m) { j = MD_DEST_ATOM_RE.lastIndex; continue; }
+    if (text[j] === '(') {
+      const k = balancedClose(text, j);
+      if (k === -1 || /\s/.test(text.slice(j, k))) return j;
+      j = k;
+      continue;
+    }
+    break;
+  }
+  return j;
+}
+
+// The same atom as the destination, minus the `#` exclusion: a fragment may
+// carry one (`#a#b` is the fragment `a#b`), and it may carry BALANCED
+// parentheses, which `[^)\s]` could not. `[x](#foo(bar))` names the id
+// `foo(bar)` and the scan stopped at the first `)`, recorded `foo(bar`, and
+// consumed that parenthesis as the link's closer -- so a working link to an
+// explicit `id="foo(bar)"` was a gating dead anchor. Codex filed it on the
+// Python twin (stocks#1121), where it is the same defect.
+const MD_FRAG_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\[!-/:-@[-`{-~]|[^()\s]/y;
+
+/**
+ * End of the balanced bare fragment starting at `i`.
+ *
+ * The same walk `bareDestination` makes, over the atom above: a parenthesised
+ * run is consumed whole however deeply it nests, and a run carrying
+ * whitespace is not part of the fragment, because CommonMark forbids
+ * whitespace anywhere in an unbracketed destination.
+ */
+function bareFragment(text, i) {
+  let j = i;
+  while (j < text.length) {
+    MD_FRAG_ATOM_RE.lastIndex = j;
+    const m = MD_FRAG_ATOM_RE.exec(text);
+    if (m) { j = MD_FRAG_ATOM_RE.lastIndex; continue; }
     if (text[j] === '(') {
       const k = balancedClose(text, j);
       if (k === -1 || /\s/.test(text.slice(j, k))) return j;
@@ -408,9 +435,9 @@ function* mdLinks(text) {
       target = text.slice(at, stop);
       at = stop;
       if (text[at] === '#') {
-        MD_FRAG_RE.lastIndex = at + 1;
-        const f = MD_FRAG_RE.exec(text);
-        if (f) { [frag] = f; at = MD_FRAG_RE.lastIndex; }
+        const stopFrag = bareFragment(text, at + 1);
+        frag = text.slice(at + 1, stopFrag);
+        at = stopFrag;
       }
     }
     const destEnd = at;
@@ -4016,10 +4043,11 @@ function inlineLinkEnd(text, at) {
     j = MD_LINK_ANGLE_RE.lastIndex;
   } else {
     j = bareDestination(text, j);
-    if (text[j] === '#') {
-      MD_FRAG_RE.lastIndex = j + 1;
-      if (MD_FRAG_RE.exec(text)) j = MD_FRAG_RE.lastIndex;
-    }
+    // The same balanced walk `mdLinks` makes. This was the second
+    // implementation of one rule, so it stopped at a `)` inside a fragment
+    // while the other did not -- and the two disagreed about where a link
+    // ENDS, which is worse than either being wrong alone.
+    if (text[j] === '#') j = bareFragment(text, j + 1);
   }
   MD_LINK_TAIL_RE.lastIndex = j;
   return MD_LINK_TAIL_RE.exec(text) ? MD_LINK_TAIL_RE.lastIndex : -1;

@@ -3368,6 +3368,52 @@ describe('a link with an EMPTY fragment', () => {
   });
 });
 
+describe('a bare fragment carrying balanced parentheses', () => {
+  const ctx = (extra = []) => ({
+    tracked: new Set(['d.md', ...extra]), topLevelDirs: new Set(), rootFiles: new Set(),
+    knownRoot: new Set(), exts: new Set(['.md']), basenames: new Set(),
+  });
+
+  it('is walked, not stopped at the first close paren', () => {
+    // `[x](#foo(bar))` names the id `foo(bar)`, which `<div id="foo(bar)">`
+    // offers. Scanning the fragment as `[^)\\s]*` stopped at the first `)`,
+    // recorded `foo(bar`, and spent that parenthesis as the link's closer --
+    // so a working link was a gating dead anchor. CommonMark allows balanced
+    // parentheses anywhere in an unbracketed destination, and the fragment is
+    // part of one, so it is walked exactly as the path already is. Codex
+    // filed it on the Python twin (stocks#1121), where it is the same defect.
+    // A REAL file, because a fragment check reads the target's ids off disk.
+    const doc = 'docs-audit-paren-frag.md';
+    const body = '# D\n\n<div id="foo(bar)"></div>\n<div id="a(b(c))"></div>\n';
+    fs.writeFileSync(doc, body);
+    try {
+      const c = ctx([doc]);
+      // Quiet on the working link; the missing one is reported with the WHOLE
+      // fragment, not the prefix a stop-at-`)` scan would have recorded.
+      expect(checkDeadLinks('d.md', `[x](${doc}#foo(bar))\n`, c)).toEqual([]);
+      expect(checkDeadLinks('d.md', `[y](${doc}#nope(z))\n`, c).map((f) => f.detail))
+        .toEqual([`link -> ${doc}#nope(z): the target has no such heading`]);
+      // Nesting is not a depth of one: the walk is balanced, not counted.
+      expect(checkDeadLinks('d.md', `[x](${doc}#a(b(c)))\n`, c)).toEqual([]);
+      // An UNBALANCED parenthesis is not part of the fragment -- it closes
+      // the link, which is what makes `[x](d.md#a)` work at all, and
+      // whitespace is still a destination boundary, so a title stays a title.
+      expect(checkDeadLinks('d.md', `[x](${doc}#foo(bar) "t")\n`, c)).toEqual([]);
+    } finally {
+      fs.unlinkSync(doc);
+    }
+  });
+
+  it('ends the link at the same place the slugger thinks it does', () => {
+    // The SECOND implementation of this rule lives in the link-end scan the
+    // heading slugger uses, and it disagreed with the first about where a
+    // link ends: the title leaked into the heading text, so the audit offered
+    // `#a-t` and `#a` -- the id GitHub actually emits -- read as dead.
+    expect(headingSlug('[a](#x(y) "t")')).toBe('a');
+    expect(headingSlug('See [g](#foo(bar)) now')).toBe('see-g-now');
+  });
+});
+
 describe('a backtick hidden in an HTML comment', () => {
   const claim = (text) => checkClaims(
     [{ doc: 'd.md', pattern: 'There are (\\d+) routes', derivation: 'grep-files src x' }],
