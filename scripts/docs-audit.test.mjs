@@ -3568,6 +3568,63 @@ describe('a review recorded against a commit that predates the document', () => 
   });
 });
 
+describe('a pure rename out of a declared path', () => {
+  it('is not drift, because git is asked without the pathspec', () => {
+    // Git applies a pathspec BEFORE it detects renames, so `-- src` reports a
+    // file moved out of `src` as a plain delete and the R100 exclusion never
+    // sees it -- the pure-rename promise silently did not hold for exactly the
+    // moves it was written for. Measured on git 2.43 against a real repo
+    // rather than a mocked `exec`, because the defect IS git's behaviour:
+    //
+    //   no pathspec   ->  R100  src/f  moved/f
+    //   -- src        ->  D     src/f
+    //
+    // Codex filed it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-ren-'));
+    const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q', '-b', 'work');
+    git('config', 'user.email', 't@example.com');
+    git('config', 'user.name', 't');
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.mkdirSync(path.join(dir, 'moved'));
+    fs.mkdirSync(path.join(dir, 'other'));
+    fs.writeFileSync(path.join(dir, 'src/f.ts'), 'export const a = 1;\n');
+    fs.writeFileSync(path.join(dir, 'other/g.ts'), 'export const b = 2;\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'base');
+    const sha = git('rev-parse', 'HEAD').stdout.trim();
+    git('mv', 'src/f.ts', 'moved/f.ts');
+    git('commit', '-q', '-m', 'move out of src');
+    const exec = (cmd, args) => spawnSync(cmd, args, { cwd: dir, encoding: 'utf8' }).stdout;
+    expect(checkChangedSince('d.md', sha, ['src'], 'HEAD', { exec })).toEqual([]);
+    // The move IN is not drift either, and for the same reason -- one rename,
+    // read from whichever side is declared.
+    expect(checkChangedSince('d.md', sha, ['moved'], 'HEAD', { exec })).toEqual([]);
+    // A rename that also EDITED is still drift, which is what the R100 test
+    // is protecting: without the score check this would be silent too.
+    git('mv', 'moved/f.ts', 'moved/h.ts');
+    fs.writeFileSync(path.join(dir, 'moved/h.ts'), 'export const a = 99;\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'move and edit');
+    expect(checkChangedSince('d.md', sha, ['moved'], 'HEAD', { exec })[0].detail)
+      .toContain('1 content commit(s)');
+    // And the declared paths still FILTER: a commit touching only `other/`
+    // is invisible to a document that declares `src`. That job moved from
+    // git's pathspec into the output scan, so it needs its own assertion.
+    const sha2 = git('rev-parse', 'HEAD').stdout.trim();
+    fs.writeFileSync(path.join(dir, 'other/g.ts'), 'export const b = 3;\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'edit other');
+    expect(checkChangedSince('d.md', sha2, ['src'], 'HEAD', { exec })).toEqual([]);
+    expect(checkChangedSince('d.md', sha2, ['other'], 'HEAD', { exec })[0].detail)
+      .toContain('1 content commit(s)');
+    // A declared path is a whole path component, not a string prefix:
+    // declaring `src` must not pick up `srcfoo/`.
+    expect(checkChangedSince('d.md', sha2, ['oth'], 'HEAD', { exec })).toEqual([]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe('pathInCommit', () => {
   it('tells an absent path apart from an empty file', () => {
     // `git show <sha>:<doc>` yields '' for both, which is why the drift check
@@ -4835,6 +4892,36 @@ describe('the blocker cue vocabulary', () => {
     expect(hasBlockingCue("isn't a blocker")).toBe(false);
     // And a word that merely CONTAINS one is still not a cue.
     expect(hasBlockingCue('nonblocking by design')).toBe(false);
+  });
+});
+
+describe('a negator that is only a word PREFIX', () => {
+  it('negates nothing, because it is not a word', () => {
+    // The trailing separator was optional, so `un` matched the start of
+    // `Unresolved` and `not` the start of `Notable`, the rest of that single
+    // word was eaten by the two-word modifier window, and the line read as a
+    // negation of the very phrase it asserts -- the direction that HIDES a
+    // finding. Codex filed it.
+    expect(hasBlockingCue('Unresolved blocking issue')).toBe(true);
+    expect(hasBlockingCue('Noncritical blocking issue')).toBe(true);
+    expect(hasBlockingCue('Notable blocking issue')).toBe(true);
+    expect(hasBlockingCue('Nevertheless blocking release')).toBe(true);
+    // Through the whole check, not just the predicate: a closed issue on such
+    // a line is a finding, which is what the predicate is for.
+    const states = { solyra: { 1: { state: 'closed', reason: 'completed', kind: 'ISSUE' } } };
+    expect(checkClosedIssues('d.md',
+      'Unresolved blocking: https://github.com/TeneikaAskew/solyra/issues/1', states)
+      .map((f) => f.ref)).toEqual(['solyra#1']);
+    // The real negations still negate, spaced, hyphenated and contracted --
+    // a negator flush against its cue cannot occur, because the cue's own
+    // word boundary already refuses `nonblocking`.
+    expect(hasBlockingCue('un blocked by anything')).toBe(false);
+    expect(hasBlockingCue('un-blocked by anything')).toBe(false);
+    expect(hasBlockingCue('non blocking by design')).toBe(false);
+    expect(hasBlockingCue('is not currently blocking')).toBe(false);
+    expect(hasBlockingCue("isn't blocking release")).toBe(false);
+    // And `not only X` still AFFIRMS X.
+    expect(hasBlockingCue('is not only blocking release but also deploys')).toBe(true);
   });
 });
 

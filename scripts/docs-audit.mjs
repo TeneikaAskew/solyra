@@ -108,8 +108,15 @@ const BLOCKING_CUE_RE =
 // form -- so the contracted sentence was read as live work and a closed issue
 // produced a P1 whose own source line states the opposite. The apostrophe may
 // be typed or curly; a document written in either renders the same word.
+// `[\s-]+`, not `*`: a negator has to be a WHOLE word. With `*` the trailing
+// separator was optional, so `un` matched the start of `Unresolved` and `not`
+// the start of `Notable`, the rest of that one word was eaten by the modifier
+// window, and `Unresolved blocking: <closed issue>` read as a negation of the
+// very phrase it asserts -- the direction that HIDES a finding. A negator
+// flush against its cue cannot occur: the cue's own `\b` already refuses
+// `nonblocking`. Codex filed it.
 const CUE_NEGATOR_RE =
-  /\b(?:not|non|never|no longer|without|un|\w+n['\u2019]t)[\s-]*(?:\w+[\s-]+){0,2}$/i;
+  /\b(?:not|non|never|no longer|without|un|\w+n['\u2019]t)[\s-]+(?:\w+[\s-]+){0,2}$/i;
 // `not only X but also Y` AFFIRMS X. The generic `not` branch read it as a
 // negation, so an issue the prose calls blocking was dropped from the audit
 // once it closed -- the direction that HIDES a finding. Tested against the
@@ -4918,8 +4925,29 @@ export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) 
   lines.forEach((line, i) => {
     // A line whose only reason to be excluded is that it sits in a non-raw-text
     // HTML block still gets the href pass; everything else about it is skipped.
-    const htmlOnly = htmlBlock.has(i) && !rawTextLines.has(i)
-      && !fencedLines(lines).has(i) && !indentedCodeLines(lines).has(i);
+    // `fenceOnly` IS `fencedLines` united with `indentedCodeLines`, computed
+    // once above. Recomputing both per line made this pass quadratic in the
+    // document: each call rescans the whole file and runs its own block
+    // analysis. Measured on a document that is one large HTML block, which is
+    // what actually reaches the recompute -- `htmlBlock.has(i)` short-circuits
+    // everywhere else, so the checked-in corpus showed no difference at all
+    // (57 ms before, 56 ms after on the 1,743-line landing-page plan, which is
+    // why the filed consequence is not the one measured here):
+    //
+    //     404 HTML lines   256 ms -> 14 ms
+    //     804 HTML lines   967 ms -> 27 ms
+    //
+    // Doubling the document nearly quadrupled the old cost and merely doubled
+    // the new one, which is the shape the word quadratic is claiming. Codex
+    // filed it.
+    //
+    // The `fenceOnly` term itself is redundant today and no test pins it:
+    // `rawHtmlBlockLines` already excludes fenced and indented-code lines, so
+    // the intersection is empty -- removing the term changes no finding, which
+    // is what the mutation showed. It is kept as a set lookup rather than
+    // deleted, because it is the guard that keeps a fenced `<div>` out of the
+    // href pass if that exclusion ever moves.
+    const htmlOnly = htmlBlock.has(i) && !rawTextLines.has(i) && !fenceOnly.has(i);
     if (fenced.has(i) && !htmlOnly) return;
     // Spans a backticked citation occupies purely as a Markdown link's LABEL.
     // ``[`src/gone.ts`](../src/gone.ts)`` is ONE broken link, and reporting it
@@ -5185,7 +5213,15 @@ export function contentChecks(cls, doc, text, ctx) {
  * with an edit (`R089`) is exactly as much drift as the edit alone, and
  * `--diff-filter=AMD` dropped the whole commit because git files it under R.
  */
-export function driftCommits(out) {
+/**
+ * The repository paths a `--name-status` line names: one, or two for a rename
+ * or copy (`R100\told\tnew`).
+ */
+function statusPaths(line) {
+  return line.split('\t').slice(1).filter(Boolean);
+}
+
+export function driftCommits(out, declared = () => true) {
   const commits = [];
   let current = null;
   for (const line of out.split('\n')) {
@@ -5193,6 +5229,13 @@ export function driftCommits(out) {
     if (header) { current = { line, drift: false }; commits.push(current); continue; }
     const status = /^([AMDRCT])(\d{3})?\t/.exec(line);
     if (!status || !current) continue;
+    // The pathspec is applied HERE rather than by git, because git filters by
+    // path BEFORE it detects renames: `-- old` turns `R100 old/f new/f` into
+    // `D old/f`, and a pure move out of a declared path then counts as
+    // content drift against the promise directly above. Reproduced on git
+    // 2.43. Either side being declared is enough -- a file moving IN and a
+    // file moving OUT both change the declared surface by exactly as much.
+    if (!statusPaths(line).some(declared)) continue;
     const [, kind, score] = status;
     // T (the git object type changed -- a regular file became a symlink, or a
     // submodule a file) is drift like any other: the described surface is not
@@ -5225,16 +5268,24 @@ export function checkChangedSince(doc, sha, codePaths, baseRef = 'origin/main', 
   // uncommitted edit under a declared path makes the documentation stale while
   // `sha..HEAD` reports nothing -- exactly the run a developer does before
   // committing.
+  // NO pathspec on either command. Git applies a pathspec before it detects
+  // renames, so `-- src` reports a file moved out of `src` as a plain delete
+  // and the R100 exclusion above never sees it -- the pure-rename promise
+  // silently did not hold for exactly the moves it was written for. Codex
+  // filed it and I reproduced it on git 2.43. The declared paths are applied
+  // to the output instead, where both sides of a rename are still visible.
+  const declared = (p) => codePaths.some((c) => p === c || p.startsWith(`${c}/`));
   const pending = exec('git', ['diff', '--name-status', '-M', '--diff-filter=AMDRT',
-    'HEAD', '--', ...codePaths]);
+    'HEAD']);
   const out = exec('git', ['log', '--abbrev=12', '--format=%h%x09%s', '--name-status', '-M',
     '--diff-filter=AMDRT',
-    `${sha}..${baseRef}`, '--', ...codePaths]);
-  const commits = driftCommits(out);
+    `${sha}..${baseRef}`]);
+  const commits = driftCommits(out, declared);
   // A bare status listing with no commit header: driftCommits needs one, so
   // the uncommitted changes are counted directly.
   const uncommitted = pending.split('\n')
     .filter((l) => /^([AMDRCT])(\d{3})?\t/.test(l))
+    .filter((l) => statusPaths(l).some(declared))
     .filter((l) => { const [, k, s] = /^([AMDRCT])(\d{3})?\t/.exec(l);
       return 'AMDT'.includes(k) || (k === 'R' && Number(s ?? 100) < 100); });
   if (commits.length === 0 && uncommitted.length === 0) return [];
