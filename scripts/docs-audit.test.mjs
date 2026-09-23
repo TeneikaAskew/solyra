@@ -3368,6 +3368,122 @@ describe('a link with an EMPTY fragment', () => {
   });
 });
 
+describe('a blocker cue the rendered line does not spell out', () => {
+  const STATES = {
+    solyra: {
+      1: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+      8: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+    },
+    stocks: {
+      825: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+      900: { state: 'closed', reason: 'completed', kind: 'ISSUE' },
+    },
+  };
+  const SU = (n) => `https://github.com/TeneikaAskew/stocks/issues/${n}`;
+  const U = (n) => `https://github.com/TeneikaAskew/solyra/issues/${n}`;
+  const ci = (text) => checkClosedIssues('d.md', text, STATES).map((f) => f.ref);
+
+  it('is still a cue when INLINE MARKUP sits inside it', () => {
+    // Emphasis was the only markup the cue scan reduced, so
+    // `Still [open](README.md):` and `Still <strong>open</strong>:` -- both
+    // of which a reader sees as "still open" -- matched no cue at all and the
+    // closed issue produced no finding. The direction that hides them. Codex
+    // filed it.
+    expect(ci(`Still [open](README.md): ${U(1)}\n`)).toEqual(['solyra#1']);
+    expect(ci(`Still <strong>open</strong>: ${U(1)}\n`)).toEqual(['solyra#1']);
+    expect(ci(`Still [open][i]: ${U(1)}\n\n[i]: x.md\n`)).toEqual(['solyra#1']);
+    // The plain spelling and the NEGATED one both still behave: this widens
+    // what counts as the cue text, not what counts as a cue.
+    expect(ci(`Still open: ${U(1)}\n`)).toEqual(['solyra#1']);
+    expect(ci(`No longer [open](README.md): ${U(1)}\n`)).toEqual([]);
+    // A URL written as a link DESTINATION is still found -- the citation scan
+    // reads the unmarked line, so blanking the destination for the cue test
+    // costs nothing.
+    expect(ci(`Blocked by [issue](${U(1)})\n`)).toEqual(['solyra#1']);
+  });
+
+  it('is read from the RENDERED PARAGRAPH, in both directions', () => {
+    // A soft break renders as a space, so a paragraph is one sentence however
+    // it is wrapped. Scanning physical lines loses the verdict both ways:
+    // `This work is blocked` over `by <url>` holds `blocked by` at neither
+    // end, which HIDES a finding, and `... as blockers when both had been`
+    // over `closed on ...` holds the blocking half without the settled half,
+    // which FABRICATES one saying the opposite of the sentence. Codex filed
+    // the first on the Python twin (stocks#1121); the second is the same
+    // defect and the same fix, and it showed up in the findings diff there.
+    expect(ci(`This work is blocked\nby ${U(8)}\n`)).toEqual(['solyra#8']);
+    const wrapped = [
+      '**Issue-state caveat.** Blocking-issue links are a snapshot, and a stale one',
+      `is worse than none: on 2026-09-15 this registry still cited [#825](${SU(825)})`,
+      `and [#900](${SU(900)}) as blockers when both had been`,
+      'closed on 2026-09-14, so MODEL-BRIEF-001 appeared blocked.',
+    ].join('\n');
+    expect(ci(`${wrapped}\n`)).toEqual([]);
+    // Every paragraph boundary still ends it, which is what keeps a cue from
+    // reaching across unrelated prose.
+    expect(ci(`This work is blocked\n\nby ${U(8)}\n`)).toEqual([]);
+    expect(ci(`This work is blocked\n# H\nby ${U(8)}\n`)).toEqual([]);
+    expect(ci(`This work is blocked\n\`\`\`\nby ${U(8)}\n\`\`\`\n`)).toEqual([]);
+    // Two lines with no cue between them are still two lines with no cue.
+    expect(ci(`Some prose here\nabout ${U(8)}\n`)).toEqual([]);
+    // And the negation is read across the break as well, because the joined
+    // text is what the classifier sees.
+    expect(ci(`This work is not blocked\nby ${U(8)}\n`)).toEqual([]);
+  });
+
+  it('is SETTLED when the clause says so, whatever else it says', () => {
+    // A clause can carry both vocabularies, and the settled one is the
+    // specific claim. With no settled pass at all the blocking word won and
+    // the audit emitted a P1 saying the opposite of the sentence it read.
+    // Ported from the Python twin (stocks#1121).
+    expect(ci(`Blocked by ${SU(900)}, now resolved\n`)).toEqual([]);
+    // The NOUN forms too, which is what the blocking vocabulary already does
+    // with `blocker` beside `blocking`. `... tracked as outstanding work, not
+    // as part of the closure` says the citation is closed in its own words,
+    // and without `closure` the `outstanding` won once the paragraph scan
+    // could see both.
+    expect(ci(`Outstanding work, not part of the closure: ${SU(900)}\n`)).toEqual([]);
+    expect(ci(`${SU(900)}'s resolution covered it\n`)).toEqual([]);
+    // A NEGATED settled cue says the opposite of the word it contains, so it
+    // settles nothing -- the same negator predicate the blocking side uses.
+    expect(ci(`Still open, not resolved: ${SU(900)}\n`)).toEqual(['stocks#900']);
+    expect(ci(`Blocked by ${SU(900)}, never merged\n`)).toEqual(['stocks#900']);
+  });
+
+  it('is carried from a TABLE HEADING to the rows under it', () => {
+    // A table headed `| Open issues |` classifies the citations beneath it as
+    // live work, but a table line is always an item, so the branch that
+    // records a carried label never ran for one and a closed issue in the
+    // body produced no finding at all. Codex filed it.
+    expect(ci(`| Open issues |\n|---|\n| ${U(1)} |\n`)).toEqual(['solyra#1']);
+    // A heading with no cue carries nothing, and the carry ends with the
+    // table -- otherwise this would be a cue that reaches arbitrarily far.
+    expect(ci(`| Reference |\n|---|\n| ${U(1)} |\n`)).toEqual([]);
+    expect(ci(`| Open issues |\n|---|\n| a |\n\nSee ${U(1)}\n`)).toEqual([]);
+    // The cue and the citation in ONE row already worked and still does.
+    expect(ci(`| Still open | ${U(1)} |\n`)).toEqual(['solyra#1']);
+  });
+});
+
+describe('a `<!--` inside a MULTI-LINE code span', () => {
+  it('opens no comment, so the fence below it still fences', () => {
+    // `commentHiddenLines` scanned for code spans per physical line, so a
+    // span that opens on one line and closes on another hid nothing: the
+    // displayed `<!--` read as a real unclosed comment, `fencedLines` then
+    // ignored BOTH delimiters of the fence below it, `h1Index` accepted the
+    // `# Fake` heading inside that fence, and `--stamp` would insert
+    // provenance into a code block. Codex filed it.
+    expect(h1Index(['Text `', 'inside <!--', '`', '```', '# Fake', '```', '', '# Real']))
+      .toBe(7);
+    // A REAL comment still hides its heading, and a real unclosed one still
+    // runs to EOF -- this narrows the scan by one construct, not by the rule.
+    expect(h1Index(['<!--', '# Fake', '-->', '', '# Real'])).toBe(4);
+    expect(h1Index(['<!--', '# Fake', '', '# Also fake'])).toBeNull();
+    // The line-local case it already handled is unchanged.
+    expect(h1Index(['`<!--`', '', '# Real'])).toBe(2);
+  });
+});
+
 describe('a backtick inside an HTML tag', () => {
   const ctx = {
     tracked: new Set(['d.md']), topLevelDirs: new Set(), rootFiles: new Set(),
@@ -7704,8 +7820,21 @@ describe('inline content at a container boundary', () => {
     // The other direction: two items must not pair into one link.
     expect(checkDeadLinks('d.md', '- [open\n- label](missing.md)\n',
       linkCtx(['d.md']))).toEqual([]);
-    expect(paragraphBlocks(['> a ` b', 'c ` d'], new Set()))
+    // A DEEPER quote is a real transition: a blockquote may interrupt a
+    // paragraph, so these are two blocks and the delimiters must not pair.
+    expect(paragraphBlocks(['a ` b', '> c ` d'], new Set()))
       .toEqual([[0, 0], [1, 1]]);
+    expect(checkDeadLinks('d.md', 'a `\n> [x](missing.md) `\n', linkCtx(['d.md']))
+      .map((f) => f.check)).toEqual(['dead-link']);
+    // A SHALLOWER one is not. This assertion read `[[0, 0], [1, 1]]` until
+    // Codex filed it: CommonMark's laziness rule lets a paragraph inside a
+    // blockquote continue on a line that omits the `>`, so these two lines
+    // are ONE paragraph and the backticks are one span. The old grouping put
+    // them in separate windows, `codeSpanLines` found no span, and literal
+    // code produced a gating dead-link finding.
+    expect(paragraphBlocks(['> a ` b', 'c ` d'], new Set())).toEqual([[0, 1]]);
+    expect(checkDeadLinks('d.md', '> sample `\n[x](missing.md) `\n',
+      linkCtx(['d.md']))).toEqual([]);
     // A CONTINUATION of an item carries no marker and stays in its block.
     expect(paragraphBlocks(['- one', '  two'], new Set())).toEqual([[0, 1]]);
   });

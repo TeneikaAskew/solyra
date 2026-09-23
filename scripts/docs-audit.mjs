@@ -199,6 +199,41 @@ export function clauseBounds(line, start, end) {
   return [lo, hi];
 }
 
+// Words that say a citation is FINISHED. The blocking vocabulary and this one
+// can share a clause -- `still cited as blockers when both had been closed` is
+// a sentence about a past mistake, not a live blocker -- and with no settled
+// pass at all the blocking word won and the audit emitted a P1 saying the
+// opposite of the sentence it read. Measured on the stocks tree's
+// docs/product/07-MODEL-REGISTRY.md, where both citations in that paragraph
+// were reported. Ported from the Python twin (stocks#1121), which has carried
+// this precedence for rounds.
+// `closure` and `resolution` are the NOUN forms of two cues here, and the
+// blocking vocabulary carries `blocker`/`blockers` beside `blocking` for
+// exactly this reason. Without them, `... is tracked as outstanding work, not
+// as part of the closure` -- a sentence whose own words say the citation is
+// closed -- reads as live work once the cue analysis sees the whole rendered
+// paragraph. Measured on the stocks tree's
+// docs/product/12-PR-ISSUE-TRACEABILITY.md.
+const SETTLED_CUE_RE =
+  /\b(?:closed|closure|resolved|resolution|superseded|merged|moved\s+to|relocated|duplicate\s+of|completed)\b/gi;
+
+/**
+ * Does this clause say the citation is finished?
+ *
+ * True only when at least one settled cue is NOT negated: `not resolved` and
+ * `never merged` say the opposite of the word they contain, and the negator
+ * predicate is the one `hasBlockingCue` already uses, so the two cannot
+ * disagree about what a negation is.
+ */
+export function isSettled(clause) {
+  SETTLED_CUE_RE.lastIndex = 0;
+  for (const m of clause.matchAll(SETTLED_CUE_RE)) {
+    const before = clause.slice(0, m.index);
+    if (NOT_ONLY_RE.test(before) || !CUE_NEGATOR_RE.test(before)) return true;
+  }
+  return false;
+}
+
 export function citationClause(line, start, end) {
   const [lo, hi] = clauseBounds(line, start, end);
   return line.slice(lo, hi);
@@ -225,8 +260,13 @@ const QUALIFIED_ISSUE_RE =
  * `| Open issues | #838 · #839 |` is a real finding whose citations sit in a
  * clause with no cue of its own.
  */
-export function citesLiveWork(line, start, end, { context = null } = {}) {
+export function citesLiveWork(line, start, end, { context = null, fallback = null } = {}) {
   const clause = citationClause(line, start, end);
+  // SETTLED first. A clause can carry both vocabularies, and the settled one
+  // is the specific claim: `still cited as blockers when both had been
+  // closed` describes a past mistake.
+  SETTLED_CUE_RE.lastIndex = 0;
+  if (SETTLED_CUE_RE.test(clause) && isSettled(clause)) return false;
   BLOCKING_CUE_RE.lastIndex = 0;
   if (BLOCKING_CUE_RE.test(clause)) return hasBlockingCue(clause);
   // No cue in the citation's own clause. Two things can still supply one, and
@@ -240,7 +280,14 @@ export function citesLiveWork(line, start, end, { context = null } = {}) {
   // fallback recreated the cross-clause false positive this function exists to
   // prevent -- `Background: #1. Still blocked by #2.` gave #1 a finding from
   // #2's cue. A pipe is what tells the two apart.
-  return line.includes('|') ? hasBlockingCue(line) : false;
+  // The physical LINE, not the paragraph. This is the table-ROW rule, and a
+  // whole table is one paragraph block -- passing the paragraph let a
+  // `Blocking issues` column HEADER reach every citation in every row, which
+  // measured 43 fabricated P1s on the stocks tree in rows whose own cells say
+  // nothing of the kind. The clause analysis above still reads the paragraph,
+  // which is what a sentence split by a soft break needs.
+  const row = fallback ?? line;
+  return row.includes('|') ? hasBlockingCue(row) : false;
 }
 // The fragment is CAPTURED, not discarded. Dropping it meant a link to a real
 // file but a heading that does not exist always passed. The Python twin had
@@ -2132,6 +2179,15 @@ export function rawHtmlBlockLines(lines,
 function commentHiddenLines(lines) {
   const out = new Set();
   let inside = false;
+  // Spans that CROSS a soft break, as well as the line-local ones below. A
+  // `<!--` inside a multi-line code span is displayed text: with only the
+  // line-local scan, `Text \`` / `inside <!--` / `\`` read as a real unclosed
+  // comment, `fencedLines` then ignored both delimiters of the fence below
+  // it, `h1Index` accepted the `# Fake` heading inside that fence, and
+  // `--stamp` inserted provenance into a code block. No cycle: passing no
+  // fence set keeps `codeSpanLines` off `fencedLines`, which is the same
+  // constraint that function already documents. Codex filed it.
+  const wrapped = codeSpanLines(lines);
   for (const [i, line] of lines.entries()) {
     if (inside) {
       out.add(i);
@@ -2146,7 +2202,7 @@ function commentHiddenLines(lines) {
     // standalone helper, which exists to break the recursion between the two,
     // did not. codeSpans is line-local, so using it here reintroduces no
     // cycle. Ported from the Python twin (stocks#1121).
-    const spans = codeSpans(line);
+    const spans = [...codeSpans(line), ...(wrapped.get(i) ?? [])];
     let at = line.indexOf('<!--');
     // An ESCAPED opener opens nothing either: `\<!--` displays the delimiter
     // literally and leaves the rest of the line live Markdown. Reading it as a
@@ -2500,7 +2556,18 @@ export function paragraphBlocks(lines, fenced = new Set()) {
     // link completely. The same grouping feeds codeSpanLines, where delimiters
     // in separate containers were hiding live content between them.
     const depth = quoteDepth(line);
-    if (start !== null && (depth !== openDepth
+    // DEEPER only. A line at a SHALLOWER quote depth than the open paragraph
+    // is a LAZY CONTINUATION, not a container transition: CommonMark lets a
+    // paragraph inside a blockquote continue on a line that omits the `>`, so
+    // `> sample \`` over `[x](missing.md) \`` is one paragraph holding one
+    // multi-line code span. Splitting them put the two delimiters in separate
+    // windows, `codeSpanLines` found no span, and the audit emitted a gating
+    // dead-link finding for literal code. Every line that could START a block
+    // instead of continuing one has already returned above -- blank, fenced,
+    // heading, setext underline, thematic break -- and a list marker is
+    // tested beside this, so what reaches here at a lower depth can only be
+    // a continuation. Codex filed it.
+    if (start !== null && (depth > openDepth
         || /^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/.test(bare))) {
       flush(i - 1);
     }
@@ -3573,7 +3640,47 @@ export function checkClosedIssues(doc, text, states) {
   // list are on adjacent lines. The context is carried only across list items
   // and table rows, and only from a line that ENDS in a cue-bearing label, so
   // it cannot leak into the prose after the block.
+  // Per line, ONCE: the spans a reader cannot see, the line with them blanked,
+  // and the cue text -- markup reduced, same length, so every offset still
+  // indexes all three. Computed here rather than in the loop because the
+  // PARAGRAPH join below needs every line's cue text before the first line is
+  // classified.
+  const hiddenOf = lines.map((line, i) => [...(commented.get(i) ?? []),
+    ...codeSpans(line), ...(wrapped.get(i) ?? []), ...(attrSpans.get(i) ?? []),
+    ...(titleSpans.get(i) ?? [])]);
+  const visibleOf = lines.map((line, i) => maskSpans(line, hiddenOf[i]));
+  const cueOf = visibleOf.map((v) => stripInlineMarkup(stripEmphasis(v)));
+  // The RENDERED PARAGRAPH, not the physical line. A soft break renders as a
+  // space, so `This work is blocked` over `by <url>` is one sentence -- and a
+  // per-line scan found `blocked by` at neither end, so a closed issue
+  // produced no finding. The SETTLED direction wraps just as often and is
+  // worse when it is missed: `... as blockers when both had been` over
+  // `closed on 2026-09-14` reads as live work on the first line alone, which
+  // is a FALSE gating finding saying the opposite of the sentence. Measured
+  // on docs/product/07-MODEL-REGISTRY.md in the stocks tree, where both
+  // spellings of that paragraph were reported. Codex filed the blocking half
+  // (stocks#1121); the settled half is the same defect and the same fix.
+  //
+  // `paragraphBlocks` is the same window the code-span scan uses, so the two
+  // cannot disagree about where inline content ends. Offsets map back: a
+  // citation found on line `i` at column `c` is read at `paraStart[i] + c` in
+  // the joined text, and the finding is still reported against line `i`.
+  const paraText = new Map();
+  const paraStart = new Map();
+  for (const [lo, hi] of paragraphBlocks(lines, fenced)) {
+    let joined = '';
+    for (let i = lo; i <= hi; i += 1) {
+      if (i > lo) joined += ' ';
+      paraStart.set(i, joined.length);
+      joined += cueOf[i];
+    }
+    for (let i = lo; i <= hi; i += 1) paraText.set(i, joined);
+  }
   const CUE_LABEL_RE = /:\s*$/;
+  // The `|---|---|` row under a table's heading. At least one dash, and
+  // nothing but the delimiter alphabet, so an ordinary body row of dashes and
+  // pipes is not mistaken for one.
+  const TABLE_DELIM_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
   let carried = null;
   // The quote depth the carried label was READ at. Stripping the container
   // prefix is what made a quoted blocker list recognisable, and it also erased
@@ -3613,16 +3720,14 @@ export function checkClosedIssues(doc, text, states) {
     // And a Markdown link TITLE, which renders as a tooltip rather than as
     // body text -- see linkTitleSpans. The destination stays visible,
     // because an issue URL written there is one a reader can follow.
-    const hidden = [...(commented.get(i) ?? []), ...codeSpans(line),
-      ...(wrapped.get(i) ?? []), ...(attrSpans.get(i) ?? []),
-      ...(titleSpans.get(i) ?? [])];
+    const hidden = hiddenOf[i];
     // The hidden spans are masked OUT before any cue is read, at the same
     // length so every offset below still lines up. Hiding only the URLs was
     // half the job: `<!-- still open --> https://.../issues/1` kept the
     // visible URL and handed the commented phrase to the classifier as live
     // prose, so a closed issue produced a false, GATING P1 from text that
     // renders as nothing.
-    const visible = maskSpans(line, hidden);
+    const visible = visibleOf[i];
     // Structure is read through the CONTAINER prefix. A quoted blocker list --
     // `> Blocked by:` then `> - <url>` -- left the `>` in `visible`, so the
     // list line was not recognised as an item, the line cleared `carried`,
@@ -3649,7 +3754,12 @@ export function checkClosedIssues(doc, text, states) {
     // audit entirely, which is the direction that hides findings. Replaced
     // with spaces rather than removed, because every offset below is an
     // offset into this line.
-    const cueText = stripEmphasis(visible);
+    const cueText = cueOf[i];
+    // The joined paragraph, and this line's offset into it. A line outside
+    // any paragraph block (a fenced one cannot reach here) falls back to
+    // itself, which is what the scan did everywhere before.
+    const paraCue = paraText.get(i) ?? cueText;
+    const paraAt = paraStart.get(i) ?? 0;
     // The label terminator is tested against the text with the hidden tail
     // REMOVED, not masked. `Blocked by: <!-- note -->` renders as a label
     // ending in `:`, but the equal-length mask leaves NULs after the colon
@@ -3657,7 +3767,7 @@ export function checkClosedIssues(doc, text, states) {
     // and every closed issue in the list below went unreported. Offsets are
     // preserved everywhere they are used; only this one anchored test reads
     // the trimmed form.
-    const labelText = stripEmphasis(bare).replace(/\u0000+\s*$/, '');
+    const labelText = stripInlineMarkup(stripEmphasis(bare)).replace(/\u0000+\s*$/, '');
     // A blank line between the label and its list is the normal spelling, so
     // it must not clear the context; any other non-item line does.
     // A line that is ENTIRELY hidden renders as nothing, so it must not clear
@@ -3668,6 +3778,19 @@ export function checkClosedIssues(doc, text, states) {
     // has to be tested against the mask character rather than the string.
     if (!isItem && !isContinuation && rendered.trim()) {
       carried = hasBlockingCue(cueText) && CUE_LABEL_RE.test(labelText) ? cueText : null;
+      carriedDepth = quoteDepth(visible);
+    }
+    // A table HEADING carries context to its body rows. A table headed
+    // `| Open issues |` classifies every citation beneath it as live work,
+    // but a table line is always `isItem`, so the branch above never ran for
+    // one and a closed issue in the body produced no finding at all. No
+    // trailing colon is required: a heading cell is a label by position.
+    // The row is a heading only when the DELIMITER row follows it, which is
+    // what makes it a heading rather than one more body row. Codex filed it.
+    if (isItem && TABLE_DELIM_RE.test(
+      (lines[i + 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, ''))
+      && hasBlockingCue(cueText)) {
+      carried = cueText;
       carriedDepth = quoteDepth(visible);
     }
     // A label belongs to its CONTAINER. `> Blocked by:`, a quoted blank, then
@@ -3684,7 +3807,8 @@ export function checkClosedIssues(doc, text, states) {
     if (/^ {0,3}(?:#{1,6}(?:\s|$)|(?:\*\s*){3,}$|(?:-\s*){3,}$|(?:_\s*){3,}$)/.test(bare)) {
       paragraphCue = null;
     }
-    const softCue = !isItem && !isContinuation && rendered.trim() ? paragraphCue : null;
+    const softCue = !isItem && !isContinuation && rendered.trim()
+      ? paragraphCue : null;
     const context = isItem || isContinuation ? carried : softCue;
     // The paragraph's cue is remembered for the NEXT line and dropped at any
     // boundary: a blank line, a fence, a heading, a list, or a change of
@@ -3698,7 +3822,7 @@ export function checkClosedIssues(doc, text, states) {
     if (!isItem && !isContinuation && rendered.trim() && hasBlockingCue(cueText)) {
       paragraphCue = cueText;
     }
-    if (!hasBlockingCue(cueText) && context === null) return;
+    if (!hasBlockingCue(paraCue) && context === null) return;
     // The DECODED line, because a destination is decoded before a reader
     // follows it: `https://github&#46;com/.../issues/1` is a link to the real
     // issue, and scanning the source spelling missed it entirely -- a stale
@@ -3733,10 +3857,11 @@ export function checkClosedIssues(doc, text, states) {
       if (urlSpans.some(([lo, hi]) => lo <= at && at < hi)) continue;
       const repo = normaliseRepo(m[1]);
       const num = Number(m[2]);
-      const [cLo, cHi] = clauseBounds(cueText, at, end);
+      const [cLo, cHi] = clauseBounds(paraCue, paraAt + at, paraAt + end);
       if (urlHere.some((u) => u.repo === repo && u.num === num
-        && cLo <= u.at && u.at < cHi)) continue;
-      if (!citesLiveWork(cueText, at, end, { context })) continue;
+        && cLo <= paraAt + u.at && paraAt + u.at < cHi)) continue;
+      if (!citesLiveWork(paraCue, paraAt + at, paraAt + end,
+        { context, fallback: cueText })) continue;
       const st = states[repo]?.[num];
       const label = `${repo}#${num}`;
       if (!st) {
@@ -3767,10 +3892,11 @@ export function checkClosedIssues(doc, text, states) {
       const num = Number(hit[3]);
       // One citation, however many spellings of it share the clause -- the
       // same dedup the qualified shorthand uses, for the same reason.
-      const [cLo, cHi] = clauseBounds(cueText, at, end);
+      const [cLo, cHi] = clauseBounds(paraCue, paraAt + at, paraAt + end);
       if (urlHere.some((v) => v.repo === repo && v.num === num
-        && cLo <= v.at && v.at < cHi)) continue;
-      if (!citesLiveWork(cueText, at, end, { context })) continue;
+        && cLo <= paraAt + v.at && paraAt + v.at < cHi)) continue;
+      if (!citesLiveWork(paraCue, paraAt + at, paraAt + end,
+        { context, fallback: cueText })) continue;
       const isPr = hit[2].toLowerCase() === 'pull';
       // Same kind check the URL pass applies; see there.
       const st = isPr && states[repo]?.[num]?.kind === 'ISSUE'
@@ -3791,7 +3917,8 @@ export function checkClosedIssues(doc, text, states) {
       const at = srcAt(m.index);
       const end = srcAt(m.index + m[0].length);
       if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
-      if (!citesLiveWork(cueText, at, end, { context })) continue;
+      if (!citesLiveWork(paraCue, paraAt + at, paraAt + end,
+        { context, fallback: cueText })) continue;
       const [, rawRepo, rawKind, num] = m;
       const repo = normaliseRepo(rawRepo);
       const kind = rawKind.toLowerCase();
@@ -4288,6 +4415,37 @@ export function maskSpans(line, spans, fill = '\u0000') {
 export function stripEmphasis(line) {
   return line.replace(/\*+/g, (m) => ' '.repeat(m.length))
     .replace(/(?<!\w)_+|_+(?!\w)/g, (m) => ' '.repeat(m.length));
+}
+
+const CLOSING_TAG_RE = /<\/[a-zA-Z][a-zA-Z0-9-]*\s*>/g;
+
+/**
+ * The line with inline LINK and HTML markup blanked, leaving visible text.
+ *
+ * Emphasis was the only markup the blocker cue scan reduced, so
+ * `Still [open](README.md): <closed issue url>` and
+ * `Still <strong>open</strong>: <url>` -- both of which a reader sees as
+ * "still open" -- matched no cue at all and the closed issue produced no
+ * finding. The direction that hides them. Codex filed it.
+ *
+ * Blanked to spaces, never removed: every offset in the caller is an offset
+ * into this line. A link's DESTINATION is blanked here even though the
+ * citation scan keeps it visible -- these two read different strings, and a
+ * URL written as a destination is still found there.
+ */
+export function stripInlineMarkup(line) {
+  const blank = (m) => ' '.repeat(m.length);
+  let out = line;
+  // The label's brackets and the whole `](destination)` tail, so the label
+  // itself stays where it was. Nested brackets in a label are walked by
+  // `mdLinks`; this is the cue scan, where a label that fails to match simply
+  // keeps its brackets, which reads the same as before.
+  out = out.replace(/\[([^\[\]]*)\]\([^()\s]*(?:\s+[^()]*)?\)/g,
+    (m, label) => ` ${label}${' '.repeat(m.length - label.length - 1)}`);
+  // A reference-style use keeps its label too: `[open][i]` renders as `open`.
+  out = out.replace(/\[([^\[\]]*)\]\[[^\[\]]*\]/g,
+    (m, label) => ` ${label}${' '.repeat(m.length - label.length - 1)}`);
+  return out.replace(TAG_OPEN_RE, blank).replace(CLOSING_TAG_RE, blank);
 }
 
 /** Every anchor a document offers, duplicates numbered as GitHub numbers them. */
