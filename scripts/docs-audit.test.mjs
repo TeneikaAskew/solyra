@@ -90,6 +90,7 @@ import {
   resolveBaseRef,
   HISTORY_REF_CANDIDATES,
   run,
+  historyTree,
   loadClaims,
   citationClause,
   ownedLines,
@@ -2183,6 +2184,51 @@ describe('a whole run over a fixture repository', () => {
     expect(said).toHaveLength(1);
   });
 
+  it('refuses a verified stamp against a baseline it did not read', () => {
+    // The audit reads the WORKING TREE. `--since` moves only the SHA written
+    // into the marker, so on a branch `--stamp --verify --since <older>`
+    // recorded a review against bytes nobody inspected -- and the next
+    // ordinary audit reports the branch's own commits as drift from that
+    // older SHA. Codex filed it. Only spawning the script can see it: the
+    // refusal is an interaction between `--since` and the stamp loop.
+    const dir = fixture();
+    fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n\nbody\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'doc'], { cwd: dir });
+    const base = spawnSync('git', ['rev-parse', 'HEAD'],
+      { cwd: dir, encoding: 'utf8' }).stdout.trim();
+
+    // (a) the DOCUMENT moved on after that commit.
+    fs.writeFileSync(path.join(dir, 'docs/d.md'), '# D\n\nbody, revised\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'revise'], { cwd: dir });
+    let res = runAudit(dir, ['--stamp', '--verify', 'docs/d.md', '--since', base]);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/does not hold what was read/);
+    expect(fs.readFileSync(path.join(dir, 'docs/d.md'), 'utf8'))
+      .not.toMatch(/Last reviewed/);
+
+    // (b) the declared CODE moved on, with the document identical. A marker
+    // written here would be reported as drifted by the very next audit.
+    const base2 = spawnSync('git', ['rev-parse', 'HEAD'],
+      { cwd: dir, encoding: 'utf8' }).stdout.trim();
+    fs.writeFileSync(path.join(dir, 'src/a.ts'), 'export const a = 2;\n');
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['commit', '-qm', 'edit code'], { cwd: dir });
+    res = runAudit(dir, ['--stamp', '--verify', 'docs/d.md', '--since', base2]);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/drifted by the very next audit/);
+
+    // The control: WITHOUT --since the baseline is the audited revision, so
+    // both comparisons are trivially empty and the stamp is written. This is
+    // what says the refusals are scoped to the claim rather than to stamping.
+    res = runAudit(dir, ['--stamp', '--verify', 'docs/d.md']);
+    expect(res.status, res.stderr).toBe(0);
+    expect(fs.readFileSync(path.join(dir, 'docs/d.md'), 'utf8'))
+      .toMatch(/Depth:\*\* verified/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('refuses a verified stamp over a claim the audit disproved', () => {
     // `--verify` writes `Depth: verified` and today's date, which says "I read
     // this and its claims hold". A dead link is a claim this audit has
@@ -3746,6 +3792,53 @@ describe('a review recorded against a commit that predates the document', () => 
     expect(() => checkVerifyTargets(new Set(['docs/new.md']),
       new Map([['docs/new.md', 'baseline-predates-doc']])))
       .toThrow(/baseline predating it/);
+  });
+});
+
+describe('the tree "before this branch"', () => {
+  it('is the branch point, not the mainline tip', () => {
+    // On a long-lived branch the tip is the wrong tree. If BOTH sides deleted
+    // a formerly tracked root file, that path is absent from the tip, so
+    // stale backticked citations of it become silently uncheckable -- at the
+    // exact moment they go dead, which is the failure `baseTracked` exists to
+    // prevent. A path added on the mainline after divergence is the mirror
+    // image and can only produce a false answer. Codex filed it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-audit-hist-'));
+    const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.email', 't@example.com');
+    git('config', 'user.name', 't');
+    fs.writeFileSync(path.join(dir, 'old.md'), 'x\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'base');
+    const branchPoint = git('rev-parse', 'HEAD').stdout.trim();
+    // main moves on, adding a file the branch never saw.
+    fs.writeFileSync(path.join(dir, 'later.md'), 'y\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'later');
+    const tip = git('rev-parse', 'HEAD').stdout.trim();
+    git('checkout', '-q', branchPoint);
+    git('checkout', '-q', '-b', 'work');
+    fs.writeFileSync(path.join(dir, 'branch.md'), 'z\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'branch');
+    // `run` reads REPO, so the merge-base is asked through an injected exec
+    // pointed at the fixture instead.
+    const at = (cmd, args, { okExitCodes = [] } = {}) => {
+      const r = spawnSync(cmd, args, { cwd: dir, encoding: 'utf8' });
+      if (r.status !== 0 && !okExitCodes.includes(r.status)) return '';
+      return r.stdout ?? '';
+    };
+    expect(historyTree('main', { exec: at })).toBe(branchPoint);
+    expect(historyTree('main', { exec: at })).not.toBe(tip);
+    // No merge base -- an unrelated history, or a shallow clone whose common
+    // ancestor was never fetched -- falls back to the ref, which is the tree
+    // this read used before. A fallback to the OLD behaviour, not an invented
+    // answer, so a shallow checkout keeps working.
+    git('checkout', '-q', '--orphan', 'unrelated');
+    git('commit', '-q', '--allow-empty', '-m', 'orphan');
+    expect(historyTree('main', { exec: at })).toBe('main');
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 

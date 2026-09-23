@@ -632,6 +632,28 @@ export const BASE_REF_CANDIDATES = ['HEAD', 'origin/main', 'main'];
 export const HISTORY_REF_CANDIDATES = ['origin/main', 'main', 'HEAD'];
 
 /**
+ * The BRANCH POINT between HEAD and `ref`, or `ref` when there is none.
+ *
+ * The tip is the wrong tree on a long-lived branch. If both sides deleted a
+ * formerly tracked root file, or the last file under a top-level directory,
+ * that path is absent from the tip and stale backticked citations of it
+ * become silently uncheckable -- at the exact moment they go dead, which is
+ * the failure `baseTracked` exists to prevent. Conversely a path added on the
+ * mainline after divergence is not part of "what used to be here" and can
+ * only produce a false answer. The merge base is what "the tree before this
+ * branch" actually means. Codex filed it.
+ *
+ * Falls back to `ref` when git reports no merge base -- unrelated histories,
+ * or a shallow clone whose common ancestor was not fetched. That is the tree
+ * this read used before, so the fallback is the old behaviour rather than an
+ * invented answer, and a shallow checkout keeps working.
+ */
+export function historyTree(ref, { exec = run } = {}) {
+  const base = exec('git', ['merge-base', 'HEAD', ref], { okExitCodes: [1, 128] }).trim();
+  return base || ref;
+}
+
+/**
  * The ref this run audits against: the first candidate git can resolve.
  *
  * Hard-coding `origin/main` aborts every documented invocation in a detached
@@ -6061,6 +6083,13 @@ const STAMP_REFUSALS = {
     + 'the findings for it first',
   'baseline-predates-doc': 'the reviewed-against commit does not contain the document, '
     + 'so the review would name a baseline predating it; commit it first',
+  'uncommitted-content': 'its prose differs from the reviewed-against commit, so the '
+    + 'review would name a baseline that does not hold what was read; commit the '
+    + 'edits, or drop --since and review against the current base',
+  'code-drift-since-baseline': 'a declared code path has changed between the '
+    + 'reviewed-against commit and the audited revision, so a review named against '
+    + 'it would be reported as drifted by the very next audit; drop --since, or '
+    + 'review against the current base',
   'skipped-no-h1': 'no H1 to place a marker after',
   'skipped-misplaced-marker': 'a marker outside the first paragraph after the H1; '
     + 'move it there rather than adding a second',
@@ -6313,7 +6342,7 @@ export function main(argv) {
   // A DIFFERENT ref from baseRef on purpose: the tree before this branch, so a
   // path deleted on the branch is still recognised as this repo's. Falls back
   // to baseRef in a checkout with no main, where there is no history to read.
-  const historyRef = resolveBaseRef(HISTORY_REF_CANDIDATES);
+  const historyRef = historyTree(resolveBaseRef(HISTORY_REF_CANDIDATES));
   // `-z` here too, for the same quoting reason as workingTreeFiles above. Not
   // in the report Codex filed, which named only that one, but it is the same
   // defect: a C-quoted non-ASCII path does not compare equal to the decoded
@@ -6523,6 +6552,28 @@ export function main(argv) {
       if (reviewed && !pathInCommit(head, doc)) {
         stampTargets.set(doc, 'baseline-predates-doc');
         continue;
+      }
+      // The audit reads the WORKING TREE. `--since` moves the SHA written into
+      // the marker without moving what was read, so on a feature branch
+      // `--stamp --verify --since origin/main` recorded a review against bytes
+      // nobody inspected -- and the next ordinary audit reports the branch's
+      // own commits as drift from that older SHA. Two questions, because the
+      // marker makes two claims: the DOCUMENT it reviewed, and the CODE those
+      // claims describe. Codex filed it; the Python twin (stocks#1121) has
+      // refused both for rounds and this side refused neither.
+      //
+      // Only when `--since` was given: without it the baseline IS the audited
+      // revision, so both comparisons are trivially empty and asking git would
+      // be a read per document for a guaranteed answer.
+      if (reviewed && args.since) {
+        if (run('git', ['show', `${head}:${doc}`], { okExitCodes: [128] }) !== text) {
+          stampTargets.set(doc, 'uncommitted-content');
+          continue;
+        }
+        if (checkChangedSince(doc, head, codePaths, baseRef).length) {
+          stampTargets.set(doc, 'code-drift-since-baseline');
+          continue;
+        }
       }
       // A review of prose the audit just disproved is false provenance. See
       // DISPROVEN_BY_AUDIT: the findings for this document have all been
