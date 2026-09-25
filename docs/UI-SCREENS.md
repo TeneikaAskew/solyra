@@ -8,7 +8,7 @@
 
 # UI Screen Inventory
 
-**Last reviewed:** 2026-08-30 · **Owner:** TBD
+**Last reviewed:** 2026-08-30 · **Last scanned:** 2026-09-16 · **Owner:** TBD
 
 **VERIFIED — CODE.** 15 routes declared in `src/App.tsx:44-72`. `/` is public;
 `/welcome` redirects; the other 13 are children of `<AuthGate><AppShell/></AppShell>`.

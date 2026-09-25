@@ -1,0 +1,6798 @@
+#!/usr/bin/env node
+/**
+ * Audit documentation against the current repo, its issues and its PRs.
+ *
+ * Why this exists
+ * ---------------
+ * This repo has no documentation tooling at all, and its docs make claims that
+ * have quietly gone false: `docs/UI-SCREENS.md` cites four stocks issues as
+ * blocking that are all closed, `docs/options_flow_data_contract.md` points at
+ * `src/data/heatseekerSwingMock.ts` which no longer exists, and 23 of 29 living
+ * docs carry no indication of when anyone last confirmed them.
+ *
+ * The sibling repo's `scripts/maintenance/docs_audit.py` is the same tool in
+ * Python; the two share a CLI, a marker format and a doc-class model on
+ * purpose, so a reviewer moving between repos reads one convention. Keep them
+ * in step when either changes.
+ *
+ * What is mechanical and what is not
+ * ----------------------------------
+ * Everything here is deterministic: reference state, link resolution, marker
+ * parsing, drift against declared code paths. Whether a document's PROSE still
+ * describes the code is not mechanical and is deliberately left to the
+ * reviewer — this produces their worklist, not their verdict.
+ *
+ * Usage
+ *   node scripts/docs-audit.mjs --json
+ *   node scripts/docs-audit.mjs --check
+ *   node scripts/docs-audit.mjs --stamp
+ *   node scripts/docs-audit.mjs --stamp --verify docs/UI-SCREENS.md
+ *   node scripts/docs-audit.mjs --write-issues-snapshot issues.json
+ *   node scripts/docs-audit.mjs --issues-snapshot issues.json --json
+ *
+ * A snapshot carries the time it was captured and EXPIRES: reading one more
+ * than ISSUE_SNAPSHOT_MAX_AGE_DAYS old is exit 2, not a clean run. Issue
+ * state moves, and a report dated today off a week-old capture is a
+ * fabricated clean bill of health -- the outcome this tool exists to stop.
+ *
+ * Exit: 0 clean, 1 findings (with --check), 2 the run itself failed. A failed
+ * `gh` read is exit 2, never a silent empty result (CLAUDE.md Rule 4).
+ */
+import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const OWNER = 'TeneikaAskew';
+const THIS_REPO = 'solyra';
+const SIBLING_REPO = 'stocks';
+const REGISTRY = 'docs/DOC_REGISTRY.md';
+
+/** U+00B7, the separator the existing `**Last reviewed:**` lines already use. */
+export const DOT = '·';
+
+const MARKER_RE = new RegExp(
+  '^\\*\\*Last reviewed:\\*\\*\\s*(\\d{4}-\\d{2}-\\d{2}|unknown)' +
+    `(?:\\s*${DOT}\\s*\\*\\*Depth:\\*\\*\\s*(verified|scanned))?` +
+    `(?:\\s*${DOT}\\s*\\*\\*Against:\\*\\*\\s*\`([0-9a-f]{7,40})\`)?` +
+    `(?:\\s*${DOT}\\s*\\*\\*Last scanned:\\*\\*\\s*(\\d{4}-\\d{2}-\\d{2}))?`
+);
+
+// Older human-review labels normalised onto `**Last reviewed:**`. A machine's
+// `Generated <date>` footer and a dated record's `**Date:**` creation stamp are
+// deliberately absent: different facts, different owners.
+const LEGACY_MARKER_RE =
+  /^\*\*(?:Last updated|Last Updated|Last refreshed|Last verified|Verified):?\*\*:?\s*(\d{4}-\d{2}-\d{2})(.*)$/;
+
+const BARE_TAIL_RE = new RegExp(`^[.\\s]*(?:${DOT}\\s*\\*\\*Owner:\\*\\*[^${DOT}]*)?[.\\s]*$`);
+const OWNED_FIELDS = ['Last reviewed:', 'Depth:', 'Against:', 'Last scanned:', 'Owner:'];
+
+// Up to three leading spaces is still a rendered ATX heading. Without them a
+// document written that way had no H1 as far as this module was concerned, so
+// --stamp returned `skipped-no-h1` and the missing-marker finding it reports
+// could never be repaired by the command that reports it.
+// An EMPTY ATX heading is a heading. `#` alone renders an H1 -- CommonMark
+// allows a heading with no text -- and requiring a title character reported
+// no H1 at all, so the audit emitted a gating marker finding and `--stamp`
+// answered `skipped-no-h1`: the command refusing to repair the finding it
+// raises, which is the shape this file has hit four times now. The closing
+// hash run is part of the syntax too: `# #` is an empty heading, not one
+// titled `#`.
+const H1_RE = /^ {0,3}#(?:\s|$)/;
+// CommonMark advances a tab to the next multiple of four.
+const TAB_STOP = 4;
+// Whole cues, not substrings. An unbounded `blocking|blocked by|...` matched
+// inside `nonblocking` and `not blocked by`, so prose stating an issue is NOT
+// a blocker produced a P1 against it once it closed -- a finding whose own
+// source line says the opposite. `\b` alone stops `nonblocking`; the negator
+// scan below stops the spaced and hyphenated forms.
+// `\s+` between the words, not a literal space. Emphasis is stripped by
+// blanking its delimiters in place -- offsets have to survive -- so
+// `still **open**` arrives as `still   open` and a single-space cue no
+// longer matched it: a closed issue that the prose plainly calls live
+// vanished from the audit entirely.
+const BLOCKING_CUE_RE =
+  /\b(?:blocking|blocked\s+(?:by|on)|blocker|blockers|open\s+issues?|still\s+open|outstanding|in\s+progress|not\s+started|pending)\b/gi;
+// Text immediately before a cue that inverts it. `not started` is itself a
+// cue, so what precedes it is what is tested -- the leading `not` is never
+// read as negating the phrase it belongs to.
+// An intervening modifier or article is admitted: `is not currently blocking`
+// and `is no longer an open issue` both invert the cue, and requiring the
+// negator to sit flush against it read them as live work and emitted a P1
+// saying the opposite of the sentence. The window is bounded to two such words
+// so a negation cannot reach across a clause it does not govern.
+// CONTRACTIONS too. `isn't blocking release` says exactly what `is not
+// blocking release` says, and the negator list held only the spelled-out
+// form -- so the contracted sentence was read as live work and a closed issue
+// produced a P1 whose own source line states the opposite. The apostrophe may
+// be typed or curly; a document written in either renders the same word.
+// `[\s-]+`, not `*`: a negator has to be a WHOLE word. With `*` the trailing
+// separator was optional, so `un` matched the start of `Unresolved` and `not`
+// the start of `Notable`, the rest of that one word was eaten by the modifier
+// window, and `Unresolved blocking: <closed issue>` read as a negation of the
+// very phrase it asserts -- the direction that HIDES a finding. A negator
+// flush against its cue cannot occur: the cue's own `\b` already refuses
+// `nonblocking`. Codex filed it.
+const CUE_NEGATOR_RE =
+  /\b(?:not|non|never|no longer|without|un|\w+n['\u2019]t)[\s-]+(?:\w+[\s-]+){0,2}$/i;
+// `not only X but also Y` AFFIRMS X. The generic `not` branch read it as a
+// negation, so an issue the prose calls blocking was dropped from the audit
+// once it closed -- the direction that HIDES a finding. Tested against the
+// same text the negator is, and it wins: a suffix ending in `not only ` is
+// not a negation however the two-word window reads it.
+const NOT_ONLY_RE = /\bnot\s+only[\s-]*(?:\w+[\s-]+){0,2}$/i;
+
+/**
+ * Does this line cite live work? True when at least ONE cue occurrence is not
+ * negated: a line may say one issue still blocks and another no longer does.
+ */
+export function hasBlockingCue(line) {
+  BLOCKING_CUE_RE.lastIndex = 0;
+  for (const m of line.matchAll(BLOCKING_CUE_RE)) {
+    const before = line.slice(0, m.index);
+    if (NOT_ONLY_RE.test(before) || !CUE_NEGATOR_RE.test(before)) return true;
+  }
+  return false;
+}
+
+// Case-insensitive, because GitHub resolves `teneikaaskew/Solyra` to the same
+// repository and a document may cite it that way. The `i` flag ALONE would be
+// worse than the bug: the captured name would index `states['Solyra']`, miss,
+// and fabricate a "could not be resolved" P2 against a live issue. The
+// capture is lower-cased at the call site (see normaliseRepo).
+// Anchored to a HOST boundary. Unanchored, any other site whose PATH embeds
+// the string matched: `https://example.com/archive/github.com/<owner>/solyra/
+// issues/1` produced a stale-blocker finding against solyra#1 although the
+// document links only to example.com. The bare-host spelling (`github.com/...`
+// with no scheme) is deliberately still accepted -- documents here write it --
+// so the boundary is "start, whitespace/bracket, or a scheme's `//`", not
+// "https:// only". Parity with the Python twin (stocks#1121).
+// The number ENDS where the number ends. Without a trailing boundary,
+// `.../issues/1foo` captured the numeric prefix and was read as a citation of
+// issue 1 -- so a closed issue 1 produced a gating stale-blocker finding for a
+// URL that identifies no issue at all. A query, a fragment, punctuation and
+// whitespace are all legitimate suffixes, so the boundary is "not another
+// digit or a word character", not "end of string".
+const ISSUE_URL_RE = new RegExp(
+  // The `//` must be the SCHEME's. Any double slash satisfied the old
+  // lookbehind, so `https://example.com//github.com/TeneikaAskew/solyra/issues/1`
+  // read as a citation of Solyra issue 1 and a closed issue 1 produced a
+  // gating stale-blocker finding for a URL whose host is example.com. The
+  // bare-host spelling this repo's docs use is still admitted, by the
+  // start/whitespace/bracket alternatives beside it.
+  `(?:(?<=^)|(?<=[\\s(\\[<])|(?<=://))github\\.com/${OWNER}/(solyra|stocks)/(issues|pull)/(\\d+)(?![\\w-])`,
+  'gi'
+);
+
+/** The state map is keyed by the canonical repository names, in lower case. */
+export function normaliseRepo(repo) {
+  return repo.toLowerCase();
+}
+
+// What bounds a clause: sentence punctuation, a semicolon, or a table-cell
+// edge. Not a comma. Ported from the Python twin (stocks#1121).
+const CLAUSE_SPLIT_RE = /[.;|]/g;
+// Not `\S+`: a table may omit padding (`| .../issues/1| still open ...|`), and
+// swallowing the `|` merged adjacent cells -- so an issue described as no
+// longer blocking inherited a live-work cue from the next cell. Trailing
+// sentence punctuation is excluded for the same reason it is on the Python
+// twin: it ends the sentence, not the URL.
+const URL_RE = /https?:\/\/[^\s|]*[^\s|.,;:!?)\]]/g;
+
+// A word that turns a clause against itself. Used ONLY to separate a settled
+// half from a blocking half inside one clause, never as a general split.
+// Ported from the Python twin (stocks#1121).
+const CONTRAST_RE = new RegExp(String.raw`\b(?:while|whilst|whereas|but|though`
+  + String.raw`|although|however|with|without|except|apart from|other than)\b`, 'gi');
+
+/**
+ * The prose around ONE citation. URLs are masked at equal length first, so a
+ * `.` or `/` inside `github.com` does not split the clause the citation sits
+ * in, and offsets stay valid.
+ */
+export function clauseBounds(line, start, end) {
+  const masked = line.replace(URL_RE, (u) => '\u0000'.repeat(u.length));
+  let lo = 0;
+  for (const m of masked.matchAll(CLAUSE_SPLIT_RE)) {
+    if (m.index < start) lo = m.index + 1; else break;
+  }
+  let hi = line.length;
+  for (const m of masked.matchAll(CLAUSE_SPLIT_RE)) {
+    if (m.index >= end) { hi = m.index; break; }
+  }
+  // One clause may still carry BOTH verdicts, and then the first one read wins
+  // for every citation in it: `<issues/8> is resolved but <issues/9> is still
+  // open` settled #9 off #8's half, so a closed issue still described as open
+  // produced no finding at all -- measured on this tree, where the semicolon
+  // spelling of the same sentence reports and the `but` and `,` spellings do
+  // not. A contrast word is a boundary the sentence split does not see, so it
+  // is applied ONLY in that ambiguous case: splitting on `with` unconditionally
+  // would shred ordinary prose and lose findings whose cue sits before one.
+  //
+  // In the BOUNDS rather than in citationClause, which is the whole point of
+  // the twin's shape: the deduplication that asks "are these two spellings of
+  // one citation" reads these bounds, and the cue analysis reads the slice, so
+  // a split visible to one and not the other suppresses a live shorthand and
+  // then skips the settled URL beside it. Codex filed that half on the Python
+  // twin (stocks#1121); this side had neither half.
+  const span = line.slice(lo, hi);
+  SETTLED_CUE_RE.lastIndex = 0;
+  BLOCKING_CUE_RE.lastIndex = 0;
+  if (SETTLED_CUE_RE.test(span) && BLOCKING_CUE_RE.test(span)) {
+    const rel = start - lo;
+    // A COMMA is a boundary here too: `#8 is resolved, #9 is still open`
+    // carries no contrast word, so the whole sentence was returned for both
+    // citations and each was settled by the first `resolved` it saw.
+    //
+    // Only a comma that SEPARATES TWO CITATIONS, which is the narrowest rule
+    // that fixes it. Splitting on every comma in this branch settles nothing
+    // and breaks the opposite shape: `#8 was still open, now resolved` is one
+    // statement about one citation, where the comma introduces the resolution
+    // -- and that is the direction that INVENTS a finding.
+    const at = [];
+    ISSUE_URL_RE.lastIndex = 0;
+    for (const m of span.matchAll(ISSUE_URL_RE)) at.push(m.index);
+    QUALIFIED_ISSUE_RE.lastIndex = 0;
+    for (const m of span.matchAll(QUALIFIED_ISSUE_RE)) at.push(m.index);
+    const cuts = new Set([0, span.length]);
+    CONTRAST_RE.lastIndex = 0;
+    for (const m of span.matchAll(CONTRAST_RE)) cuts.add(m.index);
+    for (const m of span.matchAll(/,/g)) {
+      if (at.some((c) => c < m.index) && at.some((c) => c > m.index)) {
+        cuts.add(m.index + 1);
+      }
+    }
+    const bounds = [...cuts].sort((a, b) => a - b);
+    for (let k = 0; k + 1 < bounds.length; k += 1) {
+      if (bounds[k] <= rel && rel < bounds[k + 1]) {
+        return [lo + bounds[k], lo + bounds[k + 1]];
+      }
+    }
+  }
+  return [lo, hi];
+}
+
+// Words that say a citation is FINISHED. The blocking vocabulary and this one
+// can share a clause -- `still cited as blockers when both had been closed` is
+// a sentence about a past mistake, not a live blocker -- and with no settled
+// pass at all the blocking word won and the audit emitted a P1 saying the
+// opposite of the sentence it read. Measured on the stocks tree's
+// docs/product/07-MODEL-REGISTRY.md, where both citations in that paragraph
+// were reported. Ported from the Python twin (stocks#1121), which has carried
+// this precedence for rounds.
+// `closure` and `resolution` are the NOUN forms of two cues here, and the
+// blocking vocabulary carries `blocker`/`blockers` beside `blocking` for
+// exactly this reason. Without them, `... is tracked as outstanding work, not
+// as part of the closure` -- a sentence whose own words say the citation is
+// closed -- reads as live work once the cue analysis sees the whole rendered
+// paragraph. Measured on the stocks tree's
+// docs/product/12-PR-ISSUE-TRACEABILITY.md.
+const SETTLED_CUE_RE =
+  /\b(?:closed|closure|resolved|resolution|superseded|merged|moved\s+to|relocated|duplicate\s+of|completed)\b/gi;
+
+/**
+ * Does this clause say the citation is finished?
+ *
+ * True only when at least one settled cue is NOT negated: `not resolved` and
+ * `never merged` say the opposite of the word they contain, and the negator
+ * predicate is the one `hasBlockingCue` already uses, so the two cannot
+ * disagree about what a negation is.
+ */
+export function isSettled(clause) {
+  SETTLED_CUE_RE.lastIndex = 0;
+  for (const m of clause.matchAll(SETTLED_CUE_RE)) {
+    const before = clause.slice(0, m.index);
+    if (NOT_ONLY_RE.test(before) || !CUE_NEGATOR_RE.test(before)) return true;
+  }
+  return false;
+}
+
+export function citationClause(line, start, end) {
+  const [lo, hi] = clauseBounds(line, start, end);
+  return line.slice(lo, hi);
+}
+
+// `stocks#861` and `solyra#8`: repository-qualified shorthand, which GitHub
+// renders as a link to that issue and which carries everything needed to
+// resolve it. Only the QUALIFIED form -- a bare `#123` may be a section
+// number, a column header or a count, and this repo's documents use it that
+// way. The owner prefix is optional because `TeneikaAskew/stocks#861` is the
+// same citation. The lookbehind refuses a path component (`docs/stocks#861`)
+// and a second `#`; the lookahead refuses `stocks#8x`. Codex filed it
+// (solyra#69).
+const QUALIFIED_ISSUE_RE =
+  new RegExp(String.raw`(?<![\w#/-])(?:${OWNER}/)?(solyra|stocks)#(\d{1,6})(?![\w-])`, 'gi');
+
+/**
+ * Is THIS citation cited as live work?
+ *
+ * A line-level answer put every URL on the line under one verdict, so
+ * `#1 is no longer blocking; #2 is still open` gave #1 a P1 from #2's cue.
+ * The clause decides when it carries a cue at all; otherwise the line does,
+ * because a table row puts the cue and the citations in different cells --
+ * `| Open issues | #838 · #839 |` is a real finding whose citations sit in a
+ * clause with no cue of its own.
+ */
+export function citesLiveWork(line, start, end, { context = null, fallback = null } = {}) {
+  const clause = citationClause(line, start, end);
+  // SETTLED first. A clause can carry both vocabularies, and the settled one
+  // is the specific claim: `still cited as blockers when both had been
+  // closed` describes a past mistake.
+  SETTLED_CUE_RE.lastIndex = 0;
+  if (SETTLED_CUE_RE.test(clause) && isSettled(clause)) return false;
+  BLOCKING_CUE_RE.lastIndex = 0;
+  if (BLOCKING_CUE_RE.test(clause)) return hasBlockingCue(clause);
+  // No cue in the citation's own clause. Two things can still supply one, and
+  // ordinary prose is neither.
+  //
+  // `context` is a label heading a list -- `Blocked by:` above a list of
+  // links, the ordinary Markdown form, which the caller carries down.
+  if (context !== null) return hasBlockingCue(context);
+  // A TABLE ROW puts the cue in one cell and the citations in another:
+  // `| Open issues | #838 · #839 |`. Applied to ordinary PROSE the same
+  // fallback recreated the cross-clause false positive this function exists to
+  // prevent -- `Background: #1. Still blocked by #2.` gave #1 a finding from
+  // #2's cue. A pipe is what tells the two apart.
+  // The physical LINE, not the paragraph. This is the table-ROW rule, and a
+  // whole table is one paragraph block -- passing the paragraph let a
+  // `Blocking issues` column HEADER reach every citation in every row, which
+  // measured 43 fabricated P1s on the stocks tree in rows whose own cells say
+  // nothing of the kind. The clause analysis above still reads the paragraph,
+  // which is what a sentence split by a soft break needs.
+  const row = fallback ?? line;
+  return row.includes('|') ? hasBlockingCue(row) : false;
+}
+// The fragment is CAPTURED, not discarded. Dropping it meant a link to a real
+// file but a heading that does not exist always passed. The Python twin had
+// the same gap, where 35 such links were measured (stocks#1121).
+// The optional TITLE is admitted and discarded. `[guide](missing.md "Guide")`
+// is standard CommonMark; requiring `)` straight after the destination meant
+// the pattern did not match at all, so a missing target reported clean rather
+// than dead.
+// One level of BALANCED parentheses is admitted in the destination. `[g](docs/foo(bar).md)`
+// is a valid link; stopping at the first `)` validated `docs/foo(bar` and
+// reported a tracked file dead. One level is what CommonMark's own examples
+// need and what a regex can express honestly -- deeper nesting is rare enough
+// that failing to match (and so not reporting) beats reporting a wrong path.
+// `<...>` FIRST, as a destination form of its own. It is how CommonMark writes
+// a destination containing a space, and the bare branch both rejects the
+// whitespace (so `[g](<docs/user guide.md>)` did not match at all and a missing
+// target reported clean) and split `[tests](<README.md#tests>)` into the path
+// `<README.md` and the fragment `tests>` -- reporting a tracked README dead.
+/**
+ * Is the character at `i` escaped by an odd number of backslashes?
+ *
+ * `\[x](missing.md)` renders as literal text, so a document demonstrating
+ * link syntax that way was reported as a gating dead link for a destination
+ * no reader can follow. Parity counts, because `\\[x](y.md)` IS a link
+ * preceded by a literal backslash.
+ */
+export function isEscaped(text, i) {
+  let n = 0;
+  for (let k = i - 1; k >= 0 && text[k] === '\\'; k -= 1) n += 1;
+  return n % 2 === 1;
+}
+
+// A Markdown inline link, scanned rather than matched by one pattern. The
+// destination may nest parentheses to ANY depth -- `docs/a(b(c(d))).md` is a
+// valid destination CommonMark resolves -- and a fixed-depth alternative
+// could not match such a link at all, so a deleted target spelled that way
+// produced no finding. JavaScript regexes have no recursion, so the balance
+// is walked with the same `balancedClose` the heading-link stripper uses; one
+// scanner, so the depth limit cannot come back in one caller and not another.
+//
+// The label admits ONE level of nesting and escapes: CommonMark allows
+// balanced brackets in link text, and `[outer [inner]](missing.md)` stopped at
+// the first `]` and matched nothing at all -- so a broken rendered link was
+// reported clean. One level, not arbitrary depth: deeper nesting in link TEXT
+// does not occur in this corpus, and the destination is where the depth
+// mattered.
+// A SCAN, not a fixed nesting depth. The pattern here handled one level of
+// nested brackets and nothing deeper -- so `[a [b [c]]](missing.md)`, a link
+// CommonMark renders, did not match AT ALL and its deleted target passed the
+// audit clean. The hiding direction, and a depth limit is the kind of number
+// that is wrong again the moment someone writes one more bracket. Codex filed
+// it on the Python twin (stocks#1121), where it is the same defect.
+const MD_LINK_PAREN_RE = /\(\s*/y;
+
+/**
+ * The next `[label](` at or after `pos`, as `{ index, end }`, or null.
+ *
+ * The label is walked with a depth counter rather than matched, so nesting has
+ * no limit to get wrong; a backslash escapes the character after it, there as
+ * everywhere. An unbalanced or unfollowed `[` is not an opening, and the walk
+ * resumes one character past it -- the same restart `mdLinks` already makes
+ * when a candidate fails to complete.
+ */
+function mdLinkOpen(text, pos) {
+  let i = pos;
+  while (i < text.length) {
+    const start = text.indexOf('[', i);
+    if (start === -1) return null;
+    let depth = 0;
+    let k = start;
+    let close = -1;
+    while (k < text.length) {
+      const ch = text[k];
+      if (ch === '\\') { k += 2; continue; }
+      if (ch === '[') depth += 1;
+      else if (ch === ']') {
+        depth -= 1;
+        if (depth === 0) { close = k; break; }
+      }
+      k += 1;
+    }
+    if (close === -1) { i = start + 1; continue; }
+    MD_LINK_PAREN_RE.lastIndex = close + 1;
+    const paren = MD_LINK_PAREN_RE.exec(text);
+    if (!paren) { i = start + 1; continue; }
+    return { index: start, end: MD_LINK_PAREN_RE.lastIndex };
+  }
+  return null;
+}
+// `<...>` is a distinct destination form: it is how CommonMark writes a
+// destination containing a space, and the bare form rejects whitespace. NO
+// line endings -- CommonMark forbids a newline there, so `[x](<missing\n.md>)`
+// is literal text.
+// A BACKSLASH ESCAPE is destination content: `[x](<a\>b.md>)` resolves to
+// `a>b.md`, and stopping at the escaped `>` left the candidate unmatched
+// altogether, so a missing target produced no finding. Consumed as a unit
+// before the fragment split, so `\#` stays in the path as well.
+const MD_LINK_ANGLE_RE = /<((?:&#?[0-9A-Za-z]{1,32};|\\[^\r\n]|[^<>#\\\r\n])*)(?:#([^>\s]*))?>/y;
+// One atom of a BARE destination. A character reference is matched as a UNIT
+// before the fragment split, so the `#` inside `&#38;` is not read as the
+// separator: `[x](foo&#38;bar.md)` renders as a link to `foo&bar.md` and was
+// split into the path `foo&` and the fragment `38;bar.md`. An escaped hash is
+// part of the PATH for the same reason.
+// The escape is restricted to ASCII PUNCTUATION, which is the only thing
+// CommonMark lets a backslash escape. `\\.` consumed a backslash-space, so
+// `[x](missing\ file.md)` matched as one destination -- but CommonMark does
+// not escape the space there, the bare destination ends at it, and the whole
+// spelling renders as literal text. The audit emitted a gating dead-link
+// finding for prose no reader can click. Codex filed it on the Python twin
+// (stocks#1121).
+const MD_DEST_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\[!-/:-@[-`{-~]|[^()#\s]/y;
+// A TITLE may contain its own delimiter when the delimiter is escaped:
+// `[x](missing.md "a \" quote")` is a valid link. Stopping at the escaped
+// quote left the whole candidate unmatched, so the missing destination
+// passed the audit -- the hiding direction. Each of the three title forms
+// consumes escapes as units, exactly as the destination scan does.
+const MD_LINK_TAIL_RE = /(?:\s+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\((?:\\.|[^)\\])*\)))?\s*\)/y;
+
+/**
+ * End of the balanced bare destination starting at `i`.
+ *
+ * A parenthesised run is consumed whole, however deeply it nests. CommonMark
+ * forbids ASCII whitespace anywhere in an unbracketed destination, inside the
+ * parentheses included, so a run carrying any is not part of it.
+ */
+function bareDestination(text, i) {
+  let j = i;
+  while (j < text.length) {
+    MD_DEST_ATOM_RE.lastIndex = j;
+    const m = MD_DEST_ATOM_RE.exec(text);
+    if (m) { j = MD_DEST_ATOM_RE.lastIndex; continue; }
+    if (text[j] === '(') {
+      const k = balancedClose(text, j);
+      if (k === -1 || /\s/.test(text.slice(j, k))) return j;
+      j = k;
+      continue;
+    }
+    break;
+  }
+  return j;
+}
+
+// The same atom as the destination, minus the `#` exclusion: a fragment may
+// carry one (`#a#b` is the fragment `a#b`), and it may carry BALANCED
+// parentheses, which `[^)\s]` could not. `[x](#foo(bar))` names the id
+// `foo(bar)` and the scan stopped at the first `)`, recorded `foo(bar`, and
+// consumed that parenthesis as the link's closer -- so a working link to an
+// explicit `id="foo(bar)"` was a gating dead anchor. Codex filed it on the
+// Python twin (stocks#1121), where it is the same defect.
+const MD_FRAG_ATOM_RE = /&#?[0-9A-Za-z]{1,32};|\\[!-/:-@[-`{-~]|[^()\s]/y;
+
+/**
+ * End of the balanced bare fragment starting at `i`.
+ *
+ * The same walk `bareDestination` makes, over the atom above: a parenthesised
+ * run is consumed whole however deeply it nests, and a run carrying
+ * whitespace is not part of the fragment, because CommonMark forbids
+ * whitespace anywhere in an unbracketed destination.
+ */
+function bareFragment(text, i) {
+  let j = i;
+  while (j < text.length) {
+    MD_FRAG_ATOM_RE.lastIndex = j;
+    const m = MD_FRAG_ATOM_RE.exec(text);
+    if (m) { j = MD_FRAG_ATOM_RE.lastIndex; continue; }
+    if (text[j] === '(') {
+      const k = balancedClose(text, j);
+      if (k === -1 || /\s/.test(text.slice(j, k))) return j;
+      j = k;
+      continue;
+    }
+    break;
+  }
+  return j;
+}
+
+/**
+ * Every inline link in `text`, left to right, shaped like a RegExp match:
+ * `[full, btarget, bfrag, target, frag]` with `.index`.
+ *
+ * A failed completion restarts one character past the opening `[` rather than
+ * past the whole candidate, which is what a single pattern's backtracking did.
+ */
+function* mdLinks(text) {
+  let pos = 0;
+  while (pos < text.length) {
+    const opening = mdLinkOpen(text, pos);
+    if (!opening) return;
+    let at = opening.end;
+    const destStart = at;
+    let btarget; let bfrag; let target; let frag;
+    MD_LINK_ANGLE_RE.lastIndex = at;
+    const angle = MD_LINK_ANGLE_RE.exec(text);
+    if (angle) {
+      [, btarget, bfrag] = angle;
+      at = MD_LINK_ANGLE_RE.lastIndex;
+    } else {
+      const stop = bareDestination(text, at);
+      target = text.slice(at, stop);
+      at = stop;
+      if (text[at] === '#') {
+        const stopFrag = bareFragment(text, at + 1);
+        frag = text.slice(at + 1, stopFrag);
+        at = stopFrag;
+      }
+    }
+    const destEnd = at;
+    MD_LINK_TAIL_RE.lastIndex = at;
+    const tail = MD_LINK_TAIL_RE.exec(text);
+    if (!tail) { pos = opening.index + 1; continue; }
+    const end = MD_LINK_TAIL_RE.lastIndex;
+    const out = [text.slice(opening.index, end), btarget, bfrag, target, frag];
+    out.index = opening.index;
+    // Where the DESTINATION stopped, so a caller can tell the followable part
+    // of a link from its metadata without rescanning. `linkTitleSpans` is the
+    // one that needs it; carrying it here is what keeps that scan from
+    // becoming a second, drifting copy of this one.
+    out.destEnd = destEnd;
+    // And where it BEGAN, so a caller can mask a link's metadata -- its
+    // destination and title -- while keeping the visible label.
+    out.destStart = destStart;
+    yield out;
+    pos = end;
+  }
+}
+// Two shapes: a path with a slash, and a bare root-level filename. Requiring a
+// slash meant `vite.config.ts`, `playwright.config.ts` and `package.json` --
+// which the living docs cite constantly -- could never produce a dead-path
+// finding. The bare shape must admit a dotted stem: `vite.config.ts` and
+// `playwright.config.ts` are the two most-cited root files here (12 and 15
+// mentions) and a stem of `[A-Za-z0-9_-]+` matched neither. A bare name is
+// only checked against the root files this repo tracks (see checkDeadLinks),
+// because the docs also name `mocks.ts`, `main.py`, `deploy.sh` and a hundred
+// other bare files that live under a directory or in the sibling repo.
+// The extension admits ten characters. Six covered `.drawio` and stopped one
+// short of `.properties`; the bound is not what does the filtering, so there
+// is no reason for it to be tight. `linkContext` derives `exts` from the
+// tree, and an extension this tree does not track is skipped there -- that is
+// what keeps a wide bound from inventing findings. Raised on the Python twin
+// (stocks#1121), where a five-character cap made `.drawio` uncitable outright.
+// A citation may carry a source location after the path: `src/App.tsx:44-72`,
+// `vite.config.ts:7,45,93`, `SwingMode.tsx:156`. Requiring the closing
+// backtick right after the extension made every such citation invisible.
+const LINE_SUFFIX = '(?::\\d+(?:-\\d+)?(?:,\\d+(?:-\\d+)?)*)?';
+// `\p{L}\p{N}_` rather than `A-Za-z0-9_`, with the `u` flag: a tracked path may
+// hold a non-ASCII character, and the ASCII-only class never recognised a
+// citation of one -- so deleting or renaming that file produced no dead-link
+// finding, while the git inventory preserves such filenames and the
+// percent-encoded Markdown link IS checked. The extension stays ASCII,
+// because a suffix is. Parity with the Python twin (stocks#1121).
+const PW = '[\\p{L}\\p{N}_]';
+// A git path may contain a SPACE, and the exact registry declarations already
+// admit one -- so `` `docs/old guide.md` `` was never checked and the audit
+// reported clean while the rendered documentation pointed readers at a
+// nonexistent path. A space is admitted only BETWEEN name characters, never at
+// either end, and the repository-layout guard downstream still requires the
+// first segment to be a directory this tree actually has, which is what keeps
+// ordinary backticked prose from reading as a path.
+const PWS = `(?:${PW}|[.-])(?:(?:${PW}|[.-])| (?=(?:${PW}|[.-])))*`;
+// A space is valid in EVERY segment, not only the filename. `docs/user
+// guides/old.md` and a spaced root file `old guide.md` matched neither
+// scanner, so a deleted citation written that way was reported clean -- the
+// hiding direction, and the same gap the filename fix closed one segment over.
+// The root form must still START with a name character, so a backticked
+// `.eslintrc`-shaped string does not become a root-file citation; the spaced
+// grammar is otherwise identical.
+const PWS_ROOT = `${PW}(?:(?:${PW}|[.-])| (?=(?:${PW}|[.-])))*`;
+const BACKTICK_PATH_RE = new RegExp(`\`((?:${PWS}/)+${PWS}\\.[A-Za-z0-9]{1,10})${LINE_SUFFIX}\``, 'gu');
+const BACKTICK_ROOT_FILE_RE = new RegExp(`\`(${PWS_ROOT}\\.[A-Za-z0-9]{1,10})${LINE_SUFFIX}\``, 'gu');
+// A line that names the sibling repo is citing its tree, not this one:
+// CLAUDE.md says `scripts/export_openapi.py` is a stocks file on the line
+// that cites it, and the design briefs wrap stocks paths in a
+// github.com/TeneikaAskew/stocks link. `scripts` and `docs` are also
+// top-level directories here, so without the marker those read as rot.
+// Cross-repo ownership needs EVIDENCE, not the bare product noun. A citation
+// on `\`src/removed.ts\` formats stocks for the dashboard` is about stocks the
+// asset class, and handing it to the sibling repo skipped the existence check
+// so the deletion went unreported. What counts: an explicit repository URL, a
+// path under `stocks/`, or the repo named against a repository noun --
+// `stocks repo`, `stocks PR`, `stocks main`. Measured over this tree: the
+// tightening changes no finding, so it suppresses nothing real.
+const CROSS_REPO_NOUN = '(?:repo|repository|PR|pull request|issue|main|branch|tree|side|CI)';
+const CROSS_REPO_RE = new RegExp(
+  `github\\.com/${OWNER}/${SIBLING_REPO}\\b`
+  + `|\\b${SIBLING_REPO}\\s+${CROSS_REPO_NOUN}\\b`
+  + `|\\b${SIBLING_REPO}/`, 'i');
+const CROSS_REPO_LINK_RE = new RegExp(`^\\]\\(https?://github\\.com/${OWNER}/${SIBLING_REPO}[/)]`, 'i');
+const LINK_TAIL_RE = /^\]\([^)\s]*\)/;
+
+export class AuditError extends Error {}
+
+/**
+ * Does this commit contain this path?
+ *
+ * `git show <sha>:<doc>` cannot answer it: the command exits 128 for a path
+ * the commit lacks and yields an empty string, which is the same value an
+ * empty file gives.
+ */
+export function pathInCommit(sha, doc, { spawn = spawnSync } = {}) {
+  return spawn('git', ['cat-file', '-e', `${sha}:${doc}`],
+    { cwd: REPO, encoding: 'utf8' }).status === 0;
+}
+
+/**
+ * Run a command, treating only the listed non-zero exits as answers.
+ *
+ * `okExitCodes` replaced a boolean `allowFail`, which conflated two different
+ * things and produced a fabricated measurement. `git grep` exits 1 for "ran
+ * fine, no matches" and 128 for "could not resolve that revision"; swallowing
+ * both as '' made a broken read look like a count of zero. CI caught it because
+ * actions/checkout does a shallow single-branch clone with no `origin/main`
+ * ref, so every grep exited 128 and `derive` reported 0 where the answer was
+ * 37 -- which would have had the audit report a correct document as wrong.
+ * That is the silent fallback Rule 4 forbids, in the tool built to find them.
+ */
+export function run(cmd, args, { okExitCodes = [] } = {}) {
+  try {
+    return execFileSync(cmd, args, { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  } catch (err) {
+    if (okExitCodes.includes(err.status)) return '';
+    throw new AuditError(
+      `${cmd} ${args.slice(0, 3).join(' ')}... exited ${err.status}: `
+      + String(err.stderr || err.message).slice(0, 400));
+  }
+}
+
+// ── the base ref ────────────────────────────────────────────────────────────
+
+// HEAD first, deliberately. The documents, their contents and every count
+// claim are read from the WORKING TREE, so ending the drift range at
+// `origin/main` excluded the branch's own commits: the audit reported no
+// drift for exactly the changes under review, and any document the branch
+// added was never enumerated at all. The Python twin leads with HEAD for the
+// same reason (stocks#1121, 686fdea).
+export const BASE_REF_CANDIDATES = ['HEAD', 'origin/main', 'main'];
+// Where "what USED to be here" is read from. resolveBaseRef prefers HEAD, so
+// baseTracked was the same tree as `tracked` and carried no history at all:
+// once a root file or the last file under a top-level directory was deleted in
+// an earlier branch commit, knownRootFiles and topLevelDirs forgot it had ever
+// belonged to this repo and citations of the deleted path became silently
+// uncheckable -- at the exact moment they went dead.
+export const HISTORY_REF_CANDIDATES = ['origin/main', 'main', 'HEAD'];
+
+/**
+ * The BRANCH POINT between HEAD and `ref`, or `ref` when there is none.
+ *
+ * The tip is the wrong tree on a long-lived branch. If both sides deleted a
+ * formerly tracked root file, or the last file under a top-level directory,
+ * that path is absent from the tip and stale backticked citations of it
+ * become silently uncheckable -- at the exact moment they go dead, which is
+ * the failure `baseTracked` exists to prevent. Conversely a path added on the
+ * mainline after divergence is not part of "what used to be here" and can
+ * only produce a false answer. The merge base is what "the tree before this
+ * branch" actually means. Codex filed it.
+ *
+ * Falls back to `ref` when git reports no merge base -- unrelated histories,
+ * or a shallow clone whose common ancestor was not fetched. That is the tree
+ * this read used before, so the fallback is the old behaviour rather than an
+ * invented answer, and a shallow checkout keeps working.
+ */
+export function historyTree(ref, { exec = run } = {}) {
+  const base = exec('git', ['merge-base', 'HEAD', ref], { okExitCodes: [1, 128] }).trim();
+  return base || ref;
+}
+
+/**
+ * The ref this run audits against: the first candidate git can resolve.
+ *
+ * Hard-coding `origin/main` aborts every documented invocation in a detached
+ * or shallow checkout — including the actions/checkout case this module's own
+ * `run()` describes. `--since` did not work around it, because the ls-tree,
+ * ancestry and drift reads each named the ref separately.
+ *
+ * Falling back is not a silent fallback: the ref used is reported in the run's
+ * output, so a run against `HEAD` cannot be mistaken for one against the
+ * trunk. Inventing an answer when nothing resolves would be, so that throws.
+ */
+export function resolveBaseRef(candidates = BASE_REF_CANDIDATES, { spawn = spawnSync } = {}) {
+  for (const ref of candidates) {
+    const r = spawn('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: REPO, encoding: 'utf8' });
+    if (r.status !== 0) continue;
+    // A commit that resolves is not a tree that can be read: in a partial or
+    // stale clone `main` verifies while its tree is missing, and accepting
+    // it here made the later ls-tree abort the audit instead of falling
+    // through to the next candidate.
+    const t = spawn('git', ['cat-file', '-e', `${ref}^{tree}`], { cwd: REPO, encoding: 'utf8' });
+    if (t.status === 0) return ref;
+  }
+  throw new AuditError(
+    `none of ${candidates.join(', ')} resolves in this checkout; there is nothing to audit against`,
+  );
+}
+
+// ── the tree being audited ──────────────────────────────────────────────────
+
+/**
+ * Every tracked file in the working tree: the index, minus anything deleted
+ * on disk but not yet staged. This is the tree the documents are read from
+ * (`fs.readFileSync`), so it is the tree they are enumerated from and checked
+ * against. `git ls-tree <baseRef>` was neither: it missed every document added
+ * on the branch -- docs/DOC_REGISTRY.md itself, on the branch that introduced
+ * it -- and kept a branch-deleted one for readFileSync to abort on.
+ */
+export function workingTreeFiles({ exec = run } = {}) {
+  // `-z`, because git C-quotes any path with a non-ASCII byte under the
+  // default core.quotePath: `docs/café.md` arrives as `"docs/caf\303\251.md"`,
+  // which no longer ends `.md`, so documentSet dropped it and the document got
+  // no classification, marker, link or blocker check at all -- with nothing
+  // reporting that it had been skipped. The Python twin has read these
+  // NUL-separated since stocks#1121.
+  const paths = (a) => exec('git', ['ls-files', '-z', ...a]).split('\0').filter(Boolean);
+  const deleted = new Set(paths(['--deleted']));
+  return new Set(paths(['--cached']).filter((p) => !deleted.has(p)));
+}
+
+/**
+ * The commit a review is recorded against, abbreviated. `--since deadbeef`
+ * used to be written into the marker verbatim as `Against: deadbeef` next to
+ * `Depth: verified`, for a revision nobody had audited; the ancestry check
+ * reads only the PREVIOUS marker, so the same run reported the document as
+ * newly verified. A branch name would have been written verbatim too, and
+ * the marker parser reads only a hex SHA.
+ */
+// Long enough to be unambiguous, and comfortably inside MARKER_RE's 7-40
+// whatever core.abbrev says locally.
+export const MARKER_SHA_LEN = 12;
+
+/**
+ * The SHA a marker will carry, in a form the marker parser reads back.
+ *
+ * Bare `--short` honours `core.abbrev`, which can be set below 7:
+ * `git -c core.abbrev=4 rev-parse --short HEAD` emits four characters while
+ * MARKER_RE requires 7-40. A marker written with a shorter id does not fail to
+ * parse -- `Against` is an OPTIONAL group, so the line still matches, the
+ * group captures nothing, and the `Last scanned` field after it is swallowed
+ * by the unmatched tail. The verified review then reads as having no
+ * reviewed-against SHA and its drift check silently stops running.
+ *
+ * So the round trip is the check: the rendered marker must give the value
+ * back. Asserting the line merely matches would pass a four-character id.
+ */
+export function resolveCommit(ref, { spawn = spawnSync, ancestorOf = null } = {}) {
+  const r = spawn('git', ['rev-parse', '--verify', '--quiet', `--short=${MARKER_SHA_LEN}`,
+    `${ref}^{commit}`], { cwd: REPO, encoding: 'utf8' });
+  const sha = (r.stdout ?? '').trim();
+  if (r.status !== 0 || !sha) {
+    throw new AuditError(`--since ${ref} does not resolve to a commit in this checkout`);
+  }
+  // Positional group 3 is `Against`, matching findMarker; this regex uses
+  // numbered groups, so there is no `.groups` to read.
+  const parsed = MARKER_RE.exec(`**Last reviewed:** unknown · **Against:** \`${sha}\``);
+  if (!parsed || parsed[3] !== sha) {
+    throw new AuditError(`the resolved SHA '${sha}' is not a form the marker parser reads back `
+      + '(expects 7-40 hex characters); refusing to write it');
+  }
+  // And it has to be IN the history the audit judges against. A `--since` on
+  // an unrelated branch, or a descendant the base ref does not contain, was
+  // accepted and written into `Against:` -- and the very next ordinary run
+  // reported that marker invalid via the ancestry check. The tool was
+  // manufacturing provenance it rejects itself.
+  if (ancestorOf) {
+    const anc = spawn('git', ['merge-base', '--is-ancestor', sha, ancestorOf],
+      { cwd: REPO, encoding: 'utf8' });
+    if (anc.status !== 0) {
+      throw new AuditError(`--since ${ref} (${sha}) is not an ancestor of ${ancestorOf}, `
+        + 'so a marker written against it would be reported invalid by the next '
+        + 'ordinary audit; refusing to write it');
+    }
+  }
+  return sha;
+}
+
+// ── registry ────────────────────────────────────────────────────────────────
+
+const REGISTRY_HEADING = '## Registry';
+
+/** A heading line that IS this heading, ignoring trailing `#`s and spacing. */
+export function headingIs(line, heading) {
+  return line.replace(/\s+#*\s*$/, '').trim().toLowerCase() === heading.toLowerCase();
+}
+
+/**
+ * Strip markdown emphasis and code ticks without eating a trailing glob `*`.
+ * Trimming the character class "`* " looks right and is not: it turns the glob
+ * `docs/archive/*` into `docs/archive/`, which matches nothing and silently
+ * drops every file under it into "unclassified".
+ */
+export function cell(raw) {
+  let t = raw.trim();
+  t = t.replace(/^\*\*(.*?)\*\*$/, '$1').trim();
+  // Markdown requires a literal pipe inside a table cell be written `\|`.
+  // A claim derivation whose regex needs alternation is the only place this
+  // comes up, and dropping the escape silently truncated the pattern into a
+  // `git grep` with a trailing backslash.
+  return t.replace(/^`|`$/g, '').replace(/\\\|/g, '|').trim();
+}
+
+/** Split a table row on unescaped pipes only. */
+export function splitRow(line) {
+  return line.replace(/^\||\|$/g, '').split(/(?<!\\)\|/);
+}
+
+/**
+ * Parse the pipe table under `## Registry`. Only that section: the explanatory
+ * tables above it also start their rows with a class letter, and parsing those
+ * registers English sentences as path globs.
+ */
+export function loadRegistry(text) {
+  const rows = [];
+  let inRegistry = false;
+  // A FENCED example of a registry row is documentation, not a rule. Without
+  // this the example registered as live -- producing missing-path findings for
+  // paths it never meant to declare -- and a heading-shaped line inside the
+  // same example could switch `inRegistry` off and skip every real row after
+  // the fence.
+  const allLines = text.split('\n');
+  // And a row COMMENTED OUT rather than deleted, which is how a rule or a
+  // claim is retired without losing it: it still registered as live, and a
+  // heading-shaped line in the same comment could switch the section flag
+  // off and skip every real row below it.
+  // And an INDENTED example, which `trim()` on the next line turns straight
+  // back into an executable declaration: `    | D | fake.md | | |` produced a
+  // gating missing-path finding, and an indented heading in the same example
+  // could end the section and skip every real row below it.
+  // And a RAW-TEXT HTML block, the fourth way a document shows a row without
+  // declaring it: `<pre>` renders `| D | fake.md | | |` literally, but the
+  // collector executed it as a live rule -- a fabricated missing-path finding
+  // or, worse, a classification for a real path. The exclusion set had the
+  // other three and not this one.
+  const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines),
+    ...indentedCodeLines(allLines),
+    ...rawHtmlBlockLines(allLines, { rawTextOnly: true })]);
+  for (const [i, raw] of allLines.entries()) {
+    if (fenced.has(i)) continue;
+    const line = raw.trim();
+    // A SETEXT heading ends the section too. Neither `Examples` nor its
+    // `--------` underline starts with `#`, so section mode stayed on and an
+    // illustrative table below it was executed as live configuration. The
+    // heading is the line ABOVE the underline, so the section ends there.
+    if (isSetextUnderline(allLines, i, fenced)) {
+      inRegistry = false;
+      continue;
+    }
+    // ATX SYNTAX, not a leading '#'. A hash run needs whitespace or an end of
+    // line after it to render as a heading, so `#123 remains open` is ordinary
+    // prose -- and it switched section mode off, silently dropping every
+    // declaration below it. A row that vanishes takes its class, its code
+    // paths and its region ownership with it, and nothing reports the skip.
+    if (/^#{1,6}(?:\s|$)/.test(line)) {
+      // EXACTLY, not by prefix: a later `## Registry examples` section
+      // re-entered registry mode and parsed its illustrative table as live
+      // classification rules -- visible explanatory prose becoming executable
+      // configuration.
+      inRegistry = headingIs(line, REGISTRY_HEADING);
+      continue;
+    }
+    if (!inRegistry || !line.startsWith('|')) continue;
+    const cells = splitRow(line);
+    if (cells.length < 2) continue;
+    // And no MORE than the four declared columns. An unescaped pipe in a
+    // value -- a `line:^foo|bar$` region pattern is the shape -- splits into
+    // a fifth cell, and the parser silently kept `line:^foo` and dropped
+    // `bar$`: a BROADER ownership map than the row displays, so hand-written
+    // lines routed as generated and stamping decisions came from a
+    // declaration nobody wrote. Refused rather than truncated, because the
+    // truncation is invisible in the rendered table. Codex filed it on the
+    // Python twin (stocks#1121).
+    if (cells.length > 4 && ['A', 'B', 'C', 'D', 'X'].includes(cell(cells[0]).toUpperCase())) {
+      throw new AuditError(`${REGISTRY}: a class ${cell(cells[0]).toUpperCase()} row has `
+        + `${cells.length} cells where the table declares 4 -- an unescaped \`|\` in a `
+        + 'value splits it, and the parser would read a broader declaration than the '
+        + 'row displays; escape it as `\\|`');
+    }
+    const cls = cell(cells[0]).toUpperCase();
+    // A HEADER or separator row is not a declaration; anything else is, and a
+    // typo in its class was silently discarded. `documentSet` adds a
+    // non-Markdown artefact ONLY through an exact registry row, so
+    // `| E | generated.json | | |` dropped that artefact from classification
+    // and from every region and content check WITHOUT an unclassified
+    // finding -- the registry quietly meaning something other than what it
+    // displays. Bad input is refused, as a bad `line:` pattern already is.
+    if (!['A', 'B', 'C', 'D', 'X'].includes(cls)) {
+      if (/^-+$/.test(cls) || cls === 'CLASS' || !cls) continue;
+      throw new AuditError(`${REGISTRY}: a row declares class \`${cell(cells[0])}\` for `
+        + `\`${cell(cells[1]) || '(no path)'}\`, which is not one of A, B, C, D or X; `
+        + 'the row would be dropped and its document left unclassified with '
+        + 'nothing reporting the skip');
+    }
+    const glob = cell(cells[1]);
+    if (!glob) continue;
+    // A space is valid in a git path, so the EXTENSION decides nothing. The
+    // old rule kept a spaced glob only when it ended `.md`, which silently
+    // dropped every other real path carrying one: a Class A
+    // `Frontend diagram.drawio` fell through to a broader rule and lost its
+    // code paths and region ownership with no finding anywhere -- and
+    // documentSet adds a non-Markdown artefact ONLY through an exact registry
+    // row, so dropping the row drops the artefact from the audit entirely.
+    // What the row must still look like is a PATH, which is what this tests.
+    // Ported from the Python twin (stocks#1121).
+    if (glob.includes(' ') && !(glob.includes('/') || glob.includes('.'))) {
+      throw new AuditError(`${REGISTRY}: a class ${cls} row declares \`${glob}\`, which `
+        + 'carries a space but has neither a directory nor an extension, so it cannot '
+        + 'be a path glob; the registry table takes paths, not prose');
+    }
+    const codePaths =
+      cells.length > 2 && !['', '—', '-'].includes(cell(cells[2]))
+        ? cells[2].split(',').map(cell).filter(Boolean)
+        : [];
+    // The fourth column is optional and only meaningful for Class A. It is
+    // semicolon-separated so commas stay available to the code-path column.
+    const regions =
+      cells.length > 3 && !['', '—', '-'].includes(cell(cells[3]))
+        ? cells[3].split(';').map(cell).filter(Boolean)
+        : [];
+    rows.push({ cls, glob, codePaths, regions });
+  }
+  return rows;
+}
+
+function globToRe(glob) {
+  // `*` and `?` stay INSIDE one path segment, which is what a path glob means
+  // everywhere else. As `.*` a row like `.claude/agents/*.md` also swallowed
+  // `.claude/agents/nested/example.md`, so a newly nested document was
+  // silently classified by that row instead of becoming unclassified and
+  // forcing an explicit registry decision -- the audit going quiet about a
+  // document nobody has placed. `**` keeps the recursive meaning.
+  // `**/` is ZERO or more complete segments, not "at least one". Compiling it
+  // as `.*` left the following slash mandatory, so `docs/**/*.md` matched
+  // `docs/sub/g.md` and NOT `docs/guide.md` -- immediate children reported
+  // unclassified, or the row itself reported as matching nothing. A regression
+  // from the single-star fix one round earlier, caught by Codex on the same PR.
+  // A BRACKET EXPRESSION compiles, rather than being escaped into a literal.
+  // Every other reader -- globSpecificity, documentSet, knownRootFiles --
+  // treats `[` as a wildcard token, so escaping it here made a row like
+  // `docs/[ab].md` match nothing at all: a P1 inert-rule finding, and the
+  // documents it meant to cover left unclassified. Held out of the escape
+  // pass by a sentinel, then translated (`[!a]` is glob's negation).
+  // `\u0002`, not `\u0001`: that one is already the `**` sentinel below, and
+  // reusing it turned a bracket expression into `.*`.
+  const held = [];
+  const withBrackets = glob.replace(/\[!?\]?[^\]]*\]/g, (b) => {
+    const neg = b[1] === '!';
+    held.push(`[${neg ? '^' : ''}${b.slice(neg ? 2 : 1, -1)}]`);
+    return '\u0002';
+  });
+  const escaped = withBrackets
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*\//g, '\u0000')
+    .replace(/\*\*/g, '\u0001')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/\u0000/g, '(?:[^/]+/)*')
+    .replace(/\u0001/g, '.*')
+    .replace(/\u0002/g, () => held.shift());
+  try {
+    return new RegExp(`^${escaped}$`);
+  } catch (err) {
+    // A bracket range the engine rejects -- `docs/[z-a].md` -- threw a plain
+    // SyntaxError past the AuditError handler, so the CLI exited 1 with a
+    // stack trace. 1 is the status this tool documents for "the audit ran and
+    // found problems"; a registry it cannot compile is the documented exit 2,
+    // "the run itself failed". Automation could not tell the two apart.
+    throw new AuditError(`registry glob \`${glob}\` is not a valid pattern `
+      + `(${err.message}); the audit cannot classify documents against it`);
+  }
+}
+
+/**
+ * Every file this audit treats as a document: Markdown, plus any file the
+ * registry names outright. A bare `.md` filter drops registered non-Markdown
+ * artefacts before classification, so their declared regions are never checked.
+ * Glob rows are deliberately not expanded — a directory rule is not a licence
+ * to run the content checks over everything beneath it.
+ */
+/**
+ * Every explicit registry declaration must name something that exists.
+ *
+ * Two silent failures of the same shape -- a declaration resolving to nothing,
+ * read as "nothing to report" rather than "this declaration is wrong":
+ *
+ * - An exactly-named document that has been DELETED is absent from `tracked`,
+ *   so `documentSet` never yields it, the main loop never classifies it, and
+ *   the report is clean because a maintained document disappeared while
+ *   DOC_REGISTRY.md still claims it exists.
+ * - A declared code path that does not exist makes the drift check vacuous:
+ *   `git log -- does/not/exist` exits 0 with empty output, so the document
+ *   citing it can never be queued for re-review whatever its real surface
+ *   does. `tailwind.config.ts` on the Design System row was exactly this.
+ *
+ * Ported from the Python twin's check_registry_paths (stocks#1121).
+ */
+export function checkRegistryPaths(tracked, registry) {
+  const dirs = new Set();
+  for (const p of tracked) {
+    const parts = p.split('/');
+    for (let i = 1; i < parts.length; i += 1) dirs.add(parts.slice(0, i).join('/'));
+  }
+  const out = [];
+  for (const row of registry) {
+    if (!/[*?[]/.test(row.glob)) {
+      if (!tracked.has(row.glob)) {
+        out.push({ check: 'registry', doc: row.glob, severity: 'P1',
+          detail: 'registry names this document exactly, but it is not in the audited '
+                + 'tree -- it was deleted, moved, or never existed' });
+      }
+    // A wildcard row covering nothing is the same failure one step out: every
+    // document it named has been deleted, or the glob is mistyped. Nothing
+    // reaches classify(), so the declaration goes inert and the audit reports
+    // no registry finding while a whole rule quietly stops applying.
+    } else if (![...tracked].some((p) => globToRe(row.glob).test(p))) {
+      out.push({ check: 'registry', doc: row.glob, severity: 'P1',
+        detail: 'registry declaration matches no tracked document, so the rule it '
+              + 'carries covers nothing' });
+    }
+    // A `prose:PATH` region names the prompt that owns the complement. An
+    // empty or deleted path marked the region matched anyway, so the document
+    // was labelled model-owned, stamping was disabled, and nothing reported
+    // the vanished prompt.
+    for (const spec of row.regions ?? []) {
+      if (!spec.startsWith('prose:')) continue;
+      const prompt = spec.slice(6).trim();
+      if (!prompt || (!tracked.has(prompt) && !isTrackedDir(tracked, prompt))) {
+        out.push({ check: 'registry', doc: row.glob, severity: 'P2',
+          detail: `region \`${spec}\` names a prompt that is not in the audited tree, `
+                + 'so the complement is marked model-owned by a declaration that '
+                + 'points at nothing' });
+      }
+    }
+    for (const cp of row.codePaths ?? []) {
+      if (!tracked.has(cp) && !dirs.has(cp)) {
+        out.push({ check: 'registry', doc: row.glob, severity: 'P2',
+          detail: `declared code path \`${cp}\` does not exist, so the drift check `
+                + 'for this document can never fire' });
+      }
+    }
+  }
+  return out;
+}
+
+// Every suffix this repository treats as Markdown. `.md` alone left a tracked
+// `docs/runbook.markdown`, `guide.mdown` or `README.MD` out of the set
+// COMPLETELY -- no unclassified finding, no marker, link or blocker check --
+// although documentSet claims to enumerate the Markdown documents. Matched
+// case-insensitively, because a suffix's case is not its meaning.
+export const MARKDOWN_EXTS = ['.md', '.markdown', '.mdown', '.mkd', '.mkdn', '.mdwn'];
+
+export function isMarkdownPath(p) {
+  const lower = p.toLowerCase();
+  return MARKDOWN_EXTS.some((e) => lower.endsWith(e));
+}
+
+export function documentSet(tracked, registry) {
+  const named = new Set(registry.filter((r) => !/[*?[]/.test(r.glob)).map((r) => r.glob));
+  return [...tracked].filter((p) => isMarkdownPath(p) || named.has(p)).sort();
+}
+
+/**
+ * Root files a bare backticked name may legitimately refer to even when no
+ * tracked sibling shares its stem: the ones the registry registers outright,
+ * and the ones the base ref had that the tree no longer has. The stem anchor
+ * alone cannot see a deletion -- once package.json is gone, so is the stem
+ * that would have anchored the finding -- so the base ref is the persistent
+ * record of what used to be here.
+ */
+export function knownRootFiles(registry, baseTracked, tracked) {
+  const known = new Set(
+    registry.map((r) => r.glob).filter((g) => !g.includes('/') && !/[*?[]/.test(g)),
+  );
+  for (const p of baseTracked) if (!p.includes('/') && !tracked.has(p)) known.add(p);
+  return known;
+}
+
+const stem = (name) => name.split('.').slice(0, -1).join('.');
+
+/**
+ * Everything checkDeadLinks needs to know about the tree, derived once.
+ *
+ * `exts` is the set of extensions the tree actually tracks, not an allowlist:
+ * a fixed list omitted `.css` while the registry declared `src/index.css` as
+ * design-system surface, and `.drawio` and `.html` with it. Whatever this tree
+ * or the base ref tracks is, by definition, an extension a path here can have -- and
+ * an extension it does not track (`.py`; this repo has no Python) is one no
+ * path here can have, which is the first cross-repo rule.
+ */
+export function linkContext(tracked, baseTracked, registry) {
+  return {
+    tracked,
+    // Tree and base ref both: deleting the last file under a directory must
+    // not make every citation of that directory uncheckable at the moment
+    // it goes dead.
+    topLevelDirs: new Set([...tracked, ...baseTracked].filter((p) => p.includes('/')).map((p) => p.split('/')[0])),
+    rootFiles: new Set([...tracked].filter((p) => !p.includes('/')).map(stem).filter(Boolean)),
+    basenames: new Set([...tracked].map((p) => path.posix.basename(p))),
+    knownRoot: knownRootFiles(registry, baseTracked, tracked),
+    // The base ref counts too: a deleted file's extension is still one a path
+    // here can have, or the deletion itself becomes uncheckable.
+    exts: new Set([...tracked, ...baseTracked].map((p) => path.posix.extname(p)).filter(Boolean)),
+  };
+}
+
+/** Most specific match wins, so a file rule beats the directory rule. */
+/** Do two equally specific rows say the same thing, in full? */
+export function sameRule(a, b) {
+  return a.cls === b.cls
+    && a.codePaths.join('\u0000') === b.codePaths.join('\u0000')
+    && a.regions.join('\u0000') === b.regions.join('\u0000');
+}
+
+/**
+ * How specific a registry glob is, most significant first.
+ *
+ * Raw character length is not specificity: `docs/*a*.md` is longer than
+ * `docs/a.md`, so an exclusion row could outrank the exact living-document row
+ * it overlaps and silently suppress every content, marker and drift check for
+ * it -- without setting `ambiguous`, because the lengths differ. An exact row
+ * wins outright; among wildcards, the one matching more literal characters
+ * (and, failing that, using fewer wildcards) is the more specific.
+ */
+export function globSpecificity(glob) {
+  const wildcards = (glob.match(/[*?[]/g) ?? []).length;
+  // A `**/` segment is RANKED DOWN, not counted as literal. For an immediate
+  // child like `docs/a.md` both `docs/*.md` and `docs/**/*.md` match, and
+  // the literal-length metric put the recursive one ahead because its extra
+  // slash counts as a literal character -- so a broad recursive row could
+  // outrank the narrower single-segment row it overlaps, and when the two
+  // disagree the recursive one silently won instead of the narrower rule or
+  // an ambiguity finding. Literals are counted with the `**` segments removed.
+  const recursive = (glob.match(/\*\*/g) ?? []).length;
+  // A bracket expression counts as ONE wildcard position, not as its
+  // contents. Counting the characters inside made ADDING alternatives raise
+  // specificity, so `docs/[ab].md` outranked `docs/[a].md` for `docs/a.md` --
+  // and where the broader row is Class X and the narrower is Class D, classify
+  // silently chose X and suppressed every check on the document. They now tie,
+  // which surfaces as an ambiguity finding rather than a silent pick.
+  const literals = glob.replace(/\*\*\//g, '').replace(/\[[^\]]*\]/g, '')
+    .replace(/[*?]/g, '').length;
+  // `?` matches EXACTLY one character, so it constrains the name where `*`
+  // does not: `docs/??.md` is strictly narrower than `docs/*.md`, yet counting
+  // wildcard TOKENS ranked the broader rule first because it has fewer of
+  // them. When the two rows disagree -- an `X` on `docs/*.md` beside a living
+  // `docs/??.md` -- the broad rule silently won and suppressed the checks.
+  // Fixed-width wildcards are counted with the literals they stand in for;
+  // only open-ended ones count as breadth.
+  const fixed = (glob.match(/\?/g) ?? []).length
+    + (glob.match(/\[[^\]]*\]/g) ?? []).length;
+  const stars = wildcards - fixed;
+  return [wildcards === 0 ? 1 : 0, -recursive, literals + fixed, -stars, -wildcards];
+}
+
+function cmpSpecificity(a, b) {
+  const x = globSpecificity(a);
+  const y = globSpecificity(b);
+  for (let i = 0; i < x.length; i += 1) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
+}
+
+export function classify(doc, registry) {
+  let best = null;
+  let tied = false;
+  for (const row of registry) {
+    if (!globToRe(row.glob).test(doc)) continue;
+    if (best === null || cmpSpecificity(row.glob, best.glob) > 0) {
+      best = row;
+      tied = false;
+    } else if (cmpSpecificity(row.glob, best.glob) === 0 && !sameRule(row, best)) {
+      // Equally specific and disagreeing. First-wins meant a stale `X` or `B`
+      // row could silently override a later `D` row and suppress every content
+      // and provenance check for that document, while checkRegistryPaths
+      // happily accepted both declarations.
+      tied = true;
+    }
+  }
+  return best
+    ? { cls: best.cls, codePaths: best.codePaths, regions: best.regions, ambiguous: tied }
+    : { cls: null, codePaths: [], regions: [], ambiguous: false };
+}
+
+// ── generated regions (Class A) ─────────────────────────────────────────────
+
+const INVENTORY_RE = /<!--\s*inventory:([\w.-]+):(start|end)\s*-->/g;
+
+/**
+ * Lines as `wc -l` counts them: a trailing newline does not add a line.
+ *
+ * `split('\n')` on a file ending in a newline yields a final '' that is not a
+ * line of the document. Counting it made every reported total one higher than
+ * the file, which is the kind of off-by-one that makes a measurement useless.
+ */
+export function docLines(text) {
+  // '' is zero lines, not one empty one. `split('\n')` returns [''] for it, so
+  // a Class A artifact truncated to nothing reported ONE generated line and
+  // its `all` region counted as matched -- suppressing the P1 this audit
+  // promises for a renderer that emitted nothing.
+  if (text === '') return [];
+  return text.endsWith('\n') ? text.slice(0, -1).split('\n') : text.split('\n');
+}
+
+/**
+ * Which 1-based lines a job writes, which specs matched nothing, and the prompt.
+ *
+ * The spec grammar is deliberately tiny, because the registry is read by people
+ * before it is read by this function:
+ *
+ *   all           every line (a wholly rendered artefact)
+ *   inventory:*   every `<!-- inventory:NAME:start/end -->` pair
+ *   mark:NAME     the `<!-- BEGIN NAME -->`..`<!-- END NAME -->` pair
+ *   line:REGEX    every line matching REGEX
+ *   fence:NAME    the `<!-- NAME:BEGIN -->`..`<!-- NAME:END -->` pair, which is
+ *                 the shape Lovable writes into AGENTS.md
+ *   prose:PATH    everything not otherwise claimed is model-written, by PATH
+ *   exhaustive    this file is wholly machine-owned: ANY line outside the
+ *                 declared regions is a defect, not expected prose
+ *
+ * A spec matching nothing is returned as unmatched rather than ignored: a
+ * renderer that stopped emitting its block leaves the registry claiming a
+ * coverage that no longer exists, which is the same silent rot this module is
+ * about, one level up.
+ */
+export function ownedLines(text, specs) {
+  const lines = docLines(text);
+  // The region DELIMITERS are HTML comments, and a document explaining the
+  // convention shows a pair inside a code block. Reading that example as a
+  // real region put the ownership map on prose: the span reported generated,
+  // a marker landing in it called unstampable, and drift measured against a
+  // code sample. Only the delimiter scan skips fences -- content BETWEEN two
+  // real delimiters is owned whether or not it is fenced, which it usually is,
+  // and `line:` matches generated lines that are frequently inside a fence.
+  // Raised on the Python twin (stocks#1121).
+  // INDENTED and RAW-TEXT examples are the other two ways a document shows a
+  // delimiter without declaring one. A Class A file that has LOST its real
+  // region but demonstrates the pair inside `<pre>` or as an indented sample
+  // had the example registered as the region: the declared region counted as
+  // matched, the missing-region P1 was suppressed, and the sample's own lines
+  // were routed to the renderer as generated. The fenced case was covered and
+  // these two were not.
+  const fencedHere = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
+  const owned = new Set();
+  const unmatched = [];
+  const orphans = [];
+  let prompt = null;
+  let exhaustive = false;
+
+  for (const spec of specs) {
+    let hit = false;
+    if (spec === 'all') {
+      for (let n = 1; n <= lines.length; n += 1) owned.add(n);
+      hit = lines.length > 0;
+    } else if (spec === 'inventory:*') {
+      const openAt = new Map();
+      const inlineSpans = codeSpanLines(lines);
+      lines.forEach((rawLine, i) => {
+        if (fencedHere.has(i)) return;
+        // A document DEMONSTRATING the syntax inline had both examples read as
+        // real delimiters, so every hand-written line between them was marked
+        // generated: findings misrouted, and with `exhaustive` the
+        // unowned-content finding suppressed outright. The `mark:` and
+        // `fence:` scanners already mask spans; this one did not.
+        const line = maskSpans(rawLine,
+          [...codeSpans(rawLine), ...(inlineSpans.get(i) ?? [])]);
+        // EVERY visible delimiter on the line, not the first. `.exec` read
+        // `<!-- inventory:x:start --><!-- inventory:x:end -->` -- a complete
+        // pair on one line -- as a start with no end, and hid a duplicate or
+        // orphan sharing a line with a real delimiter from the balance check.
+        // The Python twin (stocks#1121) reads them all; this copy did not.
+        for (const m of line.matchAll(INVENTORY_RE)) {
+          // An ESCAPED opener renders as TEXT and is no delimiter. It is the
+          // way a document shows the convention OUTSIDE a code span, and
+          // reading the pair as real marked the prose between them generated.
+          if (isEscaped(line, m.index)) continue;
+          if (m[2] === 'start') {
+            if (openAt.has(m[1])) {
+              orphans.push(`inventory:${m[1]} opened twice (lines ${openAt.get(m[1])} and ${i + 1})`);
+            }
+            openAt.set(m[1], i + 1);
+          } else if (openAt.has(m[1])) {
+            for (let n = openAt.get(m[1]); n <= i + 1; n += 1) owned.add(n);
+            openAt.delete(m[1]);
+            hit = true;
+          } else {
+            orphans.push(`inventory:${m[1]} ends at line ${i + 1} with no start`);
+          }
+        }
+      });
+      for (const [name, n] of [...openAt.entries()].sort((a, b) => a[1] - b[1])) {
+        orphans.push(`inventory:${name} starts at line ${n} with no end`);
+      }
+    } else if (spec.startsWith('mark:') || spec.startsWith('fence:')) {
+      const name = spec.slice(spec.indexOf(':') + 1);
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const [begin, end] = spec.startsWith('mark:')
+        ? [new RegExp(`<!--\\s*BEGIN ${esc}\\s*-->`), new RegExp(`<!--\\s*END ${esc}\\s*-->`)]
+        : [new RegExp(`<!--\\s*${esc}:BEGIN\\s*-->`), new RegExp(`<!--\\s*${esc}:END\\s*-->`)];
+      // EVERY complete pair, not just the first. Two `mark:NAME` blocks in a
+      // mixed Class A document left the second silently classified as
+      // hand-written prose, so findings inside machine-written content were
+      // routed to the wrong owner.
+      // Delimiter BALANCE, not first-opener-to-next-closer. A block that
+      // repeats its opener before a single closer paired the first with that
+      // closer, set `hit`, and never noticed the second -- so an `exhaustive`
+      // Class A file could report no findings at all and classify the whole
+      // malformed span as generated.
+      let open = -1;
+      let nested = false;
+      // A CLOSER with no opener was ignored outright, so a stray one before an
+      // otherwise valid pair produced no finding at all -- the later pair set
+      // `hit` and the unbalanced layout passed with a supposedly valid region
+      // map. `inventory:*` has always reported this shape.
+      let stray = false;
+      // A delimiter inside INLINE code is an example of the syntax, not a
+      // delimiter. Masking only block fences let a Class A document that
+      // explains its own generated-region convention turn its backticked
+      // samples into real delimiters: a balanced pair silently classified the
+      // hand-written prose between them as generated, and a lone one produced
+      // a false P1 orphan-region finding.
+      // WRAPPED spans as well as single-line ones. A span holding sample
+      // `<!-- BEGIN X -->` and `<!-- END X -->` lines across a line break had
+      // both examples read as real delimiters, so the hand-written prose
+      // between them was classified as generated -- misrouting findings and,
+      // with `exhaustive`, suppressing the unowned-content finding outright.
+      // The `inventory:*` scanner already reads these ranges.
+      const wrappedMark = codeSpanLines(lines);
+      const bare = (l, n) => {
+        const spans = [...codeSpans(l), ...(wrappedMark.get(n) ?? [])];
+        return spans.length
+          ? spans.reduce((acc, [lo, hi]) =>
+            acc.slice(0, lo) + ' '.repeat(hi - lo) + acc.slice(hi), l)
+          : l;
+      };
+      // An ESCAPED opener is not a delimiter either. `\\<!-- LOVABLE:BEGIN -->`
+      // renders as TEXT, which is how a Class A document shows its own
+      // convention outside a code span -- and reading the pair as real
+      // classified every hand-written line between them as generated, which
+      // under `exhaustive` suppressed the P1 saying regeneration would discard
+      // that prose. Same rule the comment and link scanners apply; this was
+      // the copy that did not have it.
+      const unescapedMatch = (re, l) => {
+        const m = re.exec(l);
+        return m !== null && !isEscaped(l, m.index);
+      };
+      lines.forEach((raw, n) => {
+        if (fencedHere.has(n)) return;
+        const l = bare(raw, n);
+        if (unescapedMatch(begin, l)) {
+          if (open >= 0) nested = true;
+          else open = n;
+        } else if (unescapedMatch(end, l)) {
+          if (open < 0) {
+            stray = true;
+          } else {
+            for (let k = open + 1; k <= n + 1; k += 1) owned.add(k);
+            hit = true;
+            open = -1;
+          }
+        }
+      });
+      if (nested || open >= 0 || stray) {
+        const why = nested ? 'a repeated opener before its closer'
+          : open >= 0 ? 'an opener with no closer'
+            : 'a closer with no opener';
+        orphans.push(`${spec}: ${why}`);
+        hit = true;
+      }
+    } else if (spec.startsWith('line:')) {
+      // A registry typo is bad INPUT, not a documentation finding. new RegExp
+      // throws a plain SyntaxError, which the handler rethrows, and Node exits
+      // 1 -- the status this CLI documents for findings.
+      let pat;
+      try {
+        pat = new RegExp(spec.slice(5));
+      } catch (err) {
+        throw new AuditError(`registry region \`${spec}\` is not a valid regular `
+          + `expression: ${err.message}`);
+      }
+      // SPANS as well as the whole-line exclusions below. A pattern
+      // surviving only inside inline code or a partial comment still matched
+      // the raw line, so the missing-region finding stayed suppressed after
+      // the real content went away and the sample's line was routed and
+      // stamped as generated. Blanked rather than removed, since `pat` may be
+      // anchored. Parity with the Python twin (stocks#1121).
+      const spans = commentSpans(lines);
+      // Spans that OPEN on an earlier line too. `codeSpans` is line-local, so
+      // a sample surviving only inside a wrapped span -- a
+      // `https://img.shields.io/x` between a backtick above it and one below
+      // -- still matched the raw line. The region's claim of coverage then
+      // outlived the real generated content: no unmatched-region finding, and
+      // the example's line routed to the renderer as though generated. Parity
+      // with the Python twin (stocks#1121).
+      const wrapped = codeSpanLines(lines);
+      lines.forEach((line, i) => {
+        const visibleLine = maskSpans(line,
+          [...(spans.get(i) ?? []), ...codeSpans(line), ...(wrapped.get(i) ?? [])]);
+        if (pat.test(visibleLine)) { owned.add(i + 1); hit = true; }
+      });
+    } else if (spec === 'exhaustive') {
+      exhaustive = true;
+      hit = true;
+    } else if (spec.startsWith('prose:') && prompt !== null && spec.slice(6) !== prompt) {
+      // A second, DIFFERENT prose owner. The later assignment replaced the
+      // first silently, so the region map reported itself valid, the
+      // complement was suppressed, and every prose finding was routed to one
+      // prompt while the registry claimed two. Parity with the Python twin,
+      // where Codex filed this as stocks#1121.
+      unmatched.push(spec);
+      continue;
+    } else if (spec.startsWith('prose:')) {
+      prompt = spec.slice(6);
+      hit = true;
+    } else {
+      unmatched.push(spec);
+      continue;
+    }
+    if (!hit) unmatched.push(spec);
+  }
+  return { owned, unmatched, prompt, orphans, exhaustive };
+}
+
+/**
+ * Contiguous runs of lines no job writes, ignoring blank-only runs — a blank
+ * line between two generated blocks is not documentation, and reporting it
+ * would bury the spans that matter.
+ */
+export function unownedSpans(text, owned) {
+  const lines = docLines(text);
+  const spans = [];
+  let start = null;
+  for (let n = 1; n <= lines.length; n += 1) {
+    if (owned.has(n)) {
+      if (start !== null) { spans.push([start, n - 1]); start = null; }
+    } else if (start === null) start = n;
+  }
+  if (start !== null) spans.push([start, lines.length]);
+  return spans.filter(([a, b]) => lines.slice(a - 1, b).some((l) => l.trim()));
+}
+
+/** Where a finding on this line must be fixed. */
+export function regionOf(line, owned, prompt) {
+  if (owned.has(line)) return 'generated';
+  return prompt ? 'model-prose' : 'unowned';
+}
+
+/**
+ * May a Class A document be stamped?
+ *
+ * A valid region map is a PRECONDITION, not an implication of
+ * `prompt === null`. With no declarations, with every declaration unmatched,
+ * or on an `exhaustive` file whose complement is nonblank, `owned` is empty
+ * or incomplete and the unresolved content reads as hand-written prose -- so
+ * `--stamp` would insert a marker into an artifact `checkRegions` has just
+ * identified as wholly machine-owned or impossible to map, where the next
+ * regeneration discards it and nobody can say what was lost.
+ *
+ * The Python twin carries the same `map_valid` term (stocks#1121).
+ */
+export function classAIsStampable(region, text) {
+  const mapValid = region.regionMap !== null
+    && !region.findings.some((f) => f.severity === 'P1' && f.check === 'unowned');
+  return mapValid && region.prompt === null && unownedSpans(text, region.owned).length > 0;
+}
+
+export function checkRegions(doc, text, specs) {
+  if (!specs.length) {
+    return {
+      findings: [{ check: 'unowned', doc, severity: 'P2',
+        detail: 'Class A doc with no generated regions declared; the registry '
+              + 'cannot say which lines a job writes' }],
+      owned: new Set(),
+      prompt: null,
+      regionMap: null,
+    };
+  }
+  const { owned, unmatched, prompt, orphans, exhaustive } = ownedLines(text, specs);
+  const findings = unmatched.map((spec) => ({
+    check: 'unowned', doc, severity: 'P1',
+    detail: `declared region \`${spec}\` matched nothing -- a renderer stopped `
+          + 'emitting it, or the registry is stale',
+  }));
+  for (const o of orphans) {
+    findings.push({ check: 'unowned', doc, severity: 'P1', detail: `unbalanced generated region: ${o}` });
+  }
+  // The unowned complement is NOT a finding. It is the expected shape of a
+  // mixed Class A document, and emitting one per span gave those documents
+  // permanent findings that no amount of reviewing could clear — so --check
+  // could never go green and the gate was worthless. The spans drive routing
+  // and stamping; they are reported as a map, not as defects. What IS a
+  // finding is a declared region that no longer exists.
+  // `prose:` says a model owns the complement; `exhaustive` says there is no
+  // legitimate complement at all. Declaring both emptied `spans` before the
+  // exhaustive check ran, so a wholly machine-owned file reported zero unowned
+  // lines instead of the promised P1 -- content a regeneration will discard,
+  // passing clean. The registry has to say which it means.
+  if (prompt && exhaustive) {
+    findings.push({ check: 'unowned', doc, severity: 'P1',
+      detail: 'the registry declares both `prose:` and `exhaustive` for this file: '
+            + 'one says a model owns the complement, the other that there is none' });
+  }
+  const spans = prompt && !exhaustive ? [] : unownedSpans(text, owned);
+  // A doc the registry declares `exhaustive` has no legitimate complement: it
+  // is wholly machine-owned, so anything outside the regions is content a
+  // regeneration will destroy with nobody able to say what it was. AGENTS.md
+  // is the case — a paragraph added below the Lovable fence vanishes on the
+  // next sync. That is the opposite of a mixed doc, where the complement is
+  // the hand-written half and reporting it would make --check permanently red.
+  if (exhaustive) {
+    for (const [lo, hi] of spans) {
+      findings.push({ check: 'unowned', doc, line: lo, severity: 'P1',
+        detail: `lines ${lo}-${hi} sit outside every declared region of a wholly `
+              + 'machine-owned file; the next regeneration will discard them' });
+    }
+  }
+  const regionMap = {
+    lines: docLines(text).length,
+    generated: owned.size,
+    prompt,
+    unowned_spans: spans.map(([lo, hi]) => [lo, hi]),
+    unowned_lines: spans.reduce((n, [lo, hi]) => n + hi - lo + 1, 0),
+  };
+  return { findings, owned, prompt, regionMap };
+}
+
+// ── markers ─────────────────────────────────────────────────────────────────
+
+/** Can this legacy marker be rewritten without losing anything? */
+export function legacyTailIsBare(rest) {
+  return BARE_TAIL_RE.test(rest || '');
+}
+
+// A SINGLE `-` counts. `Title` over `-` is an H2: CommonMark resolves the
+// ambiguity with an empty list item in the underline's favour, and the
+// document renders a `title` anchor. Requiring two or more rejected it, so
+// `headingAnchors` omitted that anchor and a working `[x](#title)` was
+// reported as a gating dead-anchor finding. The comment here used to argue a
+// lone `-` is "a list bullet's sibling far more often than a heading" -- a
+// belief about frequency standing in for the rule, and the Python twin
+// (stocks#1121) has accepted `-+` since it was written. What keeps a real
+// list from matching is the CONTAINER check in `isSetextUnderline`: an
+// underline needs a PARAGRAPH above it, and a list opening a block has none.
+const SETEXT_UNDERLINE_RE = /^ {0,3}(?:=+|-+)\s*$/;
+
+/**
+ * Does line `i` underline a Setext heading written on line `i - 1`?
+ *
+ * Three things are NOT one: a thematic break (`---` after a blank line, with
+ * no heading text above it), a table's delimiter row (`|---|---|`, which the
+ * pattern rejects outright), and a real underline. The line above separates
+ * them. Ported from the Python twin (stocks#1121).
+ */
+export function isSetextUnderline(lines, i, masked = new Set()) {
+  if (i <= 0 || masked.has(i) || masked.has(i - 1)) return false;
+  // The blockquote container is stripped from BOTH lines for the PATTERN
+  // tests. `> Title` over `> ===` renders as a heading, and matching the raw
+  // underline always failed on the `>` -- so headingAnchors omitted the
+  // rendered anchor and a working fragment was reported dead. Parity with the
+  // Python twin (stocks#1121).
+  const under = (lines[i] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
+  if (!SETEXT_UNDERLINE_RE.test(under)) return false;
+  const above = (lines[i - 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
+  if (!(Boolean(above.trim()) && !/^ {0,3}#/.test(above))) return false;
+  // The underline must sit in the SAME container block. `> Example` followed
+  // by an unquoted `---` ends the blockquote and renders a thematic break;
+  // reading it as a heading closed markerWindow above a real marker below the
+  // break, so the audit reported it missing and --stamp could insert a
+  // contradictory second one. Ported from the Python twin (stocks#1121).
+  // Compared on the RAW lines: the stripped copies above are for the pattern
+  // tests only, and depth read off them is 0 for every line, which both
+  // accepts `> Example` over an unquoted `---` and rejects the quoted heading
+  // the strip exists to admit.
+  if (quoteDepth(lines[i - 1] ?? '') !== quoteDepth(lines[i] ?? '')) return false;
+  // A list item is a container too: `- Example` then `---` at column 0 ends
+  // the list. An underline indented to the item's CONTENT column is still an
+  // underline, which is why this is an indentation test rather than a ban.
+  const item = /^(\s*)((?:[-*+]|\d{1,9}[.)])\s+)/.exec(above);
+  if (item && (/^\s*/.exec(under)[0].length < item[0].length)) return false;
+  return true;
+}
+
+/**
+ * Where a DOCUMENT-level marker may live: after the H1, before the next heading.
+ *
+ * A flat first-40-lines scan had two failure modes. It let a later section's
+ * metadata stand in for the document's provenance, and — because `stamp`
+ * inserts after the H1 wherever that is — it could not find its own marker in a
+ * file with more than 40 lines of front matter, so the next run reported the
+ * marker missing and inserted a duplicate.
+ */
+export function markerWindow(lines, limit = 40, { stopAtParagraph = true } = {}) {
+  // The whole H1, not its title line. A Setext H1 is TWO lines, so scanning
+  // from `h1Index + 1` started on the document's own `=====` underline,
+  // isSetextUnderline recognised it, and `stop = j - 1` closed the window
+  // BEFORE it opened -- `{from: 1, to: 0}`. A correctly placed marker was
+  // then reported missing and every --stamp inserted another one. The Python
+  // twin already starts from the anchor (stocks#1121); this is the parity fix.
+  const h1 = markerAnchor(lines);
+  // EMPTY, not the first `limit` lines. The registry places the marker in the
+  // first paragraph after the first H1, so a document with no H1 has nowhere
+  // the marker may live. Falling back to a flat scan let a marker-shaped line
+  // floating in a headingless document satisfy findMarker, which suppressed
+  // the missing-marker finding while nothing reported the missing H1 either --
+  // the document passed --check carrying provenance in a place the registry
+  // does not recognise. The missing H1 is reported on its own; `stamp` refuses
+  // rather than writing into a shape it cannot place.
+  if (h1 === null) return { from: 0, to: 0 };
+  const fencedHere = fencedLines(lines);
+  const commentedHere = commentedLines(lines);
+  // And a heading inside a RAW HTML BLOCK, which renders literally. A `<pre>`
+  // sample carrying `## Fake` above an existing marker ended the window at the
+  // sample, so findMarker missed the real marker below the block and --stamp
+  // inserted a second one near the H1: contradictory provenance. h1Index and
+  // headingAnchors already exclude these; this scan did not.
+  const rawHere = rawHtmlBlockLines(lines);
+  // Indented code too. An indented line followed by `---` is a code block and
+  // a thematic break, not a Setext heading -- omitted, isSetextUnderline read
+  // it as one, closed the window above a real marker below it, and --stamp
+  // inserted a second contradictory marker. Parity with the Python twin
+  // (stocks#1121).
+  const masked = new Set([...fencedHere, ...commentedHere,
+    ...indentedCodeLines(lines), ...rawHere]);
+  // Where each Setext heading STARTS, not where its underline is. A Setext
+  // heading's text is the whole paragraph the underline promotes, and that
+  // paragraph may be several lines: `**Last reviewed:** ...` / `More title` /
+  // `---` is ONE H2 whose first line is the marker-shaped one (CommonMark
+  // example 93). Reaching the underline and stopping at `j - 1` left that
+  // line inside the document window, so a line belonging to the next
+  // section's HEADING stood in for the whole document's provenance and
+  // `--stamp` would rewrite heading text instead of inserting a marker. Here
+  // the paragraph rule below reached it first, which is the same defect by a
+  // different route. `paragraphBlocks` already closes a block ON the
+  // underline, so the block's first line is the answer and the two cannot
+  // disagree about where a heading begins. Codex filed it on the Python twin
+  // (stocks#1121).
+  const setextStarts = new Set(paragraphBlocks(lines, masked)
+    .filter(([lo, hi]) => hi > lo && isSetextUnderline(lines, hi, masked))
+    .map(([lo]) => lo));
+  let stop = lines.length;
+  // To the next HEADING, with no additional line cap. A document opening with
+  // more than 40 lines of HTML metadata before its marker had the real marker
+  // excluded from the window, so the audit reported it missing and --stamp
+  // inserted a second one: contradictory provenance. The section boundary is
+  // the thing being asked about; the line count was a proxy for it.
+  for (let j = h1 + 1; j < lines.length; j += 1) {
+    // The same optional indentation H1_RE admits. Without it, a later
+    // section written `  ## Thing` did not end the document-level window, so a
+    // marker inside that section satisfied findMarker -- suppressing the
+    // missing top-level provenance finding and making --stamp update the
+    // section's marker instead of inserting the document's.
+    // A heading inside a FENCE is an example, not the next section. Treating
+    // it as one ended the search early, so an existing marker below the fence
+    // was reported missing and --stamp inserted a second one above it.
+    // And a heading hidden in an HTML COMMENT, which renders as nothing:
+    // treating it as the next section excluded the real marker below it, so
+    // the audit reported the marker missing and --stamp added a second one.
+    if (fencedHere.has(j) || commentedHere.has(j) || rawHere.has(j)) continue;
+    // ATX SYNTAX, not a leading '#'. `#123 remains open` renders as prose and
+    // closed the section, so a SECOND marker below it was outside the window:
+    // findMarkers saw only the first, --stamp updated it, and the
+    // contradictory duplicate stayed on the page with nothing to report it.
+    // Read through the CONTAINER prefix, as h1Index already is. A document
+    // with a blockquoted H1 keeps its marker in the same quote, and `>` on
+    // its own is the quoted spelling of a BLANK line -- but `lines[j].trim()`
+    // saw `>` as rendered prose and closed the window before the marker. The
+    // audit reported the visible marker missing and --stamp inserted a second
+    // unquoted one beside it: contradictory provenance, and the shape this
+    // window exists to prevent.
+    const bare = lines[j].replace(BLOCKQUOTE_PREFIX_RE, '');
+    if (/^ {0,3}#{1,6}(?:\s|$)/.test(bare)) { stop = j; break; }
+    // Setext is a section heading too, and its underline marks the heading on
+    // the line ABOVE -- so the section starts there, not at the underline.
+    // Reading only `#` let a `Last reviewed` inside that section stand in for
+    // the whole document's provenance. Ported from the Python twin.
+    if (setextStarts.has(j)) {
+      stop = j;
+      break;
+    }
+    // docs/DOC_REGISTRY.md puts the marker at "the first paragraph after the
+    // first H1". The window ran to the next HEADING instead, so a document
+    // with an introduction paragraph and a marker somewhere below it passed,
+    // and --stamp merely refreshed the misplaced marker rather than restoring
+    // the required placement. Blank lines, fenced blocks, commented metadata
+    // and badge lines are skipped above or here; the first other rendered
+    // paragraph ends it.
+    if (!bare.trim()) continue;
+    if (MARKER_RE.test(bare.trim()) || LEGACY_MARKER_RE.test(bare.trim())) continue;
+    if (isCodeIndented(lines[j])) continue;
+    // Duplicate detection asks a different question and needs the wider span:
+    // see markerSection.
+    if (!stopAtParagraph) continue;
+    stop = j + 1;
+    break;
+  }
+  return { from: h1 + 1, to: Math.min(stop, lines.length) };
+}
+
+/**
+ * What a marker still owes, when it parses but claims nothing.
+ *
+ * A marker reading `Last reviewed: unknown`, or carrying no `Against`, passes
+ * every other check while supporting no drift check at all -- `findMarker`
+ * returns something, so the missing-marker branch stays quiet, and the absent
+ * SHA makes `checkChangedSince` a no-op. `--stamp` writes exactly that form
+ * for a scan-only pass, so once the unrelated findings are fixed `--check`
+ * could report clean over documents that explicitly say nobody has read them.
+ *
+ * P3, because --check gates on P1/P2: these belong on the standing worklist
+ * and must not hold a build red forever. Same severity and reasoning as the
+ * Python twin (stocks#1121).
+ */
+/**
+ * Every date a marker carries has to name a real day, and be in the past.
+ *
+ * MARKER_RE checks the SHAPE only, so `2026-02-30` parses. With a verified
+ * depth and a valid ancestor SHA nothing else looked at it, and the future
+ * test is LEXICOGRAPHIC -- an impossible date that sorts before today passes
+ * that too. `Last scanned` was never date-checked at all. So a marker could
+ * record provenance that cannot be true and the audit reported clean.
+ *
+ * P2 for an impossible day: it is not an absent review, it is a recorded one
+ * that cannot be true, which is worse than `unknown` -- that at least says so.
+ * P1 for a future date, matching the twin, and applied to BOTH fields: a scan
+ * date is the one field a machine writes, so a future value there means the
+ * clock or the file is wrong.
+ */
+export function checkMarkerDates(doc, prev, today, line = null) {
+  const out = [];
+  // A marker may parse cleanly and still carry a DUPLICATE malformed owned
+  // field after the valid prefix -- `... · **Last scanned:** bad`. MARKER_RE
+  // is not end-anchored, so the dates and provenance read fine and every other
+  // check passed. Only stamp() noticed, by returning skipped-malformed-marker,
+  // and an ordinary --check never calls stamp(), so the contradiction sailed
+  // through the gate it should have held.
+  // Case-insensitively: a variant such as `**depth:** verified` is a field a
+  // reader recognises and this parser declines, so a case-sensitive filter let
+  // it through as prose AND let `stamp` add a canonical `**Depth:**` beside
+  // it. The Python twin has refused that since round 21.
+  const bad = line === null ? [] : extraSegments(line).filter(
+    (seg) => OWNED_FIELDS.some((f) => seg.toLowerCase().startsWith(`**${f}`.toLowerCase())));
+  for (const seg of bad) {
+    out.push({ check: 'marker', doc, severity: 'P2',
+      detail: `the marker repeats an owned field in a form it cannot parse: ${seg}` });
+  }
+  // And a field repeated in a form it CAN parse, with a conflicting value --
+  // two well-formed `Last scanned` segments carrying different dates.
+  // extraSegments strips every valid segment, so the filter above saw nothing,
+  // the parser took the first value, and `--stamp` collapsed the duplicate
+  // silently instead of requiring somebody to say which date is true.
+  if (line !== null) {
+    // Case-INSENSITIVELY, as the filter above and `ownerOf` already read
+    // them. `**Owner:** Alice · **owner:** Bob` passed this count, the
+    // parser took Alice, and `--stamp` then deleted Bob silently -- so
+    // conflicting provenance was lost rather than reported and refused. The
+    // two halves of this function disagreeing about what a field label is
+    // is what made one of them reachable and the other not.
+    const seen = new Map();
+    for (const raw of line.split(DOT)) {
+      const s = raw.trim().toLowerCase();
+      const field = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`.toLowerCase()));
+      if (field) seen.set(field, (seen.get(field) ?? 0) + 1);
+    }
+    for (const [field, n] of seen) {
+      if (n > 1) {
+        out.push({ check: 'marker', doc, severity: 'P2',
+          detail: `the marker carries ${n} \`${field}\` fields; they can disagree and `
+                + 'only the first is read' });
+      }
+    }
+  }
+  // A marker that CONTRADICTS itself. `Last reviewed: unknown` says no review
+  // has happened; a `Depth` or an `Against` beside it claims one at a named
+  // baseline. Every field parses, so nothing above reported it and the run
+  // emitted only the non-gating P3 for the unknown date -- so it passed --check
+  // while a drift calculation ran off provenance `stamp` never writes. A
+  // combination the writer cannot produce is malformed on read. Parity with the
+  // Python twin (stocks#1121).
+  const claims = [['Depth', prev.depth], ['Against', prev.sha]]
+    .filter(([, v]) => v).map(([f]) => f);
+  if (prev.date === 'unknown' && claims.length) {
+    out.push({ check: 'marker', doc, severity: 'P2',
+      detail: `the marker records no review (\`unknown\`) and still carries `
+            + `${claims.join(' and ')}; those claim a review that the same line `
+            + 'says did not happen' });
+  }
+  for (const [field, label] of [['date', 'review date'], ['scanned', 'last-scanned date']]) {
+    const value = prev[field];
+    if (value === undefined || value === null || value === '' || value === 'unknown') continue;
+    if (!isCalendarDate(value)) {
+      out.push({ check: 'marker', doc, severity: 'P2',
+        detail: `${label} ${value} is not a real calendar day` });
+    } else if (value > today) {
+      out.push({ check: 'marker', doc, severity: 'P1',
+        detail: `${label} ${value} is in the future` });
+    }
+  }
+  return out;
+}
+
+export function checkProvenance(doc, prev) {
+  const missing = [];
+  if (prev.date === 'unknown') missing.push('never reviewed');
+  if (!prev.sha) missing.push('no reviewed-against SHA, so drift cannot be checked');
+  // The registry defines `verified` as the only depth meaning a human reread
+  // the claims; `scanned` is what --stamp writes mechanically. A marker with
+  // a real date and SHA but scan-only depth dropped off the worklist and could
+  // yield a clean audit after nothing but a machine pass.
+  if (prev.date !== 'unknown' && prev.depth !== 'verified') {
+    missing.push(`depth is ${prev.depth ?? 'unset'}, not verified, so no human has `
+      + 'confirmed the claims');
+  }
+  // `Last scanned` is the field the registry's marker format requires and the
+  // weekly pass writes. A current-format marker omitting it parses with
+  // `scanned: null`, so checkMarkerDates has nothing to range-check and every
+  // provenance check stayed quiet: a document could pass --check carrying no
+  // record of ever having been scanned.
+  if (!prev.legacy && !prev.scanned) {
+    missing.push('no Last scanned date, so nothing records when the mechanical '
+      + 'checks last ran');
+  }
+  // `Owner` is in the registry's required marker format, and it is the field
+  // that says who answers for the claims. A marker carrying valid review,
+  // depth, SHA and scan fields but no owner parsed cleanly and neither
+  // checkMarkerDates nor this function said a word, so an ordinary --check
+  // accepted provenance the registry does not consider complete. A legacy
+  // marker predates the field and is reported as legacy instead.
+  if (!prev.legacy && !prev.owner) {
+    missing.push('no Owner, so nothing records who answers for the claims');
+  }
+  if (!missing.length) return [];
+  return [{ check: 'marker', doc, severity: 'P3',
+    detail: `incomplete provenance: ${missing.join('; ')}` }];
+}
+
+/** Lines inside a fenced code block, which are examples rather than content. */
+/**
+ * Lines inside a four-space-indented code block.
+ *
+ * CommonMark's indented code, which `fencedLines` does not see: an example
+ * written that way was inspected as live prose, so `[x](missing.md)` or a
+ * blocking citation in it could fail --check.
+ *
+ * Deliberately narrow. Indented code cannot interrupt a paragraph, and inside
+ * a list item the indentation is the list's, not a code block's -- so a run
+ * starts only after a blank line whose own preceding content is neither a list
+ * item nor a table row. Anything less careful masks list continuations and
+ * turns real findings invisible, which is the worse direction.
+ */
+/**
+ * A blockquote's container prefix: `>` with up to three spaces of lead and one
+ * optional space after, repeatable for nesting.
+ *
+ * `fencedLines` already strips this, for the same reason. Markdown removes the
+ * prefix and interprets what remains, so `>     [x](missing.md)` is a
+ * four-space indented code example inside a quote.
+ */
+const BLOCKQUOTE_PREFIX_RE = /^(?: {0,3}> ?)+/;
+
+export function indentedCodeLines(lines) {
+  const out = new Set();
+  let blankSeen = true;
+  let floor = 4;
+  let listIndent = 0;
+  let inCode = false;
+  let lastWasHeading = false;
+  for (const [i, raw] of lines.entries()) {
+    // Every measurement below reads the CONTENT, not the raw line. Counting
+    // indentation on the raw line returned zero for a quoted example, so the
+    // link and closed-issue scanners inspected it as live prose and could emit
+    // a gating finding from a document's own teaching material. Measuring only
+    // the indent and leaving the blank/heading/list tracking on the raw line
+    // would be worse than either: `>` alone is a blank line inside the quote,
+    // and the two views would disagree about where a block starts.
+    const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
+    if (!line.trim()) { blankSeen = true; continue; }
+    // COLUMNS, with tab stops. A tab only in column zero counted as four and
+    // anything else as its space count, so ` \t[x](missing.md)` measured 1 --
+    // CommonMark advances the tab to column 4 and renders the line as code, so
+    // the link and blocker scans inspected an example as live prose and could
+    // emit a gating finding from a document's own teaching material.
+    const indent = indentColumns(line);
+    if (inCode && indent >= floor) { out.add(i); continue; }
+    inCode = false;
+    if (indent >= floor && (blankSeen || lastWasHeading)) {
+      // Only a PARAGRAPH cannot be interrupted by indented code. After a
+      // heading no blank line is needed, so `## Example` followed directly by
+      // a four-space sample left the sample unmasked and the link and blocker
+      // checks could emit gating findings from it.
+      inCode = true;
+      out.add(i);
+    } else {
+      const bullet = /^(\s*(?:[-*+]|\d{1,9}[.)])\s+)/.exec(line);
+      if (bullet) {
+        // COLUMNS, as every other measurement here is. `-\titem` advances
+        // the tab to column 4, but counting characters said 2 and set the
+        // nested-code floor to 6 instead of 8 -- so a six-space rendered
+        // continuation paragraph was classified as code and skipped by the
+        // dead-link and blocker audits. Parity with the Python twin
+        // (stocks#1121), which measured it this way already.
+        listIndent = columnWidth(bullet[1]);
+        floor = listIndent + 4;
+      } else if (listIndent > 0 && indent >= listIndent) {
+        // A CONTINUATION of the item, which carries no new bullet. Resetting
+        // the floor to four here meant the next four-space line after a blank
+        // read as a code block, although a `- ` item needs six to open one --
+        // so rendered continuation content was skipped by the dead-link and
+        // closed-issue checks. Parity with the Python twin (stocks#1121).
+      } else {
+        listIndent = 0;
+        floor = 4;
+      }
+    }
+    lastWasHeading = /^ {0,3}#{1,6}\s/.test(line) || /^ {0,3}(?:=+|-+)\s*$/.test(line);
+    blankSeen = false;
+  }
+  return out;
+}
+
+/**
+ * Lines inside a raw-text HTML block, whose bracket syntax renders literally.
+ *
+ * CommonMark's HTML block type 1: `<pre>`, `<script>`, `<style>` or
+ * `<textarea>` opens it and the line carrying the matching close tag ends it.
+ * Everything between is raw text, so `[x](missing.md)` inside a `<pre>` is an
+ * EXAMPLE exactly as it would be inside a fence -- but only fenced and
+ * indented code was masked, so such a sample emitted a gating dead-link.
+ *
+ * The block runs to the closing tag's own line inclusive, and an unclosed
+ * block runs to the end of the document, both as the spec says. A fence wins
+ * where the two overlap, because inside a fence the tag is itself an example.
+ */
+// ANCHORED, after at most three spaces of container indentation. CommonMark
+// starts an HTML block only on a line that BEGINS with the opener; unanchored,
+// any prose mentioning `<pre>` -- including ``Use `<pre>` for examples`` -- was
+// read as a block opener, and with no closing tag on that line the mask ran to
+// the end of the document and every real dead link and closed blocker below it
+// was silently skipped. That is the direction that hides findings, so it is
+// worse than the bug the mask was added to fix.
+const RAW_TEXT_OPEN_RE = /^ {0,3}<(pre|script|style|textarea)(?:[\s>/]|$)/i;
+
+// CommonMark HTML block type 6: a known block-level tag, opened or closed,
+// running to the next BLANK line rather than to a matching close tag. `<div>`
+// followed by `[x](missing.md)` and `</div>` with no blank line between them
+// renders the bracket syntax literally exactly as `<pre>` does, but only
+// type 1 was masked, so the sample emitted a gating dead-link finding.
+const HTML_BLOCK_TAGS = new Set(('address article aside base basefont blockquote body caption '
+  + 'center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer '
+  + 'form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main '
+  + 'menu menuitem nav noframes ol optgroup option p param search section summary table '
+  + 'tbody td tfoot th thead title tr track ul').split(' '));
+
+const HTML_BLOCK_OPEN_RE = /^ {0,3}<\/?([a-zA-Z][a-zA-Z0-9-]*)(?:[\s/>]|$)/;
+
+// Type 7: a line that is a COMPLETE open or closing tag and nothing else. The
+// tag name is unrestricted, which is the whole point -- a custom element like
+// `<x-widget>` is not in HTML_BLOCK_TAGS and so opened nothing, leaving a
+// `[x](missing.md)` inside it audited as live prose and reported as a gating
+// dead link over an example that renders literally. It ends at a blank line,
+// like type 6, and per CommonMark it cannot INTERRUPT a paragraph, which is
+// the condition that keeps it from swallowing ordinary prose.
+// A rendered anchor's destination. Double or single quoted; an unquoted href
+// is not accepted, because telling its end from the next attribute needs a
+// parser and guessing would invent destinations -- the failure this whole
+// check exists to avoid.
+// The UNQUOTED attribute form as well. `<a href=guide.md>` is valid HTML and
+// renders a real link, so recording only the quoted forms left its destination
+// unchecked -- a deleted target cited that way produced no finding at all.
+// The unquoted value ends at whitespace or any of `"'=<>`` `, which is what
+// HTML says delimits it.
+// `href` must be a whole ATTRIBUTE NAME, not a suffix of one and not text
+// inside another attribute's value. `[^>]*?` matched the `href` in
+// `<a data-href="missing.md">`, which is not a clickable link, and would match
+// one written inside `<a title="href=x.md">` too -- both produced a gating
+// dead-link finding for a destination no reader can reach. Each attribute is
+// preceded by whitespace, and so is `href`; without that separator the name
+// backtracks to the `data-` of `data-href` and matches the rest as a real
+// attribute, which is the very case this rejects. Parity with the Python twin
+// (stocks#1121).
+// The value group is NON-capturing: this pattern is spliced in FRONT of the
+// destination groups, so a capture here shifts every one of them.
+const HTML_ATTR = String.raw`[a-zA-Z_:][-\w:.]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'\`=<>]+))?`;
+// A COMPLETE opening tag, closing `>` included. The pattern used to stop as
+// soon as it had the `href` value, so literal malformed text -- `<a
+// href="missing.md"` with no `>`, which CommonMark renders verbatim -- was
+// audited as a clickable link and a typo or an illustration produced a gating
+// dead-link finding for something no reader can follow.
+//
+// And `<img src>` as well as `<a href>`. Documentation reaches for raw HTML
+// to size an image, and `<img src="missing.png">` was never validated while
+// the equivalent Markdown was -- so changing presentation syntax silently
+// dropped the asset from the audit although a reader sees it missing.
+// The destination is pulled out with `TAG_ATTR_RE` rather than captured
+// positionally, so an attribute ORDER this pattern did not anticipate cannot
+// hide one: `<a class="x" href="y">` and `<a href="y" class="x">` are the
+// same tag.
+const HTML_DEST_TAG_RE = new RegExp(
+  String.raw`<(a|img)(?:\s+${HTML_ATTR})*\s*/?>`,
+  'gi'
+);
+const HTML_DEST_ATTR = { a: 'href', img: 'src' };
+
+/** Every `<a href>` and `<img src>` destination in `text`, with its offset. */
+function* htmlDestinations(text) {
+  for (const tag of text.matchAll(HTML_DEST_TAG_RE)) {
+    const want = HTML_DEST_ATTR[tag[1].toLowerCase()];
+    TAG_ATTR_RE.lastIndex = 0;
+    for (const attr of tag[0].matchAll(TAG_ATTR_RE)) {
+      if (attr[1].toLowerCase() !== want) continue;
+      yield { value: attr[2] ?? attr[3] ?? attr[4] ?? '', index: tag.index, whole: tag[0] };
+      break;
+    }
+  }
+}
+
+// A type-7 opener is a COMPLETE tag, and its attributes follow the same
+// grammar every other tag scan here uses. `[^<>]*?` was not that grammar: a
+// quoted value may contain `>` -- `<x-widget title=">">` is one tag -- and
+// rejecting it opened no block, so the Markdown-looking lines below it were
+// audited as live content and `[x](missing.md)` in the example became a
+// gating dead link. It was also too LAX in the other direction, accepting
+// `<x-widget ===>`, which CommonMark does not. Reusing HTML_ATTR fixes both
+// and means one grammar, not two. Codex filed it on the Python twin
+// (stocks#1121), where it is the same defect.
+const HTML_TYPE7_RE = new RegExp(
+  String.raw`^ {0,3}<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+${HTML_ATTR})*\s*\/?>\s*$`);
+
+// An explicit fragment destination the browser honours. The unquoted form is
+// valid HTML too; an unquoted value ends at whitespace or any of `"'=<>` and a
+// backtick. `[^>]*?` crosses a line break, which is what lets the joined scan
+// see an element whose attribute sits on a later physical line.
+// CASE-INSENSITIVE. HTML attribute names are, and the browser exposes the
+// fragment for `<DIV ID="section">` exactly as for the lowercase spelling --
+// but without the `i` flag neither anchor was recorded, so a valid link to
+// `#section` was a gating dead anchor. The VALUE's case is still preserved;
+// only the tag and attribute NAMES are folded.
+const HTML_ID_RE =
+  /<[a-zA-Z][^>]*?\s(?:id|name)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/gi;
+
+// CommonMark HTML block types 3, 4 and 5 -- processing instruction, document
+// declaration and CDATA. Each runs raw to its own closer, over as many lines
+// as it takes, so Markdown inside one renders literally; none of them was
+// recognised, and `[x](missing.md)` in such a block produced a false gating
+// dead-link finding over content displayed verbatim. Type 2 is the HTML
+// comment, which this scanner already tracks separately.
+const HTML_RAW_DELIMITED = [
+  [/^ {0,3}<\?/, '?>'],
+  [/^ {0,3}<!\[CDATA\[/, ']]>'],
+  [/^ {0,3}<![A-Za-z]/, '>'],
+];
+
+/**
+ * Offset of the first `<!--` a reader sees as a comment opener, or -1.
+ *
+ * Line-local `codeSpans` only, and no wrapped-span map: `codeSpanLines`
+ * reaches `fencedLines`, which reaches `rawHtmlBlockLines`, which calls this.
+ * An opener inside a span that OPENS on another line is therefore still read
+ * here; that is the cycle's price, and the single-line form is the one
+ * documents actually write.
+ */
+function visibleCommentOpen(line) {
+  const spans = codeSpans(line);
+  let at = line.indexOf('<!--');
+  while (at !== -1 && (spans.some(([lo, hi]) => lo <= at && at < hi)
+    || isEscaped(line, at))) {
+    at = line.indexOf('<!--', at + 1);
+  }
+  return at;
+}
+
+export function rawHtmlBlockLines(lines,
+  { rawTextOnly = false, fenced: given = null, openers = null } = {}) {
+  const out = new Set();
+  // `fencedLines` passes its PROVISIONAL set, computed without HTML, and
+  // relies on this scan to correct it -- so taking it as a parameter is what
+  // keeps the two from recursing.
+  const fenced = given ?? fencedLines(lines);
+  // An INDENTED example of an opener is an example, not a block.
+  const indented = indentedCodeLines(lines);
+  // Comment state is tracked in THIS pass rather than read from
+  // `commentedLines`. It cannot be read from there: `commentSpans` already
+  // masks raw blocks, so calling it here is mutual recursion -- which is
+  // exactly what happened, and the stack overflow is the only reason it was
+  // not a silent wrong answer. An HTML comment is itself a raw-text block, so
+  // tracking it beside the others costs nothing.
+  // Where a paragraph could START. A type-7 block may not INTERRUPT one, but
+  // it may begin right after a completed block -- `# Title` then `<x-widget>`
+  // -- and the blank-previous-line proxy missed exactly that, so the example
+  // below it was audited as live prose. A heading and a thematic break are
+  // blocks of their own here, so the line after either starts a new block.
+  const blockStarts = new Set(paragraphBlocks(lines, fenced).map(([lo]) => lo));
+  let inComment = false;
+  let open = null;
+  // The quote depth the OPEN block started at. A raw HTML block opened inside
+  // a blockquote ends with that quote, closing tag or not: CommonMark ends the
+  // nested block where its container ends. Holding it open added every later
+  // line to the block, so the dead-link, heading, marker and blocker scans
+  // suppressed live body content, potentially through EOF. The fence scanner
+  // has had this rule for rounds; this is the same rule one construct over. An
+  // unquoted block opens at depth 0 and nothing is below 0, so it is untouched.
+  let openDepth = 0;
+  // The closer a type-3/4/5 block waits for (`?>`, `]]>`, `>`). Null for the
+  // tag-closed and blank-line-closed kinds.
+  let closer = null;
+  lines.forEach((raw, i) => {
+    // Only while NOTHING is open. Inside a block, Markdown is not parsed, so
+    // a line the fence scan called fenced is displayed text and the block
+    // walks straight through it -- that is how the provisional set's false
+    // fence gets corrected. An opener sitting inside a REAL fence is still
+    // skipped, because there no block is open.
+    if (!open && !inComment && fenced.has(i)) return;
+    // The CONTAINER prefix is stripped, as the fence and indented-code
+    // scanners already do: `> <pre>` opens a raw-text block whose Markdown
+    // renders literally, but testing the physical line saw the `>` and
+    // recognised no opener -- so `> [x](missing.md)` inside the example was
+    // audited as a live link and emitted a gating finding.
+    let line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
+    if (open !== null && quoteDepth(raw) < openDepth) { open = null; closer = null; }
+    if (inComment) {
+      if (line.includes('-->')) inComment = false;
+      return;
+    }
+    if (open === null) {
+      // A LIST MARKER is a container prefix too, and CommonMark removes it
+      // before parsing the block: `- <pre>` opens a raw-text block whose
+      // contents display literally, so a `[x](missing.md)` inside it is an
+      // EXAMPLE and produced a gating dead-link finding for a link no reader
+      // can click. Only while nothing is open -- inside a block the line is
+      // displayed text and a leading `-` is content. Every branch below
+      // returns, so the stripped text reaches no closer test.
+      line = line.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
+      // Whatever opens on THIS line opens at this line's depth. Recorded
+      // before the opener tests rather than at each of the places a block can
+      // start, so none of them can be missed; it is only read while a block is
+      // open, so a line that opens nothing leaves a stale value nothing reads.
+      openDepth = quoteDepth(raw);
+      if (indented.has(i)) return;
+      // A comment OPENING on this line hides anything after it, including a
+      // `<pre>` on a later line of the same comment.
+      // An opener shown as `` `<!--` `` or escaped as `\\<!--` opens nothing:
+      // the first is inline code, the second displays the delimiter
+      // literally. Read as real, either one hid a later `<pre>` from this
+      // scan, so the raw-text block was never recognised and a
+      // `[x](missing.md)` DISPLAYED inside it became a gating dead-link
+      // finding for a link no reader can click. The other comment scanners
+      // have carried this rule for rounds; this copy did not.
+      const c = visibleCommentOpen(line);
+      if (c !== -1 && !line.slice(c).includes('-->')) {
+        inComment = true;
+        // The text before the opener is still live, so an opener there still
+        // starts a block.
+        if (!RAW_TEXT_OPEN_RE.test(line.slice(0, c))) return;
+      }
+      const m = RAW_TEXT_OPEN_RE.exec(line);
+      if (!m) {
+        // Types 3, 4 and 5 -- processing instruction, declaration, CDATA --
+        // before the rawTextOnly gate, because each renders its contents
+        // literally exactly as `<pre>` does: an `id=` inside one is displayed,
+        // not exposed as an anchor.
+        const delim = HTML_RAW_DELIMITED.find(([re]) => re.test(line));
+        if (delim) {
+          out.add(i);
+          if (!line.includes(delim[1])) { open = '\u0001'; [, closer] = delim; }
+          return;
+        }
+        // Type 6. Sentinel rather than a tag name, because the block does not
+        // close on one -- a blank line ends it whatever tags are inside.
+        if (rawTextOnly) return;
+        const b = HTML_BLOCK_OPEN_RE.exec(line);
+        if (b && HTML_BLOCK_TAGS.has(b[1].toLowerCase())) {
+          open = '\u0000';
+          out.add(i);
+          return;
+        }
+        // Type 7, same sentinel: it also ends at a blank line. Only where a
+        // paragraph is not already open, so a bare tag on a continuation line
+        // is inline HTML rather than the start of a block.
+        // The previous line is read THROUGH its container, as this line
+        // already is. Inside a blockquote the blank line is spelled `>`, which
+        // is nonempty raw -- so a quoted `<x-widget>` after a quoted blank
+        // opened nothing and a `[x](missing.md)` inside the block was audited
+        // as a live link.
+        const prev = (lines[i - 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
+        if (HTML_TYPE7_RE.test(line)
+            && (i === 0 || !prev.trim() || blockStarts.has(i))) {
+          open = '\u0000';
+          out.add(i);
+        }
+        return;
+      }
+      open = m[1].toLowerCase();
+      out.add(i);
+      // `openers`, when the caller passes a Map, receives `line index ->
+      // column the opening tag STARTS at`. The tag itself is RENDERED --
+      // `<pre id="sample">` offers the id `sample` -- while everything after
+      // it on that line displays literally, so a caller masking whole lines
+      // threw the id away with the content and reported a working link to
+      // `#sample` as a gating dead anchor. The START rather than the end,
+      // because where a tag ENDS is a question the tag scanner already
+      // answers and this scan must not answer a second way. In RAW
+      // coordinates: `line` has had its blockquote and list prefixes
+      // stripped, and both are prefixes, so the length difference is the
+      // offset. Codex filed it on the Python twin (stocks#1121).
+      if (openers !== null) openers.set(i, (raw.length - line.length) + m.index);
+      // A one-line block: `<pre>...</pre>` closes on the line it opened.
+      if (new RegExp(`</${open}\\s*>`, 'i').test(line.slice(m.index + m[0].length))) open = null;
+      return;
+    }
+    out.add(i);
+    if (closer !== null) {
+      if (line.includes(closer)) { open = null; closer = null; }
+      return;
+    }
+    if (open === '\u0000') {
+      // A type-6 block ends at the next BLANK line, not at a close tag.
+      if (!line.trim()) { out.delete(i); open = null; }
+      return;
+    }
+    if (new RegExp(`</${open}\\s*>`, 'i').test(line)) open = null;
+  });
+  return out;
+}
+
+/**
+ * Indices wholly inside an HTML comment, computed WITHOUT the fence scan.
+ *
+ * `fencedLines` needs this and `commentedLines` cannot supply it: that one
+ * reaches `commentSpans`, which masks raw HTML blocks, which reaches back
+ * here. An HTML comment is delimited by text rather than by block structure,
+ * so a standalone scan answers the one question the fence scan asks -- is
+ * this delimiter commented out? Parity with the Python twin (stocks#1121).
+ */
+function commentHiddenLines(lines) {
+  const out = new Set();
+  let inside = false;
+  // Spans that CROSS a soft break, as well as the line-local ones below. A
+  // `<!--` inside a multi-line code span is displayed text: with only the
+  // line-local scan, `Text \`` / `inside <!--` / `\`` read as a real unclosed
+  // comment, `fencedLines` then ignored both delimiters of the fence below
+  // it, `h1Index` accepted the `# Fake` heading inside that fence, and
+  // `--stamp` inserted provenance into a code block. No cycle: passing no
+  // fence set keeps `codeSpanLines` off `fencedLines`, which is the same
+  // constraint that function already documents. Codex filed it.
+  const wrapped = codeSpanLines(lines);
+  for (const [i, line] of lines.entries()) {
+    if (inside) {
+      out.add(i);
+      if (line.includes('-->')) inside = false;
+      continue;
+    }
+    // An inline EXAMPLE opens nothing: `` `<!--` `` in prose was read as a
+    // real unclosed comment, so fencedLines ignored every later fence
+    // delimiter -- a heading inside the fenced example could then terminate
+    // markerWindow before the real marker and --stamp inserted a second,
+    // contradictory one. commentSpans learned this a round ago; this
+    // standalone helper, which exists to break the recursion between the two,
+    // did not. codeSpans is line-local, so using it here reintroduces no
+    // cycle. Ported from the Python twin (stocks#1121).
+    const spans = [...codeSpans(line), ...(wrapped.get(i) ?? [])];
+    let at = line.indexOf('<!--');
+    // An ESCAPED opener opens nothing either: `\<!--` displays the delimiter
+    // literally and leaves the rest of the line live Markdown. Reading it as a
+    // real comment masked everything through `-->` or to EOF, suppressing the
+    // dead-link, blocker, heading and marker findings in between.
+    while (at !== -1 && (spans.some(([lo, hi]) => lo <= at && at < hi)
+        || isEscaped(line, at))) {
+      at = line.indexOf('<!--', at + 1);
+    }
+    if (at !== -1 && !line.slice(at).includes('-->')) {
+      out.add(i);
+      inside = true;
+    }
+  }
+  return out;
+}
+
+export function quoteDepth(line) {
+  return (/^ {0,3}((?:> ?)*)/.exec(line)[1].match(/>/g) ?? []).length;
+}
+
+/**
+ * Indices of a leading YAML front-matter block, delimiters included.
+ *
+ * GitHub renders front matter as a metadata table, not as Markdown, so a
+ * `# note` comment inside it is not a heading. Treating one as the document H1
+ * put `--stamp`'s marker and its surrounding blank lines INSIDE the `---`
+ * delimiters: the front matter is corrupted and the real H1 left unstamped.
+ *
+ * An UNTERMINATED opener is not front matter -- GitHub renders a lone `---` as
+ * a thematic break -- so this returns nothing rather than masking the whole
+ * document, which would hide every finding below it. Parity with the Python
+ * twin (stocks#1121).
+ */
+export function frontMatterLines(lines) {
+  // COLUMN ZERO. An indented `---` is a thematic break, not a front-matter
+  // opener, but trimming accepted it -- so every line to the next indented
+  // `---` was excluded as metadata and a rendered link between them passed
+  // the audit unchecked.
+  if (!lines.length || lines[0].replace(/\s+$/, '') !== '---') return new Set();
+  for (let i = 1; i < lines.length; i += 1) {
+    // COLUMN ZERO, as the opener already requires. An indented `---` is not
+    // a delimiter, but `trim()` accepted one -- so everything through that
+    // line was masked as metadata and a rendered link, heading or marker
+    // inside the span was silently excluded.
+    const close = lines[i].replace(/\s+$/, '');
+    if (close === '---' || close === '...') {
+      return new Set(Array.from({ length: i + 1 }, (_, k) => k));
+    }
+  }
+  return new Set();
+}
+
+export function fencedLines(lines) {
+  // Two passes, because a fence and an HTML block can each hide the other. A
+  // literal ``` inside `<div>...</div>` is displayed text, not a fence -- but
+  // the scan that would know it is inside an HTML block needs a fence set to
+  // run. So: scan once ignoring HTML, use that provisional set to find the
+  // blocks, then scan again refusing to OPEN a fence inside one. A fence that
+  // really is a fence is unaffected: an HTML opener inside one is still
+  // skipped, because there no block is open to walk through. Parity with the
+  // Python twin (stocks#1121).
+  const provisional = fencedScan(lines, new Set());
+  return fencedScan(lines, rawHtmlBlockLines(lines, { fenced: provisional }));
+}
+
+/** One fence pass, refusing to open a fence on a line inside `html`. */
+function fencedScan(lines, html) {
+  const fenced = new Set();
+  // The OPENING delimiter is remembered. Toggling on any fence-looking line
+  // meant a `~~~` inside a ``` example closed the block, so the rest of the
+  // example was read as prose and the prose after the real closing fence was
+  // read as code -- false findings and suppressed ones from one line.
+  // CommonMark: a fence closes only on the same character, at least as long,
+  // and with no info string.
+  let open = null;
+  let openDepth = 0;
+  // The content column of the list item the OPEN fence sits in, captured when
+  // it opens. Zero means it is not in one, which disables the rule below.
+  let openListCol = 0;
+  // The enclosing list item's content column, so a fence indented to it is a
+  // fence rather than indented code. Reset by a non-blank line at column 0.
+  let listIndent = 0;
+  // A delimiter inside an HTML COMMENT is commented-out HTML, not a fence. An
+  // unmatched ``` inside `<!-- ... -->` opened one, and every visible line
+  // after the comment was then classified as code.
+  const commentHidden = commentHiddenLines(lines);
+  lines.forEach((line, i) => {
+    if (!open && commentHidden.has(i)) return;
+    if (!open && line.trim()) {
+      // Any list item sets the column, not just one that also carries a
+      // fence -- the fence is normally on a LATER line of the item, which is
+      // the whole case this exists for.
+      // COLUMNS, not characters. CommonMark advances a tab to the next
+      // multiple of four, so `-\titem` puts the content column at four while
+      // counting characters gives two -- and a fence indented to the real
+      // column was then rejected as four characters too deep, so the block
+      // was not code and a `[x](missing.md)` DISPLAYED inside it became a
+      // gating dead link. The sibling calculation in `markerWindow` was
+      // corrected a round ago; this copy was measured in characters still.
+      const item = /^([ \t]*)((?:[-*+]|\d{1,9}[.)])\s+)/.exec(line);
+      if (item) listIndent = columnWidth(item[1] + item[2]);
+      else if (!/^[ \t]/.test(line)) listIndent = 0;
+    }
+    // A container prefix -- a blockquote `>`, or list indentation -- precedes
+    // the fence rather than replacing it. `> ```md` is the shape this repo's
+    // own docs use, and seeing the `>` marked none of the block as code, so
+    // links and blocker citations in the sample were audited as live prose.
+    // A LIST MARKER is a container prefix too: `- \`\`\`md` opens a fence
+    // inside the item. Admitting only indentation and blockquotes left the
+    // opener unrecognised and then misread the indented CLOSING fence as a new
+    // opener, so links inside the example were audited as live content and the
+    // prose after the block could be masked instead.
+    // Indentation is measured RELATIVE to the enclosing container, which is
+    // what CommonMark's "up to three spaces" means. Two indentation
+    // components side by side allowed six spaces with no container at all --
+    // and `    \`\`\`` is a one-line indented code block, not a fence.
+    // Opening on it masked every real link and blocker below until another
+    // fence appeared, the direction that hides findings. A flat three-space
+    // cap is wrong in the other direction: a fence inside a list item sits at
+    // the item's content column, which is commonly deeper, so `listIndent`
+    // carries that column the way indentedCodeLines does.
+    // A fence opened INSIDE a blockquote ends with its container, closing
+    // fence or not: CommonMark ends the quoted code block where the quote
+    // ends. Holding it open classified every line after the quote as code, so
+    // dead links, blocker citations, headings and markers below it were all
+    // silently skipped until some later line happened to look like a matching
+    // fence. A blank line drops to depth 0 and ends the quote, which is why
+    // this is a depth comparison rather than a `>` test; an unquoted fence
+    // opens at depth 0 and nothing is below 0, so it is untouched. Ported from
+    // the Python twin (stocks#1121), which had the same defect.
+    if (open && quoteDepth(line) < openDepth) open = null;
+    // A fence opened inside a LIST ITEM ends with that item, closing fence or
+    // not, exactly as a quoted one ends with its quote. The item ends at the
+    // first non-blank line left of its content column, so holding the fence
+    // open past that classified every remaining line as code and suppressed
+    // the dead links, blockers, headings and markers below it. A fence
+    // indented one to three columns at the TOP level is legal and its content
+    // may sit at column zero, which is why this arms only when the fence is
+    // genuinely inside an item. Parity with the Python twin (stocks#1121).
+    // COLUMNS on BOTH sides. `openListCol` is a column (listIndent runs
+    // through columnWidth); this compared it against a CHARACTER count, so a
+    // tab-indented continuation of `-\t```` measured 1 against a content
+    // column of 4, the item read as ended, and the fence closed while
+    // CommonMark keeps it open -- the links DISPLAYED inside the block then
+    // became gating dead links, and the real closing fence was misread as a
+    // new opener. Codex filed it (solyra#69).
+    if (open && openListCol && line.trim()
+        && columnWidth(/^[ \t]*/.exec(line)[0]) < openListCol) open = null;
+    const m = /^([ \t]*)((?:> ?)*)((?:[-*+]|\d{1,9}[.)])\s+)?([ \t]*)(`{3,}|~{3,})(.*)$/
+      .exec(line);
+    if (m) {
+      // Relative to the container: a blockquote prefix or a list marker on
+      // THIS line is itself the container, so its own lead is the baseline.
+      // COLUMNS, not characters. CommonMark expands a tab to four columns,
+      // so `\t\`\`\`` is an indented code line rather than a fence opener --
+      // counting the tab as one of three allowed characters opened a false
+      // fence that held across live paragraphs and suppressed their findings.
+      // Every other indentation measurement here is already in columns.
+      const base = m[2] || m[3] ? columnWidth(m[1]) : listIndent;
+      if (columnWidth(m[1]) - base > 3) return;
+      // Inside a blockquote the container is the QUOTE, so the indentation
+      // that counts is what follows the `>` marker -- and it was not measured
+      // at all. `>     \`\`\`` is an indented code line containing literal
+      // backticks, and opening a fence on it masked a live link on the next
+      // quoted line so its missing target went unreported.
+      if (m[2] && columnWidth(m[4]) > 3) return;
+    }
+    if (!open) {
+      // An opening ``` fence may not carry a backtick in its info string.
+      // And a delimiter inside a raw HTML block is displayed text: CommonMark
+      // does not parse Markdown there, so opening on it left a fence that
+      // outlived the block and swallowed every later link, blocker, heading
+      // and marker as "code".
+      if (m && !html.has(i) && !(m[5][0] === '`' && m[6].includes('`'))) {
+        open = m[5];
+        openDepth = quoteDepth(line);
+        openListCol = listIndent;
+        fenced.add(i);
+      }
+      return;
+    }
+    fenced.add(i);
+    if (m && m[5][0] === open[0] && m[5].length >= open.length && m[6].trim() === '') {
+      open = null;
+    }
+  });
+  return fenced;
+}
+
+/**
+ * Offset ranges of every inline code span on one line.
+ *
+ * A run of N backticks opens a span that only a run of exactly N closes, so
+ * `` ``a ` b`` `` is one span rather than two.
+ */
+/**
+ * Offsets of the COMPLETE HTML tags in `text`, escaped openers excluded.
+ *
+ * A backtick inside a tag is part of that tag, not a code-span delimiter:
+ * CommonMark gives code spans, raw HTML and autolinks equal precedence and
+ * lets whichever BEGINS FIRST win. Ported from the Python twin
+ * (stocks#1121), where Codex filed it.
+ */
+function htmlTagSpans(text) {
+  if (!text.includes('<')) return [];
+  TAG_OPEN_RE.lastIndex = 0;
+  const out = [];
+  for (let m = TAG_OPEN_RE.exec(text); m !== null; m = TAG_OPEN_RE.exec(text)) {
+    if (!isEscaped(text, m.index)) out.push([m.index, m.index + m[0].length]);
+  }
+  TAG_OPEN_RE.lastIndex = 0;
+  return out;
+}
+
+export function codeSpans(line) {
+  const re = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
+  const out = [];
+  // A backtick inside a COMPLETE HTML tag is part of that tag. In
+  // `<span title="`"> [x](missing.md) ` tail` the tag begins at column 0 and
+  // owns its quoted backtick, while pairing it with the trailing one masked a
+  // live link out of the audit and the missing target passed clean. Only a
+  // tag beginning at or after the committed scan position counts: one opening
+  // inside an already-running span is literal text, which is the same
+  // "begins first wins" rule read from the other side.
+  const tags = htmlTagSpans(line);
+  // The COMMITTED scan position, which the tag rule reads. `re.lastIndex` is
+  // rewound on a rejected escaped opener and so does not answer it.
+  let pos = 0;
+  // An ESCAPED run is a literal backtick, not a delimiter. `` \` [x](y.md) \` ``
+  // renders two backticks and a LIVE link, and masking the range between them
+  // made the dead-link and blocker passes skip a real citation -- the hiding
+  // direction. Parity via isEscaped, so `\\\`` (a literal backslash) still
+  // opens a span. Ported from the Python twin (stocks#1121).
+  // Skipped while SCANNING, not filtered afterwards. A post-hoc filter cannot
+  // recover an opener the rejected match already consumed: on
+  // `` \` literal ` [x](y.md) ` `` the escaped tick paired with the real
+  // opener, the pair was then discarded, and the genuine span went unmasked --
+  // so the example link inside it was reported dead. Restarting the search one
+  // character past a rejected opener is what lets the real one pair. Parity
+  // with the Python twin (stocks#1121).
+  re.lastIndex = 0;
+  for (let m = re.exec(line); m !== null; m = re.exec(line)) {
+    if (isEscaped(line, m.index)) {
+      re.lastIndex = m.index + 1;
+      continue;
+    }
+    const covering = tags.find(([lo, hi]) => pos <= lo && lo <= m.index && m.index < hi);
+    if (covering !== undefined) {
+      [, pos] = covering;
+      re.lastIndex = pos;
+      continue;
+    }
+    out.push([m.index, m.index + m[0].length]);
+    pos = m.index + m[0].length;
+    re.lastIndex = pos;
+  }
+  return out;
+}
+
+/**
+ * Code-span ranges per line index, for spans that CROSS line breaks.
+ *
+ * `codeSpans` is per physical line and so cannot see a span whose opening and
+ * closing backticks are on different lines -- a sample written that way was
+ * scanned as live prose and could emit a gating closed-issue finding. The
+ * whole document is scanned once here and the ranges split back per line, so
+ * the callers keep their per-line offsets.
+ */
+/**
+ * Runs of consecutive lines that can hold ONE paragraph, as [first, last].
+ *
+ * A blank line ends a paragraph and a fence interrupts it, so inline syntax
+ * may not pair across either. Callers that scan the joined document need the
+ * boundary as a scan WINDOW rather than as masking: a blank line has no
+ * characters to mask, so masking leaves the neighbouring paragraphs adjacent
+ * in the subject and the pairing happens regardless -- measured. Parity with
+ * the Python twin (stocks#1121).
+ */
+// ATX syntax, the same shape markerWindow tests with.
+const ATX_HEADING_RE = /^ {0,3}#{1,6}(?:\s|$)/;
+// Three or more `*`, `-` or `_`, optionally spaced, and nothing else.
+const THEMATIC_BREAK_RE = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
+
+/**
+ * Split `text` at the first `delim` that is not inside a character reference.
+ *
+ * A reference is consumed as a UNIT. `foo&#38;bar.md` carries a `#` that is
+ * part of the reference, not a fragment delimiter, and splitting the raw text
+ * gave the path `foo&` and the fragment `38;bar.md` -- a gating dead link
+ * against a tracked file. The search runs over a copy with each reference
+ * blanked to the same length, so the index still applies to the ORIGINAL and
+ * the caller decodes exactly what it decoded before.
+ */
+export function splitOutsideRefs(text, delim) {
+  // A backslash ESCAPE is a unit as well as a character reference, which is
+  // how the inline-link destination scan already reads both: `[g]: a\#b.md`
+  // targets the tracked `a#b.md`, and splitting at the `#` inside the escape
+  // reported the path `a\` dead. The escape alternative comes first so a
+  // `\&` is consumed as the escape it is. Parity with the Python twin
+  // (stocks#1121).
+  const probe = text.replace(/\\.|&#?[0-9A-Za-z]{1,32};/g, (r) => '_'.repeat(r.length));
+  const at = probe.indexOf(delim);
+  return at === -1 ? [text, undefined] : [text.slice(0, at), text.slice(at + 1)];
+}
+
+export function paragraphBlocks(lines, fenced = new Set()) {
+  const blocks = [];
+  let start = null;
+  let openDepth = 0;
+  const flush = (end) => {
+    if (start !== null && end >= start) blocks.push([start, end]);
+    start = null;
+  };
+  lines.forEach((line, i) => {
+    if (!line.trim() || fenced.has(i)) { flush(i - 1); return; }
+    // A HEADING or a thematic break is a block of its OWN, so inline content
+    // may not pair across it either. An unmatched backtick, then `# Heading`,
+    // then a live `[x](missing.md)` had the two backticks paired across the
+    // heading and the broken link masked out of the audit -- the blank-line
+    // boundary alone does not cover this, because none of these lines is
+    // blank. Read through the container prefix, as every other block test
+    // here is.
+    const bare = line.replace(BLOCKQUOTE_PREFIX_RE, '');
+    // A SETEXT UNDERLINE closes the heading it belongs to, and a heading is a
+    // block of its own exactly as an ATX one is. Without this an unmatched
+    // delimiter in the heading text paired with one in the paragraph BELOW the
+    // underline, and codeSpanLines masked a live `[x](missing.md)` between
+    // them out of the audit. Tested BEFORE the thematic break, which is what
+    // `---` under a paragraph would otherwise be read as; `isSetextUnderline`
+    // is the same predicate headingAnchors uses, so the two cannot disagree
+    // about where a heading ends.
+    // The cheap shape test first: `isSetextUnderline` strips the container
+    // again and reads the line above, and this runs on every non-blank line
+    // of every block scan. Same pattern the predicate applies, against the
+    // copy already stripped here, so the guard cannot disagree with it.
+    if (start !== null && SETEXT_UNDERLINE_RE.test(bare)
+        && isSetextUnderline(lines, i, fenced)) {
+      flush(i);
+      return;
+    }
+    // A LIST MARKER is a container prefix too, and CommonMark removes it
+    // before parsing the block inside the item: `- # Heading` opens an ATX
+    // heading as the item's first block. The prefix hid it, so an unmatched
+    // backtick in that heading paired with one in the paragraph below and
+    // `codeSpanLines` masked a live `[x](missing.md)` between them out of the
+    // audit -- the hiding direction. Stripped for the BLOCK tests only: the
+    // container-transition test below has to keep seeing the marker, since a
+    // new item is a new paragraph. Codex filed it on the Python twin
+    // (stocks#1121), where it is the same defect.
+    const inner = bare.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
+    if (ATX_HEADING_RE.test(inner) || THEMATIC_BREAK_RE.test(inner)) {
+      flush(i - 1);
+      blocks.push([i, i]);
+      return;
+    }
+    // A CONTAINER transition ends the block too. A new list item opens its own
+    // paragraph, and so does a change of blockquote depth: `a \` b` over
+    // `- [x](missing.md) \`` is a paragraph and a separate list, not one
+    // block, and joining them paired the two backticks and masked the broken
+    // link completely. The same grouping feeds codeSpanLines, where delimiters
+    // in separate containers were hiding live content between them.
+    const depth = quoteDepth(line);
+    // DEEPER only. A line at a SHALLOWER quote depth than the open paragraph
+    // is a LAZY CONTINUATION, not a container transition: CommonMark lets a
+    // paragraph inside a blockquote continue on a line that omits the `>`, so
+    // `> sample \`` over `[x](missing.md) \`` is one paragraph holding one
+    // multi-line code span. Splitting them put the two delimiters in separate
+    // windows, `codeSpanLines` found no span, and the audit emitted a gating
+    // dead-link finding for literal code. Every line that could START a block
+    // instead of continuing one has already returned above -- blank, fenced,
+    // heading, setext underline, thematic break -- and a list marker is
+    // tested beside this, so what reaches here at a lower depth can only be
+    // a continuation. Codex filed it.
+    if (start !== null && (depth > openDepth
+        || /^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/.test(bare))) {
+      flush(i - 1);
+    }
+    if (start === null) { start = i; openDepth = depth; }
+  });
+  flush(lines.length - 1);
+  return blocks;
+}
+
+export function codeSpanLines(lines, fenced = new Set()) {
+  const text = lines.join('\n');
+  const starts = [];
+  let at = 0;
+  for (const line of lines) { starts.push(at); at += line.length + 1; }
+  const out = new Map();
+  // PER PARAGRAPH, not across the whole document. Inline content cannot span
+  // a blank line, so joining everything let an unmatched backtick in one
+  // paragraph pair with another far below it -- masking every live link in
+  // between and silently dropping their findings. The scan WINDOW is the
+  // block; masking the blank line instead is not equivalent, because it has
+  // no characters to mask and the paragraphs stay adjacent.
+  // A FENCED BLOCK interrupts a paragraph exactly as a blank line does, so an
+  // unmatched delimiter above a fence paired with one below it and masked
+  // everything in between -- including a live `[x](missing.md)`, which the
+  // gating dead-link check then never saw. The set is a PARAMETER rather than
+  // computed here: this function also runs UNDERNEATH `fencedLines` (through
+  // `commentSpans`), and computing one there would be a cycle. Callers that
+  // already hold a fence set pass it; the ones below the fence scan pass
+  // nothing and keep today's behaviour, which is the honest shape of the
+  // constraint rather than a claim the cycle does not exist.
+  for (const [bLo, bHi] of paragraphBlocks(lines, fenced)) {
+    const base = starts[bLo];
+    const end = starts[bHi] + lines[bHi].length;
+    for (const [lo0, hi0] of codeSpans(text.slice(base, end))) {
+      const lo = lo0 + base;
+      const hi = hi0 + base;
+      for (let i = bLo; i <= bHi; i += 1) {
+        const from = starts[i];
+        const to = from + lines[i].length;
+        if (hi <= from || lo >= to) continue;
+        if (!out.has(i)) out.set(i, []);
+        out.get(i).push([Math.max(lo - from, 0), Math.min(hi - from, lines[i].length)]);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Offset ranges inside an HTML comment, per line index.
+ *
+ * SPANS, not whole lines: commenting a citation out is how a blocker list is
+ * retired without losing it, and it is usually done to part of a line -- a
+ * table row with a trailing `<!-- superseded: ... -->`. A whole-line rule
+ * cannot see that, and on the Python twin a whole-line rule also cost a real
+ * finding on a line whose balanced inline comment was an EXAMPLE in backticks.
+ *
+ * A `<!--` inside a code span is not a comment, so code spans are masked
+ * first -- which is what makes that same line parse right. Ported from
+ * stocks#1121.
+ */
+export function commentSpans(lines) {
+  // ONE ordered scan, because a fence and a comment compete for the same text
+  // and whichever opens first wins until it closes. Masking every fenced line
+  // wholesale looked equivalent and was not: docs/UI-SCREENS.md opens with a
+  // multi-line comment whose closing `-->` sits on an indented continuation
+  // line, so masking destroyed the closer, the comment ran to EOF, and FIVE
+  // real closed-issue findings vanished. The findings diff is what caught it.
+  //
+  // So: a code line cannot OPEN a comment -- `<!--` shown inside a code block
+  // is a sample -- but it can close one, because inside a comment nothing is
+  // code. An unmatched `<!--` in a fence therefore comments nothing, and a
+  // comment that encloses a fence still covers it.
+  // RAW-TEXT HTML blocks only. A type-6 or type-7 block is RENDERED, and an
+  // HTML comment inside one still hides its contents -- so masking every HTML
+  // line here made `<div>` containing `<!-- <a href="missing.md">old</a> -->`
+  // reach the href pass as visible content and emit a gating dead-link finding
+  // over retired markup. Closed-issue URLs and explicit ids inside the same
+  // comment were treated as visible for the same reason. Inside `<pre>` the
+  // delimiters are displayed rather than parsed, which is why those still
+  // suppress it.
+  const code = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
+  // Code spans that CROSS a line break, as well as the per-line ones below. A
+  // valid span opened on one line, carrying a literal `<!--` on the next and
+  // closing on a third, had that opener read as live: the scanner then masked
+  // everything through EOF and a real `[x](missing.md)` below it was silently
+  // dropped from the dead-link audit -- the hiding direction. codeSpanLines
+  // depends on nothing here, so this is not the recursion rawHtmlBlockLines
+  // has to avoid.
+  const wrappedCode = codeSpanLines(lines);
+  const out = new Map();
+  const add = (i, a, b) => {
+    if (a >= b) return;
+    if (!out.has(i)) out.set(i, []);
+    out.get(i).push([a, b]);
+  };
+  let openAt = null;
+  lines.forEach((line, i) => {
+    let pos = 0;
+    for (;;) {
+      if (openAt === null) {
+        if (code.has(i)) return;
+        const spans = [...codeSpans(line), ...(wrappedCode.get(i) ?? [])];
+        let a = line.indexOf('<!--', pos);
+        // An ESCAPED opener opens nothing: `\<!--` displays the delimiter
+        // literally and the rest of the line stays live Markdown. Reading it
+        // as a comment masked content through `-->` or to EOF and suppressed
+        // the findings in between. `commentHiddenLines`, the standalone copy
+        // of this scan, carries the same rule.
+        while (a >= 0 && (spans.some(([lo, hi]) => lo <= a && a < hi)
+            || isEscaped(line, a))) {
+          a = line.indexOf('<!--', a + 1);
+        }
+        if (a < 0) return;
+        openAt = [i, a];
+        pos = a + 4;
+      } else {
+        const from = openAt[0] === i ? openAt[1] : 0;
+        const b = line.indexOf('-->', openAt[0] === i ? pos : 0);
+        if (b < 0) { add(i, from, line.length); return; }
+        add(i, from, b + 3);
+        openAt = null;
+        pos = b + 3;
+      }
+    }
+  });
+  return out;
+}
+
+/**
+ * Line indices ENTIRELY inside an HTML comment, which renders as nothing.
+ *
+ * Whole-line, because that is the question a marker or an H1 asks. A line with
+ * a comment in the MIDDLE still renders, and the link and closed-issue checks
+ * use `commentSpans` so they can skip the commented part and read the rest.
+ * Ported from the Python twin (stocks#1121).
+ */
+export function commentedLines(lines) {
+  const spans = commentSpans(lines);
+  const out = new Set();
+  lines.forEach((line, i) => {
+    const stop = line.replace(/\s+$/, '').length;
+    for (const [a, b] of spans.get(i) ?? []) {
+      if (a === 0 && b >= stop) { out.add(i); break; }
+    }
+  });
+  return out;
+}
+
+/**
+ * Every marker in the document-level window, not just the first.
+ *
+ * `findMarker` stops at the first match, which is right for READING a
+ * document's provenance and wrong for judging it: a second marker below
+ * carries a different date, owner or reviewed-against SHA and nothing said so.
+ * `--stamp` updated the first, reported success, and left the contradiction.
+ */
+/**
+ * Is this line indented ENOUGH to be a code example rather than a paragraph?
+ *
+ * Any leading whitespace used to disqualify a marker, but one to three spaces
+ * still render as an ordinary paragraph -- CommonMark needs a tab or four
+ * spaces for indented code. Such a document was reported as missing
+ * provenance and `--stamp` inserted a SECOND marker while the visible
+ * original stayed put.
+ */
+/** Width of `text` in COLUMNS, expanding tabs to the next stop. */
+function columnWidth(text) {
+  let col = 0;
+  for (const ch of text) col += ch === '\t' ? TAB_STOP - (col % TAB_STOP) : 1;
+  return col;
+}
+
+export function indentColumns(line) {
+  let col = 0;
+  for (const ch of line ?? '') {
+    if (ch === ' ') col += 1;
+    else if (ch === '\t') col += TAB_STOP - (col % TAB_STOP);
+    else break;
+  }
+  return col;
+}
+
+export function isCodeIndented(line) {
+  return line ? indentColumns(line) >= 4 : false;
+}
+
+/**
+ * The whole opening SECTION: after the H1, to the next heading.
+ *
+ * `markerWindow` stops at the first rendered paragraph because that is where
+ * the registry requires the canonical marker to sit, and stopping there is
+ * what makes a misplaced marker visible as "no marker". Duplicate detection
+ * is the opposite question -- what a reader can SEE contradicting the first
+ * marker -- and the narrow window answered it wrongly: a second marker below
+ * an introduction paragraph was excluded, so the audit reported one marker,
+ * `--stamp` refreshed only the first, and the stale one stayed on the page
+ * with nothing to report it.
+ */
+export function markerSection(lines) {
+  return markerWindow(lines, Infinity, { stopAtParagraph: false });
+}
+
+/**
+ * Lines a code span covers ENTIRELY, single-line or wrapped.
+ *
+ * A marker-shaped line inside a span that opens above it and closes below is
+ * an EXAMPLE of a marker. Accepting it suppressed the missing-marker finding
+ * and `--stamp` then rewrote the example, leaving the document with no
+ * rendered provenance at all -- the same failure the fenced and commented
+ * exclusions beside it exist to prevent, a third hiding mechanism over. The
+ * content checks gained wrapped spans a round before marker discovery did.
+ * Ported from the Python twin (stocks#1121).
+ */
+export function spanHiddenLines(lines) {
+  const wrapped = codeSpanLines(lines);
+  const out = new Set();
+  lines.forEach((line, i) => {
+    const spans = [...codeSpans(line), ...(wrapped.get(i) ?? [])];
+    const stop = line.replace(/\s+$/, '').length;
+    if (stop && spans.some(([lo, hi]) => lo <= 0 && hi >= stop)) out.add(i);
+  });
+  return out;
+}
+
+/**
+ * Lines whose FIRST visible character sits inside an HTML comment.
+ *
+ * Whole-line commenting is not the only way a marker hides. A comment opened
+ * on an earlier line and closed PART WAY through this one leaves visible text
+ * after the `-->`, so `commentedLines` does not exclude it -- and trimming the
+ * line puts the hidden marker prefix first, where MARKER_RE matches it and the
+ * `-->` lands harmlessly in the tail. The document then passes the
+ * missing-marker check carrying no rendered provenance, and `--stamp` rewrites
+ * the line still inside the comment. The OFFSET is what decides it, so this
+ * reads the spans rather than the line set. Parity with the Python twin
+ * (stocks#1121).
+ */
+export function commentedPrefixLines(lines) {
+  const spans = commentSpans(lines);
+  const out = new Set();
+  lines.forEach((line, i) => {
+    const col = line.length - line.trimStart().length;
+    if ((spans.get(i) ?? []).some(([lo, hi]) => lo <= col && col < hi)) out.add(i);
+  });
+  return out;
+}
+
+export function findMarkers(lines) {
+  const { from, to } = markerSection(lines);
+  const h1 = h1Index(lines);
+  const h1Depth = h1 === null ? 0 : quoteDepth(lines[h1]);
+  // RAW HTML blocks too. Markdown inside `<pre>` or `<div>` is not parsed --
+  // `**Last reviewed:** 2026-09-01` there renders as literal characters, not
+  // as the document's provenance -- yet a marker-shaped line in one was
+  // accepted, so `--stamp --verify` could rewrite it and report the document
+  // covered while it still had no rendered marker. The fenced equivalent has
+  // been excluded since this function was written; this is the same rule one
+  // block type over. Raised on the Python twin (stocks#1121).
+  const fenced = new Set([...fencedLines(lines), ...rawHtmlBlockLines(lines)]);
+  // A marker-shaped line inside an HTML COMMENT renders as nothing, so it is
+  // not the document's provenance. Accepting it suppressed the missing-marker
+  // finding and `--stamp` then updated the hidden line, leaving the rendered
+  // document with no visible marker at all.
+  const commented = commentedLines(lines);
+  // And a line a code SPAN covers entirely -- see spanHiddenLines.
+  const spanned = spanHiddenLines(lines);
+  // And one whose marker PREFIX is commented out -- see commentedPrefixLines.
+  const prefixHidden = commentedPrefixLines(lines);
+  const out = [];
+  for (let i = from; i < to; i += 1) {
+    if (fenced.has(i) || commented.has(i) || spanned.has(i)
+      || prefixHidden.has(i) || isCodeIndented(lines[i])) continue;
+    // Trimmed, exactly as findMarker parses it. The anchored regex was
+    // applied to the RAW line, so a marker with one to three leading spaces --
+    // which findMarker accepts as a rendered paragraph -- was invisible here
+    // and two contradictory markers were counted as one.
+    // Through the CONTAINER prefix too, for the same reason: a quoted marker
+    // that findMarker now reads has to be countable here, or a document with
+    // one quoted and one plain marker reports a single marker and --stamp
+    // rewrites it with the other still contradicting it.
+    const own = markerText(lines, i, h1Depth);
+    if (own === null) continue;
+    const { text: line } = own;
+    if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) out.push(i);
+  }
+  return out;
+}
+
+// Both spellings, current and legacy. A line of this SHAPE whose date is not
+// the format the marker declares parses as neither form, so the audit
+// concluded there was no marker at all and --stamp inserted a valid one ABOVE
+// it: the document then visibly carried two contradictory provenance lines,
+// and the duplicate-marker check could not see it because only one of the two
+// parses. The labels are exactly the ones MARKER_RE and LEGACY_MARKER_RE
+// accept, so the three cannot drift apart.
+const MARKER_SHAPE_RE =
+  /^\*\*(?:Last reviewed|Last updated|Last refreshed|Last verified|Verified):?\*\*/i;
+
+/** Indices in the marker section that LOOK like a marker but parse as neither. */
+export function markerShapedLines(lines) {
+  const { from, to } = markerSection(lines);
+  const h1 = h1Index(lines);
+  const h1Depth = h1 === null ? 0 : quoteDepth(lines[h1]);
+  const fenced = fencedLines(lines);
+  const commented = commentedLines(lines);
+  // And a line a code SPAN covers entirely -- see spanHiddenLines.
+  const spanned = spanHiddenLines(lines);
+  // And one whose marker PREFIX is commented out -- see commentedPrefixLines.
+  const prefixHidden = commentedPrefixLines(lines);
+  // And a RAW HTML BLOCK. `findMarkers` beside this one has excluded them for
+  // rounds and this scan did not: `<div>` around `**Last reviewed:** bad`
+  // shows the shape without writing a marker, so the valid-marker path
+  // correctly found none while this path counted it -- `stamp()` returned
+  // `skipped-malformed-marker`, which meant the document demonstrating a bad
+  // marker could never be given a good one.
+  const rawBlock = rawHtmlBlockLines(lines);
+  const out = [];
+  for (let i = from; i < to; i += 1) {
+    if (fenced.has(i) || commented.has(i) || spanned.has(i)
+      || prefixHidden.has(i) || rawBlock.has(i)
+      || isCodeIndented(lines[i])) continue;
+    // Through the container prefix, at the H1's depth, as findMarker and
+    // findMarkers both are.
+    const own = markerText(lines, i, h1Depth);
+    if (own === null) continue;
+    const { text: line } = own;
+    if (!MARKER_SHAPE_RE.test(line)) continue;
+    if (MARKER_RE.test(line) || LEGACY_MARKER_RE.test(line)) continue;
+    out.push(i);
+  }
+  return out;
+}
+
+/**
+ * The marker line's own text, or null when its container is not the H1's.
+ *
+ * A quoted marker under a quoted H1 IS the document's provenance: the quote
+ * is the document's own top-level container, and reading the raw line left
+ * the `>` in front of `**Last reviewed:**` so the visible marker was
+ * reported missing and --stamp inserted a second, unquoted one.
+ *
+ * A quoted line under an UNQUOTED H1 is an aside, and reading it as the
+ * marker is worse than missing it. FRONTEND.md in this repo opens with an
+ * unquoted H1, its real marker, and then a `> **Companion to** ...` note
+ * carrying `> **Last refreshed:** 2026-05-22.` -- a fact about the OTHER
+ * document. Reading markers through any container turned that into a second
+ * review marker and produced a P2 saying the two can disagree. Measured on
+ * this corpus, which is how the over-broad first version was caught.
+ *
+ * So the depth has to MATCH, not merely be stripped.
+ */
+function markerText(lines, i, depth) {
+  const quoted = (/^((?:\s*>)+\s?)/.exec(lines[i]) ?? ['', ''])[1];
+  // A LIST ITEM's indentation is a container prefix too, and the rewrite
+  // writes `prefix + marker` back. Reading only the quote dragged an item's
+  // indented marker to column zero on every refresh, which ends the item and
+  // leaves the text below it outside the list -- `--stamp` restructuring the
+  // document while reporting only that it refreshed a date. `isCodeIndented`
+  // above still excludes four columns or more, so this is the one-to-three
+  // space band CommonMark renders as an ordinary paragraph. Parity with the
+  // Python twin (stocks#1121), where Codex filed the insertion half.
+  const rest = lines[i].slice(quoted.length);
+  const prefix = quoted + rest.slice(0, rest.length - rest.trimStart().length);
+  if (quoteDepth(lines[i]) !== depth) return null;
+  return { prefix, text: lines[i].slice(prefix.length).trim() };
+}
+
+/**
+ * What an INSERTED line needs to stay inside the H1's container.
+ *
+ * An H1 may sit inside a blockquote or a list item -- `> # Title`,
+ * `- # Title` -- and CommonMark ends that container at the first line lacking
+ * the prefix. Inserting a bare marker and bare blank lines after one moved the
+ * document's existing introduction OUT of the quote or the item: `--stamp`
+ * changing structure rather than only adding provenance. Codex filed it on the
+ * Python twin (stocks#1121).
+ *
+ * TWO prefixes, because they are not the same string. A list item's
+ * continuation is indented to the marker's width and a blank line inside one
+ * is genuinely blank -- indenting it would add nothing but trailing
+ * whitespace. A blockquote's continuation is `> `, and a blank line inside one
+ * must still carry `>` or the quote ends there.
+ */
+export function containerPrefix(line) {
+  const head = (/^((?:\s*>)+\s?)/.exec(line) ?? ['', ''])[1];
+  const rest = line.slice(head.length);
+  const item = /^(\s*(?:[-*+]|\d{1,9}[.)])\s+)/.exec(rest);
+  // The marker is replaced by SPACES of its own width, which is the column
+  // CommonMark parses the item's content at -- not stripped, which would put
+  // a second list marker at column zero.
+  const body = item ? ' '.repeat(item[1].length)
+    : rest.slice(0, rest.length - rest.trimStart().length);
+  const lead = head + body;
+  return [lead, lead.replace(/\s+$/, '')];
+}
+
+export function findMarker(lines) {
+  const { from, to } = markerWindow(lines);
+  // The H1's container depth: the marker belongs to the document, so it sits
+  // where the document's title does.
+  const h1 = h1Index(lines);
+  const h1Depth = h1 === null ? 0 : quoteDepth(lines[h1]);
+  const fenced = fencedLines(lines);
+  const commented = commentedLines(lines);
+  // And a line a code SPAN covers entirely -- see spanHiddenLines.
+  const spanned = spanHiddenLines(lines);
+  // And one whose marker PREFIX is commented out -- see commentedPrefixLines.
+  const prefixHidden = commentedPrefixLines(lines);
+  for (let i = from; i < to; i += 1) {
+    // An INDENTED marker-shaped line is an example, not the document's
+    // provenance: trimming before parsing let a four-space code sample count
+    // as the marker, suppressed the real missing-marker finding, and --stamp
+    // then replaced the example with an unindented live marker, destroying
+    // the example's structure. Fenced blocks are excluded for the same reason.
+    if (fenced.has(i) || commented.has(i) || spanned.has(i)
+      || prefixHidden.has(i) || isCodeIndented(lines[i])) continue;
+    // Through the CONTAINER prefix, which `markerWindow` and `h1Index` both
+    // read through. A document with a blockquoted H1 keeps its marker in the
+    // same quote, and parsing the raw line left the `>` in front of the
+    // `**Last reviewed:**` so the visible marker was reported missing and
+    // --stamp inserted a second, unquoted one beside it. The prefix is
+    // CARRIED, because a rewrite that drops it moves the marker out of the
+    // quote -- which is the corruption this fix would otherwise trade for.
+    const own = markerText(lines, i, h1Depth);
+    if (own === null) continue;
+    const { prefix, text: line } = own;
+    const m = MARKER_RE.exec(line);
+    if (m) {
+      // Captured HERE rather than re-derived at each call site: `checkProvenance`
+      // took only the parsed fields and so could not see the owner at all, and a
+      // current-format marker omitting `Owner` passed every provenance check
+      // although the registry's marker format requires it.
+      return { idx: i, prefix, date: m[1], depth: m[2] ?? null, sha: m[3] ?? null, scanned: m[4] ?? null, owner: ownerOf(line), legacy: false };
+    }
+    const l = LEGACY_MARKER_RE.exec(line);
+    if (l) {
+      return { idx: i, prefix, date: l[1], depth: null, sha: null, scanned: null, owner: ownerOf(line), legacy: true, bare: legacyTailIsBare(l[2]) };
+    }
+  }
+  return null;
+}
+
+/**
+ * Index of the first H1. Not a fixed line number on purpose: several docs open
+ * with an HTML comment and carry their H1 on line 9, where a line-3 insert
+ * lands inside the comment.
+ */
+export function h1Index(lines) {
+  // A fenced `# Example` before the real title was returned as the H1, so
+  // markerWindow missed a marker after the REAL heading and --stamp inserted a
+  // live marker inside the code block: the example corrupted, the document
+  // still carrying no rendered provenance. The heading and marker scanners
+  // already skip fenced lines.
+  // And commented-out ones. A document that retires an old title as
+  // `<!-- # Old title -->` above its real one had the hidden heading chosen,
+  // so --stamp wrote the marker INSIDE the comment, reported success, and left
+  // the rendered document with no provenance at all.
+  // And a RAW HTML block. A document opening with `<pre>` containing a sample
+  // `# Fake` had the sample chosen as its H1, so the real title then closed
+  // the marker window, an existing marker was reported missing, and --stamp
+  // wrote a live marker INSIDE the `<pre>` -- invisible to readers and
+  // corrupting the example. Same failure as the fenced case it sits beside.
+  // Front matter too: a `# note` comment inside it is metadata, not a heading,
+  // and taking it as the H1 made --stamp write inside the `---` delimiters.
+  const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
+    ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
+  // SPANS too, not only whole lines. A comment that closes partway through a
+  // heading-shaped line -- `<!--` then `# Fake --> visible` -- leaves the line
+  // with a visible suffix, so commentedLines does not exclude it while H1_RE
+  // still matches the hidden `# Fake` prefix. --stamp then inserted the marker
+  // after a heading no reader can see and above the document's real H1,
+  // putting provenance outside the opening section. Ported from the Python
+  // twin (stocks#1121), which had the same defect.
+  const hiddenSpans = commentSpans(lines);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (fenced.has(i)) continue;
+    // The blockquote container is stripped first: `> # Quoted title` RENDERS
+    // as an H1 and headingAnchors already reads it that way, but this tested
+    // the raw line -- so such a document was reported as having no H1 while
+    // --stamp answered `skipped-no-h1`, leaving the command unable to repair
+    // its own finding. The mask is applied first so offsets still line up.
+    const bare = maskSpans(lines[i], hiddenSpans.get(i) ?? [])
+      .replace(BLOCKQUOTE_PREFIX_RE, '');
+    // A LIST MARKER is a container prefix too, and headingAnchors already
+    // reads through it: `- # Title` renders a real H1 and exposes its anchor,
+    // while this test saw the marker where it needs a `#` -- so the audit
+    // reported no H1 and --stamp answered `skipped-no-h1`, the finding it
+    // raises and then refuses to act on. The ATX test only, for the same
+    // reason headingAnchors leaves the Setext branch alone.
+    if (H1_RE.test(bare.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, ''))) return i;
+    // The SETEXT branch reads the stripped copy too. `> Quoted title` over
+    // `> ====` renders as an H1, and testing the raw quoted lines returned
+    // null -- so the audit reported no H1 and --stamp answered
+    // `skipped-no-h1`, the finding it raises and then refuses to act on.
+    const under = (lines[i + 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
+    // Setext level one (`Title` over `===`). Without it the audit reported a
+    // missing marker on such a document while --stamp answered
+    // `skipped-no-h1`, so the command could not repair its own finding.
+    // Through `isSetextUnderline`, not a third inline copy of the test. That
+    // predicate carries the CONTAINER rules this one lacked: `> Title` over
+    // an unquoted `===` is a quote that ENDS, and `- Title` over a
+    // column-zero `===` is a list that ends -- neither renders a heading, yet
+    // both returned line 0 here, so the audit found an H1 the document does
+    // not have and --stamp wrote provenance after it. Level ONE only, which
+    // is the question this function asks; the predicate accepts either
+    // underline.
+    if (bare.trim() && !/^ {0,3}#/.test(bare)
+        && isSetextUnderline(lines, i + 1, fenced)
+        && /^ {0,3}=+\s*$/.test(under)) return i;
+  }
+  return null;
+}
+
+/**
+ * The line a new marker goes AFTER, which is not always the H1's own line.
+ *
+ * A Setext H1 is TWO lines -- the title and its `===` underline -- so
+ * inserting after the title splits the heading in half and leaves the document
+ * with no H1 at all (`h1Index` returns null for the result). That is strictly
+ * worse than the `skipped-no-h1` the recognizer replaced: it corrupts the
+ * document instead of declining to touch it.
+ */
+export function markerAnchor(lines) {
+  const h1 = h1Index(lines);
+  if (h1 === null) return null;
+  // The underline is read THROUGH its container, exactly as h1Index reads the
+  // title. `> Quoted title` over `> ====` left this branch seeing `>` where
+  // it needs `=`, so --stamp inserted the marker BETWEEN the title and its
+  // underline and destroyed the rendered H1 it was meant to annotate.
+  // Depth is compared on the RAW lines so an UNQUOTED `====` below a quoted
+  // title -- a different block -- is not adopted as its underline.
+  // Through `isSetextUnderline`, which is where the container rules live:
+  // this carried its own quote-depth test and none of the list ones, and a
+  // local copy of a rule is how the two halves drift. Level ONE only, as in
+  // `h1Index`; the predicate accepts either underline.
+  const under = (lines[h1 + 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, '');
+  return (isSetextUnderline(lines, h1 + 1) && /^ {0,3}=+\s*$/.test(under))
+    ? h1 + 1 : h1;
+}
+
+/**
+ * The value shape of each field this script owns. `Owner:` is absent on
+ * purpose: its value is free text that `ownerOf` carries whole, so there is no
+ * recognised prefix after which a caveat could begin.
+ */
+const OWNED_VALUE_RE = {
+  'Last reviewed:': /^(?:\d{4}-\d{2}-\d{2}|unknown)/,
+  'Depth:': /^(?:verified|scanned)/,
+  'Against:': /^`[0-9a-f]{7,40}`/,
+  'Last scanned:': /^\d{4}-\d{2}-\d{2}/,
+};
+
+/**
+ * The parts of a marker line this script does not own, so a restamp keeps them.
+ *
+ * Dropping any segment that merely STARTS with an owned field also deleted the
+ * prose riding on it: `**Last reviewed:** 2026-08-31 — deployment only` lost
+ * the caveat silently, which is exactly what `legacyTailIsBare` refuses to do
+ * for legacy lines. An owned segment contributes back whatever trails its
+ * recognised value, and only that: taking "the first token" as the value made
+ * `**Owner:** Jane Doe` yield a tail of `Doe`, which a restamp appended as a
+ * new segment and then appended again on every run after.
+ */
+export function extraSegments(line) {
+  const out = [];
+  for (const raw of line.split(DOT)) {
+    const s = raw.trim();
+    if (!s) continue;
+    const exact = OWNED_FIELDS.find((f) => s.startsWith(`**${f}`));
+    // A CASE VARIANT of a field with no value -- Owner -- is that field: the
+    // whole segment is the value, so there is nothing to misparse, and
+    // keeping it as free text duplicated it beside the canonical spelling the
+    // rewrite adds. A variant of a field that HAS a value deliberately stays
+    // in the tail, so the malformed-field checks still see it and refuse.
+    const field = exact ?? OWNED_FIELDS.find(
+      (f) => !OWNED_VALUE_RE[f] && s.toLowerCase().startsWith(`**${f}`.toLowerCase()));
+    if (!field) { out.push(s); continue; }
+    const valueRe = OWNED_VALUE_RE[field];
+    if (!valueRe) continue; // Owner: the whole segment is the value.
+    const afterLabel = s.slice(`**${field}**`.length).trim();
+    const v = valueRe.exec(afterLabel);
+    // An owned label with a value this script did not write is kept whole
+    // rather than guessed at; the parser will have rejected the line anyway.
+    if (!v) { out.push(s); continue; }
+    const tail = afterLabel.slice(v[0].length).trim();
+    if (tail) out.push(tail);
+  }
+  return out;
+}
+
+export function ownerOf(line) {
+  // Case-INSENSITIVELY. `**owner:** Alice` is a field every reader
+  // recognises; reading it case-sensitively returned null, `extraSegments`
+  // kept the variant as free text, and `--stamp` wrote a canonical
+  // `**Owner:** TBD` beside it -- one line asserting two different owners,
+  // reported as updated.
+  const m = new RegExp(`\\*\\*Owner:\\*\\*\\s*([^${DOT}]+)`, 'i').exec(line ?? '');
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * Two facts, kept apart on purpose. `Last reviewed` is when someone last
+ * confirmed the claims and only ever moves on an actual review; `Last scanned`
+ * moves every run. Collapsing them lets a weekly script overwrite a human's
+ * review date with its own automated pass.
+ */
+export function renderMarker(date, depth, sha, scanned, owner, extras = []) {
+  const parts = [`**Last reviewed:** ${date}`];
+  if (depth) parts.push(`**Depth:** ${depth}`);
+  if (sha) parts.push(`**Against:** \`${sha}\``);
+  parts.push(`**Last scanned:** ${scanned}`);
+  if (owner) parts.push(`**Owner:** ${owner}`);
+  return parts.concat(extras).join(` ${DOT} `);
+}
+
+/**
+ * Why a document must not be stamped, or null. Two cases, in order: an
+ * existing marker that sits inside a generated region (rewriting it edits a
+ * line the registry declares machine-owned; the old guard only asked
+ * whether the FIRST owned line was near the H1, so a block starting on line
+ * 4 with the marker on line 5 was rewritten), and, with no marker yet, an
+ * insertion point that a region already occupies.
+ */
+export function stampGuard(text, owned) {
+  if (!owned.size) return null;
+  const lines = text.split('\n');
+  const prev = findMarker(lines);
+  if (prev) {
+    const n = prev.idx + 1;
+    if (!owned.has(n)) return null;
+    let lo = n;
+    let hi = n;
+    while (owned.has(lo - 1)) lo -= 1;
+    while (owned.has(hi + 1)) hi += 1;
+    return `not stamped: the existing marker on line ${n} sits inside a generated region `
+      + `(lines ${lo}-${hi}); move it into hand-written prose or let the renderer own it`;
+  }
+  // The anchor, not the H1's own line: a Setext H1 is two lines, so the marker
+  // lands one lower and a region starting there was not detected.
+  const h1 = markerAnchor(lines);
+  // Where the marker would LAND, not the earliest owned line anywhere. A mixed
+  // Class A document with a complete generated header BEFORE its H1 and
+  // hand-written prose after it has a minimum owned line below h1 + 2 by
+  // construction, so a legitimate --verify ended as an AuditError though
+  // nothing generated would be touched.
+  const insertAt = h1 === null ? null : h1 + 3;
+  if (insertAt !== null && (owned.has(insertAt) || owned.has(insertAt - 1))) {
+    return `not stamped: the marker would land on line ${insertAt}, inside a `
+      + 'generated region; move the region or let the renderer own the provenance';
+  }
+  return null;
+}
+
+export function stamp(text, date, depth, sha, reviewed = false) {
+  const lines = text.split('\n');
+
+  // BEFORE the update path below, not after it. The `prev` branch returned
+  // `updated` without ever consulting markerAnchor, so a document with NO H1
+  // but a marker-shaped line in its opening lines had that line refreshed as
+  // though it were the document's provenance -- and because findMarker
+  // accepted it, the audit reported neither a missing marker nor the missing
+  // H1. The registry places the marker in the first paragraph after the first
+  // H1; a document with no H1 has nowhere it may live, and that is a refusal,
+  // not a write.
+  if (markerAnchor(lines) === null) return { text, action: 'skipped-no-h1' };
+
+  // A CRLF document splits on '\n' with the '\r' still attached to every line,
+  // so a marker written without one leaves the file mixed-EOL -- noisy in a
+  // Windows checkout's diff and enough to break tools that expect a single
+  // convention. Lines this function WRITES take the document's ending; lines
+  // it does not touch keep exactly the bytes they had, so the diff stays
+  // marker-only even in a file that was already inconsistent.
+  const crlf = lines.some((l) => l.endsWith('\r'));
+  const eol = (line) => (crlf ? `${line}\r` : line);
+
+  const prev = findMarker(lines);
+
+  // Inserting a valid marker above one that merely fails to PARSE leaves the
+  // document carrying two review claims, and the duplicate check cannot see it
+  // because only one of them is a marker as far as this script knows. ANY
+  // malformed claim in the section, not only the case where it is the sole
+  // one: with a valid marker AND a second `**Last reviewed:** 2026-1-1`, the
+  // valid one was updated, --verify counted the target as consumed, and the
+  // contradictory claim stayed on the page. Ported from the Python twin
+  // (stocks#1121), which has refused this since round 21.
+  if (markerShapedLines(lines).some((i) => !prev || i !== prev.idx)) {
+    return { text, action: 'skipped-malformed-marker' };
+  }
+
+  // A content-bearing legacy line is left exactly as it is: rewriting it would
+  // delete the prose it carries and read in the diff as a tidy one-liner.
+  if (prev?.legacy && prev.bare === false) return { text, action: 'skipped-legacy-content' };
+
+  // MARKER_RE is not end-anchored, so `**Last scanned:** bad` matches on the
+  // `Last reviewed` prefix and the malformed field lands in the tail. A
+  // restamp would then add a canonical `Last scanned` beside it and keep the
+  // broken one, leaving the document carrying two. Refuse instead.
+  // Case-insensitively, for the reason `checkMarker` is: a variant this
+  // parser declines is still a field the rewrite owns.
+  // The marker's own text, with the container prefix removed. Every read
+  // below used the RAW line, so a quoted marker's `>` was parsed as part of
+  // the provenance -- it surfaced as an extra segment and a rewrite copied it
+  // into the middle of the line.
+  const prevLine = prev ? lines[prev.idx].slice((prev.prefix ?? '').length) : null;
+  if (prev && !prev.legacy && extraSegments(prevLine).some(
+    (seg) => OWNED_FIELDS.some(
+      (f) => seg.toLowerCase().startsWith(`**${f}`.toLowerCase())))) {
+    return { text, action: 'skipped-malformed-marker' };
+  }
+
+  // A field that appears TWICE, both copies well formed, is the case the
+  // refusal above cannot see: extraSegments CONSUMES a parseable owned value
+  // and pushes only its tail, so a second `**Last scanned:** <date>` produced
+  // no extra segment at all. The ordinary audit reports the contradiction and
+  // --stamp then rewrote the line with one canonical value, silently deleting
+  // the other date -- destroying the only evidence of which provenance was
+  // right. Refusing leaves both on disk for a human to reconcile.
+  if (prev && !prev.legacy) {
+    const segs = prevLine.split(DOT).map((s) => s.trim()).filter(Boolean);
+    const dup = OWNED_FIELDS.find(
+      (f) => segs.filter(
+        (s) => s.toLowerCase().startsWith(`**${f}`.toLowerCase())).length > 1);
+    if (dup) return { text, action: 'skipped-duplicate-marker-field' };
+  }
+
+  // TWO valid markers in the opening section. `findMarker` picks the first
+  // and this path rewrites only that line, so `--stamp --verify` returned
+  // `updated` and exited successfully while leaving a second, contradictory
+  // date, owner and SHA in place -- a document the same run had already
+  // reported as carrying duplicate markers. The insertion path below has
+  // refused a misplaced marker for rounds on exactly this reasoning; the
+  // UPDATE path had no such check, so the refusal was a property of which
+  // branch the document happened to take.
+  if (prev && findMarkers(lines).length > 1) {
+    return { text, action: 'skipped-duplicate-marker' };
+  }
+
+  const owner = ownerOf(prevLine) ?? 'TBD';
+  let rDate;
+  let rDepth;
+  let rSha;
+  if (reviewed) {
+    [rDate, rDepth, rSha] = [date, depth, sha];
+  } else if (prev && prev.date !== 'unknown') {
+    [rDate, rDepth, rSha] = [prev.date, prev.depth, prev.sha];
+  } else {
+    [rDate, rDepth, rSha] = ['unknown', null, null];
+  }
+  const extras = prev && !prev.legacy ? extraSegments(prevLine) : [];
+  const marker = renderMarker(rDate, rDepth, rSha, date, owner, extras);
+
+  if (prev) {
+    // With the container prefix the marker was READ through, so a quoted
+    // marker stays inside its quote. Dropping it would move the provenance
+    // out of the block it belongs to -- a corruption, where the old miss was
+    // merely a false finding.
+    const kept = (prev.prefix ?? '') + marker;
+    if (lines[prev.idx].trimEnd() === kept || lines[prev.idx].trim() === marker) {
+      if (lines[prev.idx].trimEnd() === kept) return { text, action: 'unchanged' };
+    }
+    lines[prev.idx] = eol(kept);
+    return { text: lines.join('\n'), action: 'updated' };
+  }
+  // The line the marker goes AFTER. For a Setext H1 that is the `===`
+  // underline, not the title: inserting between them split the heading and
+  // left the document with no H1 at all -- worse than the `skipped-no-h1` the
+  // recognizer replaced, because it corrupts rather than declines. The null
+  // case is refused at the top of this function.
+  // A visible marker the canonical window did not select -- one below the
+  // opening paragraph, which is where the registry does NOT allow it. It is
+  // misplaced, not missing, and inserting here gave the document TWO
+  // contradictory markers: the audit reported "no review marker" and --stamp
+  // then made the report true of neither. `findMarkers` reads the whole
+  // opening section, so the information to refuse was already in hand.
+  if (findMarkers(lines).length) return { text, action: 'skipped-misplaced-marker' };
+
+  const h1 = markerAnchor(lines);
+  // Target shape: "# Title" / "" / marker / "" / body -- each line carrying
+  // whatever container the H1 sits in, so an H1 inside a quote or a list item
+  // keeps the body that follows it inside the same container.
+  const [lead, blank] = containerPrefix(lines[h1]);
+  // Reuse the blank line the H1 already has rather than adding a second one.
+  // Read through the container here too: a quoted document's blank line is
+  // `>`, which is not '' and made the reuse branch miss every time.
+  const next = h1 + 1 < lines.length
+    ? lines[h1 + 1].replace(BLOCKQUOTE_PREFIX_RE, '') : null;
+  if (next !== null && next.trim() === '') lines.splice(h1 + 2, 0, eol(lead + marker), eol(blank));
+  // Both blanks, not just the leading one. An H1 followed straight by body
+  // text gave `# Title` / '' / marker / body, and Markdown renders the marker
+  // and the opening sentence as a SINGLE paragraph -- not the first-paragraph
+  // marker shape this promises, and it changes how the opening content reads.
+  // The Python twin already inserts both (stocks#1121).
+  else lines.splice(h1 + 1, 0, eol(blank), eol(lead + marker), eol(blank));
+  return { text: lines.join('\n'), action: 'inserted' };
+}
+
+// ── github state ────────────────────────────────────────────────────────────
+
+/**
+ * The only values checkClosedIssues branches on. "Any string" is not enough:
+ * it tests `st.state === 'closed'` and falls through everything else, so a row
+ * reading `bogus` silently drops a cited blocker from the report -- the same
+ * clean-bill-of-health failure the row check exists to stop, one value in.
+ * GitHub's issues API returns exactly these two.
+ */
+export const ISSUE_STATES = new Set(['open', 'closed']);
+
+/** What `fetchIssueStates` records in the `kind` column, and nothing else. */
+export const ISSUE_KINDS = new Set(['PR', 'ISSUE']);
+
+/**
+ * Read an issues snapshot written by --write-issues-snapshot. A missing or
+ * malformed file threw past the AuditError handler and Node exited 1, which
+ * is the documented status for "findings", not for "the run could not
+ * happen"; automation could not tell bad input from stale documentation.
+ */
+export const ISSUE_SNAPSHOT_MAX_AGE_DAYS = 1;
+
+export function loadIssuesSnapshot(file, { now = new Date() } = {}) {
+  let states;
+  try {
+    states = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    throw new AuditError(`--issues-snapshot ${file} could not be read: ${err.message}`);
+  }
+  // WHEN the states were read, before what they say. Every other guard in
+  // this function asks whether a row is usable; none of them asked whether
+  // the file still describes reality, so a snapshot of any age was accepted
+  // as current. An issue open when it was written and closed since reported
+  // no stale-blocker finding at all, under a report dated today -- a
+  // fabricated clean bill of health, which is the one outcome this whole
+  // tool exists to prevent (CLAUDE.md Rule 4). Refused rather than flagged:
+  // a finding is a claim about the documents, and "I cannot tell" is not
+  // one of those.
+  // `isCalendarDate` on the day, not just `Date.parse` on the whole string:
+  // V8 rolls `2026-02-30T00:00:00Z` over to March 2 rather than rejecting
+  // it, and a stamp naming a day that does not exist is the shape a
+  // hand-edited one takes. The function is declared below and hoisted.
+  const captured = states?.capturedAt;
+  if (typeof captured !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(captured)
+      || !isCalendarDate(captured.slice(0, 10)) || Number.isNaN(Date.parse(captured))) {
+    throw new AuditError(`--issues-snapshot ${file} has no usable "capturedAt" `
+      + `(${JSON.stringify(captured)}); without a capture time an arbitrarily old `
+      + 'snapshot reads as current and a blocker that has since closed goes unreported');
+  }
+  // Against the WALL CLOCK, not against `--date`. "Is this issue state still
+  // current" is a question about now; a report dated in the past does not
+  // make month-old issue data accurate, and keying the window to `--date`
+  // would let one flag switch the guard off. UTC calendar days on both
+  // sides, which is the unit the rest of this tool dates things in.
+  const day = captured.slice(0, 10);
+  const on = now.toISOString().slice(0, 10);
+  const age = Math.round((Date.parse(`${on}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`))
+    / 86400000);
+  if (age < 0) {
+    throw new AuditError(`--issues-snapshot ${file} is stamped ${day}, which is after `
+      + `today (${on}); a capture that has not happened yet describes nothing, and a `
+      + 'hand-edited stamp is how an expired snapshot would be made to pass');
+  }
+  if (age > ISSUE_SNAPSHOT_MAX_AGE_DAYS) {
+    throw new AuditError(`--issues-snapshot ${file} was captured ${day}, ${age} days ago `
+      + `(limit ${ISSUE_SNAPSHOT_MAX_AGE_DAYS}); an issue that closed in between would `
+      + 'be reported as live work, or a blocker that has closed would not be reported at '
+      + 'all -- rewrite it with --write-issues-snapshot');
+  }
+  for (const repo of [THIS_REPO, SIBLING_REPO]) {
+    const entry = states?.[repo];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new AuditError(`--issues-snapshot ${file} has no "${repo}" entry; every ${repo} citation `
+        + 'would read as unresolvable');
+    }
+    // An empty map is not "a repository with no open work": fetchIssueStates
+    // refuses to report on a repository that returned zero issues, and a
+    // snapshot read may not be laxer than the live path it stands in for.
+    // Accepting `{}` turns every citation of that repo into a fabricated
+    // "could not be resolved" P2 and exits 1 for findings that do not exist.
+    if (Object.keys(entry).length === 0) {
+      throw new AuditError(`--issues-snapshot ${file} has an empty "${repo}" map; the live `
+        + 'read refuses to report on zero issues and a snapshot may not either -- every '
+        + `${repo} citation would become a fabricated "could not be resolved" finding`);
+    }
+    // "It is an object" is not enough. checkClosedIssues reads st.state once
+    // it has decided the row is not nullish, so a row with no state is
+    // neither closed nor unresolved and a cited blocker DISAPPEARS from the
+    // report. A null row is the opposite error: it takes the unresolvable
+    // branch and fabricates a finding against a live issue (Rule 4).
+    for (const num of Object.keys(entry).sort()) {
+      // The key is what a citation is looked up BY. `{"junk": {...}}` passed
+      // the nonempty-map guard and the row check, then resolved no citation at
+      // all, so every numeric reference became a fabricated "could not be
+      // resolved" P2 instead of failing the run.
+      if (!/^[1-9]\d*$/.test(num)) {
+        throw new AuditError(`--issues-snapshot ${file}: "${repo}" has the key `
+          + `${JSON.stringify(num)}, which is not an issue number; a citation is looked `
+          + 'up by number and this row can never be found');
+      }
+      const rec = entry[num];
+      if (!rec || typeof rec !== 'object' || !ISSUE_STATES.has(rec.state)) {
+        throw new AuditError(`--issues-snapshot ${file}: ${repo}#${num} has no usable state `
+          + `(${JSON.stringify(rec)}); expected one of ${[...ISSUE_STATES].join(', ')}. `
+          + 'A row the audit cannot read is not a row it may report on');
+      }
+      // And `kind`, which the live read has always collected and nothing used
+      // to check. A `/pull/N` citation backed by an ISSUE record names no
+      // pull request at all, and that check reads this column -- so a
+      // snapshot without it would silently switch the check off, which is
+      // "missing data reads as fine" wearing a different hat (Rule 4).
+      if (!ISSUE_KINDS.has(rec.kind)) {
+        throw new AuditError(`--issues-snapshot ${file}: ${repo}#${num} has no usable kind `
+          + `(${JSON.stringify(rec.kind)}); expected one of ${[...ISSUE_KINDS].join(', ')}. `
+          + 'Without it a /pull/ citation backed by an issue cannot be told from a '
+          + 'real one, and the check would pass in silence');
+      }
+    }
+  }
+  // Only the repository maps, so what a snapshot run hands downstream is the
+  // SAME shape a live read hands it. Returning the metadata beside them
+  // would put a string where every consumer expects an issue map, and the
+  // difference would show up in whichever consumer iterated the keys first.
+  return { [THIS_REPO]: states[THIS_REPO], [SIBLING_REPO]: states[SIBLING_REPO] };
+}
+
+/**
+ * Reading an unusable snapshot is exit 2; failing to WRITE one was exit 1,
+ * because a filesystem error walks straight past the AuditError handler at the
+ * bottom of this file. An unwritable path, a missing parent directory or a
+ * full disk all mean the run did not happen, not that the docs have findings.
+ */
+export function writeIssuesSnapshot(file, states, { now = new Date() } = {}) {
+  try {
+    // The capture time leads the file, so a reader looking at it sees how
+    // old it is before reading a single issue state -- and so does the
+    // loader, which refuses anything past ISSUE_SNAPSHOT_MAX_AGE_DAYS. It is
+    // written BESIDE the repository maps rather than inside one, because
+    // every consumer of a states map expects its values to be issue maps.
+    fs.writeFileSync(file, JSON.stringify(
+      { capturedAt: now.toISOString(), ...states }, null, 1));
+  } catch (err) {
+    throw new AuditError(`--write-issues-snapshot ${file} could not be written: ${err.message}`);
+  }
+}
+
+export const ISSUE_PAGE_SIZE = 100;
+// A runaway guard, not a ceiling on real data: reaching it RAISES rather than
+// truncating. `page < 40` stopped at 3,900 combined issues and PRs and said
+// nothing, so every older cited blocker past that point read as "could not be
+// resolved" -- fabricated findings from a silent cap, which is the shape this
+// module refuses everywhere else.
+export const ISSUE_PAGE_GUARD = 1000;
+
+/** One paginated read per repo, never one call per reference. */
+export function fetchIssueStates(repo, { exec = run } = {}) {
+  const states = {};
+  for (let page = 1; ; page += 1) {
+    const out = exec('gh', [
+      'api',
+      `repos/${OWNER}/${repo}/issues?state=all&per_page=${ISSUE_PAGE_SIZE}&page=${page}`,
+      '--jq',
+      // A PR has no state_reason; whether it merged is the fact that matters
+      // for a document citing it as live work, so it goes in the same column.
+      '.[] | [.number, .state, (.state_reason // (if .pull_request.merged_at then "merged" else "" end)), '
+      + '(if .pull_request then "PR" else "ISSUE" end)] | @tsv',
+    ]);
+    const rows = out.trim().split('\n').filter(Boolean);
+    for (const row of rows) {
+      const p = row.split('\t');
+      if (p.length === 4) states[Number(p[0])] = { state: p[1], reason: p[2], kind: p[3] };
+    }
+    if (rows.length < ISSUE_PAGE_SIZE) break;
+    if (page >= ISSUE_PAGE_GUARD) {
+      // Loud, not silent. A guard that fires means the assumption behind it
+      // is wrong and the result cannot be trusted: exit 2, never a short
+      // answer.
+      throw new AuditError(`${repo}: still reading issues after ${ISSUE_PAGE_GUARD} pages `
+        + `(${Object.keys(states).length} so far); refusing to report on a truncated read`);
+    }
+  }
+  if (Object.keys(states).length === 0) {
+    throw new AuditError(`no issues returned for ${repo}; refusing to report a clean run on no data`);
+  }
+  return states;
+}
+
+// ── checks ──────────────────────────────────────────────────────────────────
+
+
+// An HTML tag's opening syntax, and the attributes inside it.
+const TAG_OPEN_RE = /<[a-zA-Z][a-zA-Z0-9-]*(?:\s+[a-zA-Z_:][-\w:.]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'\`=<>]+))?)*\s*\/?>/g;
+const TAG_ATTR_RE = /([a-zA-Z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'\`=<>]+))/gd;
+
+/**
+ * Offset ranges of attribute VALUES inside HTML tags, except link destinations.
+ *
+ * Internal metadata such as `<div data-note="still open https://.../issues/1">`
+ * is neither visible to a reader nor clickable, but the raw line carried both
+ * the cue and the URL into the blocker classifier and a closed issue produced
+ * a gating finding for it. An `href` is exempt on purpose: an `<a href>`
+ * pointing at an issue IS a citation readers follow, which is why the rendered
+ * -HTML blocker pass exists at all.
+ */
+export function tagAttributeSpans(lines) {
+  // Scanned over the JOINED document and split back per line. An opening tag
+  // may span physical lines -- `<div\n data-note="Still open .../issues/1">`
+  // is one tag -- and a per-line scan finds no opener on the second line at
+  // all, so the URL and its cue were read as visible prose and produced a
+  // gating closed-blocker finding over metadata readers never see.
+  const starts = [];
+  let at = 0;
+  for (const l of lines) { starts.push(at); at += l.length + 1; }
+  const joined = lines.join('\n');
+  const out = new Map();
+  for (const tag of joined.matchAll(TAG_OPEN_RE)) {
+    // An `href` is exempt only on an ANCHOR. `<a href>` pointing at an issue
+    // IS a citation readers follow, which is why the rendered-HTML passes
+    // exist -- but on any other element it is inert: `<div href="...">`
+    // renders no link, so exempting it there admitted exactly the hidden
+    // metadata this helper exists to hide.
+    const anchor = /^<a(?![a-zA-Z0-9-])/i.test(tag[0]);
+    for (const attr of tag[0].matchAll(TAG_ATTR_RE)) {
+      if (anchor && attr[1].toLowerCase() === 'href') continue;
+      const span = attr.indices[2] ?? attr.indices[3] ?? attr.indices[4];
+      if (!span) continue;
+      const lo = tag.index + span[0];
+      const hi = tag.index + span[1];
+      // Back to per-line offsets, because every caller masks a line.
+      let i = starts.findLastIndex((s) => s <= lo);
+      for (; i < lines.length && starts[i] < hi; i += 1) {
+        const a = Math.max(lo, starts[i]) - starts[i];
+        const b = Math.min(hi, starts[i] + lines[i].length) - starts[i];
+        if (b > a) {
+          if (!out.has(i)) out.set(i, []);
+          out.get(i).push([a, b]);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Offset ranges covering an inline link's TITLE, per line index.
+ *
+ * A title renders as the anchor's `title` attribute -- a tooltip, not body
+ * text, and never a followable citation. `[x](README.md "Still open
+ * https://github.com/TeneikaAskew/solyra/issues/1")` therefore says nothing
+ * about live work, but the blocker scan read the cue and the URL as ordinary
+ * prose and emitted a gating P1 once that issue closed.
+ *
+ * The DESTINATION is deliberately left visible: an issue URL written there is
+ * a link a reader can follow, so it IS a citation. That is the same split
+ * `tagAttributeSpans` makes for `href`, one syntax over.
+ */
+export function linkTitleSpans(lines, { titleOnly = true } = {}) {
+  const out = new Map();
+  lines.forEach((line, i) => {
+    const spans = [];
+    for (const m of mdLinks(line)) {
+      // The tail runs from the end of the destination to the `)`. Masking it
+      // whole covers the title and the whitespace around it and nothing else.
+      // With `titleOnly` off the DESTINATION goes too: the anchor scan wants
+      // both, because tag-shaped text in either renders as part of a `title`
+      // attribute or a URL rather than as an element -- so
+      // `[x](README.md "<div id=fake>")` was registering an anchor that
+      // exists nowhere and a link to `#fake` passed against it.
+      const lo = titleOnly ? m.destEnd : m.destStart;
+      const hi = m.index + m[0].length - 1;
+      if (hi > lo) spans.push([lo, hi]);
+    }
+    if (spans.length) out.set(i, spans);
+  });
+  return out;
+}
+
+export function checkClosedIssues(doc, text, states) {
+  const out = [];
+  const lines = text.split('\n');
+  // Reference-style citations: `Blocked by [#1][issue]` with `[issue]:` and
+  // the URL further down. That renders as a clickable issue link, and neither
+  // half alone carries both pieces -- the cue line has no URL and the
+  // definition line has no cue -- so a closed issue cited the standard
+  // CommonMark way passed the audit clean. The SAME builder the dead-link
+  // scan uses, rather than a second copy of the definition rules. Codex filed
+  // it twice (solyra#69).
+  const refDefs = referenceDefinitions(lines);
+  // --check gates on these findings, so a document DEMONSTRATING what a
+  // blocking citation looks like failed the audit over its own example. The
+  // link, heading and marker checks already skip fenced lines.
+  // RAW-TEXT blocks only among the HTML kinds. A type-6 or type-7 block is
+  // RENDERED -- `<div>` around `Blocked by <a href=".../issues/1">#1</a>`
+  // produces a clickable blocker citation that a reader acts on -- and
+  // masking the whole block meant a closed issue cited there produced no
+  // finding at all. Only `<pre>`/`<script>`/`<style>`/`<textarea>` (and the
+  // PI/declaration/CDATA kinds this option also covers) display their
+  // contents literally, so only those suppress the scan. Same distinction the
+  // explicit-anchor scan already draws.
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
+  // And text commented OUT, which is how a blocker list is retired without
+  // losing it: the prose no longer renders, but --check still held the build
+  // red over it. Raised on the Python twin (stocks#1121).
+  const commented = commentSpans(lines);
+  // Code spans that CROSS line breaks. `codeSpans` is per physical line and
+  // cannot see either delimiter of a span opened on one line and closed on
+  // the next, so a sample written that way was scanned as live prose and
+  // could emit a gating closed-issue finding.
+  const wrapped = codeSpanLines(lines);
+  // Attribute VALUES are implementation metadata: `<div data-issue="...">`
+  // shows a reader nothing clickable, so a citation there is not a blocker.
+  const attrSpans = tagAttributeSpans(lines);
+  const titleSpans = linkTitleSpans(lines);
+  // A cue can head a BLOCK rather than sit on the citation's own line:
+  // `Blocked by:` followed by a list of issue links is the ordinary Markdown
+  // form, and requiring the cue on the URL's physical line skipped every one
+  // of them -- closed blockers passing the audit because the label and the
+  // list are on adjacent lines. The context is carried only across list items
+  // and table rows, and only from a line that ENDS in a cue-bearing label, so
+  // it cannot leak into the prose after the block.
+  // Per line, ONCE: the spans a reader cannot see, the line with them blanked,
+  // and the cue text -- markup reduced, same length, so every offset still
+  // indexes all three. Computed here rather than in the loop because the
+  // PARAGRAPH join below needs every line's cue text before the first line is
+  // classified.
+  const hiddenOf = lines.map((line, i) => [...(commented.get(i) ?? []),
+    ...codeSpans(line), ...(wrapped.get(i) ?? []), ...(attrSpans.get(i) ?? []),
+    ...(titleSpans.get(i) ?? [])]);
+  const visibleOf = lines.map((line, i) => maskSpans(line, hiddenOf[i]));
+  const cueOf = visibleOf.map((v) => stripInlineMarkup(stripEmphasis(v)));
+  // The RENDERED PARAGRAPH, not the physical line. A soft break renders as a
+  // space, so `This work is blocked` over `by <url>` is one sentence -- and a
+  // per-line scan found `blocked by` at neither end, so a closed issue
+  // produced no finding. The SETTLED direction wraps just as often and is
+  // worse when it is missed: `... as blockers when both had been` over
+  // `closed on 2026-09-14` reads as live work on the first line alone, which
+  // is a FALSE gating finding saying the opposite of the sentence. Measured
+  // on docs/product/07-MODEL-REGISTRY.md in the stocks tree, where both
+  // spellings of that paragraph were reported. Codex filed the blocking half
+  // (stocks#1121); the settled half is the same defect and the same fix.
+  //
+  // `paragraphBlocks` is the same window the code-span scan uses, so the two
+  // cannot disagree about where inline content ends. Offsets map back: a
+  // citation found on line `i` at column `c` is read at `paraStart[i] + c` in
+  // the joined text, and the finding is still reported against line `i`.
+  const paraText = new Map();
+  const paraStart = new Map();
+  for (const [lo, hi] of paragraphBlocks(lines, fenced)) {
+    let joined = '';
+    for (let i = lo; i <= hi; i += 1) {
+      if (i > lo) joined += ' ';
+      paraStart.set(i, joined.length);
+      joined += cueOf[i];
+    }
+    for (let i = lo; i <= hi; i += 1) paraText.set(i, joined);
+  }
+  const CUE_LABEL_RE = /:\s*$/;
+  // The `|---|---|` row under a table's heading. At least one dash, and
+  // nothing but the delimiter alphabet, so an ordinary body row of dashes and
+  // pipes is not mistaken for one.
+  const TABLE_DELIM_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
+  let carried = null;
+  // The quote depth the carried label was READ at. Stripping the container
+  // prefix is what made a quoted blocker list recognisable, and it also erased
+  // the boundary the label lives inside.
+  let carriedDepth = 0;
+  // Content column of the list item currently open, for its continuations.
+  let itemIndent = null;
+  // The cue carried by a SOFT BREAK within one paragraph. `Blocked by` and a
+  // URL on the next line render as one sentence, but the scan read physical
+  // lines, so the cue and the citation never met and a closed issue produced
+  // no finding at all -- the direction that hides them. Separate from
+  // `carried`, which is a LABEL introducing a list and is cleared by
+  // different things; conflating the two would have made a label survive a
+  // blank line in the paragraph case, where it must not.
+  let paragraphCue = null;
+  let paragraphDepth = 0;
+  lines.forEach((line, i) => {
+    // A rendered code block INTERRUPTS the list a label introduces, so the
+    // label does not reach past it. The early return skipped the block
+    // without clearing anything, and a later unrelated list item inherited
+    // the stale cue -- a gating finding on a closed issue the prose never
+    // called a blocker. `itemIndent` goes with it: a continuation measured
+    // against an item on the far side of a code block is not a continuation.
+    if (fenced.has(i)) {
+      paragraphCue = null;
+      carried = null;
+      itemIndent = null;
+      return;
+    }
+    // Inline code as well as commented-out text. Inline code renders
+    // literally, never as a live citation, so a document showing what a
+    // blocker row looks like drew a gating finding once its sample issue
+    // closed -- while the fenced and indented forms of the same example were
+    // already ignored.
+    // And HTML tag ATTRIBUTES other than a link destination -- see
+    // tagAttributeSpans. Internal metadata is not prose a reader sees.
+    // And a Markdown link TITLE, which renders as a tooltip rather than as
+    // body text -- see linkTitleSpans. The destination stays visible,
+    // because an issue URL written there is one a reader can follow.
+    const hidden = hiddenOf[i];
+    // The hidden spans are masked OUT before any cue is read, at the same
+    // length so every offset below still lines up. Hiding only the URLs was
+    // half the job: `<!-- still open --> https://.../issues/1` kept the
+    // visible URL and handed the commented phrase to the classifier as live
+    // prose, so a closed issue produced a false, GATING P1 from text that
+    // renders as nothing.
+    const visible = visibleOf[i];
+    // Structure is read through the CONTAINER prefix. A quoted blocker list --
+    // `> Blocked by:` then `> - <url>` -- left the `>` in `visible`, so the
+    // list line was not recognised as an item, the line cleared `carried`,
+    // and closed blockers in the list produced no finding at all. Offsets are
+    // untouched: only the structural tests read the stripped copy.
+    const bare = visible.replace(BLOCKQUOTE_PREFIX_RE, '');
+    const itemM = /^(\s*)((?:[-*+]|\d{1,9}[.)])\s)/.exec(bare);
+    const isItem = Boolean(itemM) || /^\s*\|/.test(bare);
+    // A CONTINUATION line belongs to the item above it. `Blocked by:`, then
+    // `- Upstream:`, then an indented line carrying the URL renders as one
+    // list item, but only a fresh marker counted as "in the list" -- so the
+    // continuation cleared the carried label and the closed blocker on it was
+    // silently omitted. Indentation at or past the item's CONTENT column is
+    // what makes it a continuation, which is the same rule indentedCodeLines
+    // uses to decide where an item's content begins.
+    const rendered = bare.replace(/\u0000/g, '');
+    const isContinuation = itemIndent !== null && !isItem && Boolean(rendered.trim())
+      && /^\s*/.exec(bare)[0].length >= itemIndent;
+    if (itemM) itemIndent = itemM[1].length + itemM[2].length;
+    else if (!isContinuation && rendered.trim()) itemIndent = null;
+    // Emphasis is MARKUP: `is still **open**` renders as "is still open" and
+    // plainly cites live work, but the classifier saw the `**` between the
+    // words and found no cue at all -- so a closed issue vanished from the
+    // audit entirely, which is the direction that hides findings. Replaced
+    // with spaces rather than removed, because every offset below is an
+    // offset into this line.
+    const cueText = cueOf[i];
+    // The joined paragraph, and this line's offset into it. A line outside
+    // any paragraph block (a fenced one cannot reach here) falls back to
+    // itself, which is what the scan did everywhere before.
+    const paraCue = paraText.get(i) ?? cueText;
+    const paraAt = paraStart.get(i) ?? 0;
+    // The label terminator is tested against the text with the hidden tail
+    // REMOVED, not masked. `Blocked by: <!-- note -->` renders as a label
+    // ending in `:`, but the equal-length mask leaves NULs after the colon
+    // and the anchored `:\s*$` fails -- so the carried context was cleared
+    // and every closed issue in the list below went unreported. Offsets are
+    // preserved everywhere they are used; only this one anchored test reads
+    // the trimmed form.
+    const labelText = stripInlineMarkup(stripEmphasis(bare)).replace(/\u0000+\s*$/, '');
+    // A blank line between the label and its list is the normal spelling, so
+    // it must not clear the context; any other non-item line does.
+    // A line that is ENTIRELY hidden renders as nothing, so it must not clear
+    // the carried label -- `Blocked by:` / `<!-- note -->` / the list was
+    // losing its context because masking leaves NUL characters and
+    // `bare.trim()` is therefore non-empty. My own regression from the
+    // hidden-suffix fix: the mask preserves length by design, so emptiness
+    // has to be tested against the mask character rather than the string.
+    if (!isItem && !isContinuation && rendered.trim()) {
+      carried = hasBlockingCue(cueText) && CUE_LABEL_RE.test(labelText) ? cueText : null;
+      carriedDepth = quoteDepth(visible);
+    }
+    // A table HEADING carries context to its body rows. A table headed
+    // `| Open issues |` classifies every citation beneath it as live work,
+    // but a table line is always `isItem`, so the branch above never ran for
+    // one and a closed issue in the body produced no finding at all. No
+    // trailing colon is required: a heading cell is a label by position.
+    // The row is a heading only when the DELIMITER row follows it, which is
+    // what makes it a heading rather than one more body row. Codex filed it.
+    if (isItem && TABLE_DELIM_RE.test(
+      (lines[i + 1] ?? '').replace(BLOCKQUOTE_PREFIX_RE, ''))
+      && hasBlockingCue(cueText)) {
+      carried = cueText;
+      carriedDepth = quoteDepth(visible);
+    }
+    // A label belongs to its CONTAINER. `> Blocked by:`, a quoted blank, then
+    // an UNQUOTED list applied the quoted label to the outside list, so an
+    // otherwise neutral closed-issue link there produced a false gating
+    // finding. A blank line does not clear it -- that is the normal spelling
+    // between a label and its list -- so only a line that RENDERS something is
+    // tested, which is the same emptiness rule the branch above uses.
+    if (carried !== null && rendered.trim() && quoteDepth(visible) !== carriedDepth) {
+      carried = null;
+    }
+    // A heading or a thematic break is a block of its own, so a cue above one
+    // does not reach the text below it.
+    if (/^ {0,3}(?:#{1,6}(?:\s|$)|(?:\*\s*){3,}$|(?:-\s*){3,}$|(?:_\s*){3,}$)/.test(bare)) {
+      paragraphCue = null;
+    }
+    const softCue = !isItem && !isContinuation && rendered.trim()
+      ? paragraphCue : null;
+    const context = isItem || isContinuation ? carried : softCue;
+    // The paragraph's cue is remembered for the NEXT line and dropped at any
+    // boundary: a blank line, a fence, a heading, a list, or a change of
+    // container. Same emptiness rule as the branches above -- the mask
+    // preserves length, so a wholly hidden line renders as nothing.
+    if (!rendered.trim() || isItem || isContinuation
+        || quoteDepth(visible) !== paragraphDepth) {
+      paragraphCue = null;
+    }
+    paragraphDepth = quoteDepth(visible);
+    if (!isItem && !isContinuation && rendered.trim() && hasBlockingCue(cueText)) {
+      paragraphCue = cueText;
+    }
+    if (!hasBlockingCue(paraCue) && context === null) return;
+    // The DECODED line, because a destination is decoded before a reader
+    // follows it: `https://github&#46;com/.../issues/1` is a link to the real
+    // issue, and scanning the source spelling missed it entirely -- a stale
+    // blocker cited that way passed clean. Every offset below is mapped back
+    // to the source line, because that is what `hidden` and `cueText` index.
+    const scan = decodeWithMap(line);
+    const srcAt = (k) => (scan.map ? scan.map[k] : k);
+    // What the URL pass will name, and where. `[solyra#8](.../issues/8)`
+    // carries BOTH spellings of ONE citation, and reporting it twice would
+    // double the finding and the summary count. Scoped to the CLAUSE, not to
+    // the line: on `stocks#1 is still open; <.../issues/2> is resolved` the
+    // two clauses say different things, and a line-wide set would suppress a
+    // live citation because its number appears somewhere else. Same split
+    // citesLiveWork makes, so "one citation" means the same thing to the
+    // dedup and to the cue analysis.
+    const urlHere = [];
+    // And the URL SPANS, so the shorthand scan does not re-read a
+    // `.../stocks#861` sitting inside a destination as a citation of its own.
+    const urlSpans = [];
+    for (const m of scan.text.matchAll(ISSUE_URL_RE)) {
+      const at = srcAt(m.index);
+      if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      urlHere.push({ at, repo: normaliseRepo(m[1]), num: Number(m[3]) });
+    }
+    for (const m of scan.text.matchAll(URL_RE)) {
+      urlSpans.push([srcAt(m.index), srcAt(m.index + m[0].length)]);
+    }
+    for (const m of scan.text.matchAll(QUALIFIED_ISSUE_RE)) {
+      const at = srcAt(m.index);
+      const end = srcAt(m.index + m[0].length);
+      if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      if (urlSpans.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      const repo = normaliseRepo(m[1]);
+      const num = Number(m[2]);
+      const [cLo, cHi] = clauseBounds(paraCue, paraAt + at, paraAt + end);
+      if (urlHere.some((u) => u.repo === repo && u.num === num
+        && cLo <= paraAt + u.at && paraAt + u.at < cHi)) continue;
+      if (!citesLiveWork(paraCue, paraAt + at, paraAt + end,
+        { context, fallback: cueText })) continue;
+      const st = states[repo]?.[num];
+      const label = `${repo}#${num}`;
+      if (!st) {
+        out.push({ check: 'closed-issue', doc, line: i + 1, severity: 'P2',
+          detail: `${label} could not be resolved` });
+      } else if (st.state === 'closed') {
+        const reason = st.reason || 'completed';
+        out.push({ check: 'closed-issue', doc, line: i + 1,
+          severity: reason === 'not_planned' ? 'P2' : 'P1',
+          detail: `${label} is CLOSED (${reason}) but cited as live work`,
+          ref: `${repo}#${num}`, reason });
+      }
+    }
+    for (const u of referenceUses(scan.text)) {
+      const def = refDefs.get(refKey(u.label));
+      if (!def) continue;
+      // The destination as a READER resolves it: angle brackets off, escapes
+      // and character references decoded, the same order every other
+      // destination here is read in.
+      const dest = decodeCharRefs(unescapeMarkdown(
+        String(def.target).replace(/^<([\s\S]*)>$/, '$1')));
+      const hit = [...dest.matchAll(ISSUE_URL_RE)][0];
+      if (!hit) continue;
+      const at = srcAt(u.at);
+      const end = srcAt(u.end);
+      if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      const repo = normaliseRepo(hit[1]);
+      const num = Number(hit[3]);
+      // One citation, however many spellings of it share the clause -- the
+      // same dedup the qualified shorthand uses, for the same reason.
+      const [cLo, cHi] = clauseBounds(paraCue, paraAt + at, paraAt + end);
+      if (urlHere.some((v) => v.repo === repo && v.num === num
+        && cLo <= paraAt + v.at && paraAt + v.at < cHi)) continue;
+      if (!citesLiveWork(paraCue, paraAt + at, paraAt + end,
+        { context, fallback: cueText })) continue;
+      const isPr = hit[2].toLowerCase() === 'pull';
+      // Same kind check the URL pass applies; see there.
+      const st = isPr && states[repo]?.[num]?.kind === 'ISSUE'
+        ? undefined : states[repo]?.[num];
+      const label = `${repo}#${num}${isPr ? ' (PR)' : ''}`;
+      if (!st) {
+        out.push({ check: 'closed-issue', doc, line: i + 1, severity: 'P2',
+          detail: `${label} could not be resolved` });
+      } else if (st.state === 'closed') {
+        const reason = st.reason || (isPr ? 'closed' : 'completed');
+        out.push({ check: 'closed-issue', doc, line: i + 1,
+          severity: reason === 'not_planned' ? 'P2' : 'P1',
+          detail: `${label} is CLOSED (${reason}) but cited as live work`,
+          ref: `${repo}#${num}`, reason });
+      }
+    }
+    for (const m of scan.text.matchAll(ISSUE_URL_RE)) {
+      const at = srcAt(m.index);
+      const end = srcAt(m.index + m[0].length);
+      if (hidden.some(([lo, hi]) => lo <= at && at < hi)) continue;
+      if (!citesLiveWork(paraCue, paraAt + at, paraAt + end,
+        { context, fallback: cueText })) continue;
+      const [, rawRepo, rawKind, num] = m;
+      const repo = normaliseRepo(rawRepo);
+      const kind = rawKind.toLowerCase();
+      // A pull request cited as a blocker is live work too. `/pull/` used to
+      // be skipped outright, so "blocked by #60" stayed invisible after #60
+      // merged, though the issue-state read already carried PR records; the
+      // blocking-cue filter above is what keeps ordinary PR lineage out.
+      const isPr = kind === 'pull';
+      // A `/pull/N` citation backed by an ISSUE record names no pull request
+      // at all. GitHub's issues API returns issues and PRs from one endpoint,
+      // so the lookup found the numbered ISSUE and accepted its state -- and
+      // if that issue was open, a URL pointing at a pull request that does
+      // not exist passed the audit clean. `kind` was already collected and
+      // was the one column nothing read. Codex filed it on the Python twin
+      // (stocks#1121). Only this direction: GitHub redirects `/issues/N` to
+      // `/pull/N` for a PR, so that spelling IS a link that resolves.
+      const st = isPr && states[repo]?.[Number(num)]?.kind === 'ISSUE'
+        ? undefined : states[repo]?.[Number(num)];
+      const label = `${repo}#${num}${isPr ? ' (PR)' : ''}`;
+      if (!st) {
+        out.push({ check: 'closed-issue', doc, line: i + 1, severity: 'P2',
+          detail: `${label} could not be resolved` });
+      } else if (st.state === 'closed') {
+        const reason = st.reason || (isPr ? 'closed' : 'completed');
+        out.push({ check: 'closed-issue', doc, line: i + 1,
+          severity: reason === 'not_planned' ? 'P2' : 'P1',
+          detail: `${label} is CLOSED (${reason}) but cited as live work`,
+          ref: `${repo}#${num}`, reason });
+      }
+    }
+  });
+  return out;
+}
+
+/**
+ * Which backticked citations on a line belong to the sibling repo, by start
+ * offset. A citation is the sibling's when its own markdown link targets
+ * that repo, or when the repo's name sits between it and the nearest other
+ * citation or table-cell edge on either side. A link's URL is part of the
+ * citation it belongs to, so a stocks URL never counts as free text next to
+ * the citation after it. Free text is bounded by other citations and by
+ * cell pipes, not by sentence punctuation: CLAUDE.md cites a stocks file
+ * and names the repo after a semicolon.
+ */
+export function crossRepoCitations(line) {
+  const cites = [];
+  for (const re of [BACKTICK_PATH_RE, BACKTICK_ROOT_FILE_RE]) {
+    for (const m of line.matchAll(re)) {
+      let end = m.index + m[0].length;
+      const tail = LINK_TAIL_RE.exec(line.slice(end));
+      const link = tail ? tail[0] : '';
+      if (link) end += link.length;
+      cites.push({ start: m.index, end, link });
+    }
+  }
+  cites.sort((a, b) => a.start - b.start);
+  const out = new Set();
+  cites.forEach((c, i) => {
+    if (CROSS_REPO_LINK_RE.test(c.link)) { out.add(c.start); return; }
+    const cellStart = line.lastIndexOf('|', c.start);
+    const cellEnd = line.indexOf('|', c.end);
+    const lo = Math.max(cellStart + 1, i > 0 ? cites[i - 1].end : 0);
+    const hi = Math.min(cellEnd === -1 ? line.length : cellEnd, i + 1 < cites.length ? cites[i + 1].start : line.length);
+    if (CROSS_REPO_RE.test(line.slice(lo, c.start)) || CROSS_REPO_RE.test(line.slice(c.end, hi))) out.add(c.start);
+  });
+  return out;
+}
+
+/** Does any tracked path live under this one? Then it is a real directory. */
+/**
+ * GitHub's anchor for a heading.
+ *
+ * The ORDER is the whole point: lowercase, strip everything that is not a word
+ * character, space or hyphen, and THEN replace each space with a hyphen. Runs
+ * are not collapsed, so a heading like `A — B / C` loses the em dash and the
+ * slash and keeps the spaces either side, giving doubled hyphens. Collapsing
+ * whitespace here would reproduce the broken links' own spelling and call
+ * every one of them valid.
+ */
+/**
+ * The named character references, as HTML 4.01 defines them.
+ *
+ * A closed, complete list of 252: the whole Latin-1 block, the five XML
+ * names, and the symbol, arrow, maths and Greek sets. An 18-entry whitelist
+ * was not enough and was wrong in the same two directions the decoder exists
+ * to fix -- `Caf&eacute;` slugged `cafeacute`, so the reader's link to
+ * `#café` read as dead and a nonexistent source-spelling anchor was accepted.
+ *
+ * Not the full HTML5 list of ~2,231, which is mostly aliases and mathematical
+ * names that do not appear in a heading, and which is too large to carry
+ * correctly by hand. An unrecognised name stays literal -- what CommonMark
+ * does with a genuinely invalid one, and the safe direction, since decoding a
+ * name got wrong would invent an anchor. Numeric references need no table.
+ */
+// The COMPLETE WHATWG list, generated rather than curated:
+// `scripts/docs-audit-entities.json` holds the 2,125 names that HTML5 defines
+// with a trailing semicolon, which is the set CommonMark accepts. The map
+// here used to be hand-written -- the Latin-1 block plus the punctuation and
+// Greek names someone had needed -- and an unlisted name stayed literal, so
+// `## A &colon; B` was anchored `a-colon-b` while the page offers `a--b`:
+// a working link rejected AND a nonexistent one accepted, the same
+// both-directions shape the decoder exists to prevent. A curated list cannot
+// be finished, so it is no longer curated.
+//
+// Read from disk rather than inlined because 33 KB of data in the middle of
+// this file would bury the rules around it. The file sits beside the script
+// and ships with it; a missing or unreadable table is a broken install, not a
+// documentation finding, so it throws rather than degrading to a partial map
+// that would silently reintroduce exactly the defect above.
+const ENTITIES_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)), 'docs-audit-entities.json');
+const NAMED_CHAR_REFS = (() => {
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(ENTITIES_PATH, 'utf8'));
+  } catch (err) {
+    throw new Error(`${ENTITIES_PATH} is missing or unreadable (${err.message}); `
+      + 'it ships with this script and every anchor derived from a character '
+      + 'reference depends on it');
+  }
+  return new Map(Object.entries(raw));
+})();
+
+/** How many named references the shipped table carries. */
+export function namedCharRefCount() {
+  return NAMED_CHAR_REFS.size;
+}
+
+const CHAR_REF_RE = /&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z][a-zA-Z0-9]{1,31}));/g;
+
+/**
+ * Markdown decodes a character reference BEFORE the anchor is derived.
+ *
+ * `## Dogs &amp; Cats` renders as "Dogs & Cats" and GitHub anchors it
+ * `dogs--cats`. Passing the raw text to the slugger recorded `dogs-amp-cats`
+ * instead, so the link a reader follows was reported dead while a link to the
+ * literal-entity slug -- an anchor that exists nowhere -- was accepted. Wrong
+ * in both directions, the same shape as the inline-HTML and `\w`-ASCII bugs
+ * `headingSlug` already carries.
+ */
+export function decodeCharRefs(text) {
+  return text.replace(CHAR_REF_RE, (whole, dec, hex, name) => {
+    if (name !== undefined) return NAMED_CHAR_REFS.get(name) ?? whole;
+    const cp = Number.parseInt(dec ?? hex, dec !== undefined ? 10 : 16);
+    // A reference outside Unicode, or to a surrogate, or to NUL, is not a
+    // character -- and CommonMark does not leave it as text either: it
+    // renders U+FFFD. Returning the SOURCE here was the wrong half of that
+    // sentence, borrowed from the unknown-name case above where leaving the
+    // text alone IS what a renderer does. `## A&#0;B` renders `A\uFFFDB`
+    // and GitHub anchors it `ab`, while this recorded `a0b` -- so the
+    // fragment a reader follows was reported dead and an anchor the page
+    // exposes nowhere was accepted. The Python twin has been right the whole
+    // time, because `html.unescape` substitutes the replacement character
+    // itself (stocks#1121). Codex filed it here.
+    if (!Number.isFinite(cp) || cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return '\uFFFD';
+    return String.fromCodePoint(cp);
+  });
+}
+
+/**
+ * The text with character references decoded, plus a map back to the source.
+ *
+ * A destination is decoded before the reader's browser ever sees it, so
+ * `https://github&#46;com/TeneikaAskew/solyra/issues/1` is a link to the real
+ * issue -- but `ISSUE_URL_RE` scanned the SOURCE, where `github&#46;com` is
+ * not `github.com`, and a stale blocker cited that way passed the audit
+ * clean. Decoding alone is not enough: every offset the caller then uses --
+ * the hidden-span test, the clause the citation sits in -- is an offset into
+ * the source line, so the decoded index has to come back.
+ *
+ * `map[i]` is the source index of decoded unit `i`; a reference collapses to
+ * its OPENING index, so a citation spelled with one reports the position a
+ * reader would point at. `map[out.length]` is the end sentinel, which is what
+ * makes a match's exclusive end mappable. A line with no `&` in it cannot
+ * carry a reference, and returns a null map meaning "identity".
+ */
+export function decodeWithMap(text) {
+  if (!text.includes('&')) return { text, map: null };
+  let out = '';
+  const map = [];
+  let last = 0;
+  for (const m of text.matchAll(CHAR_REF_RE)) {
+    for (let k = last; k < m.index; k += 1) { out += text[k]; map.push(k); }
+    const rep = decodeCharRefs(m[0]);
+    // UTF-16 UNITS, not code points: `out` is indexed in units, so an astral
+    // character contributes two and needs two map entries or every offset
+    // after it slides by one.
+    for (let k = 0; k < rep.length; k += 1) { out += rep[k]; map.push(m.index); }
+    last = m.index + m[0].length;
+  }
+  if (!map.length) return { text, map: null };
+  for (let k = last; k < text.length; k += 1) { out += text[k]; map.push(k); }
+  map.push(text.length);
+  return { text: out, map };
+}
+
+/**
+ * A reference label reduced to what CommonMark compares.
+ *
+ * Case-folded, trimmed, and with internal whitespace collapsed to one space --
+ * `[foo bar]` and `[foo   bar]` are the SAME label. Every place that keys a
+ * label goes through here so the definition side and the use side cannot
+ * drift apart: normalising only the definitions left `[guide][my   ref]`
+ * unmatched in a heading, so the reference stayed literal bracket syntax and
+ * slugged as `see-guidemy---ref`.
+ */
+function refKey(label) {
+  // CASE FOLDING, not lowercasing. CommonMark compares labels by Unicode
+  // case folding, under which `Stra\u00dfe` and `STRASSE` are the same label --
+  // `toLowerCase` leaves the sharp s alone and made them two, so a heading
+  // resolving one recorded an invented anchor and a valid link to the real
+  // one was reported dead. Codex filed it on the Python twin (stocks#1121).
+  return label.replace(/\s+/g, ' ').trim().toLocaleLowerCase('en').normalize('NFKC')
+    .replace(/\u00df/g, 'ss')
+    .toLocaleLowerCase('en');
+}
+
+/**
+ * Index just past the `)` that closes the `(` at `at`, or -1.
+ *
+ * CommonMark allows a destination to carry balanced parentheses to any depth,
+ * and the pattern that handled it stopped at the first `)` -- so
+ * `[x](a(b).md)` left `.md)` in the slug. A scan has no depth limit to get
+ * wrong. A backslash escapes the character after it, there as everywhere.
+ */
+function balancedClose(text, at) {
+  let depth = 0;
+  for (let i = at; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '\\') { i += 1; continue; }
+    if (ch === '(') depth += 1;
+    else if (ch === ')') { depth -= 1; if (depth === 0) return i + 1; }
+  }
+  return -1;
+}
+
+/**
+ * A heading's visible text, with link syntax removed but labels kept.
+ *
+ * `## See [x](guide.md) now` renders as "See x now". Two shapes were wrong: a
+ * destination containing parentheses ended the old pattern early, and a
+ * REFERENCE link (`[guide][g]` with `[g]` defined) was not recognised at all,
+ * so its second label survived as `guideg`. Both were wrong in the same two
+ * directions -- a working fragment reported dead, and one the page does not
+ * expose accepted.
+ *
+ * A SHORTCUT reference (`[guide]` alone) is deliberately not resolved: this
+ * corpus is full of bracketed prose indistinguishable from one, which is the
+ * same reason reference USES are not scanned in the link pass.
+ */
+function stripHeadingLinks(s, refLabels) {
+  const out = [];
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    // An escaped bracket is literal text, so it opens nothing.
+    if (ch === '\\' && i + 1 < s.length) { out.push(s.slice(i, i + 2)); i += 2; continue; }
+    if (ch !== '[') { out.push(ch); i += 1; continue; }
+    let depth = 0;
+    let end = -1;
+    for (let j = i; j < s.length; j += 1) {
+      if (s[j] === '\\') { j += 1; continue; }
+      if (s[j] === '[') depth += 1;
+      else if (s[j] === ']') { depth -= 1; if (depth === 0) { end = j; break; } }
+    }
+    if (end === -1) { out.push(ch); i += 1; continue; }
+    const label = s.slice(i + 1, end);
+    const k = end + 1;
+    if (s[k] === '(') {
+      const close = inlineLinkEnd(s, k);
+      if (close !== -1) { out.push(label); i = close; continue; }
+    }
+    if (s[k] === '[') {
+      const shut = labelClose(s, k);
+      if (shut !== -1) {
+        // A COLLAPSED reference (`[guide][]`) names itself.
+        const ref = refKey(s.slice(k + 1, shut) || label);
+        if (refLabels.has(ref)) { out.push(label); i = shut + 1; continue; }
+      }
+    }
+    out.push(ch);
+    i += 1;
+  }
+  return out.join('');
+}
+
+/**
+ * Index just past the `)` of a VALID inline-link suffix starting at `at`
+ * (which must be the `(`), or -1.
+ *
+ * `balancedClose` alone answers a narrower question: it finds a matching
+ * parenthesis, not a link. `## [x](foo bar)` and `## [x](foo "unclosed)`
+ * both have one, and CommonMark renders each source literally -- so the
+ * heading stripper removed a suffix that is visible text, recorded `x`, and
+ * rejected a link to the real anchor while accepting a `#x` the page does not
+ * expose. The destination and title rules live in `mdLinks`; this shares them
+ * rather than restating them, so the two cannot come to disagree about what a
+ * link is.
+ */
+function inlineLinkEnd(text, at) {
+  if (text[at] !== '(') return -1;
+  let j = at + 1;
+  while (j < text.length && /\s/.test(text[j])) j += 1;
+  MD_LINK_ANGLE_RE.lastIndex = j;
+  if (MD_LINK_ANGLE_RE.exec(text)) {
+    j = MD_LINK_ANGLE_RE.lastIndex;
+  } else {
+    j = bareDestination(text, j);
+    // The same balanced walk `mdLinks` makes. This was the second
+    // implementation of one rule, so it stopped at a `)` inside a fragment
+    // while the other did not -- and the two disagreed about where a link
+    // ENDS, which is worse than either being wrong alone.
+    if (text[j] === '#') j = bareFragment(text, j + 1);
+  }
+  MD_LINK_TAIL_RE.lastIndex = j;
+  return MD_LINK_TAIL_RE.exec(text) ? MD_LINK_TAIL_RE.lastIndex : -1;
+}
+
+/**
+ * Index of the `]` closing the `[` at `at`, honouring escapes, or -1.
+ *
+ * `indexOf(']')` stops at an ESCAPED bracket, so `## [Guide][my\]ref]` with a
+ * matching `[my\]ref]: README.md` definition failed to resolve and slugged as
+ * `guidemyref`, while the page exposes `guide`. The label walk above this one
+ * already skipped escapes; this second scan did not.
+ */
+function labelClose(text, at) {
+  for (let j = at + 1; j < text.length; j += 1) {
+    if (text[j] === '\\') { j += 1; continue; }
+    if (text[j] === ']') return j;
+  }
+  return -1;
+}
+
+// A code span delimited by a matching RUN of backticks, contents in group 2.
+const CODE_SPAN_RUN_RE = /(?<!`)(`+)(?!`)([\s\S]+?)(?<!`)\1(?!`)/g;
+
+/**
+ * The markup passes that must NOT see code-span contents.
+ *
+ * Character references, inline HTML and link syntax are markup in ordinary
+ * heading text and LITERAL characters inside a code span, so each runs per
+ * part rather than over the whole heading.
+ */
+// One complete HTML tag: a name, optional attributes whose quoted values may
+// contain `>`, and the close. An AUTOLINK is not a tag: `## <https://x>`
+// renders as the URL and derives a real anchor from it, so only a tag NAME is
+// matched, never a `<scheme:...>`.
+// The attribute grammar CommonMark actually specifies, not "anything that is
+// not an angle bracket". `## A <span ???>B` renders the tag-shaped text
+// LITERALLY and anchors `a-span-b`, but the permissive form matched it and
+// recorded `a-b` -- a valid fragment link rejected and a nonexistent one
+// accepted, the usual pair. An attribute is a name, optionally followed by a
+// value that is unquoted, single-quoted or double-quoted.
+const HTML_TAG_RE = new RegExp(
+  '<[A-Za-z][A-Za-z0-9-]*'
+  + '(?:\\s+[A-Za-z_:][A-Za-z0-9_.:-]*'
+  + '(?:\\s*=\\s*(?:[^\\s"\'=<>`]+|\'[^\']*\'|"[^"]*"))?)*'
+  + '\\s*/?>'
+  + '|</[A-Za-z][A-Za-z0-9-]*\\s*>', 'y');
+
+/**
+ * Inline HTML removed from heading text, escapes left as they are.
+ *
+ * An ESCAPED `<` opens nothing: CommonMark renders `## \<em>foo` as the
+ * literal text `<em>foo`, whose id is `emfoo`, and an unconditional
+ * substitution removed the tag-shaped run and recorded `foo` -- a working
+ * `#emfoo` link rejected and a nonexistent `#foo` accepted.
+ */
+function stripHeadingTags(s) {
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === '\\' && i + 1 < s.length) { out += s.slice(i, i + 2); i += 2; continue; }
+    HTML_TAG_RE.lastIndex = i;
+    const m = HTML_TAG_RE.exec(s);
+    if (m) { i = HTML_TAG_RE.lastIndex; continue; }
+    out += s[i];
+    i += 1;
+  }
+  return out;
+}
+
+function headingMarkup(part, refLabels) {
+  // Tags BEFORE character references are decoded. A `<` that a reference
+  // PRODUCES is literal text, not markup: `## &lt;em&gt;foo` renders the
+  // characters `<em>foo` and anchors `emfoo`.
+  const bare = decodeCharRefs(stripHeadingTags(part));
+  // See stripHeadingLinks: the destination is SCANNED rather than matched, so
+  // parentheses inside it cannot end it early, and a DEFINED reference link
+  // resolves to its visible label.
+  return stripHeadingLinks(bare, refLabels);
+}
+
+/**
+ * A code span's contents as they RENDER.
+ *
+ * CommonMark strips one leading AND trailing space when the content begins
+ * and ends with one and is not all spaces, so `` ` foo ` `` renders `foo` and
+ * anchors `a-foo-b` rather than `a--foo--b`. Line endings inside a span
+ * render as spaces for the same reason the surrounding text's do.
+ */
+function codeSpanText(body) {
+  const flat = body.replace(/\r\n|\r|\n/g, ' ');
+  return (flat.length >= 2 && flat.startsWith(' ') && flat.endsWith(' ') && flat.trim())
+    ? flat.slice(1, -1) : flat;
+}
+
+export function headingSlug(heading, refLabels = new Set()) {
+  // Tokenised on a matching backtick RUN, and the parts processed separately.
+  // A code span renders its contents LITERALLY, so unwrapping it first handed
+  // `` `[x](y)` `` to the link stripper, which discarded the destination and
+  // recorded `x` where GitHub exposes `xy`. The run form matters too --
+  // `` ``[x](y)`` `` is one span, and a single-backtick pattern saw none.
+  const parts = [];
+  let at = 0;
+  for (const mm of heading.matchAll(CODE_SPAN_RUN_RE)) {
+    parts.push(headingMarkup(heading.slice(at, mm.index), refLabels));
+    parts.push(codeSpanText(mm[2]));
+    at = mm.index + mm[0].length;
+  }
+  parts.push(headingMarkup(heading.slice(at), refLabels));
+  let s = parts.join('');
+  // Only where the opening bracket is NOT escaped. `## Literal \[x](guide.md)`
+  // renders the brackets and the destination as TEXT -- CommonMark makes no
+  // link -- so GitHub's anchor includes `xguidemd`, while stripping the
+  // destination unconditionally recorded `literal-x`: a working fragment
+  // reported dead AND an anchor the page does not expose accepted. Parity with
+  // the Python twin (stocks#1121).
+  // See stripHeadingLinks: the destination is SCANNED rather than matched, so
+  // parentheses inside it cannot end it early, and a DEFINED reference link
+  // resolves to its visible label. Parity with the Python twin (stocks#1121).
+  // Emphasis MARKUP only. Stripping every underscore turned `## API_FIELD`
+  // into `apifield`, so a valid link to `#api_field` read as a dead anchor
+  // while an incorrect `#apifield` was accepted. CommonMark does not treat an
+  // intraword `_` as emphasis and GitHub's anchor keeps it.
+  // UNESCAPED first. CommonMark removes the escape and renders `## API\_FIELD`
+  // as `API_FIELD`, whose slug keeps the intraword underscore -- but the raw
+  // backslash sat between the letter and the `_`, so the lookbehind saw no
+  // word character, the underscore was stripped as emphasis and the audit
+  // recorded `apifield`: a valid link to `#api_field` rejected AND a
+  // nonexistent `#apifield` accepted. The escape is markup either way, so
+  // removing it before the classification loses nothing.
+  // An ESCAPED underscore is literal text and must survive the strip below.
+  // Unescaping first was right for the INTRAWORD case and wrong at a
+  // boundary: `## \_foo` renders `_foo`, whose GitHub id keeps the
+  // underscore, but the escape was gone by the time the boundary rule ran and
+  // the audit recorded `foo`. It is parked out of the pattern's reach
+  // instead, which leaves the intraword case exactly as it was. Only the
+  // underscore: an asterisk is stripped by the slug rule below whether or not
+  // the emphasis pass removed it, so protecting one would change no output.
+  s = s.replace(/\\_/g, '\u0000');
+  s = unescapeMarkdown(s);
+  s = s.replace(/\*/g, '').replace(/(?<!\w)_+|_+(?!\w)/g, '');
+  s = s.replace(/\u0000/g, '_').trim().toLowerCase();
+  // `\w` is ASCII-only in JavaScript, so `## Café` produced `caf` -- a valid
+  // link to `#café` read as a dead anchor while the nonexistent `#caf` was
+  // accepted, wrong in both directions at once. `\p{L}\p{N}_` is what `\w`
+  // means in the Python twin, whose `re` module is Unicode by default; `_` has
+  // to be named because it is not a letter or a number.
+  // EVERY run of rendered whitespace, not only the literal space. `## Hello\tWorld`
+  // anchors as `hello-world` on GitHub, but keeping the tab recorded an
+  // unusable slug -- so a valid `#hello-world` link was a gating dead anchor
+  // while the tab-bearing spelling nothing exposes was accepted.
+  // And a COMBINING MARK is part of the letter before it, not punctuation. An
+  // NFD heading -- `Cafe` + U+0301 -- renders as `Café` and GitHub's
+  // identifier keeps the mark, while dropping it recorded `cafe`: the working
+  // encoded fragment rejected AND a `#cafe` the page does not expose
+  // accepted, wrong in both directions at once.
+  return s.replace(/[^\p{L}\p{M}\p{N}_\s-]/gu, '').replace(/\s/g, '-');
+}
+
+/**
+ * Emphasis delimiters blanked, every other offset left where it was.
+ *
+ * `*` in both spellings, and `_` only where CommonMark treats it as emphasis
+ * -- an intraword `_` is a literal character, and blanking it would break
+ * `API_FIELD` into two words for the cue scan.
+ */
+/**
+ * The line with `spans` blanked, keeping every other offset where it was.
+ *
+ * NUL rather than deletion: the callers compute match offsets against the
+ * ORIGINAL line, so a shorter masked copy would silently shift every span
+ * that follows one. Extracted from the blocker scan, which had this inline,
+ * so the region scan masks the same way. Parity with the Python twin's
+ * `mask_spans` (stocks#1121).
+ */
+export function maskSpans(line, spans, fill = '\u0000') {
+  return spans.reduce(
+    (acc, [lo, hi]) => acc.slice(0, lo) + fill.repeat(hi - lo) + acc.slice(hi), line);
+}
+
+export function stripEmphasis(line) {
+  return line.replace(/\*+/g, (m) => ' '.repeat(m.length))
+    .replace(/(?<!\w)_+|_+(?!\w)/g, (m) => ' '.repeat(m.length));
+}
+
+const CLOSING_TAG_RE = /<\/[a-zA-Z][a-zA-Z0-9-]*\s*>/g;
+
+/**
+ * The line with inline LINK and HTML markup blanked, leaving visible text.
+ *
+ * Emphasis was the only markup the blocker cue scan reduced, so
+ * `Still [open](README.md): <closed issue url>` and
+ * `Still <strong>open</strong>: <url>` -- both of which a reader sees as
+ * "still open" -- matched no cue at all and the closed issue produced no
+ * finding. The direction that hides them. Codex filed it.
+ *
+ * Blanked to spaces, never removed: every offset in the caller is an offset
+ * into this line. A link's DESTINATION is blanked here even though the
+ * citation scan keeps it visible -- these two read different strings, and a
+ * URL written as a destination is still found there.
+ */
+export function stripInlineMarkup(line) {
+  const blank = (m) => ' '.repeat(m.length);
+  let out = line;
+  // The label's brackets and the whole `](destination)` tail, so the label
+  // itself stays where it was. Nested brackets in a label are walked by
+  // `mdLinks`; this is the cue scan, where a label that fails to match simply
+  // keeps its brackets, which reads the same as before.
+  out = out.replace(/\[([^\[\]]*)\]\([^()\s]*(?:\s+[^()]*)?\)/g,
+    (m, label) => ` ${label}${' '.repeat(m.length - label.length - 1)}`);
+  // A reference-style use keeps its label too: `[open][i]` renders as `open`.
+  out = out.replace(/\[([^\[\]]*)\]\[[^\[\]]*\]/g,
+    (m, label) => ` ${label}${' '.repeat(m.length - label.length - 1)}`);
+  return out.replace(TAG_OPEN_RE, blank).replace(CLOSING_TAG_RE, blank);
+}
+
+/** Every anchor a document offers, duplicates numbered as GitHub numbers them. */
+/**
+ * The line with `spans` REMOVED rather than blanked.
+ *
+ * `maskSpans` keeps every other offset where it was, which is what a scanner
+ * reporting positions needs. A heading's SLUG is whitespace sensitive -- runs
+ * are not collapsed -- so blanking turned `## Hello <!-- note --> Real` into
+ * `hello---------------real` where GitHub exposes `hello--real`, and pushed a
+ * comment sitting before the `#` past the three-column limit so the heading
+ * stopped matching at all. Nothing downstream of this reads an offset.
+ */
+function dropSpans(line, spans) {
+  let out = '';
+  let at = 0;
+  for (const [lo, hi] of [...spans].sort((a, b) => a[0] - b[0])) {
+    if (lo > at) out += line.slice(at, lo);
+    at = Math.max(at, hi);
+  }
+  return out + line.slice(at);
+}
+
+export function headingAnchors(text) {
+  const seen = new Map();
+  const out = new Set();
+  // A heading inside an HTML comment renders as nothing, so GitHub exposes no
+  // anchor for it -- recording one let a broken link to `#hidden` pass.
+  // A `# ` line inside a fenced block is code, and GitHub creates no anchor
+  // for it -- docs/E2E_TEST_PLAN.md:59 has exactly that. Recording it invented
+  // an anchor, so a link to a fragment that does not exist PASSED the
+  // dead-anchor check. Marker parsing already excludes fenced lines; this is
+  // the same rule for the same reason.
+  const lines = text.split('\n');
+  // Raw-text HTML blocks too. `<pre>` renders `## Fake` literally and GitHub
+  // exposes no anchor for it, so recording one let a broken link to `#fake`
+  // pass the dead-anchor check -- the same invented-destination failure as
+  // the fenced case, which the link scans around this already mask.
+  // Indented code too. `    Fake` followed by `---` is a code block and a
+  // thematic break, not a Setext heading -- omitted, isSetextUnderline
+  // recorded a `fake` anchor the rendered document does not offer and a link
+  // to it PASSED. markerWindow already excludes indented code. Parity with
+  // the Python twin (stocks#1121).
+  const fenced = new Set([...fencedLines(lines), ...commentedLines(lines),
+    ...rawHtmlBlockLines(lines), ...indentedCodeLines(lines),
+    // And YAML front matter, which GitHub renders as a metadata table rather
+    // than as Markdown -- a `# note` inside it exposes no anchor, and
+    // recording one let a link to it pass.
+    ...frontMatterLines(lines)]);
+  // The reference labels this document DEFINES, so a heading carrying
+  // `[guide][g]` can resolve to its visible label. Undefined ones must NOT
+  // resolve: CommonMark renders `[guide][g]` literally when `[g]` is not
+  // defined, and the slug keeps both labels. Read through the same exclusions
+  // as everything else here -- a definition inside a fence defines nothing --
+  // and keyed the way the link scan keys them, internal whitespace collapsed.
+  // And only where a definition may BEGIN. `paragraph` then `[g]: x.md`
+  // renders literally -- CommonMark registers no reference there -- so
+  // collecting it let `## [Guide][g]` resolve to `guide` when the page
+  // actually exposes `guideg`. The dead-link scan has applied this rule since
+  // the round it was raised; this collector did not, which is the same
+  // two-halves-disagreeing shape as the label keying before it. The colon's
+  // trailing whitespace is optional here too, for the same reason.
+  const blocks = paragraphBlocks(lines, fenced);
+  // Which line each paragraph block STARTS on, for the Setext branch below.
+  const setextStarts = new Map();
+  for (const [lo, hi] of blocks) for (let k = lo; k <= hi; k += 1) setextStarts.set(k, lo);
+  const defStarts = new Set(blocks.map(([lo]) => lo));
+  const defSeen = new Set();
+  const refLabels = new Set();
+  lines.forEach((raw, i) => {
+    if (fenced.has(i)) return;
+    const body = raw.replace(BLOCKQUOTE_PREFIX_RE, '')
+      .replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
+    let d = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*\S/.exec(body);
+    // The destination may sit on the FOLLOWING line. `[g]:` over `  guide.md`
+    // defines `g`, so `## See [guide][g]` renders anchored `see-guide` --
+    // and reading only the single-line form recorded `see-guideg` and
+    // reported a working fragment link dead. The dead-link scan has read both
+    // forms since it was raised; this collector read one, which is the same
+    // two-halves shape as the block-start rule it sits beside.
+    let last = i;
+    if (!d) {
+      const head = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*$/.exec(body);
+      const j = i + 1;
+      if (head && j < lines.length && !fenced.has(j)
+          && /^[ \t]*\S/.test(lines[j].replace(BLOCKQUOTE_PREFIX_RE, ''))) {
+        d = head;
+        last = j;
+      }
+    }
+    if (!d || !(defStarts.has(i) || defSeen.has(i - 1))) return;
+    defSeen.add(last);
+    refLabels.add(refKey(d[1]));
+  });
+  // A comment INSIDE a rendered heading is not part of its text. The blanket
+  // tag strip used to remove it as a side effect; now that only real tags are
+  // stripped, the comment has to be masked explicitly or `## <!-- note --> Real`
+  // would slug as `---note----real` -- the fabricated anchor accepted and the
+  // valid link to `#real` reported dead. SPACES, not the default NUL: the slug
+  // trims whitespace but not NUL, which would leave a leading hyphen.
+  const headingHidden = commentSpans(lines);
+  for (const [i, raw] of lines.entries()) {
+    if (fenced.has(i)) continue;
+    // A heading may sit inside a container and still be a heading: `> ## Q`
+    // renders with the anchor `q`. Matching the raw line omitted it, so a
+    // valid local link produced a gating dead-anchor finding. The prefix is
+    // consumed for the heading test exactly as `fencedLines` and
+    // `indentedCodeLines` consume it for theirs.
+    const line = dropSpans(raw, headingHidden.get(i) ?? [])
+      .replace(BLOCKQUOTE_PREFIX_RE, '');
+    // `## Install ##` renders as `Install`, and GitHub's anchor is `install`.
+    // Passing `Install ##` to headingSlug recorded `install-`, so a valid link
+    // to `#install` was reported dead.
+    // Indented ATX, and setext (`Title` over `===` or `---`). A column-zero
+    // ATX-only scan recorded no anchor for either, so a valid link to one was
+    // emitted as a dead-anchor P2 and could fail --check.
+    // The underline is read through the same container prefix, or a quoted
+    // Setext heading would lose its underline and stop being one.
+    // The underline test is `isSetextUnderline`, not an inline pattern. The
+    // inline copy had none of that predicate's container rules, so `- Example`
+    // over a column-zero `---` -- a list item that ENDS and a thematic break --
+    // recorded the fabricated anchor `--example`, which a link could then
+    // resolve against. The Python twin has asked the predicate since
+    // stocks#1121; this is the parity port.
+    const setext = isSetextUnderline(lines, i + 1, fenced);
+    // A LIST MARKER is a container prefix too. `- # Install` and `1. ## Setup`
+    // render real headings and GitHub exposes their anchors, but stripping
+    // only the blockquote prefix left the marker in front of the ATX syntax --
+    // so the anchor was omitted and a valid link to it was reported as a
+    // gating dead anchor. Applied to the ATX branch only: for Setext,
+    // `- Example` over `---` at column zero ENDS the list and renders a
+    // thematic break, and stripping the marker there would invent a heading.
+    const atx = line.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
+    // The marker is stripped for the SETEXT branch too. `- Title` over an
+    // indented `===` is a heading isSetextUnderline deliberately accepts, but
+    // the raw `- Title` reached the slug and recorded `--title`. Safe
+    // precisely because that predicate already refuses the case the ATX-only
+    // note above was guarding.
+    // A Setext heading is the WHOLE paragraph above its underline, not just
+    // the last line: `Hello` over `world` over `---` renders one heading
+    // anchored `hello-world`. Slugging the final line alone recorded `world`,
+    // so the real fragment was reported dead and one the page does not expose
+    // accepted. Joined with a space, which is how the soft break renders.
+    const setextText = () => {
+      const lo = setextStarts.get(i) ?? i;
+      // Each line read through the SAME comment mask the ATX branch applies.
+      // This branch rereads the raw text, so `Hello <!-- note -->` over `---`
+      // slugged `hello----note---`: the valid `#hello` fragment reported dead
+      // and an anchor the page does not expose accepted.
+      const joined = lines.slice(lo, i + 1)
+        .map((ln, k) => dropSpans(ln, headingHidden.get(lo + k) ?? [])
+          .replace(BLOCKQUOTE_PREFIX_RE, '').trim()).join(' ');
+      return joined.trim().replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
+    };
+    const m = setext
+      ? [null, setextText()]
+      : /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(atx);
+    if (!m) continue;
+    const base = headingSlug(m[1], refLabels);
+    // Advance until the slug is unused, rather than trusting a per-base
+    // counter. `## Notes`, `## Notes-1`, `## Notes` gave `notes` and
+    // `notes-1` twice and never emitted `notes-2`, which is what GitHub
+    // assigns the third -- so a valid link to it read as dead.
+    let n = seen.get(base) ?? 0;
+    let slug = n === 0 ? base : `${base}-${n}`;
+    while (out.has(slug)) { n += 1; slug = `${base}-${n}`; }
+    seen.set(base, n + 1);
+    out.add(slug);
+  }
+  // Explicit HTML anchors. `<a name="legacy"></a>` and any `id="..."` are
+  // rendered destinations GitHub honours, so a link to `#legacy` is valid
+  // with no heading of that name -- and recording only heading slugs made the
+  // dead-anchor check reject it and fail --check.
+  //
+  // Tokenised through the same tag scanner the attribute mask uses, rather
+  // than by searching for `id=` in arbitrary text. A loose search invented
+  // anchors from `<div data-note=" id=fake">`, where the text sits inside
+  // ANOTHER attribute's value, and missed the real one in
+  // `<div title="a > b" id="section">`, where the `>` inside a quoted value
+  // ended the search early -- wrong in both directions at once, and the
+  // invented ids were the worse half, because a link to one PASSED.
+  //
+  // `id` exposes a fragment destination on any element. `name` does so only
+  // on an anchor: `<meta name="viewport">` is not a destination, and
+  // recording it let a link to `#viewport` pass against nothing.
+  //
+  // A NARROWER mask than the heading scan's: a type-6 or type-7 block such as
+  // `<div id="x">` IS the anchor, so masking every HTML line would discard
+  // the very thing being read. Only the raw-text kinds display their contents
+  // instead of rendering them, and only those hide an id. Comment SPANS as
+  // well as code spans, since `text <!-- <a id="fake"></a> -->` shares a line
+  // with prose and a whole-line exclusion never reached it.
+  //
+  // One scan over the joined document, so an element whose `id` sits on a
+  // LATER physical line is read as the one tag it is.
+  // The raw-text OPENERS are held back from the whole-line mask: the opening
+  // tag is rendered, so `<pre id="sample">code</pre>` offers `sample` while
+  // only `code` is literal. The content after the tag is still masked, so a
+  // `<pre><a id="fake"></a></pre>` written on one line invents nothing.
+  const rawOpen = new Map();
+  const literal = new Set([
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true, openers: rawOpen }),
+    ...fencedLines(lines), ...indentedCodeLines(lines),
+    ...frontMatterLines(lines)]);
+  const literalSpan = (i, l) => {
+    const start = rawOpen.get(i);
+    if (start === undefined) return [[0, l.length]];
+    TAG_OPEN_RE.lastIndex = start;
+    const tag = TAG_OPEN_RE.exec(l);
+    TAG_OPEN_RE.lastIndex = 0;
+    // An unparseable opener offers no id anyway, so the whole tag is masked
+    // with its contents; text BEFORE it is live prose either way.
+    return [[tag !== null && tag.index === start ? start + tag[0].length : start, l.length]];
+  };
+  const wrappedSpans = codeSpanLines(lines);
+  const commentRanges = commentSpans(lines);
+  // A link's DESTINATION and TITLE are metadata: tag-shaped text in either
+  // renders inside a URL or a `title` attribute, never as an element, and
+  // reading it as one invented an anchor a link could then resolve against.
+  const linkMeta = linkTitleSpans(lines, { titleOnly: false });
+  const idDoc = lines.map((l, i) => (literal.has(i)
+    ? maskSpans(l, literalSpan(i, l))
+    : maskSpans(l, [...codeSpans(l), ...(wrappedSpans.get(i) ?? []),
+      ...(commentRanges.get(i) ?? []), ...(linkMeta.get(i) ?? [])]))).join('\n');
+  for (const tag of idDoc.matchAll(TAG_OPEN_RE)) {
+    // An ESCAPED opener is not an element. CommonMark renders the `<` in
+    // `\<div id="fake">` literally and creates nothing, so `#fake` reaches
+    // nowhere -- but the scan parsed it like any other tag and registered the
+    // id, which made a link to a destination the document does not offer
+    // PASS. Documents that demonstrate tag syntax escape it exactly this way,
+    // so the invented anchors land in the docs most likely to cite them.
+    if (isEscaped(idDoc, tag.index)) continue;
+    const anchor = /^<a(?![a-zA-Z0-9-])/i.test(tag[0]);
+    // The FIRST occurrence of a repeated attribute is the one that exists.
+    // HTML parsing drops the later duplicates, so `<div id="real" id="fake">`
+    // offers only `real` -- and recording both let a link to `#fake` pass the
+    // dead-anchor check against a destination the page does not have.
+    const seen = new Set();
+    for (const attr of tag[0].matchAll(TAG_ATTR_RE)) {
+      const key = attr[1].toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (key !== 'id' && !(key === 'name' && anchor)) continue;
+      // Character references DECODED, as the heading slug already decodes
+      // them: `<div id="a&amp;b">` exposes `a&b`. Case is PRESERVED, because
+      // a browser matches an explicit id exactly -- `<a name="Install">` is
+      // reached by `#Install` and not by `#install`.
+      const id = decodeCharRefs(attr[2] ?? attr[3] ?? attr[4] ?? '');
+      if (id) out.add(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * CommonMark backslash escapes removed, as rendering removes them.
+ *
+ * Only before ASCII punctuation, which is the whole set CommonMark allows an
+ * escape before. A backslash anywhere else is a literal character, and
+ * dropping it would turn one path into a different one -- inventing a
+ * destination rather than resolving the real one.
+ */
+export function unescapeMarkdown(text) {
+  return text.replace(/\\([!-/:-@[-`{-~])/g, '$1');
+}
+
+export function isTrackedDir(tracked, norm) {
+  const prefix = `${norm}/`;
+  for (const p of tracked) if (p.startsWith(prefix)) return true;
+  return false;
+}
+
+// What may follow a reference definition's destination: nothing, or an
+// optional title, to the end of the line. CommonMark renders a definition
+// with any other suffix as ORDINARY TEXT -- `[g]: missing.md garbage` and
+// `[g]: missing.md "unclosed` define nothing and link nowhere -- while a
+// prefix-only match registered the destination and reported a gating dead
+// link for a target no reader can reach.
+const REF_DEF_TAIL_RE = /^[ \t]*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\((?:\\.|[^)\\])*\))?[ \t]*$/;
+
+/**
+ * Reference-style link USES in one line: `[text][label]`, `[label][]`, `[label]`.
+ *
+ * Yielded with the offsets of the whole use, because that is where a reader
+ * sees the citation and what every gate around it indexes.
+ *
+ * The dead-link scan deliberately does NOT check uses -- measured on the
+ * stocks twin, 204 bracket pairs against 1 definition, nearly all of them
+ * issue-title tags like `[P0][Replay]`, and checking them produced 79
+ * fabricated findings. That reasoning does not carry here: a use is acted on
+ * ONLY when its label resolves to a definition whose destination is an issue
+ * URL, and a title tag resolves to nothing.
+ */
+export function* referenceUses(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== '[' || isEscaped(text, i)) continue;
+    const close = labelClose(text, i);
+    if (close === -1) continue;
+    const after = text[close + 1];
+    // An INLINE link is not a reference use: without this, `[issue](x.md)`
+    // reads as a shortcut use of `issue` and invents a citation the document
+    // does not make. That half is asserted.
+    //
+    // The `:` half is NOT, and saying so is the honest version: a definition
+    // is not a use of itself, but every input that reaches this branch
+    // (`[g]: <url> "still open"`, the only definition shape carrying a cue)
+    // is already collapsed to one finding by the clause dedup below, so no
+    // test can pin it -- measured, identical output with the branch removed.
+    // Kept because reading a definition as a use is wrong about the grammar
+    // rather than merely redundant, and the dedup that currently hides it is
+    // not the thing guaranteeing it.
+    if (after === '(' || after === ':') { i = close; continue; }
+    let label = text.slice(i + 1, close);
+    let end = close + 1;
+    if (after === '[') {
+      const close2 = labelClose(text, close + 1);
+      if (close2 === -1) { i = close; continue; }
+      const second = text.slice(close + 2, close2);
+      // FULL form takes the second label; COLLAPSED (`[label][]`) keeps the
+      // first, which is what CommonMark resolves it by.
+      if (second.trim()) label = second;
+      end = close2 + 1;
+    }
+    yield { at: i, end, label };
+    i = end - 1;
+  }
+}
+
+/**
+ * Every reference definition in the document, keyed by its normalised label.
+ *
+ * ONE implementation, because two consumers now ask the same question and a
+ * second copy is how the two would drift: the dead-link scan validates a
+ * definition's destination, and the blocker scan resolves a reference USE to
+ * see whether it cites an issue. A definition is registered only where
+ * CommonMark registers one, and every exclusion below is a case where it does
+ * not.
+ */
+export function referenceDefinitions(lines) {
+  const fenced = new Set([...fencedLines(lines), ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
+  // Reference-style Markdown: `[guide][g]` with `[g]: docs/guide.md` further
+  // down. Neither shape is an inline link, so a broken reference link -- the
+  // form the CommonMark spec calls standard and readers see as an ordinary
+  // link -- produced a clean audit. The DEFINITION's destination is validated
+  // exactly as an inline link's is.
+  // A footnote (`[^1]: ...`) is deliberately excluded: it defines a note, not
+  // a destination.
+  // A USE (`[text][label]`) is excluded too, and that is a measurement, not a
+  // shortcut: across the stocks twin's 322 markdown documents there is 1
+  // reference definition and 204 bracket pairs, nearly all of them issue-title
+  // tags -- `| #906 | P0 | [P0][Replay] Quarantine ...` is a title, not a
+  // link, and indistinguishable from a full reference use. Checking uses
+  // produced 79 fabricated findings there. The definition's destination is the
+  // half that certainly names a path, so that is the half this checks.
+  const refDefs = new Map();
+  // A definition retained inside a multiline HTML comment is not registered by
+  // Markdown at all, so validating it produced a false gating dead-link for
+  // retired content. The fenced exclusion was here; the comment one was not.
+  const commentedDefs = commentedLines(lines);
+  // A definition-shaped line inside a code span is an EXAMPLE of one. The
+  // single-line form cannot match anyway -- the opening backtick sits where
+  // the anchored pattern needs a bracket -- but a span opened on an earlier
+  // line covers this one whole, and `[g]: missing.md` displayed inside such a
+  // span was validated as a live destination. Parity with the Python twin
+  // (stocks#1121).
+  // The same boundary set the inline scan below uses: a definition displayed
+  // inside a span that CANNOT reach this line is not displayed at all.
+  const wrappedDefs = codeSpanLines(lines, fenced);
+  const spanHidden = (i) => {
+    const stop = lines[i].replace(/\s+$/, '').length;
+    if (!stop) return false;
+    return [...codeSpans(lines[i]), ...(wrappedDefs.get(i) ?? [])]
+      .some(([lo, hi]) => lo <= 0 && hi >= stop);
+  };
+  // A definition may not INTERRUPT a paragraph. `paragraph` then
+  // `[g]: missing.md` with no blank line between them renders LITERALLY --
+  // CommonMark registers no reference there -- yet the destination produced a
+  // gating dead-link finding for a link no reader can follow. So a definition
+  // counts only where one could begin: at the start of a block, or directly
+  // after another definition inside the same block, which is the run form
+  // CommonMark allows.
+  const defBlockStarts = new Set(paragraphBlocks(lines, fenced).map(([lo]) => lo));
+  const defLines = new Set();
+  lines.forEach((raw, i) => {
+    if (fenced.has(i) || commentedDefs.has(i) || spanHidden(i)) return;
+    // A definition inside a blockquote still defines: `> [g]: docs/g.md`
+    // renders as a working reference for uses inside that quote, and the
+    // anchored pattern saw `>` where it needs a bracket -- so every quoted
+    // definition went unchecked. Parity with the Python twin (stocks#1121).
+    const line = raw.replace(BLOCKQUOTE_PREFIX_RE, '');
+    // `<...>` is the standard destination form and the ONLY one that may
+    // contain a space, which is exactly why an author reaches for it.
+    // `\S+` stopped at the space, so `[guide]: <docs/user guide.md>` captured
+    // `<docs/user` and a tracked file was reported dead. The inline-link
+    // parser already accepts this form; the definition parser did not.
+    // A LIST MARKER is a container prefix too: `- [g]: missing.md` is the
+    // first content of an item, and CommonMark resolves a use of `[g]` inside
+    // that item as a clickable link. The anchored pattern saw the marker where
+    // it needs a bracket, so such a definition went unparsed -- and because
+    // reference USES are deliberately not scanned, its broken destination
+    // produced no finding at all.
+    const inItem = line.replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])\s+/, '');
+    // The whitespace after the colon is OPTIONAL. CommonMark registers
+    // `[g]:missing.md` and resolves `[x][g]` against it, but `\s+` skipped
+    // the definition -- and because reference USES are deliberately not
+    // scanned, its broken destination produced no finding at all. The head
+    // form below still matches when nothing follows, because it is anchored.
+    // A BACKSLASH ESCAPE inside the angle-bracketed form is destination
+    // content, not the delimiter: CommonMark resolves `[g]: <a\>b.md>` to
+    // `a>b.md`. `[^<>\n]*` stopped at the escaped `>`, captured `a\` and
+    // reported a tracked file dead -- the false direction.
+    let m = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*(?:<((?:\\.|[^<>\n\\])*)>|(\S+))/
+      .exec(inItem);
+    // The REMAINDER has to be a definition too. A prefix match accepted
+    // `[g]: missing.md garbage`, which CommonMark renders as ordinary text --
+    // no definition, no link -- and reported its destination as a gating dead
+    // link for something no reader can click.
+    if (m && !REF_DEF_TAIL_RE.test(inItem.slice(m[0].length))) m = null;
+    // The destination may sit on the FOLLOWING line: `[guide]:` then
+    // `  missing.md` is a definition CommonMark resolves, and `[x][guide]`
+    // renders as a clickable link to it. A per-line pattern could not capture
+    // that, and because reference USES are deliberately not scanned, the
+    // broken destination produced no finding at all. The continuation is read
+    // through the same exclusions as any other line, and the finding is
+    // reported against the line the destination is on, which is where a fix
+    // goes.
+    let destLine = i;
+    if (!m) {
+      const head = /^ {0,3}\[((?:\\.|[^\]\\^])(?:\\.|[^\]\\])*)\]:[ \t]*$/.exec(inItem);
+      const j = i + 1;
+      if (head && j < lines.length && !fenced.has(j) && !commentedDefs.has(j)
+          && !spanHidden(j)) {
+        const cont = lines[j].replace(BLOCKQUOTE_PREFIX_RE, '');
+        const d = /^[ \t]*(?:<((?:\\.|[^<>\n\\])*)>|(\S+))/.exec(cont);
+        if (d) { m = [null, head[1], d[1], d[2]]; destLine = j; }
+      }
+    }
+    // See defBlockStarts: a definition that interrupts an open paragraph is
+    // not a definition. Recorded once accepted, so a RUN of them still parses.
+    if (m && !(defBlockStarts.has(i) || defLines.has(i - 1))) m = null;
+    if (m) { defLines.add(i); defLines.add(destLine); }
+    // The FIRST definition wins, as CommonMark resolves it. Overwriting with
+    // the last emitted a false dead-link when the first destination exists and
+    // the duplicate is stale, and missed the link readers follow in the
+    // reverse order.
+    // Internal whitespace COLLAPSED, as CommonMark collapses it when matching
+    // labels. `[foo bar]` and `[foo   bar]` are the same label, so the second
+    // spelling is a duplicate definition the first wins over -- but keying on
+    // the raw text validated it independently and emitted a gating dead-link
+    // finding for a destination no rendered reference resolves to.
+    const label = m && refKey(m[1]);
+    // Group 2 is the angle-bracketed form, group 3 the bare one. Group 2 can
+    // legitimately be the EMPTY string (`[x]: <>`), so the branch tests for
+    // `undefined` rather than truthiness -- `m[2] || m[3]` would fall through
+    // to an undefined bare group and throw on the replace below.
+    const dest = m && (m[2] !== undefined ? m[2] : m[3]);
+    if (m && !refDefs.has(label)) {
+      refDefs.set(label, { target: dest, line: destLine + 1 });
+    }
+  });
+  return refDefs;
+}
+
+export function checkDeadLinks(doc, text, ctx, { backtickedPaths = true } = {}) {
+  const { tracked, topLevelDirs, rootFiles, knownRoot, exts, basenames } = ctx;
+  const out = [];
+  const base = path.posix.dirname(doc);
+  const anchorCache = new Map();
+  const anchorsOf = (p) => {
+    if (!anchorCache.has(p)) {
+      // The LINKED document gets the same refusal the audited one does. The
+      // preflight guards the doc being scanned, not the ones it cites, so a
+      // link to a tracked symlink read the target's machine-local bytes to
+      // collect its headings -- and one pointing at a non-terminating special
+      // file hangs or exhausts memory here, which the catch below cannot
+      // catch. Parity with the Python twin (stocks#1121).
+      const pLink = symlinkedComponent(p);
+      if (pLink !== null) {
+        throw new AuditError(`${symlinkNote(p, pLink)} is a tracked symlink, so `
+          + 'reading it would audit its target rather than a document in this '
+          + 'repository; the result would not reproduce in another clone');
+      }
+      try {
+        anchorCache.set(p, headingAnchors(fs.readFileSync(path.join(REPO, p), 'utf8')));
+      } catch (err) {
+        // A TRACKED Markdown file that cannot be read is not a document with
+        // no headings. Storing null made the anchor check skip silently, so a
+        // link to a fragment that does not exist passed clean over a target
+        // the audit never actually inspected.
+        if (tracked.has(p)) {
+          throw new AuditError(`${doc} links into ${p}, which is tracked but could not be `
+            + `read (${err.message}); its anchors were never checked`);
+        }
+        anchorCache.set(p, null);
+      }
+    }
+    return anchorCache.get(p);
+  };
+  const lines = text.split('\n');
+  // A fenced block is an EXAMPLE, not a citation. A document demonstrating
+  // Markdown syntax with `[x](missing.md)`, or showing a path that has since
+  // moved, was read as rendered documentation and failed --check over its own
+  // teaching material. The marker and heading checks already skip these lines.
+  // And YAML FRONT MATTER, which GitHub renders as a metadata table rather
+  // than as body text: `title: "[guide](missing.md)"` is not a link a reader
+  // can click, so the destination produced a gating finding over nothing. The
+  // heading and marker scans already exclude these lines. Parity with the
+  // Python twin (stocks#1121).
+  const fenceOnly = new Set([...fencedLines(lines), ...indentedCodeLines(lines)]);
+  const fenced = new Set([...fenceOnly,
+    ...rawHtmlBlockLines(lines), ...frontMatterLines(lines)]);
+  // Markdown is not PARSED inside a type-6 or type-7 HTML block, but the HTML
+  // is rendered: `<div>` then `<a href="missing.md">` is a link a reader
+  // clicks. Excluding every raw-block line skipped the href pass along with
+  // the Markdown one, so those links were never checked at all. Only a
+  // RAW-TEXT block (`<pre>`, `<script>`, ...) makes its tags literal, and
+  // rawTextLines below already identifies exactly those.
+  const htmlBlock = rawHtmlBlockLines(lines);
+
+  const refDefs = referenceDefinitions(lines);
+
+  // One destination, validated exactly as an inline link's is: same tracked
+  // paths, same anchors. A different spelling must not buy a laxer check.
+  const checkTarget = (tgt, frag, lineNo, label = null) => {
+    const what = label === null ? `relative link -> ${tgt}` : `reference link [${label}] -> ${tgt}`;
+    const anchorWhat = label === null ? `link -> ${tgt}` : what;
+    // Any scheme, case-insensitively, plus a protocol-relative `//host/path`.
+    // A narrow `https?:|mailto:` allowlist sent `tel:`, `ftp:`, `HTTPS:` and
+    // `//example.com/x` down the repository-path branch and produced a P2 for
+    // a local file that was never meant to exist.
+    // Against the RENDERED spelling as well as the written one. A destination
+    // may encode the scheme separator as a character reference or hide it
+    // behind a backslash escape -- `[x](https&#58;//example.com)` renders as
+    // an ordinary HTTPS link -- and testing only the raw text sent it down the
+    // repository-path branch, where it became a gating dead-link finding for a
+    // file no one meant to exist locally. Percent escapes are deliberately NOT
+    // decoded here: `https%3A//x` stays percent-encoded in the href, so a
+    // browser resolves it relative to this document after all.
+    const rendered = decodeCharRefs(unescapeMarkdown(tgt));
+    if (/^[a-z][a-z0-9+.-]*:/i.test(tgt) || tgt.startsWith('//')
+      || /^[a-z][a-z0-9+.-]*:/i.test(rendered) || rendered.startsWith('//')) return;
+    let norm;
+    // A fragment the DESTINATION carried as a character reference, which the
+    // caller's reference-aware split could not separate.
+    let decodedFrag = null;
+    if (!tgt) {
+      norm = doc;
+    } else {
+      // `[g](<guide.md>)` is the standard form for a destination with spaces,
+      // and the angle brackets are delimiters, not part of the path. A query
+      // (`guide.md?plain=1`) is not part of it either -- the tracked-file
+      // lookup searched for the literal filename including the `?`.
+      // And a backslash escape is MARKUP: Markdown removes it when the
+      // destination renders, so `[x](docs/foo\(bar\).md)` links to the
+      // tracked file `docs/foo(bar).md`. Keeping the backslashes reported
+      // that valid link as dead. Only the ASCII punctuation CommonMark
+      // allows an escape before -- a backslash anywhere else is a literal
+      // character and removing it would invent a different path.
+      // Character references are resolved before the link is constructed, so
+      // `[x](foo&amp;bar.md)` targets a tracked `foo&bar.md`; leaving `&amp;`
+      // intact reported that valid link as dead. Decoded here for the same
+      // reason heading text is decoded before its anchor is generated.
+      // Decoded BEFORE the query is removed. `&#63;` IS a `?`, so
+      // `[x](foo&#63;v=1)` renders a URL whose PATH is `foo` -- and splitting
+      // the raw destination first left the nonexistent path `foo?v=1` once
+      // decoded, a gating dead link against a tracked file. Percent decoding
+      // stays AFTER, because `%3F` is not a delimiter either: a file really
+      // named with a percent-escaped `?` would otherwise lose its name.
+      // A decoded `#` IS the fragment delimiter. `&#35;` resolves to `#` when
+      // the link is constructed, so `[x](README.md&#35;tests)` gives the href
+      // `README.md#tests` and the browser splits there -- while this looked
+      // for a tracked file literally named `README.md#tests` and reported a
+      // gating dead link against one that exists. The caller's split consumes
+      // references as UNITS, deliberately, so it cannot see this one; the
+      // split has to happen after decoding.
+      //
+      // Only a reference, not a BACKSLASH escape. `[x](a\#b.md)` is asserted
+      // elsewhere to target the tracked `a#b.md`, and whether CommonMark
+      // percent-encodes that `#` is a question I have not put to a reference
+      // implementation -- so the escape is left alone rather than changed on
+      // an argument. That is why decoding happens in two steps here: the
+      // references first, the split, then the escapes.
+      const decoded = decodeCharRefs(tgt.replace(/^<(.*)>$/, '$1'));
+      let cut = -1;
+      for (let k = 0; k < decoded.length; k += 1) {
+        if (decoded[k] === '#' && !isEscaped(decoded, k)) { cut = k; break; }
+      }
+      if (cut !== -1) decodedFrag = decoded.slice(cut + 1) || null;
+      const raw = unescapeMarkdown(
+        cut === -1 ? decoded : decoded.slice(0, cut)).split('?')[0];
+      // `100%-coverage.md` is a literal percent, and decodeURIComponent throws
+      // a plain URIError on it -- a stack trace and exit 1, the status
+      // reserved for documentation findings. An undecodable destination is
+      // simply used as written.
+      let bare;
+      try {
+        bare = decodeURIComponent(raw);
+      } catch {
+        bare = raw;
+      }
+      // Stripping the query can empty the path outright -- `[x](?plain=1#h)`
+      // is a link to THIS document carrying a query string. Returning on an
+      // empty path skipped the fragment check entirely, so a dead anchor
+      // spelled that way passed; it is the same same-document case as `#h`.
+      // Parity with the Python twin (stocks#1121).
+      if (!bare) {
+        norm = doc;
+      } else {
+        // A slash-prefixed destination is a HOST-ROOT URL, not a repository
+        // path: `[Dashboard](/dashboard)` is a route this app serves.
+        // Stripping the slash and looking it up in `tracked` reported valid
+        // application links as dead, and would have accepted one by accident
+        // wherever a same-named directory happened to exist.
+        if (bare.startsWith('/')) return;
+        norm = path.posix.normalize(path.posix.join(base, bare));
+        // A PARENT component, not any name that starts with two dots.
+        // `..missing.md` is a legal repository filename that normalizes to
+        // itself, and treating it as traversal meant a deleted or misspelled
+        // dot-prefixed target was never reported at all.
+        if (norm === '..' || norm.startsWith('../')) return;
+        if (!tracked.has(norm) && !isTrackedDir(tracked, norm)) {
+          out.push({ check: 'dead-link', doc, line: lineNo, severity: 'P2', detail: what });
+          return;
+        }
+      }
+    }
+    // The same predicate documentSet uses. After alternate suffixes were
+    // admitted a round ago, a tracked `guide.markdown` or `README.MD` passed
+    // the path check and never reached anchorsOf, so `[x](guide.markdown#gone)`
+    // let a broken anchor through -- my own regression, one gate behind.
+    const wantFrag = frag ?? decodedFrag;
+    if (wantFrag && isMarkdownPath(norm)) {
+      const have = anchorsOf(norm);
+      // Decoded, exactly as the destination path above is. A link may
+      // percent-encode non-ASCII -- `[Café](#caf%C3%A9)` -- while
+      // headingAnchors records the rendered slug `café`, so comparing the raw
+      // fragment reported a valid link as a gating dead anchor. An undecodable
+      // fragment is used as written, for the same reason paths are.
+      //
+      // And EXACTLY as the destination is, which this was not: a Markdown
+      // escape and a character reference are both resolved when the link is
+      // rendered, so `[x](#foo\:bar)` reaches `id="foo:bar"` and
+      // `[x](#a&amp;b)` reaches `id="a&b"` -- while `headingAnchors` records
+      // the decoded id and this compared the source spelling, reporting both
+      // working links as gating dead anchors. Same order the destination
+      // uses: escapes, then references, then percent-decoding, which is the
+      // browser's and comes last.
+      let wanted;
+      const rendered = decodeCharRefs(unescapeMarkdown(wantFrag));
+      try {
+        wanted = decodeURIComponent(rendered);
+      } catch {
+        wanted = rendered;
+      }
+      // Two spellings, because `have` now holds two KINDS of anchor. A
+      // generated heading slug is lowercase by construction, so the folded
+      // form matches it; an explicit `id`/`name` keeps its spelling and the
+      // browser matches it exactly, so `#Install` matches `Install` and
+      // `#install` does not. EXACTLY, against both sets at once: a folded
+      // fallback was added here to keep `#Install` working and it also
+      // accepted `#Install` against a GENERATED `install`, which does not
+      // navigate -- the false direction. The Python twin has compared
+      // exactly since it was written.
+      if (have && !have.has(wanted)) {
+        out.push({ check: 'dead-anchor', doc, line: lineNo, severity: 'P2',
+          detail: `${anchorWhat}#${wantFrag}: the target has no such heading` });
+      }
+    }
+  };
+
+  for (const [label, { target, line }] of refDefs) {
+    // Not `split('#')`: `[g]: foo&#38;bar.md` renders a link to the tracked
+    // `foo&bar.md`, and splitting the raw destination gave the path `foo&` and
+    // the fragment `38;bar.md`. The inline and HTML destinations consume a
+    // reference as a unit; this one did not.
+    const [tgt, frag] = splitOutsideRefs(target, '#');
+    checkTarget(tgt, frag, line, label);
+  }
+  // Offsets inside an HTML comment, per line: retired Markdown kept that way
+  // is not rendered, so it is not a citation. Spans rather than whole lines,
+  // matching checkClosedIssues, so a visible link beside a comment still counts.
+  const commentedSpans = commentSpans(lines);
+  // `<a href="...">` is a link a reader can follow and click, so a broken one
+  // is the same defect as a broken `[x](y)` -- and only the Markdown syntax
+  // was scanned, so the audit reported clean over it. Raw-TEXT blocks are
+  // excluded because a tag inside `<pre>` is shown rather than rendered;
+  // comments and code spans are excluded per span, exactly as the Markdown
+  // pass below excludes them.
+  const rawTextLines = rawHtmlBlockLines(lines, { rawTextOnly: true });
+  // Every BLOCK boundary, not just the code ones. The earlier reading here
+  // was that a rendered HTML block does not end a paragraph -- it does:
+  // CommonMark lets an HTML block of types 1 through 6 interrupt one, and
+  // type 7 only opens where a paragraph is not already running, which
+  // `rawHtmlBlockLines` already enforces. So an unmatched backtick above
+  // `<pre></pre>` paired with one below it and masked a live
+  // `[x](missing.md)` in between out of the audit -- the hiding direction,
+  // and the same shape as the fence and heading boundaries already here.
+  // Codex filed it (solyra#69).
+  const wrappedCodeSpans = codeSpanLines(lines, fenced);
+  lines.forEach((line, i) => {
+    // A line whose only reason to be excluded is that it sits in a non-raw-text
+    // HTML block still gets the href pass; everything else about it is skipped.
+    // `fenceOnly` IS `fencedLines` united with `indentedCodeLines`, computed
+    // once above. Recomputing both per line made this pass quadratic in the
+    // document: each call rescans the whole file and runs its own block
+    // analysis. Measured on a document that is one large HTML block, which is
+    // what actually reaches the recompute -- `htmlBlock.has(i)` short-circuits
+    // everywhere else, so the checked-in corpus showed no difference at all
+    // (57 ms before, 56 ms after on the 1,743-line landing-page plan, which is
+    // why the filed consequence is not the one measured here):
+    //
+    //     404 HTML lines   256 ms -> 14 ms
+    //     804 HTML lines   967 ms -> 27 ms
+    //
+    // Doubling the document nearly quadrupled the old cost and merely doubled
+    // the new one, which is the shape the word quadratic is claiming. Codex
+    // filed it.
+    //
+    // The `fenceOnly` term itself is redundant today and no test pins it:
+    // `rawHtmlBlockLines` already excludes fenced and indented-code lines, so
+    // the intersection is empty -- removing the term changes no finding, which
+    // is what the mutation showed. It is kept as a set lookup rather than
+    // deleted, because it is the guard that keeps a fenced `<div>` out of the
+    // href pass if that exclusion ever moves.
+    const htmlOnly = htmlBlock.has(i) && !rawTextLines.has(i) && !fenceOnly.has(i);
+    if (fenced.has(i) && !htmlOnly) return;
+    // Spans a backticked citation occupies purely as a Markdown link's LABEL.
+    // ``[`src/gone.ts`](../src/gone.ts)`` is ONE broken link, and reporting it
+    // from both passes doubles the finding and the summary count.
+    const labelSpans = [...line.matchAll(/\[([^\]]*)\]\([^)\s]*(?:\s+[^)]*)?\)/g)]
+      .map((m) => [m.index + 1, m.index + 1 + m[1].length]);
+    const inLinkLabel = (idx) => labelSpans.some(([lo, hi]) => idx >= lo && idx < hi);
+    // `[x](#heading)` carries no path, so the anchor is checked against this
+    // same document. A target that climbs out of the repository is cross-repo
+    // prose this tree cannot resolve and must not call rot. Filesystem
+    // existence answers DIRECTORY only: an ignored, generated or
+    // staged-for-deletion file is present here and absent for anyone who
+    // clones, so letting it satisfy a link produced a clean audit over a
+    // committed link broken for every reader. All of that now lives in
+    // checkTarget, shared with the reference-style definitions above.
+    // Link SYNTAX shown as inline code renders literally: `` `[x](missing.md)` ``
+    // displays the brackets. Scanning it produced gating dead-link findings
+    // over a document's own syntax examples. Only THIS pass is masked -- the
+    // backtick pass below needs code spans, because a backticked path IS its
+    // subject. The Python twin masks the same way (stocks#1121).
+    // Wrapped spans too: on an interior physical line of a span that crosses
+    // line breaks, codeSpans sees neither delimiter, so a literal
+    // `[x](missing.md)` or `<a href="missing.md">` inside the example was
+    // scanned as a live link and emitted a gating dead-link finding. The
+    // blocker and comment scanners already read these ranges.
+    const codeHere = [...codeSpans(line), ...(wrappedCodeSpans.get(i) ?? [])];
+    const hiddenHere = commentedSpans.get(i) ?? [];
+    // A citation nested inside a WIDER code span is sample text, not a
+    // citation: ``example `scripts/missing.py` here`` renders the inner
+    // backticks and the path literally, and reporting it failed the audit over
+    // a document's own illustration. STRICT enclosure, because an ordinary
+    // single-backtick citation IS its own span -- testing mere overlap would
+    // skip every backticked path in the corpus. Parity with the Python twin
+    // (stocks#1121).
+    // Strict enclosure ALONE was not the rule, though. A span written with
+    // two or more backticks pads its own content, so `BACKTICK_PATH_RE`
+    // matches from the second opening tick to the first closing one --
+    // strictly inside -- and ``scripts/missing.py`` produced no finding at
+    // all when the file was deleted. Comparing the span's BODY with the
+    // candidate is the distinction the enclosure test was standing in for: a
+    // span whose body IS the path is a citation, and a span with prose around
+    // the path is still a demonstration. Codex filed it on the Python twin
+    // (stocks#1121).
+    const spanBody = (lo, hi) => {
+      const raw = line.slice(lo, hi);
+      const run = raw.length - raw.replace(/^`+/, '').length;
+      return run ? raw.slice(run, raw.length - run) : raw;
+    };
+    const nested = (mm) => codeHere.some(
+      ([lo, hi]) => lo < mm.index && hi > mm.index + mm[0].length
+        && spanBody(lo, hi).trim() !== mm[0].replace(/^`+|`+$/g, '').trim());
+    for (const m of htmlOnly ? [] : mdLinks(line)) {
+      // An ESCAPED opening bracket renders as literal text, so a document
+      // demonstrating link syntax as `\[x](missing.md)` was reported as a
+      // gating dead link for a destination no reader can follow. Parity
+      // matters: `\\[x](y.md)` IS a link after a literal backslash.
+      if (isEscaped(line, m.index)) continue;
+      if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+      // Retired Markdown kept in an HTML comment is not rendered, so it is not
+      // a citation: `<!-- [old](removed.md) -->` produced a gating dead-link
+      // finding over content no reader can see. A SPAN, so a visible link
+      // beside a comment on the same line is still checked -- which is what
+      // checkClosedIssues already does.
+      if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+      // Either destination form: `<...>` is a separate branch in the pattern
+      // because it admits a space, and both name the same thing here.
+      const [tgt, frag] = m[1] !== undefined ? [m[1], m[2]] : [m[3], m[4]];
+      checkTarget(tgt, frag, i + 1);
+    }
+    if (!rawTextLines.has(i)) {
+      for (const m of htmlDestinations(line)) {
+        if (codeHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+        if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)) continue;
+        // `\<a href="missing.md">` escapes the `<`, so CommonMark renders the
+        // tag as TEXT and there is no clickable link -- the Markdown pass has
+        // applied this check for rounds and the href pass did not, so the
+        // same escape produced a gating finding here.
+        if (isEscaped(line, m.index)) continue;
+        // A character reference is consumed as a UNIT before the fragment
+        // delimiter is sought. HTML decodes the attribute first, so
+        // `<a href="foo&#38;bar.md">` links to `foo&bar.md` -- and splitting
+        // the raw attribute at the `#` INSIDE the reference gave the target
+        // `foo&` and the fragment `38;bar.md`, a gating dead-link finding
+        // against a tracked file. The search runs over a copy with each
+        // reference blanked to the same length, so the index still applies to
+        // the original and checkTarget decodes exactly what it decoded before.
+        // indexOf rather than split, so a fragment carrying a second `#` is
+        // not truncated. Parity with the Markdown destination pattern, which
+        // consumes references the same way (stocks#1121).
+        const [tgt, frag] = splitOutsideRefs(m.value, '#');
+        if (!tgt && !frag) continue;
+        checkTarget(tgt, frag, i + 1);
+      }
+    }
+    // A backticked path is this repo's to resolve only when nothing says
+    // otherwise: its extension is one this tree tracks, and the citation is
+    // not the sibling repo's. Ownership is decided per citation, not per
+    // line: docs/TEST_COVERAGE_AUDIT.md:104 has a stocks docs/API.md link in
+    // one cell and a local src/lib path in another, and a line-level marker
+    // hid the local one.
+    if (!backtickedPaths || htmlOnly) return;
+    const crossRepo = crossRepoCitations(line);
+    for (const m of line.matchAll(BACKTICK_PATH_RE)) {
+      if (hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)
+          || nested(m)) continue;
+      const cited = m[1];
+      // `./src/removed.ts` and `docs/../src/live.ts` name the same files as
+      // their plain spellings. Comparing the raw string meant the first hid a
+      // deleted file (its top-level component is `.`, which is in no
+      // topLevelDirs) and the second could be called dead though it resolves.
+      const p = path.posix.normalize(cited);
+      if (p.startsWith('..')) continue;
+      if (inLinkLabel(m.index) || crossRepo.has(m.index)
+          || !exts.has(path.posix.extname(p))) continue;
+      // Tracked membership for files, same rule as the Markdown-link branch
+      // above: an ignored or generated file, or one recreated after a staged
+      // deletion, is present here and absent for everyone who clones. The
+      // previous fix corrected one branch and left this one.
+      if (tracked.has(p) || isTrackedDir(tracked, p)) continue;
+      // Only flag paths shaped like this repo's layout, so a deliberate
+      // cross-repo citation is not reported as rot.
+      if (topLevelDirs.has(p.split('/')[0])) {
+        out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2',
+          detail: `backticked path -> ${cited}` });
+      }
+    }
+    for (const m of line.matchAll(BACKTICK_ROOT_FILE_RE)) {
+      const f = m[1];
+      // inLinkLabel was consulted only by the slash-path loop. A deleted root
+      // file cited as ``[`vite.config.ts`](../vite.config.ts)`` was reported
+      // once by the Markdown pass and again here -- one broken link, two
+      // findings and a doubled summary count.
+      // And the comment spans, which this sibling loop never consulted though
+      // the slash-path loop above does: a deleted root file retained inside a
+      // comment -- `<!-- retired: \`vite.config.ts\` -->` -- drew a gating
+      // dead-link finding over content no reader can see.
+      if (inLinkLabel(m.index) || crossRepo.has(m.index) || nested(m)
+          || hiddenHere.some(([lo, hi]) => lo <= m.index && m.index < hi)
+          || !exts.has(path.posix.extname(f))) continue;
+      // A bare name that is the basename of some tracked file is a citation
+      // of that file, wherever it lives: `index.css` in the design docs is
+      // src/index.css, and the stem rule below would otherwise read it as a
+      // renamed root index.html.
+      if (tracked.has(f) || basenames.has(f)) continue;
+      // A bare name is weak evidence: the docs cite over a hundred bare
+      // filenames that live under a directory or in the sibling repo. It is
+      // reported only when a tracked root file shares its stem (a rename or
+      // an extension change) or the name is a root file this repo knows --
+      // registered outright, or present at the base ref and gone now.
+      if (!rootFiles.has(stem(f)) && !knownRoot.has(f)) continue;
+      out.push({ check: 'dead-link', doc, line: i + 1, severity: 'P2', detail: `backticked root file -> ${f}` });
+    }
+  });
+
+  // Links that CROSS a line break. CommonMark lets a label run over a newline
+  // and lets whitespace follow the opening parenthesis, so `[long\nlabel](x)`
+  // and `[x](\nmissing.md)` both render as clickable links -- and a per-line
+  // scan can never see either, so their broken destinations passed clean.
+  // `mdLinks` already admits both shapes; what it never had was a subject
+  // spanning more than one physical line.
+  //
+  // The document is masked LINE BY LINE first, at the same lengths, so every
+  // exclusion the per-line pass makes still applies and the offsets still map
+  // back to a line. Only matches that actually contain a newline are reported
+  // here; the single-line ones belong to the pass above and reporting them
+  // twice would double the finding and the summary count.
+  const docStarts = [];
+  let docAt = 0;
+  for (const l of lines) { docStarts.push(docAt); docAt += l.length + 1; }
+  const visibleDoc = lines.map((l, i) => {
+    const htmlOnly = htmlBlock.has(i) && !rawTextLines.has(i);
+    if (fenced.has(i) && !htmlOnly) return maskSpans(l, [[0, l.length]]);
+    if (htmlOnly) return maskSpans(l, [[0, l.length]]);
+    return maskSpans(l, [...codeSpans(l), ...(wrappedCodeSpans.get(i) ?? []),
+      ...(commentedSpans.get(i) ?? [])]);
+  }).join('\n');
+  const lineOf = (idx) => {
+    let lo = 0;
+    let hi = lines.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (docStarts[mid] <= idx) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+  };
+  // Inline content does not cross a paragraph boundary. A blank line ends the
+  // paragraph, so a `[` in one and a `](missing.md)` in the next render as
+  // literal brackets -- and scanning the whole document as one string paired
+  // them and reported a destination no reader can click. A fence interrupts a
+  // paragraph the same way. Masking the blank line is not equivalent: it has
+  // no characters to mask, so the paragraphs stay adjacent in the subject and
+  // pair regardless. The scan is therefore windowed to one block at a time.
+  // Parity with the Python twin (stocks#1121).
+  for (const [bLo, bHi] of paragraphBlocks(lines, fenced)) {
+    const from = docStarts[bLo];
+    const to = docStarts[bHi] + lines[bHi].length;
+    for (const mm of mdLinks(visibleDoc.slice(from, to))) {
+      if (!mm[0].includes('\n')) continue;
+      if (isEscaped(visibleDoc, from + mm.index)) continue;
+      const [tgt, frag] = mm[1] !== undefined ? [mm[1], mm[2]] : [mm[3], mm[4]];
+      checkTarget(tgt, frag, lineOf(from + mm.index) + 1);
+    }
+  }
+  // An anchor whose attributes begin on another physical line -- `<a\n
+  // href="missing.md">` -- still renders a clickable link, and the per-line
+  // scan could never see the opening tag and its `href` together, so a missing
+  // destination produced no finding at all. The subject is a SEPARATE joined
+  // document: the Markdown pass masks a rendered HTML block whole (Markdown is
+  // not parsed there), while an href inside one is exactly what this scans.
+  // Same windows, because an HTML tag may not span a blank line either.
+  const hrefDoc = lines.map((l, i) => {
+    if (fenced.has(i) && !htmlBlock.has(i)) return maskSpans(l, [[0, l.length]]);
+    if (rawTextLines.has(i)) return maskSpans(l, [[0, l.length]]);
+    return maskSpans(l, [...codeSpans(l), ...(wrappedCodeSpans.get(i) ?? []),
+      ...(commentedSpans.get(i) ?? [])]);
+  }).join('\n');
+  // Windowed WITHOUT the HTML-block lines as boundaries, unlike every other
+  // scan here. `fenced` makes each of them a boundary, so a type-6 block
+  // formed no window at all and `<div>` then `<a` then ` href="missing.md">`
+  // -- a clickable link a reader follows -- was scanned by neither pass: the
+  // per-line one cannot see the tag and its href together, and this one never
+  // looked. An HTML block is exactly where an href lives. Nothing unsafe
+  // widens with it: every line this pass may not read is already blanked in
+  // `hrefDoc` above, and a blank line still ends both a paragraph and a
+  // type-6 block, which is the constraint that matters. Codex filed it on the
+  // Python twin (stocks#1121), where it is the same defect.
+  const hrefBounds = new Set([...fenceOnly, ...frontMatterLines(lines)]);
+  for (const [bLo, bHi] of paragraphBlocks(lines, hrefBounds)) {
+    const from = docStarts[bLo];
+    const to = docStarts[bHi] + lines[bHi].length;
+    for (const mm of htmlDestinations(hrefDoc.slice(from, to))) {
+      // The single-line ones belong to the pass above; reporting them here
+      // too would double the finding and the summary count.
+      if (!mm.whole.includes('\n')) continue;
+      // And the escape check belongs to BOTH passes. The single-line one has
+      // it; this one did not, so `\<a` followed by ` href="missing.md">` --
+      // text CommonMark renders literally, with nothing to click -- was
+      // reported as a gating dead link. The same rule, written once in one
+      // pass and not the other, is how the two disagreed.
+      if (isEscaped(hrefDoc, from + mm.index)) continue;
+      const [tgt, frag] = splitOutsideRefs(mm.value, '#');
+      if (!tgt && !frag) continue;
+      checkTarget(tgt, frag, lineOf(from + mm.index) + 1);
+    }
+  }
+  return out;
+}
+
+/**
+ * The content checks a class is subject to. Class C keeps its LINK check but
+ * not its issue check, and the split is the point: a dated record citing an
+ * issue that has since closed was true on its date, so reporting it builds a
+ * backlog whose only resolution is "leave it". A dead link is different: the
+ * record still means what it said, but its evidence can no longer be reached,
+ * and repointing the link changes nothing the record asserts. The registry
+ * promises Class C is read for cross-references; this is that promise.
+ */
+export function contentChecks(cls, doc, text, ctx) {
+  // A Class C record keeps its links checked but NOT its historical file
+  // names. A dated record truthfully lists the files an old commit touched;
+  // once one is renamed or deleted, a live-tree path check turns that truth
+  // into a finding whose only remedy is rewriting the record -- which is the
+  // one thing Class C exists to prevent. Measured on the shipped
+  // docs/LOVABLE_COMMITS_REVIEW.md: 16 P2 findings, every one of them a file
+  // an old commit really did touch, including src/styles.css.
+  //
+  // Markdown links are different and stay checked: a link is a promise to the
+  // reader NOW, not a record of what was true then.
+  const links = checkDeadLinks(doc, text, ctx, { backtickedPaths: cls !== 'C' });
+  if (cls === 'C') return links;
+  return [...checkClosedIssues(doc, text, ctx.states), ...links];
+}
+
+/**
+ * Commits in a `--format=%h%x09%s --name-status` listing that changed content
+ * under the pathspec: an add, a modify, a delete, or a rename that did not
+ * keep 100% of its content. A pure rename (`R100`) is not drift; a moved file
+ * with an edit (`R089`) is exactly as much drift as the edit alone, and
+ * `--diff-filter=AMD` dropped the whole commit because git files it under R.
+ */
+/**
+ * The repository paths a `--name-status` line names: one, or two for a rename
+ * or copy (`R100\told\tnew`).
+ */
+function statusPaths(line) {
+  return line.split('\t').slice(1).filter(Boolean);
+}
+
+export function driftCommits(out, declared = () => true) {
+  const commits = [];
+  let current = null;
+  for (const line of out.split('\n')) {
+    const header = /^([0-9a-f]{7,40})\t/.exec(line);
+    if (header) { current = { line, drift: false }; commits.push(current); continue; }
+    const status = /^([AMDRCT])(\d{3})?\t/.exec(line);
+    if (!status || !current) continue;
+    // The pathspec is applied HERE rather than by git, because git filters by
+    // path BEFORE it detects renames: `-- old` turns `R100 old/f new/f` into
+    // `D old/f`, and a pure move out of a declared path then counts as
+    // content drift against the promise directly above. Reproduced on git
+    // 2.43. Either side being declared is enough -- a file moving IN and a
+    // file moving OUT both change the declared surface by exactly as much.
+    if (!statusPaths(line).some(declared)) continue;
+    const [, kind, score] = status;
+    // T (the git object type changed -- a regular file became a symlink, or a
+    // submodule a file) is drift like any other: the described surface is not
+    // what it was. The uncommitted branch below already counted it, so leaving
+    // it out here made the same change invisible the moment it was committed.
+    if ('AMDT'.includes(kind) || (kind === 'R' && Number(score) < 100)) current.drift = true;
+  }
+  return commits.filter((c) => c.drift).map((c) => c.line);
+}
+
+export function checkChangedSince(doc, sha, codePaths, baseRef = 'origin/main', { exec = run } = {}) {
+  if (!sha || codePaths.length === 0) return [];
+  // `git log` exits 0 with empty output when the range holds no commits, so
+  // there is no non-zero code that means "no matches" here. A bad SHA exits
+  // 128 and must abort: reporting "nothing changed since <sha>" for a SHA the
+  // repo does not have is the same fabrication as a count of zero. The marker
+  // check reports the unknown SHA separately.
+  // AMDR with the rename score read per file, not M: a declared path GAINING a
+  // route under src/routes or LOSING a documented component changes the
+  // described surface as much as editing one, and a file moved WITH an edit
+  // is drift that `--diff-filter=AMD` filed under R and dropped. Only a pure
+  // rename (R100) is excluded, which is what the filter was for: the
+  // 2026-09-07 file-move wave must not flag every document.
+  // --abbrev=12 overrides core.abbrev, which can be set below 7. Without it
+  // `%h` emits e.g. `abcd\tmessage`, driftCommits' header pattern rejects it,
+  // no status line is associated with any commit, and the drift check reports
+  // nothing however much the declared paths moved.
+  // The working tree too, not only committed history. The documents, their
+  // contents and every count claim are read from the working tree, so an
+  // uncommitted edit under a declared path makes the documentation stale while
+  // `sha..HEAD` reports nothing -- exactly the run a developer does before
+  // committing.
+  // NO pathspec on either command. Git applies a pathspec before it detects
+  // renames, so `-- src` reports a file moved out of `src` as a plain delete
+  // and the R100 exclusion above never sees it -- the pure-rename promise
+  // silently did not hold for exactly the moves it was written for. Codex
+  // filed it and I reproduced it on git 2.43. The declared paths are applied
+  // to the output instead, where both sides of a rename are still visible.
+  const declared = (p) => codePaths.some((c) => p === c || p.startsWith(`${c}/`));
+  const pending = exec('git', ['diff', '--name-status', '-M', '--diff-filter=AMDRT',
+    'HEAD']);
+  const out = exec('git', ['log', '--abbrev=12', '--format=%h%x09%s', '--name-status', '-M',
+    '--diff-filter=AMDRT',
+    `${sha}..${baseRef}`]);
+  const commits = driftCommits(out, declared);
+  // A bare status listing with no commit header: driftCommits needs one, so
+  // the uncommitted changes are counted directly.
+  const uncommitted = pending.split('\n')
+    .filter((l) => /^([AMDRCT])(\d{3})?\t/.test(l))
+    .filter((l) => statusPaths(l).some(declared))
+    .filter((l) => { const [, k, s] = /^([AMDRCT])(\d{3})?\t/.exec(l);
+      return 'AMDT'.includes(k) || (k === 'R' && Number(s ?? 100) < 100); });
+  if (commits.length === 0 && uncommitted.length === 0) return [];
+  const parts = [];
+  if (commits.length) parts.push(`${commits.length} content commit(s)`);
+  if (uncommitted.length) parts.push(`${uncommitted.length} uncommitted change(s)`);
+  return [{ check: 'changed-since', doc, severity: 'P2',
+    detail: `${parts.join(' and ')} to ${codePaths.join(', ')} since ${sha}`,
+    commits: commits.slice(0, 10) }];
+}
+
+// ── prose count claims (A3 without a doc_inventory.py) ──────────────────────
+
+const CLAIMS_HEADING = '## Claims';
+
+/**
+ * Parse the `## Claims` table: a doc's numeric assertions and how to re-derive
+ * each one. stocks delegates counting to `doc_inventory.py`; this repo has no
+ * counter, so the registry declares the derivation instead of a person
+ * remembering to re-check.
+ *
+ * Columns: Doc | Pattern (capture 1 is the claimed number) | Derivation.
+ */
+export function loadClaims(text) {
+  const rows = [];
+  let inClaims = false;
+  // A FENCED example row is documentation, not a claim -- the same rule
+  // loadRegistry already applies. Parsing it made the audit try to read an
+  // example document or run an example derivation and fail the whole run with
+  // exit 2, and a heading inside the fence could switch `inClaims` off and
+  // skip every real row after it.
+  const allLines = text.split('\n');
+  // And a row COMMENTED OUT rather than deleted, which is how a rule or a
+  // claim is retired without losing it: it still registered as live, and a
+  // heading-shaped line in the same comment could switch the section flag
+  // off and skip every real row below it.
+  // And an INDENTED example, which `trim()` on the next line turns straight
+  // back into an executable declaration: `    | D | fake.md | | |` produced a
+  // gating missing-path finding, and an indented heading in the same example
+  // could end the section and skip every real row below it.
+  // And a RAW-TEXT HTML block, the fourth way a document shows a row without
+  // declaring it: `<pre>` renders `| D | fake.md | | |` literally, but the
+  // collector executed it as a live rule -- a fabricated missing-path finding
+  // or, worse, a classification for a real path. The exclusion set had the
+  // other three and not this one.
+  const fenced = new Set([...fencedLines(allLines), ...commentedLines(allLines),
+    ...indentedCodeLines(allLines),
+    ...rawHtmlBlockLines(allLines, { rawTextOnly: true })]);
+  for (const [i, raw] of allLines.entries()) {
+    if (fenced.has(i)) continue;
+    const line = raw.trim();
+    // A SETEXT heading ends the section too. Neither `Examples` nor its
+    // `--------` underline starts with `#`, so section mode stayed on and an
+    // illustrative table below it was executed as live configuration. The
+    // heading is the line ABOVE the underline, so the section ends there.
+    if (isSetextUnderline(allLines, i, fenced)) {
+      inClaims = false;
+      continue;
+    }
+    // ATX SYNTAX, not a leading '#'. A hash run needs whitespace or an end of
+    // line after it to render as a heading, so `#123 remains open` is ordinary
+    // prose -- and it switched section mode off, silently dropping every
+    // declaration below it. A row that vanishes takes its class, its code
+    // paths and its region ownership with it, and nothing reports the skip.
+    if (/^#{1,6}(?:\s|$)/.test(line)) {
+      // Exactly, for the reason given at the registry reader: `## Claims
+      // methodology` is documentation about the mechanism, not claims.
+      inClaims = headingIs(line, CLAIMS_HEADING);
+      continue;
+    }
+    if (!inClaims || !line.startsWith('|')) continue;
+    const cells = splitRow(line).map(cell);
+    if (cells[0] === 'Doc' || cells[0].startsWith('---')) continue;
+    // A row inside the Claims table that is not the header or the separator
+    // is a DECLARATION, and one missing its derivation cell was dropped in
+    // silence -- so `loadClaims` returned no entry, `main` ran no count check,
+    // and the stale numeric assertion the row exists to catch passed clean.
+    // A malformed declaration is bad input (exit 2), never one fewer check.
+    // Codex filed it (solyra#69).
+    if (cells.length < 3) {
+      throw new AuditError(`${REGISTRY}: a Claims row has ${cells.length} cells where `
+        + `the table declares 3 (${JSON.stringify(line.trim().slice(0, 80))}); a row the `
+        + 'audit cannot read is a check that silently does not run');
+    }
+    rows.push({ doc: cells[0], pattern: cells[1], derivation: cells[2] });
+  }
+  return rows;
+}
+
+/**
+ * Re-derive a claimed number. The grammar is a fixed set of derivations rather
+ * than a shell string on purpose: a registry row is documentation, and
+ * documentation that executes arbitrary commands is a different thing.
+ *
+ *   grep-count <paths> <regex>   total matches across the pathspec
+ *   grep-files <paths> <regex>   files with at least one match
+ *   list-len   <path> <regex>    comma-separated items in capture 1
+ *
+ * `<paths>` is comma-separated, because the pattern may contain spaces and
+ * splitting on the first space alone silently folded `src tests <pattern>` into
+ * a search for "tests <pattern>" under `src` -- a check that ran, returned a
+ * number, and measured the wrong thing.
+ */
+export function derive(derivation, { exec = run, linkOf = symlinkedComponent } = {}) {
+  // Split on RUNS of whitespace. `grep-count  src foo` made `target` the empty
+  // string and folded the path into the regex, so the empty pathspec grepped
+  // the whole repository and returned a plausible, wrong count.
+  const [kind, target, ...rest] = derivation.trim().split(/\s+/);
+  const pattern = rest.join(' ');
+  if (!target) throw new AuditError(`derivation has no target: ${derivation}`);
+  if (!pattern) throw new AuditError(`derivation has no pattern: ${derivation}`);
+  if (kind === 'grep-count' || kind === 'grep-files') {
+    const flag = kind === 'grep-count' ? '-ohE' : '-lE';
+    const paths = target.split(',').filter(Boolean);
+    // No revision: the documents are read from the working tree, so the
+    // counts come from the same tree. Measured against origin/main, a branch
+    // that updates code and the doc counting it together was reported as
+    // wrong; and in a shallow single-branch clone origin/main does not
+    // resolve, which took the whole audit to exit 2 before any report.
+    // Exit 1 is git grep's "no matches", and a real answer. Everything else
+    // aborts the run.
+    // ...and exit 1 is ALSO what a deleted or mistyped path gives, so a
+    // derivation naming one silently derived zero: a false clean result for a
+    // document claiming zero, and a fabricated count finding otherwise. The
+    // paths are checked first, so exit 1 can only mean "no matches".
+    // TRACKED, not merely present on disk. `git grep` searches the index, so a
+    // path that exists but is untracked -- an ignored generated directory is
+    // the ordinary case -- made this existence check pass while the search
+    // covered no files and exited 1, which the caller then read as a
+    // legitimate count of zero. A zero claim passed having measured nothing,
+    // the same fabricated-result shape the existence check itself was added
+    // to close.
+    for (const p of paths) {
+      if (!fs.existsSync(path.join(REPO, p))) {
+        throw new AuditError(`derivation path \`${p}\` does not exist, so `
+          + `\`${derivation}\` would derive 0 from a search that never ran`);
+      }
+      // `run`, not the injected `exec`: this is a precondition on the
+      // REPOSITORY, the same category as the `fs.existsSync` check above it,
+      // which also reads the real tree. `exec` is injected so a test can
+      // control the MEASUREMENT, and a stub that answered this probe would be
+      // asserting about a repository it does not have.
+      if (!run('git', ['ls-files', '--', p], { okExitCodes: [1, 128] }).trim()) {
+        throw new AuditError(`derivation path \`${p}\` is not tracked, so `
+          + `\`${derivation}\` would derive 0 from a git grep that searched `
+          + 'no files');
+      }
+    }
+    // `-e` before the pattern, so a regex BEGINNING with `-` is read as data.
+    // Counting Markdown list items is the natural reason to write one, and in
+    // option position git grep exits 129 with an unknown-switch error rather
+    // than deriving anything -- every regex the claims grammar admits has to
+    // survive the trip.
+    const out = exec('git', ['grep', flag, '-e', pattern, '--', ...paths], { okExitCodes: [1] });
+    // RECORDS, not trimmed content. A derivation may deliberately match
+    // whitespace -- `[[:space:]]+` is the natural way to count indentation --
+    // and `git grep -o` then emits one whitespace-only line per match.
+    // Trimming the whole result collapsed those to the empty string and
+    // returned 0, so an incorrect zero claim passed and a correct nonzero one
+    // was reported stale. Only the single trailing newline git appends is
+    // removed; every other line is a match.
+    return out ? out.replace(/\n$/, '').split('\n').length : 0;
+  }
+  if (kind === 'list-len') {
+    let body;
+    // A SYMLINK is refused before it is read, not after. `git ls-files` below
+    // confirms the symlink itself, and reading through it measures the
+    // machine's target rather than a file in this repository -- so the number
+    // differs between clones, or comes from outside the repository entirely,
+    // while the row presents it as a reproducible measurement. A
+    // non-terminating special file hangs here, which the catch below cannot
+    // catch. Same refusal the document reads carry, one derivation over.
+    // Codex filed it (solyra#69).
+    // Injectable for the same reason `exec` is: planting a real symlink in
+    // the repository to test a refusal is a side effect on the tree, and the
+    // refusal is about what the path IS, not about what the test can stage.
+    const targetLink = linkOf(target);
+    if (targetLink !== null) {
+      throw new AuditError(`list-len target \`${target}\`: ${symlinkNote(target, targetLink)} `
+        + 'is a symlink, so the count would come from its target rather than from this '
+        + 'repository and would not reproduce in another clone');
+    }
+    try {
+      body = fs.readFileSync(path.join(REPO, target), 'utf8');
+    } catch (err) {
+      // Same split as claimPattern and the Claims document read: a registry
+      // row naming a moved or deleted target is bad INPUT, and a bare
+      // filesystem Error walks past the AuditError handler and exits 1.
+      throw new AuditError(`list-len target \`${target}\` could not be read: ${err.message}`);
+    }
+    // TRACKED, not merely readable. The grep derivations reject an untracked
+    // path because a search over one measures nothing; this branch reads the
+    // file directly, so it produced a real number from content a clean clone
+    // does not have -- a claim that passes locally and is unreadable, or
+    // different, for everyone else. Same probe, same reason, and `run` rather
+    // than the injected `exec` because it is a precondition on the
+    // REPOSITORY, not the measurement a test controls.
+    if (!run('git', ['ls-files', '--', target], { okExitCodes: [1, 128] }).trim()) {
+      throw new AuditError(`list-len target \`${target}\` is not tracked, so `
+        + `\`${derivation}\` would derive its number from content a clean `
+        + 'clone does not have');
+    }
+    const m = claimPattern(pattern, '', 'list-len pattern').exec(body);
+    if (!m) throw new AuditError(`list-len: ${pattern} matched nothing in ${target}`);
+    // A valid regex that matches but has no group 1 left `m[1]` undefined, and
+    // `.split` on it threw a plain TypeError: a stack trace and exit 1, the
+    // status reserved for documentation findings.
+    if (m[1] === undefined) {
+      throw new AuditError(`list-len pattern \`${pattern}\` has no capture group 1; `
+        + 'the list it counts is whatever group 1 holds');
+    }
+    return m[1].split(',').filter((s) => s.trim()).length;
+  }
+  throw new AuditError(`unknown derivation kind: ${kind}`);
+}
+
+/**
+ * A registry pattern is INPUT. `new RegExp` throws a plain SyntaxError, which
+ * walks past the AuditError handler and exits 1 -- the status this CLI
+ * documents for documentation findings. The region path already made this
+ * split; the Claims table needs it too, so a typo there exits 2.
+ */
+function claimPattern(pattern, flags, where) {
+  try {
+    return new RegExp(pattern, flags);
+  } catch (err) {
+    throw new AuditError(`${where} \`${pattern}\` is not a valid regular expression: `
+      + err.message);
+  }
+}
+
+/**
+ * A document's claim-bearing prose, with everything a reader cannot see
+ * blanked and every other offset kept where it was.
+ *
+ * RAW-TEXT blocks only among the HTML kinds. A type-6 or type-7 block RENDERS
+ * its text -- `There are 3 routes` inside a `<div>` is prose a reader sees,
+ * and can be the very assertion a Claims row watches -- so masking every HTML
+ * block made the row report its pattern inert instead of comparing the
+ * number. Only `pre`/`script`/`style`/`textarea` and the delimited kinds
+ * display their contents literally. Markdown syntax inside a rendered block
+ * is still not parsed; that is a different question from whether the TEXT is
+ * visible, and the link scan answers it the other way for that reason.
+ *
+ * An HTML ATTRIBUTE value renders as nothing at all. When the only occurrence
+ * of a registered claim sat in `<div data-note="3 routes">`, the row passed
+ * while the document no longer made the assertion in prose -- or emitted a
+ * count finding against metadata a reader never sees.
+ *
+ * INLINE CODE is deliberately NOT masked here; see the caller.
+ *
+ * Named rather than inline so the rule can be exercised on its own:
+ * `checkClaims` reads a TRACKED document off disk, so a synthetic one cannot
+ * reach it, and the mask that was added last could be removed without a
+ * single test noticing.
+ */
+export function visibleClaimText(lines) {
+  const literalLines = new Set([...fencedLines(lines),
+    ...indentedCodeLines(lines),
+    ...rawHtmlBlockLines(lines, { rawTextOnly: true })]);
+  const hidden = commentSpans(lines);
+  const attrs = tagAttributeSpans(lines);
+  return lines.map((l, i) => (literalLines.has(i)
+    ? maskSpans(l, [[0, l.length]])
+    : maskSpans(l, [...(hidden.get(i) ?? []), ...(attrs.get(i) ?? [])]))).join('\n');
+}
+
+export function checkClaims(claims, { exec = run, readDoc = null, linkOf = symlinkedComponent } = {}) {
+  const out = [];
+  for (const { doc, pattern, derivation } of claims) {
+    // TRACKED, not merely readable -- the same precondition every derivation
+    // TARGET already carries, for the same reason. A row naming an ignored or
+    // otherwise untracked document inspected content a clean clone does not
+    // have, so the claim passed here and failed, or measured different prose,
+    // for everyone else. `run` rather than the injected `exec`, because this
+    // is a property of the REPOSITORY and a stub that answered it would be
+    // asserting about a tree it does not have.
+    // `readDoc` is a TEST seam, like `exec` beside it: what this pass does to
+    // prose -- which spans are code, which text is visible -- cannot be
+    // exercised without a document to put that prose in, and planting one in
+    // the repository to assert a masking rule is a side effect on the tree.
+    // When it is supplied the tracked-file precondition does not apply,
+    // because the document is the caller's, not this repository's.
+    if (readDoc === null
+        && !run('git', ['ls-files', '--', doc], { okExitCodes: [1, 128] }).trim()) {
+      throw new AuditError(`claim document \`${doc}\` is not tracked, so its prose `
+        + 'is not what another clone would read');
+    }
+    // And not through a SYMLINK. The tracked check above confirms the symlink
+    // itself; reading through it evaluates the claim against bytes outside
+    // this repository, so the number differs between clones -- and a
+    // non-terminating special file hangs at the read, which the catch below
+    // cannot catch. Same refusal the audited-document read carries, and the
+    // same ordering reason as the `list-len` target one derivation over.
+    // Injectable like `derive`'s, and for the same reason: planting a real
+    // symlink in the repository to exercise a refusal is a side effect on the
+    // tree. A path that does not exist is not a symlink, so the default
+    // answers null for a `readDoc` document and the check is a no-op there
+    // rather than a special case. Codex filed it (solyra#69).
+    const docLink = linkOf(doc);
+    if (docLink !== null) {
+      throw new AuditError(`claim document \`${doc}\`: ${symlinkNote(doc, docLink)} is a `
+        + 'symlink, so the claim would be read from its target rather than from this '
+        + 'repository and would not reproduce in another clone');
+    }
+    let text;
+    try {
+      text = readDoc === null ? fs.readFileSync(path.join(REPO, doc), 'utf8') : readDoc(doc);
+    } catch (err) {
+      // Same split as claimPattern beside it: a registry row naming a moved or
+      // deleted document is bad INPUT. A bare filesystem Error walks past the
+      // AuditError handler and exits 1, the status reserved for findings.
+      throw new AuditError(`claim document \`${doc}\` could not be read: ${err.message}`);
+    }
+    const re = claimPattern(pattern, 'g', 'claim pattern');
+    const actual = derive(derivation, { exec });
+    // RENDERED prose only. A claim-shaped string inside a fenced or indented
+    // example, inline code, an HTML comment or a raw HTML block is not an
+    // assertion the document makes, and matching it was wrong in both
+    // directions at once: an example whose number happens to equal the
+    // derivation kept a Claims row passing after the real assertion had been
+    // deleted, and one whose number differs produced a gating count finding
+    // over text nobody asserts. Masked in place rather than removed, so the
+    // match offsets this loop reports still name the right place.
+    const claimLines = text.split('\n');
+    // RAW-TEXT blocks only. A type-6 or type-7 block RENDERS its text --
+    // `There are 3 routes` inside a `<div>` is prose a reader sees, and can be
+    // the very assertion a Claims row watches -- so masking every HTML block
+    // made the row report its pattern inert instead of comparing the number.
+    // Only `pre`/`script`/`style`/`textarea` and the delimited kinds display
+    // their contents literally. Markdown syntax inside a rendered block is
+    // still not parsed; that is a different question from whether the TEXT is
+    // visible, and the link scan answers it the other way for that reason.
+    const visible = visibleClaimText(claimLines);
+    // INLINE CODE is not masked, and that is the one deliberate narrowing
+    // here. A code span RENDERS -- `37 files under \`src/\` reference X` is a
+    // real assertion that happens to spell a path as code, and this repo's own
+    // live Claims row is exactly that shape, so masking spans wholesale stopped
+    // two true claims from being checked at all. What is an example is a match
+    // that lies ENTIRELY inside one span (`\`3 living docs\``), and that is what
+    // is skipped. Document-wide ranges, so a span crossing a line break counts.
+    // Per BLOCK, not over the whole document. Inline content cannot cross a
+    // blank line, so an unmatched backtick in one paragraph was pairing with
+    // another after a claim further down and swallowing the real assertion as
+    // an inline-code example -- reported as an inert pattern instead of
+    // compared. Same windowing `codeSpanLines` uses, mapped back to document
+    // offsets because that is what the match index below is measured in.
+    const claimStarts = [];
+    let claimAt = 0;
+    for (const l of claimLines) { claimStarts.push(claimAt); claimAt += l.length + 1; }
+    const claimSpans = [];
+    for (const [bLo, bHi] of paragraphBlocks(claimLines, fencedLines(claimLines))) {
+      const from = claimStarts[bLo];
+      const to = claimStarts[bHi] + claimLines[bHi].length;
+      // `visible`, not the raw `text`. A backtick inside an HTML comment is
+      // not a delimiter a reader sees, and pairing it with a visible one put
+      // the REAL numeric assertion inside a span -- so the claim was skipped
+      // and the row reported inert instead of compared. The mask preserves
+      // length, so the same offsets index both and the match index below
+      // still names the right place. Codex filed it (solyra#69).
+      for (const [a, b] of codeSpans(visible.slice(from, to))) {
+        claimSpans.push([from + a, from + b]);
+      }
+    }
+    let hits = 0;
+    for (const m of visible.matchAll(re)) {
+      if (claimSpans.some(([lo, hi]) => lo <= m.index
+          && m.index + m[0].length <= hi)) continue;
+      hits += 1;
+      // A pattern that matches prose without group 1 made `Number(undefined)`
+      // NaN, and the audit emitted a fabricated count-claim finding with exit
+      // 1 rather than treating the registry row as invalid input with exit 2.
+      if (m[1] === undefined || !/^\d+$/.test(m[1].trim())) {
+        throw new AuditError(`claim pattern \`${pattern}\` for ${doc} matched, but capture `
+          + `group 1 is ${JSON.stringify(m[1])} rather than a number; the claim it `
+          + 'watches is whatever group 1 holds');
+      }
+      const claimed = Number(m[1]);
+      if (claimed !== actual) {
+        const line = text.slice(0, m.index).split('\n').length;
+        out.push({ check: 'count-claim', doc, line, severity: 'P2',
+          detail: `claims ${claimed}, \`${derivation}\` gives ${actual}` });
+      }
+    }
+    if (!hits) {
+      out.push({ check: 'count-claim', doc, severity: 'P2',
+        detail: `claim pattern \`${pattern}\` matched nothing; the prose it `
+              + 'watched was reworded and the check is now inert' });
+    }
+  }
+  return out;
+}
+
+// ── Class A delivery (A1) ───────────────────────────────────────────────────
+
+/**
+ * Did this repo's machine-owned surface actually land on `main`?
+ *
+ * stocks asks whether the monthly refresh PR merged. The same question here is
+ * whether `tests/fixtures/stocks-openapi.json` still matches stocks `main`:
+ * `contract:sync` writes it, `contract:check` gates it, and `main` has been red
+ * on that gate at least four times (#60, #64, CI run 220 on 2026-09-15, #68) —
+ * each time meaning the vendored snapshot was claiming a freshness it did not
+ * have. A doc having an owning job is not evidence the job delivered.
+ */
+const CONTRACT_STALE_RE = /^\[api-contract\] .*\b(?:stale|missing)\b/im;
+// The same run reports two different broken invariants. Naming the vendored
+// snapshot for a stale GENERATED type tells the reader the snapshot no longer
+// matches stocks when it matches fine, and points the fix at the wrong file.
+const CONTRACT_GENERATED_RE =
+  /^\[api-contract\] .*stocksOpenApi\.gen\.d\.ts\b.*\b(?:stale|missing)\b/im;
+const GENERATED_TYPES = 'src/types/stocksOpenApi.gen.d.ts';
+
+export function checkContractSync({ spawn = spawnSync } = {}) {
+  // STOCKS_OPENAPI_FILE / _REF would point sync-api-contract at a local file
+  // or a non-main ref while this check reports the invariant as "matches
+  // stocks main" -- a clean Class A result for a snapshot that is stale
+  // against main. The audit states the upstream, so it also chooses it.
+  const env = { ...process.env };
+  delete env.STOCKS_OPENAPI_FILE;
+  delete env.STOCKS_OPENAPI_REF;
+  const res = spawn('node', ['scripts/sync-api-contract.mjs', '--check'],
+    { cwd: REPO, encoding: 'utf8', env });
+  const why = `${res.stdout ?? ''}${res.stderr ?? ''}`.trim();
+  if (res.error) throw new AuditError(`contract:check could not run: ${res.error.message}`);
+  if (res.status === 0) return [];
+  // sync-api-contract.mjs exits 1 for "compared, and stale" and 2 for a non-OK
+  // HTTP response. But Node ALSO exits 1 for anything it did not catch -- a
+  // DNS failure inside fetch(), a malformed body in JSON.parse, a missing
+  // package -- so the exit status alone cannot separate a verdict from a
+  // crash. The script's verdict is the `[api-contract] ... stale|missing`
+  // line it writes to stderr; nothing else counts. Reporting an unreachable
+  // upstream as "the snapshot is stale, run contract:sync" tells someone to
+  // resync against a contract that was never compared -- a fabricated result,
+  // which is the rule this module exists to enforce (Rule 4).
+  const verdict = res.status === 1 && CONTRACT_STALE_RE.test(res.stderr ?? '');
+  if (!verdict) {
+    throw new AuditError(
+      `contract:check could not compare the snapshot (exit ${res.status}, a transport `
+      + `or execution failure, not a verdict); the audit cannot report on the vendored `
+      + `OpenAPI contract. (${why.split('\n').slice(0, 2).join(' ').slice(0, 200)})`);
+  }
+  const tail = why.split('\n').slice(0, 3).join(' ').slice(0, 200);
+  if (CONTRACT_GENERATED_RE.test(res.stderr ?? '')) {
+    return [{ check: 'class-a', doc: GENERATED_TYPES, severity: 'P1',
+      detail: `contract:check is red: the generated types no longer match the vendored `
+            + `OpenAPI snapshot, so the assignability checks over them prove nothing. `
+            + `Run \`npm run contract:sync\`. (${tail})` }];
+  }
+  return [{ check: 'class-a', doc: 'tests/fixtures/stocks-openapi.json', severity: 'P1',
+    detail: `contract:check is red: the vendored OpenAPI snapshot no longer matches `
+          + `stocks main, so every type and fixture derived from it is unverified. `
+          + `Run \`npm run contract:sync\`. (${tail})` }];
+}
+
+// ── cli ─────────────────────────────────────────────────────────────────────
+
+const VALUE_FLAGS = {
+  '--since': 'since',
+  '--issues-snapshot': 'issuesSnapshot',
+  '--write-issues-snapshot': 'writeIssuesSnapshot',
+  '--date': 'date',
+};
+
+/**
+ * Parse argv, rejecting anything unrecognised.
+ *
+ * Silently ignoring an unknown option meant `--chek` left `args.check` false:
+ * the audit printed its findings and exited 0, so a typo in a CI invocation
+ * turned the gate off without a word. Exit status is this CLI's contract with
+ * automation, and a contract that a misspelling can void is not one.
+ */
+/** A YYYY-MM-DD string that names a real day: `2026-02-30` rolls over. */
+export function isCalendarDate(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s ?? '');
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.toISOString().slice(0, 10) === s;
+}
+
+export function parseArgs(argv) {
+  const a = { verify: [] };
+  for (let i = 0; i < argv.length; i += 1) {
+    const t = argv[i];
+    if (t === '--json') a.json = true;
+    else if (t === '--check') a.check = true;
+    else if (t === '--stamp') a.stamp = true;
+    else if (t === '--verify') {
+      const before = a.verify.length;
+      while (argv[i + 1] && !argv[i + 1].startsWith('--')) a.verify.push(argv[++i]);
+      // `--stamp --verify` with the path forgotten is a scan-only pass the
+      // operator believes recorded a review.
+      if (a.verify.length === before) throw new AuditError(`${t} needs a value`);
+    } else if (t === '--contract-check' || t === '--no-contract-check') {
+      a.contractCheck = t === '--contract-check';
+    } else if (VALUE_FLAGS[t]) {
+      const v = argv[++i];
+      if (v === undefined || v.startsWith('--')) {
+        throw new AuditError(`${t} needs a value`);
+      }
+      a[VALUE_FLAGS[t]] = v;
+    } else {
+      throw new AuditError(`unknown option: ${t}`);
+    }
+  }
+  // `--stamp --date bad` wrote `bad` into every marker as Last scanned; on
+  // the next run MARKER_RE stopped at the prefix, extraSegments kept the
+  // malformed field as prose, and each document ended up with two.
+  if (a.date !== undefined && !isCalendarDate(a.date)) {
+    throw new AuditError(`--date ${a.date} is not a calendar day (YYYY-MM-DD)`);
+  }
+  // A review is recorded only by writing a marker; --verify without --stamp
+  // is a no-op that reads as if it had recorded one.
+  if (a.verify.length && !a.stamp) throw new AuditError('--verify requires --stamp');
+  // A real but FUTURE --date passed validation and was written into every
+  // `Last scanned`, while the same run compared existing markers against that
+  // same future "today" and saw nothing wrong. The next ordinary audit then
+  // emitted P1 future-date findings for markers this tool had just written.
+  if (a.date && a.stamp && a.date > new Date().toISOString().slice(0, 10)) {
+    throw new AuditError(`--date ${a.date} is in the future; --stamp would write `
+      + 'markers that the next ordinary audit reports as future-dated');
+  }
+  return a;
+}
+
+/** The stamp actions that leave the requested review recorded on disk. */
+export const RECORDS_REVIEW = new Set(['inserted', 'updated', 'unchanged']);
+
+/**
+ * The checks a stamp does NOT answer.
+ *
+ * `--verify` writes `Depth: verified` and today's date, which says "I read
+ * this document and its claims hold". A dead link, a stale count, a closed
+ * issue cited as live work or a missing Class A stamp is a claim this audit
+ * has mechanically DISPROVEN, so writing that sentence over it is the tool
+ * lying about itself -- and `--stamp --verify docs/x.md` without `--check`
+ * exited 0 having done exactly that.
+ *
+ * `marker` and `changed-since` are deliberately absent: a missing, stale or
+ * drifted marker is precisely what the stamp resolves, so refusing on those
+ * would make `--verify` impossible on any document that needs it.
+ */
+const DISPROVEN_BY_AUDIT = new Set([
+  'dead-link', 'dead-anchor', 'closed-issue', 'count-claim', 'class-a']);
+
+const STAMP_REFUSALS = {
+  'refused-disproven': 'the audit disproved a claim the document makes, so a '
+    + 'verified stamp would record a review of prose that does not hold; fix '
+    + 'the findings for it first',
+  'baseline-predates-doc': 'the reviewed-against commit does not contain the document, '
+    + 'so the review would name a baseline predating it; commit it first',
+  'uncommitted-content': 'its prose differs from the reviewed-against commit, so the '
+    + 'review would name a baseline that does not hold what was read; commit the '
+    + 'edits, or drop --since and review against the current base',
+  'code-drift-since-baseline': 'a declared code path has changed between the '
+    + 'reviewed-against commit and the audited revision, so a review named against '
+    + 'it would be reported as drifted by the very next audit; drop --since, or '
+    + 'review against the current base',
+  'skipped-no-h1': 'no H1 to place a marker after',
+  'skipped-misplaced-marker': 'a marker outside the first paragraph after the H1; '
+    + 'move it there rather than adding a second',
+  'skipped-legacy-content': 'a legacy marker carrying prose that rewriting would delete',
+  'skipped-duplicate-marker-field': 'a marker repeating an owned field; say which '
+    + 'value is true rather than letting a rewrite pick one',
+  'skipped-duplicate-marker': 'two review markers in the opening section; rewriting '
+    + 'one would leave the other contradicting it',
+};
+
+/**
+ * Every --verify path must have been consumed by a document whose marker was
+ * actually written, or the review it was asked to record was never recorded:
+ * `--verify nope.md` used to stamp everything else scan-only and exit 0
+ * without a word.
+ *
+ * This takes the ACTIONS rather than a set of candidates on purpose. The set
+ * was filled before stamp() ran, so a document stamp() declines --
+ * `skipped-no-h1`, or `skipped-legacy-content` for a legacy line carrying
+ * prose that rewriting would delete -- still satisfied the check, and
+ * `--stamp --verify <doc>` exited 0 having written nothing. Passing the
+ * action makes that ordering unrepresentable rather than merely corrected.
+ *
+ * `unchanged` counts: the marker on disk is already byte-identical to what
+ * would be written, so refusing it would fail a re-run of a review that IS
+ * recorded.
+ */
+export function checkVerifyTargets(verify, stampActions) {
+  const missing = [...verify].filter((v) => !RECORDS_REVIEW.has(stampActions.get(v)));
+  if (missing.length) {
+    const named = missing.map((d) => {
+      const action = stampActions.get(d);
+      return action ? `${d} (${STAMP_REFUSALS[action] ?? action})` : d;
+    });
+    throw new AuditError(`--verify ${named.join(', ')}: the review could not be recorded `
+      + '(not a tracked doc, or Class B/C/X, or a machine-owned file with nowhere to stamp)');
+  }
+}
+
+/** What a stamp did, with a depth only when something was written. */
+export function stampRecord(doc, res, reviewed) {
+  const wrote = res.action === 'inserted' || res.action === 'updated';
+  return { doc, action: res.action, depth: wrote ? (reviewed ? 'verified' : 'scan-only') : null };
+}
+
+/**
+ * Write every marker, or refuse before writing any.
+ *
+ * Each marker went out through a bare writeFileSync, so a read-only or deleted
+ * document threw a plain filesystem error, the handler at the bottom of this
+ * file rethrew it, and Node exited 1 -- the status reserved for findings. The
+ * writes are also sequential, so it could stop partway and leave the tree half
+ * stamped with nothing saying where.
+ *
+ * Every target is checked first. That narrows the window rather than closing
+ * it: a full disk still fails mid-loop, and accessSync answers for the calling
+ * uid, which under root calls a mode-444 file writable. So the loop reports how
+ * far it got instead of pretending the operation was atomic.
+ */
+/**
+ * The first component of `doc` that is a symlink, or null.
+ *
+ * EVERY component, not just the last one. `lstatSync` on the full path answers
+ * for the final name after the kernel has already resolved each parent, so a
+ * checkout replacing a tracked DIRECTORY -- `docs/` -> some writable path
+ * outside the repository -- reported the document as an ordinary file, and
+ * both the read guards and `--stamp`'s temp-file-and-rename went straight
+ * through it. Codex filed that as a P1, after the final-component check had
+ * been in place for rounds: the hole was that the check answered a narrower
+ * question than the one being asked.
+ *
+ * Walking components is deliberate over comparing `realpathSync(parent)`
+ * against `realpathSync(repo)`: a repository root is legitimately reached
+ * through a symlink on some platforms (`/tmp` on macOS, a worktree under a
+ * linked path), and a root comparison rejects those checkouts wholesale. What
+ * is being refused is a link INSIDE the tree.
+ */
+export function symlinkedComponent(doc, { repo = REPO, fsImpl = fs } = {}) {
+  const parts = doc.split('/').filter(Boolean);
+  for (let i = 1; i <= parts.length; i += 1) {
+    const partial = parts.slice(0, i).join('/');
+    try {
+      if (fsImpl.lstatSync(path.join(repo, partial)).isSymbolicLink()) return partial;
+    } catch { /* absent or unreadable -- not this guard's question */ }
+  }
+  return null;
+}
+
+/** `doc`, naming the ancestor link when the link is not `doc` itself. */
+function symlinkNote(doc, link) {
+  return link === doc ? doc : `${doc} (through ${link})`;
+}
+
+export function writeStamps(writes, { repo = REPO, fsImpl = fs } = {}) {
+  const unwritable = writes
+    .map((w) => w.doc)
+    .filter((doc) => {
+      try {
+        fsImpl.accessSync(path.join(repo, doc), fsImpl.constants.W_OK);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+  if (unwritable.length) {
+    throw new AuditError(`--stamp cannot write ${unwritable.sort().join(', ')}: missing or `
+      + 'not writable. Nothing was written.');
+  }
+  // A tracked `.md` SYMLINK is not a document this command may write. Both the
+  // read and the write follow it, so --stamp edited the link's target rather
+  // than a repository file -- and a symlink committed on a branch could point
+  // anywhere writable, inside the checkout or outside it. Checked before any
+  // write, so one bad path stops the whole batch rather than half of it.
+  const links = writes
+    .map((w) => [w.doc, symlinkedComponent(w.doc, { repo, fsImpl })])
+    .filter(([, link]) => link !== null)
+    .map(([doc, link]) => symlinkNote(doc, link));
+  if (links.length) {
+    throw new AuditError(`--stamp refuses ${links.sort().join(', ')}: a tracked `
+      + 'symlink, so the write would land on its target rather than a document '
+      + 'in this repository. Nothing was written.');
+  }
+  const done = [];
+  for (const w of writes) {
+    try {
+      // Temp file in the SAME directory, then rename. `writeFileSync` opens
+      // with O_TRUNC, so a failure part-way through -- a full disk is the
+      // ordinary cause -- leaves the document truncated while the error
+      // reports only the previously completed entries and implies this one
+      // was untouched. A rename within a directory is atomic, so a failed
+      // stamp leaves the original intact and the error tells the truth.
+      const target = path.join(repo, w.doc);
+      // A UNIQUE name, created EXCLUSIVELY. The symlink refusal above checks
+      // the document; it does not check this path, and `writeFileSync`
+      // follows a symlink found here -- so a checkout carrying
+      // `.README.md.stamp-tmp` as a link could have `--stamp` truncate a file
+      // anywhere writable and then rename the link itself into place as the
+      // document. `wx` is O_CREAT|O_EXCL, which fails on an existing path,
+      // symlink included; the suffix keeps a stale temp file from a
+      // hard-killed run from turning that refusal into a permanent one.
+      // Codex filed this as a P1.
+      const tmp = path.join(path.dirname(target),
+        `.${path.basename(target)}.${process.pid}-${Math.random().toString(36).slice(2, 10)}.stamp-tmp`);
+      try {
+        fsImpl.writeFileSync(tmp, w.text, { flag: 'wx' });
+        // The temp file is created with default permissions and then REPLACES
+        // the original, so stamping a tracked executable Markdown file turned
+        // it from mode 100755 to 100644 -- an unrelated diff, and a broken
+        // consumer wherever the bit mattered. Carried over before the rename.
+        // Best effort: a filesystem that cannot report or set a mode is not a
+        // reason to refuse the stamp, and the rename below is still atomic.
+        try {
+          if (fsImpl.statSync && fsImpl.chmodSync) {
+            fsImpl.chmodSync(tmp, fsImpl.statSync(target).mode);
+          }
+        } catch { /* mode unavailable -- the write itself still stands */ }
+        fsImpl.renameSync(tmp, target);
+      } catch (err) {
+        // Best effort, and never masking the original error: the temp file is
+        // this function's litter, and failing to remove it is not the failure
+        // worth reporting.
+        try { fsImpl.unlinkSync(tmp); } catch { /* cleanup only */ }
+        throw err;
+      }
+    } catch (err) {
+      // `${w.doc} is unchanged` is now true, and was not before: the write
+      // goes to a temp file and is renamed into place, so a failure leaves
+      // the original document byte-for-byte as it was. The earlier wording
+      // said only "the tree is partially stamped", which left a reader
+      // unable to tell whether the named document had been truncated.
+      throw new AuditError(`--stamp failed writing ${w.doc}: ${err.message}. `
+        + `${w.doc} is unchanged; ${done.length} of ${writes.length} documents `
+        + 'were already stamped'
+        + (done.length ? ` (${done.join(', ')})` : '')
+        + '; the tree is partially stamped.');
+    }
+    done.push(w.doc);
+  }
+  return done;
+}
+
+/**
+ * What `--check` exits with. P1 and P2 only.
+ *
+ * P3 is the standing worklist -- legacy marker lines a human must merge, and
+ * documents nobody has reviewed yet. Both are real and both are reported;
+ * neither is a reason to fail a build, and a gate that can never go green is
+ * not a gate. `checkProvenance` emits P3 for exactly that reason, and gating
+ * on `findings.length` contradicted it: the moment every actionable finding
+ * was cleared, --check stayed red on the worklist forever. Same rule as the
+ * Python twin.
+ */
+export const BLOCKING_SEVERITIES = new Set(['P1', 'P2']);
+
+export function checkExitCode(check, findings) {
+  if (!check) return 0;
+  return findings.some((f) => BLOCKING_SEVERITIES.has(f.severity)) ? 1 : 0;
+}
+
+export function summariseStamps(stamped) {
+  const changed = stamped.filter((s) => s.action === 'inserted' || s.action === 'updated').length;
+  const unchanged = stamped.filter((s) => s.action === 'unchanged').length;
+  return { changed, unchanged, skipped: stamped.length - changed - unchanged };
+}
+
+export function main(argv) {
+  const args = parseArgs(argv);
+  const today = args.date || new Date().toISOString().slice(0, 10);
+  const baseRef = resolveBaseRef();
+  // Both paths go through resolveCommit: see there for why a bare --short is
+  // not safe to write into a marker.
+  // The ancestry constraint applies only when a review is being RECORDED: an
+  // ordinary scan against the base ref is trivially contained, and an explicit
+  // --since used to read drift is a question, not a claim written to disk.
+  const head = resolveCommit(args.since ?? baseRef,
+    args.since && args.verify.length ? { ancestorOf: baseRef } : {});
+
+  const regPath = path.join(REPO, REGISTRY);
+  if (!fs.existsSync(regPath)) {
+    process.stderr.write(`error: ${REGISTRY} not found; every doc would be unclassified\n`);
+    return 2;
+  }
+  // Exit 2, matching the audited-document reads. A registry that exists but
+  // cannot be read is an audit that could not run, not a documentation
+  // finding, and a bare throw here exited 1 with a stack trace.
+  // The registry is a tracked document and gets the same refusal they do. This
+  // read happens BEFORE the per-document loop, so the guard there is not
+  // reached late but not at all: a symlinked DOC_REGISTRY.md supplied
+  // machine-local classification and ownership rules for the whole run, and one
+  // pointing at a non-terminating special file hangs here. Parity with the
+  // Python twin (stocks#1121).
+  const regLink = symlinkedComponent(REGISTRY);
+  if (regLink !== null) {
+    throw new AuditError(`${symlinkNote(REGISTRY, regLink)} is a tracked symlink, `
+      + 'so reading it would audit its target rather than a document in this '
+      + 'repository; the result would not reproduce in another clone');
+  }
+  let registryText;
+  try {
+    registryText = fs.readFileSync(regPath, 'utf8');
+  } catch (err) {
+    throw new AuditError(`${REGISTRY} exists but cannot be read (${err.message}); `
+      + 'every document would be unclassified, so the audit cannot run');
+  }
+  const registry = loadRegistry(registryText);
+
+  // The documents come from the working tree; the base ref is consulted only
+  // for what USED to be there (drift, ancestry, deleted root files).
+  const tracked = workingTreeFiles();
+  // A DIFFERENT ref from baseRef on purpose: the tree before this branch, so a
+  // path deleted on the branch is still recognised as this repo's. Falls back
+  // to baseRef in a checkout with no main, where there is no history to read.
+  const historyRef = historyTree(resolveBaseRef(HISTORY_REF_CANDIDATES));
+  // `-z` here too, for the same quoting reason as workingTreeFiles above. Not
+  // in the report Codex filed, which named only that one, but it is the same
+  // defect: a C-quoted non-ASCII path does not compare equal to the decoded
+  // spelling, so a document that exists on the history ref would look
+  // branch-new and the cross-repo path rules would read the wrong answer.
+  const baseTracked = new Set(
+    run('git', ['ls-tree', '-r', '-z', historyRef, '--name-only'])
+      .split('\0').filter(Boolean));
+  const docs = documentSet(tracked, registry);
+
+  let states;
+  if (args.issuesSnapshot) states = loadIssuesSnapshot(args.issuesSnapshot);
+  else states = { [THIS_REPO]: fetchIssueStates(THIS_REPO), [SIBLING_REPO]: fetchIssueStates(SIBLING_REPO) };
+  if (args.writeIssuesSnapshot) writeIssuesSnapshot(args.writeIssuesSnapshot, states);
+  const ctx = { states, ...linkContext(tracked, baseTracked, registry) };
+
+  // Registry rows are validated against the tree before anything is
+  // classified: a row naming a deleted document, or a code path that no
+  // longer exists, is a declaration resolving to nothing rather than
+  // nothing to report.
+  const findings = checkRegistryPaths(tracked, registry);
+  const regionMaps = {};
+  // Class A delivery: is this repo's one machine-written artefact in sync?
+  // This used to be skipped whenever --issues-snapshot was passed, which
+  // coupled an OpenAPI check to an unrelated flag: an offline issue-state run
+  // reported Class A clean no matter how stale the vendored snapshot was.
+  // The opt-out is now its own flag, and it defaults to running.
+  if (args.contractCheck !== false) findings.push(...checkContractSync());
+  findings.push(...checkClaims(loadClaims(fs.readFileSync(regPath, 'utf8'))));
+  const stamped = [];
+  const stampTargets = new Map();
+  const writes = [];
+  const verify = new Set(args.verify.map((v) => v.replace(/^\.\//, '')));
+  const counts = { A: 0, B: 0, C: 0, D: 0, X: 0, unclassified: 0 };
+
+  for (const doc of docs) {
+    const { cls, codePaths, regions, ambiguous } = classify(doc, registry);
+    if (ambiguous) {
+      findings.push({ check: 'registry', doc, severity: 'P1',
+        detail: 'two equally specific registry rows give this document different '
+              + 'classes; the audit picked one by table order, so the other row\'s '
+              + 'checks are silently not running, and the document is skipped '
+              + 'entirely until the registry says which rule owns it' });
+      // And SKIP it. Recording the finding and then proceeding on the
+      // first-by-table-order rule meant --stamp could write into a file whose
+      // ownership is explicitly unresolved -- inserting a marker into content
+      // the other rule declares machine-owned, or stamping a document the
+      // other rule freezes. An unresolved owner is not a licence to pick one.
+      continue;
+    }
+    if (cls === null) {
+      counts.unclassified += 1;
+      findings.push({ check: 'unclassified', doc, severity: 'P2',
+        detail: 'no rule in docs/DOC_REGISTRY.md covers this doc' });
+      continue;
+    }
+    counts[cls] += 1;
+    // X is a deliberate exclusion, B a frozen snapshot; both silent. Keeping
+    // them distinct from "unclassified" matters: unclassified means the
+    // registry has a gap, which is a finding worth acting on.
+    if (cls === 'B' || cls === 'X') continue;
+
+    // Exit 2, not a traceback. A tracked document made unreadable by
+    // permissions, or deleted between the inventory read and here, threw a
+    // plain filesystem error that the handler rethrew -- Node then exited 1,
+    // the status this CLI documents for FINDINGS, so automation could not tell
+    // "this documentation has problems" from "the audit never ran".
+    // A SYMLINK is refused before it is read, not only before it is written.
+    // Following one audits the target's machine-local bytes as though they
+    // were committed under this path: a clean result another clone does not
+    // reproduce, and a read that can leave the checkout entirely. writeStamps
+    // already refuses them; a read-only --check had no such guard, which made
+    // the refusal a property of the command rather than of the tree.
+    let text;
+    try {
+      const docLink = symlinkedComponent(doc);
+      if (docLink !== null) {
+        throw new AuditError(`${symlinkNote(doc, docLink)} is a tracked symlink, so `
+          + 'reading it would audit its target rather than a document in this '
+          + 'repository; the result would not reproduce in another clone');
+      }
+      text = fs.readFileSync(path.join(REPO, doc), 'utf8');
+    } catch (err) {
+      if (err instanceof AuditError) throw err;
+      throw new AuditError(`${doc} is in the audited tree but cannot be read `
+        + `(${err.message}); the audit cannot report on a document it could not open`);
+    }
+
+    // Class C is read for cross-references and nothing else: no issue
+    // freshness, no marker, no rewriting. See contentChecks for why.
+    if (cls === 'C') {
+      findings.push(...contentChecks(cls, doc, text, ctx));
+      continue;
+    }
+
+    // Class A is write-restricted per REGION, not per file. Map the regions
+    // first: the complement is prose no job writes, and that prose is Class D
+    // in everything but the label -- audited, corrected and stamped here.
+    // Findings inside a generated region are reported with where the fix
+    // belongs, and never edited in place.
+    let owned = new Set();
+    let prompt = null;
+    let stampable = cls === 'D';
+    if (cls === 'A') {
+      const r = checkRegions(doc, text, regions);
+      findings.push(...r.findings);
+      ({ owned, prompt } = r);
+      if (r.regionMap) regionMaps[doc] = r.regionMap;
+      stampable = classAIsStampable(r, text);
+    }
+
+    const content = contentChecks(cls, doc, text, ctx);
+    if (cls === 'A') for (const f of content) f.region = regionOf(f.line ?? 0, owned, prompt);
+    findings.push(...content);
+
+    if (!stampable) continue;
+
+    const docLinesForMarker = text.split('\n');
+    const prev = findMarker(docLinesForMarker);
+    const allMarkers = findMarkers(docLinesForMarker);
+    if (h1Index(docLinesForMarker) === null) {
+      // Reported in its own right, and BEFORE the missing-marker case, because
+      // it is the reason the marker has nowhere to go. Saying only "no review
+      // marker" sends someone to add one, and --stamp then refuses with
+      // `skipped-no-h1` and no explanation of what to do instead.
+      findings.push({ check: 'marker', doc, severity: 'P2',
+        detail: 'no H1, so there is nowhere a review marker may live; the registry '
+              + 'places it in the first paragraph after the first H1' });
+    } else if (!prev && allMarkers.length) {
+      // Misplaced, not missing. Reporting "no review marker" sent someone to
+      // add one, and --stamp then refuses -- or, before it refused, inserted
+      // a second beside the visible original.
+      findings.push({ check: 'marker', doc, severity: 'P2',
+        detail: `a review marker sits on line ${allMarkers[0] + 1}, outside the first `
+              + 'paragraph after the H1 where the registry places it; move it there '
+              + 'rather than adding a second' });
+    } else if (!prev) {
+      findings.push({ check: 'marker', doc, severity: 'P2', detail: 'no review marker' });
+    } else if (allMarkers.length > 1) {
+      findings.push({ check: 'marker', doc, severity: 'P2',
+        detail: `${allMarkers.length} review markers in the opening section `
+              + `(lines ${allMarkers.map((n) => n + 1).join(', ')}); they can disagree `
+              + 'about date, owner or reviewed-against SHA, and --stamp updates only '
+              + 'the first' });
+    } else {
+      if (prev.legacy) {
+        findings.push({ check: 'marker', doc, severity: 'P3',
+          detail: `legacy label, date ${prev.date}; normalise to Last reviewed` });
+      }
+      findings.push(...checkMarkerDates(doc, prev, today, docLinesForMarker[prev.idx]));
+      // Whether the drift range can be asked for at all. A syntactically
+      // valid SHA the checkout does not HOLD -- an older `Against` commit in
+      // a depth-one CI clone is the ordinary case -- recorded the P2 below and
+      // then still reached checkChangedSince, whose `git log <sha>..<baseRef>`
+      // exits 128 and raises. One unreadable marker took the whole audit to
+      // exit 2 with no findings emitted at all, which is the opposite of what
+      // a per-document finding is for.
+      let driftable = Boolean(prev.sha);
+      if (prev.sha) {
+        // `git merge-base --is-ancestor` reports through its EXIT STATUS and
+        // prints nothing, so testing its stdout for '' treats every SHA --
+        // ancestor or not -- as suspect. Read the status.
+        const anc = spawnSync('git', ['merge-base', '--is-ancestor', prev.sha, baseRef],
+          { cwd: REPO, encoding: 'utf8' });
+        if (anc.status !== 0) {
+          // 128 is "no such commit", any other non-zero is "not an ancestor".
+          // Neither can support a drift range, and they are different facts,
+          // so they are reported as different findings rather than one.
+          findings.push({ check: 'marker', doc, severity: 'P2',
+            detail: anc.status === 128
+              ? `reviewed-against ${prev.sha} is not a commit this checkout holds, `
+                + 'so drift since the review cannot be measured'
+              : `reviewed-against ${prev.sha} is not an ancestor of ${baseRef}` });
+          driftable = false;
+        }
+      }
+      // A marker reading `unknown`, or carrying no `Against`, passes every
+      // check above while supporting no drift check at all -- so `--stamp`
+      // could clear the missing-marker finding with nobody having reviewed
+      // anything, and once the unrelated findings are fixed `--check` reports
+      // clean over documents that explicitly say nobody has read them.
+      //
+      // P3, because --check gates on P1/P2: these belong on the standing
+      // worklist and must not hold a build red forever. The Python twin uses
+      // the same severity for the same reason (stocks#1121).
+      findings.push(...checkProvenance(doc, prev));
+      findings.push(...checkChangedSince(doc, driftable ? prev.sha : null, codePaths, baseRef));
+    }
+
+    if (args.stamp) {
+      // Never write a marker into a generated region, whether it would be
+      // inserted there or already sits there.
+      const why = stampGuard(text, owned);
+      if (why) {
+        findings.push({ check: 'unowned', doc, severity: 'P2', detail: why });
+        continue;
+      }
+      const reviewed = verify.has(doc);
+      // A review records "these claims were true against THIS revision". For a
+      // document the revision does not contain -- a staged-new file, the case
+      // that reaches here -- that sentence is simply false, and nothing later
+      // catches it: this module has no document-level drift check, so the SHA
+      // is never read back against the document at all. Raised on the Python
+      // twin (stocks#1121), where the doc-drift check DOES read it and, given
+      // an absent blob, reported "nothing changed". The answer either way is
+      // to commit the document and stamp against a revision that holds it.
+      if (reviewed && !pathInCommit(head, doc)) {
+        stampTargets.set(doc, 'baseline-predates-doc');
+        continue;
+      }
+      // The audit reads the WORKING TREE. `--since` moves the SHA written into
+      // the marker without moving what was read, so on a feature branch
+      // `--stamp --verify --since origin/main` recorded a review against bytes
+      // nobody inspected -- and the next ordinary audit reports the branch's
+      // own commits as drift from that older SHA. Two questions, because the
+      // marker makes two claims: the DOCUMENT it reviewed, and the CODE those
+      // claims describe. Codex filed it; the Python twin (stocks#1121) has
+      // refused both for rounds and this side refused neither.
+      //
+      // Only when `--since` was given: without it the baseline IS the audited
+      // revision, so both comparisons are trivially empty and asking git would
+      // be a read per document for a guaranteed answer.
+      if (reviewed && args.since) {
+        if (run('git', ['show', `${head}:${doc}`], { okExitCodes: [128] }) !== text) {
+          stampTargets.set(doc, 'uncommitted-content');
+          continue;
+        }
+        if (checkChangedSince(doc, head, codePaths, baseRef).length) {
+          stampTargets.set(doc, 'code-drift-since-baseline');
+          continue;
+        }
+      }
+      // A review of prose the audit just disproved is false provenance. See
+      // DISPROVEN_BY_AUDIT: the findings for this document have all been
+      // pushed by now, so they can be asked about directly. A scan-only stamp
+      // is still written -- `Last scanned` claims only that the job ran.
+      if (reviewed) {
+        const disproven = findings.filter(
+          (f) => f.doc === doc && DISPROVEN_BY_AUDIT.has(f.check));
+        if (disproven.length) {
+          stampTargets.set(doc, 'refused-disproven');
+          continue;
+        }
+      }
+      const res = stamp(text, today, reviewed ? 'verified' : 'scanned', head, reviewed);
+      stampTargets.set(doc, res.action);
+      const record = stampRecord(doc, res, reviewed);
+      if (record.depth) writes.push({ doc, text: res.text });
+      stamped.push(record);
+    }
+  }
+
+  // Nothing is written until every requested review has a document to land
+  // on, so a misspelled --verify aborts the run instead of half of it.
+  if (args.stamp) {
+    checkVerifyTargets(verify, stampTargets);
+    writeStamps(writes);
+  }
+
+  const summary = {};
+  for (const f of findings) summary[f.check] = (summary[f.check] ?? 0) + 1;
+  const report = { date: today, baseRef, head, docs: docs.length, classes: counts,
+    regions: regionMaps, findings, stamped, summary };
+
+  if (args.json) {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } else {
+    process.stdout.write(`docs ${docs.length}  classes ${JSON.stringify(counts)}  head ${head} (${baseRef})\n`);
+    for (const [d, rm] of Object.entries(regionMaps).sort()) {
+      if (rm.unowned_lines) {
+        process.stdout.write(`  region: ${d} — ${rm.unowned_lines} of ${rm.lines} lines hand-written (audit as Class D)\n`);
+      }
+    }
+    for (const [k, v] of Object.entries(summary).sort()) process.stdout.write(`  ${k}: ${v}\n`);
+    for (const f of findings) {
+      process.stdout.write(`  [${f.severity}] ${f.check}: ${f.doc}${f.line ? `:${f.line}` : ''} — ${f.detail}\n`);
+    }
+    if (stamped.length) {
+      const { changed, unchanged, skipped } = summariseStamps(stamped);
+      process.stdout.write(`  stamped: ${changed} changed, ${unchanged} unchanged, ${skipped} skipped\n`);
+      for (const s of stamped) {
+        if (!s.depth) process.stdout.write(`    ${s.action}: ${s.doc}\n`);
+      }
+    }
+  }
+
+  return checkExitCode(args.check, findings);
+}
+
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  try {
+    // exitCode, not exit(): process.exit() can terminate Node before a
+    // buffered write to a pipe has flushed, truncating a large JSON report
+    // while still returning the intended status.
+    process.exitCode = main(process.argv.slice(2));
+  } catch (err) {
+    if (err instanceof AuditError) {
+      // RETURN. This used to be process.exit(2), which made the rethrow below
+      // unreachable; switching to exitCode so a piped report can flush made it
+      // reachable, so every handled AuditError printed a stack trace and
+      // exited 1 -- the status reserved for findings. A regression introduced
+      // by the flush fix, not a pre-existing one.
+      process.stderr.write(`error: ${err.message}\n`);
+      process.exitCode = 2;
+    } else {
+      throw err;
+    }
+  }
+}
