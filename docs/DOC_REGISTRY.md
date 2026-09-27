@@ -40,11 +40,17 @@ looking.
 
 ### Class A is a property of a region, not of a file
 
-`AGENTS.md` is 10 lines, all of them inside `<!-- LOVABLE:BEGIN -->` /
-`<!-- LOVABLE:END -->`. Lovable rewrites that fence, so no line of it is ours
-to edit — but the audit still checks that nothing has appeared *outside* the
-fence, because a hand-written paragraph added below it would be silently
-destroyed on the next regeneration and nobody would know which one.
+`AGENTS.md` was 10 lines, all of them inside `<!-- LOVABLE:BEGIN -->` /
+`<!-- LOVABLE:END -->`, and was registered Class A `exhaustive`: Lovable
+rewrites that fence, so the audit flagged anything that appeared *outside* it,
+because a hand-written paragraph added below would be silently destroyed on the
+next regeneration and nobody would know which one.
+
+It is now Class D, hand-maintained, because it carries the delivery-gate
+instructions below the fence. Lovable still owns the fenced block, and the row
+keeps `fence:LOVABLE` to say so, but a Lovable regeneration is **merged into**
+this file, never applied over it: take Lovable's new fence content and keep
+every line outside the fence.
 
 That check generalises, and it is why the registry declares regions rather than
 files. In the stocks repo the same column showed 1,325 lines of hand-written
@@ -101,7 +107,7 @@ renames are ignored, so a file-move wave does not flag every document.
 
 | Class | Path glob | Declared code paths | Generated regions |
 |---|---|---|---|
-| A | AGENTS.md | | fence:LOVABLE; exhaustive |
+| D | AGENTS.md | scripts/gate, .claude/skills/product-delivery | fence:LOVABLE |
 | C | docs/LOVABLE_COMMITS_REVIEW.md | | |
 | C | docs/TEST_COVERAGE_AUDIT.md | | |
 | C | docs/expected-move-affordances-design.md | | |
