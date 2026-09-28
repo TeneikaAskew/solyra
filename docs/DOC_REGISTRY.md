@@ -1,6 +1,6 @@
 # Documentation registry
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `772a5f2eb5fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 Which documents this repo maintains, who owns each one, and what code each one
 describes. `scripts/docs-audit.mjs` reads the tables below; the prose around
@@ -118,7 +118,7 @@ renames are ignored, so a file-move wave does not flag every document.
 | D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs | |
 | D | docs/REDESIGN.md | src/components, src/index.css | |
 | D | docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md | src/routes/AdminPage.tsx, src/hooks/useAdmin.ts | |
-| D | docs/options_flow_data_contract.md | src/types, src/hooks/useOptionsGreeks.ts | |
+| D | docs/options_flow_data_contract.md | src/types, src/hooks/useOptionsGreeks.ts, src/hooks/useGammaLevels.ts, src/hooks/useGammaGrid.ts, src/components/options/SwingMode.tsx, src/data/gammaMapMock.ts | |
 | D | docs/solyra-landing-page-plan.md | src/components/landing | |
 | D | docs/DOC_REGISTRY.md | scripts/docs-audit.mjs | |
 | X | .claude/agents/*.md | | |

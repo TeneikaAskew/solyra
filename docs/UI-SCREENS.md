@@ -316,8 +316,10 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **Status:** Incomplete (not re-graded this pass) · **Blocking issue:** [#685](https://github.com/TeneikaAskew/stocks/issues/685) — CLOSED not_planned; **and it does not describe this screen** — #685's body is entirely about renaming Options Flow's Heatseeker/Flowseeker tabs, not `/settings`. This citation looks mismatched, not merely stale; the correct blocker for Settings' Incomplete status was not identified in this pass · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SettingsPage.tsx` (492 lines — was cited as 131,
   now stale by 3.7x; not fully re-audited line-by-line this pass)
-- **API calls (from source):** `/api/me/preferences` (via `usePreferencesStatus`,
-  write-through), `/api/me/profile` (via `useProfile`, draft+Save) —
+- **API calls (from source):** `/api/me/preferences` (write-through GET/PUT
+  via `usePreferencesSync`, mounted once in `AppShell.tsx` — `SettingsPage`
+  itself only reads sync status via `usePreferencesStatus`, which does no
+  network I/O), `/api/me/profile` (via `useProfile`, draft+Save) —
   **corrected 2026-09-28, was "none found... device-local state only"**
 - **Stores:** `useSettingsStore`, `useThemeStore`
 - **States present:** load, err, saving/saved (via `useProfile`'s `loading`/

@@ -1,6 +1,6 @@
 # Project Instructions for Claude Code — Solyra
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `f312384b79fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `772a5f2eb5fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## Project Overview
 
@@ -434,7 +434,13 @@ so every gated call would 401.
 at an absolute origin when one is configured (using `apiTargets.ts`) and
 (2) attach the Firebase ID token. It's a global wrapper because the app makes
 ~87 bare relative `fetch('/api/...')` calls across ~34 files with no central
-client.
+client (`grep -rE "fetch\(\s*['"\`]/api/" src`, per `docs/DOC_REGISTRY.md`'s
+Claims table — that count includes the 19 occurrences across 2 test files,
+`authedFetch.test.ts` and `contract.test.ts`, that exercise the wrapper
+itself rather than needing it; production call sites are ~68 across ~32
+files. The registry's derivation grammar has no path-exclude, so the
+tracked count intentionally includes tests rather than silently
+undercounting).
 
 `OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`,
 `/api/waitlist`) must stay in sync with the backend's open-path list in

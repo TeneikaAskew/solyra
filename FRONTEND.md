@@ -136,7 +136,11 @@ Three concentric loops:
 | Hook                       | Endpoint(s) hit                                            | Reads                              |
 |----------------------------|------------------------------------------------------------|------------------------------------|
 | `useUser`                  | `/api/me`                                                  | Identity + server-computed `is_admin`. Source depends on the service: a verified Firebase token on staging (what the SPA calls), the trusted IAP header on prod |
-| `useTickerSearch`          | `/api/insights/ticker/search`, `/api/market/coverage`, `/api/insights/watchlist/add`, `/api/insights/watchlist/{ticker}` (DELETE) | Ticker search, coverage badges, watchlist add/remove — despite the name, not a client-side filter |
+| `useTickerSearch` (`useTickerSearch.ts` — 4 separate exported hooks, not 1) | | |
+| — `useTickerSearch`        | `/api/insights/ticker/search`                               | Keyword ticker search |
+| — `useTickerCoverage`      | `/api/market/coverage`                                       | Full/daily/new badges |
+| — `useAddToWatchlist`      | `/api/insights/watchlist/add` (POST)                         | Watchlist add |
+| — `useRemoveFromWatchlist` | `/api/insights/watchlist/{ticker}` (DELETE)                  | Watchlist remove |
 | `useLiveQuote`             | `/api/live/quote/{ticker}`                                 | Latest 1-min bar                   |
 | `useLiveIndicators`        | `/api/live/indicators`                                     | Wilder RSI/EMA/ATR/VWAP            |
 | `useLiveHistory`           | `/api/live/history/{ticker}`                               | Intraday history window            |
