@@ -1,6 +1,6 @@
 # Options Flow — backend data contract (Skylit-aligned UI)
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `1d8188474d8c` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `956dd9092f33` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The redesigned Options Flow page (`src/routes/OptionsFlowPage.tsx`) follows
 Skylit's product model. Three views are **real-data backed today**; two are
@@ -29,8 +29,8 @@ the record rather than deleted; do not build it.
 | View | Tab · Mode | Data today | Real source needed |
 |------|-----------|-----------|--------------------|
 | GEX/VEX profile | Profiles | **Real** — `/api/options/dates/{t}` (date list), `/api/options/{t}/{date}` + `/api/options/live/{t}/{date}` fallback (chain, via `ProfilesTab.tsx`'s local `useOptionsData`), `/api/options/{t}/{date}/levels` (taxonomy) + `POST /api/options/greeks` | — |
-| Trinity 3-panel | Gamma Map · Trinity | **Real** — `useGammaLevels` for SPX/SPY/QQQ | — |
-| Swing 2D heatmap | Gamma Map · Swing | **Real** heatmap/grid (`useGammaGrid` + `useGammaLevels`); tactical-read overlay only is illustrative, from `src/data/gammaMapMock.ts` | — |
+| Trinity 3-panel | Gamma Map · Trinity | **Real** — `/api/options/dates/{t}?limit=1` (via `useLatestOptionsDate`, gates the query) + `useGammaLevels` for SPX/SPY/QQQ | — |
+| Swing 2D heatmap | Gamma Map · Swing | **Real** — same `/api/options/dates/{t}?limit=1` gate, then heatmap/grid (`useGammaGrid` + `useGammaLevels`); tactical-read overlay only is illustrative, from `src/data/gammaMapMock.ts` | — |
 | Live flow tape | Flow · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |
 | Contract drilldown | Flow · Drilldown | Mock `src/data/contractDrilldownMock.ts` | **(C)** per-contract tape |
 
