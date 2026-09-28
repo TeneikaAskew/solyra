@@ -1624,9 +1624,19 @@ previous account's Resend/confirmed state (its own doc comment).
 unverified for the second); the specific "blocked or signed-out" combination is SHELL-16.
 
 **Acceptance criteria:**
-- Given `useAuthStatus().status === 'loading'`, when either banner would render, then both
-  return `null` (`AuthStatusIndicator.tsx:40`, `:81`, `:158`, read directly; no test isolates
-  this transient render, see Gaps).
+- Given `useAuthStatus().status === 'loading'`, when `AuthStatusBanner` would render, then it
+  returns `null` (`AuthStatusIndicator.tsx:158`; the same `useAuthStatus()` gate also hides the
+  identity pill at `:40` and the account menu at `:81`, neither of which is a "banner" this row
+  names, but both share the citation; no test isolates this transient render, see Gaps).
+- Given `useUser()`'s Firebase auth state has resolved (`fbReady`, set inside the SAME
+  `onAuthStateChanged` callback that sets `emailVerified`, `useUser.ts:36-45`) while the separate
+  `/api/me` round trip is still in flight, when `EmailVerificationBannerFor` reads `emailVerified`,
+  then it can render even though `useAuthStatus().status` is still `'loading'`: its hide
+  condition (`emailVerified !== false || confirmed`, `AuthStatusIndicator.tsx:221`) never reads
+  `useAuthStatus()` at all, only `useUser()`'s own `emailVerified`, which is independent of the
+  `/api/me` query's own loading state (`isLoading = !fbReady || (meEnabled && query.isLoading)`,
+  `useUser.ts:82`). Corrected in this task's fix round; the original bullet wrongly implied both
+  banners share one loading gate.
 - Given an anonymous open-mode session, when `GET /api/me` answers
   `{"email":null,"is_admin":false,"is_dev":false}`, then `isSignedIn` is `true` in open mode
   regardless (`useUser.ts:81`, `isSignedIn = firebaseMode ? signedIn : true`), so
@@ -1708,7 +1718,8 @@ grouping, empty-table 200, and DB-failure 503 in full.
 ##### SHELL-06 · RouteErrorBoundary
 
 **Shows or does:** React Router `errorElement`, attached to every app route individually and to
-their shared `AppGroup` parent (`src/App.tsx:49,78` and each child route, e.g. `:80-86`), so a
+their shared `AppGroup` parent (`src/App.tsx:49` the const, `:82` the parent route's assignment,
+`:84-96` each of the 13 child routes' own repeated assignment), so a
 render crash on one page shows a contained card ("Page crashed... rest of the app is unaffected")
 with Reload/Go to dashboard buttons and a collapsible technical-details panel, while the
 sidebar/header stay mounted. Distinguishes a thrown React Router response (`isRouteErrorResponse`,
@@ -1723,7 +1734,7 @@ state; no API, no store.
 - Given a page component throws during render, when React Router catches it, then
   `RouteErrorBoundary` renders in place of that page only: the sidebar/header/banners from
   `AppShell` stay rendered around it (`RouteErrorBoundary.tsx`'s own doc comment; wiring verified
-  at `App.tsx:49-86`).
+  at `App.tsx:49,82,84-96`).
 - Given the thrown value is a React Router response object, when `describeError` runs, then the
   title is `"{status} {statusText}"`; given any other `Error`, the title is `"Page error"` and the
   stack is available behind "Show technical details" (`RouteErrorBoundary.tsx:82-94`, read
@@ -1733,7 +1744,7 @@ state; no API, no store.
 page-render throw; no colocated Vitest test and no Playwright spec exercise this component at all
 (matches the pre-existing Gaps note).
 
-**Code:** `src/components/shared/RouteErrorBoundary.tsx`, wired at `src/App.tsx:49`.
+**Code:** `src/components/shared/RouteErrorBoundary.tsx`, wired at `src/App.tsx:49,82,84-96`.
 
 ##### SHELL-07 · Market session badge (LIVE, PRE, AH, CLOSED)
 
@@ -1839,9 +1850,14 @@ review-aware pages (not this row) re-fetch as-of the pinned moment.
   from the committed value), then `setReviewDate`/`setReviewTime` commit and the popover closes;
   "Cancel" discards the draft instead (`ReplayControl.tsx:123-136`, read directly).
 
-**Tests:** none found. Grepped both repos for `ReplayControl`, `replay-toggle`, `replay-apply`;
-no colocated Vitest test and no Playwright spec exercise this component (the pre-existing Chain
-Tests cell was blank; the pre-existing Gaps note lists it, confirmed still accurate).
+**Tests:** `tests/shared/popover-fit.spec.ts` (`replay picker stays on screen`), Playwright.
+Clicks `replay-toggle` (`ReplayControl.tsx:166`) at two phone widths (390px, 411px) and asserts
+the open popover's bounding box stays inside the viewport (`left >= 0`, `right <= innerWidth`),
+a structural fit regression guard, not a test of the replay behavior itself: it never picks a
+date, applies, or asserts anything about `reviewDate`/`reviewTime`. No test anywhere exercises
+the picking/applying/clearing flow (`ReplayControl.tsx:123-141`), only that the panel is fully
+on-screen when open. Corrected in this task's fix round; the row's Gaps citation is removed
+accordingly (see Gaps).
 
 **Code:** `src/components/shared/ReplayControl.tsx`, `src/stores/reviewDateStore.ts`; test ids
 `replay-toggle`, `replay-clear`, `replay-apply`.
@@ -1888,7 +1904,11 @@ value falls back to dark rather than throwing.
 `src/hooks/usePreferences.test.ts` (Vitest, CI-run, the write-through payload shaping),
 `tests/api/test_preferences_router.py` (pytest, CI-run, the server contract, including `theme`
 explicitly in its fixture rows), `tests/shared/navigation.spec.ts` (`theme toggle flips the
-document theme attribute`, new in this task, Playwright).
+document theme attribute`, new in this task, Playwright). `tests/settings/settings.spec.ts:97`
+(`theme toggle applies data-theme and writes through`) is adjacent, not this row's own control:
+it drives the SAME `useThemeStore()` through a Settings-page radio button calling `setTheme(k)`
+directly (`SettingsPage.tsx:310`), not the Header/TopTabs icon button's `toggleTheme()` this row
+is about, the way SHELL-02 and SHELL-11 handle a similarly-named near miss.
 
 **Code:** `src/components/layout/Header.tsx:24`, `src/components/layout/TopTabs.tsx:228`,
 `src/stores/themeStore.ts`, `src/hooks/usePreferences.ts:192-210`.
