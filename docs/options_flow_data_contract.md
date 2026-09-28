@@ -1,6 +1,6 @@
 # Options Flow — backend data contract (Skylit-aligned UI)
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `52c330c09492` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `20a92dc3b488` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The redesigned Options Flow page (`src/routes/OptionsFlowPage.tsx`) follows
 Skylit's product model. Three views are **real-data backed today**; two are
@@ -87,5 +87,9 @@ GET /api/flow/contract/{occ_symbol}?window=
 
 When (B) or (C) lands, swap the matching `src/data/*Mock.ts` import for a
 TanStack Query hook and remove that view's demo banner. Swing's own banner
-stays — it correctly labels only the tactical-read overlay as illustrative,
-and that overlay has no proposed real source in this doc.
+stays, but its disclosure is incomplete: it labels only the tactical-read
+overlay as illustrative, not the Legend's Hedge chip or NodeList's
+Midpoint/Hedge rows (see the note above) — those render unlabeled whenever
+real `/levels` data is present. None of the three have a proposed real
+source in this doc; closing the banner's gap is a UI fix, not a backend one,
+so it's out of scope here beyond flagging it.
