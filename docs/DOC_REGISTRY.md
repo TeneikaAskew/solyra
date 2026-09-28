@@ -123,6 +123,7 @@ renames are ignored, so a file-move wave does not flag every document.
 | D | docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md | src/routes/AdminPage.tsx, src/hooks/useAdmin.ts | |
 | D | docs/options_flow_data_contract.md | src/types, src/hooks/useOptionsGreeks.ts | |
 | D | docs/solyra-landing-page-plan.md | src/components/landing | |
+| D | docs/product/12-PR-ISSUE-TRACEABILITY.md | | |
 | D | docs/DOC_REGISTRY.md | scripts/docs-audit.mjs | |
 | X | .claude/agents/*.md | | |
 | X | .claude/commands/*.md | | |
