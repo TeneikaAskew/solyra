@@ -223,7 +223,7 @@ test.describe('Command palette and theme toggle', () => {
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     // Wait for the shell to actually mount (and its effects to run, which
     // is where AppShell.tsx:47 attaches the keydown listener) before
-    // sending the shortcut — domcontentloaded alone races React's commit.
+    // sending the shortcut, since domcontentloaded alone races React's commit.
     await expect(page.getByRole('button', { name: 'Search (⌘K)' })).toBeVisible();
 
     // AppShell.tsx:47 toggles the palette on ctrl/meta+K; CommandPalette has
@@ -240,10 +240,11 @@ test.describe('Command palette and theme toggle', () => {
   });
 
   test('theme toggle flips the document theme attribute', async ({ page }) => {
-    // Header (with the theme toggle) only renders in sidebar mode
-    // (AppShell.tsx:61-77) — seed the persisted shell setting the way
-    // settingsStore.ts reads it back (tests/settings/settings.spec.ts and
-    // tests/admin/admin-auth.spec.ts use the same key and shape).
+    // Seeds sidebar mode (AppShell.tsx:61-77) so this test exercises the
+    // Header's theme toggle specifically; TopTabs.tsx:229 carries the same
+    // toggle in the default mode too. settingsStore.ts reads the setting
+    // back the way tests/settings/settings.spec.ts and
+    // tests/admin/admin-auth.spec.ts use, with the same key and shape.
     await page.addInitScript(() => {
       window.localStorage.setItem(
         'platform-shell-settings',
