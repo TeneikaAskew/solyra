@@ -976,7 +976,7 @@ error`, the client-validation branch only).
 - **Child components:** `Brand`, `LoadingSpinner`, `SignInScreen`
 - **API calls (from source):** `/api/config/firebase`, `/api/me`
 - **E2E specs:** `tests/shared/auth-gate.spec.ts`, `tests/admin/admin-auth.spec.ts`
-- **PR lineage:** UNKNOWN / NEEDS HISTORY TRACE
+- **PR lineage:** not traced
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
 
@@ -1478,7 +1478,7 @@ endpoint, or
 - **API calls (from source):** `/api/market/most-active`, `/api/live/status`, `/api/me/preferences`, `/api/config/market-hours`
 - **Stores:** `useSettingsStore`
 - **E2E specs:** `tests/shared/navigation.spec.ts`, `tests/shared/most-active-bar.spec.ts`, `tests/shared/mock-mode.spec.ts`
-- **PR lineage:** UNKNOWN / NEEDS HISTORY TRACE
+- **PR lineage:** not traced (the components predate the 2026-09-03 repository split, stocks#957)
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
 
@@ -2365,7 +2365,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 | CHARTS-09 | Change date or timeframe | The date input is bounded by `useAvailableDates`'s list and disabled in historical review mode; timeframe buttons set `settingsStore`'s in-memory `timeframe`, which resamples the `/api/market/data` request. |
 | CHARTS-10 | Toggle overlays | Volume and RTH-only are client state; the reference-levels toggle drives `useReferenceLevels`; the gamma toggle drives `useGammaLevels` (SPY, IWM, QQQ, SPX only); the signals toggle drives `useSignalSeries` markers. |
 | CHARTS-11 | Run a replay session | `useReplaySession` reveals the loaded bars one at a time (a 15-bar warm start); Mark Entry during a session POSTs `/api/journal/trades` with `source: 'replay'` and the session id. |
-| CHARTS-12 | Backtest my trades | POSTs `/api/backtest/replay-trades` for the ticker's journal trades and opens the scorecard modal (titled "Backtest my trades"). |
+| CHARTS-12 | Backtest my trades | The seed's on-demand button no longer exists. The replay-trades endpoint is reached only from a finished replay session, which on this page ends with no closed trades to score, so the scorecard never opens (see the matrix Charts Gaps). |
 
 #### States
 | ID | State | Present in source | Presentation |
@@ -3030,7 +3030,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| ADMIN-04 | Grant or revoke roles | `toggleRole` (`UsersPanel.tsx`) sends the account's current roles plus or minus the clicked one through `useUpdateUserRoles`; applies immediately. |
+| ADMIN-04 | Grant or revoke roles | `toggleRole` (`UsersPanel.tsx`) sends the account's current roles plus or minus the clicked one through `useUpdateUserRoles`. A grant succeeds only for an account with no role; the server answers 422 for any other combination (see the matrix Admin Gaps). |
 | ADMIN-05 | Disable a user | Disable / Enable buttons call `useUpdateUserStatus`; refused (409) wherever `AUTH_MODE` is `iap`, for the caller's own account, and for the `ADMIN_EMAIL` account. |
 | ADMIN-06 | Refresh a data source | The Refresh button calls `useRefreshDataSource`, which dispatches the registered Cloud Run job for that dataset and refetches the list; disabled with a tooltip when `refreshable` is false. |
 | ADMIN-07 | Change provider or model per role and save | Provider and model selects (`(no creds)` models disabled); Save calls `useUpdateAdminRoute` for the one changed row only. |
