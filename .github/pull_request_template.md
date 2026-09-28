@@ -4,6 +4,7 @@
 ## Summary
 
 <!-- What changed and why. Link the issue if one exists. -->
+- Matrix rows touched and gates changed: <!-- IDs from stocks docs/product/03-SITE-TRACEABILITY.md, or "none" -->
 
 ## Cross-repo contract impact (CLAUDE.md Rule 6)
 

@@ -115,6 +115,10 @@ Five specs cover behavior spanning screens rather than one route:
 Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs in CI
 ([#868](https://github.com/TeneikaAskew/stocks/issues/868)).
 
+The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#00--shared-under-every-page) traces the infrastructure every screen inherits and this document does not repeat per screen: the API service and auth middleware, the authedFetch data path, mock mode, React Query defaults, the failure lane and the freshness watchdog.
+
+#### Elements
+
 ## Per-screen records
 
 ### SCREEN-LANDING — `/`
@@ -140,6 +144,33 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 - **E2E specs:** **none**
 - **PR lineage:** [#684](https://github.com/TeneikaAskew/stocks/pull/684)
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
+  WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
+
+### SCREEN-AUTH — sign-in (in-route)
+
+- **Purpose:** In-route auth surface guarding every app route: boots the runtime auth config, renders Google or email/password sign-in and sign-up until a session exists, and handles sign-out and the /auth/action password-reset and email-verification links.
+- **Status:** Infrastructure · **Blocking issue:** none · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-09-28
+- **Component:** `src/components/auth/AuthGate.tsx`, `src/components/auth/ConfigGate.tsx`, `src/components/auth/SignInScreen.tsx`, `src/components/auth/SignOutButton.tsx`, `src/routes/AuthActionPage.tsx`
+- **Child components:** `LoadingSpinner`, `SignInScreen`
+- **API calls (from source):** `/api/config/firebase`, `/api/me`
+- **States present:** load, err
+- **E2E specs:** `tests/shared/auth-gate.spec.ts`, `tests/admin/admin-auth.spec.ts`
+- **PR lineage:** UNKNOWN / NEEDS HISTORY TRACE
+- **Target:** meet REQ-UX-001: explicit stale/unavailable presentation, keyboard operability,
+  WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
+
+### SCREEN-SHELL — app shell
+
+- **Purpose:** Shared layout for the 13 authenticated app routes: sidebar or top-tab navigation, header, command palette, status banners and the most-active marquee around the routed page.
+- **Status:** Infrastructure · **Blocking issue:** none · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-09-28
+- **Component:** `src/components/layout/AppShell.tsx`
+- **Child components:** `Sidebar`, `TopTabs`, `Header`, `CommandPalette`, `MostActiveBar`, `AuthStatusBanner`, `EmailVerificationBanner`, `MockModeBanner`, `Outlet`
+- **API calls (from source):** `/api/market/most-active`, `/api/live/status`, `/api/me/preferences`, `/api/config/market-hours`
+- **Stores:** `useSettingsStore`
+- **States present:** none in the shell itself
+- **E2E specs:** `tests/shared/navigation.spec.ts`, `tests/shared/most-active-bar.spec.ts`, `tests/shared/mock-mode.spec.ts`
+- **PR lineage:** UNKNOWN / NEEDS HISTORY TRACE
+- **Target:** meet REQ-UX-001: explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
 
 ### SCREEN-DASHBOARD — `/dashboard`
