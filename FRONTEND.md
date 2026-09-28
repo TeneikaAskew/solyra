@@ -65,7 +65,7 @@ solyra/
 │  │  ├─ charts/                # CandlestickChart, PriceAreaChart,
 │  │  │                         # StrategyConditionsCard, SimilarSetupsCard
 │  │  └─ backtest/              # BacktesterSection
-│  ├─ hooks/                    # 23 TanStack-Query-backed data hooks (see hook map below — 7 aren't in it yet)
+│  ├─ hooks/                    # 23 TanStack-Query-backed hook MODULES (see hook map below — 7 aren't in it yet). Several export more than one hook (e.g. useJournalChartTrades.ts exports 11+), so this is a module count, not an exported-hook count
 │  ├─ stores/                   # Zustand client state (5 stores)
 │  │  ├─ tickerStore.ts         # activeTicker + availableTickers (IWM/SPY/QQQ)
 │  │  ├─ tradeStore.ts          # in-flight trade form state

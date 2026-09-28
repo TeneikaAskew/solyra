@@ -1,6 +1,6 @@
 # Project Instructions for Claude Code — Solyra
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `772a5f2eb5fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `b4502d21e52f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## Project Overview
 
@@ -326,8 +326,13 @@ standalone exports.
 
 ### E2E — Playwright
 
-In `tests/`, and **hermetic**: every `/api` call is intercepted with
-`page.route`, so they need no backend and no network.
+In `tests/`. Every `/api` call a test asserts on is intercepted with
+`page.route`, so they need no **backend** (25 requests escape interception
+during teardown per `docs/TEST_COVERAGE_AUDIT.md`, accepted noise, not a
+fixture gap). They are not fully network-isolated, though: `src/index.css`
+loads Montserrat from `fonts.googleapis.com`, a real external request
+`playwright.config.ts` works around with `ignoreHTTPSErrors: true` rather
+than mocking.
 
 **Layout — one folder per page/area.** Every spec lives under
 `tests/<page>/` (`tests/dashboard/`, `tests/charts/`, `tests/admin/`, …),

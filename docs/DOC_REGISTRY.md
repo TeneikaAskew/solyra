@@ -1,6 +1,6 @@
 # Documentation registry
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `772a5f2eb5fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `b4502d21e52f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 Which documents this repo maintains, who owns each one, and what code each one
 describes. `scripts/docs-audit.mjs` reads the tables below; the prose around
@@ -110,12 +110,12 @@ renames are ignored, so a file-move wave does not flag every document.
 | C | docs/expected-move-affordances-design.md | | |
 | C | docs/journal-one-stop-shop-design.md | | |
 | C | docs/solyra-landing-page-design.md | | |
-| D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json | |
+| D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json, src, src/index.css | |
 | D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows | |
 | D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/App.tsx | |
 | D | docs/UI-SCREENS.md | src/routes, src/components, src/App.tsx | |
 | D | docs/DESIGN_SYSTEM.md | src/index.css, vite.config.ts, src/components/primitives, src/stores/themeStore.ts, src/lib/chartTheme.ts | |
-| D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs | |
+| D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs, .github/workflows/ci.yml, src/index.css | |
 | D | docs/REDESIGN.md | src/components, src/index.css | |
 | D | docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md | src/routes/AdminPage.tsx, src/hooks/useAdmin.ts | |
 | D | docs/options_flow_data_contract.md | src/types, src/hooks/useOptionsGreeks.ts, src/hooks/useGammaLevels.ts, src/hooks/useGammaGrid.ts, src/components/options/SwingMode.tsx, src/data/gammaMapMock.ts | |
@@ -156,3 +156,4 @@ different thing.
 | CLAUDE.md | ~(\d+) bare relative | grep-count src fetch\(\s*['"`]/api/ |
 | CLAUDE.md | across ~(\d+) files | grep-files src fetch\(\s*['"`]/api/ |
 | CLAUDE.md | (\d+) files under `src/` and | grep-files src,tests Rule 3\.7\|§3\.7 |
+| README.md | ~(\d+) bare | grep-count src fetch\(\s*['"`]/api/ |
