@@ -150,7 +150,7 @@ once at boot and blocks every gated route behind it: `loading` while the fetch i
 - Given an `AUTH_MODE` value outside `("open", "firebase", "iap")`, when the API process starts, then `_validated_auth_mode` raises `RuntimeError` and the service refuses to boot rather than silently serving every route ungated (`platform/api/auth.py:44-53`).
 - Given `GET /api/config/firebase` fails, returns a non 2xx status, or returns a body whose `authMode` is not one of the three literals, when `ConfigGate` awaits `fetchRuntimeConfig`, then it renders `ConfigErrorScreen` (`data-testid="config-error"`) instead of any gated route (`ConfigGate.tsx`, `describeBootFailure`, `fetchRuntimeConfig`).
 
-**Tests:** `tests/api/test_platform_auth.py::test_open_mode_is_noop`, `::test_iap_mode_reads_header_and_does_not_enforce`, `::test_firebase_requires_valid_token`; `tests/api/test_route_coverage.py`; solyra `tests/shared/auth-gate.spec.ts` (Playwright, not yet part of Te, solyra#28 is open).
+**Tests:** `tests/api/test_platform_auth.py::test_open_mode_is_noop`, `::test_iap_mode_reads_header_and_does_not_enforce`, `::test_firebase_requires_valid_token`; `tests/api/test_route_coverage.py`; solyra `tests/shared/auth-gate.spec.ts` runs hermetically in ci.yml's `e2e (chromium, mocked)` job, but this citation names no specific assertion of this row's own behavior (see AUTH-01 for the narrower, named tests that do), so it stays presence-only here.
 
 **Code:** `platform/api/auth.py:41-55` (`_VALID_AUTH_MODES`, `_validated_auth_mode`, `AUTH_MODE`), `:180-213` (`_path_requires_auth`, `auth_middleware`); `platform/api/main.py:97` (middleware registration); `platform/api/routers/config.py:45-68` (`get_firebase_config`); solyra `src/components/auth/ConfigGate.tsx` (`bootOnce`, `fetchRuntimeConfig`, `ConfigErrorScreen`); `src/lib/runtimeConfig.ts`.
 
@@ -276,7 +276,7 @@ converges on the same world.
 - Given a user clicks `Exit`, when `setMockMode(false)` persists, then the page reloads and the preference stays `'off'`, so `autoEnableMockModeForDev` will not re-enable it for that browser (`never overrides an explicit exit`).
 - Given mock mode is on and a requested path matches no fixture route, when `mockApiResponse()` runs, then it answers 501 with the offending path in the body (`src/mocks/index.ts:132`).
 
-**Tests:** `src/lib/mockMode.test.ts` (`is unset by default and inactive`, `setMockMode(true) persists and reloads`, `setMockMode(false) persists the explicit exit`, `enables once while the preference is unset`, `never overrides an explicit exit`); `tests/shared/mock-mode.spec.ts` (Playwright, banner visibility and exit; not yet part of Te, solyra#28 is open).
+**Tests:** `src/lib/mockMode.test.ts` (`is unset by default and inactive`, `setMockMode(true) persists and reloads`, `setMockMode(false) persists the explicit exit`, `enables once while the preference is unset`, `never overrides an explicit exit`); `tests/shared/mock-mode.spec.ts` (Playwright, banner visibility and exit) runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry for this row cites that job on main run 36361217691.
 
 **Code:** `src/lib/mockMode.ts` (`mockModePreference`, `isMockModeActive`, `setMockMode`, `autoEnableMockModeForDev`); `src/lib/authedFetch.ts:139-148`; `src/components/shared/MockModeBanner.tsx`; `src/components/layout/AppShell.tsx:67`; `src/mocks/index.ts:132`.
 
@@ -396,7 +396,7 @@ area 14) consume.
 - Given `scripts/audit_data_freshness.py` cannot reach Cloud SQL, when the audit fails, then `get_freshness` answers 503, not 500, distinguishing an external outage from an internal defect (`health.py:139-151`, `is_infrastructure_error`).
 - Given the Admin page's Data Sources panel mounts, when `useAdminDataSources` fetches `GET /api/admin/data-sources`, then it receives the same cached freshness report this element produces, because both endpoints share `freshness_report_dict()` (`platform/api/routers/admin.py:1391-1402`).
 
-**Tests:** `tests/api/test_platform_api.py`, `tests/api/test_route_coverage.py` (both exercise `GET /api/health/freshness` reachability; no dedicated freshness-cache unit test covering the claim, stale and 503 branches was found in `tests/api/` under this task's search). solyra `tests/dashboard/data-pipeline-widget.spec.ts` (Playwright, pins the retired widget's absence; not part of Te, solyra#28 is open).
+**Tests:** `tests/api/test_platform_api.py`, `tests/api/test_route_coverage.py` (both exercise `GET /api/health/freshness` reachability; no dedicated freshness-cache unit test covering the claim, stale and 503 branches was found in `tests/api/` under this task's search). solyra `tests/dashboard/data-pipeline-widget.spec.ts` runs hermetically in ci.yml's `e2e (chromium, mocked)` job, but it pins the retired `DataPipelineStatus` widget's absence, not this row's own freshness-cache behavior, so it does not lift Te here.
 
 **Code:** `platform/api/routers/health.py:40-64` (`_CACHE_TTL`, `_cache`, `_AUDIT_FLIGHT`), `:67-125` (`freshness_report_dict`), `:127-155` (`_run_audit_and_cache`), `:158-184` (`get_freshness`); `platform/api/routers/admin.py:1391-1402` (`GET /api/admin/data-sources`); `gcp/deploy.sh:2525-2554` (`deploy_freshness_watchdog`), `:4447-4448` (scheduler triggers); solyra `src/hooks/useAdmin.ts:312-364`, `src/components/admin/DataSourcesPanel.tsx`.
 
@@ -1050,12 +1050,12 @@ Covered as separate rows.
 
 **Tests:** `tests/shared/auth-gate.spec.ts` (`open mode → app renders, no login screen`; `gated
 chunk downloads in parallel with the config fetch`; `firebase mode, signed out → login screen
-blocks the app`), Playwright, not run in CI (solyra#28), so does not tick Te here.
+blocks the app`) runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry
+for this row cites that job on main run 36361217691.
 `tests/api/test_route_coverage.py`'s `GET /api/config/firebase` case issues a real request and
 asserts a 200 JSON envelope, and `tests/api/test_platform_auth.py::TestValidatedAuthMode` tests
-the `AUTH_MODE` validation the endpoint's value depends on, both pytest and CI-run, but neither
-exercises the client-side mode-bootstrap decision this row is actually about, so Te stays
-unticked here (see Gaps).
+the `AUTH_MODE` validation the endpoint's value depends on, both pytest and CI-run, backing the
+`AUTH_MODE` half of this row independently of the Playwright evidence above.
 
 **Code:** `src/components/auth/ConfigGate.tsx`, `src/components/auth/AuthGate.tsx`,
 `src/lib/runtimeConfig.ts`; test ids `signin-screen`, `config-error` (the sibling states' own
@@ -1092,11 +1092,12 @@ account" / "Create account") with `mode`.
   already unmounted (`firebaseImpl.ts:84-96`; the store itself is unit-tested by
   `src/lib/authGate.test.ts`, independent of sign-up).
 
-**Tests:** `tests/shared/auth-gate.spec.ts` (`login screen toggles between sign-in and sign-up`),
-Playwright, no Te. `tests/api/test_platform_auth.py::test_firebase_allowlist_switch` is real,
-CI-run pytest coverage of this row's access-policy half (`_is_allowed`), but the sign-up
-submission and the verification-email bookkeeping remain untested by any CI-run suite, so Te
-stays unticked for the row as a whole.
+**Tests:** `tests/shared/auth-gate.spec.ts` (`login screen toggles between sign-in and sign-up`)
+runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry for this row
+cites that job on main run 36361217691. `tests/api/test_platform_auth.py::test_firebase_allowlist_switch`
+is real, CI-run pytest coverage of this row's access-policy half (`_is_allowed`); together the two
+suites back the Te tick, though the verification-email bookkeeping itself remains untested by any
+suite.
 
 **Code:** `src/components/auth/SignInScreen.tsx:29, 275-284`, `src/lib/firebaseImpl.ts:81-96`,
 `platform/api/auth.py:169`; test ids `login-toggle`, `login-submit`.
@@ -1143,7 +1144,8 @@ Backtest Pipeline workflow on `main`), so this row ticks Te on that evidence.
 `tests/api/test_route_coverage.py` also requests `GET /api/me` as part of its full-surface sweep
 (200, JSON envelope). The client side (`useUser.ts`'s consumption of the response) has no Vitest
 of its own; `tests/admin/admin-auth.spec.ts` exercises the admin-gating consequence of `is_admin`
-end to end, Playwright, no Te of its own.
+end to end and runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry
+for this row appends that job on main run 36361217691 to the pytest evidence above.
 
 **Code:** `platform/api/main.py:282-304 get_current_user`, `platform/api/auth.py:229-264
 stored_role_for`, `platform/api/auth.py:224-226 configured_admin_email`, `src/hooks/useUser.ts`.
@@ -1181,11 +1183,15 @@ state `run()` manages for every sign-in method on this screen.
   though no test drives this specific rejection through `SignInScreen` itself.
 
 **Tests:** `tests/shared/auth-gate.spec.ts` (`firebase mode, signed out → login screen blocks the
-app`, asserting the unframed `google-signin` button; `framed preview: the Google button opens a
-new tab instead of a popup`, new, asserting the framed variant), both Playwright, no Te.
+app`, asserting the unframed `google-signin` button, pre-existing) runs hermetically in ci.yml's
+`e2e (chromium, mocked)` job and genuinely covers the not-framed branch, but this row's own title
+names the framed new-tab variant, and the only test that asserts it
+(`framed preview: the Google button opens a new tab instead of a popup`) is one this branch added;
+the cited main run (36361217691) is on commit eca7078, this branch's base, so it predates that
+test. Te waits for a CI run that includes it (see Gaps).
 `src/lib/authAction.test.ts`'s `friendlyError` suite covers the Google-specific error codes as
 pure-function mappings (Vitest, CI-run), but no test wires that mapping through this component,
-so it does not lift Te for this row.
+so it does not lift Te for this row either way.
 
 **Code:** `src/components/auth/SignInScreen.tsx:180-209`, `src/lib/firebase.ts` (`isFramed`,
 `signInWithGoogle`), `src/lib/firebaseImpl.ts:71-74`; test ids `google-signin`,
@@ -1221,12 +1227,16 @@ to our backend; only `/api/*` calls made once signed in attach the resulting ID 
 - Given the submit button, when `email`/`password` are empty or a request is in flight, then it is
   `disabled` (`SignInScreen.tsx:266`), so no empty or duplicate submission reaches the SDK.
 
-**Tests:** `tests/shared/auth-gate.spec.ts` (`login screen toggles between sign-in and sign-up`;
-`email sign-in shows the inline error when the identity call fails`, new), Playwright, no Te.
+**Tests:** `tests/shared/auth-gate.spec.ts` (`login screen toggles between sign-in and sign-up`,
+pre-existing, toggles the UI mode only and asserts nothing about an inline error;
+`email sign-in shows the inline error when the identity call fails`, the only test that actually
+asserts this row's own behavior, is one this branch added) runs hermetically in ci.yml's
+`e2e (chromium, mocked)` job, but the cited main run (36361217691, commit eca7078) predates that
+test, so Te waits for a CI run that includes it (see Gaps).
 `src/lib/authAction.test.ts`'s `friendlyError` describe block is real, CI-run (Vitest) coverage of
 the error-copy mapping this row's "with inline error" half depends on, but it tests the pure
 function in isolation, not the form submission itself, so it does not on its own satisfy Te for
-the row; the submission path stays Playwright-only (see Gaps).
+the row.
 
 **Code:** `src/components/auth/SignInScreen.tsx:58-66, 218-273`, `src/lib/authAction.ts`
 (`friendlyError`), `src/lib/firebaseImpl.ts:76-78`; test ids `login-email`, `login-password`,
@@ -1277,8 +1287,9 @@ machine: loading, invalid-link, unavailable (open mode), reset-form, confirm-app
   email sign-in unavailable card`).
 
 **Tests:** `tests/shared/auth-gate.spec.ts` (`Forgot password` describe block, `/auth/action`
-describe block, 10 tests total), Playwright, no Te on their own. Two CI-run suites cover this
-row's own logic closely enough to tick Te here: `src/lib/authAction.test.ts` (Vitest, 15 tests
+describe block, 10 tests total) runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the
+matrix's Te entry for this row appends that job on main run 36361217691. Two CI-run suites already
+cover this row's own logic closely enough to tick Te independently: `src/lib/authAction.test.ts` (Vitest, 15 tests
 passed) unit-tests `parseAuthAction`, `operationMatchesMode`, `validateNewPassword`,
 `friendlyActionError`, `successCopy`, and `resetLooksSent`, effectively the entire client-side
 decision logic this row exercises, independent of DOM rendering; `tests/test_auth_email_templates.py`
@@ -1318,9 +1329,13 @@ only.
   outside firebase mode, not the sign-out *action* itself, which only the new test above exercises
   end to end.
 
-**Tests:** `tests/shared/auth-gate.spec.ts` (`sign out returns to the sign-in screen`, new),
-`tests/shared/navigation.spec.ts` (`auth status lives at the menu bottom, not the bar`, the
-negative open-mode case), both Playwright, no Te (solyra#28).
+**Tests:** `tests/shared/auth-gate.spec.ts` (`sign out returns to the sign-in screen`, the only
+test that actually asserts this row's own action, is one this branch added),
+`tests/shared/navigation.spec.ts` (`auth status lives at the menu bottom, not the bar`,
+pre-existing, the negative open-mode case, asserts absence of a different control, not this row's
+action). Both run hermetically in ci.yml's `e2e (chromium, mocked)` job, but the cited main run
+(36361217691, commit eca7078) predates the new test, so Te waits for a CI run that includes it
+(see Gaps).
 
 **Code:** `src/components/auth/SignOutButton.tsx`, `src/components/shared/AuthStatusIndicator.tsx:96-103, 132`;
 test ids `sign-out`, `account-menu-sign-out`.
@@ -1389,8 +1404,11 @@ further sub-states.
   unnecessarily (`retries a gated 401 once with a force-refreshed token and does not report
   signed-out on success`, `src/lib/authedFetch.test.ts`).
 - Given `isAuthBlocked()` is true, when `MostActiveBar` renders, then it shows the signed-out
-  presentation rather than an empty or stale marquee (`MostActiveBar.tsx:179`); exercised by
-  `tests/shared/most-active-bar.spec.ts`, Playwright.
+  presentation rather than an empty or stale marquee (`MostActiveBar.tsx:179`, read directly); no
+  test in `tests/shared/most-active-bar.spec.ts` exercises this branch (its six tests cover
+  rendering with data, non-mount on other routes, reduced motion, the empty list, a 500 response
+  and horizontal overflow only, none mocking a 401 or referencing auth), matching the untested
+  status this same branch carries under SHELL-05.
 - Given a real, unauthenticated request against `GET /api/market/most-active` on staging, when
   issued from this session, then it answers 401 (verified 2026-09-28, see the V-gate evidence
   comment).
@@ -1401,8 +1419,11 @@ the 401-on-gated-path mechanics and the token-retry behavior, though its asserti
 `markAuthBlocked`/`clearAuthBlocked` run for real as an unmocked side effect, but no assertion in
 that file reads the resulting flag. `tests/api/test_platform_auth.py::test_firebase_requires_valid_token`
 covers the server-side 401 half. Together these back the Te tick for this row.
-`tests/shared/most-active-bar.spec.ts` covers the actual `isAuthBlocked` → "Sign in to load data"
-rendering, Playwright, no Te of its own.
+`tests/shared/most-active-bar.spec.ts` does **not** cover this row: an earlier version of this
+line claimed it exercised the `isAuthBlocked` → "Sign in to load data" rendering, but reading the
+file directly shows its six tests (data rendering, non-mount, reduced motion, the empty list, a
+500 response, horizontal overflow) never mock a 401 or mention auth at all. Corrected 2026-09-28.
+The `isAuthBlocked` branch itself remains untested by any suite, Vitest or Playwright.
 
 **Code:** `platform/api/auth.py:188-213 auth_middleware`, `src/lib/authedFetch.ts:157-165,
 249-250`, `src/lib/authGate.ts:14-47 markAuthBlocked/clearAuthBlocked/useAuthBlocked`,
@@ -1436,8 +1457,10 @@ its own beyond that.
   error (`ConfigGate.tsx:58-65`); no test exercises `describeBootFailure` directly (see Gaps).
 
 **Tests:** `tests/shared/auth-gate.spec.ts` (`config fetch failure → config-error screen, app
-never renders`, `config endpoint answering HTML (static-host fallback) → config-error screen`),
-Playwright, no Te. No pytest or Vitest covers a failure response from this endpoint, or
+never renders`, `config endpoint answering HTML (static-host fallback) → config-error screen`)
+runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry for this row
+cites that job on main run 36361217691. No pytest or Vitest covers a failure response from this
+endpoint, or
 `describeBootFailure` itself.
 
 **Code:** `src/components/auth/ConfigGate.tsx:27-65, 94-123`; test id `config-error`.
@@ -1814,8 +1837,10 @@ Escape or a backdrop click closes it.
   by any test, see Gaps).
 
 **Tests:** `tests/shared/navigation.spec.ts` (`command palette opens with the keyboard shortcut
-and navigates to a page`, new in this task; Playwright, not run in CI, solyra#28, so ticks no
-Te here). No prior test of any kind existed for this component (confirmed the pre-existing Gaps
+and navigates to a page`, the only test for this component, is one this branch added) runs
+hermetically in ci.yml's `e2e (chromium, mocked)` job, but the cited main run (36361217691,
+commit eca7078) predates it, so Te waits for a CI run that includes it (see Gaps). No prior test
+of any kind existed for this component (confirmed the pre-existing Gaps
 note before adding this test).
 
 **Code:** `src/components/layout/AppShell.tsx:45-54,77`, `src/components/layout/CommandPalette.tsx`.
