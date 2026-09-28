@@ -630,7 +630,7 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 #### Journeys
 1. Analyse a level: Opens /charts and picks a date and timeframe (CHARTS-09) → Turns on Levels and Gamma overlays (CHARTS-10) → Reads King, Gate and Flip against price (CHARTS-10) → Checks the Strategy conditions card for the voter read (CHARTS-05) → Opens Similar setups to see how the pattern resolved before (CHARTS-06)
 2. Train on bar replay: Starts a replay session (CHARTS-11) → Steps bars forward one at a time (CHARTS-04, CHARTS-11) → Marks an entry and picks CALL, PUT or skip (CHARTS-11) → Finishes the session (CHARTS-11) → Reads the post-session scorecard against the system benchmark (CHARTS-08)
-3. Backtest your own trades: Scrolls to the backtester section (CHARTS-07) → Clicks "Backtest my trades" (CHARTS-12) → Journal trades for the ticker are replayed (CHARTS-12) → Reviews the equity curve and results (CHARTS-07) → Follows through to /reports for the written version
+3. Backtest your own trades: Scrolls to the Backtester section (CHARTS-07) → sees results computed once in February 2026, not a live run over the trader's own journal; the seed's on-demand "Backtest my trades" button and journey no longer exist (see the matrix Charts Gaps) → the equivalent live outcome comes from finishing a replay session instead (CHARTS-11), read as the post-session scorecard (CHARTS-08)
 
 #### Elements
 ##### CHARTS-01 · Toolbar
@@ -719,7 +719,7 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 | OPTIONS-13 | permission | not tracked (new category); present | `SignInBanner` ("Sign in to load options data") plus `DataGate` around the tab content. |
 
 #### Journeys
-1. Find the level that matters: Opens /options with Heatseeker in Swing Mode (OPTIONS-01) → Picks a snapshot date (OPTIONS-08) → Reads the strike by expiry grid for the largest positive GEX (OPTIONS-01) → Notes King, Gate and Flip from the legend and node list (OPTIONS-01) → Carries those levels to /charts as an overlay (CHARTS-10)
+1. Find the level that matters: Opens /options with Heatseeker in Swing Mode (OPTIONS-01) → the expiry chips only change their own highlight here; picking an expiration does not refetch the grid in Swing Mode (see the matrix Options Gaps) → Reads the strike by expiry grid for the largest positive GEX (OPTIONS-01) → Notes King, Gate and Flip from the legend and node list (OPTIONS-01) → Carries those levels to /charts as an overlay (CHARTS-10)
 2. Check index positioning: Switches Heatseeker to Trinity Mode (OPTIONS-02, OPTIONS-07) → Compares SPX, SPY and QQQ strike ladders (OPTIONS-02) → Identifies where dealer hedging concentrates (OPTIONS-02)
 3. Inspect flow (demo data): Switches to Flowseeker, Live Feed (OPTIONS-03, OPTIONS-07) → Demo-data banner states this view is mock (OPTIONS-03) → Opens Contract Drilldown for a per-contract tape (OPTIONS-04) → Switches to Profiles for real Greeks and gamma (OPTIONS-05, OPTIONS-07)
 
@@ -771,7 +771,7 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 | GET /api/live/status | is_open, session, next_open, current_time_et (types: `useLiveStatus.ts` LiveStatus) |  | 60s refetch, 30s staleTime | `useLiveStatus` → Header evaluation line, snapshot |
 | GET /api/live/quote/{ticker} | price, open, high, low, volume, change, change_pct, prev_close, last_updated (types: `useLiveQuote.ts` LiveQuote) |  | fetched only while the session is open, pre-market or after-hours | `useLiveQuote` → Trade levels (target/stop off the live price), snapshot |
 | GET /api/live/history/{ticker} | ticker, interval, count, market_session, market_open, bars[] (types: `useLiveHistory.ts` LiveHistory) |  | 60s refetch, 30s staleTime; fetched only while the session is open, pre-market or after-hours | `useLiveHistory` → evaluation snapshot |
-| GET /api/live/avg-volume/{ticker} | ticker, avg_volume_20d, sample_size, last_date, source (types: `useLiveHistory.ts` AvgVolume) | fetch-market-data 23:00 ET Mon-Fri → market_data_daily | one-hour staleTime | `useAvgVolume` → evaluation snapshot |
+| GET /api/live/avg-volume/{ticker} | ticker, avg_volume_20d, sample_size, last_date, source (types: `useLiveHistory.ts` AvgVolume) | fetch-market-data 23:00 ET Mon-Fri and fetch-earnings-history 19:15 ET Mon-Fri → market_data_daily | one-hour staleTime | `useAvgVolume` → evaluation snapshot |
 | POST /api/live/indicators | indicators, signals.call/put, chart_voter (types: `useLiveIndicators.ts` IndicatorsResponse) |  | keyed on bar count, last bar time and current price, not time-based | `useLiveIndicators` → evaluation snapshot |
 | POST /api/playbook/evaluate | results_by_key keyed by card id (types: `usePlaybookEvaluation.ts` PlaybookEvaluateResponse, `lib/playbookEvaluator.ts` EvalResult) |  | 30s staleTime | `usePlaybookBatch` (`usePlaybookEvaluation.ts`) → Setup cards condition rows, progress bar |
 | store: ticker |  | Zustand, per session |  | every card |
@@ -868,9 +868,9 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 | REPORTS-10 | permission | not tracked (new category); present | `DataGate` wraps the list error, empty state, report header and body; the picker bar itself sits outside it and still renders, with an empty list, when signed out. |
 
 #### Journeys
-1. Read the pipeline end to end: Opens /reports (REPORTS-01) → The first report loads automatically (REPORTS-01, REPORTS-03) → Steps forward with Next through phases (REPORTS-05) → Reads the walk-forward tables (REPORTS-03) → Notes which setups degraded out-of-sample (REPORTS-03)
+1. Read the pipeline end to end: Opens /reports (REPORTS-01) → The first report loads automatically (REPORTS-01, REPORTS-03); it is Phase 6, the server's reverse order, not Phase 1 as the seed describes (see the matrix Reports Gaps) → Steps through with Next, which walks backward through the pipeline from there (REPORTS-05) → Reads the walk-forward tables (REPORTS-03) → Notes which setups degraded out-of-sample (REPORTS-03)
 2. Jump to one phase: Opens the grouped dropdown (REPORTS-01) → Picks the phase by name (REPORTS-04) → Reads the body; the filename shows the source (REPORTS-03, REPORTS-02)
-3. No reports yet: Switches ticker → The list comes back empty (REPORTS-07) → The page says to run the analysis pipeline (REPORTS-07)
+3. No reports yet: Switches ticker → The list comes back empty as a 404, shown as "Could not load the report list for {ticker}." (REPORTS-08); the seed's "no reports yet" empty-state copy is never reached in code (see the matrix Reports Gaps)
 
 #### Elements
 ##### REPORTS-01 · Picker bar
@@ -1028,7 +1028,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 | JOURNAL-16 | permission | not tracked (new category); present | `DataGate` wraps the page body; `AuthGate`'s `SignInScreen` renders for a signed-out visitor; every signed-in user sees the same Examples. |
 
 #### Journeys
-1. Log a trade from the chart: Opens /journal and picks the session date (JOURNAL-01, JOURNAL-11) → Clicks Mark entry (JOURNAL-07) → Clicks the entry bar, then the exit bar (JOURNAL-07) → Picks CALL or PUT (JOURNAL-07) → The trade appears in the rail, tiles and table (JOURNAL-02, JOURNAL-03, JOURNAL-06)
+1. Log a trade from the chart: Opens /journal and picks the session date (JOURNAL-01, JOURNAL-11) → Clicks Mark entry (JOURNAL-07) → Clicks the entry bar, then picks CALL or PUT (JOURNAL-07) → Optionally sets up to three targets and a stop (JOURNAL-07) → The trade appears in the rail, tiles and table (JOURNAL-02, JOURNAL-03, JOURNAL-06) → Exits later from the rail card (JOURNAL-07); the seed describes entry, then exit, then CALL or PUT, which is not the code's order (see the matrix Journal Gaps)
 2. Bring in broker history: Clicks Import CSV (JOURNAL-09) → Picks the broker and file, Robinhood and Webull skip the mapper (JOURNAL-09) → Reviews the preview table and unchecks rows (JOURNAL-09) → Commits; result reads "Imported N · M duplicates skipped" (JOURNAL-09) → Trades land in My journal (JOURNAL-06, JOURNAL-11)
 3. Review performance: Clears the session date for the Overview (JOURNAL-11) → Reads the KPI tiles across all dates (JOURNAL-03) → Follows the cumulative equity curve (JOURNAL-02) → Opens "My style" to mine patterns from closed trades (JOURNAL-04) → Exports the view as CSV (JOURNAL-10)
 4. Learn from examples: Switches the view toggle to Examples (JOURNAL-11) → Studies curated trades on the same chart (JOURNAL-02) → Compares their levels with their own (JOURNAL-06) → Switches back to My journal (JOURNAL-11)
@@ -1089,7 +1089,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 | GET /api/admin/routes | routes[].role/provider/model/updated_at/updated_by (types: `useAdmin.ts` RouteListResponse) |  | 30s staleTime | `useAdminRoutes` (`useAdmin.ts`) → Agents tab (`AgentsPanel`) |
 | GET /api/insights/watchlist | run_id, as_of, candidate_count, excluded_count, ranked[].ticker/score/pct_of_max/catalyst_types/catalyst_metadata/score_breakdown, weights_used, duration_ms (types: `src/types/watchlist.ts` WatchlistResponse) | fetch-earnings-calendar 19:00 ET Mon-Fri → earnings_calendar (one of several candidate-tag tables the ranker reads) | 5min staleTime | `useWatchlist` (`useWatchlist.ts`) → Watchlist tab (`WatchlistPanel`) |
 | GET /api/insights/ticker/search · POST /api/insights/watchlist/add | results[].symbol/name/type/region/currency/match_score (search); ticker/added/info/quote/peers/watchlist (add) (types: `useTickerSearch.ts` TickerSearchResult/WatchlistAddResult) |  | 60s staleTime (search) | `useTickerSearch` / `useAddToWatchlist` (`useTickerSearch.ts`) → Watchlist tab's `TickerSearchPanel` |
-| POST /api/insights/chat | message, mode, ticker, history (request); streamed plain-text reply, no `response_model` | none |  | `ChatView` (inline in `InsightsPage.tsx`) → Chat tab |
+| POST /api/insights/chat | message, mode, ticker, history (request); streamed plain-text reply, no `response_model` |  |  | `ChatView` (inline in `InsightsPage.tsx`) → Chat tab |
 | store: ticker |  | Zustand, per session |  | every tab |
 
 #### Displayed
@@ -1122,8 +1122,8 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 #### Journeys
 1. Read the day's council report: Opens /insights (INSIGHTS-01) → Reads the thesis, direction, conviction and confidence (INSIGHTS-01) → Checks key levels and risk flags (INSIGHTS-01) → Reads the agent debate and the judge's verdict (INSIGHTS-01) → Picks the persona plan matching their style (INSIGHTS-01)
 2. Generate a fresh report: Switches ticker → No report exists yet (INSIGHTS-12) → Clicks Regenerate (INSIGHTS-07) → Run progress is polled (INSIGHTS-07) → Report cards populate; a degradation banner appears if part of the pipeline was unavailable (INSIGHTS-01, INSIGHTS-06)
-3. Point-in-time replay: Sets a cutoff date and time (INSIGHTS-08) → The pipeline re-runs against data available then (INSIGHTS-08) → Compares that report with what happened after (INSIGHTS-01) → Clears the cutoff to return to live (INSIGHTS-08)
-4. Track a basket: Opens the Watchlist tab (INSIGHTS-04) → Searches and adds tickers (INSIGHTS-09) → Reviews quotes side by side (INSIGHTS-04) → Jumps into any ticker's report (INSIGHTS-01)
+3. Point-in-time replay: Sets a cutoff date and time (INSIGHTS-08) → the pipeline re-runs, though three reads (the catalysts news slice, reflection memory, the trade planner's blue-sky offset) ignore the cutoff, and the result is never labeled as a replay in the Report or History views (see the matrix Insights Gaps) → Opens the run from History to see it (INSIGHTS-03) → Clears the cutoff to return to live (INSIGHTS-08)
+4. Track a basket: Opens the Watchlist tab (INSIGHTS-04) → Searches and adds tickers (INSIGHTS-09) → the tab shows the ranker's score, not quotes, and is empty for every signed-in user today, since the ranking is scoped to the caller's own rows and only the shared default account holds any (see the matrix Insights Gaps) → Jumps into any ticker's report (INSIGHTS-01)
 
 #### Elements
 ##### INSIGHTS-01 · Report cards
@@ -1359,9 +1359,9 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 | HELP-04 | empty | present | "No matching terms found." |
 
 #### Journeys
-1. Look up a term: Opens /help (HELP-01) → Types "gamma" in the search box (HELP-01, HELP-05) → Expands the King level entry (HELP-07, HELP-03) → Reads the definition and its cross-references to Gate and Flip (HELP-03)
-2. Browse one framework: Clicks the STRAT category pill (HELP-02, HELP-06) → Scans the entries for that framework (HELP-03) → Expands 2-1-2 and FTFC to learn the vocabulary (HELP-07, HELP-03)
-3. Arrive from elsewhere: Hovers a term on another page (HELP-08) → Follows the link into the glossary (HELP-08) → Reads the entry, then returns to the analysis (HELP-03)
+1. Look up a term: Opens /help (HELP-01) → Types "gamma" in the search box (HELP-01, HELP-05) → Expands the King Node (★) entry (HELP-07, HELP-03) → Reads the definition and its cross-references to Gate and Flip (HELP-03)
+2. Browse one framework: Clicks the category pill labeled "The Strat" (HELP-02, HELP-06) → Scans the entries for that framework (HELP-03) → Expands 2-1-2 and FTFC to learn the vocabulary (HELP-07, HELP-03)
+3. Arrive from elsewhere: Hovers a Term span on the Options Gamma Map (HELP-08) → its tooltip reads a separate mock glossary and the Glossary button opens /help with no term or anchor carried over; no link into a specific entry exists today (see the matrix Help Gaps) → Searches for the term manually (HELP-01, HELP-05)
 
 #### Elements
 ##### HELP-01 · Search box
