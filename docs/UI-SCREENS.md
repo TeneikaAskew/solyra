@@ -536,8 +536,10 @@ fixtures.ts:10-18`); no endpoint, no store.
 
 **Acceptance criteria:**
 - Given `/` is rendered, when `Hero` mounts, then the "Know why the market moves." heading
-  and the "Join the waitlist" / "See a live day ↓" CTAs are visible (`renders all key
-  sections at /`, matching `/know why the market moves/i` by role).
+  is visible (`renders all key sections at /`, matching `/know why the market moves/i` by
+  role); no test asserts the "Join the waitlist" or "See a live day ↓" CTAs themselves,
+  confirmed by searching both `tests/landing/landing.spec.ts` and
+  `src/components/landing/*.test.ts*` for their text.
 - Given the OS reports `prefers-reduced-motion: reduce`, when `useTypingLines(7)` runs,
   then it returns 7 immediately and starts no interval (`useTypingLines.ts:12-15`; verified
   by reading the hook directly, no test exercises this branch).
@@ -674,9 +676,13 @@ store, no other endpoint.
 (`data-testid="waitlist-success"`, `:48-51`), error (LANDING-13).
 
 **Acceptance criteria:**
-- Given `/` is rendered, when `WaitlistSection` mounts, then "Be there at first light."
-  and the email input are visible (`renders all key sections at /`, exact heading text;
-  `WaitlistSection.tsx:43,64-76`).
+- Given `/` is rendered, when `WaitlistSection` mounts, then "Be there at first light." is
+  visible (`renders all key sections at /`, exact heading text, `WaitlistSection.tsx:43`);
+  no assertion in that test targets the email input. It is exercised, though not explicitly
+  asserted visible, by a different test's fill action
+  (`tests/landing/landing.spec.ts:74`, `page.getByTestId('waitlist-email').fill(...)` inside
+  `waitlist form rejects an invalid email with a visible error`), which requires the input
+  to be present and actionable to succeed.
 - Given the honeypot input, when a sighted person fills the form with a mouse or keyboard,
   then it stays empty, because it is visually and semantically hidden
   (`aria-hidden="true"`, off-screen absolute positioning, `tabIndex={-1}`, `:54-63`); only
