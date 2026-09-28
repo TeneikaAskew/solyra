@@ -149,28 +149,28 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 ### SCREEN-AUTH — sign-in (in-route)
 
 - **Purpose:** In-route auth surface guarding every app route: boots the runtime auth config, renders Google or email/password sign-in and sign-up until a session exists, and handles sign-out and the /auth/action password-reset and email-verification links.
-- **Status:** Infrastructure · **Blocking issue:** none · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-09-28
-- **Component:** `src/components/auth/AuthGate.tsx`, `src/components/auth/ConfigGate.tsx`, `src/components/auth/SignInScreen.tsx`, `src/components/auth/SignOutButton.tsx`, `src/routes/AuthActionPage.tsx`
+- **Status:** Infrastructure · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-09-28
+- **Component:** `src/components/auth/AuthGate.tsx` (30 lines), `src/components/auth/ConfigGate.tsx` (176 lines), `src/components/auth/SignInScreen.tsx` (302 lines), `src/components/auth/SignOutButton.tsx` (38 lines), `src/routes/AuthActionPage.tsx` (550 lines)
 - **Child components:** `LoadingSpinner`, `SignInScreen`
 - **API calls (from source):** `/api/config/firebase`, `/api/me`
 - **States present:** load, err
 - **E2E specs:** `tests/shared/auth-gate.spec.ts`, `tests/admin/admin-auth.spec.ts`
 - **PR lineage:** UNKNOWN / NEEDS HISTORY TRACE
-- **Target:** meet REQ-UX-001: explicit stale/unavailable presentation, keyboard operability,
+- **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
 
 ### SCREEN-SHELL — app shell
 
 - **Purpose:** Shared layout for the 13 authenticated app routes: sidebar or top-tab navigation, header, command palette, status banners and the most-active marquee around the routed page.
-- **Status:** Infrastructure · **Blocking issue:** none · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-09-28
-- **Component:** `src/components/layout/AppShell.tsx`
+- **Status:** Infrastructure · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-09-28
+- **Component:** `src/components/layout/AppShell.tsx` (80 lines)
 - **Child components:** `Sidebar`, `TopTabs`, `Header`, `CommandPalette`, `MostActiveBar`, `AuthStatusBanner`, `EmailVerificationBanner`, `MockModeBanner`, `Outlet`
 - **API calls (from source):** `/api/market/most-active`, `/api/live/status`, `/api/me/preferences`, `/api/config/market-hours`
 - **Stores:** `useSettingsStore`
 - **States present:** none in the shell itself
 - **E2E specs:** `tests/shared/navigation.spec.ts`, `tests/shared/most-active-bar.spec.ts`, `tests/shared/mock-mode.spec.ts`
 - **PR lineage:** UNKNOWN / NEEDS HISTORY TRACE
-- **Target:** meet REQ-UX-001: explicit stale/unavailable presentation, keyboard operability,
+- **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
 
 ### SCREEN-DASHBOARD — `/dashboard`
