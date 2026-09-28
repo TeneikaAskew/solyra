@@ -15,10 +15,16 @@ By moving away from the bright greens of the reference material and adopting a s
 The palette is anchored in deep charcoals and obsidian blacks, providing a high-contrast stage for critical data points.
 
 > **Corrected 2026-09-28 — the described blue is one of twelve selectable
-> accents, and it is not the default.** Everything below describes the
-> `blue` accent (`src/index.css`'s base `--brand: #8bceff`, which `blue`
-> "needs no overrides" to reach — see the comment at `src/index.css:303`).
-> But `src/stores/settingsStore.ts:45` defaults new users to **`dawn`**
+> accents, it is not the default, and even "blue" only means these hex
+> values in dark mode.** Everything below describes the `blue` accent in
+> **dark theme** (`src/index.css`'s base `:root` block, `--brand: #8bceff`,
+> which `blue` "needs no overrides" to reach — see the comment at
+> `src/index.css:303`). Under `[data-theme="light"]` the base variables
+> are redefined regardless of accent — `--brand: #0072c6`,
+> `--brand-container: #004f8a`, `--brand-glow: #3b9fde` (`src/index.css:90-92`)
+> — so light-mode `blue` does not match this section either; that
+> variant isn't documented here. `src/stores/settingsStore.ts:45` also
+> defaults new users to **`dawn`**
 > (`--brand: #ff7a4d`, orange), applied as a body class at module load
 > (`applyShellClasses(initial.density, initial.accent)`, line 96) before
 > any component renders. The full set — `dawn`, `blue`, `amber`, `violet`,
