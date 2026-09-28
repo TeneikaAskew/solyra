@@ -1,6 +1,6 @@
 # Documentation registry
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-18 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 Which documents this repo maintains, who owns each one, and what code each one
 describes. `scripts/docs-audit.mjs` reads the tables below; the prose around
@@ -90,8 +90,11 @@ single-branch CI clone, where no such ref exists. Pass `--since origin/main`
 when the recorded provenance has to name a mainline commit.
 
 Placement is "the first paragraph after the first H1", never a fixed line
-number: seven living docs here open with an HTML comment block and carry their
-H1 on line 9, where a line-3 insert would land inside the comment.
+number: six living docs here (`FRONTEND.md`, `docs/UI-SCREENS.md`,
+`docs/E2E_TEST_PLAN.md`, `docs/REDESIGN.md`,
+`docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md`,
+`docs/solyra-landing-page-plan.md`) open with an HTML comment block and carry
+their H1 on line 9, where a line-3 insert would land inside the comment.
 
 ## Registry
 

@@ -1,6 +1,6 @@
 # Design System Document
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## 1. Overview & Creative North Star: "The Obsidian Analyst"
 
@@ -217,11 +217,15 @@ the paths below were `platform/src/...` in that repo.
 imports **Montserrat** only (`:1`), and uses it for both display and body.
 
 The §3 type scale is only partially implemented, and not at the documented
-sizes. Of the table's nine rows, `src/index.css` defines classes for two:
-`.display-lg` at **3rem**, not the specified 3.5rem, and `.headline-sm` at
-the specified 1.125rem — plus a `.label-micro` (11px) the table doesn't
-name. The remaining rows (`display-md`, `display-sm`, `headline-lg`,
-`body-*`, `label-*`) have no implementation yet.
+sizes. Of the table's nine rows, `src/index.css` defines classes for three:
+`.display-lg` at **3rem**, not the specified 3.5rem; `.headline-sm` at the
+specified 1.125rem; and `display-sm`'s spec (1.75rem / 700) is implemented
+exactly, but under a different class name — `.metric-value`, whose own
+comment ("Display-sm: KPI card value, matches NVDA reference '$175.31'") is
+the same example this doc's own §5 KPI Card Anatomy diagram labels
+`display-sm`. Plus a `.label-micro` (11px) the table doesn't name. The
+remaining rows (`display-md`, `headline-lg`, `body-*`, `label-*`) have no
+implementation yet.
 
 These are recorded rather than silently reconciled, because closing them is
 a design decision: load the specified pair or ratify Montserrat, and either

@@ -8,7 +8,7 @@
 
 # End-to-End Test Plan — Stocks Trading Platform
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 > Canonical test strategy for the Obsidian Analyst redesign. Three layers —
 > **frontend E2E (Playwright)**, **backend (pytest)**, and **GCP data/pipeline
@@ -33,7 +33,8 @@
 
 ## 1. Frontend E2E (Playwright) — primary
 
-**Config:** `playwright.config.ts` — `testDir: ./tests`, 3 projects:
+**Config:** `playwright.config.ts` — `testDir: ./tests`, 4 projects:
+- **`warmup`**: not run directly — a dependency of `chromium` only. Warms every lazy route against the freshly-booted Vite so the specs' wall-clock budgets measure a warm server, not a cold transform.
 - **`chromium`** (default): boots its **own** Vite on the dedicated E2E port (`:5199`, never your `:5173` dev server), all `/api/**` **mocked** per-spec → no backend needed, hermetic, fast.
 - **`iap-setup`** / **`cloud`**: run against the deployed FRONTEND (`solyra-stocks.lovable.app`), not a Cloud Run URL, and **not** behind IAP — the SPA is published separately since #957 and its API is gated per request by a Firebase ID token. `iap-setup` captures a real signed-in session interactively (including Firebase's IndexedDB persistence). `cloud` matches `*.cloud.spec.ts` and **none exist yet**, so it exits `No tests found` rather than running the hermetic specs against production, which would have forced `authMode: 'open'` and measured the mocks. Writing that suite is outstanding work. Both are skipped by the default command.
 
@@ -49,10 +50,10 @@
 | `journal.spec.ts` | `/journal` | **KPI tiles + equity curve** · add/delete trade · CSV export |
 | `catalysts.spec.ts` | `/catalysts` | feed grouped by date · impact/type filter chips · sentiment |
 | `options-flow.spec.ts` · `gamma-levels.spec.ts` | `/options` | Gamma Map grid · GEX/VEX · King/Gate fallback · live-AV badge |
-| `live-market.spec.ts` · `charts-cards.spec.ts` · `phase1-charts.spec.ts` | `/live` `/charts` | hero tiles · candlestick canvas · reference levels |
+| `live-market.spec.ts` · `charts-cards.spec.ts` | `/live` `/charts` | hero tiles · candlestick canvas · reference levels |
 | `playbook.spec.ts` · `reports.spec.ts` · `help.spec.ts` · `admin.spec.ts` · `admin-auth.spec.ts` | `/playbook` `/reports` `/help` `/admin` | cards · glossary · admin auth gate |
 | `navigation.spec.ts` | every route | each route loads without a fatal error |
-| `api-smoke.spec.ts` | API contracts | health/freshness, market dates, signals, options, backtest, insights as-of-replay rejects bad cutoffs |
+| **`api-smoke.spec.ts` — no such file.** No spec by this name exists in `tests/`; this row described planned API-contract coverage that was never written under this name (or was removed) | API contracts | *(not currently exercised by a Playwright spec — `src/mocks/contract.test.ts` is a Vitest unit test that checks a related but different concern, request/response shape vs. the OpenAPI contract; see CLAUDE.md Rule 6)* |
 
 ### Run
 ```bash
@@ -112,8 +113,17 @@ Known prod caveats validated there: AV-on-request endpoints require the
 
 ---
 
-## 5. CI gating (recommended)
-- **PR to `main`**: `npm run lint` + `npm run build` + `npm run e2e` (chromium, mocked) + `make test` must pass.
+## 5. CI gating
+
+`.github/workflows/ci.yml` runs on every PR to `main` and every push to
+`main`: `npm run build` (`tsc -b` across all three TS projects, which type-
+checks the E2E fixtures against the real API contracts) then `npm run e2e`
+(chromium, mocked). Two deliberate deviations from what this section used to
+prescribe, both explained in the workflow's own header comment:
+`npm run lint` is not gated yet (it currently fails on `main`, mostly on a
+pattern — exporting a pure helper beside the component that uses it — this
+codebase uses on purpose), and `make test` is gone, since it exercised the
+Python backend, which no longer lives in this repo.
 - **Pre-deploy**: add the `cloud` Playwright project against a staging revision before promoting traffic.
 
 ---

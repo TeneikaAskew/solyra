@@ -1,6 +1,6 @@
 # Project Instructions for Claude Code — Solyra
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## Project Overview
 
@@ -12,7 +12,7 @@ options/gamma analysis, signals, the trade journal, AI insights, and catalysts.
 pipeline (`lib/`), and the GCP jobs live in the **stocks** repo
 (`TeneikaAskew/stocks`) and deploy together as the `solyra-api-prod` Cloud Run
 service. Solyra's dev server proxies `/api/*` to that backend, so the browser
-sees same-origin requests and none of the ~73 bare `fetch('/api/...')` call
+sees same-origin requests and none of the ~87 bare `fetch('/api/...')` call
 sites need to know where the API actually is.
 
 | | |
@@ -433,11 +433,19 @@ so every gated call would 401.
 `src/lib/authedFetch.ts` monkeypatches `window.fetch` to (1) re-point `/api/*`
 at an absolute origin when one is configured (using `apiTargets.ts`) and
 (2) attach the Firebase ID token. It's a global wrapper because the app makes
-~73 bare relative `fetch('/api/...')` calls across ~30 files with no central
+~87 bare relative `fetch('/api/...')` calls across ~34 files with no central
 client.
 
-`OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`) must stay in
-sync with the backend's `api/auth._OPEN_API_PREFIXES` in stocks.
+`OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`,
+`/api/waitlist`) must stay in sync with the backend's open-path list in
+`stocks/platform/api/auth.py`. That list now splits `_OPEN_API_EXACT =
+("/api/me",)` from `_OPEN_API_PREFIXES = ("/api/health", "/api/config/firebase",
+"/api/waitlist")` — the exact/prefix split keeps `/api/me/preferences` and
+`/api/me/profile` gated server-side, where a flat prefix match used to open
+them. Solyra's `OPEN_PREFIXES` stays a flat list on purpose: it decides which
+401s mean "signed out" (see the comment above it in `authedFetch.ts`), not
+which paths skip the bearer token, so treating `/api/me` as a prefix here is
+correct even though the backend narrowed its own match to exact.
 
 ---
 

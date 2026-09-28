@@ -8,7 +8,7 @@
 
 # FRONTEND ARCHITECTURE
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 > **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app. Since the #957 split it no longer ships inside the API image: `platform/Dockerfile` in stocks copies no `dist/`, so the API serves `/api/*` only.
 > **Last refreshed:** 2026-05-22.
@@ -65,7 +65,7 @@ solyra/
 │  │  ├─ charts/                # CandlestickChart, PriceAreaChart,
 │  │  │                         # StrategyConditionsCard, SimilarSetupsCard
 │  │  └─ backtest/              # BacktesterSection
-│  ├─ hooks/                    # 17 TanStack-Query-backed data hooks (see hook map below)
+│  ├─ hooks/                    # 23 TanStack-Query-backed data hooks (see hook map below — 7 aren't in it yet)
 │  ├─ stores/                   # Zustand client state (5 stores)
 │  │  ├─ tickerStore.ts         # activeTicker + availableTickers (IWM/SPY/QQQ)
 │  │  ├─ tradeStore.ts          # in-flight trade form state
@@ -179,10 +179,10 @@ This is the only path that mutates production data from the frontend — everyth
 ### Local dev
 
 ```bash
-cd platform && npm install         # one-time
+npm install                        # one-time — this repo IS the frontend root
 npm run dev                        # vite on :5173, proxies /api → :8000
-# In another terminal:
-make dev                           # FastAPI on :8000 (from repo root)
+# In another terminal, from the stocks repo (the backend lives there now):
+make dev                           # FastAPI on :8000
 ```
 
 `vite.config.ts` proxies `/api/*` (and `/dev/*`) to `localhost:8000`, so the browser only talks to `:5173`. Hot-module reload works for `.tsx`/`.css`; FastAPI auto-reloads via `uvicorn --reload`.
@@ -190,10 +190,10 @@ make dev                           # FastAPI on :8000 (from repo root)
 ### Production build
 
 ```bash
-npm run build                       # tsc -b && vite build → platform/dist/
+npm run build                       # tsc -b && vite build → dist/
 ```
 
-`tsc -b` runs project-references compilation (`tsconfig.app.json` + `tsconfig.node.json`) — type-checks the whole app before bundling. `vite build` produces tree-shaken, code-split chunks (each lazy route is its own chunk) into `platform/dist/`.
+`tsc -b` runs project-references compilation (`tsconfig.app.json` + `tsconfig.node.json` + `tsconfig.test.json`) — type-checks the whole app (and the E2E fixtures) before bundling. `vite build` produces tree-shaken, code-split chunks (each lazy route is its own chunk) into `dist/`.
 
 ### Docker image
 
@@ -224,12 +224,14 @@ at 0% traffic was promoted by shifting traffic. `--no-traffic` was dropped on
 deploy lands in is now the service name, not a traffic percentage.
 
 `platform/deploy.sh` keeps a `STAGING=1` revision-tag mode for one-off operator
-use, marked legacy in the script. `.github/workflows/deploy-staging.yml` is a
-manual one-click staging redeploy with an optional schema apply.
+use, marked legacy in the script. Stocks'
+[`.github/workflows/deploy-staging.yml`](https://github.com/TeneikaAskew/stocks/blob/main/.github/workflows/deploy-staging.yml)
+is a manual (`workflow_dispatch`) one-click staging redeploy with an optional
+schema apply.
 
 The Cloud Build triggers run as `trading-runner@`. The separate
-`deploy-staging.yml` GitHub Actions workflow authenticates via Workload
-Identity Federation as `arch-refresh-bot@`, clamped to `main`.
+`deploy-staging.yml` GitHub Actions workflow (in stocks) authenticates via
+Workload Identity Federation as `arch-refresh-bot@`, clamped to `main`.
 
 > Superseding an earlier note here: that note said two GitHub Actions workflows
 > (`deploy-platform-staging.yml` / `promote-platform-prod.yml`) had been removed
@@ -273,7 +275,17 @@ served** — that is Lovable, at `https://solyra-stocks.lovable.app`.
   attaches the ID token per request, which the middleware **does** verify. The
   SPA talks to staging, so **Firebase is the path that actually runs today**.
   `useUser` gates `/admin` off the server-computed `is_admin` in either mode.
-- **Cloud Run config:** `min-instances=0` on BOTH services — `minScale` is unset, verified live 2026-09-05. An earlier revision said `min-instances=1` and credited it with avoiding cold starts against Discord's 3-second interaction-ack budget; no such warm instance is configured, so do not rely on one. `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), `max-instances=5`, 1 vCPU / 2 GiB (1 GiB OOM-killed full-chain GEX on `/api/options/*/levels`).
+- **Cloud Run config:** per `platform/deploy.sh` (stocks): `--min-instances 0`
+  on BOTH services, `--max-instances 5`, `--cpu 1`, `--memory 2Gi` (1 GiB
+  OOM-killed full-chain GEX on `/api/options/*/levels` — the script's own
+  comment above the flags documents the incident), `--cpu-throttling`
+  (CPU is NOT allocated between requests), `--timeout 300`. No warm instance
+  is configured, so do not rely on one to avoid cold starts. **Corrected
+  2026-09-28:** this previously said `--no-cpu-throttling`, citing PR #507 —
+  #507 did the opposite (it *enabled* `--cpu-throttling`, and for an unrelated
+  service, `trading-platform`, to stop always-allocated instance billing on a
+  ~38-req/day service). There is no `--no-cpu-throttling` flag anywhere in
+  `platform/deploy.sh`.
 - **Logging:** stdout → Cloud Logging; the failure-notifier sink does NOT cover the service (its filter is `resource.type=cloud_run_job`), so service errors don't auto-create GitHub issues. Pager-style monitoring is via Cloud Logging alert policies (not yet wired — open todo).
 
 ## Known limitations

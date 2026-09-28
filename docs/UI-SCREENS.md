@@ -8,7 +8,7 @@
 
 # UI Screen Inventory
 
-**Last reviewed:** 2026-08-30 · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 **VERIFIED — CODE.** 15 routes declared in `src/App.tsx:44-72`. `/` is public;
 `/welcome` redirects; the other 13 are children of `<AuthGate><AppShell/></AppShell>`.
@@ -145,7 +145,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-DASHBOARD — `/dashboard`
 
 - **Purpose:** Daily starting point: market brief, movement read, expected move, most-active marquee, sector rotation.
-- **Status:** Production but needs remediation · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) — CLOSED completed, fixed by stocks#1005; status/remediation need re-verification, not re-graded here · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/DashboardPage.tsx` (843 lines)
 - **Child components:** `CandlestickChart`, `Card`, `CardHeader`, `Delta`, `DirTag`, `KpiTile`, `Metric`, `MicroLabel`, `MovementRead`, `Pill`, `PriceAreaChart`, `ScoreStars`, `SetupCardDetails`, `TickerCombobox`
 - **API calls (from source):** `/api/catalysts/events`, `/api/dashboard/brief/`, `/api/market/data/`, `/api/market/reference/`, `/api/market/sectors`, `/api/playbook/`, `/api/signals/`
@@ -201,7 +201,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-PLAYBOOK — `/playbook`
 
 - **Purpose:** The day’s structured setups — trigger, invalidation, targets — with as-of review mode.
-- **Status:** Broken · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Broken · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) — CLOSED completed, fixed by stocks#1005; status/remediation need re-verification, not re-graded here · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/PlaybookPage.tsx` (355 lines)
 - **Child components:** `SetupCardDetails`, `type SetupHorizon`
 - **API calls (from source):** `/api/market/reference/`, `/api/playbook/`
@@ -228,7 +228,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-SIGNALS — `/signals`
 
 - **Purpose:** Signal discovery and live alert monitoring.
-- **Status:** Production but needs remediation · **Blocking issue:** [#905](https://github.com/TeneikaAskew/stocks/issues/905) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#905](https://github.com/TeneikaAskew/stocks/issues/905) — CLOSED duplicate, superseded by [#1206](https://github.com/TeneikaAskew/stocks/issues/1206) (open, tracking-only — decided 2026-09-27 that pipeline maintenance is stopped) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SignalsPage.tsx` (341 lines)
 - **Child components:** `KpiTile`, `MicroLabel`, `TickerCombobox`
 - **API calls (from source):** `/api/signals/`
@@ -242,7 +242,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-JOURNAL — `/journal`
 
 - **Purpose:** One-stop trade cockpit: interactive chart marking, examples, broker CSV import, per-user trades.
-- **Status:** Production but needs remediation · **Blocking issue:** [#717](https://github.com/TeneikaAskew/stocks/issues/717) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#717](https://github.com/TeneikaAskew/stocks/issues/717) — CLOSED duplicate, superseded by [#716](https://github.com/TeneikaAskew/stocks/issues/716) item 1 (open, non-blocking follow-up: same return_pct unit-mix defect, still unresolved) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/JournalPage.tsx` (945 lines)
 - **Child components:** `Card`, `CardHeader`, `ImportTradesModal`, `KpiTile`, `LoadingSpinner`, `PriceAreaChart`, `TickerCombobox`, `TradeMarkingChart`, `TradeRailCard`, `type TradeMarkingChartHandle`
 - **API calls (from source):** `/api/journal/export/`, `/api/journal/trades`
@@ -283,7 +283,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-ADMIN — `/admin`
 
 - **Purpose:** Operator surface: model routing, strat-engine state, structure brief, route config.
-- **Status:** Production but needs remediation · **Blocking issue:** [#838](https://github.com/TeneikaAskew/stocks/issues/838) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#838](https://github.com/TeneikaAskew/stocks/issues/838) — CLOSED completed (low-severity: non-constant-time admin token comparison) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/AdminPage.tsx` (369 lines)
 - **Child components:** `ModelStateSnapshot`, `PredictForm`, `StructureBrief`
 - **API calls (from source):** `/api/admin/routes`
@@ -308,7 +308,7 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 ### SCREEN-SETTINGS — `/settings`
 
 - **Purpose:** Device-local appearance and layout preferences.
-- **Status:** Incomplete · **Blocking issue:** [#685](https://github.com/TeneikaAskew/stocks/issues/685) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Incomplete · **Blocking issue:** [#685](https://github.com/TeneikaAskew/stocks/issues/685) — CLOSED not_planned; **and it does not describe this screen** — #685's body is entirely about renaming Options Flow's Heatseeker/Flowseeker tabs, not `/settings`. This citation looks mismatched, not merely stale; the correct blocker for Settings' Incomplete status was not identified in this pass · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SettingsPage.tsx` (131 lines)
 - **API calls (from source):** none found in the page component — device-local state only
 - **Stores:** `useSettingsStore`, `useThemeStore`

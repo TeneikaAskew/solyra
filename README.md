@@ -1,6 +1,6 @@
 # Solyra
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The frontend for the trading platform — a React + TypeScript single-page app
 covering the market dashboard, live quotes, charts, options/gamma analysis,
@@ -10,7 +10,7 @@ signals, the trade journal, AI insights, and catalysts.
 pipeline, and the GCP jobs live in the **stocks** repo and are deployed
 together as the `solyra-api-prod` Cloud Run service. Solyra's dev server
 proxies `/api/*` to that backend, so the browser still sees same-origin
-requests and none of the ~73 bare `fetch('/api/...')` call sites need to know
+requests and none of the ~87 bare `fetch('/api/...')` call sites need to know
 where the API actually is.
 
 Built with [Lovable](https://lovable.dev).
