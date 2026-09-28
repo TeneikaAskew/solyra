@@ -66,7 +66,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: proposed-spec-gate
-          path: ${{ runner.temp }}/proposed/spec_gate.py
+          path: ${{ runner.temp }}/proposed/
 
   # The BASE's suite judges the proposed gate: a PR cannot certify its gate with tests it
   # also controls (registry-check.yml runs the PR's own suite; this runs main's). It runs
