@@ -440,6 +440,7 @@ up, at the infrastructure boundary: the Cloud Run service answers (200) or does 
 ### SCREEN-LANDING — `/`
 
 - **Purpose:** Public marketing entry and waitlist capture — the only route reachable signed-out in every auth mode.
+- **Matrix:** [03 § 01](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#01--landing)
 - **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/LandingPage.tsx` (40 lines)
 - **Child components:** `BentoGrid`, `ChartShowcase`, `DailyRhythm`, `Hero`, `LandingFAQ`, `LandingNav`, `ModuleDives`, `WaitlistSection`
@@ -956,6 +957,7 @@ error`, the client-validation branch only).
 ### SCREEN-NAVIGATE — `/welcome`
 
 - **Purpose:** Legacy alias; permanently redirects to `/`.
+- **Matrix:** [03 § 01](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#01--landing)
 - **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/App.tsx (inline)` (0 lines)
 - **API calls (from source):** none found in the page component — issued by child components or hooks
@@ -968,6 +970,7 @@ error`, the client-validation branch only).
 ### SCREEN-AUTH — sign-in (in-route)
 
 - **Purpose:** In-route auth surface guarding every app route: boots the runtime auth config, renders Google or email/password sign-in and sign-up until a session exists, and handles sign-out and the /auth/action password-reset and email-verification links.
+- **Matrix:** [03 § 02](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#02--authgate-and-sign-in)
 - **Status:** Infrastructure · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-09-28
 - **Component:** `src/components/auth/AuthGate.tsx` (30 lines), `src/components/auth/ConfigGate.tsx` (176 lines), `src/components/auth/SignInScreen.tsx` (302 lines), `src/components/auth/SignOutButton.tsx` (38 lines), `src/routes/AuthActionPage.tsx` (550 lines)
 - **Child components:** `Brand`, `LoadingSpinner`, `SignInScreen`
@@ -1468,6 +1471,7 @@ endpoint, or
 ### SCREEN-SHELL — app shell
 
 - **Purpose:** Shared layout for the 13 authenticated app routes: sidebar or top-tab navigation, header, command palette, status banners and the most-active marquee around the routed page.
+- **Matrix:** [03 § 03](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#03--appshell)
 - **Status:** Infrastructure · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-09-28
 - **Component:** `src/components/layout/AppShell.tsx` (80 lines)
 - **Child components:** `Sidebar`, `TopTabs`, `Header`, `CommandPalette`, `MostActiveBar`, `AuthStatusBanner`, `EmailVerificationBanner`, `MockModeBanner`, `Outlet`
@@ -2122,6 +2126,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 ### SCREEN-DASHBOARD — `/dashboard`
 
 - **Purpose:** Daily starting point: market brief, movement read, expected move, most-active marquee, sector rotation.
+- **Matrix:** [03 § 04](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#04--dashboard)
 - **Status:** Production but needs remediation · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/DashboardPage.tsx` (843 lines)
 - **Child components:** `CandlestickChart`, `Card`, `CardHeader`, `Delta`, `DirTag`, `KpiTile`, `Metric`, `MicroLabel`, `MovementRead`, `Pill`, `PriceAreaChart`, `ScoreStars`, `SetupCardDetails`, `TickerCombobox`
@@ -2233,6 +2238,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 ### SCREEN-LIVEMARKET — `/live`
 
 - **Purpose:** Intraday monitoring of quotes, indicators and STRAT state for the watchlist.
+- **Matrix:** [03 § 05](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#05--live-market)
 - **Status:** Production but needs remediation · **Blocking issue:** [#928](https://github.com/TeneikaAskew/stocks/issues/928) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/LiveMarketPage.tsx` (411 lines)
 - **Child components:** `MetricCard`
@@ -2315,6 +2321,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 ### SCREEN-CHARTS — `/charts`
 
 - **Purpose:** Instrument and timeframe chart analysis with strategy conditions and level overlays.
+- **Matrix:** [03 § 06](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#06--charts)
 - **Status:** Production but needs remediation · **Blocking issue:** [#912](https://github.com/TeneikaAskew/stocks/issues/912) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/ChartsPage.tsx` (967 lines)
 - **Child components:** `LoadingSpinner`, `Modal`, `ReplaySessionControls`, `SimilarSetupsCard`, `StrategyConditionsCard`, `TradeMarkingChart`, `type PriceLineConfig`, `type TradeMarkingChartHandle`
@@ -2412,6 +2419,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 ### SCREEN-OPTIONSFLOW — `/options`
 
 - **Purpose:** Options flow, Greeks and the 2-D strike x expiration gamma grid.
+- **Matrix:** [03 § 07](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#07--options-flow)
 - **Status:** Production but needs remediation · **Blocking issue:** [#826](https://github.com/TeneikaAskew/stocks/issues/826) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/OptionsFlowPage.tsx` (68 lines)
 - **Child components:** `TickerCombobox`
@@ -2495,6 +2503,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 ### SCREEN-PLAYBOOK — `/playbook`
 
 - **Purpose:** The day’s structured setups — trigger, invalidation, targets — with as-of review mode.
+- **Matrix:** [03 § 11](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#11--playbook)
 - **Status:** Broken · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/PlaybookPage.tsx` (355 lines)
 - **Child components:** `SetupCardDetails`, `type SetupHorizon`
@@ -2569,6 +2578,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 ### SCREEN-REPORTS — `/reports`
 
 - **Purpose:** Backtest, walk-forward and replay-trainer results; analytics summaries.
+- **Matrix:** [03 § 12](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#12--reports)
 - **Status:** Production but needs remediation · **Blocking issue:** [#813](https://github.com/TeneikaAskew/stocks/issues/813) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/ReportsPage.tsx` (153 lines)
 - **API calls (from source):** `/api/reports/`, `/api/reports/list/`
@@ -2638,6 +2648,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 ### SCREEN-SIGNALS — `/signals`
 
 - **Purpose:** Signal discovery and live alert monitoring.
+- **Matrix:** [03 § 08](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#08--signals)
 - **Status:** Production but needs remediation · **Blocking issue:** [#1206](https://github.com/TeneikaAskew/stocks/issues/1206) (replaces [#905](https://github.com/TeneikaAskew/stocks/issues/905), closed as a duplicate on 2026-09-28) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SignalsPage.tsx` (341 lines)
 - **Child components:** `KpiTile`, `MicroLabel`, `TickerCombobox`
@@ -2713,6 +2724,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 ### SCREEN-JOURNAL — `/journal`
 
 - **Purpose:** One-stop trade cockpit: interactive chart marking, examples, broker CSV import, per-user trades.
+- **Matrix:** [03 § 13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#13--journal)
 - **Status:** Production but needs remediation · **Blocking issue:** [#717](https://github.com/TeneikaAskew/stocks/issues/717) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/JournalPage.tsx` (945 lines)
 - **Child components:** `Card`, `CardHeader`, `ImportTradesModal`, `KpiTile`, `LoadingSpinner`, `PriceAreaChart`, `TickerCombobox`, `TradeMarkingChart`, `TradeRailCard`, `type TradeMarkingChartHandle`
@@ -2811,6 +2823,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 ### SCREEN-INSIGHTS — `/insights`
 
 - **Purpose:** AI-generated per-ticker insight reports, history and chat.
+- **Matrix:** [03 § 09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#09--ai-insights)
 - **Status:** Experimental · **Blocking issue:** [#916](https://github.com/TeneikaAskew/stocks/issues/916) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/InsightsPage.tsx` (587 lines)
 - **Child components:** `AgentsPanel`, `BriefVsInsightsCard`, `CatalystsCard`, `DebateCard`, `DegradationBanner`, `HeaderCard`, `KeyLevelsCard`, `MicroLabel`, `PersonaPlansCard`, `RiskFlagsCard`, `SignalsCard`, `SimilarTradesCard`, `StratCard`, `TickerCombobox`
@@ -2901,6 +2914,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 ### SCREEN-CATALYSTS — `/catalysts`
 
 - **Purpose:** Earnings, economic events, news and SEC filings as trade context.
+- **Matrix:** [03 § 10](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#10--catalysts)
 - **Status:** Production but needs remediation · **Blocking issue:** [#863](https://github.com/TeneikaAskew/stocks/issues/863) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/CatalystsPage.tsx` (625 lines)
 - **API calls (from source):** `/api/catalysts/events`, `/api/catalysts/types`
@@ -2980,6 +2994,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 ### SCREEN-ADMIN — `/admin`
 
 - **Purpose:** Operator surface: model routing, strat-engine state, structure brief, route config.
+- **Matrix:** [03 § 14](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#14--admin)
 - **Status:** Production but needs remediation · **Blocking issue:** [#838](https://github.com/TeneikaAskew/stocks/issues/838) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/AdminPage.tsx` (369 lines)
 - **Child components:** `ModelStateSnapshot`, `PredictForm`, `StructureBrief`
@@ -3066,6 +3081,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 ### SCREEN-HELP — `/help`
 
 - **Purpose:** Glossary and cross-framework term reference.
+- **Matrix:** [03 § 16](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#16--help-and-glossary)
 - **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/HelpPage.tsx` (296 lines)
 - **API calls (from source):** none found in the page component — issued by child components or hooks
@@ -3125,6 +3141,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 ### SCREEN-SETTINGS — `/settings`
 
 - **Purpose:** Device-local appearance and layout preferences.
+- **Matrix:** [03 § 15](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#15--settings)
 - **Status:** Incomplete · **Blocking issue:** [#685](https://github.com/TeneikaAskew/stocks/issues/685) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SettingsPage.tsx` (131 lines)
 - **API calls (from source):** none found in the page component — device-local state only
