@@ -748,12 +748,19 @@ def frontmatter(text: str | None) -> dict:
     return fm
 
 
+def requirement_definitions(text: str) -> set[str]:
+    """The REQ-IDs a requirements registry defines as rendered: not in a fence, an indented
+    block or inline code (solyra#72 r4121100680: `` `**REQ-X-001:**` `` is an example, not
+    a definition)."""
+    return set(REQ_DEFINITION.findall(re.sub(r"`[^`\n]*`", "", visible(text))))
+
+
 def requirement_defs(tree: "Tree") -> set[str] | None:
     """The REQ-IDs the requirements registry defines; None where the repository has
     no registry (solyra), so req_ids are checked for shape only. A registry that
     exists but defines nothing fails closed rather than passing every ID."""
     text = tree.read(REQUIREMENTS)
-    return None if text is None else set(REQ_DEFINITION.findall(visible(text)))
+    return None if text is None else requirement_definitions(text)
 
 
 def validate_spec(fm: dict, name: str, catalog: set[str], req_defs: set[str] | None) -> list[str]:
@@ -1529,7 +1536,7 @@ def policy_ids(path: str, text: str) -> set[str]:
     if path == CATALOG:
         return catalog_ids(text)
     if path == REQUIREMENTS:
-        return set(REQ_DEFINITION.findall(visible(text)))
+        return requirement_definitions(text)
     if path == CANVASES:
         return set(canvas_modes(text))
     # the traceability document: a FEAT with a heading or a row, not one merely mentioned
@@ -1591,9 +1598,11 @@ def check_policy_structure(ch: Change) -> list[str]:
     if REQUIREMENTS in ch.changed and ch.base.read(REQUIREMENTS) is None and (reqs := ch.tree.read(REQUIREMENTS)) is not None:
         # solyra#72 r4120633485: a repository without a registry checks req_ids for shape; a new
         # registry that omits an ID the specs cite would refuse every spec citing it
-        defined = set(REQ_DEFINITION.findall(visible(reqs)))
-        cited = {r for path in ch.base.list(SPECS) for r in (frontmatter(ch.base.read(path)).get("req_ids") or [])
-                 if isinstance(r, str)}
+        # (solyra#72 r4121100668: a spec arriving in the same change is checked against the
+        # registry-less base, so its citations must be defined here too)
+        defined = requirement_definitions(reqs)
+        cited = {r for tree in (ch.base, ch.tree) for path in tree.list(SPECS)
+                 for r in (frontmatter(tree.read(path)).get("req_ids") or []) if isinstance(r, str)}
         if not defined:
             errs.append(f"{REQUIREMENTS}: a new requirements registry defines no `**REQ-XXX-000:**`; a registry that "
                         "exists but is empty fails every spec")
@@ -1631,7 +1640,8 @@ def check_record_uniqueness(ch: Change) -> list[str]:
     errs: list[str] = []
     if REQUIREMENTS in ch.changed and (text := ch.tree.read(REQUIREMENTS)) is not None:
         # stocks#1205 r4120166765: one definition per REQ-ID, or a spec validates against two
-        defs, base_defs = REQ_DEFINITION.findall(visible(text)), REQ_DEFINITION.findall(visible(ch.base.read(REQUIREMENTS) or ""))
+        rendered = lambda t: re.sub(r"`[^`\n]*`", "", visible(t))
+        defs, base_defs = REQ_DEFINITION.findall(rendered(text)), REQ_DEFINITION.findall(rendered(ch.base.read(REQUIREMENTS) or ""))
         for req in sorted({r for r in defs if defs.count(r) > 1 and defs.count(r) > base_defs.count(r)}):
             errs.append(f"{REQUIREMENTS}: {req} is defined {defs.count(req)} times; a requirement has one definition")
     for path in (CATALOG, TRACEABILITY):
