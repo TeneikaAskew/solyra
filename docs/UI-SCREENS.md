@@ -8,7 +8,7 @@
 
 # UI Screen Inventory
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-08-30 · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 **VERIFIED — CODE.** 15 routes declared in `src/App.tsx:44-72`. `/` is public;
 `/welcome` redirects; the other 13 are children of `<AuthGate><AppShell/></AppShell>`.
@@ -307,14 +307,28 @@ Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs i
 
 ### SCREEN-SETTINGS — `/settings`
 
-- **Purpose:** Device-local appearance and layout preferences.
-- **Status:** Incomplete · **Blocking issue:** [#685](https://github.com/TeneikaAskew/stocks/issues/685) — CLOSED not_planned; **and it does not describe this screen** — #685's body is entirely about renaming Options Flow's Heatseeker/Flowseeker tabs, not `/settings`. This citation looks mismatched, not merely stale; the correct blocker for Settings' Incomplete status was not identified in this pass · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/SettingsPage.tsx` (131 lines)
-- **API calls (from source):** none found in the page component — device-local state only
+- **Purpose:** Profile, appearance, trading defaults, notifications, and
+  account — **corrected 2026-09-28, was "device-local appearance and layout
+  preferences" only.** Two persistence models per `SettingsPage.tsx`'s own
+  header comment: appearance (theme/nav/density/accent) still writes
+  instantly via `useSettingsStore`/`useThemeStore`, but profile/trading/
+  notification/display settings are now a server-synced draft+Save form.
+- **Status:** Incomplete (not re-graded this pass) · **Blocking issue:** [#685](https://github.com/TeneikaAskew/stocks/issues/685) — CLOSED not_planned; **and it does not describe this screen** — #685's body is entirely about renaming Options Flow's Heatseeker/Flowseeker tabs, not `/settings`. This citation looks mismatched, not merely stale; the correct blocker for Settings' Incomplete status was not identified in this pass · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Component:** `src/routes/SettingsPage.tsx` (492 lines — was cited as 131,
+  now stale by 3.7x; not fully re-audited line-by-line this pass)
+- **API calls (from source):** `/api/me/preferences` (via `usePreferencesStatus`,
+  write-through), `/api/me/profile` (via `useProfile`, draft+Save) —
+  **corrected 2026-09-28, was "none found... device-local state only"**
 - **Stores:** `useSettingsStore`, `useThemeStore`
-- **States present:** empty · **absent:** load, err, stale
-- **E2E specs:** **none**
-- **PR lineage:** [#611](https://github.com/TeneikaAskew/stocks/pull/611) platform redesign · [#589](https://github.com/TeneikaAskew/stocks/pull/589) app shell
+- **States present:** load, err, saving/saved (via `useProfile`'s `loading`/
+  `loadError`/`saving`/`saveError`) — **corrected 2026-09-28, was "empty
+  only, load/err/stale absent"**; not independently re-verified against every
+  other screen's "States present" convention, so treat this row's format as
+  a best-effort match rather than a like-for-like re-audit
+- **E2E specs:** `tests/settings/settings.spec.ts` (three `describe` blocks:
+  tabs & sync, appearance write-through, profile draft & save) —
+  **corrected 2026-09-28, was "none"**
+- **PR lineage:** [#611](https://github.com/TeneikaAskew/stocks/pull/611) platform redesign · [#589](https://github.com/TeneikaAskew/stocks/pull/589) app shell (pre-existing citations, not re-verified this pass — the screen has clearly grown substantially since)
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
 

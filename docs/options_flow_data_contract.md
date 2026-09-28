@@ -3,7 +3,7 @@
 **Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The redesigned Options Flow page (`src/routes/OptionsFlowPage.tsx`) follows
-Skylit's product model. Three views are **real-data backed today**; three are
+Skylit's product model. Two views are **real-data backed today**; three are
 built against **labeled demo mocks** because no backend endpoint exists yet.
 This doc specifies the endpoints needed to make the mocked views real.
 

@@ -60,7 +60,7 @@
 # From this repo's root. Playwright always boots its own Vite on :5199 —
 # it never adopts a running dev server (see playwright.config.ts).
 npm run e2e
-npx playwright test --project=chromium tests/journal.spec.ts   # a single spec
+npx playwright test --project=chromium tests/journal/journal.spec.ts   # a single spec
 ```
 
 ---
@@ -115,15 +115,22 @@ Known prod caveats validated there: AV-on-request endpoints require the
 
 ## 5. CI gating
 
-`.github/workflows/ci.yml` runs on every PR to `main` and every push to
-`main`: `npm run build` (`tsc -b` across all three TS projects, which type-
-checks the E2E fixtures against the real API contracts) then `npm run e2e`
-(chromium, mocked). Two deliberate deviations from what this section used to
-prescribe, both explained in the workflow's own header comment:
-`npm run lint` is not gated yet (it currently fails on `main`, mostly on a
-pattern — exporting a pure helper beside the component that uses it — this
-codebase uses on purpose), and `make test` is gone, since it exercised the
-Python backend, which no longer lives in this repo.
+`.github/workflows/ci.yml` runs two independent jobs on every PR to `main` and
+every push to `main` — `e2e` does not run after `checks`, it runs in parallel:
+
+- **`checks` (types · unit · build):** `npx tsc -b` (type-checks the E2E
+  fixtures against the real API contracts), then `npm test`, then
+  `npm run build`, then `npm run contract:check` (the vendored OpenAPI
+  snapshot against stocks `main` — CLAUDE.md Rule 6).
+- **`e2e` (chromium, mocked):** `npm run e2e`, independently checked out and
+  installed — not a step of `checks`.
+
+Two deliberate deviations from what this section used to prescribe, both
+explained in the workflow's own header comment: `npm run lint` is not gated
+yet (it currently fails on `main`, mostly on a pattern — exporting a pure
+helper beside the component that uses it — this codebase uses on purpose),
+and `make test` is gone, since it exercised the Python backend, which no
+longer lives in this repo.
 - **Pre-deploy**: add the `cloud` Playwright project against a staging revision before promoting traffic.
 
 ---

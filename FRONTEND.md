@@ -8,7 +8,7 @@
 
 # FRONTEND ARCHITECTURE
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 > **Companion to** [`ARCHITECTURE.md`](https://github.com/TeneikaAskew/stocks/blob/main/ARCHITECTURE.md) (in the stocks repo) — that doc covers the GCP/Cloud-Run/Cloud-SQL backbone; this doc covers the React + Vite single-page app. Since the #957 split it no longer ships inside the API image: `platform/Dockerfile` in stocks copies no `dist/`, so the API serves `/api/*` only.
 > **Last refreshed:** 2026-05-22.
@@ -136,13 +136,13 @@ Three concentric loops:
 | Hook                       | Endpoint(s) hit                                            | Reads                              |
 |----------------------------|------------------------------------------------------------|------------------------------------|
 | `useUser`                  | `/api/me`                                                  | Identity + server-computed `is_admin`. Source depends on the service: a verified Firebase token on staging (what the SPA calls), the trusted IAP header on prod |
-| `useTickerSearch`          | (client-side filter over `availableTickers`)               | Zustand `tickerStore`              |
+| `useTickerSearch`          | `/api/insights/ticker/search`, `/api/market/coverage`, `/api/insights/watchlist/add`, `/api/insights/watchlist/{ticker}` (DELETE) | Ticker search, coverage badges, watchlist add/remove — despite the name, not a client-side filter |
 | `useLiveQuote`             | `/api/live/quote/{ticker}`                                 | Latest 1-min bar                   |
 | `useLiveIndicators`        | `/api/live/indicators`                                     | Wilder RSI/EMA/ATR/VWAP            |
 | `useLiveHistory`           | `/api/live/history/{ticker}`                               | Intraday history window            |
 | `useLiveStatus`            | `/api/live/status`                                         | Market session + fetcher freshness |
 | `useMarketData`            | `/api/market/data/{ticker}/{date}`, `/dates`, `/reference` | Daily OHLCV for chart              |
-| `useGammaLevels`           | `/api/options/greeks` (per-strike GEX)                     | King/Gate/Spot/Flip                |
+| `useGammaLevels`           | `/api/options/{ticker}/{date}/levels`                      | King/Gate/Spot/Flip                |
 | `useOptionsGreeks`         | `/api/options/greeks`                                      | BSM delta/gamma/theta/vega         |
 | `usePlaybookEvaluation`    | `/api/playbook/evaluate`                                   | trigger/target/stop                |
 | `useInsights`              | `/api/insights/report/{ticker}`, `/refresh`, `/history`    | AI insight reports                 |
