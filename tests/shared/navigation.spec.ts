@@ -209,3 +209,55 @@ test.describe('Mobile menu — account section', () => {
     await expect(page.getByTestId('account-menu-sign-in')).toHaveCount(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Command palette (SHELL-08) and theme toggle (SHELL-10)
+// ---------------------------------------------------------------------------
+
+test.describe('Command palette and theme toggle', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAllPages(page);
+  });
+
+  test('command palette opens with the keyboard shortcut and navigates to a page', async ({ page }) => {
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    // Wait for the shell to actually mount (and its effects to run, which
+    // is where AppShell.tsx:47 attaches the keydown listener) before
+    // sending the shortcut — domcontentloaded alone races React's commit.
+    await expect(page.getByRole('button', { name: 'Search (⌘K)' })).toBeVisible();
+
+    // AppShell.tsx:47 toggles the palette on ctrl/meta+K; CommandPalette has
+    // no data-testid, so select the (placeholder-only) search input by its
+    // accessible text and the results by role.
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+    const input = page.getByPlaceholder(/search pages, tickers, actions/i);
+    await expect(input).toBeVisible();
+    await input.fill('Journal');
+    await page.keyboard.press('Enter');
+
+    await page.waitForURL('**/journal');
+    expect(page.url()).toContain('/journal');
+  });
+
+  test('theme toggle flips the document theme attribute', async ({ page }) => {
+    // Header (with the theme toggle) only renders in sidebar mode
+    // (AppShell.tsx:61-77) — seed the persisted shell setting the way
+    // settingsStore.ts reads it back (tests/settings/settings.spec.ts and
+    // tests/admin/admin-auth.spec.ts use the same key and shape).
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        'platform-shell-settings',
+        JSON.stringify({ navPattern: 'sidebar', density: 'dense', accent: 'dawn' }),
+      );
+    });
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+
+    // themeStore.ts:18 sets data-theme on <html>; dark is the product
+    // default with no stored 'platform-theme' value (mockCommon's
+    // /api/me/preferences is all-null, so usePreferencesSync never
+    // overrides it).
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.getByRole('button', { name: 'Switch to light theme' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  });
+});
