@@ -1287,7 +1287,7 @@ backend fact this row depends on. Both confirmed passing in this task.
 
 **Code:** `src/components/auth/SignInScreen.tsx:68-87, 108-168` (reset request),
 `src/routes/AuthActionPage.tsx` (the full state machine), `src/lib/authAction.ts`,
-`gcp/auth_email_templates.py`, `docs/AUTH_EMAILS.md`; test ids `login-forgot`, `reset-email`,
+stocks `gcp/auth_email_templates.py`, [docs/AUTH_EMAILS.md](https://github.com/TeneikaAskew/stocks/blob/main/docs/AUTH_EMAILS.md); test ids `login-forgot`, `reset-email`,
 `reset-submit`, `reset-sent`, `reset-back`, `auth-action-*` (see `AuthActionPage.tsx`).
 
 ##### AUTH-09 · Sign out
