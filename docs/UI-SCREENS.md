@@ -120,19 +120,306 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 #### Elements
 ##### SHARED-01 · API service and auth middleware (solyra-api-staging, solyra-api-prod, AUTH_MODE)
 
+**Shows or does:** No UI of its own. `platform/api/auth.py` is global ASGI middleware
+(`app.middleware("http")(auth_middleware)`, `platform/api/main.py:97`) that gates every
+`/api/*` request except the open prefixes (SHARED-02). Three modes, set by the `AUTH_MODE`
+env var and validated once at process start: `open` (local dev, a no-op), `firebase` (bearer
+token verified per request, the public `solyra-api-staging` service), `iap` (pass-through,
+identity read from the `X-Goog-Authenticated-User-Email` header IAP injects at the edge, the
+`solyra-api-prod` service). On the frontend, `ConfigGate` fetches `GET /api/config/firebase`
+once at boot and blocks every gated route behind it: `loading` while the fetch is in flight,
+`ready` once a valid `authMode` is parsed, or the fail loud `ConfigErrorScreen`
+(`data-testid="config-error"`) on any network error, non 2xx status or unparseable body.
+
+**Needs:**
+- `GET /api/config/firebase` returning `RuntimeConfigResponse { authMode: "open" | "firebase" | "iap", firebase?: { apiKey, authDomain, projectId, appId } }` (`platform/api/schemas.py:200-207`)
+- env `AUTH_MODE` on the Cloud Run service (`solyra-api-staging` firebase, `solyra-api-prod` iap)
+- env `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID` (firebase mode only)
+
+**States:**
+- `open`: every request passes through unchecked (local dev only)
+- `firebase`, no or invalid token on a gated path: 401 `{"detail":"sign in to continue"}` or `{"detail":"invalid or expired sign-in"}`
+- `firebase`, valid token, disallowed email: 403 `{"detail":"this account is not allowed"}`
+- `iap`: pass-through, identity trusted from the edge header
+- frontend boot: `loading`, then `ready` or `error` (`ConfigGate.tsx`)
+
+**Acceptance criteria:**
+- Given `AUTH_MODE=open`, when any `/api/*` request arrives, then `auth_middleware` calls through without checking a token and `request.state.user_email` stays `None` (`test_open_mode_is_noop`).
+- Given `AUTH_MODE=firebase` and no `Authorization` header, when a gated path such as `/api/market/most-active` is requested, then the response is 401 with `{"detail":"sign in to continue"}` (`test_firebase_requires_valid_token`; confirmed live 2026-09-28, see V evidence).
+- Given `AUTH_MODE=firebase` and a valid bearer token for an allowed email, when a gated path is requested, then the response is 200 and `request.state.user_email` is the verified, lower cased email (`test_firebase_requires_valid_token`).
+- Given an `AUTH_MODE` value outside `("open", "firebase", "iap")`, when the API process starts, then `_validated_auth_mode` raises `RuntimeError` and the service refuses to boot rather than silently serving every route ungated (`platform/api/auth.py:44-53`).
+- Given `GET /api/config/firebase` fails, returns a non 2xx status, or returns a body whose `authMode` is not one of the three literals, when `ConfigGate` awaits `fetchRuntimeConfig`, then it renders `ConfigErrorScreen` (`data-testid="config-error"`) instead of any gated route (`ConfigGate.tsx`, `describeBootFailure`, `fetchRuntimeConfig`).
+
+**Tests:** `tests/api/test_platform_auth.py::test_open_mode_is_noop`, `::test_iap_mode_reads_header_and_does_not_enforce`, `::test_firebase_requires_valid_token`; `tests/api/test_route_coverage.py`; solyra `tests/shared/auth-gate.spec.ts` (Playwright, not yet part of Te, solyra#28 is open).
+
+**Code:** `platform/api/auth.py:41-55` (`_VALID_AUTH_MODES`, `_validated_auth_mode`, `AUTH_MODE`), `:180-213` (`_path_requires_auth`, `auth_middleware`); `platform/api/main.py:97` (middleware registration); `platform/api/routers/config.py:45-68` (`get_firebase_config`); solyra `src/components/auth/ConfigGate.tsx` (`bootOnce`, `fetchRuntimeConfig`, `ConfigErrorScreen`); `src/lib/runtimeConfig.ts`.
+
 ##### SHARED-02 · Open prefixes kept in sync (api/auth.py and authedFetch OPEN_PREFIXES)
+
+**Shows or does:** Two independent lists decide which `/api/*` paths work without a signed in
+user, one per side of the split, and they are deliberately not identical. Backend
+(`platform/api/auth.py:62-70`): `_OPEN_API_EXACT = ("/api/me",)` matches the literal path
+only, so `/api/me` itself is open but every sub-path (`/api/me/preferences`) is gated;
+`_OPEN_API_PREFIXES = ("/api/health", "/api/config/firebase", "/api/waitlist")` matches the
+path or anything starting with it. Frontend (`src/lib/authedFetch.ts:45`):
+`OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase', '/api/waitlist']` is one
+list, prefix matched for all four entries including `/api/me`, broader than the backend's
+exact match rule for that one path. The frontend closes the gap with a second, narrower
+check: `isIdentityPath` (`/api/me` or `/api/me/*`) forces the wrapper to throw rather than
+send anonymously when token acquisition fails, regardless of what `OPEN_PREFIXES` says, and
+the wrapper attaches a present token to every `/api/*` request (open or gated) when one is
+available, so a signed in caller's `/api/me` reply is never anonymous.
+
+**Needs:** no endpoint of its own; every `/api/*` route depends on this classification
+agreeing closely enough that a legitimate call is never mistakenly 401'd and no sub-path is
+accidentally opened.
+
+**States:**
+- exact-open (backend `/api/me` only, sub-paths gated): `test_firebase_open_me_is_exact_match_and_subpaths_are_gated`
+- prefix-open (backend `/api/health*`, `/api/config/firebase*`, `/api/waitlist*`)
+- frontend open-classified with a token present (still attaches `Authorization`)
+- frontend open-classified with no token (sent anonymously, except identity paths, which throw instead)
+
+**Acceptance criteria:**
+- Given `AUTH_MODE=firebase`, when `GET /api/me` is requested with no token, then the backend answers 200, open by exact match (`test_firebase_open_me_is_exact_match_and_subpaths_are_gated`).
+- Given `AUTH_MODE=firebase`, when `GET /api/me/preferences` is requested with no token, then the backend answers 401, the sub-path is gated and not covered by the exact match (`test_firebase_open_me_is_exact_match_and_subpaths_are_gated`).
+- Given `AUTH_MODE=firebase`, when `GET /api/messages` is requested (a path that merely starts with the string `/api/me`) with no token, then the backend answers 401, proving the exact match does not degrade into a prefix match (`test_firebase_open_me_is_exact_match_and_subpaths_are_gated`).
+- Given a signed in user with a resolvable token, when the frontend fetches `/api/me` (an `OPEN_PREFIXES` entry), then `authedFetch` still attaches `Authorization: Bearer <token>` (`attaches the bearer token to OPEN-prefix paths like /api/me`).
+- Given token acquisition fails persistently, when the frontend fetches `/api/me` or any `/api/me/*` path, then the wrapper throws instead of sending the request anonymously (`propagates a persistent token failure on the identity path instead of going anonymous`).
+
+**Tests:** `tests/api/test_platform_auth.py::test_firebase_open_me_is_exact_match_and_subpaths_are_gated`; solyra `src/lib/authedFetch.test.ts` (`attaches the bearer token to OPEN-prefix paths like /api/me`, `propagates a persistent token failure on the identity path instead of going anonymous`).
+
+**Code:** `platform/api/auth.py:56-70` (the `_OPEN_API_EXACT`/`_OPEN_API_PREFIXES` comment and definitions), `:180-185` (`_path_requires_auth`); solyra `src/lib/authedFetch.ts:39-45` (`OPEN_PREFIXES`), `:89-102` (`isGatedApiPath`, `isIdentityPath`).
 
 ##### SHARED-03 · Data path: authedFetch, apiTargets, Vite proxy, staging fallback
 
+**Shows or does:** Decides, per environment, what absolute origin (if any) a relative
+`fetch('/api/...')` call actually reaches, so the same bundle works unmodified on Cloud Run
+(same origin), local dev (Vite proxy) and Lovable's static hosting (cross origin to
+staging). `src/lib/apiTargets.ts` is the single source for both origins (`LOCAL_API`,
+`STAGING_API`) and the static-host detector (`isStaticFrontendHost`, matching `.lovable.app`
+and `.lovableproject.com` suffixes), imported by both the Node side dev proxy
+(`vite.config.ts`) and the browser side rewrite (`src/lib/authedFetch.ts`). In the browser,
+`resolveApiBase()` picks, in order: an explicit build-time `VITE_API_BASE_URL`, then
+`STAGING_API` when the hostname is a known static host, then same origin (`''`).
+`withApiBase()` rewrites a relative `/api/*` call onto that base for the `string`, `Request`
+and `URL` call shapes `window.fetch` accepts. In the dev server, `resolveApiTarget()` probes
+`localhost:8000` with a raw TCP connect (300 ms timeout) and proxies to it when something
+answers, else falls back to `STAGING_API`; `VITE_API_PROXY_TARGET` overrides the probe
+unconditionally.
+
+**Needs:**
+- every `/api/*` call site in the app (about 73 bare `fetch('/api/...')` calls across about 30 files, per `CLAUDE.md`)
+- `STAGING_API = 'https://solyra-api-staging-5sjtb3yl7a-ue.a.run.app'` (`src/lib/apiTargets.ts:29`)
+- `LOCAL_API = 'http://localhost:8000'` (`src/lib/apiTargets.ts:22`)
+- optional env `VITE_API_BASE_URL` (browser rewrite), `VITE_API_PROXY_TARGET` (dev server proxy only)
+
+**States:**
+- same origin (Cloud Run serving SPA and API from one container, or local dev behind the Vite proxy): `API_BASE = ''`
+- static host fallback (a `*.lovable.app` / `*.lovableproject.com` visit): `API_BASE = STAGING_API`
+- explicit override: `VITE_API_BASE_URL` set at build time
+- dev server, local backend reachable: proxy target is `LOCAL_API`
+- dev server, local backend unreachable: proxy target is `STAGING_API`, with a console warning that writes from that session hit staging
+
+**Acceptance criteria:**
+- Given the app is served from a `*.lovable.app` host, when a component calls `fetch('/api/health')`, then `resolveApiBase()` returns `STAGING_API` and the request that reaches the network is `STAGING_API + '/api/health'` (`resolveApiBase`, `withApiBase`, `src/lib/authedFetch.ts:52-129`).
+- Given the app is served same origin, when a component calls `fetch('/api/health')`, then the request stays relative (`API_BASE` is `''`, `withApiBase` no-ops).
+- Given `VITE_API_BASE_URL` is set at build time, when `resolveApiBase()` runs, then that value wins over the static host detection.
+- Given nothing is listening on `localhost:8000` when the Vite dev server starts, when `resolveApiTarget()` probes it, then the proxy falls back to `STAGING_API` and logs the staging writes warning (`vite.config.ts:42-46`, `:99-102`).
+- Given `VITE_API_PROXY_TARGET` is set, when the dev server starts, then that URL is used unconditionally without probing `localhost:8000` (`vite.config.ts:43-44`).
+
+**Tests:** solyra `src/lib/authedFetch.test.ts` (`attaches the bearer token to gated paths` and the rest of the `installAuthFetch — firebase mode` suite exercise `withApiBase` and token attachment together). `vite.config.ts`'s dev proxy probe and `apiTargets.ts`'s suffix list have no colocated unit test; their only coverage today is this task's V evidence against the deployed staging service and the E2E `webServer` boot in `playwright.config.ts`, which depends on the same probe succeeding against its own dedicated port.
+
+**Code:** `src/lib/apiTargets.ts` (`LOCAL_API`, `STAGING_API`, `STATIC_FRONTEND_HOST_SUFFIXES`, `isStaticFrontendHost`); `src/lib/authedFetch.ts:49-65` (`resolveApiBase`), `:109-129` (`withApiBase`); `vite.config.ts:19-46` (`localApiIsUp`, `resolveApiTarget`), `:71-102` (`VITE_NO_BACKEND` stub and logging).
+
 ##### SHARED-04 · Mock mode and demo-data banners
+
+**Shows or does:** A per-browser, tri-state preference (`'on' | 'off' | unset`,
+`localStorage['solyra-mock-mode']`) that, when `'on'`, makes `authedFetch` answer every
+`/api/*` call from bundled fixtures instead of the network (`src/lib/authedFetch.ts:145-148`,
+a dynamic `import('@/mocks')` resolving to `mockApiResponse`). An always visible amber banner
+(`MockModeBanner.tsx`, `data-testid="mock-mode-banner"`) renders whenever the mode is active,
+reading only `localStorage` so it stays available even if a fixture elsewhere breaks; it
+states plainly that data is fixture only and offers an `Exit` button
+(`data-testid="mock-mode-exit"`). A `dev` role account (server verified through `/api/me`'s
+`is_dev` flag) auto-enters mock mode exactly once, the first time the preference is unset; an
+explicit exit persists `'off'` and is never overridden by the auto-enable again. Toggling
+reloads the page, and a `storage` event listener reloads sibling tabs so every open tab
+converges on the same world.
+
+**Needs:**
+- `localStorage` key `solyra-mock-mode` (`'on'`, `'off'`, or absent)
+- `/api/me`'s `is_dev` boolean (drives `autoEnableMockModeForDev`, not fetched by this module itself)
+- the fixture engine under `src/mocks/` (`mockApiResponse`)
+
+**States:**
+- unset (default): `isMockModeActive()` is `false`, no banner, `authedFetch` behaves normally
+- on: banner visible, every `/api/*` call short circuited to a fixture or a 501 for an unmatched route
+- off (explicit exit): banner hidden, `autoEnableMockModeForDev` will not fire again in this browser
+- storage write failure (private mode or blocked storage): `setMockMode` logs an error and does not reload, so the mode never silently half flips
+
+**Acceptance criteria:**
+- Given no stored preference, when `mockModePreference()` reads `localStorage`, then it returns `null` and `isMockModeActive()` is `false` (`is unset by default and inactive`).
+- Given a `dev` role account signs in with the preference unset, when `autoEnableMockModeForDev()` runs, then it persists `'on'` and reloads the page (`enables once while the preference is unset`).
+- Given mock mode is `'on'`, when any component calls `fetch('/api/...')`, then `authedFetch` returns `mockApiResponse()`'s result and no request reaches the network (`src/lib/authedFetch.ts:145-148`).
+- Given mock mode is `'on'` and AppShell renders, then `MockModeBanner` shows the fixture only text and an `Exit` button (`MockModeBanner.tsx`, mounted at `src/components/layout/AppShell.tsx:67`).
+- Given a user clicks `Exit`, when `setMockMode(false)` persists, then the page reloads and the preference stays `'off'`, so `autoEnableMockModeForDev` will not re-enable it for that browser (`never overrides an explicit exit`).
+- Given mock mode is on and a requested path matches no fixture route, when `mockApiResponse()` runs, then it answers 501 with the offending path in the body (`src/mocks/index.ts:132`).
+
+**Tests:** `src/lib/mockMode.test.ts` (`is unset by default and inactive`, `setMockMode(true) persists and reloads`, `setMockMode(false) persists the explicit exit`, `enables once while the preference is unset`, `never overrides an explicit exit`); `tests/shared/mock-mode.spec.ts` (Playwright, banner visibility and exit; not yet part of Te, solyra#28 is open).
+
+**Code:** `src/lib/mockMode.ts` (`mockModePreference`, `isMockModeActive`, `setMockMode`, `autoEnableMockModeForDev`); `src/lib/authedFetch.ts:139-148`; `src/components/shared/MockModeBanner.tsx`; `src/components/layout/AppShell.tsx:67`; `src/mocks/index.ts:132`.
 
 ##### SHARED-05 · React Query defaults (five-minute staleness, one retry)
 
+**Shows or does:** One module-level `QueryClient` (`src/App.tsx:30-37`), created with
+`defaultOptions.queries.staleTime = 5 * 60 * 1000` and `retry: 1`, wraps the whole router
+through `QueryClientProvider` (`:103-105`). Every `useQuery` call in the app inherits these
+unless it overrides them locally, so a query result is treated as fresh for five minutes (no
+automatic refetch on remount or refocus inside that window) and a failed request is retried
+exactly once before the query settles into its error state.
+
+**Needs:** no endpoint or store of its own; it is configuration consumed by every other
+data-fetching element in every area.
+
+**States:**
+- fresh (resolved less than five minutes ago): served from cache, no network request on remount
+- stale (five minutes or older): eligible for a background refetch per TanStack Query's normal triggers
+- failed, retrying: one automatic retry before the query reports `isError`
+- failed, exhausted: `isError` true after the single retry also fails
+
+**Acceptance criteria:**
+- Given a query resolved less than five minutes ago, when a component using the same query key remounts, then TanStack Query serves the cached value without issuing a new request (`staleTime: 5 * 60 * 1000`, `src/App.tsx:33`).
+- Given a query request fails, when TanStack Query's default retry logic runs, then it retries exactly once before the query surfaces as errored (`retry: 1`, `src/App.tsx:34`).
+- Given no page creates its own `QueryClient`, when any route under `AppGroup` mounts, then it reads and writes the single client created in `App.tsx` (`QueryClientProvider`, `:103-105`).
+
+**Tests:** none found. No test in `src/` imports `QueryClient`, asserts on `staleTime` or
+`retry`, or otherwise exercises this configuration directly; this element does not tick Te in
+this task.
+
+**Code:** `src/App.tsx:1-3` (imports), `:30-37` (`queryClient`), `:103-105` (`QueryClientProvider`).
+
 ##### SHARED-06 · Failure lane: job log, Cloud Logging sink, Pub/Sub, failure-notifier, GitHub issue
+
+**Shows or does:** Turns a Cloud Run Job's own failure into a Discord message and a tracked
+GitHub issue without any job needing to know about either. Any Cloud Run Job execution that
+logs a severity `ERROR` or higher (excluding the notifier's own job name and the
+`CreateJob`/`UpdateJob` audit log noise every deploy produces) matches the Cloud Logging sink
+`gcp-job-failures-sink`, which forwards the entry to the Pub/Sub topic `gcp-job-failures`. A
+push subscription (`gcp-job-failures-push`, OIDC authenticated, five attempt dead letter to
+`gcp-job-failures-dlq`) delivers it to the `failure-notifier` Cloud Run service
+(`gcp/failure_notifier.py`), which posts to a dedicated Discord channel and creates or
+updates a GitHub issue labelled `gcp-job-failure,<job_name>`; a second failure for the same
+job comments on the existing open issue instead of opening a duplicate. A known benign
+SQLAlchemy/pg8000 connection cleanup traceback is filtered out before either channel fires,
+on the reasoning that the job's own exit code, not this log line, is the source of truth for
+success. An hourly Cloud Scheduler trigger (`reconcile-failure-notifier-hourly`, `0 * * * *`
+America/New_York) posts to the service's `/reconcile` endpoint, which closes any open
+`gcp-job-failure` issue whose job's latest execution has since succeeded.
+
+**Needs:**
+- Cloud Logging sink `gcp-job-failures-sink` to Pub/Sub topic `gcp-job-failures` (verified live 2026-09-28, see V evidence)
+- Pub/Sub push subscription `gcp-job-failures-push`, dead letter topic `gcp-job-failures-dlq`
+- Cloud Run service `failure-notifier` (verified live 2026-09-28, `https://failure-notifier-5sjtb3yl7a-ue.a.run.app`)
+- secrets `discord-webhook-gcp`, `github-pat`, `github-repo`
+- Cloud Scheduler trigger `reconcile-failure-notifier-hourly`
+
+**States:**
+- healthy: no matching `ERROR` severity log, nothing published, silence
+- new failure, first occurrence for that job: Discord message and a new GitHub issue
+- new failure, an issue is already open for that job: Discord message and a comment on the existing issue, no new issue
+- benign pool cleanup traceback: suppressed on both channels
+- the notifier's own failure: suppressed (self-loop guard)
+- recovered job: the hourly reconcile closes the open issue with a comment
+
+**Acceptance criteria:**
+- Given a Cloud Run Job execution logs a severity `ERROR` entry that is not a benign pool cleanup traceback and not the notifier's own job, when the sink's filter matches it, then the entry reaches `failure-notifier` through the `gcp-job-failures` topic and its push subscription (`gcp/deploy.sh:4003-4015`).
+- Given no open issue exists yet for a failing job, when `handle_notification` runs, then it posts to Discord and creates a new issue labelled `gcp-job-failure,<job_name>` (`test_create_or_update_creates_new_issue_when_none_exists`).
+- Given an open issue already exists for that job, when `handle_notification` runs again, then it posts to Discord and comments on the existing issue rather than opening a new one (`test_create_or_update_comments_on_existing_issue`).
+- Given the log entry's innermost frame matches a benign pool cleanup marker, when `handle_notification` runs, then neither Discord nor GitHub is called (`test_handle_notification_suppresses_benign_pool_cleanup`).
+- Given `reconcile-failure-notifier-hourly` fires `POST /reconcile`, when a previously failing job's latest execution has since succeeded, then `reconcile_closures` closes its open issue with a comment (`test_reconcile_closures_closes_recovered_jobs`).
+
+**Tests:** `tests/gcp/test_failure_notifier.py` (`test_create_or_update_creates_new_issue_when_none_exists`, `test_create_or_update_comments_on_existing_issue`, `test_handle_notification_suppresses_benign_pool_cleanup`, `test_handle_notification_skips_self_loop`, `test_reconcile_closures_closes_recovered_jobs`, and the rest of the file).
+
+**Code:** `gcp/failure_notifier.py:61` (`is_benign_pool_cleanup`), `:85` (`extract_failure_details`), `:206` (`send_discord`), `:256` (`close_issue`), `:451` (`reconcile_closures`), `:522` (`handle_notification`), `:580` (`handle_reconcile`); `gcp/deploy.sh:3805-3808` (service, topic, sub and sink names), `:3879` (`deploy_notifier`), `:4003-4015` (sink filter and creation), `:4062` (scheduler trigger).
 
 ##### SHARED-07 · Freshness watchdog and /api/health/freshness
 
+**Shows or does:** Two independent paths read the same freshness signal and must not be
+conflated. First, the standalone `freshness-watchdog` Cloud Run Job runs
+`scripts/audit_data_freshness.py --strict` on a schedule (`freshness-watchdog-hourly`,
+`0 9-19 * * 1-5`; `freshness-watchdog-nightly`, `30 19 * * *`) and exits non-zero on any
+stale table, which the failure lane (SHARED-06) turns into a Discord message and a GitHub
+issue. Second, `GET /api/health/freshness` (`platform/api/routers/health.py:158`,
+`get_freshness`) wraps the same `audit_data_freshness.audit_all()` behind a 300 second
+in-process cache with a single-flight claim: the request that claims a stale or empty cache
+runs the audit and returns the fresh report; every other concurrent request answers
+immediately, either the previous report labelled `stale: true` with its age, or a 503
+(`{"detail":"Freshness audit in progress and no cached report is available yet. Retry
+shortly."}`) when nothing is cached yet. `GET /api/health/freshness` itself has no direct
+solyra consumer today: the old Dashboard "data pipeline" widget that used to poll it was
+retired in the stocks/solyra split, and a regression test pins its absence
+(`tests/dashboard/data-pipeline-widget.spec.ts`, `dashboard renders without the
+data-pipeline widget`). The same cached audit does reach the UI through a sibling endpoint:
+`platform/api/routers/admin.py:1391-1402` imports `freshness_report_dict` from the health
+router and serves it as `GET /api/admin/data-sources`, which solyra's `useAdminDataSources`
+hook (`src/hooks/useAdmin.ts:347`) and `DataSourcesPanel.tsx` (mounted on the Admin page,
+area 14) consume.
+
+**Needs:**
+- `GET /api/health/freshness` returning `FreshnessResponse { checked_at, expected_market_close, overall_status, tables: FreshnessRow[], stale?, stale_age_seconds? }` (`platform/api/schemas.py:1411-1434`)
+- every tracked Cloud SQL table `scripts/audit_data_freshness.py` checks (see 05-c)
+- Cloud Run job `freshness-watchdog`, triggers `freshness-watchdog-hourly`, `freshness-watchdog-nightly`
+- secret `DB_PASS` (`db-trading-pass:latest`)
+
+**States:**
+- fresh cache hit (under 300 s old): returns immediately, no audit run
+- cache miss, this request claims the audit: runs `audit_all()` synchronously, then caches and returns
+- cache miss or expired, another request already claimed it: returns the previous report with `stale: true` and `stale_age_seconds`, or 503 if nothing was ever cached
+- audit failure, external (Cloud SQL unreachable): 503 (`is_infrastructure_error`, CLAUDE.md rule 4 EXTERNAL)
+- audit failure, internal defect: 500
+
+**Acceptance criteria:**
+- Given the cache is empty and no request currently holds the claim, when `GET /api/health/freshness` is requested, then the caller runs the audit synchronously and receives the fresh `FreshnessResponse` (`_run_audit_and_cache`, `platform/api/routers/health.py:127-155`; confirmed live 2026-09-28, see V evidence).
+- Given the cache is empty and another request already holds the claim, when a second `GET /api/health/freshness` arrives concurrently, then it answers 503 with `{"detail":"Freshness audit in progress and no cached report is available yet. Retry shortly."}` rather than blocking or fabricating a report (confirmed live 2026-09-28, see V evidence).
+- Given a cached report exists but is expired and this request does not hold the claim, when `GET /api/health/freshness` is requested, then it answers the previous report with `stale: true` and a computed `stale_age_seconds` (`health.py:113-119`).
+- Given `scripts/audit_data_freshness.py` cannot reach Cloud SQL, when the audit fails, then `get_freshness` answers 503, not 500, distinguishing an external outage from an internal defect (`health.py:139-151`, `is_infrastructure_error`).
+- Given the Admin page's Data Sources panel mounts, when `useAdminDataSources` fetches `GET /api/admin/data-sources`, then it receives the same cached freshness report this element produces, because both endpoints share `freshness_report_dict()` (`platform/api/routers/admin.py:1391-1402`).
+
+**Tests:** `tests/api/test_platform_api.py`, `tests/api/test_route_coverage.py` (both exercise `GET /api/health/freshness` reachability; no dedicated freshness-cache unit test covering the claim, stale and 503 branches was found in `tests/api/` under this task's search). solyra `tests/dashboard/data-pipeline-widget.spec.ts` (Playwright, pins the retired widget's absence; not part of Te, solyra#28 is open).
+
+**Code:** `platform/api/routers/health.py:40-64` (`_CACHE_TTL`, `_cache`, `_AUDIT_FLIGHT`), `:67-125` (`freshness_report_dict`), `:127-155` (`_run_audit_and_cache`), `:158-184` (`get_freshness`); `platform/api/routers/admin.py:1391-1402` (`GET /api/admin/data-sources`); `gcp/deploy.sh:2525-2554` (`deploy_freshness_watchdog`), `:4447-4448` (scheduler triggers); solyra `src/hooks/useAdmin.ts:312-364`, `src/components/admin/DataSourcesPanel.tsx`.
+
 ##### SHARED-08 · Liveness: /api/health
+
+**Shows or does:** The liveness probe every uptime check and the SPA's pre-auth boot can hit
+unconditionally: `GET /api/health` (`platform/api/main.py:270-279`, `health_check`). It is
+declared `def`, not `async def`, on purpose (`:255-269`): every other handler that blocks
+belongs on the threadpool, but this one exists to answer even while the service is in
+trouble, most often worker saturation from a burst of DB requests queued behind the
+connection pool, and a threadpooled health check would wait in that same queue and go silent
+exactly when the answer matters most (Codex, PR #991). It touches no database, filesystem or
+network at request time; `cloud_sql` and `lib_dir_exists` are both booleans resolved once at
+import.
+
+**Needs:**
+- `GET /api/health` returning `HealthResponse { status, project_root, cloud_sql, gcs_bucket, lib_dir_exists }` (`platform/api/schemas.py:280-285`)
+- module-level `_CLOUD_SQL` (`is_cloud_sql_configured()` at import, `main.py:61-64`) and `_LIB_DIR_EXISTS` (`(PROJECT_ROOT / "lib").is_dir()` at import, `main.py:248`)
+
+**States:** one. The handler has exactly one return path and no error branch of its own; if
+the process can execute it at all the response is always `status: "ok"` with the three
+booleans reflecting configuration, not runtime health. The meaningful states live one layer
+up, at the infrastructure boundary: the Cloud Run service answers (200) or does not
+(unreachable, not observed in this task).
+
+**Acceptance criteria:**
+- Given any `AUTH_MODE` (open, firebase or iap), when `GET /api/health` is requested with no `Authorization` header, then the response is 200 with `status: "ok"`, because the path is in `_OPEN_API_PREFIXES` (`test_health_returns_ok`; `test_firebase_requires_valid_token`'s `c.get("/api/health").status_code == 200` assertion; confirmed live 2026-09-28, see V evidence).
+- Given the handler runs, when it builds its response, then it makes no database call, filesystem call or network call, only reading the two module-level booleans computed at import (`main.py:270-279`).
+- Given Cloud SQL is configured for the running service, when `GET /api/health` returns, then `cloud_sql` is `true` (`test_health_returns_ok` asserts the key is present; live probe 2026-09-28 returned `cloud_sql: true`).
+
+**Tests:** `tests/api/test_platform_api.py::test_health_returns_ok`, `tests/api/test_platform_auth.py::test_firebase_requires_valid_token`, `tests/api/test_route_coverage.py`.
+
+**Code:** `platform/api/main.py:61-64` (`_CLOUD_SQL`), `:248` (`_LIB_DIR_EXISTS`), `:255-269` (why this handler stays synchronous), `:270-279` (`health_check`); `platform/api/schemas.py:280-285` (`HealthResponse`).
 
 ## Per-screen records
 
