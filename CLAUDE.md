@@ -75,17 +75,20 @@ If you're on the connected branch, create a feature branch before touching any
 file:
 
 ```bash
-git checkout -b feature/short-description   # new features
-git checkout -b fix/short-description       # bug fixes
-git checkout -b docs/short-description      # doc-only changes
-git checkout -b chore/short-description     # refactors, deps, tooling
-git checkout -b test/short-description      # test-only changes
+git checkout -b feature/<feat-id>-<slug>   # a CHANGE: approved spec and ready plan
+git checkout -b fix/<feat-id>-<slug>       # a bug fix, filed under its FEAT-ID
+git checkout -b docs/short-description     # documentation only
+git checkout -b chore/short-description    # dependency manifests and lockfiles only
 ```
+
+These are the shapes the spec gate (`scripts/gate/spec_gate.py`) accepts, with
+`spike/` for local investigation and `bot/superpowers-*` for the vendored
+skills. Tests and refactors are code: they go on a `feature/` or `fix/` branch.
 
 Push with upstream tracking on the first push:
 
 ```bash
-git push -u origin feature/short-description
+git push -u origin feature/<feat-id>-<slug>
 ```
 
 Use kebab-case, keep under ~40 chars, no emoji, no PR/issue numbers.

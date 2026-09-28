@@ -41,7 +41,7 @@
 - Create: `platform/api/routers/waitlist.py`
 - Modify: `platform/api/auth.py:34` (`_OPEN_API_PREFIXES`)
 - Modify: `platform/api/main.py:23` (import) and `:73` (include_router)
-- Test: `tests/test_waitlist_router.py`
+- Test (stocks repo): `tests/test_waitlist_router.py`
 
 **Interfaces:**
 - Consumes: `gcp.database.get_engine()` (existing), `api.auth._OPEN_API_PREFIXES` (existing tuple).
@@ -49,7 +49,7 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `tests/test_waitlist_router.py`:
+Create `tests/test_waitlist_router.py` in the stocks repo:
 
 ```python
 """Tests for POST /api/waitlist — the public landing-page signup endpoint.
@@ -317,7 +317,7 @@ CREATE TABLE IF NOT EXISTS waitlist_signups (
 - [ ] **Step 6: Run the full hermetic suite**
 
 Run: `make test`
-Expected: passes (existing auth tests in `tests/test_platform_auth.py` must still pass — the new prefix only ADDS an open path).
+Expected: passes (existing auth tests in the stocks repo's `tests/test_platform_auth.py` must still pass — the new prefix only ADDS an open path).
 
 - [ ] **Step 7: Commit**
 

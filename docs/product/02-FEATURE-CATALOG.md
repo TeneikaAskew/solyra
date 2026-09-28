@@ -1,6 +1,6 @@
 # Feature Catalog (solyra)
 
-**Last reviewed:** unknown · **Last scanned:** unknown · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `b9ede92a41e1` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The FEAT-IDs solyra work is filed under. `scripts/gate/spec_gate.py` reads the
 IDs from this file: a change to anything but documentation needs a
