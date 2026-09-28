@@ -477,8 +477,8 @@ up, at the infrastructure boundary: the Cloud Run service answers (200) or does 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| LANDING-12 | loading (waitlist submit in flight) | absent | `WaitlistSection` disables the submit button and shows "Joining…" while `status === 'submitting'`. |
-| LANDING-13 | error (waitlist failure shown inline) | absent | `WaitlistSection` renders the thrown error's message in a `role="alert"` block (`data-testid="waitlist-error"`), never a silent failure. |
+| LANDING-12 | loading (waitlist submit in flight) | present | `WaitlistSection` disables the submit button and shows "Joining…" while `status === 'submitting'`. |
+| LANDING-13 | error (waitlist failure shown inline) | present | `WaitlistSection` renders the thrown error's message in a `role="alert"` block (`data-testid="waitlist-error"`), never a silent failure. |
 
 #### Journeys
 1. First-time visitor to waitlist: Lands on / → Reads the hero and watches the agent terminal type (LANDING-02) → Scrolls the bento tiles and module deep-dives (LANDING-03, LANDING-05) → Clicks "Join the waitlist" (LANDING-10) → Submits email, an error shows inline if it fails (LANDING-12, LANDING-13)
@@ -488,29 +488,464 @@ up, at the infrastructure boundary: the Cloud Run service answers (200) or does 
 #### Elements
 ##### LANDING-01 · LandingNav
 
+**Shows or does:** The nav bar, the first section rendered on `/` (`LandingPage.tsx:29`):
+the SOLYRA wordmark linking home (`LandingNav.tsx:7-10`), three in-page anchors, Modules
+`#modules`, Learn `#learn`, FAQ `#faq` (`:12-14`), and two CTAs, "Sign in" to `/dashboard`
+and "Request access" to `#waitlist` (`:17-18`; these two links are also LANDING-09 and half
+of LANDING-10 in their own right, as Actions). Plain `<a>` tags, not a client-side router
+`<Link>`: every link is a normal browser navigation or same-page anchor scroll.
+
+**Needs:** nothing; no props, no store, no endpoint.
+
+**States:** one; the nav is identical on every render.
+
+**Acceptance criteria:**
+- Given `/` is rendered, when `LandingNav` mounts, then it is the first child under
+  `data-testid="landing-page"` (`LandingPage.tsx:28-29`) and holds links to `#modules`,
+  `#learn`, `#faq`, `/dashboard`, `#waitlist` (`LandingNav.tsx:12-18`); no assertion in
+  `renders all key sections at /` targets the nav specifically, only its "Sign in" link is
+  directly asserted, by the mobile regression specs (see LANDING-09).
+- Given a phone-width viewport (360, 390 or 411px), when the nav renders, then neither
+  `.sl-nav-signin` nor `.sl-nav-cta` overflows the viewport and the page has no horizontal
+  scroll (`tests/landing/landing.spec.ts:83-100`, the `Sign in stays reachable and
+  in-bounds at Npx` regression specs).
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (the three `Sign in stays reachable and
+in-bounds at Npx` specs cover the nav's layout directly; every other spec in the file
+mounts it too, so a runtime error here would fail them, but none asserts its content).
+
+**Code:** `src/components/landing/LandingNav.tsx`.
+
 ##### LANDING-02 · Hero with the agent terminal
+
+**Shows or does:** The hero header (`Hero.tsx:9-82`): a kicker, the "Know why the market
+moves. / Before it moves." headline (`:22-33`), a two-CTA row (`#waitlist`, `#learn`,
+`:39-42`), and a terminal-styled panel that types out seven scripted `AGENT_LINES` one at a
+time via `useTypingLines(AGENT_LINES.length)` (`:6`, `useTypingLines.ts:8-27`), 650ms apart,
+revealing a "3 signals armed" badge once every line is visible (`Hero.tsx:58-79`).
+`useTypingLines` honors `prefers-reduced-motion` by revealing every line immediately
+instead of animating (`useTypingLines.ts:12-15`).
+
+**Needs:** `AGENT_LINES`, a bundled, static 7-entry array (`src/components/landing/
+fixtures.ts:10-18`); no endpoint, no store.
+
+**States:**
+- typing in progress: fewer than 7 lines visible, no "signals armed" badge
+- typing complete, or `prefers-reduced-motion: reduce`: all 7 lines visible immediately,
+  "3 signals armed · watching every 1-min bar" badge shown (`Hero.tsx:66-78`)
+
+**Acceptance criteria:**
+- Given `/` is rendered, when `Hero` mounts, then the "Know why the market moves." heading
+  and the "Join the waitlist" / "See a live day ↓" CTAs are visible (`renders all key
+  sections at /`, matching `/know why the market moves/i` by role).
+- Given the OS reports `prefers-reduced-motion: reduce`, when `useTypingLines(7)` runs,
+  then it returns 7 immediately and starts no interval (`useTypingLines.ts:12-15`; verified
+  by reading the hook directly, no test exercises this branch).
+- Given normal motion preference, when the component mounts, then one additional
+  `AGENT_LINES` entry becomes visible every 650ms until all 7 show (`useTypingLines.ts:
+  16-23`; no test exercises the timing itself).
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /` asserts
+the rendered heading; neither the typing animation nor the reduced-motion branch is
+asserted by any test found in `src/` or `tests/`).
+
+**Code:** `src/components/landing/Hero.tsx`; `src/components/landing/useTypingLines.ts`;
+`src/components/landing/fixtures.ts:10-18` (`AGENT_LINES`).
 
 ##### LANDING-03 · BentoGrid
 
+**Shows or does:** A six-tile grid, `id="modules"` (`BentoGrid.tsx:69`, the target of
+`LandingNav`'s and the footer's `#modules` links), under "Everything that moves the
+market. One surface.": a two-row Gamma Map ladder tile (`GammaLadderTile`, `:4-61`),
+Council verdict, Catalysts, Movement Read, Signals, and a Proof tile that shows a real
+number when present or a placeholder when it is not (`:115-125`).
+
+**Needs:** `BENTO`, `GAMMA_LADDER`, `SPOT_LABEL` (`fixtures.ts:10-55`), bundled static
+objects; no endpoint.
+
+**States:** one rendered state per tile; the Proof tile alone branches on
+`proof.hitRatePct !== null` (`BentoGrid.tsx:117-123`), currently `50` in the fixture,
+never `null`, so the "Results published at launch" placeholder branch is unexercised by
+any test (`fixtures.ts:51-54`).
+
+**Acceptance criteria:**
+- Given `/` is rendered, when `BentoGrid` mounts, then "Everything that moves the market.
+  One surface." is visible (`renders all key sections at /`, exact text, `BentoGrid.
+  tsx:70`).
+- Given `BENTO.proof.hitRatePct` is a number, when the Proof tile renders, then it shows
+  `{hitRatePct}% hit rate` and the caption, not the "Results published at launch"
+  placeholder (`BentoGrid.tsx:117-124`); the fixture's own header comment records the
+  number's provenance, a trade-weighted `avg_win_rate` queried 2026-07-05 via db-query,
+  50% over 2,980 out-of-sample trades across 3 tickers (`fixtures.ts:1-9`).
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`).
+
+**Code:** `src/components/landing/BentoGrid.tsx`; `src/components/landing/fixtures.
+ts:10-55`.
+
 ##### LANDING-04 · ChartShowcase
+
+**Shows or does:** A static inline SVG sample chart (`ChartShowcase.tsx:26-73`) under
+"Charts that show the *why*." (`:14-16`): 24 fixed candles (`CANDLES`, `fixtures.
+ts:58-85`), a VWAP path, and three gamma level lines styled to match the real Charts
+page's own line styles exactly, per the component's own comment: King solid gold
+`#f59e0b` width 2, Gate dotted blue `#3b82f6`, Flip dashed violet `#a78bfa` (`:6-9,
+31-44`), plus one signal marker and one rejection annotation.
+
+**Needs:** `CANDLES` (`fixtures.ts:58-85`); no endpoint.
+
+**States:** one; fully static SVG.
+
+**Acceptance criteria:**
+- Given `/` is rendered, when `ChartShowcase` mounts, then "Charts that show the why." is
+  visible (`renders all key sections at /`, matching `/charts that show the/i`).
+- Given the component renders, then the three level lines carry the colors and dash
+  patterns the component's own comment names (`ChartShowcase.tsx:6-9`; verified by reading
+  the SVG `stroke`/`strokeDasharray` attributes at `:32,37,42` directly; no test asserts
+  the styling itself).
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`).
+
+**Code:** `src/components/landing/ChartShowcase.tsx`; `src/components/landing/fixtures.
+ts:58-85` (`CANDLES`).
 
 ##### LANDING-05 · ModuleDives
 
+**Shows or does:** Three stacked two-column deep-dive sections (`ModuleDives.tsx:154-161`):
+`GammaMapDive`, a strike-by-expiry heat grid (`:4-62`); `FlowDive`, a filtered
+options-flow tape table (`:65-109`); `CouncilDive`, bull/bear/verdict cards plus
+scalper/swing/income persona chips (`:112-152`). All copy and numbers come from bundled
+fixtures (`HEAT_ROWS`, `HEAT_EXPIRIES`, `FLOW_ROWS`, `COUNCIL`, `fixtures.ts:87-116`).
+
+**Needs:** `HEAT_ROWS`, `HEAT_EXPIRIES`, `FLOW_ROWS`, `COUNCIL` (`fixtures.ts:87-116`); no
+endpoint.
+
+**States:** one; fully static.
+
+**Acceptance criteria:**
+- Given `/` is rendered, when the three dives mount as part of the page, then a runtime
+  error in any of them would fail `renders all key sections at /`'s initial `landing-page`
+  visibility assertion, but no assertion in that test, or in any other test found in
+  `tests/landing/`, targets this section's own headings ("See the wall before price hits
+  it.", "Flow without the firehose.", the Council quotes) or content specifically.
+  Presence-only coverage, confirmed by reading the full spec file.
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (presence-only, see above).
+
+**Code:** `src/components/landing/ModuleDives.tsx`; `src/components/landing/fixtures.
+ts:87-116`.
+
 ##### LANDING-06 · DailyRhythm
+
+**Shows or does:** `DailyRhythm`, `id="learn"` (`DailyRhythm.tsx:6`), headed "One market
+day with Solyra.": three phase cards, LEARN 07:00, DO 09:30, ACT 16:00, from `RHYTHM`
+(`fixtures.ts:118-131`). This section is the scroll target of `Hero`'s "See a live day ↓"
+(LANDING-11) and of the `#learn` links in `LandingNav` and the footer.
+
+**Needs:** `RHYTHM` (`fixtures.ts:118-131`); no endpoint.
+
+**States:** one; fully static.
+
+**Acceptance criteria:**
+- Given `/` is rendered, when `DailyRhythm` mounts, then "One market day with Solyra." is
+  visible (`renders all key sections at /`, exact text) and the section carries
+  `id="learn"` (`DailyRhythm.tsx:6`); no test asserts the anchor is actually reachable by
+  scroll (see LANDING-11).
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`).
+
+**Code:** `src/components/landing/DailyRhythm.tsx`; `src/components/landing/fixtures.
+ts:118-131` (`RHYTHM`).
 
 ##### LANDING-07 · WaitlistSection
 
+**Shows or does:** The waitlist capture section, `id="waitlist"` (`WaitlistSection.
+tsx:30-89`), headed "Be there at first light." (`:43`): an email input
+(`data-testid="waitlist-email"`, `:64-76`), a hidden honeypot text input (`tabIndex={-1}`,
+positioned off-screen, `aria-hidden`, `:54-63`), and a submit button
+(`data-testid="waitlist-submit"`, `:77-79`), all replaced by a success message once
+`status === 'done'` (`:48-51`). This is the element LANDING-10's action operates on, and
+LANDING-12/LANDING-13 are two of its four possible states.
+
+**Needs:** `POST /api/waitlist` (full request/response contract under LANDING-10); no
+store, no other endpoint.
+
+**States:** idle (default), submitting (LANDING-12), success
+(`data-testid="waitlist-success"`, `:48-51`), error (LANDING-13).
+
+**Acceptance criteria:**
+- Given `/` is rendered, when `WaitlistSection` mounts, then "Be there at first light."
+  and the email input are visible (`renders all key sections at /`, exact heading text;
+  `WaitlistSection.tsx:43,64-76`).
+- Given the honeypot input, when a sighted person fills the form with a mouse or keyboard,
+  then it stays empty, because it is visually and semantically hidden
+  (`aria-hidden="true"`, off-screen absolute positioning, `tabIndex={-1}`, `:54-63`); only
+  a bot's blind form-filler is expected to populate it (see LANDING-10).
+- Given a successful submission, when `status` becomes `'done'`, then the form is replaced
+  by "You're on the list. One email when your cohort opens." (`:48-51`); no test observes
+  this branch end to end: `waitlist.test.ts` tests `submitWaitlist` in isolation and
+  `landing.spec.ts` only exercises the client-validation rejection path, so the success UI
+  itself is untested, only the data layer beneath it is (`test_valid_email_upserts_and_
+  returns_ok`, `waitlist.test.ts`'s `POSTs email + source + empty honeypot and resolves on
+  200`).
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`, heading
+only); `src/components/landing/waitlist.test.ts` (data layer only, see above). stocks
+`tests/api/test_waitlist_router.py`.
+
+**Code:** `src/components/landing/WaitlistSection.tsx`.
+
 ##### LANDING-08 · FAQ (#faq)
+
+**Shows or does:** `LandingFAQ`, `id="faq"` (`LandingFAQ.tsx:6`): three question/answer
+pairs from `FAQ` (`fixtures.ts:133-146`), plus the page footer, wordmark, Modules/Learn/
+FAQ/Privacy/Terms/Disclosures links, copyright line (`:16-45`). It is the scroll target of
+three separate links: `LandingNav`'s own `#faq` (`LandingNav.tsx:14`), the footer's own
+`#faq` (`LandingFAQ.tsx:37`), and the in-app Support menu's `/#faq` entry
+(`src/components/layout/navConfig.ts:92`).
+
+**Needs:** `FAQ` (`fixtures.ts:133-146`); no endpoint.
+
+**States:** one; fully static.
+
+**Acceptance criteria:**
+- Given a reader follows `/#faq` (e.g. from the in-app Support menu), when `LandingPage`
+  mounts, then its mount effect reads `window.location.hash` and calls `scrollIntoView()`
+  on the element whose id matches (`LandingPage.tsx:22-25`), landing on this section; no
+  test asserts the scroll itself.
+- Given `/` is rendered without a hash, when the page mounts, then `LandingFAQ`'s three
+  questions and the footer render as part of the static tree; a runtime error here would
+  fail every assertion in `renders all key sections at /` (since `landing-page` would
+  never become visible), but no assertion in that test targets this section's own text
+  specifically. Presence-only coverage, same as LANDING-05.
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (presence-only; no assertion targets
+this section's content or the hash-scroll behaviour).
+
+**Code:** `src/components/landing/LandingFAQ.tsx`; `src/components/landing/fixtures.
+ts:133-146` (`FAQ`); `src/routes/LandingPage.tsx:22-25` (hash scroll); `src/components/
+layout/navConfig.ts:92` (Support menu entry).
 
 ##### LANDING-09 · Sign in (to /dashboard)
 
+**Shows or does:** `LandingNav`'s "Sign in" anchor, `<a href="/dashboard"
+className="sl-mut sl-nav-signin">Sign in</a>` (`LandingNav.tsx:17`). A plain link, not a
+client-side router element: clicking it performs a normal browser navigation to
+`/dashboard`.
+
+**Needs:** nothing; no props, no store, no endpoint. What renders after navigation belongs
+to AuthGate (AUTH-01), not to this element.
+
+**States:** one.
+
+**Acceptance criteria:**
+- Given `/` is rendered, when the reader looks at the nav, then a link with the accessible
+  name "Sign in" and `href="/dashboard"` is present (`LandingNav.tsx:17`; asserted
+  directly: `tests/landing/landing.spec.ts:84-89`,
+  `page.getByRole('link', { name: 'Sign in' })`, `toHaveAttribute('href', '/dashboard')`).
+- Given a phone-width viewport (360, 390 or 411px), when the nav renders, then the "Sign
+  in" link's bounding box stays within the viewport and the page has no horizontal scroll
+  (`tests/landing/landing.spec.ts:90-98`; a regression for a mobile CSS fix that once hid
+  `.sl-nav-signin` with `display: none` below 720px and removed the only route to
+  `/dashboard` on a phone, per the spec's own comment at `:79-82`).
+- Given the link is followed, when `/dashboard` loads, then AuthGate decides what renders
+  there, the sign-in screen in firebase mode or the app directly in open/iap mode; out of
+  this element's own scope, traced under AUTH-01, not observed by any test in this area.
+
+**Tests:** solyra `tests/landing/landing.spec.ts` (the three `Sign in stays reachable and
+in-bounds at Npx` specs).
+
+**Code:** `src/components/landing/LandingNav.tsx:17`.
+
 ##### LANDING-10 · Request access, join the waitlist
+
+**Shows or does:** Two cooperating pieces: `LandingNav`'s "Request access" anchor,
+`<a href="#waitlist" className="sl-cta sl-nav-cta">Request access</a>`
+(`LandingNav.tsx:18`), a same-page scroll to `WaitlistSection`'s `id="waitlist"`
+(`WaitlistSection.tsx:33`); and the form submit itself, `WaitlistSection`'s `onSubmit`
+handler (`:13-28`): client-side `validateEmail` first, then `submitWaitlist(email,
+'landing', website)` (`waitlist.ts:10-31`) POSTs to `/api/waitlist`, handled by
+`join_waitlist` (`platform/api/routers/waitlist.py:84-130`).
+
+**Needs:** `POST /api/waitlist` (`WaitlistBody { email, source, website }`,
+`platform/api/routers/waitlist.py:45-48`) returning `WaitlistResponse { status: "ok" }`
+(`platform/api/schemas.py:1382-1383`) on success, or an `HTTPException` with a `detail`
+string on failure; table `waitlist_signups` (`email UNIQUE, source, user_agent,
+created_at, updated_at`, `gcp/schema.sql:4755-4762`), written by a single `INSERT ...
+ON CONFLICT (email) DO UPDATE` (`waitlist.py:108-121`, no separate `lib/` module).
+
+**States:**
+- idle: form visible, submit enabled, reads "Join the waitlist"
+- submitting: see LANDING-12
+- success: form replaced by the `data-testid="waitlist-success"` message (see LANDING-07)
+- error: see LANDING-13
+- honeypot tripped (bot traffic): the hidden `website` field is non-empty; the backend
+  returns the same 200 `{"status":"ok"}` WITHOUT writing a row, so from the browser this
+  state is indistinguishable from success (`waitlist.py:86-92`, "the one sanctioned
+  anti-bot fake success", the router's own docstring)
+
+**Acceptance criteria:**
+- Given the nav's "Request access" link is clicked, when the browser follows `#waitlist`,
+  then it scrolls to `WaitlistSection`'s matching `id` (`LandingNav.tsx:18`,
+  `WaitlistSection.tsx:33`); no test asserts the scroll itself, only that the anchor and
+  its target exist in source.
+- Given a syntactically valid, previously-unseen email and an empty honeypot, when the
+  form is submitted, then the browser POSTs `{email (trimmed, lowercased), source:
+  "landing", website: ""}` to `/api/waitlist`, the backend inserts a new
+  `waitlist_signups` row and returns `{"status":"ok"}` (`test_valid_email_upserts_and_
+  returns_ok`; `waitlist.test.ts`'s `POSTs email + source + empty honeypot and resolves on
+  200`).
+- Given the app is served from a `*.lovable.app` host (Lovable, the production SPA host
+  for this area), when `submitWaitlist` calls the bare global `fetch('/api/waitlist',
+  ...)`, then `installAuthFetch`'s wrapper, installed unconditionally at boot before
+  ConfigGate specifically because "the landing page's own waitlist POST needs that
+  rewrite too" (`src/main.tsx:14-25`), rewrites it onto `STAGING_API`
+  (`src/lib/apiTargets.ts:29,37`, `authedFetch.ts:56-63,109-129`), because a static host
+  would otherwise answer `/api/*` with `index.html` and break `r.json()`. `/api/waitlist`
+  is itself one of the `OPEN_PREFIXES` (`authedFetch.ts:45`) that both the frontend and
+  `platform/api/auth.py:70`'s `_OPEN_API_PREFIXES` agree needs no bearer token (SHARED-02);
+  since the landing route never runs `ConfigGate`, `getAuthMode()` reads its module
+  default, `'open'` (`src/lib/runtimeConfig.ts:22`), so the request takes the
+  no-token branch (`authedFetch.ts:163-166`) unconditionally.
+- Given the honeypot `website` field is filled (bot traffic), when `join_waitlist` runs,
+  then it returns 200 `{"status":"ok"}` and never opens a DB connection, checked BEFORE
+  email-format validation so a bot never learns this is a validation endpoint
+  (`waitlist.py:86-92`; `test_honeypot_returns_fake_success_without_db_call`,
+  `test_honeypot_checked_before_email_validation`).
+- Given the reader has dev-role mock mode active (SHARED-04), when the same submit runs,
+  then `authedFetch` intercepts it before the network, checked before the base rewrite
+  (`authedFetch.ts:145-148`), and the fixture engine has NO route for `/api/waitlist` on
+  this page, on purpose (`landingRoutes: MockRoute[] = []`, `src/mocks/landing.ts:36`), so
+  the loud 501 "no fixture" miss (`src/mocks/index.ts:132-140`) flows into
+  `submitWaitlist`'s own error branch and the form shows an honest failure rather than a
+  mocked fake "you're on the list" (`src/mocks/landing.ts:27-35`, citing CLAUDE.md Rule 4
+  by name).
+
+**Tests:** stocks `tests/api/test_waitlist_router.py` (`test_valid_email_upserts_and_
+returns_ok`, `test_honeypot_returns_fake_success_without_db_call`, `test_honeypot_
+checked_before_email_validation`). solyra `src/components/landing/waitlist.test.ts`
+(`submitWaitlist > POSTs email + source + empty honeypot and resolves on 200`, `>
+sends a filled honeypot value through to the server`). solyra `tests/landing/
+landing.spec.ts` (`waitlist form rejects an invalid email with a visible error` exercises
+the same submit handler's client-validation branch, not the network branch).
+
+**Code:** `src/components/landing/LandingNav.tsx:18`; `src/components/landing/
+WaitlistSection.tsx:13-28`; `src/components/landing/waitlist.ts`; `platform/api/routers/
+waitlist.py:84-130`; `platform/api/schemas.py:1382-1383`; `gcp/schema.sql:4755-4762`;
+`src/main.tsx:14-25`; `src/lib/authedFetch.ts:45,56-63,109-129,145-166`;
+`src/lib/runtimeConfig.ts:22`; `src/mocks/landing.ts`.
 
 ##### LANDING-11 · See a live day (scroll to #learn)
 
+**Shows or does:** `Hero`'s "See a live day ↓" anchor, `<a href="#learn"
+className="sl-cta2">See a live day ↓</a>` (`Hero.tsx:41`), a same-page scroll to
+`DailyRhythm`'s `id="learn"` section (`DailyRhythm.tsx:6`).
+
+**Needs:** nothing; no props, no store, no endpoint.
+
+**States:** one.
+
+**Acceptance criteria:**
+- Given `/` is rendered, when the reader looks at the hero, then a link with the visible
+  text "See a live day ↓" and `href="#learn"` is present (`Hero.tsx:41`), and `DailyRhythm`
+  renders a section with `id="learn"` (`DailyRhythm.tsx:6`) as the matching anchor target.
+- Given the link is clicked, when the browser follows the `#learn` fragment, then it
+  scrolls to that section by native browser anchor behaviour; no test asserts the scroll
+  itself, since no test in `src/` or `tests/` references `#learn` or "See a live day"
+  (confirmed by search).
+
+**Tests:** none. No Vitest, pytest or Playwright test references this link or the
+`#learn` anchor.
+
+**Code:** `src/components/landing/Hero.tsx:41`; `src/components/landing/
+DailyRhythm.tsx:6`.
+
 ##### LANDING-12 · State: loading (waitlist submit in flight)
 
+**Shows or does:** While `submitWaitlist` is in flight, `WaitlistSection`'s local `status`
+state is `'submitting'` (`WaitlistSection.tsx:20`, set right after client-side email
+validation passes and before `submitWaitlist` is awaited): the submit button is disabled
+and its text changes from "Join the waitlist" to "Joining…"
+(`:77-79`, `disabled={status === 'submitting'}`, `data-testid="waitlist-submit"`). This
+presentation genuinely exists in the current source; UI-SCREENS.md's States table
+previously marked it "absent", which this task corrects after reading `WaitlistSection.
+tsx` directly rather than trusting the earlier marking.
+
+**Needs:** nothing beyond the component's own `status` state; no endpoint of its own, it
+is a presentation of the LANDING-10 request's lifecycle.
+
+**States:** this row is itself one of `WaitlistSection`'s four states (idle, submitting,
+success, error; see LANDING-10). It has no further sub-states.
+
+**Acceptance criteria:**
+- Given a valid email and an empty honeypot, when the reader clicks "Join the waitlist",
+  then `status` becomes `'submitting'` before `submitWaitlist` is awaited, the button
+  becomes `disabled`, and its text reads "Joining…" (`WaitlistSection.tsx:19-23,77-79`;
+  verified by reading the component directly, no test exercises this branch, see Tests).
+- Given the request resolves, success or a thrown error, when the handler's `try`/`catch`
+  completes, then `status` leaves `'submitting'` (`'done'` on success, back to `'idle'` on
+  error, `:22-27`), so the disabled/"Joining…" presentation is never stuck.
+
+**Tests:** none. Searched `src/` and `tests/` for `submitting`, `Joining` and the
+`waitlist-submit` testid: the only two references outside this component are in
+`tests/landing/landing.spec.ts`'s invalid-email test, which returns before `status` ever
+becomes `'submitting'` (`validateEmail` fails first, `WaitlistSection.tsx:16-19`), so no
+test, Vitest or Playwright, ever observes this state.
+
+**Code:** `src/components/landing/WaitlistSection.tsx:19-23` (state transition), `:77-79`
+(presentation).
+
 ##### LANDING-13 · State: error (waitlist failure shown inline)
+
+**Shows or does:** On any thrown error, from `submitWaitlist` or from client-side
+`validateEmail`, `WaitlistSection` sets `error` to the error's `message` and renders it
+inline in a `role="alert"` block, `data-testid="waitlist-error"` (`:24-27,82-86`), never a
+silent failure; the component's own header comment cites CLAUDE.md Rule 3.7 by name
+(`:6`). `submitWaitlist` itself never resolves to a fabricated success: a non-2xx response
+throws the server's `detail` string when present, else a `signup failed (<status>)`
+fallback; a network failure throws "Could not reach the server, check your connection and
+retry." (`waitlist.ts:10-31`).
+
+**Needs:** the thrown `Error`'s `message`; no endpoint of its own (see LANDING-10).
+
+**States:** one of `WaitlistSection`'s four states (see LANDING-10); the message itself
+has three distinct sources: client-side format rejection, a non-2xx HTTP response, and a
+network failure.
+
+**Acceptance criteria:**
+- Given an invalid email is submitted, when `validateEmail` rejects it, then the handler
+  sets `error` to "Enter a valid email address." without calling `submitWaitlist` at all
+  (`WaitlistSection.tsx:16-19`; `tests/landing/landing.spec.ts`'s `waitlist form rejects
+  an invalid email with a visible error`: fills `not-an-email`, clicks submit, asserts
+  `waitlist-error` contains `/valid email/i`).
+- Given the backend responds 400/429/503 with a JSON `{"detail": "..."}` body, when
+  `submitWaitlist` parses it, then it throws an `Error` whose message IS that `detail`
+  string, which `WaitlistSection` then renders verbatim (`waitlist.ts:21-29`;
+  `waitlist.test.ts`'s `throws the server detail on a non-2xx response (loud failure)`,
+  backed on the server side by `test_invalid_email_is_400_and_no_db_call`, `test_rate_
+  limit_429_after_five_requests`, `test_db_failure_is_loud_503`, each of which returns a
+  `detail` string `join_waitlist` puts in the response, `waitlist.py:96,100,127`).
+- Given the backend responds non-2xx with a body that is not JSON, or whose `detail` is
+  not a string (e.g. a FastAPI validation error shaping `detail` as a list), when
+  `submitWaitlist` parses it, then it falls back to `signup failed (<status>)` rather than
+  surfacing the raw structure (`waitlist.ts:21-29`; `waitlist.test.ts`'s `falls back to
+  the status-code message when detail is not a string`).
+- Given `fetch` itself rejects (offline, DNS failure), when `submitWaitlist` catches it,
+  then it throws "Could not reach the server, check your connection and retry."
+  (`waitlist.ts:12-19`; `waitlist.test.ts`'s `throws a readable message on network
+  failure`).
+
+**Tests:** solyra `src/components/landing/waitlist.test.ts` (`throws the server detail on
+a non-2xx response (loud failure)`, `falls back to the status-code message when detail is
+not a string`, `throws a readable message on network failure`). stocks
+`tests/api/test_waitlist_router.py` (`test_invalid_email_is_400_and_no_db_call`,
+`test_rate_limit_429_after_five_requests`, `test_db_failure_is_loud_503`). solyra
+`tests/landing/landing.spec.ts` (`waitlist form rejects an invalid email with a visible
+error`, the client-validation branch only).
+
+**Code:** `src/components/landing/WaitlistSection.tsx:6` (Rule 3.7 citation), `:13-28`
+(`onSubmit`), `:82-86` (rendering); `src/components/landing/waitlist.ts:10-31`;
+`platform/api/routers/waitlist.py:84-130`.
 
 ### SCREEN-NAVIGATE — `/welcome`
 
