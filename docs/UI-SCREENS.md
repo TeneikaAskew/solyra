@@ -2638,7 +2638,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 ### SCREEN-SIGNALS — `/signals`
 
 - **Purpose:** Signal discovery and live alert monitoring.
-- **Status:** Production but needs remediation · **Blocking issue:** [#905](https://github.com/TeneikaAskew/stocks/issues/905) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [#1206](https://github.com/TeneikaAskew/stocks/issues/1206) (replaces [#905](https://github.com/TeneikaAskew/stocks/issues/905), closed as a duplicate on 2026-09-28) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SignalsPage.tsx` (341 lines)
 - **Child components:** `KpiTile`, `MicroLabel`, `TickerCombobox`
 - **API calls (from source):** `/api/signals/`
