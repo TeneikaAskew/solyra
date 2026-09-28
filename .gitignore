@@ -58,3 +58,6 @@ docs/har.json
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+
+# Superpowers visual companion session files (mockups, server-info, access token)
+.superpowers/
