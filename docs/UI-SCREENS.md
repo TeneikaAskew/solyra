@@ -1289,7 +1289,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 | ADMIN-13 | permission | not tracked (new category); present | `AdminPage.tsx` renders an "Admin access required" card from `useUser`'s `isAdmin` before mounting any tab. |
 
 #### Journeys
-1. Onboard a teammate: Opens /admin, Users & roles (ADMIN-01) → Finds the account (ADMIN-01) → Toggles a role, it applies immediately (ADMIN-04) → Disables an account later without deleting its history (ADMIN-05)
+1. Onboard a teammate: Opens /admin, Users & roles (ADMIN-01) → Finds the account (ADMIN-01) → Toggles a role, it applies immediately (ADMIN-04) → Disables an account later without deleting its history (ADMIN-05); on prod, where AUTH_MODE is iap, the request always 409s, so disable only works on staging today (see the matrix Admin Gaps)
 2. Chase stale data: Opens Chart & report data (ADMIN-02) → Spots a dataset behind on freshness (ADMIN-02) → Clicks Refresh to queue a pipeline job (ADMIN-06) → Re-checks coverage after the job runs (ADMIN-02)
 3. A/B one agent role: Opens Models & routing (ADMIN-03) → Changes the judge role to a stronger model (ADMIN-07) → Saves that row only (ADMIN-07) → Compares report quality over the week → Reverts or keeps the change (ADMIN-07)
 4. Non-admin hits the page: Navigates to /admin without the admin role (ADMIN-13) → An "Admin access required" card renders (ADMIN-13) → Explains access is per account, not a shared token (ADMIN-13)
@@ -1427,7 +1427,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 
 #### Journeys
 1. Make the app fit the desk: Opens /settings, Appearance (SETTINGS-02) → Switches Tabs to Sidebar (SETTINGS-06) → Sets Density to Dense (SETTINGS-06) → Picks an accent color (SETTINGS-06) → Every change applies instantly and syncs to the account (SETTINGS-06)
-2. Set trading defaults: Opens the Trading tab (SETTINGS-03) → Enters a default ticker and timeframe (SETTINGS-03) → Adds account size and risk per trade (SETTINGS-03) → Clicks Save changes (SETTINGS-07) → Sizing suggestions now pre-fill in the journal and playbook
+2. Set trading defaults: Opens the Trading tab (SETTINGS-03) → Enters a default ticker and timeframe (SETTINGS-03) → Adds account size and risk per trade (SETTINGS-03) → Clicks Save changes (SETTINGS-07) → the values are stored in user_profile; the journal and playbook pre-fill the seed describes is not implemented (see the matrix Settings Gaps)
 3. Abandon an edit: Starts typing an account size (SETTINGS-03) → The save bar reads "Unsaved changes" (SETTINGS-07) → Clicks Discard (SETTINGS-07) → The draft resets to the stored values, nothing half-typed was persisted (SETTINGS-07)
 
 #### Elements
