@@ -90,6 +90,7 @@ jobs:
           fi
           python3 -m pip install --quiet pytest pyyaml
           # Unconditional: the suite is a gate entrypoint the PR cannot remove, and the base
-          # gate accepts a contract command only in a statement that always runs.
+          # gate accepts a contract command only in a statement that always runs. This is the
+          # PR's own suite; the base's suite judges the proposed gate in spec-gate.yml.
           # --noconftest: the suite is hermetic; a repository conftest may import packages this job does not install
           python3 -m pytest tests/scripts/test_spec_gate.py -q -p no:cacheprovider --noconftest
