@@ -8,7 +8,7 @@
 
 # End-to-End Test Plan — Stocks Trading Platform
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `f312384b79fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 > Canonical test strategy for the Obsidian Analyst redesign. Three layers —
 > **frontend E2E (Playwright)**, **backend (pytest)**, and **GCP data/pipeline
@@ -44,7 +44,8 @@
 
 | Spec | Route / surface | Asserts |
 |---|---|---|
-| `dashboard.spec.ts` | `/` Overview | "Overview" heading · pre-market brief · KPI tiles (prev/latest close, 2-day, RSI) · **Candles\|Area chart toggle** · perf budget |
+| `landing.spec.ts` | `/` | landing page sections render, signed-out, in every auth mode |
+| `dashboard.spec.ts` | `/dashboard` Overview | "Overview" heading · pre-market brief · KPI tiles (prev/latest close, 2-day, RSI) · **Candles\|Area chart toggle** · perf budget |
 | `signals.spec.ts` | `/signals` | **90-day Performance P&L card** (win rate / profit factor) · explorer rows · CALL/PUT · empty state |
 | `insights.spec.ts` (+ Agents) | `/insights` | Briefing dossier · **Agents tab** (run cost/latency · per-role pipeline · model-routing roster · recent runs) |
 | `journal.spec.ts` | `/journal` | **KPI tiles + equity curve** · add/delete trade · CSV export |
@@ -52,6 +53,7 @@
 | `options-flow.spec.ts` · `gamma-levels.spec.ts` | `/options` | Gamma Map grid · GEX/VEX · King/Gate fallback · live-AV badge |
 | `live-market.spec.ts` · `charts-cards.spec.ts` | `/live` `/charts` | hero tiles · candlestick canvas · reference levels |
 | `playbook.spec.ts` · `reports.spec.ts` · `help.spec.ts` · `admin.spec.ts` · `admin-auth.spec.ts` | `/playbook` `/reports` `/help` `/admin` | cards · glossary · admin auth gate |
+| `settings.spec.ts` | `/settings` | tabbed profile/appearance/trading/notifications/account · write-through appearance (`PUT /api/me/preferences`) · draft+Save profile (`PUT /api/me/profile`) · sync/save failures rendered, not swallowed |
 | `navigation.spec.ts` | every route | each route loads without a fatal error |
 | **`api-smoke.spec.ts` — no such file.** No spec by this name exists in `tests/`; this row described planned API-contract coverage that was never written under this name (or was removed) | API contracts | *(not currently exercised by a Playwright spec — `src/mocks/contract.test.ts` is a Vitest unit test that checks a related but different concern, request/response shape vs. the OpenAPI contract; see CLAUDE.md Rule 6)* |
 

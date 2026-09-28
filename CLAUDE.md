@@ -1,6 +1,6 @@
 # Project Instructions for Claude Code — Solyra
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `f312384b79fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## Project Overview
 
@@ -442,10 +442,20 @@ client.
 ("/api/me",)` from `_OPEN_API_PREFIXES = ("/api/health", "/api/config/firebase",
 "/api/waitlist")` — the exact/prefix split keeps `/api/me/preferences` and
 `/api/me/profile` gated server-side, where a flat prefix match used to open
-them. Solyra's `OPEN_PREFIXES` stays a flat list on purpose: it decides which
-401s mean "signed out" (see the comment above it in `authedFetch.ts`), not
-which paths skip the bearer token, so treating `/api/me` as a prefix here is
-correct even though the backend narrowed its own match to exact.
+them. Solyra's `OPEN_PREFIXES` stays a flat list on purpose (it decides which
+401s mean "signed out", not which paths skip the bearer token — see the
+comment above it in `authedFetch.ts`), but treating `/api/me` as a prefix here
+has a real, currently-unaddressed consequence now that the backend gates
+`/api/me/preferences` and `/api/me/profile`: `isGatedApiPath()` classifies
+both as open (`gated = false`), and the stale-token retry (`authedFetch.ts`
+around the `resp.status === 401 && gated` check) and `markAuthBlocked()`
+handling only run when `gated` is true. A stale cached token hitting either
+endpoint therefore returns a 401 that is never retried with a refreshed
+token and never flagged as a blocked session — the settings page is left
+showing a load/save error a token refresh would have fixed, instead of
+self-healing the way every other gated path does. Not fixed in this pass
+(a behavior change to `authedFetch.ts`, not a documentation fix); flagging
+so it isn't mistaken for settled.
 
 ---
 

@@ -1,6 +1,6 @@
 # Solyra
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `f312384b79fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The frontend for the trading platform — a React + TypeScript single-page app
 covering the market dashboard, live quotes, charts, options/gamma analysis,
@@ -73,9 +73,14 @@ mock.
 documentation auditor is tested beside itself at `scripts/docs-audit.test.mjs`,
 which `npm test` also runs.
 
-**E2E** — Playwright, in `tests/`. These are **hermetic**: every `/api` call is
-intercepted with `page.route`, so they need no backend and no network. Test
-data lives in `tests/helpers/`:
+**E2E** — Playwright, in `tests/`. These are **hermetic**: every `/api` call a
+test asserts on is intercepted with `page.route`, so they need no backend and
+no network. (A small number of requests — `docs/TEST_COVERAGE_AUDIT.md`
+records 25 — can still escape interception after a test's own assertions
+finish, in the teardown window between a mutation's refetch or a navigation's
+fan-out and Playwright tearing the context down; these are accepted,
+logged-but-harmless `ECONNREFUSED` noise against Vite's dead proxy, not a
+missing fixture.) Test data lives in `tests/helpers/`:
 
 - `mocks.ts` — `mockCommon` (the cross-cutting endpoints every page hits) plus
   the `M` fulfil helpers.
