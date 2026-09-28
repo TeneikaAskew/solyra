@@ -21,10 +21,16 @@ You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#in
 
 ```sh
 npm i
+git config core.hooksPath .githooks   # once per clone: the spec gate runs on every commit
 npm run dev
 ```
 
 The app runs on <http://localhost:5173>.
+
+The hook is installed by hand, not from an npm `prepare` script: Lovable runs
+`npm install` and commits to the connected branch, and a hook installed there
+would block its commits if its environment lacks `python3`. CI's `spec-gate`
+check applies the same gate to every pull request.
 
 ### Where `/api` goes
 
