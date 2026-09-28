@@ -154,6 +154,35 @@ test.describe('Auth gate', () => {
     await page.getByTestId('login-toggle').click();
     await expect(page.getByTestId('login-submit')).toHaveText(/create account/i);
   });
+
+  // SignInScreen reads isFramed() once at mount (window.self !== window.top,
+  // SignInScreen.tsx:28, `const [framed] = useState(isFramed)`). Embedding
+  // the app in an iframe via page.setContent — rather than page.goto — puts
+  // the real top-level page on about:blank, so the iframe's window.self is
+  // genuinely a different browsing context from window.top without needing
+  // a second origin.
+  test('framed preview: the Google button opens a new tab instead of a popup', async ({
+    page,
+    baseURL,
+  }) => {
+    await mockAllPages(page);
+    await page.route('**/api/config/firebase', (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ authMode: 'firebase', firebase: FAKE_FIREBASE }),
+      }),
+    );
+
+    await page.setContent(
+      `<iframe id="app-frame" src="${baseURL}/dashboard" style="width:1000px;height:800px;border:0;"></iframe>`,
+    );
+    const frame = page.frameLocator('#app-frame');
+
+    await expect(frame.getByTestId('google-signin-newtab')).toBeVisible();
+    await expect(frame.getByTestId('google-signin-newtab')).toHaveAttribute('target', '_blank');
+    await expect(frame.getByTestId('google-signin')).toHaveCount(0);
+  });
 });
 
 // ── Email flows: forgot-password + the /auth/action landing page ────────────
@@ -214,6 +243,79 @@ async function mockIdentityToolkit(page: Page, reply: (call: ItkCall) => ItkRepl
   });
   return calls;
 }
+
+test.describe('Email sign-in and sign-out', () => {
+  test('email sign-in shows the inline error when the identity call fails', async ({ page }) => {
+    await firebaseMode(page);
+    await mockIdentityToolkit(page, (call) =>
+      call.path.endsWith('accounts:signInWithPassword')
+        ? itkError('INVALID_PASSWORD')
+        : itkError('UNEXPECTED_CALL'),
+    );
+
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('login-email').fill('trader@example.test');
+    await page.getByTestId('login-password').fill('wrong-password');
+    await page.getByTestId('login-submit').click();
+
+    await expect(page.getByTestId('login-error')).toContainText(/incorrect email or password/i);
+    // The app must stay on the sign-in form, not render behind it.
+    await expect(page.getByTestId('signin-screen')).toBeVisible();
+  });
+
+  test('sign out returns to the sign-in screen', async ({ page }) => {
+    await firebaseMode(page);
+    await mockIdentityToolkit(page, (call) => {
+      if (call.path.endsWith('accounts:signInWithPassword')) {
+        return {
+          status: 200,
+          body: {
+            idToken: 'fake-id-token',
+            email: 'trader@example.test',
+            refreshToken: 'fake-refresh-token',
+            expiresIn: '3600',
+            localId: 'uid-trader',
+          },
+        };
+      }
+      // signInWithEmailAndPassword resolves only once the SDK also has the
+      // full user record — it calls accounts:lookup right after a
+      // successful signInWithPassword to build that User object.
+      if (call.path.endsWith('accounts:lookup')) {
+        return {
+          status: 200,
+          body: {
+            kind: 'identitytoolkit#GetAccountInfoResponse',
+            users: [
+              {
+                localId: 'uid-trader',
+                email: 'trader@example.test',
+                emailVerified: true,
+                providerUserInfo: [],
+                validSince: '1',
+                lastLoginAt: String(Date.now()),
+                createdAt: String(Date.now()),
+              },
+            ],
+          },
+        };
+      }
+      return itkError('UNEXPECTED_CALL');
+    });
+
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('login-email').fill('trader@example.test');
+    await page.getByTestId('login-password').fill('correct-horse-9');
+    await page.getByTestId('login-submit').click();
+
+    // Signed in: the gate steps aside and the shell renders.
+    await expect(page.getByTestId('signin-screen')).toHaveCount(0);
+    await expect(page.getByTestId('sign-out')).toBeVisible();
+
+    await page.getByTestId('sign-out').click();
+    await expect(page.getByTestId('signin-screen')).toBeVisible();
+  });
+});
 
 test.describe('Forgot password', () => {
   test('requests a reset link and shows the neutral confirmation', async ({ page }) => {
