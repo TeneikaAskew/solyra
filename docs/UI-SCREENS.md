@@ -168,7 +168,13 @@ exact match rule for that one path. The frontend closes the gap with a second, n
 check: `isIdentityPath` (`/api/me` or `/api/me/*`) forces the wrapper to throw rather than
 send anonymously when token acquisition fails, regardless of what `OPEN_PREFIXES` says, and
 the wrapper attaches a present token to every `/api/*` request (open or gated) when one is
-available, so a signed in caller's `/api/me` reply is never anonymous.
+available, so a signed in caller's `/api/me` reply is never anonymous. The same gated/open
+classification also decides which 401s mean anything: `authedFetch` only runs a response
+through `track()` (`src/lib/authedFetch.ts:156-158`) when `isGatedApiPath` called the request
+gated, so a 401 from a gated path calls `markAuthBlocked()` and may trigger the registered
+`onUnauthorized` callback, while a 401 from an open path such as `/api/me` never reaches
+`track()` at all, so neither fires; an open path answering without a token is expected, not a
+sign the session is blocked.
 
 **Needs:** no endpoint of its own; every `/api/*` route depends on this classification
 agreeing closely enough that a legitimate call is never mistakenly 401'd and no sub-path is
@@ -179,6 +185,8 @@ accidentally opened.
 - prefix-open (backend `/api/health*`, `/api/config/firebase*`, `/api/waitlist*`)
 - frontend open-classified with a token present (still attaches `Authorization`)
 - frontend open-classified with no token (sent anonymously, except identity paths, which throw instead)
+- gated path returns 401: `track()` calls `markAuthBlocked()`, session marked auth-blocked
+- open path returns 401: `track()` never runs, `markAuthBlocked()` and `onUnauthorized` both stay silent
 
 **Acceptance criteria:**
 - Given `AUTH_MODE=firebase`, when `GET /api/me` is requested with no token, then the backend answers 200, open by exact match (`test_firebase_open_me_is_exact_match_and_subpaths_are_gated`).
@@ -186,10 +194,12 @@ accidentally opened.
 - Given `AUTH_MODE=firebase`, when `GET /api/messages` is requested (a path that merely starts with the string `/api/me`) with no token, then the backend answers 401, proving the exact match does not degrade into a prefix match (`test_firebase_open_me_is_exact_match_and_subpaths_are_gated`).
 - Given a signed in user with a resolvable token, when the frontend fetches `/api/me` (an `OPEN_PREFIXES` entry), then `authedFetch` still attaches `Authorization: Bearer <token>` (`attaches the bearer token to OPEN-prefix paths like /api/me`).
 - Given token acquisition fails persistently, when the frontend fetches `/api/me` or any `/api/me/*` path, then the wrapper throws instead of sending the request anonymously (`propagates a persistent token failure on the identity path instead of going anonymous`).
+- Given a gated path (`isGatedApiPath` true), when the response status is 401, then `track()` calls `markAuthBlocked()`, marking the session auth-blocked (`src/lib/authedFetch.ts:156-158`).
+- Given an open path such as `/api/me`, when the response status is 401, then the request never reaches `track()`, so `markAuthBlocked()` is not called and the registered `onUnauthorized` callback does not fire either (`a 401 from an OPEN path does not fire onUnauthorized`).
 
-**Tests:** `tests/api/test_platform_auth.py::test_firebase_open_me_is_exact_match_and_subpaths_are_gated`; solyra `src/lib/authedFetch.test.ts` (`attaches the bearer token to OPEN-prefix paths like /api/me`, `propagates a persistent token failure on the identity path instead of going anonymous`).
+**Tests:** `tests/api/test_platform_auth.py::test_firebase_open_me_is_exact_match_and_subpaths_are_gated`; solyra `src/lib/authedFetch.test.ts` (`attaches the bearer token to OPEN-prefix paths like /api/me`, `propagates a persistent token failure on the identity path instead of going anonymous`, `a 401 from an OPEN path does not fire onUnauthorized`).
 
-**Code:** `platform/api/auth.py:56-70` (the `_OPEN_API_EXACT`/`_OPEN_API_PREFIXES` comment and definitions), `:180-185` (`_path_requires_auth`); solyra `src/lib/authedFetch.ts:39-45` (`OPEN_PREFIXES`), `:89-102` (`isGatedApiPath`, `isIdentityPath`).
+**Code:** `platform/api/auth.py:56-70` (the `_OPEN_API_EXACT`/`_OPEN_API_PREFIXES` comment and definitions), `:180-185` (`_path_requires_auth`); solyra `src/lib/authedFetch.ts:39-45` (`OPEN_PREFIXES`), `:89-102` (`isGatedApiPath`, `isIdentityPath`), `:156-158` (`track`, `markAuthBlocked`).
 
 ##### SHARED-03 · Data path: authedFetch, apiTargets, Vite proxy, staging fallback
 
@@ -333,7 +343,7 @@ America/New_York) posts to the service's `/reconcile` endpoint, which closes any
 - recovered job: the hourly reconcile closes the open issue with a comment
 
 **Acceptance criteria:**
-- Given a Cloud Run Job execution logs a severity `ERROR` entry that is not a benign pool cleanup traceback and not the notifier's own job, when the sink's filter matches it, then the entry reaches `failure-notifier` through the `gcp-job-failures` topic and its push subscription (`gcp/deploy.sh:4003-4015`).
+- Given a Cloud Run Job execution logs a severity `ERROR` entry that is not a benign pool cleanup traceback and not the notifier's own job, when the sink's filter matches it, then the entry is published to the `gcp-job-failures` topic (`gcp/deploy.sh:4003-4015`, the sink filter and creation) and delivered to `failure-notifier` by the `gcp-job-failures-push` subscription (`gcp/deploy.sh:3950-3963`, its OIDC push endpoint and five-attempt dead letter to `gcp-job-failures-dlq`).
 - Given no open issue exists yet for a failing job, when `handle_notification` runs, then it posts to Discord and creates a new issue labelled `gcp-job-failure,<job_name>` (`test_create_or_update_creates_new_issue_when_none_exists`).
 - Given an open issue already exists for that job, when `handle_notification` runs again, then it posts to Discord and comments on the existing issue rather than opening a new one (`test_create_or_update_comments_on_existing_issue`).
 - Given the log entry's innermost frame matches a benign pool cleanup marker, when `handle_notification` runs, then neither Discord nor GitHub is called (`test_handle_notification_suppresses_benign_pool_cleanup`).
@@ -341,7 +351,7 @@ America/New_York) posts to the service's `/reconcile` endpoint, which closes any
 
 **Tests:** `tests/gcp/test_failure_notifier.py` (`test_create_or_update_creates_new_issue_when_none_exists`, `test_create_or_update_comments_on_existing_issue`, `test_handle_notification_suppresses_benign_pool_cleanup`, `test_handle_notification_skips_self_loop`, `test_reconcile_closures_closes_recovered_jobs`, and the rest of the file).
 
-**Code:** `gcp/failure_notifier.py:61` (`is_benign_pool_cleanup`), `:85` (`extract_failure_details`), `:206` (`send_discord`), `:256` (`close_issue`), `:451` (`reconcile_closures`), `:522` (`handle_notification`), `:580` (`handle_reconcile`); `gcp/deploy.sh:3805-3808` (service, topic, sub and sink names), `:3879` (`deploy_notifier`), `:4003-4015` (sink filter and creation), `:4062` (scheduler trigger).
+**Code:** `gcp/failure_notifier.py:61` (`is_benign_pool_cleanup`), `:85` (`extract_failure_details`), `:206` (`send_discord`), `:256` (`close_issue`), `:451` (`reconcile_closures`), `:522` (`handle_notification`), `:580` (`handle_reconcile`); `gcp/deploy.sh:3805-3808` (service, topic, sub and sink names), `:3879` (`deploy_notifier`), `:3950-3963` (push subscription and dead letter), `:4003-4015` (sink filter and creation), `:4062` (scheduler trigger).
 
 ##### SHARED-07 · Freshness watchdog and /api/health/freshness
 
@@ -393,14 +403,18 @@ area 14) consume.
 ##### SHARED-08 · Liveness: /api/health
 
 **Shows or does:** The liveness probe every uptime check and the SPA's pre-auth boot can hit
-unconditionally: `GET /api/health` (`platform/api/main.py:270-279`, `health_check`). It is
-declared `def`, not `async def`, on purpose (`:255-269`): every other handler that blocks
-belongs on the threadpool, but this one exists to answer even while the service is in
-trouble, most often worker saturation from a burst of DB requests queued behind the
-connection pool, and a threadpooled health check would wait in that same queue and go silent
-exactly when the answer matters most (Codex, PR #991). It touches no database, filesystem or
-network at request time; `cloud_sql` and `lib_dir_exists` are both booleans resolved once at
-import.
+unconditionally: `GET /api/health` (`platform/api/main.py:271-279`, `health_check`). It is
+declared `async def`, deliberately the only handler in this file that is
+(`platform/api/main.py:249-271`): every other handler here is synchronous `def` on purpose,
+so FastAPI dispatches it to a threadpool and a blocking call there cannot stall the event
+loop. That threadpool is itself the failure mode this handler exists to survive: a burst of
+DB requests queued behind the SQLAlchemy pool can hold every AnyIO worker token for up to
+the pool's 30 second timeout, and a threadpooled (`def`) health check would wait in that same
+worker-token queue, going silent exactly when the answer matters most (Codex, PR #991).
+Staying `async def` with no blocking call inside it keeps it on the event loop instead, where
+the threadpool's saturation cannot reach it; it touches no database, filesystem or network at
+request time, and `cloud_sql` and `lib_dir_exists` are both booleans resolved once at import
+specifically so the handler has nothing left to block on.
 
 **Needs:**
 - `GET /api/health` returning `HealthResponse { status, project_root, cloud_sql, gcs_bucket, lib_dir_exists }` (`platform/api/schemas.py:280-285`)
@@ -413,13 +427,13 @@ up, at the infrastructure boundary: the Cloud Run service answers (200) or does 
 (unreachable, not observed in this task).
 
 **Acceptance criteria:**
-- Given any `AUTH_MODE` (open, firebase or iap), when `GET /api/health` is requested with no `Authorization` header, then the response is 200 with `status: "ok"`, because the path is in `_OPEN_API_PREFIXES` (`test_health_returns_ok`; `test_firebase_requires_valid_token`'s `c.get("/api/health").status_code == 200` assertion; confirmed live 2026-09-28, see V evidence).
-- Given the handler runs, when it builds its response, then it makes no database call, filesystem call or network call, only reading the two module-level booleans computed at import (`main.py:270-279`).
-- Given Cloud SQL is configured for the running service, when `GET /api/health` returns, then `cloud_sql` is `true` (`test_health_returns_ok` asserts the key is present; live probe 2026-09-28 returned `cloud_sql: true`).
+- Given any `AUTH_MODE` (open, firebase or iap), when `GET /api/health` is requested with no `Authorization` header, then the response is 200 with `status: "ok"`, because the path is in `_OPEN_API_PREFIXES` (`TestHealth::test_health_returns_ok`; `test_firebase_requires_valid_token`'s `c.get("/api/health").status_code == 200` assertion; confirmed live 2026-09-28, see V evidence).
+- Given the handler runs, when it builds its response, then it makes no database call, filesystem call or network call, only reading the two module-level booleans computed at import (`main.py:271-279`).
+- Given Cloud SQL is configured for the running service, when `GET /api/health` returns, then `cloud_sql` is `true` (`TestHealth::test_health_returns_ok` asserts the key is present; live probe 2026-09-28 returned `cloud_sql: true`).
 
-**Tests:** `tests/api/test_platform_api.py::test_health_returns_ok`, `tests/api/test_platform_auth.py::test_firebase_requires_valid_token`, `tests/api/test_route_coverage.py`.
+**Tests:** `tests/api/test_platform_api.py::TestHealth::test_health_returns_ok`, `tests/api/test_platform_auth.py::test_firebase_requires_valid_token`, `tests/api/test_route_coverage.py`.
 
-**Code:** `platform/api/main.py:61-64` (`_CLOUD_SQL`), `:248` (`_LIB_DIR_EXISTS`), `:255-269` (why this handler stays synchronous), `:270-279` (`health_check`); `platform/api/schemas.py:280-285` (`HealthResponse`).
+**Code:** `platform/api/main.py:61-64` (`_CLOUD_SQL`), `:248` (`_LIB_DIR_EXISTS`), `:249-271` (why this handler alone stays on the event loop as `async def`), `:271-279` (`health_check`); `platform/api/schemas.py:280-285` (`HealthResponse`).
 
 ## Per-screen records
 
