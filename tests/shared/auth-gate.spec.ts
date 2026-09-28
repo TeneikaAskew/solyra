@@ -157,7 +157,7 @@ test.describe('Auth gate', () => {
 
   // SignInScreen reads isFramed() once at mount (window.self !== window.top,
   // SignInScreen.tsx:28, `const [framed] = useState(isFramed)`). Embedding
-  // the app in an iframe via page.setContent — rather than page.goto — puts
+  // the app in an iframe via page.setContent, rather than page.goto, puts
   // the real top-level page on about:blank, so the iframe's window.self is
   // genuinely a different browsing context from window.top without needing
   // a second origin.
@@ -279,7 +279,7 @@ test.describe('Email sign-in and sign-out', () => {
         };
       }
       // signInWithEmailAndPassword resolves only once the SDK also has the
-      // full user record — it calls accounts:lookup right after a
+      // full user record: it calls accounts:lookup right after a
       // successful signInWithPassword to build that User object.
       if (call.path.endsWith('accounts:lookup')) {
         return {
