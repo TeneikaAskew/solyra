@@ -112,8 +112,8 @@ Five specs cover behavior spanning screens rather than one route:
 `auth-gate.spec.ts`, `navigation.spec.ts`, `api-smoke.spec.ts`, `data-pipeline-status.spec.ts`,
 `dev.spec.ts`. Note `dev.spec.ts` does **not** exercise the public-staging configuration in which
 `/dev` is unauthenticated — see [09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/09-SECURITY-AUTH.md).
-Plus **27 Vitest component tests** under `src/**/*.test.*`. Neither suite runs in CI
-([#868](https://github.com/TeneikaAskew/stocks/issues/868)).
+Plus **27 Vitest component tests** under `src/**/*.test.*`. Both suites run in CI on pull
+requests and on pushes to `main`, the `checks` and `e2e` jobs in `.github/workflows/ci.yml`.
 
 The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#00--shared-under-every-page) traces the infrastructure every screen inherits and this document does not repeat per screen: the API service and auth middleware, the authedFetch data path, mock mode, React Query defaults, the failure lane and the freshness watchdog.
 
