@@ -17,7 +17,7 @@ Built with [Lovable](https://lovable.dev).
 
 ## Development
 
-You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating) — and Python 3.11 or newer on `PATH` as `python3`: the spec gate the commit hook runs is a Python script (it uses `tomllib`, new in 3.11). The hook checks the version and says so before it runs the gate.
 
 ```sh
 npm i
