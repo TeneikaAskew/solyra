@@ -1013,23 +1013,434 @@ error`, the client-validation branch only).
 #### Elements
 ##### AUTH-01 · Auth-mode bootstrap (firebase, iap, open)
 
+**Shows or does:** On the first route that needs it, `ConfigGate` fetches `GET /api/config/firebase`
+once per page load (`bootPromise`, a module-level singleton so every mounted gate settles on the
+same outcome) and stores the result via `setRuntimeConfig`. In `firebase` mode it then dynamically
+imports the Firebase facade and awaits `initFirebase` before rendering children, so `AuthGate`
+never reads auth state before the SDK exists. `AuthGate` itself renders children unchanged in
+`iap`/`open` mode (`authMode !== 'firebase'` short-circuits to `<>{children}</>`, `AuthGate.tsx:17`).
+
+**Needs:** `GET /api/config/firebase`, served by `platform/api/routers/config.py:46
+get_firebase_config`, which reads `api.auth.AUTH_MODE` (validated at import, `auth.py:52
+_validated_auth_mode`, refusing to start on an unrecognized value) and, only in firebase mode
+with `FIREBASE_API_KEY` set, the four Firebase web-config env vars.
+
+**States:** loading (AUTH-02), signed-out login screen (AUTH-03 through AUTH-06), error (AUTH-10).
+Covered as separate rows.
+
+**Acceptance criteria:**
+- Given the backend answers `{"authMode":"open", ...}`, when `ConfigGate` boots, then no Firebase
+  SDK chunk is imported and `AuthGate` renders the app directly (`ConfigGate.tsx:79`,
+  `AuthGate.tsx:17`; `open mode → app renders, no login screen`, `tests/shared/auth-gate.spec.ts`).
+- Given the backend answers `{"authMode":"firebase", firebase: {...}}`, when the config fetch
+  resolves, then `ConfigGate` awaits `initFirebase` before rendering, and a signed-out visitor sees
+  `SignInScreen`, not the app shell (`firebase mode, signed out → login screen blocks the app`,
+  asserting `nav a[href="/help"]` has zero count).
+- Given `AUTH_MODE` at the API is anything other than `open`, `firebase`, or `iap`, when the process
+  starts, then `_validated_auth_mode` raises `RuntimeError` and the deploy fails rather than
+  silently no-opping the middleware (`TestValidatedAuthMode::test_refuses_unknown_mode`,
+  `tests/api/test_platform_auth.py`), which guarantees the value `/api/config/firebase` ever
+  reports is one of the three literals `RuntimeConfigResponse` declares.
+- Given a cold app-route visit, when `ConfigGate` mounts, then the routed page's lazy chunk (its
+  `preload` prop) downloads in parallel with the config fetch rather than after it (`gated chunk
+  downloads in parallel with the config fetch`, the regression fence for #64).
+- Given a real, unauthenticated request against `GET /api/config/firebase` on staging, when issued
+  from this session, then it answers 200 with `authMode: "firebase"` (verified 2026-09-28, see the
+  V-gate evidence comment).
+
+**Tests:** `tests/shared/auth-gate.spec.ts` (`open mode → app renders, no login screen`; `gated
+chunk downloads in parallel with the config fetch`; `firebase mode, signed out → login screen
+blocks the app`), Playwright, not run in CI (solyra#28), so does not tick Te here.
+`tests/api/test_route_coverage.py`'s `GET /api/config/firebase` case issues a real request and
+asserts a 200 JSON envelope, and `tests/api/test_platform_auth.py::TestValidatedAuthMode` tests
+the `AUTH_MODE` validation the endpoint's value depends on, both pytest and CI-run, but neither
+exercises the client-side mode-bootstrap decision this row is actually about, so Te stays
+unticked here (see Gaps).
+
+**Code:** `src/components/auth/ConfigGate.tsx`, `src/components/auth/AuthGate.tsx`,
+`src/lib/runtimeConfig.ts`; test ids `signin-screen`, `config-error` (the sibling states' own
+markers; this row renders no distinct DOM beyond the app/login decision itself).
+
 ##### AUTH-05 · Sign-up mode
+
+**Shows or does:** `login-toggle` switches `mode` between `signin` and `signup`; in `signup` mode
+the same form submits through `signUpWithEmail` (`createUserWithEmailAndPassword`,
+`firebaseImpl.ts:81-96`), which also fires a verification email and records the outcome in the
+`authGate` store (`recordVerificationEmail`) for `EmailVerificationBanner` to read, since
+`onAuthStateChanged` has already swapped the screen for the app shell by the time that send
+resolves.
+
+**Needs:** the server-side access policy: `_is_allowed` (`auth.py:169`) permits any email when
+`AUTH_OPEN_SIGNUP=1` (the default) or checks `AUTH_ALLOWED_EMAILS` otherwise. This runs on every
+*subsequent* gated API call, not the sign-up itself (Firebase-SDK-only), so a disallowed account
+can create a Firebase user and still 403 on every gated request afterward.
+
+**States:** shared `busy`/`error` state; the heading and submit-button copy swap ("Create your
+account" / "Create account") with `mode`.
+
+**Acceptance criteria:**
+- Given the sign-in screen, when `login-toggle` is clicked, then `mode` becomes `signup` and
+  `login-submit`'s text becomes "Create account" (`SignInScreen.tsx:275-284`; `login screen
+  toggles between sign-in and sign-up`, asserting `login-submit` text before and after the click).
+- Given `AUTH_OPEN_SIGNUP=0` and an email outside `AUTH_ALLOWED_EMAILS`, when that email later
+  makes a gated `/api/*` call, then the backend answers 403 `"this account is not allowed"`, never
+  a silent pass-through (`auth.py:169, 209-210`; `test_firebase_allowlist_switch`,
+  `tests/api/test_platform_auth.py`, asserting 200 for allow-listed emails and 403 for one that
+  is not).
+- Given a successful sign-up, when the verification-email send is still in flight or fails, then
+  the outcome is recorded per-uid in the `authGate` store rather than shown on a screen that has
+  already unmounted (`firebaseImpl.ts:84-96`; the store itself is unit-tested by
+  `src/lib/authGate.test.ts`, independent of sign-up).
+
+**Tests:** `tests/shared/auth-gate.spec.ts` (`login screen toggles between sign-in and sign-up`),
+Playwright, no Te. `tests/api/test_platform_auth.py::test_firebase_allowlist_switch` is real,
+CI-run pytest coverage of this row's access-policy half (`_is_allowed`), but the sign-up
+submission and the verification-email bookkeeping remain untested by any CI-run suite, so Te
+stays unticked for the row as a whole.
+
+**Code:** `src/components/auth/SignInScreen.tsx:29, 275-284`, `src/lib/firebaseImpl.ts:81-96`,
+`platform/api/auth.py:169`; test ids `login-toggle`, `login-submit`.
 
 ##### AUTH-07 · Identity and role read (email, admin, dev)
 
+**Shows or does:** `useUser()` is the app's single identity hook. In firebase mode it subscribes
+to `onAuthStateChanged` for `isSignedIn`/`uid`/`emailVerified`, and once signed in (or
+unconditionally in `iap`/`open` mode) queries `GET /api/me`, keyed by `uid` so an account switch
+across tabs cannot serve a cached `is_admin` for the wrong identity. The backend's
+`get_current_user` resolves the verified email (bearer token in firebase mode, the IAP header in
+iap mode), looks up `stored_role_for(email)` once, and derives both `is_admin` (`ADMIN_EMAIL` env
+fallback OR a stored `'admin'` role) and `is_dev` (a stored `'dev'` role) from that single query.
+
+**Needs:** `GET /api/me`; the `user_roles` table (one row per email, written through
+`PUT /api/admin/users/{uid}/roles`, ADMIN-04).
+
+**States:** the query's own `isLoading` feeds AUTH-02; a query error leaves `email`/`isAdmin`/
+`isDev` at their safe defaults (`null`/`false`/`false`) rather than caching a fabricated anonymous
+answer; the query function throws on a non-OK response so React Query keeps it refetchable.
+
+**Acceptance criteria:**
+- Given a stored role of `'dev'`, when `/api/me` is read, then the response is
+  `is_admin: false, is_dev: true` (`test_me_dev_role_sets_is_dev_not_is_admin`).
+- Given a stored role of `'admin'`, when `/api/me` is read, then `is_admin: true, is_dev: false`
+  (`test_me_admin_role_sets_is_admin_not_is_dev`).
+- Given no stored role but an email matching `ADMIN_EMAIL`, when `/api/me` is read, then
+  `is_admin` is still `true` via the env fallback
+  (`test_me_env_fallback_admin_without_table_row`).
+- Given no identity at all (anonymous), when `/api/me` is read, then the response is
+  `{"email": null, "is_admin": false, "is_dev": false}`, never `0`/`''` standing in for "unknown"
+  (`test_me_plain_user_and_anonymous`).
+- Given a real, unauthenticated request against `GET /api/me` on staging, when issued from this
+  session, then it answers 200 with `{"email":null,"is_admin":false,"is_dev":false}`, matching
+  `test_me_plain_user_and_anonymous`'s anonymous case field for field (verified 2026-09-28, see
+  the V-gate evidence comment).
+
+**Tests:** `tests/api/test_platform_auth.py`'s `_me`-keyed tests
+(`test_me_dev_role_sets_is_dev_not_is_admin`, `test_me_admin_role_sets_is_admin_not_is_dev`,
+`test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`) exercise
+`get_current_user` through a real FastAPI `TestClient`, covering every role/anonymous combination
+this row claims: pytest, CI-run (`python -m pytest tests/ -x -q --ignore=tests/integration`, the
+Backtest Pipeline workflow on `main`), so this row ticks Te on that evidence.
+`tests/api/test_route_coverage.py` also requests `GET /api/me` as part of its full-surface sweep
+(200, JSON envelope). The client side (`useUser.ts`'s consumption of the response) has no Vitest
+of its own; `tests/admin/admin-auth.spec.ts` exercises the admin-gating consequence of `is_admin`
+end to end, Playwright, no Te of its own.
+
+**Code:** `platform/api/main.py:282-304 get_current_user`, `platform/api/auth.py:229-264
+stored_role_for`, `platform/api/auth.py:224-226 configured_admin_email`, `src/hooks/useUser.ts`.
+
 ##### AUTH-03 · Google sign-in, with the new-tab variant when framed
+
+**Shows or does:** `SignInScreen` computes `isFramed()` once at mount (`window.self !==
+window.top`, catching a cross-origin throw as "framed too") and branches: framed renders an
+`<a target="_blank" data-testid="google-signin-newtab">` that reopens the current URL in a new
+top-level tab (Google's popup handshake cannot complete inside a cross-origin iframe, since storage
+partitioning blocks the `postMessage` back); not framed renders a
+`<button data-testid="google-signin">` that calls `signInWithGoogle()` →
+`signInWithPopup(auth, new GoogleAuthProvider())`.
+
+**Needs:** Firebase Auth's Google provider and the project's authorized-domains list (whatever
+origin the popup or new tab completes on must be authorized).
+
+**States:** framed / not framed, the two branches above; otherwise the shared `busy`/`error`
+state `run()` manages for every sign-in method on this screen.
+
+**Acceptance criteria:**
+- Given the sign-in screen is embedded in an iframe, when it mounts, then it renders
+  `google-signin-newtab` (visible, `target="_blank"`) and `google-signin` is absent
+  (`SignInScreen.tsx:182-198`; `framed preview: the Google button opens a new tab instead of a
+  popup`, new test, driven by loading `/dashboard` inside a real `<iframe>` via `page.setContent`
+  so the real top-level page is genuinely a different browsing context from the iframe).
+- Given the sign-in screen is not framed, when it mounts, then it renders `google-signin`, and
+  clicking it calls `run(signInWithGoogle)` (`firebase mode, signed out → login screen blocks the
+  app` asserts `google-signin` visible in the ordinary, unframed test harness).
+- Given `signInWithGoogle()` rejects (popup closed, blocked, network failure), when the promise
+  settles, then `friendlyError` maps the SDK code to sign-in-screen copy and `run()` sets it as
+  `login-error`, never leaving the screen in a stuck `busy` state (`SignInScreen.tsx:45-56`); the
+  Google-specific codes (`auth/popup-closed-by-user`, `auth/popup-blocked`,
+  `auth/cancelled-popup-request`) are unit-tested as pure mappings in `src/lib/authAction.test.ts`,
+  though no test drives this specific rejection through `SignInScreen` itself.
+
+**Tests:** `tests/shared/auth-gate.spec.ts` (`firebase mode, signed out → login screen blocks the
+app`, asserting the unframed `google-signin` button; `framed preview: the Google button opens a
+new tab instead of a popup`, new, asserting the framed variant), both Playwright, no Te.
+`src/lib/authAction.test.ts`'s `friendlyError` suite covers the Google-specific error codes as
+pure-function mappings (Vitest, CI-run), but no test wires that mapping through this component,
+so it does not lift Te for this row.
+
+**Code:** `src/components/auth/SignInScreen.tsx:180-209`, `src/lib/firebase.ts` (`isFramed`,
+`signInWithGoogle`), `src/lib/firebaseImpl.ts:71-74`; test ids `google-signin`,
+`google-signin-newtab`.
 
 ##### AUTH-04 · Email and password sign-in with inline error
 
+**Shows or does:** `SignInScreen`'s email/password form (`onEmailSubmit`) calls
+`signInWithEmail(email, password)` in `signin` mode (`signInWithEmailAndPassword` under the hood,
+`firebaseImpl.ts:76-78`); `run()` wraps the call, and a rejection sets `error` from
+`friendlyError(err.code, err.message)`, rendered inline as `data-testid="login-error"` directly
+under the password field, never a silent failure or a redirect away from the form.
+
+**Needs:** Firebase Auth's password provider. The sign-in call itself is client-SDK-only, nothing
+to our backend; only `/api/*` calls made once signed in attach the resulting ID token
+(`authedFetch.ts`).
+
+**States:** the shared `busy`/`error` state `run()` manages for every method on this screen.
+
+**Acceptance criteria:**
+- Given valid credentials, when the form is submitted, then `signInWithEmail` resolves,
+  `onAuthStateChanged` (via `useUser`) flips `isSignedIn`, and `AuthGate` renders the app with no
+  explicit navigation call (`SignInScreen.tsx:58-66`; `sign out returns to the sign-in screen`,
+  new test, whose setup signs in this way before exercising sign-out).
+- Given the identity call rejects (Identity Toolkit answers `accounts:signInWithPassword` with a
+  400 `INVALID_PASSWORD` body), when the promise settles, then `login-error` becomes visible and
+  reads "Incorrect email or password."; `friendlyError` maps `auth/invalid-credential` /
+  `auth/wrong-password` / `auth/user-not-found` to that one message (`authAction.ts:16-23`,
+  unit-tested by `src/lib/authAction.test.ts`'s `friendlyError` suite); proved end to end through
+  the real form by `email sign-in shows the inline error when the identity call fails`, new test,
+  which routes the Identity Toolkit call to that exact 400 body and asserts the rendered text;
+  the app stays on `signin-screen` throughout, never rendering behind a failed attempt.
+- Given the submit button, when `email`/`password` are empty or a request is in flight, then it is
+  `disabled` (`SignInScreen.tsx:266`), so no empty or duplicate submission reaches the SDK.
+
+**Tests:** `tests/shared/auth-gate.spec.ts` (`login screen toggles between sign-in and sign-up`;
+`email sign-in shows the inline error when the identity call fails`, new), Playwright, no Te.
+`src/lib/authAction.test.ts`'s `friendlyError` describe block is real, CI-run (Vitest) coverage of
+the error-copy mapping this row's "with inline error" half depends on, but it tests the pure
+function in isolation, not the form submission itself, so it does not on its own satisfy Te for
+the row; the submission path stays Playwright-only (see Gaps).
+
+**Code:** `src/components/auth/SignInScreen.tsx:58-66, 218-273`, `src/lib/authAction.ts`
+(`friendlyError`), `src/lib/firebaseImpl.ts:76-78`; test ids `login-email`, `login-password`,
+`login-submit`, `login-error`.
+
 ##### AUTH-06 · Forgot password: reset email, then /auth/action
+
+**Shows or does:** `login-forgot` switches `SignInScreen` to `reset` mode; submitting `reset-email`
+calls `sendPasswordReset` (`onResetSubmit`, `SignInScreen.tsx:68-87`). Success, or the
+enumeration-safe `auth/user-not-found` case (`resetLooksSent`), shows the neutral `reset-sent`
+confirmation naming the address, never confirming or denying the account exists. The emailed
+link's `%LINK%` points at this project's `callbackUri`, set by `gcp/auth_email_templates.py` to
+`https://solyra-stocks.lovable.app/auth/action` rather than Google's generic action page, so it
+lands on `AuthActionPage`, whose state machine (`parseAuthAction` → `checkAuthActionCode` →
+mode-specific apply) verifies the code, checks the SDK-reported operation actually matches the
+link's `mode` (`operationMatchesMode`, refusing a mismatched code before applying it), and renders
+the reset form, a destructive-action confirmation, or the success/error card.
+
+**Needs:** Firebase Auth action links; the branded email templates (`gcp/auth_email_templates/`)
+rendered by `gcp/auth_email_templates.py`, whose `callbackUri` is the one fact about the email
+this app's own route depends on.
+
+**States:** the reset request itself (idle → sending → sent/error); `/auth/action`'s own view
+machine: loading, invalid-link, unavailable (open mode), reset-form, confirm-apply, success, error.
+
+**Acceptance criteria:**
+- Given a reset request for an existing address, when it resolves, then `reset-sent` shows the
+  address and "if an account exists" copy, and the actual `sendOobCode` call carries
+  `requestType: PASSWORD_RESET` (`requests a reset link and shows the neutral confirmation`).
+- Given Identity Toolkit answers `TOO_MANY_ATTEMPTS_TRY_LATER`, when the request is submitted,
+  then `login-error` shows the rate-limit message and `reset-sent` never renders (`a rate-limit
+  failure is shown, not swallowed`).
+- Given `gcp/auth_email_templates.py`'s PATCH body, when it is built, then `callbackUri` is
+  `https://solyra-stocks.lovable.app/auth/action` (`test_build_patch_covers_all_templates_and_callback_uri`,
+  `tests/test_auth_email_templates.py`), so the emailed button lands on this app's own route, not
+  Google's generic one.
+- Given a `resetPassword` link with a valid code, when `/auth/action` loads it, then it shows
+  `auth-action-reset-form` with the email the code carries, rejects a password/confirmation
+  mismatch client-side before any network call, and on success shows `auth-action-success`
+  (`password reset: verifies the code, validates the form, confirms, succeeds`;
+  `validateNewPassword`, unit-tested by `src/lib/authAction.test.ts`).
+- Given a link whose `mode` query param disagrees with the operation the code actually carries,
+  when the page checks it, then it refuses to apply the code and shows the mismatch error
+  (`operationMatchesMode`; `a code whose operation disagrees with mode is refused before it is
+  applied`; the matching function itself unit-tested in `src/lib/authAction.test.ts`).
+- Given `authMode` is not `firebase`, when `/auth/action` loads, then it shows
+  `auth-action-unavailable` rather than attempting an SDK call that cannot succeed (`open mode →
+  email sign-in unavailable card`).
+
+**Tests:** `tests/shared/auth-gate.spec.ts` (`Forgot password` describe block, `/auth/action`
+describe block, 10 tests total), Playwright, no Te on their own. Two CI-run suites cover this
+row's own logic closely enough to tick Te here: `src/lib/authAction.test.ts` (Vitest, 15 tests
+passed) unit-tests `parseAuthAction`, `operationMatchesMode`, `validateNewPassword`,
+`friendlyActionError`, `successCopy`, and `resetLooksSent`, effectively the entire client-side
+decision logic this row exercises, independent of DOM rendering; `tests/test_auth_email_templates.py`
+(pytest, 26 tests passed) asserts the rendered templates and, specifically, `callbackUri`, the one
+backend fact this row depends on. Both confirmed passing in this task.
+
+**Code:** `src/components/auth/SignInScreen.tsx:68-87, 108-168` (reset request),
+`src/routes/AuthActionPage.tsx` (the full state machine), `src/lib/authAction.ts`,
+`gcp/auth_email_templates.py`, `docs/AUTH_EMAILS.md`; test ids `login-forgot`, `reset-email`,
+`reset-submit`, `reset-sent`, `reset-back`, `auth-action-*` (see `AuthActionPage.tsx`).
 
 ##### AUTH-09 · Sign out
 
+**Shows or does:** `SignOutButton` (rendered only in firebase mode for a signed-in user) calls
+`firebaseSignOut()` then `qc.clear()` on the React Query cache (`SignOutButton.tsx:18-24`), so no
+data tied to the previous identity survives into the next session; `onAuthStateChanged` then
+flips `useUser().isSignedIn` to false and `AuthGate` renders `SignInScreen` again. A second,
+independently implemented sign-out control exists for the mobile account menu,
+`AuthStatusIndicator.tsx`'s `account-menu-sign-out` button (`AuthStatusIndicator.tsx:96-103`),
+with the same `firebaseSignOut` + `qc.clear()` body duplicated rather than shared.
+
+**Needs:** nothing from our backend; `firebaseSignOut` is `signOut(auth)` against the Firebase SDK
+only.
+
+**States:** none beyond signed-in/signed-out.
+
+**Acceptance criteria:**
+- Given a signed-in firebase-mode session, when `sign-out` is clicked, then `firebaseSignOut()`
+  resolves, the query cache is cleared, and `AuthGate` renders `signin-screen` again with no page
+  reload (`SignOutButton.tsx:18-24`; `sign out returns to the sign-in screen`, new test: signs in
+  via a mocked `accounts:signInWithPassword` success, confirms `signin-screen` is absent and
+  `sign-out` is visible, clicks it, then confirms `signin-screen` reappears).
+- Given `open`/`iap` mode, when `SignOutButton` renders, then it renders nothing
+  (`authMode !== 'firebase' || !isSignedIn` returns `null`, `SignOutButton.tsx:16`); the mobile
+  account-menu variant is asserted absent under open mode by `tests/shared/navigation.spec.ts`
+  (`account-menu-sign-out` has zero count), which covers the *absence* of the mobile control
+  outside firebase mode, not the sign-out *action* itself, which only the new test above exercises
+  end to end.
+
+**Tests:** `tests/shared/auth-gate.spec.ts` (`sign out returns to the sign-in screen`, new),
+`tests/shared/navigation.spec.ts` (`auth status lives at the menu bottom, not the bar`, the
+negative open-mode case), both Playwright, no Te (solyra#28).
+
+**Code:** `src/components/auth/SignOutButton.tsx`, `src/components/shared/AuthStatusIndicator.tsx:96-103, 132`;
+test ids `sign-out`, `account-menu-sign-out`.
+
 ##### AUTH-02 · State: loading spinner while the session resolves
+
+**Shows or does:** Two independent spinners cover two different waits. `AuthGate` renders
+`LoadingSpinner` (`size={28}`) centered on a full-height screen while `useUser().isLoading` is
+true, while the Firebase SDK has not yet reported an auth state (`!fbReady`) or, once signed
+in, while the `/api/me` query is still in flight (`AuthGate.tsx:19-25`). `ConfigGate` renders its
+own `LoadingSpinner` (`size={32}`) while its own boot promise (`bootOnce`) is still pending, before
+either the app or `AuthGate` mounts at all (`ConfigGate.tsx:168-174`).
+
+**Needs:** nothing of its own; it renders while AUTH-01's config fetch or AUTH-07's `/api/me`
+query is outstanding.
+
+**States:** this row is itself a state of AUTH-01/AuthGate; it has no further sub-states.
+
+**Acceptance criteria:**
+- Given `useUser().isLoading` is true, when `AuthGate` renders, then it shows `LoadingSpinner`
+  instead of `SignInScreen` or the app (`AuthGate.tsx:19-25`).
+- Given the config boot promise has not yet settled, when `ConfigGate` renders, then it shows its
+  own `LoadingSpinner` instead of children (`ConfigGate.tsx:168-174`).
+- Given the app boots in `open`/`iap` mode, when `useUser` runs, then `isLoading` starts `false`
+  (`!firebaseMode`, `useUser.ts:26`) and this spinner is never reachable there; no
+  `auth-gate.spec.ts` open-mode test ever needs to wait it out.
+
+**Tests:** none. No Vitest or Playwright test isolates this render: every hermetic mock in
+`tests/shared/auth-gate.spec.ts` fulfills `/api/config/firebase` and `/api/me` synchronously, so
+the spinner, if it paints at all, is gone before any assertion runs. See Gaps.
+
+**Code:** `src/components/auth/AuthGate.tsx:19-25`, `src/components/auth/ConfigGate.tsx:168-174`,
+`src/components/shared/LoadingSpinner.tsx`.
 
 ##### AUTH-08 · State: permission, 401 on a gated call shows "Sign in to load data"
 
+**Shows or does:** Two mechanisms working together. Server: `auth_middleware` answers any gated
+`/api/*` request with 401 when no/invalid token is presented, in firebase mode only
+(`auth.py:188-213`). Client: `authedFetch.ts`'s `track()` calls `markAuthBlocked()` on any
+gated-path 401 and `clearAuthBlocked()` on the next gated-path success (`authedFetch.ts:157-165,
+249-250`); `markAuthBlocked` flips a module-level flag and notifies subscribers
+(`authGate.ts:14-47`). `useAuthBlocked()` (a `useSyncExternalStore` hook) is read by
+`SignInEmptyState`, `AuthStatusIndicator`, and `MostActiveBar` (`MostActiveBar.tsx:179`), which
+render "Sign in to load data" (or the equivalent banner/marquee-suppression) instead of a blank or
+stale card, never a fabricated value (Rule 4).
+
+**Needs:** nothing beyond the gated endpoint being called; this row is the shared consequence of
+every 401, not a request of its own.
+
+**States:** this row is itself the "permission" state for every data-bearing page; it has no
+further sub-states.
+
+**Acceptance criteria:**
+- Given firebase mode and no token, when a gated path like `/api/secret` is requested, then the
+  backend answers 401, while `/api/health`, `/api/me`, and `/api/waitlist` (the open paths) still
+  answer normally (`test_firebase_requires_valid_token`, `tests/api/test_platform_auth.py`).
+- Given the fetch wrapper is installed in firebase mode, when a gated path answers 401, then
+  `onUnauthorized` (the callback `authedFetch.ts` exposes via `setOnUnauthorized`) fires exactly
+  once, and does not fire for a 401 from an open path. This is a distinct, adjacent signal from
+  `markAuthBlocked`/`isAuthBlocked`; the same 401 handling code path runs `markAuthBlocked()` for
+  real as a side effect in this suite, but no assertion in it reads the resulting flag (`a 401 from
+  a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`,
+  `src/lib/authedFetch.test.ts`).
+- Given a stale token, when a gated call first 401s, then the wrapper retries once with a
+  force-refreshed token before giving up, so a merely-expired token does not trip this state
+  unnecessarily (`retries a gated 401 once with a force-refreshed token and does not report
+  signed-out on success`, `src/lib/authedFetch.test.ts`).
+- Given `isAuthBlocked()` is true, when `MostActiveBar` renders, then it shows the signed-out
+  presentation rather than an empty or stale marquee (`MostActiveBar.tsx:179`); exercised by
+  `tests/shared/most-active-bar.spec.ts`, Playwright.
+- Given a real, unauthenticated request against `GET /api/market/most-active` on staging, when
+  issued from this session, then it answers 401 (verified 2026-09-28, see the V-gate evidence
+  comment).
+
+**Tests:** `src/lib/authedFetch.test.ts` (15 tests, Vitest, CI-run) is real, passing coverage of
+the 401-on-gated-path mechanics and the token-retry behavior, though its assertions target the
+`onUnauthorized` callback and the `Authorization` header, not `isAuthBlocked()` directly;
+`markAuthBlocked`/`clearAuthBlocked` run for real as an unmocked side effect, but no assertion in
+that file reads the resulting flag. `tests/api/test_platform_auth.py::test_firebase_requires_valid_token`
+covers the server-side 401 half. Together these back the Te tick for this row.
+`tests/shared/most-active-bar.spec.ts` covers the actual `isAuthBlocked` → "Sign in to load data"
+rendering, Playwright, no Te of its own.
+
+**Code:** `platform/api/auth.py:188-213 auth_middleware`, `src/lib/authedFetch.ts:157-165,
+249-250`, `src/lib/authGate.ts:14-47 markAuthBlocked/clearAuthBlocked/useAuthBlocked`,
+`src/components/shared/SignInEmptyState.tsx`, `src/components/shared/AuthStatusIndicator.tsx`,
+`src/components/shared/MostActiveBar.tsx:179`.
+
 ##### AUTH-10 · State: error, config fetch failure shows the config-error screen
+
+**Shows or does:** `fetchRuntimeConfig` throws on a non-OK status, a network failure, or a body
+that parses but doesn't carry a recognized `authMode` literal (guarding against a static host's
+SPA-fallback `index.html` answering `/api/config/firebase` with 200 `text/html`).
+`ConfigGate` catches that in its boot effect and renders `ConfigErrorScreen`
+(`data-testid="config-error"`) instead of falling back to any default mode; this is the regression fence
+for issue #5, where a bot edit once swapped this path to silently fail open.
+
+**Needs:** `GET /api/config/firebase` failing or answering an unrecognized shape; no data need of
+its own beyond that.
+
+**States:** this row is itself the `error` state for AUTH-01; it has no further sub-states.
+
+**Acceptance criteria:**
+- Given `/api/config/firebase` answers 500, when `ConfigGate` boots, then `config-error` is
+  visible and neither the app shell nor `signin-screen` ever renders (`config fetch failure →
+  config-error screen, app never renders`).
+- Given `/api/config/firebase` answers 200 with `text/html` (a static host's SPA fallback), when
+  `ConfigGate` boots, then the JSON-shape guard still rejects it and shows `config-error`, rather
+  than reading the fallback HTML as `authMode` (`config endpoint answering HTML (static-host
+  fallback) → config-error screen`).
+- Given a `Failed to fetch` message on a known static-frontend host, when `describeBootFailure`
+  builds the shown message, then it appends a CORS-allow-list hint rather than the bare browser
+  error (`ConfigGate.tsx:58-65`); no test exercises `describeBootFailure` directly (see Gaps).
+
+**Tests:** `tests/shared/auth-gate.spec.ts` (`config fetch failure → config-error screen, app
+never renders`, `config endpoint answering HTML (static-host fallback) → config-error screen`),
+Playwright, no Te. No pytest or Vitest covers a failure response from this endpoint, or
+`describeBootFailure` itself.
+
+**Code:** `src/components/auth/ConfigGate.tsx:27-65, 94-123`; test id `config-error`.
 
 ### SCREEN-SHELL — app shell
 
