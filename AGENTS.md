@@ -11,7 +11,7 @@
 
 # Agent instructions
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `b9ede92a41e1` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `7e4795217b47` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## Delivery gate
 Read `.claude/skills/product-delivery/SKILL.md` and follow it for any code change. The same gate
