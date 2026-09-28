@@ -290,6 +290,7 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
+| GET /api/me | email, is_admin, is_dev (types: `useUser.ts` MeResponse) |  | 30s staleTime; a role granted or revoked converges on the next mount/focus refetch | `useUser` (via `AppShell`, `AuthStatusIndicator`) |
 | GET /api/market/most-active | items[].symbol/price/change_pct/volume (types: `MostActiveBar.tsx` MostActiveItem/MostActiveResponse) | fetch-top-movers 16:15 ET Mon-Fri → top_movers_intraday | 10min staleTime, 15min refetch | `MostActiveBar` |
 | GET /api/live/status | is_open, session, next_open, current_time_et (types: `useLiveStatus.ts` LiveStatus) |  | 60s refetch, 30s staleTime | `MarketSessionBadge` (`useLiveStatus`) |
 | GET/PUT /api/me/preferences | theme, nav_pattern, density, accent (types: `preferences.ts` UserPreferences) |  | hydrated once per session, written through on every change | `usePreferencesSync` (`usePreferences.ts`), mounted in `AppShell` |
@@ -421,7 +422,7 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 | DASHBOARD-17 | empty | present | `DashboardPage.tsx` renders an `Unavailable` presentation rather than a fabricated zero when a card's data is genuinely absent. |
 | DASHBOARD-18 | error | present | `WidgetState.tsx`'s `WidgetError` renders per card on a failed fetch. |
 | DASHBOARD-19 | stale | present | `DashboardPage.tsx` computes `playbookAge`/`snapshotAgeLabel` from the response's own age fields and shows it rather than presenting old data as current. |
-| DASHBOARD-20 | permission | present | `WidgetState.tsx`'s `SignInEmptyState` renders per card when `authGate.ts` reports the session is auth-blocked. |
+| DASHBOARD-20 | permission | not tracked (new category); present | `WidgetState.tsx`'s `SignInEmptyState` renders per card when `authGate.ts` reports the session is auth-blocked. |
 
 #### Journeys
 1. Morning brief to a trade idea: Opens /dashboard (DASHBOARD-01) → Reads the pre-market brief bullets and market pill (DASHBOARD-01) → Checks the Top setup, win rate, conditions, levels (DASHBOARD-02) → Clicks Live signals to go to /signals (DASHBOARD-05, DASHBOARD-14) → Or follows the setup to /playbook for the full card (DASHBOARD-02)
@@ -491,7 +492,7 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 | GET /api/live/status | is_open, session, next_open, current_time_et (types: `useLiveStatus.ts` LiveStatus) |  | 60s refetch, 30s staleTime | `useLiveStatus` → session bar |
 | GET /api/live/quote/{ticker} | price, change, change_pct, open/high/low, volume, prev_close (types: `useLiveQuote.ts` LiveQuote; fixture: `tests/helpers/fixtures/live.ts`) |  | 15s poll (10s staleTime), only while `livePolling` | `useLiveQuote` → quote card |
 | GET /api/live/history/{ticker} | bars[] OHLCV, count, market_session (types: `useLiveHistory.ts` LiveHistory) |  | 60s poll (30s staleTime), only while `livePolling` | `useLiveHistory` → indicator tiles, setup cards |
-| GET /api/live/avg-volume/{ticker} | avg_volume_20d, sample_size, last_date, source (types: `useLiveHistory.ts` AvgVolume) |  | 1h staleTime | `useAvgVolume` → RVOL tile |
+| GET /api/live/avg-volume/{ticker} | avg_volume_20d, sample_size, last_date, source (types: `useLiveHistory.ts` AvgVolume) | fetch-market-data 23:00 ET Mon-Fri → market_data_daily | 1h staleTime | `useAvgVolume` → RVOL tile |
 | POST /api/live/indicators | indicators (EMA9/20/50, RSI, StochRSI, ATR), signals.call/put, chart_voter (types: `useLiveIndicators.ts` IndicatorsResponse) |  | 10s staleTime, keyed on bar count/last bar time/price/volume/avg-volume | `useLiveIndicators` → indicator tiles, CALL/PUT setup cards |
 | GET /api/market/data/{ticker}/{date} | candlestick[]/volume[] bars (types: `useMarketData.ts` MarketDataResponse) | fetch-market-data 23:00 ET Mon-Fri → market_data_intraday |  | `buildReviewQuote`/`useReviewQuote` → review mode |
 | GET /api/market/reference/{ticker}/{date} | open, close, high, low (types: `useMarketData.ts` ReferenceLevels) | fetch-market-data 23:00 ET Mon-Fri → market_data_daily |  | `useReferenceLevels` → review mode prior close |
@@ -671,7 +672,7 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 | GET /api/options/{ticker}/grid (live) · GET /api/options/{ticker}/{date}/grid (historical) | cells[].strike/gex/net_gamma, summary (types: `useGammaGrid.ts` GammaGridCell/GammaGridSummary) | fetch-av-options-realtime every 5min 09:00-15:55 ET Mon-Fri → etf_options_snapshots | live grid refetches every 60s (50s staleTime); historical holds 1h | `useGammaGrid` → Swing Mode |
 | GET /api/options/{ticker}/{date}/levels | king/gate/flip strikes, spot (types: `useGammaLevels.ts` GammaLevelsResponse) | fetch-av-options-realtime every 5min 09:00-15:55 ET Mon-Fri → etf_options_snapshots | 1h staleTime | `useGammaLevels` → Swing Mode legend, Trinity Mode, Profiles taxonomy |
 | GET /api/options/{ticker}/{date} · GET /api/options/live/{ticker}/{date} | options[] chain records, snapshot_timestamp, metadata.source (types: `ProfilesTab.tsx` OptionsResponse) | fetch-av-options-backfill 21:00 ET Mon-Fri → etf_options_snapshots | 1h staleTime | `useOptionsData` (inline in `ProfilesTab`) → Profiles chain |
-| POST /api/options/greeks | per-strike delta/gamma/theta/vega, GEX by strike (types: `useOptionsGreeks.ts` GreeksResponse) |  |  | `useOptionsGreeks` → Profiles Greeks and gamma profile |
+| POST /api/options/greeks | per-strike delta/gamma/theta/vega, GEX by strike (types: `useOptionsGreeks.ts` GreeksResponse) | fetch-av-options-realtime every 5min 09:00-15:55 ET Mon-Fri and fetch-av-options-backfill 21:00 ET Mon-Fri → etf_options_snapshots |  | `useOptionsGreeks` → Profiles Greeks and gamma profile |
 | GET /api/insights/ticker/search · GET /api/market/coverage · POST /api/insights/watchlist/add | matches[], coverage flags, watchlist add result (types: `useTickerSearch.ts` TickerSearchResult/CoverageResult/WatchlistAddResult) |  |  | `TickerCombobox` (`useTickerSearch.ts`) → Symbol picker |
 | mock fixture: optionsFlowMock.ts | flow tape rows (no server type; `DemoDataBanner` marks it mock) | bundled in `src/data/optionsFlowMock.ts` |  | `FlowTab` → Flowseeker Live Feed |
 | mock fixture: contractDrilldownMock.ts | per-contract tape rows (no server type; `DemoDataBanner` marks it mock) | bundled in `src/data/contractDrilldownMock.ts` |  | `ContractDrilldown` → Flowseeker Contract Drilldown |
@@ -778,7 +779,7 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
 | GET /api/signals/{ticker}?limit=5000 | signals[].time/direction/score/rsi/ema9/ema20/close/volume, count, returned, source (types: `SignalsPage.tsx` SignalRow/SignalsResponse; fixture: `tests/helpers/fixtures/signals.ts`) | historical-signals-watchlist 01:00 ET Tue-Sat → historical_signals | 5min staleTime; the newest row is the prior session's (the writer runs at 01:00) | `useSignals` (inline in `SignalsPage`) → Signals table |
-| GET /api/analytics/summary/{ticker}?days=90 | totalTrades, closedTrades, winCount, lossCount, winRate, totalPnL, avgPnL, profitFactor, callCount, putCount (types: `useTradeAnalytics.ts` TradeStats) |  | 5min staleTime | `useTradeSummary` (`useTradeAnalytics.ts`) → Performance KPIs |
+| GET /api/analytics/summary/{ticker}?days=90 | totalTrades, closedTrades, winCount, lossCount, winRate, totalPnL, avgPnL, profitFactor, callCount, putCount (types: `useTradeAnalytics.ts` TradeStats) | signal-monitor 09:25 ET Mon-Fri and signal-monitor-eod-resolver 16:30 ET Mon-Fri → trades | 5min staleTime | `useTradeSummary` (`useTradeAnalytics.ts`) → Performance KPIs |
 | GET /api/insights/ticker/search · GET /api/market/coverage · POST /api/insights/watchlist/add | matches[], coverage flags, watchlist add result (types: `useTickerSearch.ts`) |  |  | `TickerCombobox` → Header ticker picker |
 | store: ticker, review date |  | Zustand, per session |  | every card |
 
