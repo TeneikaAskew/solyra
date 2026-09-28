@@ -319,12 +319,27 @@ NON_EXECUTING = {"echo", "printf", "cat", "tee", ":", "true", "false", "test", "
                  "declare", "readonly", "grep", "sed", "awk", "exit", "return", "shift", "trap"}
 
 
+def quoted_text(m: re.Match) -> str:
+    """A quoted span with its shell structure removed: '...' becomes '', and inside "..."
+    every newline, separator and reserved word becomes filler."""
+    span = m.group(0)
+    if span.startswith("'"):
+        return "''"
+    body = re.sub(r"[\n;|&{}]|\b(then|do|else|elif|fi|done|esac|case|if|while|until)\b", "_", span[1:-1])
+    return '"' + body + '"'
+
+
 def shell_statements(runs: str, errexit: bool = True) -> list[str]:
     """The statements of the collected run text that the shell executes unconditionally and
     whose failure propagates: heredoc bodies, single-quoted text, comments, statements led
     by a non-executing word (echo, printf, cat, test ...) or by an assignment of a literal,
     the body of an `if`/`while`/`case` construct, a statement after `&&` or `||`, and a
     statement followed by `||` are all dropped (stocks#1205 r4119966265, r4120166743)."""
+    # stocks#1205 r4121216898: a quoted span is text to the shell however many lines it
+    # covers, so the separators and newlines inside `"..."` or '...' are neutralised first,
+    # keeping the words a contract quotes (`"$BASE_SHA"`) intact
+    runs = re.sub(r"\$\{\{.*?\}\}", "__VAR__", runs, flags=re.S)
+    runs = re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", quoted_text, runs, flags=re.S)
     lines, out, i = runs.splitlines(), [], 0
     depth = 0          # inside then/do/else ... fi/done, or a { } body: GitHub may never reach it
     # GitHub runs bash -e, so `errexit` starts True there; a hook starts without it, and a

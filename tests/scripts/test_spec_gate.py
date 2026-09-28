@@ -2220,3 +2220,19 @@ def test_requirement_definitions_are_rendered_text_and_a_new_registry_covers_hea
     r = pr(repo, "chore/exporter", {generated: "{}\n"}, **cap)
     assert r.returncode == 1 and "changes 1 gated file(s)" in r.stdout, r.stdout
     assert pr(repo, "chore/exporter", {generated: "{}\n", "scripts/gate/export_model_registry.py": "print('x')\n"}, **cap).returncode == 0
+
+
+def test_quoted_text_is_text_across_lines(repo):
+    """stocks#1205 r4121216898 (spec_gate.py:343): quote state was per line, so an `echo "x;`
+    opened on one line and closed after the verdict command on the next made the command a
+    statement of its own. A quoted span is text however many lines it spans."""
+    cap = {"PR_BODY": "## Capacity\nn/a: x\n"}
+    wf = ".github/workflows/spec-gate.yml"
+    for decoy in ('|\n          echo "disabled;\n          ' + VERDICT_CMD + '\n          "',
+                  '|\n          echo "disabled; ' + VERDICT_CMD + '"',
+                  "|\n          echo 'disabled;\n          " + VERDICT_CMD + "\n          '",
+                  '|\n          x="\n          ' + VERDICT_CMD + '\n          "'):
+        r = pr(repo, "chore/gate-workflow", {wf: gate_workflow(a=decoy)}, **cap)
+        assert r.returncode == 1 and "no longer executes" in r.stdout, (decoy, r.stdout)
+    quoted_args = gate_workflow(a='|\n          echo "note: $HEAD_SHA"\n          ' + VERDICT_CMD + '\n          echo "done"')
+    assert pr(repo, "chore/gate-workflow", {wf: quoted_args}, **cap).returncode == 0
