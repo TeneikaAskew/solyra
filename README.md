@@ -17,14 +17,20 @@ Built with [Lovable](https://lovable.dev).
 
 ## Development
 
-You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating) — and Python 3.11 or newer on `PATH` as `python3`: the spec gate the commit hook runs is a Python script (it uses `tomllib`, new in 3.11). The hook checks the version and says so before it runs the gate.
 
 ```sh
 npm i
+git config core.hooksPath .githooks   # once per clone: the spec gate runs on every commit
 npm run dev
 ```
 
 The app runs on <http://localhost:5173>.
+
+The hook is installed by hand, not from an npm `prepare` script: Lovable runs
+`npm install` and commits to the connected branch, and a hook installed there
+would block its commits if its environment lacks `python3`. CI's `spec-gate`
+check applies the same gate to every pull request.
 
 ### Where `/api` goes
 

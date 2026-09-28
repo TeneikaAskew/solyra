@@ -26,7 +26,7 @@
 | **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `tests/*.spec.ts` | `npm run e2e` |
 | **Frontend E2E (live)** | **NOT IMPLEMENTED.** Would prove the deployed app serves real data | Playwright (`cloud` project) | `*.cloud.spec.ts` — **none exist**, so `e2e:cloud` exits `No tests found` | `npm run e2e:cloud:auth` (interactive Firebase sign-in) then `npm run e2e:cloud` |
 | **Backend unit** | `lib/` math (indicators, strat, gamma, backtest), API contracts | pytest | `tests/test_*.py` | `make test` |
-| **Backend E2E / scripts** | Pipeline scripts, fetchers, signal monitor | pytest | `tests/test_e2e.py`, `tests/test_scripts_*.py` | `make test-e2e` · `make test-scripts` |
+| **Backend E2E / scripts** | Pipeline scripts, fetchers, signal monitor | pytest | stocks repo: `tests/test_e2e.py`, `tests/test_scripts_*.py` | `make test-e2e` · `make test-scripts` |
 | **GCP data/pipeline** | Real Cloud SQL data exists + is fresh; jobs/services healthy | `db_query_cr.sh`, `gcloud`, `/api/health/freshness` | `scripts/`, GCP | see §4 |
 
 ---
