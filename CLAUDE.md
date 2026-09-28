@@ -78,7 +78,7 @@ file:
 git checkout -b feature/<feat-id>-<slug>   # a CHANGE: approved spec and ready plan
 git checkout -b fix/<feat-id>-<slug>       # a bug fix, filed under its FEAT-ID
 git checkout -b docs/short-description     # documentation only
-git checkout -b chore/short-description    # dependency manifests and lockfiles only
+git checkout -b chore/short-description    # dependency fields of manifests, and lockfiles
 ```
 
 These are the shapes the spec gate (`scripts/gate/spec_gate.py`) accepts, with
