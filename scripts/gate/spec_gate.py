@@ -927,6 +927,8 @@ def chore_allows(path: str, ch: "Change") -> str | None:
     its dependency fields)."""
     if is_gate_file(path):
         return None
+    if path == REGISTRY_DOCS[1] and "scripts/gate/export_model_registry.py" in ch.changed:
+        return None   # the exporter's own output: a changed exporter regenerates it in the same change
     if not MANIFEST.search(path):
         return ""
     # Against the merge base, not the current base: a scripts edit main made after the

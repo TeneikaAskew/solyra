@@ -2214,3 +2214,9 @@ def test_requirement_definitions_are_rendered_text_and_a_new_registry_covers_hea
     r = pr(repo, "docs/reqs", {REQUIREMENTS: REQUIREMENTS_TEXT, new_spec: spec(feat_id="FEAT-DATA-001", req_ids=["REQ-DATA-009"])})
     assert r.returncode == 1 and "omits 1 requirement(s) the specs cite (REQ-DATA-009)" in r.stdout, r.stdout
     assert pr(repo, "docs/reqs", {REQUIREMENTS: REQUIREMENTS_TEXT, new_spec: spec(feat_id="FEAT-DATA-001", req_ids=["REQ-DATA-001"])}).returncode == 0
+    # the generated registry rides a chore/ change only with the exporter that writes it
+    generated = "docs/product/generated/model-registry.json"
+    cap = {"PR_BODY": "## Capacity\nn/a: x\n"}
+    r = pr(repo, "chore/exporter", {generated: "{}\n"}, **cap)
+    assert r.returncode == 1 and "changes 1 gated file(s)" in r.stdout, r.stdout
+    assert pr(repo, "chore/exporter", {generated: "{}\n", "scripts/gate/export_model_registry.py": "print('x')\n"}, **cap).returncode == 0
