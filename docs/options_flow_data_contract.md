@@ -1,6 +1,6 @@
 # Options Flow — backend data contract (Skylit-aligned UI)
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `df145ccda929` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `1d8188474d8c` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The redesigned Options Flow page (`src/routes/OptionsFlowPage.tsx`) follows
 Skylit's product model. Three views are **real-data backed today**; two are
@@ -11,9 +11,16 @@ This doc specifies the endpoints needed to make the mocked views real.
 heatmap grid and pivot rail are real (`useGammaGrid` → `/api/options/{ticker}/grid`
 or `/api/options/{ticker}/{date}/grid`, combined with `useGammaLevels` for the
 King/Gate/Flip node taxonomy) — the component's own comment calls the grid
-"the centerpiece (real /grid)". Only a secondary `TacticalCard` overlay, built
-from `gammaMapMock.ts`'s `HS` fixture, stays illustrative; the on-screen
-banner says so explicitly ("Tactical read is illustrative"). §A below, which
+"the centerpiece (real /grid)". Real is not "entirely real", though: the
+`TacticalCard` overlay stays illustrative (the on-screen banner says so —
+"Tactical read is illustrative"), and separately, the Legend and node list
+also mix in mock Midpoint and Hedge chips from `gammaMapMock.ts`'s `HS.nodes`
+whenever real `/levels` data is present — `SwingMode.tsx`'s own comment says
+why: "Midpoint / Hedge nodes have no backend source — show them only
+alongside the real /levels taxonomy, never as mock next to a grid-derived
+overlay." That is a deliberate, permanent design choice (no backend for
+these two node types is proposed anywhere in this doc), not a gap to close.
+§A below, which
 proposed a `/surface` endpoint to make Swing real, is superseded by the grid
 endpoint that already ships this — combining `/grid`'s per-cell GEX/VEX with
 `/levels`'s node taxonomy covers everything §A asked for. Left below for
@@ -21,7 +28,7 @@ the record rather than deleted; do not build it.
 
 | View | Tab · Mode | Data today | Real source needed |
 |------|-----------|-----------|--------------------|
-| GEX/VEX profile | Profiles | **Real** — `/api/options/{t}/{date}/levels` + `POST /api/options/greeks` | — |
+| GEX/VEX profile | Profiles | **Real** — `/api/options/dates/{t}` (date list), `/api/options/{t}/{date}` + `/api/options/live/{t}/{date}` fallback (chain, via `ProfilesTab.tsx`'s local `useOptionsData`), `/api/options/{t}/{date}/levels` (taxonomy) + `POST /api/options/greeks` | — |
 | Trinity 3-panel | Gamma Map · Trinity | **Real** — `useGammaLevels` for SPX/SPY/QQQ | — |
 | Swing 2D heatmap | Gamma Map · Swing | **Real** heatmap/grid (`useGammaGrid` + `useGammaLevels`); tactical-read overlay only is illustrative, from `src/data/gammaMapMock.ts` | — |
 | Live flow tape | Flow · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |

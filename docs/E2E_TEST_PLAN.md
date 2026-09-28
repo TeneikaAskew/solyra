@@ -8,7 +8,7 @@
 
 # End-to-End Test Plan — Stocks Trading Platform
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `b4502d21e52f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `1d8188474d8c` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 > Canonical test strategy for the Obsidian Analyst redesign. Three layers —
 > **frontend E2E (Playwright)**, **backend (pytest)**, and **GCP data/pipeline
