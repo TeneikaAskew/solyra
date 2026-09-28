@@ -1500,35 +1500,579 @@ Playwright, no Te. No pytest or Vitest covers a failure response from this endpo
 #### Elements
 ##### SHELL-01 · Sidebar or TopTabs navigation
 
+**Shows or does:** AppShell picks one of two nav shells by `useSettingsStore().navPattern`:
+`Sidebar` when `'sidebar'`, `TopTabs` (the default, `'top-tabs'`) otherwise (`AppShell.tsx:57,61`).
+Both read the same `NAV_GROUPS` from `navConfig.ts`: TRADING (Dashboard, inline), MARKET
+(Live/Charts/Options Flow/Signals, a dropdown in TopTabs, always expanded in Sidebar),
+INTELLIGENCE (AI Insights/Catalysts, inline), LEARN (Playbook/Reports/Journal, dropdown),
+SUPPORT (Admin/Settings/Help & Glossary/FAQ, dropdown; Admin filtered by `adminOnly` unless
+`useUser().isAdmin`). TopTabs additionally collapses to a hamburger menu under 640px
+(`sm:hidden`/`sm:flex`), grouping the same items plus `AccountMenuSection`.
+
+**Needs:** `navConfig.ts`'s `NAV_GROUPS`/`FLAT_NAV` (client-only, no API); `useSettingsStore().navPattern`
+(persisted `localStorage['platform-shell-settings']`, hydrated from the server by
+`usePreferencesSync`, SHELL-10); `useUser().isAdmin` to filter the Admin link.
+
+**States:** covered by the general loading/empty/error/stale/permission rows (SHELL-12 to
+SHELL-16); the nav itself has no distinct loading state (renders immediately from the static
+`NAV_GROUPS`, only the admin filter depends on `/api/me`).
+
+**Acceptance criteria:**
+- Given the default (unset) shell preference, when AppShell mounts, then `navPattern` reads
+  `'top-tabs'` (`settingsStore.ts:45`'s `DEFAULTS`) and `TopTabs` renders, not `Sidebar`
+  (`top nav renders inline tabs + Market/Learn/Support dropdowns for non-admin`,
+  `tests/shared/navigation.spec.ts`).
+- Given the SUPPORT dropdown for a non-admin (`/api/me` → `is_admin: false`), when it opens,
+  then `a[href="/admin"]` has zero count (same test).
+- Given `navPattern: 'sidebar'` is seeded in `localStorage['platform-shell-settings']` before
+  boot, when AppShell mounts, then `Sidebar` renders and an admin email sees
+  `nav a[href="/admin"]` (`admin email sees Admin link in sidebar`, `tests/admin/admin-auth.spec.ts`).
+- Given a click on a top-nav link, when the route changes, then the corresponding group's
+  trigger gains the `active` class (`can navigate between routes via top-nav clicks`,
+  `tests/shared/navigation.spec.ts`).
+
+**Tests:** `tests/shared/navigation.spec.ts` (`top nav renders inline tabs...`, `can navigate
+between routes via top-nav clicks`), `tests/admin/admin-auth.spec.ts` (sidebar rendering and the
+Admin-link filter), `tests/settings/settings.spec.ts` (`navigation toggle persists the shell
+choice and writes through` exercises the SAME `navPattern` store from the Settings side). All
+Playwright; no colocated Vitest test of `Sidebar.tsx`/`TopTabs.tsx`/`navConfig.ts` was found.
+
+**Code:** `src/components/layout/AppShell.tsx:57,61`, `src/components/layout/Sidebar.tsx`,
+`src/components/layout/TopTabs.tsx`, `src/components/layout/navConfig.ts`; test ids
+`nav-menu-market`, `nav-menu-learn`, `nav-menu-support`, `nav-group-menu`.
+
 ##### SHELL-02 · Header in sidebar mode (auth status, sign out, replay control, theme toggle)
+
+**Shows or does:** A thin utility strip rendered only when `isSidebar` is true (`AppShell.tsx:66`,
+`{isSidebar && <Header />}`); in top-tabs mode the same controls fold into `TopTabs`'s single row
+instead (`Header.tsx`'s own doc comment). Left to right: `AuthStatusIndicator` (identity pill),
+`SignOutButton`, `ReplayControl`, then a dark/light toggle button.
+
+**Needs:** `useThemeStore()` for the toggle (SHELL-10); `useAuthStatus()` (`useAuthBlocked` +
+`useUser`) for the identity pill (SHELL-04/16); `useUser()` for `SignOutButton`'s render gate;
+`ReplayControl`'s own `/api/config/market-hours` read (SHELL-09).
+
+**States:** none of its own; composes SHELL-04's identity pill, SHELL-09's replay control and
+SHELL-10's toggle, each with its own state handling.
+
+**Acceptance criteria:**
+- Given `navPattern !== 'sidebar'`, when AppShell renders, then no `<header>` strip mounts at
+  all: `TopTabs` carries the same controls inline instead (`AppShell.tsx:61-77`, read directly).
+- Given `navPattern === 'sidebar'`, when AppShell renders, then the header mounts with a
+  `Switch to light theme`/`Switch to dark theme` button, visible at the default (≥640px)
+  Playwright viewport (`theme toggle flips the document theme attribute`,
+  `tests/shared/navigation.spec.ts`, new in this task, the first test that seeds sidebar mode
+  and asserts against this specific component rather than `TopTabs`'s identical-looking inline
+  control).
+
+**Tests:** `tests/shared/navigation.spec.ts` (`theme toggle flips the document theme attribute`,
+new in this task). The pre-existing Chain citation here (`auth status lives at the menu bottom,
+not the bar`) was wrong: that test drives `TopTabs`'s mobile hamburger menu at the default
+`top-tabs` nav pattern and never mounts `Header` at all, corrected in the T-gate commit (see
+Gaps).
+
+**Code:** `src/components/layout/Header.tsx`.
 
 ##### SHELL-03 · MockModeBanner
 
+**Shows or does:** `if (!isMockModeActive()) return null;` else an amber strip ("Mock data mode:
+IWM fixture data only...") with an Exit button. Mounted unconditionally in `AppShell.tsx:67`,
+above the routed page on every route (not just the Market group).
+
+**Needs:** `src/lib/mockMode.ts`'s `isMockModeActive()`/`setMockMode()`, reading/writing
+`localStorage['solyra-mock-mode']` only, no API. Its own doc comment: the banner reads only
+`localStorage` (not the mocked `/api/me`) specifically so Exit stays reachable even if a fixture
+breaks the shell.
+
+**States:** on/off is itself the state; no loading/error (a synchronous `localStorage` read).
+
+**Acceptance criteria:**
+- Given `solyra-mock-mode` is unset, when AppShell renders, then the banner is absent and zero
+  `/api/*` requests are intercepted by the mock engine (verified indirectly: every other spec's
+  clean run assumes the OFF default).
+- Given the preference is `'on'`, when AppShell renders, then `mock-mode-banner` is visible and
+  the mocked identity is used (`banner shows, app boots, and ZERO /api requests reach the
+  network`, `tests/shared/mock-mode.spec.ts`).
+- Given the Exit button is clicked, when `setMockMode(false)` persists, then the page reloads and
+  the banner disappears, even with no Support-menu access (`the banner Exit button leaves the
+  mode even without the menu`, same file).
+
+**Tests:** `tests/shared/mock-mode.spec.ts` (all six tests exercise `mock-mode-banner` directly).
+`src/lib/mockMode.test.ts` (Vitest, CI-run) tests the underlying `isMockModeActive`/`setMockMode`/
+`mockModePreference`/`autoEnableMockModeForDev` functions this component calls, but never renders
+`MockModeBanner` itself: the banner's own conditional render is Playwright-only.
+
+**Code:** `src/components/shared/MockModeBanner.tsx`, `src/lib/mockMode.ts`; test ids
+`mock-mode-banner`, `mock-mode-exit`.
+
 ##### SHELL-04 · AuthStatusBanner and EmailVerificationBanner
+
+**Shows or does:** Two independent full-width strips, both mounted unconditionally in
+`AppShell.tsx:68-69`, above the routed page on every route. `AuthStatusBanner` (`role="status"`,
+`data-testid="auth-status-banner"`) renders only when `useAuthStatus().status` is `'blocked'` or
+`'signed-out'` (hidden while `'loading'` or `'signed-in'`), with a Sign in button that reloads the
+page. `EmailVerificationBanner` renders only for a signed-in email/password account whose
+`emailVerified === false`, keyed by `uid` so a same-session account switch does not inherit the
+previous account's Resend/confirmed state (its own doc comment).
+
+**Needs:** `useAuthStatus()` = `useAuthBlocked()` (client-only, set by any gated 401,
+`src/lib/authGate.ts`) combined with `useUser()`, which calls `GET /api/me`, served by
+`platform/api/main.py:282 get_current_user`. `EmailVerificationBanner` needs no API at all:
+`emailVerified` comes from the Firebase client SDK's `onAuthStateChanged`, not from `/api/me`.
+
+**States:** both banners ARE state presentations (loading/blocked/signed-out for the first,
+unverified for the second); the specific "blocked or signed-out" combination is SHELL-16.
+
+**Acceptance criteria:**
+- Given `useAuthStatus().status === 'loading'`, when either banner would render, then both
+  return `null` (`AuthStatusIndicator.tsx:40`, `:81`, `:158`, read directly; no test isolates
+  this transient render, see Gaps).
+- Given an anonymous open-mode session, when `GET /api/me` answers
+  `{"email":null,"is_admin":false,"is_dev":false}`, then `isSignedIn` is `true` in open mode
+  regardless (`useUser.ts:81`, `isSignedIn = firebaseMode ? signedIn : true`), so
+  `AuthStatusBanner` stays hidden, matching production: verified 2026-09-28, `GET /api/me` on
+  staging answers 200 with exactly that anonymous body (see the V-gate evidence comment).
+- Given a firebase-mode email/password account with `emailVerified === false`, when
+  `EmailVerificationBannerFor` mounts, then it shows "Confirm your email address." plus
+  Resend/"I've confirmed" actions, and re-checks verification via `refreshEmailVerified()` rather
+  than trusting a stale SDK snapshot (`AuthStatusIndicator.tsx:240-253`, read directly).
+
+**Tests:** `platform/api/main.py`'s `get_current_user` (the identity half) is pytest-covered by
+`test_me_dev_role_sets_is_dev_not_is_admin`, `test_me_admin_role_sets_is_admin_not_is_dev`,
+`test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`
+(`tests/api/test_platform_auth.py`, CI-run, reused from AUTH-07's own citation, same endpoint).
+No Vitest or Playwright test anywhere in solyra targets `AuthStatusBanner` or
+`EmailVerificationBanner` by name or test id (grepped both repos for the component names and for
+`auth-status-banner`/`email-verification-banner`; zero matches); the Gaps note this precisely
+rather than crediting the generic navigation smoke tests with coverage they don't have.
+
+**Code:** `src/components/shared/AuthStatusIndicator.tsx` (`AuthStatusBanner`,
+`EmailVerificationBanner`/`EmailVerificationBannerFor`, `useAuthStatus`); test ids
+`auth-status-banner`, `email-verification-banner`, `verification-resend`, `verification-check`,
+`verification-error`.
 
 ##### SHELL-05 · MostActiveBar marquee
 
+**Shows or does:** A horizontally-scrolling ticker strip, mounted once in `AppShell.tsx:70` and
+gated by `showMostActiveBar(pathname)`, only on `/live`, `/charts`, `/options`, `/signals`,
+`/journal` (`MOST_ACTIVE_BAR_ROUTES`, `AppShell.tsx:22`), so it persists across navigation within
+that group instead of unmounting per route. Each chip shows ticker, price (or `—`), change %
+(colored, or `—`), compact volume, and a sparkline when the series has ≥2 usable points
+(`hasUsableSpark`); the strip duplicates its items and CSS-marquees them unless
+`prefers-reduced-motion` is set, in which case a single static, horizontally-scrollable strip
+renders instead.
+
+**Needs:** `GET /api/market/most-active`, served by `platform/api/main.py:1510
+market_most_active`, which reads only `top_movers_intraday` (one SQL,
+`WHERE snapshot_date = (SELECT MAX(snapshot_date)...)`, ordered `snapshot_ts, rank`);
+`market_data_intraday` is not touched by this handler (verified by reading the full function;
+corrected in the T-gate commit, see Gaps). `useAuthBlocked()` for the "Sign in to load data"
+branch (a second, independent instance of that copy, distinct from SHELL-16's `AuthStatusBanner`).
+
+**States:** SHELL-12 (loading), SHELL-13 (empty), SHELL-14 (error) are this component's three
+`null`-returning branches, indistinguishable from each other in source; the auth-blocked branch
+(`MostActiveBar.tsx:182-191`) is a fourth, distinct, non-null branch.
+
+**Acceptance criteria:**
+- Given a signed-out/blocked session, when `useAuthBlocked()` is true, then the strip renders its
+  label with "Sign in to load data" instead of `null` (`MostActiveBar.tsx:182-191`, read
+  directly; no test isolates this branch specifically, see Gaps).
+- Given the API returns a non-empty `items` array, when the strip renders, then volume renders
+  via `formatCompactVolume` (e.g. `312_000_000` → `"312M"`) and change via `formatChangePct`
+  (e.g. `2.31` → `"+2.31%"`), both returning `—` for `null`/`undefined`, never a fabricated `0`
+  (Rule 3.7; `formats hundreds of millions with an M suffix`, `renders an em dash for missing
+  volume`, `src/components/shared/MostActiveBar.test.ts`).
+- Given a ticker's price series has fewer than two finite points, when the item renders, then
+  `hasUsableSpark` returns `false` and no sparkline draws, never a synthesized flat line
+  (`rejects missing, short, and constant series`, `MostActiveBar.test.tsx`).
+- Given a real backend response, when the handler groups rows in memory, then a ticker with ≥2
+  snapshots on the latest date carries an ordered `spark` array and a ticker with exactly one
+  point omits the key entirely (`test_spark_present_and_ordered_for_multi_snapshot_ticker`,
+  `test_spark_omitted_when_fewer_than_two_points`, `tests/api/test_most_active_endpoint.py`).
+- Given the underlying table, when queried in production, then it holds fresh, growing rows:
+  verified 2026-09-28, `max(snapshot_ts) = 2026-09-28 19:30:16+00:00`, `count(*) = 8920` (see the
+  V-gate evidence comment).
+
+**Tests:** `src/components/shared/MostActiveBar.test.ts` and `MostActiveBar.test.tsx` (Vitest,
+CI-run): both are pure-helper tests of `formatCompactVolume`/`formatChangePct`/
+`sparklinePoints`/`isBullishSpark`/`hasUsableSpark`, the exact formatting/geometry math the
+marquee renders with; neither renders `<MostActiveBar/>` or exercises `useMostActive()`, so the
+component's own fetch/branch-selection logic (loading vs. empty vs. error vs. auth-blocked, and
+the reduced-motion item-duplication) is Playwright-only (`tests/shared/most-active-bar.spec.ts`).
+`tests/api/test_most_active_endpoint.py` (pytest, CI-run) covers the backend shape, sparkline
+grouping, empty-table 200, and DB-failure 503 in full.
+
+**Code:** `src/components/shared/MostActiveBar.tsx`; test ids `most-active-bar`,
+`most-active-track`, `most-active-spark`.
+
 ##### SHELL-06 · RouteErrorBoundary
+
+**Shows or does:** React Router `errorElement`, attached to every app route individually and to
+their shared `AppGroup` parent (`src/App.tsx:49,78` and each child route, e.g. `:80-86`), so a
+render crash on one page shows a contained card ("Page crashed... rest of the app is unaffected")
+with Reload/Go to dashboard buttons and a collapsible technical-details panel, while the
+sidebar/header stay mounted. Distinguishes a thrown React Router response (`isRouteErrorResponse`,
+e.g. a 404) from a thrown `Error` from any other thrown value (`describeError`).
+
+**Needs:** nothing: it reads only `useRouteError()`/`useNavigate()` from React Router's own
+state; no API, no store.
+
+**States:** it IS the app's page-level error state; no further states apply to it.
+
+**Acceptance criteria:**
+- Given a page component throws during render, when React Router catches it, then
+  `RouteErrorBoundary` renders in place of that page only: the sidebar/header/banners from
+  `AppShell` stay rendered around it (`RouteErrorBoundary.tsx`'s own doc comment; wiring verified
+  at `App.tsx:49-86`).
+- Given the thrown value is a React Router response object, when `describeError` runs, then the
+  title is `"{status} {statusText}"`; given any other `Error`, the title is `"Page error"` and the
+  stack is available behind "Show technical details" (`RouteErrorBoundary.tsx:82-94`, read
+  directly).
+
+**Tests:** none found. Grepped both repos for `RouteErrorBoundary` and for a test that forces a
+page-render throw; no colocated Vitest test and no Playwright spec exercise this component at all
+(matches the pre-existing Gaps note).
+
+**Code:** `src/components/shared/RouteErrorBoundary.tsx`, wired at `src/App.tsx:49`.
 
 ##### SHELL-07 · Market session badge (LIVE, PRE, AH, CLOSED)
 
+**Shows or does:** `data-testid="market-session-badge"`, next to the MARKET nav trigger
+(`liveBadge`, `navConfig.ts`) and inside its dropdown items. Renders `null` while
+`useLiveStatus()` has no data yet or reports an unrecognized session, never a fabricated default
+(its own doc comment cites Rule 3.7 by number). Otherwise one of LIVE (green, `regular`), PRE, AH,
+or CLOSED.
+
+**Needs:** `GET /api/live/status`, served by `platform/api/routers/live.py:174
+get_market_status`, itself computed purely from `datetime.now(ET_TZ)` against `_is_market_open`
+(weekday/holiday/09:30-16:00/04:00-09:30/16:00-20:00 windows), no database read, no external
+vendor call.
+
+**States:** SHELL-15 is this same badge's "truthful when closed" state, specifically.
+
+**Acceptance criteria:**
+- Given the market is closed, when `useLiveStatus()` resolves `{session: 'closed', is_open:
+  false, ...}`, then the badge reads "CLOSED" and never carries the `live` class (`market session
+  badge is truthful — CLOSED when the market is closed`, `tests/shared/navigation.spec.ts`).
+- Given `useLiveStatus()` has not yet resolved, when `MarketSessionBadge` renders, then it
+  returns `null` rather than a placeholder (`MarketSessionBadge.tsx:19-20`, read directly).
+- Given a real backend request, when issued without a token, then it answers 401 on staging,
+  confirming the endpoint is real and gated (verified 2026-09-28, see the V-gate evidence
+  comment); the actual session VALUE needs a signed-in session to observe in production (see
+  Gaps).
+
+**Tests:** `tests/shared/navigation.spec.ts` (`market session badge is truthful...`, Playwright,
+asserts against a directly-mocked response, not the live backend computation).
+`tests/api/test_platform_api.py::test_live_status` (pytest, CI-run) asserts only that the
+response has `is_open`/`session`/`current_time_et` keys; it does not assert `_is_market_open`'s
+actual classification for any specific time, so it is real but shallow backend coverage (see
+Gaps). No Vitest test of `MarketSessionBadge.tsx` exists; `src/lib/marketSession.test.ts` tests a
+different, unrelated module (`src/lib/marketSession.ts`'s `sessionLabel`/`sessionColor`/
+`sessionPillClasses`, which this badge does not import, verified by reading
+`MarketSessionBadge.tsx`, which defines its own inline `SESSION_CHIP` map).
+
+**Code:** `src/components/layout/MarketSessionBadge.tsx`, `src/hooks/useLiveStatus.ts`; test id
+`market-session-badge`.
+
 ##### SHELL-08 · Command palette (Cmd-K, Ctrl-K)
+
+**Shows or does:** `AppShell.tsx:45-54` attaches a `window`-level `keydown` listener;
+`(e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'` toggles `paletteOpen` (line 47).
+`CommandPalette` (`AppShell.tsx:77`) renders `null` while closed; open, it shows a search input
+(placeholder "Search pages, tickers, actions…") and three filtered groups: "Jump to" (every page
+in `FLAT_NAV`), "Tickers" (`useTickerStore`'s quick picks + recent tickers, selecting one
+navigates to `/charts` and calls `setTicker`), "Actions" (three fixed shortcuts: New journal
+entry, Open today's brief, Dealer gamma). Arrow keys move the highlighted row, Enter selects it,
+Escape or a backdrop click closes it.
+
+**Needs:** `navConfig.ts`'s `FLAT_NAV` and `useTickerStore()` only, no API.
+
+**States:** none beyond open/closed; an empty filtered result renders "No results"
+(`CommandPalette.tsx:133-137`).
+
+**Acceptance criteria:**
+- Given the shell has mounted, when Ctrl-K (or Cmd-K) is pressed anywhere, then the palette
+  opens with its search input focused and visible (`command palette opens with the keyboard
+  shortcut and navigates to a page`, `tests/shared/navigation.spec.ts`, new in this task).
+- Given "Journal" is typed, when the filtered list narrows, then both the "Jump to → Journal"
+  row and the "Actions → New journal entry" row match (both routes to `/journal`,
+  `CommandPalette.tsx:38-66`, read directly), and pressing Enter selects the first (`sel` defaults
+  to `0`) and navigates to `/journal` (same new test).
+- Given the palette is open, when Escape is pressed or the backdrop is clicked, then `onClose`
+  fires and the palette unmounts (`CommandPalette.tsx:73,82-83,99`, read directly; not asserted
+  by any test, see Gaps).
+
+**Tests:** `tests/shared/navigation.spec.ts` (`command palette opens with the keyboard shortcut
+and navigates to a page`, new in this task; Playwright, not run in CI, solyra#28, so ticks no
+Te here). No prior test of any kind existed for this component (confirmed the pre-existing Gaps
+note before adding this test).
+
+**Code:** `src/components/layout/AppShell.tsx:45-54,77`, `src/components/layout/CommandPalette.tsx`.
+No data-testid anywhere in `CommandPalette.tsx`; selected by placeholder text and role in the new
+test.
 
 ##### SHELL-09 · Replay control (historical review)
 
+**Shows or does:** A compact "Replay" button in the shared utility cluster (`Header.tsx` in
+sidebar mode, inline in `TopTabs.tsx`), gated to `/dashboard`, `/live`, `/charts`, `/signals`
+(`REPLAY_ROUTES`), renders `null` on every other route. Opens a TradingView-style popover: a
+visual calendar (weekends, market holidays, and future dates disabled) plus a segmented time
+field, draft-only until "OK" is pressed so the screen never flips modes mid-edit. While a review
+moment is pinned, the trigger turns into an amber chip showing it, with an inline "back to live"
+(✕).
+
+**Needs:** `GET /api/config/market-hours` (only for `holidays_2026`, to gray out calendar days),
+served by `platform/api/routers/config.py:131 get_market_hours`, a static dict
+(`MARKET_OPEN`/`MARKET_CLOSE`/`MARKET_HOLIDAYS_2026` constants), no database, no vendor call.
+`useReviewDateStore()` (client store) holds the committed `reviewDate`/`reviewTime`.
+
+**States:** none of its own beyond open/closed and live/replay, both covered above;
+review-aware pages (not this row) re-fetch as-of the pinned moment.
+
+**Acceptance criteria:**
+- Given the current route is not in `REPLAY_ROUTES`, when `ReplayControl` renders, then it
+  returns `null` (`ReplayControl.tsx:112`, read directly).
+- Given no review date is set, when the trigger renders, then it reads "Replay" with a History
+  icon; given one is set, it reads `"Replay · {formatted date/time}"` with an amber border and a
+  Calendar icon (`ReplayControl.tsx:174-179`, read directly).
+- Given a date/time is picked and "OK" is pressed, when `canApply` is true (the draft differs
+  from the committed value), then `setReviewDate`/`setReviewTime` commit and the popover closes;
+  "Cancel" discards the draft instead (`ReplayControl.tsx:123-136`, read directly).
+
+**Tests:** none found. Grepped both repos for `ReplayControl`, `replay-toggle`, `replay-apply`;
+no colocated Vitest test and no Playwright spec exercise this component (the pre-existing Chain
+Tests cell was blank; the pre-existing Gaps note lists it, confirmed still accurate).
+
+**Code:** `src/components/shared/ReplayControl.tsx`, `src/stores/reviewDateStore.ts`; test ids
+`replay-toggle`, `replay-clear`, `replay-apply`.
+
 ##### SHELL-10 · Theme toggle
+
+**Shows or does:** A Sun/Moon icon button in `Header.tsx` (sidebar mode) and `TopTabs.tsx`
+(top-tabs mode, same behavior, two separate elements), `aria-label`/`title` reading "Switch to
+light theme" while dark and vice versa. Calls `useThemeStore().toggleTheme()`, which flips
+`dark`↔`light`, writes `document.documentElement`'s `data-theme` attribute (`src/index.css` keys
+light styles off `[data-theme="light"]`), and persists to `localStorage['platform-theme']`.
+`usePreferencesSync` (mounted once in `AppShell.tsx:32`) then writes the new theme through to the
+server on the next render.
+
+**Needs:** no read API for the toggle itself (client store only); the write-through is
+`PUT /api/me/preferences`, served by `platform/api/routers/preferences.py:149 put_preferences`
+(one upsert, `ON CONFLICT (user_email) DO UPDATE` on only the changed columns, 503 on a real DB
+failure, never a silent no-op).
+
+**States:** dark is the product default regardless of OS preference, applied at module-load time
+before the preference hydrates from the server (`themeStore.ts:7-14,27-28`); a corrupt stored
+value falls back to dark rather than throwing.
+
+**Acceptance criteria:**
+- Given no stored theme, when `themeStore` loads, then `theme` is `'dark'` and
+  `document.documentElement` carries `data-theme="dark"` (`defaults to dark regardless of OS
+  preference`, `src/stores/themeStore.test.ts`).
+- Given the toggle is clicked twice, when each click resolves, then the theme flips light then
+  back to dark, the `data-theme` attribute follows each flip, and `localStorage` persists each
+  value (`toggleTheme flips, applies, and persists on every flip`, same file).
+- Given `navPattern: 'sidebar'` is seeded, when the page loads and the Header's toggle is
+  clicked, then `html[data-theme]` changes from `dark` to `light` (`theme toggle flips the
+  document theme attribute`, `tests/shared/navigation.spec.ts`, new in this task).
+- Given the server holds a stored `theme` value, when `usePreferencesSync` hydrates, then it maps
+  the raw payload through `sanitizePreferences`, nulling any value outside the known enum rather
+  than coercing it to a default (`nulls unknown values instead of coercing them to a default`,
+  `src/hooks/usePreferences.test.ts`).
+- Given a `PUT /api/me/preferences` body with only `theme` set, when the handler runs, then the
+  SQL `SET` list contains only the provided columns and the full stored row (including
+  `theme: "dark"` from `FULL_ROW`) returns (`test_put_partial_sets_only_provided_fields`,
+  `tests/api/test_preferences_router.py`).
+
+**Tests:** `src/stores/themeStore.test.ts` (Vitest, CI-run, the toggle's own client logic),
+`src/hooks/usePreferences.test.ts` (Vitest, CI-run, the write-through payload shaping),
+`tests/api/test_preferences_router.py` (pytest, CI-run, the server contract, including `theme`
+explicitly in its fixture rows), `tests/shared/navigation.spec.ts` (`theme toggle flips the
+document theme attribute`, new in this task, Playwright).
+
+**Code:** `src/components/layout/Header.tsx:24`, `src/components/layout/TopTabs.tsx:228`,
+`src/stores/themeStore.ts`, `src/hooks/usePreferences.ts:192-210`.
 
 ##### SHELL-11 · Sign out
 
+**Shows or does:** `SignOutButton` (`data-testid="sign-out"`, a LogOut icon) renders only when
+`authMode === 'firebase' && isSignedIn`, absent in `iap`/`open` modes and while signed out.
+Calls `firebaseSignOut()`, then clears the whole React Query cache (`qc.clear()`) so no
+identity-tied data survives the switch. `AccountMenuSection`'s `account-menu-sign-out` is a
+second, independently-implemented control for the mobile hamburger menu, duplicating the same
+`firebaseSignOut()` + `qc.clear()` body rather than sharing it (`AuthStatusIndicator.tsx:96-103`).
+
+**Needs:** no read API; `firebaseSignOut()` is a Firebase client-SDK call, no backend round trip.
+
+**States:** none of its own; signing out is what drives SHELL-16's "signed-out" half.
+
+**Acceptance criteria:**
+- Given `authMode !== 'firebase'` or the session is signed out, when `SignOutButton` renders,
+  then it returns `null` (`SignOutButton.tsx:15`, read directly).
+- Given a signed-in firebase session, when `sign-out` is clicked, then `firebaseSignOut()`
+  resolves, the query cache clears, and the app returns to `SignInScreen` (`sign out returns to
+  the sign-in screen`, `tests/shared/auth-gate.spec.ts`, added in Task 13, the only real test of
+  this control anywhere).
+
+**Tests:** `tests/shared/auth-gate.spec.ts` (`sign out returns to the sign-in screen`),
+Playwright. The pre-existing Chain citation here ("solyra navigation.spec.ts") was wrong: every
+`navigation.spec.ts` test runs in open mode (`MOCK_FIREBASE_CONFIG_OPEN`), in which
+`SignOutButton` always returns `null`, so no test in that file can render it at all. That file's
+one sign-out-adjacent assertion (`account-menu-sign-out` has zero count, `auth status lives at
+the menu bottom, not the bar`) tests the second control's absence under open mode, not this one's
+action, corrected in the T-gate commit (see Gaps).
+
+**Code:** `src/components/auth/SignOutButton.tsx`,
+`src/components/shared/AuthStatusIndicator.tsx:96-103` (`AccountMenuSection`); test ids
+`sign-out`, `account-menu-sign-out`.
+
 ##### SHELL-12 · State: loading (marquee before the first response)
+
+**Shows or does:** `MostActiveBar` has no dedicated loading branch: `items = data?.items ?? []`,
+so before `useMostActive()`'s first response the array is empty and the component returns `null`
+via the same `items.length === 0` guard as the empty state (SHELL-13), indistinguishable from it
+in source (the pre-existing States table entry, confirmed by reading
+`MostActiveBar.tsx:176-178,195`).
+
+**Needs:** same as SHELL-05 (`GET /api/market/most-active`).
+
+**States:** this row IS the loading state.
+
+**Acceptance criteria:**
+- Given the query has not yet resolved, when `MostActiveBar` renders, then `data` is
+  `undefined`, `items` is `[]`, and the component returns `null` rather than a skeleton
+  (`MostActiveBar.tsx:176-178,195`, read directly; Rule 3.7: "no skeleton flash, just hidden
+  until there's real data to show", the component's own comment).
+- Given the table holds real, recently-written rows in production, when the first request
+  resolves, then the loading window is bounded by real pipeline freshness, not an indefinite
+  stall: verified 2026-09-28, `max(snapshot_ts) = 2026-09-28 19:30:16+00:00`, `8920` rows (see
+  the V-gate evidence comment); this validates the pipeline is live, not the loading render
+  itself, which needs a timing capture no production request can provide (see Gaps).
+
+**Tests:** none isolate this branch specifically: it is not visually distinguishable from
+SHELL-13 in the DOM, and no test asserts the pre-first-response instant. See Gaps.
+
+**Code:** `src/components/shared/MostActiveBar.tsx:176-178,195`.
 
 ##### SHELL-13 · State: empty (marquee renders nothing on an empty list)
 
+**Shows or does:** Same `items.length === 0` guard as SHELL-12, reached when the API genuinely
+returns `{"items": []}` rather than merely not having answered yet.
+
+**Needs:** same as SHELL-05.
+
+**States:** this row IS the empty state.
+
+**Acceptance criteria:**
+- Given `GET /api/market/most-active` answers `{"items": [], ...}`, when `MostActiveBar`
+  renders, then it returns `null` (`renders nothing when the API returns an empty item list`,
+  `tests/shared/most-active-bar.spec.ts`).
+- Given the source table has no rows for the latest `snapshot_date`, when the handler runs, then
+  it returns the honest empty envelope rather than an error
+  (`test_empty_table_returns_honest_empty_200`, `tests/api/test_most_active_endpoint.py`).
+
+**Tests:** `tests/shared/most-active-bar.spec.ts` (`renders nothing when the API returns an
+empty item list`, Playwright),
+`tests/api/test_most_active_endpoint.py::TestEmptyTable::test_empty_table_returns_honest_empty_200`
+(pytest, CI-run, backend shape only; the client's own `null`-return branch stays
+Playwright-only).
+
+**Code:** `src/components/shared/MostActiveBar.tsx:195`.
+
 ##### SHELL-14 · State: error (marquee absent on 500, page renders)
+
+**Shows or does:** `useMostActive()`'s `queryFn` throws on a non-OK response
+(`MostActiveBar.tsx:107`, `if (!r.ok) throw...`); React Query then leaves `data` undefined, so
+`items` stays `[]` and the SAME `null`-return branch as SHELL-12/13 fires: the marquee simply is
+not there, while the rest of the shell (nav, banners, routed page) renders normally.
+
+**Needs:** same as SHELL-05.
+
+**States:** this row IS the error state.
+
+**Acceptance criteria:**
+- Given `GET /api/market/most-active` answers 500, when the query rejects, then the marquee is
+  absent and the page otherwise renders fine (`bar is absent and the page otherwise renders fine
+  when the API returns 500`, `tests/shared/most-active-bar.spec.ts`).
+- Given a real query exception in the handler, when it is raised, then the endpoint answers 503
+  with no `items` key at all, never a fabricated empty success
+  (`test_query_exception_surfaces_as_503`, `tests/api/test_most_active_endpoint.py`).
+
+**Tests:** `tests/shared/most-active-bar.spec.ts` (`bar is absent...when the API returns 500`,
+Playwright), `tests/api/test_most_active_endpoint.py::TestDbUnavailable::test_query_exception_surfaces_as_503`
+(pytest, CI-run, backend shape only, same caveat as SHELL-13).
+
+**Code:** `src/components/shared/MostActiveBar.tsx:102-113,195`.
 
 ##### SHELL-15 · State: stale (session badge truthful when closed)
 
+**Shows or does:** `MarketSessionBadge` never shows LIVE unless `useLiveStatus().session ===
+'regular'`; the badge's data goes stale after 30s (`staleTime`) and refetches every 60s, so a
+session change (e.g. the close) converges within that window rather than staying pinned to a
+load-time snapshot.
+
+**Needs:** same as SHELL-07.
+
+**States:** this row IS the "truthful when closed" state.
+
+**Acceptance criteria:**
+- Given a mocked closed session, when the badge renders, then it reads "CLOSED" and never
+  carries the `live` class (`market session badge is truthful — CLOSED when the market is
+  closed`, `tests/shared/navigation.spec.ts`).
+- Given the query is older than its 30s `staleTime`, when the component is focused or refetches
+  on its 60s interval, then a session change is reflected without a manual reload
+  (`useLiveStatus.ts:20-21`, read directly; not independently asserted by any test, the
+  Playwright test mocks a single static response).
+
+**Tests:** same as SHELL-07 (`tests/shared/navigation.spec.ts`,
+`tests/api/test_platform_api.py::test_live_status`).
+
+**Code:** `src/components/layout/MarketSessionBadge.tsx`, `src/hooks/useLiveStatus.ts:20-21`.
+
 ##### SHELL-16 · State: permission (auth status banner when signed out or blocked)
+
+**Shows or does:** `AuthStatusBanner` renders "Your session expired, so live data is not
+loading." when `status === 'blocked'`, or "You are signed out, so live data is not loading." when
+`status === 'signed-out'`, both with a Sign in button. The trigger is NOT `GET /api/me`
+specifically: `blocked` is set by `markAuthBlocked()`, called from `authedFetch.ts`'s `track()`
+helper on ANY gated `/api/*` 401, "in every auth mode" (`authedFetch.ts:155-159,163-166,250`,
+read directly), the same universal mechanism AUTH-08 documents. `signed-out` is a pure
+Firebase-client-SDK state in firebase mode (`useUser.ts`'s `subscribeAuth` listener); in
+`iap`/`open` mode `isSignedIn` is hardcoded `true`, so this half never fires there.
+
+**Needs:** `platform/api/auth.py`'s middleware (401 on a gated path without a valid identity)
+plus the client `src/lib/authGate.ts` (`markAuthBlocked`/`useAuthBlocked`). `GET /api/me`
+(`main.py:282`) is fetched by the same `useUser()` hook but its VALUES are not read by this
+banner: only its loading timing matters here (see Gaps, correcting the pre-existing Chain
+citation).
+
+**States:** this row is itself a state of SHELL-04.
+
+**Acceptance criteria:**
+- Given a gated call answers 401, when `track()` runs, then `markAuthBlocked()` fires and every
+  subscribed component (including this banner) re-renders as `'blocked'` on the next tick
+  (`authedFetch.ts:157-159`, read directly).
+- Given a real, unauthenticated request, when issued against any of the gated AppShell endpoints
+  on staging, then each answers 401 `{"detail":"sign in to continue"}`: verified 2026-09-28 for
+  `/api/market/most-active`, `/api/live/status`, `/api/config/market-hours`,
+  `/api/me/preferences` (see the V-gate evidence comment); this is the production trigger for
+  `blocked`, reproduced directly.
+- Given `AUTH_MODE=firebase` and no token at all, when any gated path (e.g. `/api/secret`) is
+  requested, then it answers 401, while `/api/health`, `/api/me`, `/api/waitlist` stay open
+  (`test_firebase_requires_valid_token`, `tests/api/test_platform_auth.py`), the backend half of
+  the same mechanism.
+
+**Tests:** `tests/api/test_platform_auth.py::test_firebase_requires_valid_token` (pytest,
+CI-run, the general gated-401 mechanism, reused from AUTH-08's own citation) plus the four
+`_me`-keyed tests reused from SHELL-04. `src/lib/authedFetch.test.ts` exercises `track()`'s 401
+path for real (unmocked `markAuthBlocked`/`clearAuthBlocked` calls), but every assertion in that
+file targets `onUnauthorized`/the `Authorization` header, never `isAuthBlocked()`/
+`useAuthBlocked()` directly (grepped both repos for those four names inside any test file: zero
+matches), matching Task 13's AUTH-08 finding for the identical mechanism. No test targets
+`AuthStatusBanner`'s own render of this state.
+
+**Code:** `src/components/shared/AuthStatusIndicator.tsx` (`AuthStatusBanner`, `useAuthStatus`),
+`src/lib/authGate.ts`, `src/lib/authedFetch.ts:155-166,249-250`; test id `auth-status-banner`.
 
 ### SCREEN-DASHBOARD — `/dashboard`
 
