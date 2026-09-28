@@ -1,6 +1,6 @@
 # Design System Document
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `eca7078d322f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## 1. Overview & Creative North Star: "The Obsidian Analyst"
 
@@ -13,6 +13,24 @@ By moving away from the bright greens of the reference material and adopting a s
 ## 2. Colors & Surface Philosophy
 
 The palette is anchored in deep charcoals and obsidian blacks, providing a high-contrast stage for critical data points.
+
+> **Corrected 2026-09-28 — the described blue is one of twelve selectable
+> accents, and it is not the default.** Everything below describes the
+> `blue` accent (`src/index.css`'s base `--brand: #8bceff`, which `blue`
+> "needs no overrides" to reach — see the comment at `src/index.css:303`).
+> But `src/stores/settingsStore.ts:45` defaults new users to **`dawn`**
+> (`--brand: #ff7a4d`, orange), applied as a body class at module load
+> (`applyShellClasses(initial.density, initial.accent)`, line 96) before
+> any component renders. The full set — `dawn`, `blue`, `amber`, `violet`,
+> `cyan`, `teal`, `pink`, `magenta`, `orange`, `yellow`, `indigo`, `rose`
+> (`src/stores/settingsStore.ts`'s `ACCENTS` array) — each remaps
+> `--brand`/`--brand-glow`/`--outline` via an `.accent-*` class
+> (`src/index.css:299-316`), user-selectable in Settings › Appearance
+> (`SettingsPage.tsx`'s `ACCENT_SWATCH`) and persisted to `localStorage`.
+> This document was written around the `blue` accent only and was not
+> re-audited against the other eleven for this correction — treat every
+> hex value below as "true for the `blue` accent," not as a repo-wide
+> constant.
 
 > **Naming note:** this document uses Material-style role names
 > (`surface-container-low`, `primary`, …). The implemented custom properties

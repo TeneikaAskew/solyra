@@ -8,7 +8,7 @@
 
 # End-to-End Test Plan — Stocks Trading Platform
 
-**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `f312384b79fb` · **Last scanned:** 2026-09-28 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `df145ccda929` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 > Canonical test strategy for the Obsidian Analyst redesign. Three layers —
 > **frontend E2E (Playwright)**, **backend (pytest)**, and **GCP data/pipeline
@@ -34,7 +34,7 @@
 ## 1. Frontend E2E (Playwright) — primary
 
 **Config:** `playwright.config.ts` — `testDir: ./tests`, 4 projects:
-- **`warmup`**: not run directly — a dependency of `chromium` only. Warms every lazy route against the freshly-booted Vite so the specs' wall-clock budgets measure a warm server, not a cold transform.
+- **`warmup`**: not run directly — a dependency of `chromium` only. Warms the 14 app-shell routes (`tests/routes.warmup.ts`'s `ROUTES`) against the freshly-booted Vite so the specs' wall-clock budgets measure a warm server, not a cold transform. Two lazy routes are outside that list: `/welcome` deliberately (a redirect, no chunk of its own) and `/auth/action` not — it's lazy-loaded (`src/App.tsx`) and not warmed, so `tests/shared/auth-gate.spec.ts`'s `/auth/action` cases still pay for a cold transform.
 - **`chromium`** (default): boots its **own** Vite on the dedicated E2E port (`:5199`, never your `:5173` dev server), all `/api/**` **mocked** per-spec → no backend needed, hermetic, fast.
 - **`iap-setup`** / **`cloud`**: run against the deployed FRONTEND (`solyra-stocks.lovable.app`), not a Cloud Run URL, and **not** behind IAP — the SPA is published separately since #957 and its API is gated per request by a Firebase ID token. `iap-setup` captures a real signed-in session interactively (including Firebase's IndexedDB persistence). `cloud` matches `*.cloud.spec.ts` and **none exist yet**, so it exits `No tests found` rather than running the hermetic specs against production, which would have forced `authMode: 'open'` and measured the mocks. Writing that suite is outstanding work. Both are skipped by the default command.
 
