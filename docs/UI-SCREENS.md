@@ -2140,7 +2140,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/dashboard/brief/{ticker} | bias, reason, rsi, strat_candle, strat_combo, ftfc_score, ftfc_direction, signal_status, daily_indicators, live.price/session (types: `DashboardPage.tsx` BriefResponse; fixture: `tests/helpers/fixtures/dashboard.ts`) | premarket-brief 08:30 ET Mon-Fri → premarket_analysis; fetch-market-data 23:00 ET Mon-Fri → market_data_daily, into which fetch-premarket-refresh 08:20 ET Mon-Fri first inserts today's row without a close | the newest `premarket_analysis` row (`run_kind = 'live'`) and the newest `market_data_daily` row, served as stored with no date floor, so from 08:20 ET until the 23:00 ET fetch the daily row is today's placeholder with no close; `source: 'unavailable'` only when Cloud SQL is not configured, otherwise HTTP 200 with bias `neutral` when a read fails or finds nothing; re-requested every 15s while the market is open in live mode | `briefQ` (`useFetch`) → briefing strip, top setup |
+| GET /api/dashboard/brief/{ticker} | bias, reason, rsi, strat_candle, strat_combo, ftfc_score, ftfc_direction, signal_status, daily_indicators, live.price/session (types: `DashboardPage.tsx` BriefResponse; fixture: `tests/helpers/fixtures/dashboard.ts`) | premarket-brief 08:30 ET Mon-Fri → premarket_analysis; fetch-market-data 23:00 ET Mon-Fri → market_data_daily, into which fetch-premarket-refresh 08:20 ET Mon-Fri first inserts today's row without a close | the newest `premarket_analysis` row (`run_kind = 'live'`) and the newest `market_data_daily` row, served as stored with no date floor, so from 08:20 ET until the 23:00 ET fetch the daily row is today's placeholder with no close; `source: 'unavailable'` only when Cloud SQL is not configured, otherwise HTTP 200, and when both reads fail or find nothing the bias is `neutral` with empty `daily_indicators` (a premarket read that fails alone still returns the daily row's bias, executed 2026-09-30 against the real handler with faked reads); re-requested every 15s while the market is open in live mode | `briefQ` (`useFetch`) → briefing strip, top setup |
 | GET /api/live/quote/{ticker} | price, change, change_pct, open/high/low, volume, prev_close (types: `useLiveQuote.ts` LiveQuote) |  | 15s poll while the tab is open | `useLiveQuote` → briefing strip hero price |
 | GET /api/live/status | is_open, session, next_open, current_time_et (types: `useLiveStatus.ts` LiveStatus) |  | 60s refetch, 30s staleTime | `useLiveStatus` → briefing strip market pill |
 | GET /api/playbook/{ticker} | cards[].name/direction/win_rate/avg_return/conditions/target_pct/stop_pct/horizons, analysis_date, age_days, max_age_days (types: `DashboardPage.tsx` PlaybookResponse) | phase6-playbook 04:30 ET Mon-Fri → playbook_cards | server refuses (503) a card set older than max_age_days; re-polled every 15min in live mode | `playbookQ` (`useFetch`) → top setup |
@@ -2241,14 +2241,20 @@ line). The hero price and the pill have no state of their own: a failed or unans
   `tests/api/test_platform_api.py`); without it `bias` derives from RSI and the price against EMA20
   (`dashboard.py:226-244`, read directly, no test).
 - Given `?date=`, when the handler reads, then both reads are bounded by that date
-  (`test_brief_with_historical_date`, `test_review_brief_returns_correct_date`).
+  (`analysis_date <= :date` and `date <= :date`, `dashboard.py:111,157`, read directly, not asserted):
+  `test_brief_with_historical_date` and `test_review_brief_returns_correct_date` feed a fixed frame
+  through a fake `_query_fn` that ignores the SQL and its parameters and assert only that the response
+  date is at or before the requested date, which holds for that fixture whatever the SQL says
+  (`tests/api/test_platform_api.py`).
 - Given the market is in its regular session and `date` is absent, when the brief is requested,
   then the overlay replaces `close`, `rsi_14`, the EMAs and `stale_days` with live-derived values
   (`dashboard.py:257-331`, read directly; no test runs `_apply_live_overlay`).
 - Given both reads return no row or raise, when the handler answers, then it is HTTP 200 with
   `source: 'cloud_sql'`, `bias: 'neutral'` and `daily_indicators: {}`, and the strip reads
   `Daily bias NEUTRAL` alone (executed 2026-09-30 against the real handler with faked query
-  results, and against the page with that body; no committed test; see Gaps).
+  results, and against the page with that body). The 200 itself is pinned against a dead backend
+  (`Req("GET", f"/api/dashboard/brief/{T}", 200)`, `tests/api/test_route_coverage.py:321`); no
+  committed test asserts the neutral body (see Gaps).
 - Given the newest daily row is the premarket placeholder (production read 2026-09-30 09:26 ET:
   IWM `date` 2026-09-30 with `close`, `rsi_14` and `atr_14` NULL, `updated_at` 12:24 UTC, execution
   `db-query-2s56t`), when the handler answers, then `daily_indicators.close` is null and the strip
@@ -2257,9 +2263,10 @@ line). The hero price and the pill have no state of their own: a failed or unans
 **Tests:** `tests/dashboard/dashboard.spec.ts` (the two presence tests above; the file's `beforeEach`
 serves the brief, quote and status). `tests/api/test_platform_api.py` (`TestDashboardBriefAPI`,
 `TestReviewModeIntegration`, `TestLiveMarketAPI`, `test_live_status`, which asserts only that the
-keys are present); `tests/api/test_route_coverage.py` only proves each route answers with a JSON
-status and no crash. `briefBullets`, the pill, the hero price and the overlay have no test of their
-own, so Te stays unticked.
+keys are present); `tests/api/test_route_coverage.py` pins each route's exact status against a dead
+backend and a JSON content type (`Req.expect`, `:191-194`: the brief at 200, `:321`, the live status
+at 200 and the quote at 503, `:225-226`) and asserts no body. `briefBullets`, the pill, the hero
+price and the overlay have no test of their own, so Te stays unticked.
 
 **Code:** `src/routes/DashboardPage.tsx:194-222,316-327,525-533,559-691`,
 `src/hooks/useLiveStatus.ts`, `src/hooks/useLiveQuote.ts`, `src/hooks/useReviewQuote.ts`,
@@ -2456,12 +2463,16 @@ reads `historical_signals` for the ticker (all `run_kind`s, disclosed on each ro
 holds the Catalysts card; DASHBOARD-17 for no rows.
 
 **Acceptance criteria:**
-- Given the ticker has signals, when the handler answers, then the newest rows come back ascending
-  with the count, direction and end-date filters honoured (`test_signals_live`,
-  `test_signals_with_direction_filter`, `test_signals_end_date_filter`,
-  `test_signals_end_date_and_time_filter`, `test_signals_empty_for_old_date`,
-  `tests/api/test_platform_api.py`); a Cloud SQL failure is a 503, not the parquet
-  (`TestSignalsAPIFailsLoud`).
+- Given the ticker has signals, when the handler answers, then the response carries the ticker's
+  `count`, `source: 'cloud_sql'` and the rows with `time` stringified and `ticker` set
+  (`test_signals_live`, `tests/api/test_platform_api.py`); given a count of zero, then it answers
+  `signals: []` and never runs the rows query (`test_signals_empty_for_old_date`, `calls["n"] == 1`);
+  a Cloud SQL failure is a 503, not the parquet (`TestSignalsAPIFailsLoud`). The newest-N read
+  (`signals.py:206-207`), the ascending order (`ORDER BY time ASC`, `signals.py:209`) and the
+  direction and end-date filters (`signals.py:165-174`) are in the SQL and read directly: the class
+  returns pre-filtered mock rows (`_patch_query`), so `test_signals_with_direction_filter`,
+  `test_signals_end_date_filter` and `test_signals_end_date_and_time_filter` assert only that the
+  envelope passes those rows through, and no test asserts the filters or the order.
 - Given a signal with `return_pct` 0.5, when the table renders, then the Return cell reads
   `+50.00%`; given `null`, it reads `+0.00%` in green (executed 2026-09-30 in the page; see Gaps:
   the column stores percentage points, so a 0.5 reading is +0.5%).
@@ -2598,7 +2609,10 @@ reads the same `No insight report for IWM` line (executed 2026-09-30; see Gaps).
   (`tests/api/test_route_coverage.py`, `GET /api/insights/report/{T}`; the fuller
   `tests/lib/test_routers_insights_admin.py` skips without a test Postgres).
 - Given `as_of`, when the handler reads, then it never returns a report after the cutoff
-  (`_fetch_latest_report`, `insights.py:204-250`, read directly; no test on the Dashboard path).
+  (`_fetch_latest_report`, `insights.py:204-250`; asserted by
+  `test_get_insight_report_as_of_includes_same_day_morning_report` in
+  `tests/lib/test_routers_insights_admin.py`, which finds the same-day report and none for an earlier
+  cutoff, but that module skips without a test Postgres).
 - Given production on 2026-09-30, then IWM, SPY and QQQ each have a live report from 12:55 UTC
   (08:55 ET), 123, 113 and 117 live rows (see the V-gate evidence comment).
 
@@ -2614,10 +2628,10 @@ reads the same `No insight report for IWM` line (executed 2026-09-30; see Gaps).
 `news-card`), headed `News` with `<n> fresh` (n at most 4). `newsFeed` (`:508-511`) is the first
 four events of the same date-ascending list that feeds the Catalysts card whose `source` is
 `AV news`. Each row shows the title, `<ticker> · <source> · <today | yesterday | Mon D>` (day
-granularity only, `relativeDayLabel`, `:172-185`, computed in ET) and a pill with the sentiment
-label coloured by score (above 0.15 green, below -0.15 red, else neutral, a missing score counted as
-0, `:924-925`). With none it shows `No tagged news right now.` The whole card is clickable to
-`/catalysts`.
+granularity only, `relativeDayLabel`, `:172-185`, computed in ET) and, only when the row has a
+non-empty `sentiment_label` (`:936`), a pill with that label coloured by score (above 0.15 green,
+below -0.15 red, else neutral, a missing score counted as 0, `:924-925`). With none it shows
+`No tagged news right now.` The whole card is clickable to `/catalysts`.
 
 **Needs:** the same `GET /api/catalysts/events` request as DASHBOARD-06; the `AV news` rows are the
 handler's `news_sentiment` read (`catalysts.py:101-124,353-410`: relevance 0.7 or more, seven
@@ -2697,16 +2711,23 @@ three requests, no badge; see Gaps). Field-level `UNAVAILABLE` shows the em dash
   the size light, ATR label, risk hint, options idea and size calculator follow their thresholds
   (`MovementRead.test.tsx`, `expectedMove.test.ts`).
 - Given the endpoint, then a flag off is a 404, a bad ticker or `30m` a 400, the assembler output is
-  passed through unchanged, a NaN close degrades levels to `UNAVAILABLE` and a backend outage is a
-  503 (`tests/api/test_movement_statement_router.py`, 22 tests: 144 passed together with
+  passed through unchanged and a NaN close degrades levels to `UNAVAILABLE`
+  (`tests/api/test_movement_statement_router.py`, 22 tests: 144 passed together with
   `tests/api/test_route_coverage.py`, and the module skips when it runs alone; its NaN-close test
-  fails when selected with `-k`, stocks#1225). The assembler's own tests
-  (`tests/lib/test_movement_statement.py`) fail alone in this sandbox (41 of 65, no lightgbm) and pass
-  after `tests/api/test_route_coverage.py` has run (187 passed together); both executed 2026-09-30.
+  fails when selected with `-k`, stocks#1225). That file asserts no 503:
+  `test_level_map_propagates_a_backend_outage` checks only that the level-map builder re-raises a
+  driver error. With the flag on and `get_engine` failing, a backend outage is a 503 and an internal
+  defect a 500 (`tests/api/test_route_coverage.py`:
+  `test_the_feature_gated_handlers_survive_a_backend_outage`, `:1234`, and
+  `test_an_internal_defect_is_not_reported_as_an_outage`). The
+  assembler's own tests (`tests/lib/test_movement_statement.py`) fail alone in this sandbox (41 of 65,
+  no lightgbm) and pass after `tests/api/test_route_coverage.py` has run (187 passed together); all of
+  these executed 2026-09-30.
 - Given production on 2026-09-30, then the flag is on for both services, IWM has 15m magnitude
-  predictions to 19:45 UTC on 09-29, `strat_features_15m` and its levels table to the same bar, and
-  the served IWM, SPY and QQQ 15m models list `vix_close` and `vix_tercile_*` as features (see the
-  V-gate evidence comment).
+  predictions to 19:45 UTC on 09-29, `strat_features_15m` and its levels table to the same bar (see
+  the V-gate evidence comment), and the served IWM, SPY and QQQ 15m models list `vix_close` and
+  `vix_tercile_*` as features (`features.txt` read from GCS, see the
+  [follow-up comment](https://github.com/TeneikaAskew/stocks/issues/1234#issuecomment-5914245540)).
 
 **Tests:** the files named above. The FE layer (Playwright on main, Vitest), the handler and the
 assembler each assert the row's behaviour with real assertions.
@@ -2819,11 +2840,12 @@ name `Refresh`).
 
 **Shows or does:** A two-button segmented control, `Candles` and `Area`, in the header of the
 intraday card (`DashboardPage.tsx:739-742`, classes `segctrl` and `active`). `chartStyle` starts from
-`localStorage` key `overview-chart` (`area` gives Area, anything else or an unreadable store gives
-Candles, `:282-284`); `pickChart` sets the state and writes the key (`candle` or `area`,
-`:285-288`). A storage failure is caught and the choice then lasts only until the next reload, with
-no message. The control exists only while the intraday card is mounted (DASHBOARD-04). Switching does
-not request bars again: both styles read the same `hourlyQ` response.
+`localStorage` key `overview-chart` (`area` gives Area; a missing `localStorage` or any other value
+gives Candles, `:282-284`; the read has no `try`/`catch`, so a storage that throws on access throws
+out of the initializer, see Gaps); `pickChart` sets the state and writes the key (`candle` or `area`,
+`:285-288`). A failing write is caught (`:287`) and the choice then lasts only until the next
+reload, with no message. The control exists only while the intraday card is mounted (DASHBOARD-04).
+Switching does not request bars again: both styles read the same `hourlyQ` response.
 
 **Needs:** browser storage only.
 
@@ -2955,16 +2977,26 @@ sector and news cards are live.
 - Given a prior close, then the review quote's change is against it; given none, then change and
   change percent are null and never rebased on the open; given no bars, then no quote
   (`buildReviewQuote`, `src/routes/reviewQuote.test.ts`).
-- Given `date`, then the brief handler bounds both reads by it, the signals handler honours
-  `end_date` and `end_time`, the playbook age is judged against the requested date, and the report
-  never comes from after the cutoff (`test_brief_with_historical_date`, `test_review_brief_returns_correct_date`,
-  `test_signals_end_date_and_time_filter`, `test_playbook_as_of_is_judged_against_the_requested_date`;
-  the `as_of` bound of the report is read in `insights.py:204-250`, no test).
+- Given `date`, then the brief handler bounds both reads by it (`dashboard.py:111,157`), the signals
+  handler honours `end_date` and `end_time` (`signals.py:171-174`), the playbook age is judged
+  against the requested date, and the report never comes from after the cutoff. The playbook age is
+  asserted (`test_playbook_as_of_is_judged_against_the_requested_date`: a set 2 days old is served
+  for 2026-06-15 and one 80 days old is refused as of 2026-09-01), and so is the report bound
+  (`insights.py:204-250`; `test_get_insight_report_as_of_includes_same_day_morning_report` in
+  `tests/lib/test_routers_insights_admin.py`, whose module skips without a test Postgres). The brief
+  bound and the signals filter are read directly, not asserted: `test_brief_with_historical_date` and
+  `test_review_brief_returns_correct_date` feed a fixed frame through a fake `_query_fn` that ignores
+  the SQL and assert only that the response date is at or before the requested date, and
+  `test_signals_end_date_and_time_filter` returns pre-filtered mock rows and asserts only that they
+  come back.
 - Given Refresh or a reload, then review mode is gone (see DASHBOARD-11).
 
-**Tests:** the Vitest files and pytest tests above cover the helpers and the handlers. No test
-drives the Dashboard through the Replay control, so the page-level wiring is unasserted and Te stays
-unticked.
+**Tests:** the Vitest files above cover the helpers (`reviewCutoffTs`, `buildReviewQuote`),
+`test_playbook_as_of_is_judged_against_the_requested_date` the playbook age and, in a module that
+skips without a test Postgres, `test_get_insight_report_as_of_includes_same_day_morning_report` the
+report bound; the brief and signals date bounds are read, not asserted (see the criteria above). No
+test drives the Dashboard through the Replay control, so the page-level wiring is unasserted and Te
+stays unticked.
 
 **Code:** `src/components/shared/ReplayControl.tsx`, `src/stores/reviewDateStore.ts`,
 `src/hooks/useReviewQuote.ts`, `src/lib/reviewQuote.ts`,
@@ -3128,7 +3160,7 @@ not shown, and the strip's `· <date> close` is the only age cue for the daily r
 
 **Shows or does:** When a wrapped query fails with a message containing `401` or `unauthor`
 (`isAuthError`, `src/components/shared/WidgetState.tsx:75-78`), the card body is replaced by
-`SignInEmptyState` (`src/components/shared/SignInEmptyState.tsx:13-59`): a lock icon, `Sign in to load
+`SignInEmptyState` (`src/components/shared/SignInEmptyState.tsx:12-51`): a lock icon, `Sign in to load
 data`, a sentence saying the session has expired or the user is signed out (omitted in the compact
 cards), a `Sign in` button that reloads the document so the auth gate can show the sign-in screen, and a
 `Retry` link that refetches. `responseErrorMessage` keeps the status in the message (`Not authenticated
@@ -3163,7 +3195,7 @@ state, so Te stays unticked.
 
 **Code:** `src/components/shared/WidgetState.tsx:75-78,93-115`,
 `src/components/shared/SignInEmptyState.tsx`, `src/lib/authGate.ts:45`, `src/lib/format.ts:98-109`,
-`src/routes/DashboardPage.tsx:290-296,560,694,734,767,832`.
+`src/routes/DashboardPage.tsx:368,560,694,732,734,767,832`.
 
 ### SCREEN-LIVEMARKET — `/live`
 
