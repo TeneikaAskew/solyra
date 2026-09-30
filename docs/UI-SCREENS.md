@@ -3232,10 +3232,10 @@ state, so Te stays unticked.
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/live/status | session, current_time_et (types: `useLiveStatus.ts` LiveStatus; `is_open` and `next_open` are fetched and not read; fixture: `MOCK_LIVE_STATUS` in `src/mocks/common.ts`) | computed on each request from the Eastern clock and `MARKET_HOLIDAYS_2026` (`live.py:104-186`); no table, no job | 60s refetch, 30s staleTime, whatever Live, Paused or review mode say; a pending or failed request reads `Market Closed`; gated, 401 without a token | `useLiveStatus` → session bar |
-| GET /api/live/quote/{ticker} | price, change, change_pct, open, high, low, prev_close, volume (types: `useLiveQuote.ts` LiveQuote; `last_updated`, `market_session` and `market_open` are not read; fixture: `tests/helpers/fixtures/live.ts`) | AlphaVantage GLOBAL_QUOTE, called on each request; no table, no job; 503 without `AV_API_KEY` (secret `av-api-key`) | 15s poll (10s staleTime) while `livePolling`, in every session | `useLiveQuote` → quote card, `Updated:` |
-| GET /api/live/history/{ticker} | bars[] time/open/high/low/close/volume (types: `useLiveHistory.ts` LiveHistory; `count`, `interval` and the session flags are not read) | AlphaVantage TIME_SERIES_INTRADAY 1min compact (the last 100 bars), called on each request; a bar that fails to parse is dropped | 60s poll (30s staleTime) while `livePolling` | `useLiveHistory` → indicator tiles, setup cards |
-| GET /api/live/avg-volume/{ticker} | avg_volume_20d (types: `useLiveHistory.ts` AvgVolume; `sample_size`, `last_date` and `source` are not read) | the newest 20 `market_data_daily` rows with a volume, at least 5, ← fetch-market-data 23:00 ET Mon-Fri and fetch-earnings-history 19:15 ET Mon-Fri and Sun; AlphaVantage TIME_SERIES_DAILY when Cloud SQL is not configured, fails or has fewer than 5 rows | 1h staleTime, asked in live and review mode; no date bound, so review mode uses the latest 20 sessions; production 2026-09-30: 20 rows to 2026-09-29 for IWM, SPY and QQQ | `useAvgVolume` → the RVOL condition of the setup cards |
+| GET /api/live/status | session, current_time_et (types: `useLiveStatus.ts` LiveStatus; `is_open` and `next_open` are fetched and not read; fixture: `MOCK_LIVE_STATUS` in `src/mocks/common.ts`) | computed on each request from the Eastern clock and `MARKET_HOLIDAYS_2026` (`live.py:104-186`); no table, no job | 60s refetch (a visible tab only), 30s staleTime, whatever Live, Paused or review mode say; a pending or failed request reads `Market Closed`; gated, 401 without a token | `useLiveStatus` → session bar |
+| GET /api/live/quote/{ticker} | price, change, change_pct, open, high, low, prev_close, volume (types: `useLiveQuote.ts` LiveQuote; `last_updated`, `market_session` and `market_open` are not read; fixture: `tests/helpers/fixtures/live.ts`) | AlphaVantage GLOBAL_QUOTE, called on each request; no table, no job; 503 without `AV_API_KEY` (secret `av-api-key`) | 15s poll (a visible tab only, 10s staleTime) while `livePolling`, in every session | `useLiveQuote` → quote card, `Updated:` |
+| GET /api/live/history/{ticker} | bars[] time/open/high/low/close/volume (types: `useLiveHistory.ts` LiveHistory; `count`, `interval` and the session flags are not read) | AlphaVantage TIME_SERIES_INTRADAY 1min compact (the last 100 bars), called on each request; a bar that fails to parse is dropped | 60s poll (a visible tab only, 30s staleTime) while `livePolling` | `useLiveHistory` → indicator tiles, setup cards |
+| GET /api/live/avg-volume/{ticker} | avg_volume_20d (types: `useLiveHistory.ts` AvgVolume; `sample_size`, `last_date` and `source` are not read) | the newest 20 `market_data_daily` rows with a volume, at least 5, ← fetch-market-data 23:00 ET Mon-Fri and fetch-earnings-history 19:15 ET Mon-Fri and Sun; AlphaVantage TIME_SERIES_DAILY when Cloud SQL is not configured, fails or has fewer than 5 rows | 1h staleTime and no refetch interval (asked on mount, then on a later mount, window focus or reconnect once stale), in live and review mode; no date bound, so review mode uses the latest 20 sessions; production 2026-09-30: 20 rows to 2026-09-29 for IWM, SPY and QQQ | `useAvgVolume` → the RVOL condition of the setup cards |
 | POST /api/live/indicators | request: bars, current_price, current_volume, avg_volume_20d; read: indicators ema9/ema20/ema50/rsi/stochK/atr and signals.call/put (types: `useLiveIndicators.ts` IndicatorsResponse; `vwap`, `stochD`, `stochKPrev` and `chart_voter` are not read) | computed on each request by `lib/indicators.py` and `_build_signals` from the bars in the request; no table | 10s staleTime, keyed on bar count, last bar time, price, volume and avg-volume; asked only with at least one bar; not polled | `useLiveIndicators` → indicator tiles, setup cards |
 | GET /api/market/data/{ticker}/{date}?timeframe=1 | candlestick[] time/open/high/low/close, volume[].value (types: `LiveMarketPage.tsx` HistoricalData; fixture: `MOCK_MARKET_DATA` in `src/mocks/live.ts`) | `market_data_intraday` ← fetch-market-data 23:00 ET Mon-Fri and fetch-alphavantage-intraday 21:00 ET Mon-Sat | review mode only; `{date}` is the review day YYYYMMDD; 1h staleTime; the whole day, extended hours included, is returned and cut in the browser; a Cloud SQL failure falls through to the GCS parquet files with no signal | `useHistoricalDay` (in `LiveMarketPage.tsx`) → review-mode bars and quote |
 | GET /api/market/reference/{ticker}/{date} | close, the prior session's close (types: `useMarketData.ts` ReferenceLevels; `open`, `high`, `low`, `source`, `stale_days` and `week` are not read) | AlphaVantage TIME_SERIES_DAILY for dates under 30 days old, then `market_data_daily` ← fetch-market-data 23:00 ET Mon-Fri | review mode only; staleTime Infinity; a non-OK answer becomes null and is kept | `useReferenceLevels` → review-mode prior close |
@@ -3262,10 +3262,10 @@ state, so Te stays unticked.
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
 | LIVE-09 | loading | present | `LiveMarketPage.tsx` shows "Fetching live quote…" and "Loading historical bars for indicators…" (or the review-date variant) while the first quote and bars resolve, and keeps showing them when those requests fail; there is no skeleton. |
-| LIVE-10 | empty | present | `EMPTY_INDICATORS`/`EMPTY_SIGNALS` (`src/lib/indicators.ts`) render tiles as `--` and setup cards as `0/0 met` until the indicators response arrives, and when it fails; the quote slot is empty while Paused with no quote. |
+| LIVE-10 | empty | present | `EMPTY_INDICATORS`/`EMPTY_SIGNALS` (`src/lib/indicators.ts`) render tiles as `--` and setup cards as `0/0 met` until the indicators response arrives (in review mode, until the day's bars arrive), and when it fails; the quote slot is empty while Paused with no quote. |
 | LIVE-11 | error | present | The `quoteError` banner renders on any non-OK quote status, with one text for every status, and replaces the last good quote on a failed poll. |
 | LIVE-12 | stale | present | An "Updated:" timestamp reads the quote query's `dataUpdatedAt` in the viewer's local time with no zone; the quote's own `last_updated` is not shown. In review mode a "Historical:" label replaces the session label in the session bar and "Updated:" stays. |
-| LIVE-13 | permission | not tracked (new category); present | `SignInEmptyState`'s `DataGate` replaces everything below the toolbar with "Sign in to load data" only when a gated call has answered 401 and the user is signed out; no path was found on which that happens on this route, and a 401 while signed in shows the quote box instead. |
+| LIVE-13 | permission | not tracked (new category); present | `SignInEmptyState`'s `DataGate` replaces everything below the toolbar with "Sign in to load data" only when a gated call has answered 401 and the user is signed out; no path was found on which that happens on this route, and a 401 while signed in shows the quote box instead, and a 401 on the status route or on a review route changes only that row's display (`Market Closed`, the review loading lines). |
 
 #### Journeys
 1. Watch for a setup to fire: Opens /live during the session (LIVE-01) → Confirms the session bar reads Market Open (LIVE-01) → Leaves polling on (15s) (LIVE-05) → Enables Sound (LIVE-06) → A card reaches 7 of its 10 conditions (70%), its SIGNAL badge pulses and a tone sounds, 880Hz for CALL and 440Hz for PUT (LIVE-04, LIVE-06)
@@ -3284,8 +3284,9 @@ filled dot, one label, and the Eastern clock. In live mode the label is
 `to12h(current_time_et)` and ` ET` (`:267-269`, for example `8:00:00 PM ET`), shown only once a
 status has arrived and never in review mode. In review mode the dot is amber and the label reads
 `Historical: <date>` and, when a time is set, ` @ <HH:MM> ET`, with no clock (`:261-266`, LIVE-08).
-The status is requested every 60 s with a 30 s stale time whatever the Live or Paused toggle says,
-and in review mode too (`src/hooks/useLiveStatus.ts:12-23`).
+The status is requested every 60 s while the tab is visible (see LIVE-02), with a 30 s stale time,
+whatever the Live or Paused toggle says, and in review mode too
+(`src/hooks/useLiveStatus.ts:12-23`).
 
 **Needs:** `GET /api/live/status` (`platform/api/routers/live.py:174-186`, a plain `def`). It reads
 the container clock in Eastern time and answers `is_open`, `session`, `next_open` and
@@ -3347,9 +3348,14 @@ type, the change as a signed amount and a signed percentage with two decimals an
 numbers when `change` or `change_pct` is null), then `Open`, `High` (green), `Prev` (an em-dash when
 null) and `Low` (red), then `Vol:` in millions with two decimals. In live mode the data is the quote
 query's (`:162`); in review mode it is the synthetic quote of LIVE-08 (`:197-205`). The page never
-shows the quote's `last_updated`, `market_session` or `market_open`. The quote is requested every 15
-s with a 10 s stale time while `livePolling` (LIVE-05), in every session, closed ones included
-(`src/hooks/useLiveQuote.ts:22-34`).
+shows the quote's `last_updated`, `market_session` or `market_open`. While `livePolling` (LIVE-05)
+the quote is requested every 15 s with a 10 s stale time, in every session, closed ones included,
+but only while the tab is visible: TanStack Query skips an interval fetch while the document is
+hidden, and `refetchIntervalInBackground` is unset (`src/hooks/useLiveQuote.ts:22-34`,
+`src/App.tsx:30-37`; `@tanstack/query-core` 5.102.8, `queryObserver.js:163` and
+`focusManager.js:48-51`). Executed 2026-09-30 with a fake clock and `document.visibilityState`
+forced to `hidden`: over 120 s of clock no quote, history or status request went out, and with the
+document visible they resumed.
 
 **Needs:** `GET /api/live/quote/{ticker}` (`platform/api/routers/live.py:189-312`), which calls
 AlphaVantage `GLOBAL_QUOTE` on every request and reads no table. It answers 503 without `AV_API_KEY`
@@ -3397,8 +3403,8 @@ quote), LIVE-11 (the amber box replaces the card on any failure), LIVE-12 (`Upda
 no body. `tests/lib/test_silent_fallback_fixes.py` covers the schema. Playwright `renders live price
 quote` asserts `getByText(/220\.45/)` is visible and nothing else of the card: on main the change,
 the OHLC, the volume and the em-dash are asserted by no test (the review-mode test added on this
-branch asserts the change, `Prev`, `Open` and `Vol` of the synthetic quote, LIVE-08), so Te stays
-unticked.
+branch asserts the price, change, `Prev`, `Open` and `Vol` of the synthetic quote, LIVE-08), so Te
+stays unticked.
 
 **Code:** `src/routes/LiveMarketPage.tsx:28,162,197-205,297-349`, `src/hooks/useLiveQuote.ts`,
 `platform/api/routers/live.py:189-312`, `platform/api/schemas.py:59-86`; no test id.
@@ -3422,10 +3428,10 @@ each calendar date of the bar times; `_last` returns the final value, or null fo
 (`:498-504,554-590`). The bars are the last 100 one-minute bars of `GET /api/live/history/{ticker}`
 (`:315-382`, AlphaVantage `TIME_SERIES_INTRADAY`, sorted ascending, a bar that fails to parse
 dropped without a count) in live mode (`src/hooks/useLiveHistory.ts:13-25`, every 60 s while
-`livePolling`), and the review-day bars cut at the review time in review mode (LIVE-08). The
-indicators request is asked only while there is at least one bar and is keyed on the bar count, the
-last bar time, the price, the volume and the average volume with a 10 s stale time, so it is asked
-again whenever a new bar or price arrives and is never polled
+`livePolling` and the tab is visible), and the review-day bars cut at the review time in review mode
+(LIVE-08). The indicators request is asked only while there is at least one bar and is keyed on the
+bar count, the last bar time, the price, the volume and the average volume with a 10 s stale time,
+so it is asked again whenever a new bar or price arrives and is never polled
 (`src/hooks/useLiveIndicators.ts:26-50`). Both routes are gated: 401 on staging without a token
 (V-gate evidence).
 
@@ -3488,11 +3494,12 @@ missing or the average is not above zero (`:592-596`). Until the indicators answ
 (`platform/api/routers/live.py:385-477`): the newest 20 `market_data_daily` rows with a volume, at
 least five of them, averaged (`:395-426`), else AlphaVantage `TIME_SERIES_DAILY` when Cloud SQL is
 not configured, fails or has fewer than five rows, with the source in the response and the fallback
-silent (`:428-477`, see Gaps). It is asked once an hour (`useAvgVolume`, 3,600,000 ms stale time,
-`src/hooks/useLiveHistory.ts:35-46`) and in review mode too. Production 2026-09-30: IWM, SPY and QQQ
-each give 20 rows from 2026-09-01 to 2026-09-29, none from the one-minute fallback, with averages of
-23.16 million, 43.95 million and 33.28 million shares (V-gate evidence, statement 2); today's row is
-the placeholder with no volume, which the query skips.
+silent (`:428-477`, see Gaps). It is asked when the page mounts and, having no `refetchInterval`,
+again only on a later mount, window focus or reconnect once its 3,600,000 ms stale time has passed
+(`useAvgVolume`, `src/hooks/useLiveHistory.ts:35-46`), in review mode too. Production 2026-09-30:
+IWM, SPY and QQQ each give 20 rows from 2026-09-01 to 2026-09-29, none from the one-minute fallback,
+with averages of 23.16 million, 43.95 million and 33.28 million shares (V-gate evidence, statement
+2); today's row is the placeholder with no volume, which the query skips.
 
 **States:** LIVE-09 and LIVE-10, LIVE-13. A failed avg-volume request shows nothing: the indicators
 request then carries `avg_volume_20d: null` and the RVOL rows read `--` and unmet (the body sent was
@@ -3519,9 +3526,13 @@ voter's own tests (`tests/lib/test_chart_voter.py`). `tests/api/test_live_chart_
 that the `signals` key is present and nothing in it; the two `/api/live/indicators` tests of
 `tests/api/test_live_signal_series.py` assert VWAP sessions and the 422;
 `tests/api/test_platform_api.py` covers quote and history; avg-volume has no test beyond its row in
-`tests/api/test_route_coverage.py` (503 with no key and no database). No solyra test on main renders
-a setup card (the Sound test added on this branch asserts only that the `SIGNAL` badge shows,
-LIVE-06), so Te stays unticked.
+`tests/api/test_route_coverage.py` (503 with no key and no database). No solyra test on main asserts
+a setup card: the four tests of `live-market.spec.ts` on main and the route loop of
+`navigation.spec.ts` (through `mockAllPages`, `tests/helpers/fixtures/all.ts:50`) mount the page
+with `MOCK_LIVE_INDICATORS` (the CALL setup fired, `src/mocks/live.ts:199-246`, served by
+`mockLiveApi`, `tests/helpers/fixtures/live.ts:62,67`), so both cards render in each, but none reads
+one (the Sound test added on this branch asserts only that the `SIGNAL` badge shows, LIVE-06), so Te
+stays unticked.
 
 **Code:** `src/routes/LiveMarketPage.tsx:49-137,219,376-390`, `src/hooks/useLiveHistory.ts:35-46`,
 `platform/api/routers/live.py:385-477,498-524,592-596,680-722`; no test id.
@@ -3549,14 +3560,15 @@ Leaving review mode returns the button to what it held before, since review mode
 executed 2026-09-30), LIVE-09 (`Fetching live quote…` shows only while `polling`, `:344`).
 
 **Acceptance criteria:**
-- Given Live, when 60 s pass, then the quote is requested again (15 s interval) and the history is
-  requested again (60 s interval) (`the Live (15s) toggle pauses the quote and history polling and
-  resumes it`, new test).
+- Given Live, when 60 s of clock pass, then at least one more quote request and one more history
+  request have gone out (`the Live (15s) toggle pauses the quote and history polling and resumes
+  it`, new test, which asserts the second request of each within the 60 s and not the 15 s and 60 s
+  intervals themselves).
 - Given Live, when the button is pressed, then it reads `Paused`, the icon stops spinning and, over
   a further 120 s, neither the quote nor the history is requested again while the session status
   still refetches, and the last quote, `$220.45`, stays on screen (same test).
 - Given Paused, when the button is pressed, then it reads `Live (15s)` and the quote and history are
-  requested again at once (same test).
+  requested again without the fake clock advancing (same test).
 - Given review mode, then the button reads `Historical`, is disabled and no live request is made
   (LIVE-08, `review mode rebuilds the quote from that day's bars up to the chosen time and stops the
   live polling`, new test).
@@ -3601,10 +3613,10 @@ calls `resume()` and the page says nothing (read directly, not executed).
 **States:** LIVE-04 for what fires; none of its own.
 
 **Acceptance criteria:**
-- Given Sound is off and the CALL setup is firing, when the page loads, then no tone plays, no audio
-  context is created and there is no `Last signal` line (`Sound is silent until enabled, then a
-  firing CALL sounds 880 Hz and a firing PUT 440 Hz`, new test; the context count of 0 executed
-  2026-09-30).
+- Given Sound is off and the CALL setup is firing, when the page loads, then no tone plays and there
+  is no `Last signal` line (`Sound is silent until enabled, then a firing CALL sounds 880 Hz and a
+  firing PUT 440 Hz`, new test), and no audio context is created (executed 2026-09-30 with a
+  counting stub: the test's own recording stub counts tones, not contexts).
 - Given the CALL setup is firing, when Sound is pressed, then one 880 Hz tone plays and `Last
   signal: CALL at <time>` shows (same test).
 - Given the next quote carries another price and only the PUT setup fires, then one 440 Hz tone
@@ -3617,10 +3629,10 @@ calls `resume()` and the page says nothing (read directly, not executed).
 - Given review mode, then no tone (`:223`, read directly; no test).
 
 **Tests:** The new Playwright test above (`tests/live-market/live-market.spec.ts`, solyra commit
-0e9ab73) asserts the first three criteria and nothing about the two-minute rule, the both-fired
-rule, review-mode silence or the persistence of the `Last signal` line. It was added on this branch,
-so no test on main touches the control, and Te stays unticked: it waits for a CI run that includes
-the branch's tests.
+0e9ab73) asserts the tones and the `Last signal` line of the first three criteria and nothing about
+the audio context count, the two-minute rule, the both-fired rule, review-mode silence or the
+persistence of the `Last signal` line. It was added on this branch, so no test on main touches the
+control, and Te stays unticked: it waits for a CI run that includes the branch's tests.
 
 **Code:** `src/routes/LiveMarketPage.tsx:153,155-157,221-241,286-294,392-400,406-417`; no test id
 (the test finds the button by role and name).
@@ -3734,9 +3746,11 @@ has them; a day with no bars, or a failed request, keeps the loading lines on sc
   (`test_a_single_date_load_excludes_the_prior_sessions_spill`, which calls `_load_date_data` and
   not the route).
 - Given a date under 30 days old, then the prior day comes from AlphaVantage
-  (`test_reference_recent_uses_alphavantage`); given an old date, then from Cloud SQL
-  (`test_reference_historical_uses_cloud_sql`); and given the old review date, then the row returned
-  is dated before it (`test_reference_returns_prev_day`, `test_reference_for_review_date`).
+  (`test_reference_recent_uses_alphavantage`); given an old date, then from Cloud SQL and dated
+  before it (`test_reference_historical_uses_cloud_sql`, which asserts the source `cloud_sql` and a
+  date below the requested one); given the old review date, then a row dated before it
+  (`test_reference_for_review_date`); and given an old date, then a row that is not the requested
+  date (`test_reference_returns_prev_day`, which asserts `!=` only).
 
 **Tests:** Vitest covers the two pure helpers and pytest the routes, as above;
 `tests/api/test_route_coverage.py` pins both routes at 404 against a dead backend and asserts no
@@ -3780,8 +3794,11 @@ own.
   query's one retry would have run (executed 2026-09-30 with a 404).
 - Given Paused and no quote, then `Fetching live quote…` is absent (LIVE-10).
 
-**Tests:** None. No test holds a request to observe either line and none asserts their text, so Te
-stays unticked.
+**Tests:** None. No test asserts either line: none holds a request to observe them, and the first
+test of `tests/shared/most-active-bar.spec.ts` (`renders on /journal and on a Market page with a
+spark ticker and a no-spark ticker`) mounts this page with a history of no bars, which leaves
+`Loading historical bars for indicators…` on screen (executed 2026-09-30 with that test's mocks)
+while it asserts only the marquee. Te stays unticked.
 
 **Code:** `src/routes/LiveMarketPage.tsx:344-348,370-374`; no test id.
 
@@ -3792,12 +3809,15 @@ for the indicators answer until one exists (`src/routes/LiveMarketPage.tsx:218-2
 read `--` and both cards read `0/0 met` with a `0%` strength bar and no condition rows. They stand
 in for a failed indicators request as well, with no error text anywhere on the page (executed
 2026-09-30 with a 500 and the bars and the quote in hand; filed as
-[solyra#75](https://github.com/TeneikaAskew/solyra/issues/75)). The quote slot is empty, with no
-message, while Paused and no quote has arrived (`:344-349`, executed 2026-09-30 with the quote
-request held). The server never gives the page an empty set: the history route raises 404 or 503 for
-an empty series (`platform/api/routers/live.py:352-358`), and a response with `bars: []` happens
-only when every bar failed to parse (`:360-373`), which the page reads as loading. There is no empty
-state for a ticker without data: a quote failure reads as LIVE-11 and a history failure as LIVE-09.
+[solyra#75](https://github.com/TeneikaAskew/solyra/issues/75)). In review mode they stay until the
+day's bars arrive, because the indicators query is enabled only with at least one bar (`:216`;
+executed 2026-09-30 with the day's route answering 401: `--` tiles and `0/0 met` cards beside
+`Loading <date> intraday bars…`). The quote slot is empty, with no message, while Paused and no
+quote has arrived (`:344-349`, executed 2026-09-30 with the quote request held). The server never
+gives the page an empty set: the history route raises 404 or 503 for an empty series
+(`platform/api/routers/live.py:352-358`), and a response with `bars: []` happens only when every bar
+failed to parse (`:360-373`), which the page reads as loading. There is no empty state for a ticker
+without data: a quote failure reads as LIVE-11 and a history failure as LIVE-09.
 
 **Needs:** The indicators request of LIVE-03; none of its own.
 
@@ -3809,8 +3829,13 @@ state for a ticker without data: a quote failure reads as LIVE-11 and a history 
   (executed 2026-09-30).
 - Given Paused before the first quote answers, then the quote slot is empty (executed 2026-09-30).
 - Given no bars, then the indicators query is not enabled (`:216`, read directly).
+- Given review mode and the day's bars not yet arrived or failed, then the tiles read `--` and the
+  cards `0/0 met` (executed 2026-09-30 with the day's route answering 401).
 
-**Tests:** None: no test renders the empty tiles or cards, so Te stays unticked.
+**Tests:** None: no test asserts the empty tiles or cards. The same test of
+`tests/shared/most-active-bar.spec.ts` leaves the six tiles at `--` and both cards at `0/0 met`,
+with no indicators request, and asserts only the marquee (executed 2026-09-30 with that test's
+mocks), so Te stays unticked.
 
 **Code:** `src/routes/LiveMarketPage.tsx:216-219,344-349`, `src/lib/indicators.ts:50-65`; no test
 id.
@@ -3909,7 +3934,14 @@ the Firebase state in firebase mode and always true in `iap` and `open` mode
 shows the sign-in screen instead, so no path was found on which the sign-in card renders on `/live`
 (executed 2026-09-30: a 401 on the quote in open mode left the body and the LIVE-11 box in place and
 `Sign in to load data` appeared only in the shell's most-active bar; the branch table of `DataGate`
-executed with a scratch Vitest render). The page has no `SignInBanner`.
+executed with a scratch Vitest render). A 401 on one route changes only what that route feeds
+(executed 2026-09-30 in open mode, the other routes answering): a 401 on the status route leaves the
+session bar reading `Market Closed` with a red dot and no clock (LIVE-01); in review mode a 401 on
+the market-data route leaves `Fetching live quote…`, `Loading <date> intraday bars…`, `--` tiles and
+`0/0 met` cards (LIVE-08, LIVE-09, LIVE-10), and a 401 on the reference route leaves the price with
+an em-dash for the change and for `Prev` (LIVE-08); none of them puts a sign-in prompt in the page,
+although the shell's most-active bar, outside it, read `Sign in to load data` after the status and
+market-data 401s and not after the reference one. The page has no `SignInBanner`.
 
 **Needs:** The 401 of a gated route (`platform/api/auth.py:180-185,208`, where `/api/live/*` is not
 among the open paths); every route this page calls answers 401 without a token on staging (V-gate
@@ -3937,8 +3969,8 @@ evidence).
 
 **Tests:** `src/lib/authedFetch.test.ts` (`a 401 from a gated path fires onUnauthorized`) asserts
 that the callback fires for a 401 on `/api/admin/routes` with the callback registered by the test;
-no test reads `markAuthBlocked` or `useAuthBlocked`, renders `DataGate` or loads this page with a
-401. The AuthGate spec asserts the sign-in screen on `/dashboard`. Te stays unticked.
+no test reads `markAuthBlocked` or `useAuthBlocked`, asserts what `DataGate` renders or loads this
+page with a 401. The AuthGate spec asserts the sign-in screen on `/dashboard`. Te stays unticked.
 
 **Code:** `src/components/shared/SignInEmptyState.tsx:93-98`, `src/lib/authGate.ts:14-47`,
 `src/lib/authedFetch.ts:155-166,247-250`, `src/hooks/useUser.ts:81-82`,
