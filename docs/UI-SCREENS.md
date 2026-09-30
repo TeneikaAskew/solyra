@@ -2879,8 +2879,9 @@ Switching does not request bars again: both styles read the same `hourlyQ` respo
   storage write removed the test failed `Expected: "area" Received: null`, and with the real code it
   passed).
 
-**Tests:** the two tests above. The main test asserts only that the Area surface appears; the
-memory is asserted only by the branch test, so Te stays unticked until a CI run includes it.
+**Tests:** the two tests above. The main test asserts that both buttons show and that the Area
+surface appears after the click; the memory is asserted only by the branch test, so Te stays
+unticked until a CI run includes it.
 
 **Code:** `src/routes/DashboardPage.tsx:282-288,731-764`; test id `intraday-chart-slot`.
 
