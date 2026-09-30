@@ -2,7 +2,7 @@
 feat_id: FEAT-CICD-001
 spec: docs/superpowers/specs/2026-09-29-feat-cicd-001-docs-only-ci-skip.md
 branch: feature/feat-cicd-001-docs-only-ci-skip
-pr: null
+pr: 82
 status: ready
 ---
 
