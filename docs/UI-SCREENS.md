@@ -2608,9 +2608,14 @@ reads the same `No insight report for IWM` line (executed 2026-09-30; see Gaps).
 
 **Acceptance criteria:**
 - Given the report route with no row, when requested, then it is a 404, and with a row `insights.py`
-  returns the envelope; the route answers with a JSON status and no crash
-  (`tests/api/test_route_coverage.py`, `GET /api/insights/report/{T}`; the fuller
-  `tests/lib/test_routers_insights_admin.py` skips without a test Postgres).
+  returns the envelope (`test_get_insight_report_404_when_missing` and
+  `test_get_insight_report_returns_latest`, `tests/lib/test_routers_insights_admin.py`, whose module
+  skips without a test Postgres). Given no reachable database, then it is a 503 with a JSON body:
+  `Req("GET", f"/api/insights/report/{T}", 503)` (`tests/api/test_route_coverage.py:293`) pins that
+  exact status against a dead backend (`Req.expect`, `:191-194`), and
+  `test_insight_report_lookups_are_503_not_a_bare_500` injects a driver error and asserts the 503, a
+  JSON content type and the error type in the detail. A defect in the lookup stays a 500
+  (`test_an_internal_defect_is_not_reported_as_an_outage`).
 - Given `as_of`, when the handler reads, then it never returns a report after the cutoff
   (`_fetch_latest_report`, `insights.py:204-250`; asserted by
   `test_get_insight_report_as_of_includes_same_day_morning_report` in
@@ -2619,8 +2624,14 @@ reads the same `No insight report for IWM` line (executed 2026-09-30; see Gaps).
 - Given production on 2026-09-30, then IWM, SPY and QQQ each have a live report from 12:55 UTC
   (08:55 ET), 123, 113 and 117 live rows (see the V-gate evidence comment).
 
-**Tests:** no test asserts this card or the hook: the Playwright fixtures serve the report and
-`ticker-combobox.spec.ts` serves a 404 for AAPL, and none looks at the text. Te stays unticked.
+**Tests:** no Dashboard test looks at the card: the Playwright fixtures serve the report and
+`ticker-combobox.spec.ts` serves a 404 for AAPL, and none looks at the text. The hook is driven on
+`/insights` by `tests/insights/insights.spec.ts` (`renders a full report with all cards`;
+`shows empty-state CTA when no report exists` for the 404 answered as no report;
+`refresh runs the queued -> running -> done polling loop` for a 404 followed by a report), which assert
+that page and not this card. No test sends the hook's `as_of` request, which only the Dashboard makes in
+review mode (`DashboardPage.tsx:358`; `InsightsPage.tsx:49` passes no cutoff), or reaches its failure
+branch. Te stays unticked.
 
 **Code:** `src/routes/DashboardPage.tsx:358,513,895-912`, `src/hooks/useInsights.ts:68-81`,
 `src/types/insights.ts`; no test id.
