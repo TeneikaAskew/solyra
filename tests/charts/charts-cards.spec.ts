@@ -176,8 +176,16 @@ test.describe('Charts page · toolbar controls and crosshair bar', () => {
     await date.fill('2026-04-23');
     await expect.poll(() => dataRequests.at(-1)).toBe('/api/market/data/IWM/20260423?timeframe=30');
     // Typed outside the list's ends, the date is still asked for: min and max
-    // only bound the browser's picker.
-    await date.fill('2026-04-10');
+    // only bound the browser's picker. The answers are awaited as well, so the test ends
+    // with nothing in flight: a request still pending at the teardown reaches the dev
+    // server's proxy, which logs ECONNREFUSED for a backend this spec never starts.
+    // (`waitForLoadState('networkidle')` would not do it: it resolves at once for a
+    // document that already reached that state, and a date change is not a navigation.)
+    await Promise.all([
+      page.waitForResponse('**/api/market/data/IWM/20260410*'),
+      page.waitForResponse('**/api/market/reference/IWM/20260410'),
+      date.fill('2026-04-10'),
+    ]);
     await expect.poll(() => dataRequests.at(-1)).toBe('/api/market/data/IWM/20260410?timeframe=30');
   });
 
