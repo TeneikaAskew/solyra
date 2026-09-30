@@ -4003,7 +4003,7 @@ page with a 401. The AuthGate spec asserts the sign-in screen on `/dashboard`. T
 | GET /api/signals/{ticker}/similar | direction, rsi, score, stats count, pct_profitable, median_mfe_pct, p25_mfe_pct, p75_mfe_pct, matches[] time, rsi, return_pct, return_5min, return_20min (types: `useSimilarSetups.ts` SimilarResponse; the other fields are not read; fixture: `MOCK_SIMILAR_SETUPS` in `src/mocks/charts.ts`) | `historical_signals` ← historical-signals-watchlist 01:00 ET Tue-Sat; every IWM row is labelled `momentum` ([#912](https://github.com/TeneikaAskew/stocks/issues/912)) | 60 s staleTime; asked only after the voter fired on the series' last bar; the stats query measured 1.6 to 2.0 s in production; 2026-09-30: IWM 190,159 rows to 2026-09-29, strengths 3 and 4 end 2026-05-01; a failure shows its status in red; gated | `useSimilarSetups` → Similar setups card |
 | GET /api/backtest/all/{ticker} · results/{ticker}?run= · equity/{ticker}?run= | runs[] timestamp and has_equity_curve; summary total_trades, win_rate, avg_return_pct, avg_win_pct, avg_loss_pct and trades[]; equity dates, values and summary total_return_pct, max_drawdown_pct (types: `BacktesterSection.tsx`; the other fields are not read) | none (GCS CSV objects under `raw/data/backtest_results/`, no table; nothing writes them and the newest was uploaded 2026-02-23) | 30 s staleTime; server-side results and equity one hour, the run list ten minutes; `/all` downloads and parses every CSV of the ticker (IWM: 17 files, 19.62 MiB); a storage failure or an empty prefix reads 404; gated | `BacktesterSection` → Backtester |
 | POST /api/backtest/replay-trades | request: ticker and session_id (trade_ids is supported and not sent); read: trades[] id, status, reason, actual_return_pct, fill_check, system_signal_at_entry, system_exit, exit_edge_bps, and aggregate n, scored_n, win_rate, avg_return_pct, system_resolved_n, system_no_signal_n, system_agreement_rate, avg_exit_edge_bps (types: `useJournalChartTrades.ts` ReplayTradesResponse) | computed on each request by `lib/backtest.py` `replay_labeled_trades` from the user's `journal_entries`, the day's `market_data_intraday` bars and `exit_config_overrides` ← param-sweep (manual, no trigger) | on demand, once when a replay session stops with a closed trade of its own, which this page cannot produce (CHARTS-12); a failed journal read answers 404; gated | `useReplayTrades` → Post-session scorecard |
-| GET /api/options/{ticker}/{date}/levels | kings[].strike, gates[].strike, gamma_flip, gamma_balance (types: `useGammaLevels.ts` GammaLevelsResponse; `spot`, `regime`, `total_gex`, `levels` and `warnings` are not read; fixture: `MOCK_LEVELS_POPULATED` in `src/mocks/options.ts`) | `etf_options_snapshots` ← fetch-av-options-realtime every 5 min 09:00-15:55 ET Mon-Fri and fetch-av-options-backfill 21:00 ET Mon-Fri, the date's latest snapshot; `daily_rates` ← fetch-fred-rates 06:30 ET daily for the flip | shown only for SPY, IWM, QQQ and SPX; asked only with `Gamma` on; 1 h staleTime, no retry; server-side the chain is cached 12 h; a failure, a date with no chain (404) included, draws nothing and says nothing; production 2026-09-30: IWM, SPY and QQQ snapshots at 19:40 UTC, SPX 2026-09-29; gated | `useGammaLevels` → Gamma overlay |
+| GET /api/options/{ticker}/{date}/levels | kings[].strike, gates[].strike, gamma_flip, gamma_balance (types: `useGammaLevels.ts` GammaLevelsResponse; `spot`, `regime`, `total_gex`, `levels` and `warnings` are not read; fixture: `MOCK_LEVELS_POPULATED` in `src/mocks/options.ts`) | `etf_options_snapshots` ← fetch-av-options-realtime every 5 min 09:00-15:55 ET Mon-Fri and fetch-av-options-backfill 21:00 ET Mon-Fri, the date's latest snapshot; `daily_rates` ← fetch-fred-rates 06:30 ET daily for the flip | shown only for SPY, IWM, QQQ and SPX, though Cloud SQL holds no SPX bars to select a date from (matrix Charts Gaps); asked only with `Gamma` on; 1 h staleTime, no retry; server-side the chain is cached 12 h; a failure, a date with no chain (404) included, draws nothing and says nothing; production 2026-09-30: IWM, SPY and QQQ snapshots at 19:40 UTC, SPX 2026-09-29 with no `gamma` on any of its 4,871 contracts; gated | `useGammaLevels` → Gamma overlay |
 | GET /api/config/market-hours | regular.open, regular.close (types: `useConfig.ts` MarketHours; the pre-market, after-hours and holiday fields are not read; fixture: `MOCK_MARKET_HOURS` in `src/mocks/common.ts`) | constants in `platform/api/routers/live.py` (`MARKET_OPEN`, `MARKET_CLOSE`); no table, no job | 24 h staleTime; the browser's 09:30 and 16:00 stand in while it is pending or after a failure; gated | `useMarketHours` → the `RTH` filter of the chart |
 | store: ticker, review date, timeframe |  | Zustand: `tickerStore` (persisted as `ticker-store`), `reviewDateStore` (in memory, set by the Replay control), `settingsStore` timeframe (in memory, default `5`) |  | Toolbar, every card |
 | component state: date, Vol, RTH, Ref, Gamma, Sig |  | `useState` in `ChartsPage`, lost when the page unmounts |  | Toolbar, chart |
@@ -4024,7 +4024,7 @@ page with a 401. The AuthGate spec asserts the sign-in screen on `/dashboard`. T
 | ID | Action | What happens |
 |---|---|---|
 | CHARTS-09 | Change date or timeframe | The date input is bounded by `useAvailableDates`'s list (a typed date outside it is still requested) and disabled in historical review mode; timeframe buttons set `settingsStore`'s in-memory `timeframe`, which resamples the `/api/market/data` request on the clock. |
-| CHARTS-10 | Toggle overlays | `Vol`, `RTH`, `Ref`, `Gamma` and `Sig` are component state that decides what is drawn: `RTH` filters the drawn bars to the window of `GET /api/config/market-hours`; `Ref` draws the reference levels, which are requested on every load; `Gamma` (SPY, IWM, QQQ, SPX only) is the one toggle that gates its request, `useGammaLevels`; `Sig` draws the markers of a signal series that is requested on every load, and is disabled in a replay session. |
+| CHARTS-10 | Toggle overlays | `Vol`, `RTH`, `Ref`, `Gamma` and `Sig` are component state that decides what is drawn: `RTH` filters the drawn bars to the window of `GET /api/config/market-hours`; `Ref` draws the reference levels, which are requested on every load; `Gamma` (SPY, IWM, QQQ, SPX only; SPX has no date to ask for, see the matrix Charts Gaps) is the one toggle that gates its request, `useGammaLevels`; `Sig` draws the markers of a signal series that is requested on every load, and is disabled in a replay session. |
 | CHARTS-11 | Run a replay session | `useReplaySession` reveals the loaded bars one at a time (a 15-bar warm start); Mark Entry during a session POSTs `/api/journal/trades` with `source: 'replay'`, the session id and an entry time pinned to the last revealed bar, and a failed post shows nothing. |
 | CHARTS-12 | Backtest my trades | The seed's on-demand button no longer exists. The replay-trades endpoint is reached only from a finished replay session, which on this page ends with no closed trades to score, so the scorecard never opens (see the matrix Charts Gaps). |
 
@@ -4344,8 +4344,10 @@ leaves Start disabled as it was.
   file; the test's title promises a re-fit that it does not assert).
 - Given the reducers, then a start reveals the warm start or the whole short day, a step never
   passes the last bar and pauses at it, Play does nothing at the end or when idle, Pause does
-  nothing when paused, Stop returns the idle state, and the summary says whether the day was played
-  through (`src/hooks/replaySession.test.ts`, 22 cases).
+  nothing when paused, the idle state that Stop resets to is fully reset, and the summary says
+  whether the day was played through (`src/hooks/replaySession.test.ts`, 22 cases; its `stop` case
+  compares that constant with itself, so the hook's `stop()` is asserted only by the Playwright test
+  above).
 - Given Play at `20x`, then one bar is revealed about every 50 ms (executed 2026-09-30: 15 to 120 in
   5.5 s); the timer, the speed buttons and the Play and Pause buttons are asserted by no test.
 - Given a timeframe or date change during a session, then the count is kept, and above the new total
@@ -4358,7 +4360,11 @@ test asserts the speed buttons, the playback timer, the Play and Pause buttons t
 disabled Start or what a timeframe or date change does to a session. The bars the session reveals
 come from the loader that `tests/api/test_intraday_loader_conventions.py` and `TestMarketDataAPI` in
 `tests/api/test_platform_api.py` assert (CHARTS-02), and `tests/api/test_route_coverage.py` pins 404
-for the route against a dead backend. Te stays unticked.
+for the route against a dead backend. Te is ticked on that coverage: the two Playwright tests exist
+on main at eca7078, where the e2e job of the cited solyra run passed 242 tests, the 22 cases of
+`replaySession.test.ts` passed in that run's Vitest job, and the loader tests exist at the head of
+the cited stocks run, whose `tests/` passed; what no test asserts is recorded in the matrix Charts
+Gaps.
 
 **Code:** `src/routes/ChartsPage.tsx:165-190,295-318,341-344,415-419,599-626`,
 `src/components/charts/ReplaySessionControls.tsx:30-117`, `src/hooks/useReplaySession.ts:30-195`;
@@ -4504,9 +4510,12 @@ raised the page banner, CHARTS-17). With fewer than 14 bars the card is absent.
   fixture; no test asserts them).
 - Given `direction=BUY`, then 400; given `score=6` or `2`, or `rsi_band=25`, then 422; given no
   Cloud SQL, then 503; given an empty bucket, then `stats: {count: 0}` and no matches; given stats
-  and two matches, then the direction is upper-cased, `time` is a string and the newest match is
-  first (`TestSimilarSignalsAPI` and `test_similar_is_503_when_the_cloud_sql_query_fails`,
-  `tests/api/test_platform_api.py`; the query is stubbed, so no test asserts the `WHERE` clause).
+  and two matches, then the direction is upper-cased and `time` is a string
+  (`TestSimilarSignalsAPI` and `test_similar_is_503_when_the_cloud_sql_query_fails`,
+  `tests/api/test_platform_api.py`). The newest-first order comes from the handler's
+  `ORDER BY entry_time DESC` (`platform/api/routers/signals.py:425`), and the test only reads the
+  order of the two rows its stub returns (`tests/api/test_platform_api.py:344-346`), so with the
+  query stubbed no test asserts the ordering or the `WHERE` clause.
 - Given the request held, failing or empty, then the loading line, the red error text or the
   empty-bucket text shows (executed 2026-09-30).
 - Given a request with no token, then staging answers 401 (V-gate evidence).
@@ -4766,9 +4775,10 @@ volume histogram under the candles; `RTH` (on, `:566-574`) draws only bars whose
 regular session window (CHARTS-02); `Ref` (off, `:576-584`) draws four lines titled `Prev High`,
 `Prev Low`, `Prev Open` and `Prev Close` from the reference levels (`:442-450`) and adds
 `Prev: H / L` to the crosshair bar (CHARTS-03); `Gamma` (off, `:586-598`, rendered only for SPY,
-IWM, QQQ and SPX, `:54,586`) draws the chain's levels for the chart date, `★ King <strike>` (gold),
-`◆ Gate <strike>` (blue), `⇅ Gamma Flip <level>` and `≈ Gamma Balance <level>`, the last two only
-when the answer has them (`:455-491`); `Sig` (off, `:600-611`, disabled with the title
+IWM, QQQ and SPX, `:54,586`, though for SPX there is nothing to draw, see States) draws the chain's
+levels for the chart date, `★ King <strike>` (gold), `◆ Gate <strike>` (blue),
+`⇅ Gamma Flip <level>` and `≈ Gamma Balance <level>`, the last two only when the answer has them
+(`:455-491`); `Sig` (off, `:600-611`, disabled with the title
 `unavailable during replay` in a session) draws one arrow per fire of the mean-reversion voter,
 green and below the bar for CALL, red and above for PUT, labelled `CALL 4` or `PUT 3` (`:420-430`).
 An active toggle has the raised background. The toggles gate what is drawn, not what is asked: the
@@ -4789,8 +4799,9 @@ time, and the browser's 09:30 to 16:00 when it fails, `src/hooks/useConfig.ts:68
 `Gamma`: `GET /api/options/{ticker}/{YYYY-MM-DD}/levels` (`platform/api/routers/options.py:809-848`,
 a plain `def`), which validates the ticker against SPY, IWM, QQQ and SPX (400), requires Cloud SQL
 (503), loads the chain of the date's latest `etf_options_snapshots` row set with
-`data_source = 'alphavantage'` (`:524-580`, cached 12 hours, 404 with the nearest date for none) and
-builds the summary with `lib/gamma.py` `build_summary`, whose flip uses the `daily_rates` row at or
+`data_source = 'alphavantage'` (`:524-580`, cached 12 hours, 404 with the nearest date for none; the
+query selects `gamma` and no `*_computed` column, `:562-579`) and builds the summary with
+`lib/gamma.py` `build_summary`, whose flip uses the `daily_rates` row at or
 before the date, at most seven days old, and is `null` without one (`lib/gamma.py:1076-1100`,
 `lib/options_greeks.py:56-96,148-214`). The page sends no `window_pct` or `spot` and keeps the
 answer for an hour with no retry (`src/hooks/useGammaLevels.ts:74-98`). `Sig`:
@@ -4802,12 +4813,27 @@ the bars with no ticker, so the per-ticker rows of `exit_config_overrides` (`dis
 with `stoch_rsi_overbought` and `rsi_overbought_zone` disabled and QQQ's PUT side switched off, all
 dated 2026-05-08, so the overlay can draw a PUT fire on QQQ that production never fires (V-gate
 evidence, dispatch C statement 1); `etf_options_snapshots` holds an `alphavantage` snapshot for IWM,
-SPY and QQQ at 19:40 UTC (the 5 minute job ran at 19:41), for SPX on 2026-09-29, and IWM's newest
-chain has 5,600 contracts, all with gamma; `daily_rates` runs to 2026-09-28 (dispatch A statements
-11 to 13). All routes are gated and answered 401 without a token (V-gate evidence).
+SPY and QQQ at 19:40 UTC (the 5 minute job ran at 19:41), for SPX on 2026-09-29, whose 4,871
+contracts carry no `gamma`, `delta`, `implied_volatility` or `gamma_computed` (executed 2026-09-30,
+execution `db-query-gv8xf`), and IWM's newest chain has 5,600 contracts, all with gamma;
+`daily_rates` runs to 2026-09-28 (dispatch A statements 11 to 13). Cloud SQL holds no SPX bars
+(`market_data_intraday` and `market_data_daily` have no row for `SPX`, `^SPX` or `SPXW`, same
+execution), so the dates list for SPX is empty and the toggle has no date to ask for unless one is
+typed, and the legacy GCS files that the market-data loader falls to hold SPX minute files only for
+2025-09-02 to 2025-12-17 (matrix Charts Gaps). All routes are gated and answered 401 without a token
+(V-gate evidence).
 
-**States:** `Sig` is disabled in a session; `Gamma` is absent for other tickers; `Ref` and `Gamma`
-have no loading, empty or error text, and a failed read is indistinguishable from an empty one.
+**States:** `Sig` is disabled in a session; `Gamma` is absent for other tickers and present for SPX,
+where it cannot draw: with no SPX bars in Cloud SQL the dates list is empty, no date is selected and
+the toggle does nothing and says nothing (executed 2026-09-30 with SPX chosen in the combobox), a
+typed date outside the 2025 window of the legacy GCS files ends in the chart card's
+`Couldn't load this data` with no canvas, and the newest SPX chain has no `gamma`, so the levels
+answer would be the unavailable summary, which the page does not read (matrix Charts Gaps). `Ref`
+and `Gamma` have no loading, empty or error text, and a failed read is indistinguishable from an
+empty one: a Cloud SQL outage reads as a 404 that claims the ticker was never ingested,
+`No AlphaVantage options data for IWM on 2026-09-04. No earlier data ingested for this ticker.`
+(executed 2026-09-30 through the real handler with the connection refused), because the chain is
+read with the swallowing `query_to_dataframe` (`platform/api/routers/options.py:580,591`).
 CHARTS-13 to CHARTS-17.
 
 **Acceptance criteria:**
@@ -4825,11 +4851,21 @@ CHARTS-13 to CHARTS-17.
 - Given `Sig` pressed twice, then the button is visible and clickable and nothing more is asserted
   (`Sig overlay toggle is in the toolbar and is clickable`, `tests/charts/charts-cards.spec.ts`).
 - Given a gamma request answering 404, then no message shows (executed 2026-09-30).
+- Given SPX chosen in the combobox, then `Gamma` is rendered, the date input is empty and the chart
+  card reads `Select a date to load chart data`, and pressing `Gamma` changes its class and sends no
+  request (executed 2026-09-30 on a hermetic page; no test asserts it).
 - Given the signal series, then the route's contract holds, under 14 bars is 422, epoch-second times
   are accepted and millisecond ones rejected (`tests/api/test_live_signal_series.py`); no test
   asserts that the overlay matches production's configuration.
-- Given a chain, then the library summarises its levels, regime and flip, and a missing or stale
-  `daily_rates` row yields no flip (`tests/lib/test_gamma.py`, `tests/lib/test_options_greeks.py`).
+- Given a chain, then the library summarises its levels, regime and flip (`tests/lib/test_gamma.py`,
+  with `get_rate_and_yield` stubbed to a fixed rate and yield, `:19-23`); given a chain whose gamma
+  is missing on every contract, then the summary is the unavailable one, regime `unknown` with a
+  warning (`test_build_summary_all_gamma_missing_is_unavailable_not_zero`, same file); given a
+  `daily_rates` lookup with no table, no row, a NULL column or a row more than seven days old, then
+  the lookup raises `RateLookupError` (`tests/lib/test_options_greeks.py:352-396`). That
+  `build_summary` then leaves the flip `null`, through the catch at `lib/gamma.py:1087-1095`, is
+  asserted by no test (executed 2026-09-30 with the lookup raising: the flip `null`, the regime and
+  the balance still resolved).
 - Given a request with no token, then staging answers 401 for the four routes (V-gate evidence).
 
 **Tests:** The two Playwright tests of `tests/shared/gamma-levels.spec.ts` that assert something and
@@ -4902,11 +4938,15 @@ statement 14).
   2026-09-30).
 - Given a post answering 503, then no message shows and the prompt chrome resets (executed
   2026-09-30).
-- Given a posted trade without an exit, then the route answers `status: active` and a null return,
-  at most three take profits are kept and the local file is not written on a defect
+- Given a posted trade without an exit, then the route answers `status: active` and a null return
   (`test_create_active_trade_without_exit_returns_null_return_pct`,
-  `test_take_profits_capped_at_three`, `tests/api/test_journal_phase2.py`;
-  `test_post_does_not_fall_back_to_local_on_an_application_defect`,
+  `tests/api/test_journal_phase2.py`); given a fourth take profit, then the route refuses the
+  request with 422, because the validator raises and does not truncate
+  (`platform/api/routers/journal.py:225-230`; `test_take_profits_capped_at_three` posts four levels
+  and asserts the 422, `tests/api/test_journal_phase2.py`), and the page sends at most three, its
+  steps being `tp1` to `tp3` (`src/hooks/useTradeMarking.ts:126-132`); given an application defect,
+  then the local file is not written
+  (`test_post_does_not_fall_back_to_local_on_an_application_defect`,
   `tests/api/test_platform_api.py`); no test posts `source: 'replay'` or a `session_id` to the
   route.
 - Given an epoch, then the journal date and time are the Eastern wall clock without a zone
