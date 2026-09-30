@@ -2243,9 +2243,9 @@ line). The hero price and the pill have no state of their own: a failed or unans
 - Given `?date=`, when the handler reads, then both reads are bounded by that date
   (`analysis_date <= :date` and `date <= :date`, `dashboard.py:111,157`, read directly, not asserted):
   `test_brief_with_historical_date` and `test_review_brief_returns_correct_date` feed a fixed frame
-  through a fake `_query_fn` that ignores the SQL and its parameters and assert only that the response
-  date is at or before the requested date, which holds for that fixture whatever the SQL says
-  (`tests/api/test_platform_api.py`).
+  through a fake `_query_fn` that ignores the SQL and its parameters and assert that the answer is
+  `source: 'cloud_sql'` (`tests/api/test_platform_api.py:857,2086`) and that it carries a daily date at
+  or before the requested date, which holds for that fixture whatever the SQL says.
 - Given the market is in its regular session and `date` is absent, when the brief is requested,
   then the overlay replaces `close`, `rsi_14`, the EMAs and `stale_days` with live-derived values
   (`dashboard.py:257-331`, read directly; no test runs `_apply_live_overlay`).
@@ -2474,8 +2474,9 @@ holds the Catalysts card; DASHBOARD-17 for no rows.
   (`signals.py:206-207`), the ascending order (`ORDER BY time ASC`, `signals.py:209`) and the
   direction and end-date filters (`signals.py:165-174`) are in the SQL and read directly: the class
   returns pre-filtered mock rows (`_patch_query`), so `test_signals_with_direction_filter`,
-  `test_signals_end_date_filter` and `test_signals_end_date_and_time_filter` assert only that the
-  envelope passes those rows through, and no test asserts the filters or the order.
+  `test_signals_end_date_filter` and `test_signals_end_date_and_time_filter` assert that the returned
+  rows are all `CALL` (the first) or at or before the cutoff (the other two), which holds for those
+  fixtures whatever the SQL says; no test asserts the filters or the order.
 - Given a signal with `return_pct` 0.5, when the table renders, then the Return cell reads
   `+50.00%`; given `null`, it reads `+0.00%` in green (executed 2026-09-30 in the page; see Gaps:
   the column stores percentage points, so a 0.5 reading is +0.5%).
@@ -2537,9 +2538,10 @@ loads and after it fails the card reads `0 upcoming` and `No catalysts in the ne
   2026-09-30 (see the V-gate evidence comment).
 
 **Tests:** `tests/api/test_catalysts_news_filter.py` (two tests on the SQL text and the topic list);
-`tests/api/test_route_coverage.py` (the route answers). `tests/dashboard/dashboard.spec.ts` serves
-this payload but asserts nothing on this card, so the row's ordering, labels and impact pills are
-untested and Te stays unticked.
+`tests/api/test_route_coverage.py` (`Req("GET", "/api/catalysts/events", 200)`, `:325`, pins the
+route's exact status against a dead backend and asserts no body). `tests/dashboard/dashboard.spec.ts`
+serves this payload but asserts nothing on this card, so the row's ordering, labels and impact pills
+are untested and Te stays unticked.
 
 **Code:** `src/routes/DashboardPage.tsx:108-113,153-164,351-356,494-502,805-827`; no test id.
 
@@ -2729,9 +2731,9 @@ three requests, no badge; see Gaps). Field-level `UNAVAILABLE` shows the em dash
   (`tests/api/test_movement_statement_router.py`, 22 tests: 144 passed together with
   `tests/api/test_route_coverage.py`, and the module skips when it runs alone; its NaN-close test
   fails when selected with `-k`, stocks#1225). That file asserts no 503:
-  `test_level_map_propagates_a_backend_outage` checks only that the level-map builder re-raises a
-  driver error. With the flag on and `get_engine` failing, a backend outage is a 503 and an internal
-  defect a 500 (`tests/api/test_route_coverage.py`:
+  `test_level_map_propagates_a_backend_outage` (`:602`) checks that the level-map builder re-raises a
+  driver error and that a data gap gives `None` (`:617-621`). With the flag on and `get_engine`
+  failing, a backend outage is a 503 and an internal defect a 500 (`tests/api/test_route_coverage.py`:
   `test_the_feature_gated_handlers_survive_a_backend_outage`, `:1234`, and
   `test_an_internal_defect_is_not_reported_as_an_outage`). The
   assembler's own tests (`tests/lib/test_movement_statement.py`) fail alone in this sandbox (41 of 65,
@@ -3000,9 +3002,10 @@ sector and news cards are live.
   `tests/lib/test_routers_insights_admin.py`, whose module skips without a test Postgres). The brief
   bound and the signals filter are read directly, not asserted: `test_brief_with_historical_date` and
   `test_review_brief_returns_correct_date` feed a fixed frame through a fake `_query_fn` that ignores
-  the SQL and assert only that the response date is at or before the requested date, and
-  `test_signals_end_date_and_time_filter` returns pre-filtered mock rows and asserts only that they
-  come back.
+  the SQL and assert that the answer is `source: 'cloud_sql'` (`test_platform_api.py:857,2086`) and
+  that it carries a daily date at or before the requested date, and
+  `test_signals_end_date_and_time_filter` returns pre-filtered mock rows and asserts that their times
+  are at or before the cutoff, which holds for that fixture whatever the SQL says.
 - Given Refresh or a reload, then review mode is gone (see DASHBOARD-11).
 
 **Tests:** the Vitest files above cover the helpers (`reviewCutoffTs`, `buildReviewQuote`),
