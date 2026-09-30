@@ -1,0 +1,71 @@
+# E2E for Solyra, in its own workflow so a documentation-only change can skip it.
+#
+# The job below is the `e2e` job that lived in ci.yml, moved unchanged. It has
+# its own workflow because path filters apply per workflow, not per job: the
+# unit suite in ci.yml reads docs/DOC_REGISTRY.md and README.md
+# (scripts/docs-audit.test.mjs) and must run on every PR, while the Playwright
+# suite reads no documentation (playwright.config.ts, scripts/e2e-server.mjs
+# and tests/ read nothing under docs/ and no .md file). A PR or push whose
+# every changed file is under docs/ or is a .md file does not start this
+# workflow; any other file runs it as before.
+#
+# e2e is not a required status check. If it ever becomes one, replace this
+# workflow-level filter with an always-started workflow that diffs the PR and
+# gates the job with `if:`, since a skipped run must then still report a check.
+# Spec: docs/superpowers/specs/2026-09-29-feat-cicd-001-docs-only-ci-skip.md
+
+name: E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+
+# A new push to the same branch supersedes the previous run.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (chromium, mocked)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Hermetic: every /api call is intercepted with page.route, so this needs
+      # no backend and no network. playwright.config.ts boots its own Vite on
+      # :5199 via scripts/e2e-server.mjs with workers:1 — a fresh runner has no
+      # leaked server and no concurrent run, which is the condition the
+      # single-worker measurement in docs/TEST_COVERAGE_AUDIT.md §6 was taken
+      # under. Do not raise workers here without re-measuring.
+      - name: E2E
+        run: npm run e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
