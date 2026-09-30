@@ -4683,15 +4683,22 @@ pending line. The session note is CHARTS-14.
   outside its bar, a date with no bars, a NaN entry price and all trades unavailable, then the card
   or the aggregate is scored, flagged, `unavailable` or null, never zero (the nine
   `TestReplayLabeledTradesLib` tests, same file).
-- Given null, positive and negative basis points, then `—`, `+13.00 bps` and `-20.00 bps`
-  (`formatEdgeBps`, four cases, `src/hooks/journalChartTrades.test.ts`).
+- Given 120, -45.3, 0, and null or undefined, then `+120.00 bps`, `-45.30 bps`, `+0.00 bps` and
+  the em dash placeholder (`formatEdgeBps`, four cases, `src/hooks/journalChartTrades.test.ts`).
 - Given a request with no token, then staging answers 401 (V-gate evidence).
 
-**Tests:** Both Playwright tests exist on main at eca7078 and assert the modal's opening, the post
-body and the note. The scorer and the endpoint are asserted by
-`tests/lib/test_replay_labeled_trades.py` (twelve tests, the bars and the journal stubbed);
-`tests/api/test_route_coverage.py` pins 422 for the route. No test asserts a row, the badge logic or
-the footer, and no test reaches the route's failure mode. Te stays unticked.
+**Tests:** Both Playwright tests exist on main at eca7078. The first asserts the trigger, a closed
+session trade posting `{ticker, session_id}` with no `trade_ids`, and the modal's opening with an
+element carrying the trade's row test id, which the unavailable card and the scored card share; the
+second asserts that with no closed trade the note shows, nothing is posted and no modal opens. The
+scorer and the endpoint are asserted by `tests/lib/test_replay_labeled_trades.py` (twelve tests, the
+bars and the journal stubbed; the endpoint ones send `trade_ids` and no pytest test passes
+`session_id`, so the `WHERE` on the owner and the session,
+`platform/api/routers/backtest.py:526-550`, is asserted by none); `tests/api/test_route_coverage.py`
+pins 422 for the route. No test asserts what a row or the footer shows, the pending or error texts,
+or the route's failure mode. Te stays unticked: the tests on main prove the trigger and the scoring
+math, not the scorecard the trader reads, and a row test id shared by both card kinds is presence
+only.
 
 **Code:** `src/routes/ChartsPage.tsx:226-277,827-1003`,
 `src/hooks/useJournalChartTrades.ts:493-611`, `platform/api/routers/backtest.py:461-594`,
@@ -4833,7 +4840,10 @@ and `Gamma` have no loading, empty or error text, and a failed read is indisting
 empty one: a Cloud SQL outage reads as a 404 that claims the ticker was never ingested,
 `No AlphaVantage options data for IWM on 2026-09-04. No earlier data ingested for this ticker.`
 (executed 2026-09-30 through the real handler with the connection refused), because the chain is
-read with the swallowing `query_to_dataframe` (`platform/api/routers/options.py:580,591`).
+read with the swallowing `query_to_dataframe` (`platform/api/routers/options.py:580,591`). A
+`daily_rates` lookup that raises leaves the flip `null` with no entry in the answer's `warnings`
+(`lib/gamma.py:1086-1095`, read; executed 2026-09-30 through the real library), so the
+`⇅ Gamma Flip` line is missing and nothing says why (matrix Charts Gaps).
 CHARTS-13 to CHARTS-17.
 
 **Acceptance criteria:**
