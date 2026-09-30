@@ -2252,9 +2252,11 @@ line). The hero price and the pill have no state of their own: a failed or unans
 - Given both reads return no row or raise, when the handler answers, then it is HTTP 200 with
   `source: 'cloud_sql'`, `bias: 'neutral'` and `daily_indicators: {}`, and the strip reads
   `Daily bias NEUTRAL` alone (executed 2026-09-30 against the real handler with faked query
-  results, and against the page with that body). The 200 itself is pinned against a dead backend
-  (`Req("GET", f"/api/dashboard/brief/{T}", 200)`, `tests/api/test_route_coverage.py:321`); no
-  committed test asserts the neutral body (see Gaps).
+  results, and against the page with that body). The sweep row
+  `Req("GET", f"/api/dashboard/brief/{T}", 200)` (`tests/api/test_route_coverage.py:321`) pins the
+  status only: `_query_fn` is bound at import, so that row answers `source: 'unavailable'` when no
+  Cloud SQL variables are set at import (executed 2026-09-30 in this sandbox) and the neutral body
+  when they are (executed with `DB_*` set), and no committed test asserts the neutral body (see Gaps).
 - Given the newest daily row is the premarket placeholder (production read 2026-09-30 09:26 ET:
   IWM `date` 2026-09-30 with `close`, `rsi_14` and `atr_14` NULL, `updated_at` 12:24 UTC, execution
   `db-query-2s56t`), when the handler answers, then `daily_indicators.close` is null and the strip
@@ -2263,10 +2265,11 @@ line). The hero price and the pill have no state of their own: a failed or unans
 **Tests:** `tests/dashboard/dashboard.spec.ts` (the two presence tests above; the file's `beforeEach`
 serves the brief, quote and status). `tests/api/test_platform_api.py` (`TestDashboardBriefAPI`,
 `TestReviewModeIntegration`, `TestLiveMarketAPI`, `test_live_status`, which asserts only that the
-keys are present); `tests/api/test_route_coverage.py` pins each route's exact status against a dead
-backend and a JSON content type (`Req.expect`, `:191-194`: the brief at 200, `:321`, the live status
-at 200 and the quote at 503, `:225-226`) and asserts no body. `briefBullets`, the pill, the hero
-price and the overlay have no test of their own, so Te stays unticked.
+keys are present); `tests/api/test_route_coverage.py` pins each route's exact status with no backend
+and a JSON content type (`Req.expect`, `:191-194`: the brief at 200, `:321`, the live status at 200
+and the quote at 503, `:225-226`) and asserts no body (the brief's answer depends on whether Cloud
+SQL variables are set at import, see the criteria above). `briefBullets`, the pill, the hero price
+and the overlay have no test of their own, so Te stays unticked.
 
 **Code:** `src/routes/DashboardPage.tsx:194-222,316-327,525-533,559-691`,
 `src/hooks/useLiveStatus.ts`, `src/hooks/useLiveQuote.ts`, `src/hooks/useReviewQuote.ts`,
