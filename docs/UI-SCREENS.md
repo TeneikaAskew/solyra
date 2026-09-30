@@ -4065,18 +4065,18 @@ the list bounds only the browser's picker.
 answers `{ticker, source, dates, months}` with `dates` as `YYYYMMDD` newest first; the page reads
 `dates` only (`src/hooks/useMarketData.ts:52-63`, 5 minute stale time). The list is one
 `SELECT DISTINCT` over the ticker's 1-minute rows of `market_data_intraday` that shifts every raw
-stamp back four hours and keeps weekdays (`:745-764`), which puts each bar on its session's date in
-both stored conventions (true UTC, and Eastern wall clock stamped as UTC); it is cached for one hour
-behind a `MAX(ts)` probe (`:578-581,617-658`). A database failure, in the probe or in the list, is a
-503 and never a fallback (`:627-644,826-848`); the GCS staging parquets answer only when Cloud SQL
-is not configured (`:850-902`, local development). A ticker with no rows answers 200 with empty
-lists and is not cached (`:820-825`). While another request refreshes a stale entry the old list is
-served with `source` set to `cloud_sql (stale, refresh in flight)` (`:717-718`), which the page
-never reads; with nothing cached and a refresh in flight it answers 503 with `Retry-After: 2`
-(`:725-735`). Production 2026-09-30: 2,943 dates for IWM from 2015-01-02 to 2026-09-29, the newest
-eight being 09-29, 09-28, 09-25, 09-24, 09-23, 09-22, 09-21 and 09-18, and the list query took 1.4
-to 1.6 s (V-gate evidence, dispatch A statements 2 and 3). The route is gated: it answers 401
-without a token (V-gate evidence).
+stamp back four hours and keeps weekdays (`platform/api/main.py:745-764`), which puts each bar on
+its session's date in both stored conventions (true UTC, and Eastern wall clock stamped as UTC); it
+is cached for one hour behind a `MAX(ts)` probe (`:578-581,617-658`). A database failure, in the
+probe or in the list, is a 503 and never a fallback (`:627-644,826-848`); the GCS staging parquets
+answer only when Cloud SQL is not configured (`:850-902`, local development). A ticker with no rows
+answers 200 with empty lists and is not cached (`:820-825`). While another request refreshes a stale
+entry the old list is served with `source` set to `cloud_sql (stale, refresh in flight)`
+(`:717-718`), which the page never reads; with nothing cached and a refresh in flight it answers 503
+with `Retry-After: 2` (`:725-735`). Production 2026-09-30: 2,943 dates for IWM from 2015-01-02 to
+2026-09-29, the newest eight being 09-29, 09-28, 09-25, 09-24, 09-23, 09-22, 09-21 and 09-18, and
+the list query took 1.4 to 1.6 s (V-gate evidence, dispatch A statements 2 and 3). The route is
+gated: it answers 401 without a token (V-gate evidence).
 
 **States:** The row is a container; its states are CHARTS-13 to CHARTS-17. A failed, empty or
 pending dates request leaves the input empty with no `min` or `max`, and the chart card reads
@@ -4139,9 +4139,9 @@ computable, and one horizontal line per take profit and stop loss titled `TP1`, 
 `Sig` (CHARTS-10) go into the marker list ahead of the trade markers, and the `Ref` and `Gamma`
 lines after the trade lines (`:250-253,303-306`). While a replay session runs the chart gets only
 the revealed bars and their volume and is remounted on each start and stop (`key chart-<session id>`
-or `chart-live`, `:746-748`, CHARTS-04). Times are the day's Eastern wall clock carried as epoch
-seconds, so the axis reads Eastern whatever the viewer's zone. With the `RTH` toggle on, the canvas
-draws only bars whose open time lies in `[09:30, 16:00)`, the window from
+or `chart-live`, `src/routes/ChartsPage.tsx:746-748`, CHARTS-04). Times are the day's Eastern wall
+clock carried as epoch seconds, so the axis reads Eastern whatever the viewer's zone. With the `RTH`
+toggle on, the canvas draws only bars whose open time lies in `[09:30, 16:00)`, the window from
 `GET /api/config/market-hours` with the browser's 09:30 and 16:00 as the answer to a failed or
 pending request (`src/components/charts/CandlestickChart.tsx:173-178,279-282`,
 `src/hooks/useConfig.ts:68-78`). That filter is on the open time, so on the `1h` timeframe the bar
@@ -4153,23 +4153,24 @@ showed, with it off the bars from 04:00; see Gaps). The other timeframes open th
 **Needs:** `GET /api/market/data/{ticker}/{date}?timeframe=N` (`platform/api/main.py:905-1016`, a
 plain `def`). It reads the day's 1-minute rows of `market_data_intraday` through `_load_date_data`
 (`:1595-1696`): the window `[D 00:00Z, D+1 02:00Z)`, which holds session D in both stored
-conventions (`:1609-1624`), is converted to Eastern wall clock by `lib/eastern_time.py`
-(`stored_intraday_to_eastern`, `:1654`) and cut to the Eastern date (`:1661-1663`); then
-`_aggregate_timeframe` (`:1699-1709`) resamples to `timeframe` minutes on the clock (a 5 minute bar
-opens at :00, :05 and so on, empty bins are dropped). An empty day answers 404 (`:927-928,973-974`),
-volume that is NaN is sent as `0` (`:1004`), and a Cloud SQL failure or an empty window falls
-through, with no signal in the answer, to the GCS parquet files (`:1667-1696`) and then to 404
-`No data found in Cloud SQL or GCS` (`:1696`). The response has no `source` field. Production
-2026-09-30: IWM holds 2,020,871 one-minute rows to 2026-09-30 00:00 UTC, and the handler's window
-holds 883 rows for 2026-09-29 and 856 for 2026-09-28 (V-gate evidence, dispatch A statements 1 and
-4); `fetch-market-data` ran at 03:00 UTC and `fetch-alphavantage-intraday` at 01:00 UTC on
-2026-09-30, both successful (V-gate evidence). `GET /api/journal/trades/{ticker}`
+conventions (`:1609-1624`), is converted to Eastern wall clock by `stored_intraday_to_eastern`
+(`lib/eastern_time.py`, applied at `platform/api/main.py:1654`) and cut to the Eastern date
+(`:1661-1663`); then `_aggregate_timeframe` (`:1699-1709`) resamples to `timeframe` minutes on the
+clock (a 5 minute bar opens at :00, :05 and so on, empty bins are dropped). An empty day answers 404
+(`:927-928,973-974`), volume that is NaN is sent as `0` (`:1004`), and a Cloud SQL failure or an
+empty window falls through, with no signal in the answer, to the GCS parquet files (`:1667-1696`)
+and then to 404 `No data found in Cloud SQL or GCS` (`:1696`). The response has no `source` field.
+Production 2026-09-30: IWM holds 2,020,871 one-minute rows to 2026-09-30 00:00 UTC, and the
+handler's window holds 883 rows for 2026-09-29 and 856 for 2026-09-28 (V-gate evidence, dispatch A
+statements 1 and 4); `fetch-market-data` ran at 03:00 UTC and `fetch-alphavantage-intraday` at 01:00
+UTC on 2026-09-30, both successful (V-gate evidence). `GET /api/journal/trades/{ticker}`
 (`platform/api/routers/journal.py:882-922`) returns the signed-in user's whole journal for the
 ticker, newest first, with no date filter; the page keeps the rows whose entry date is the chart
 date (`src/hooks/useJournalChartTrades.ts:289-303`, 10 second stale time). A failed read is 503
-`journal temporarily unavailable` (`:917`), and the page reads `data: trades = []` (`:222`), so a
-failed journal read draws no trade and says nothing (executed 2026-09-30 with a 500). Both routes
-are gated and answered 401 without a token (V-gate evidence).
+`journal temporarily unavailable` (`platform/api/routers/journal.py:917`), and the page reads
+`data: trades = []` (`src/routes/ChartsPage.tsx:222`), so a failed journal read draws no trade and
+says nothing (executed 2026-09-30 with a 500). Both routes are gated and answered 401 without a
+token (V-gate evidence).
 
 **States:** CHARTS-13 (skeleton), CHARTS-14 (`No market data available for this date`,
 `Select a date to load chart data`), CHARTS-15 (`Couldn't load this data` with the error text and a
@@ -4233,13 +4234,13 @@ unticked: nothing asserts the drawn candles, markers or lines.
 reads `O`, `H`, `L` and `C`, each to two decimals (`H` green, `L` red), from the bar under the
 crosshair: the chart's own subscription passes the bar to the page, and passes `null` when there is
 no time under the pointer, which removes the bar
-(`src/components/charts/CandlestickChart.tsx:444-467`, `:109-113`). It shows the bar as drawn: the
-selected timeframe, the RTH filter applied, and during a replay only the revealed bars (CHARTS-04).
-While `Ref` is on (CHARTS-10) and the reference levels have arrived it adds a fifth piece,
-`Prev: H <high> / L <low>`, the prior session's high and low (`:703-707`, `refLevels` from `:193`).
-With `Ref` off, or with no reference answer, the piece is absent, and a failed reference request
-says nothing (executed 2026-09-30 with a 401 and a 404 on the reference route and `Ref` on: the OHLC
-showed, no `Prev`, no alert).
+(`src/components/charts/CandlestickChart.tsx:444-467`, `src/routes/ChartsPage.tsx:109-113`). It
+shows the bar as drawn: the selected timeframe, the RTH filter applied, and during a replay only the
+revealed bars (CHARTS-04). While `Ref` is on (CHARTS-10) and the reference levels have arrived it
+adds a fifth piece, `Prev: H <high> / L <low>`, the prior session's high and low (`:703-707`,
+`refLevels` from `:193`). With `Ref` off, or with no reference answer, the piece is absent, and a
+failed reference request says nothing (executed 2026-09-30 with a 401 and a 404 on the reference
+route and `Ref` on: the OHLC showed, no `Prev`, no alert).
 
 **Needs:** The bars of CHARTS-02 and `GET /api/market/reference/{ticker}/{date}`
 (`platform/api/main.py:1061-1204`, a plain `def`), which answers the OHLC of the session before
@@ -4312,20 +4313,20 @@ reveals on a timer and pauses itself at the last bar (`:68-74,143-149`); Stop re
 leaves a summary for the scorecard (CHARTS-08, `:88-99,168-171`). While a session runs, everything
 downstream sees only `revealedBars`: the chart and its volume (CHARTS-02), the crosshair bar
 (CHARTS-03), the indicators request and so the Strategy conditions card (CHARTS-05)
-(`:341-344,356-370`); the Sig request is not made and the Sig toggle is disabled with the title
-`unavailable during replay` (`:415-419,600-611`); the similar card is forced to its no-setup text
-(`:799`); the user's own trades timed after the last revealed bar are hidden and counted in
-`N trade(s) hidden` (`:295-318`, CHARTS-16). The session is not tied to the day it was started on: a
-timeframe change or a date change leaves `revealedCount` as it was, so a session at 40 of 78 five
-minute bars switched to `15m` reads `40/26` with all 26 bars drawn, and a date change keeps the
-count for the new day's bars (executed 2026-09-30; see Gaps). A session can be started in review
-mode (executed, `15/30`).
+(`src/routes/ChartsPage.tsx:341-344,356-370`); the Sig request is not made and the Sig toggle is
+disabled with the title `unavailable during replay` (`:415-419,600-611`); the similar card is forced
+to its no-setup text (`:799`); the user's own trades timed after the last revealed bar are hidden
+and counted in `N trade(s) hidden` (`:295-318`, CHARTS-16). The session is not tied to the day it
+was started on: a timeframe change or a date change leaves `revealedCount` as it was, so a session
+at 40 of 78 five minute bars switched to `15m` reads `40/26` with all 26 bars drawn, and a date
+change keeps the count for the new day's bars (executed 2026-09-30; see Gaps). A session can be
+started in review mode (executed, `15/30`).
 
 **Needs:** The day's bars (CHARTS-02); nothing of its own. Each step sends the revealed bars to
 `POST /api/live/indicators` (CHARTS-05): a 20x playback of a 120 bar day sent 105 requests in 5.5 s,
 about 19 a second, each carrying every bar revealed so far (executed 2026-09-30, one hermetic page,
-the answer mocked); the handler took a median of 17 to 29 ms for 30 to 961 bars in process (executed
-2026-09-30 through the real handler, `TestClient`).
+the answer mocked); the handler took a median of 13 to 31 ms for 30 to 961 bars in process (executed
+2026-09-30 through the real handler with `TestClient`; an earlier run read 17 to 29 ms).
 
 **States:** Idle, active, playing, paused and at the end (Play and Step disabled) are the row's own
 states (executed 2026-09-30: `15/30`, `16/30`, `30/30` with both disabled, idle again after Stop).
@@ -4371,13 +4372,13 @@ test ids `replay-start-btn`, `replay-controls`, `replay-play-pause-btn`, `replay
 (`src/components/charts/StrategyConditionsCard.tsx:27-64`, mounted at
 `src/routes/ChartsPage.tsx:784-786` inside the compact `DataGate`, only with at least 14 bars in the
 series). The heading's badge reads `CALL · n/5` or `PUT · n/5` when one side fires and `No setup`
-otherwise (`:68-97`). Below it are two columns, `CALL` and `PUT`, each with `<met>/5`, ` ✓ fires`
-when that side fires, and five rows: a check or a cross, the label, and the current value in
-monospace (`:99-159`). The rows are the chart teaching voter of `lib/chart_voter.py`, not the
-production alerting voter and not the Live page's ten conditions (Backend notes): CALL is
-`3 consecutive up moves` (the last three closes each above the one before),
-`RSI 25–50 (bullish band)`, `StochRSI K < 80 (room to run)`, `Price > VWAP` and `Price > EMA9`; PUT
-mirrors them with `3 consecutive down moves`, `RSI 50–75 (bearish band)`,
+otherwise (`src/components/charts/StrategyConditionsCard.tsx:68-97`). Below it are two columns,
+`CALL` and `PUT`, each with `<met>/5`, ` ✓ fires` when that side fires, and five rows: a check or a
+cross, the label, and the current value in monospace (`:99-159`). The rows are the chart teaching
+voter of `lib/chart_voter.py`, not the production alerting voter and not the Live page's ten
+conditions (Backend notes): CALL is `3 consecutive up moves` (the last three closes each above the
+one before), `RSI 25–50 (bullish band)`, `StochRSI K < 80 (room to run)`, `Price > VWAP` and
+`Price > EMA9`; PUT mirrors them with `3 consecutive down moves`, `RSI 50–75 (bearish band)`,
 `StochRSI K > 20 (room to fall)`, `Price < VWAP` and `Price < EMA9`. A side fires with at least
 three conditions met and strictly more than the other side (`lib/chart_voter.py:33-101`). The series
 sent is the page's whole bar list for the day, extended hours included: the `RTH` toggle only
@@ -4395,17 +4396,18 @@ keyed on the bar count, the last bar's time, the price and the volume). The hand
 20 and 50, RSI, StochRSI, ATR and a session VWAP from the bars with `lib/indicators.py` and returns
 `indicators`, the Live page's `signals` and the `chart_voter` slice; the page reads `chart_voter`
 only and the last RSI for CHARTS-06. A volume of `0` stands in for a candle with no matching volume
-bar (`:364-368`, the `AUDIT-2026-05-13` marker). No table is read: the bars come from CHARTS-02.
-Production 2026-09-30: IWM one minute rows run to 2026-09-30 00:00 UTC and the nightly jobs that
-write them succeeded (V-gate evidence, dispatch A statement 1). The route is gated and answered 401
-without a token (V-gate evidence).
+bar (`src/routes/ChartsPage.tsx:364-368`, the `AUDIT-2026-05-13` marker). No table is read: the bars
+come from CHARTS-02. Production 2026-09-30: IWM one minute rows run to 2026-09-30 00:00 UTC and the
+nightly jobs that write them succeeded (V-gate evidence, dispatch A statement 1). The route is gated
+and answered 401 without a token (V-gate evidence).
 
 **States:** While the request is pending, and after it has failed (a 401 included), the card is
-rendered from `EMPTY_CHART_VOTER` (`:60-64,393`): `No setup` and `0/5` in both columns with no rows,
-the same as a live answer of no setup, and no error text (executed 2026-09-30 with the request held,
-with a 500 and with a 401; with the 401 the page banner also showed, CHARTS-17). With fewer than 14
-bars the card is absent (executed: 13 bars hid it, 14 showed it). CHARTS-13 to CHARTS-15 name the
-loading and error text of the other cards; this one has none of its own.
+rendered from `EMPTY_CHART_VOTER` (`src/routes/ChartsPage.tsx:60-64,393`): `No setup` and `0/5` in
+both columns with no rows, the same as a live answer of no setup, and no error text (executed
+2026-09-30 with the request held, with a 500 and with a 401; with the 401 the page banner also
+showed, CHARTS-17). With fewer than 14 bars the card is absent (executed: 13 bars hid it, 14 showed
+it). CHARTS-13 to CHARTS-15 name the loading and error text of the other cards; this one has none of
+its own.
 
 **Acceptance criteria:**
 - Given at least 14 bars and an answer in which CALL fires with 3 of 5, when the page loads, then
@@ -4452,11 +4454,11 @@ fire, and during a replay session (the fires are forced empty, `:799`), it reads
 `Waits for the voter to fire, no setup currently active.` With a fire it shows the badge
 `CALL · score 4 · RSI ~55.0 (±5)` (the RSI is the last bar's RSI from the indicators answer,
 CHARTS-05; the band is fixed at 5), then `Querying historical signals…` while the first answer is
-pending (`:60-65`), then four tiles, `Matches`, `% profitable` (the 0 to 1 fraction times 100, two
-decimals), `Median MFE` and `IQR (p25–p75)` as `+0.012% → +0.180%` (three decimals, `--` for a
-missing value; `:94-124`), and `Most recent matches` as a table of `When` (the first 16 characters
-of the stored time, `2026-04-07 14:44`), `RSI`, `MFE`, `+5 min` and `+20 min` (`:126-180`). An empty
-bucket reads
+pending (`src/components/charts/SimilarSetupsCard.tsx:60-65`), then four tiles, `Matches`,
+`% profitable` (the 0 to 1 fraction times 100, two decimals), `Median MFE` and `IQR (p25–p75)` as
+`+0.012% → +0.180%` (three decimals, `--` for a missing value; `:94-124`), and `Most recent matches`
+as a table of `When` (the first 16 characters of the stored time, `2026-04-07 14:44`), `RSI`, `MFE`,
+`+5 min` and `+20 min` (`:126-180`). An empty bucket reads
 `No historical matches in this bucket yet. Try widening the RSI band or wait for the backfill to finish for this ticker.`
 (`:69-73`); a failed request shows the error text in red, `similar-setups 503` for example
 (`:83-87`).
@@ -4465,26 +4467,27 @@ bucket reads
 (`platform/api/routers/signals.py:321-442`, a plain `def`), asked only with a direction, an RSI and
 a score (`src/hooks/useSimilarSetups.ts:54-82`, 60 second stale time). It counts
 `historical_signals` rows for the ticker, `UPPER(trade_type)` equal to the direction,
-`signal_strength` equal to the score and `entry_rsi` within the band (`:354-356`), in one aggregate
-query and one newest-first list, both strict through `_query_or_503`; there is no predicate on
-`strategy`. The answer is 503 without Cloud SQL, 400 for a direction other than CALL and PUT, and
-422 for a score outside 3 to 5, a band outside 0.5 to 20 or a limit outside 1 to 100. The table is
-written by `historical-signals-watchlist` (01:00 ET Tue to Sat) and read on 2026-09-30: IWM holds
-190,159 rows to 2026-09-29 23:21 UTC, every one labelled `momentum`, so the card reports the other
-voter's outcomes ([#912](https://github.com/TeneikaAskew/stocks/issues/912), Backend notes).
-Strengths 3 and 4 end on 2026-05-01 for IWM (backfill to 2026-04-13, live 2026-04-24 to 2026-05-01),
-strengths 5 and 6 run to 2026-09-29 (V-gate evidence, dispatch A statements 8 and 9); the handler's
-own predicate matched 242 rows for a CALL of score 4 at RSI 35 (earliest 2015-01-15, newest
-2026-05-01) and 14,725 for a PUT of score 3 at RSI 60 (newest 2026-05-01), and 679 for a PUT of
-score 5 with its newest on 2026-09-29 (dispatch A statement 10). The stored `entry_time` mixes both
-conventions (IWM `live` rows sit at UTC hours 4 to 7, which only an Eastern stamp explains, 2,321
-rows, and at hours 21 to 23, which only a true UTC stamp explains, 1,516 rows; dispatch C statement
-2), so the `When` column, which prints the stored string with no zone, is in neither frame reliably.
-The handler calls itself sub-100 ms regardless of row count (`:335-336`);
-`EXPLAIN (ANALYZE, BUFFERS)` measured the stats query at 2,001 ms for the CALL of score 4 (an index
-scan of 18,984 rows for 242) and 1,592 ms for the PUT of score 3 (153,793 rows read for 14,725), and
-the match lists at 120 ms and 330 ms (V-gate evidence, dispatch B). The route is gated and answered
-401 without a token (V-gate evidence).
+`signal_strength` equal to the score and `entry_rsi` within the band
+(`platform/api/routers/signals.py:354-356`), in one aggregate query and one newest-first list, both
+strict through `_query_or_503`; there is no predicate on `strategy`. The answer is 503 without Cloud
+SQL, 400 for a direction other than CALL and PUT, and 422 for a score outside 3 to 5, a band outside
+0.5 to 20 or a limit outside 1 to 100. The table is written by `historical-signals-watchlist` (01:00
+ET Tue to Sat) and read on 2026-09-30: IWM holds 190,159 rows to 2026-09-29 23:21 UTC, every one
+labelled `momentum`, so the card reports the other voter's outcomes
+([#912](https://github.com/TeneikaAskew/stocks/issues/912), Backend notes). Strengths 3 and 4 end on
+2026-05-01 for IWM (backfill to 2026-04-13, live 2026-04-24 to 2026-05-01), strengths 5 and 6 run to
+2026-09-29 (V-gate evidence, dispatch A statements 8 and 9); the handler's own predicate matched 242
+rows for a CALL of score 4 at RSI 35 (earliest 2015-01-15, newest 2026-05-01) and 14,725 for a PUT
+of score 3 at RSI 60 (newest 2026-05-01), and 679 for a PUT of score 5 with its newest on 2026-09-29
+(dispatch A statement 10). The stored `entry_time` mixes both conventions (IWM `live` rows sit at
+UTC hours 4 to 7, which only an Eastern stamp explains, 2,321 rows, and at hours 21 to 23, which
+only a true UTC stamp explains, 1,516 rows; dispatch C statement 2), so the `When` column, which
+prints the stored string with no zone, is in neither frame reliably. The handler's docstring
+promises sub-100ms regardless of total row count (`:330-336`); `EXPLAIN (ANALYZE, BUFFERS)` measured
+the stats query at 2,001 ms for the CALL of score 4 (an index scan of 18,984 rows for 242) and 1,592
+ms for the PUT of score 3 (153,793 rows read for 14,725), and the match lists at 120 ms and 330 ms
+(V-gate evidence, dispatch B). The route is gated and answered 401 without a token (V-gate
+evidence).
 
 **States:** The placeholder is the no-setup state; `Querying historical signals…`, the red error
 line and the empty-bucket text are the card's own loading, error and empty states (executed
@@ -4525,19 +4528,20 @@ bar minimum and the epoch-second times that decide the fire. No test asserts the
 **Shows or does:** The section at the foot of the page
 (`src/components/backtest/BacktesterSection.tsx:344-467`, mounted at `src/routes/ChartsPage.tsx:819`
 inside the compact `DataGate`, for any bar count). A heading `<ticker> Backtester` with the line
-`N backtest run(s): viewing: <run timestamp>` (the raw `YYYYMMDD_HHMMSS`, `:385-395`) or
-`No backtest results found`; a select of the run timestamps when there is more than one, newest
-first (`:396-408`); five metric cards from the run's summary, `Total Trades`, `Win Rate` (the 0 to 1
-fraction times 100, one decimal), `Avg Return`, `Avg Win` and `Avg Loss`, each `—` for a missing
-field (`:425-453`); an `Equity Curve` card with `Total: +1.2%` and `Max DD: -0.8%` and an area chart
-of the run's equity series (`:150-223`), shown only when the run has an equity curve (`:367-371`);
-and a `Trade Log (N trades)` table of `Entry`, `Dir`, `Entry $`, `Exit $`, `Return %`, `Exit` and
-`Score`, sortable, the first 200 rows with `Showing first 200 of N trades` (`:227-340,457-464`). The
-run selection is reset when the ticker changes (`:347-353`). The equity chart's x axis formats its
-dates `MM/DD/YY` through `fmtRunDate` (`:145-148,195`); that is the series' dates, not the run's
-age, which the section shows only as the raw timestamp. The runs are not live: the newest object for
-any ticker was uploaded on 2026-02-23 and nothing writes them (Gaps), so the page shows results
-computed once, not a run over the trader's own journal.
+`N backtest run(s): viewing: <run timestamp>` (the raw `YYYYMMDD_HHMMSS`,
+`src/components/backtest/BacktesterSection.tsx:385-395`) or `No backtest results found`; a select of
+the run timestamps when there is more than one, newest first (`:396-408`); five metric cards from
+the run's summary, `Total Trades`, `Win Rate` (the 0 to 1 fraction times 100, one decimal),
+`Avg Return`, `Avg Win` and `Avg Loss`, each `—` for a missing field (`:425-453`); an `Equity Curve`
+card with `Total: +1.2%` and `Max DD: -0.8%` and an area chart of the run's equity series
+(`:150-223`), shown only when the run has an equity curve (`:367-371`); and a `Trade Log (N trades)`
+table of `Entry`, `Dir`, `Entry $`, `Exit $`, `Return %`, `Exit` and `Score`, sortable, the first
+200 rows with `Showing first 200 of N trades` (`:227-340,457-464`). The run selection is reset when
+the ticker changes (`:347-353`). The equity chart's x axis formats its dates `MM/DD/YY` through
+`fmtRunDate` (`:145-148,195`); that is the series' dates, not the run's age, which the section shows
+only as the raw timestamp. The runs are not live: the newest object for any ticker was uploaded on
+2026-02-23 and nothing writes them (Gaps), so the page shows results computed once, not a run over
+the trader's own journal.
 
 **Needs:** Three routes, all reading GCS through `platform/api/gcs_reader.py` and no table:
 `GET /api/backtest/all/{ticker}` (`platform/api/routers/backtest.py:355-458`) lists the ticker's
@@ -4558,9 +4562,9 @@ evidence). The three routes are gated and answered 401 without a token (V-gate e
 **States:** `Loading backtest data…` while the list or a run is pending; `No backtest results found`
 under the heading with no runs; an amber banner
 `No backtest results for <ticker>. Run scripts/run_backtest.py --ticker <ticker> first.` for any
-list or results error of any status (`:411-417`; executed 2026-09-30 with a 404 and a 401, and with
-the request held); no error state of its own for a failed equity read, which only leaves the chart
-out. CHARTS-13 to CHARTS-15, CHARTS-17.
+list or results error of any status (`src/components/backtest/BacktesterSection.tsx:411-417`;
+executed 2026-09-30 with a 404 and a 401, and with the request held); no error state of its own for
+a failed equity read, which only leaves the chart out. CHARTS-13 to CHARTS-15, CHARTS-17.
 
 **Acceptance criteria:**
 - Given two runs and a result of three trades with an equity curve, when the section renders, then
@@ -4604,17 +4608,17 @@ whose status is not `active`; with at least one it opens the modal and posts `{t
 to `POST /api/backtest/replay-trades` (no `trade_ids`,
 `src/hooks/useJournalChartTrades.ts:572-600`), and with none it shows the note
 `Session ended: no closed trades to score` and posts nothing (CHARTS-14). The modal shows
-`Scoring your trades against the system benchmark…` while pending (`:833-837`),
-`Replay failed: <message>` in a red box on an error, with the server's `detail` when there is one
-(`:838-842`), and otherwise one row per trade and a footer (`:843-857`). A row (`ScorecardRow`,
-`:876-957`, test id `scorecard-row-<trade id>`) is, for a trade the scorer could not price, a dashed
-box with the id and the server's `reason`; for a scored trade, the id, an amber warning icon titled
-`Entry price was outside the entry bar's high/low range` when the fill check says so, one badge of
-four (`system unavailable`, `no setup`, `match`, `differed`, from the system's signal at the entry
-against the trade's own direction, which the page looks up because the answer does not carry it),
-`Your return: +0.23%`, `System exit: time_stop +0.10%` and `Edge: +13.00 bps`, each `—` when null
-(`:894-955`). The footer (`:974-1003`) reads `<scored> / <n> scored · Win rate <x>%`,
-`Avg return: … · Avg edge: … bps` and
+`Scoring your trades against the system benchmark…` while pending
+(`src/routes/ChartsPage.tsx:833-837`), `Replay failed: <message>` in a red box on an error, with the
+server's `detail` when there is one (`:838-842`), and otherwise one row per trade and a footer
+(`:843-857`). A row (`ScorecardRow`, `:876-957`, test id `scorecard-row-<trade id>`) is, for a trade
+the scorer could not price, a dashed box with the id and the server's `reason`; for a scored trade,
+the id, an amber warning icon titled `Entry price was outside the entry bar's high/low range` when
+the fill check says so, one badge of four (`system unavailable`, `no setup`, `match`, `differed`,
+from the system's signal at the entry against the trade's own direction, which the page looks up
+because the answer does not carry it), `Your return: +0.23%`, `System exit: time_stop +0.10%` and
+`Edge: +13.00 bps`, each `—` when null (`:894-955`). The footer (`:974-1003`) reads
+`<scored> / <n> scored · Win rate <x>%`, `Avg return: … · Avg edge: … bps` and
 `Agreement: <x>%: system had a setup on <r> of <scored> entries` with ` · no setup on <k>` when the
 system had none, the rates `—` when they are null. Changing the ticker closes the modal and clears
 its answer (`:266-277`). The modal cannot be reached from this page as it stands: Mark Entry posts
@@ -4733,9 +4737,9 @@ request shows CHARTS-15; nothing else changes. CHARTS-13 to CHARTS-17.
   `tests/charts/charts-cards.spec.ts`, added on this branch).
 - Given a ticker switch after a date was chosen, then the same date is asked for the new ticker
   (executed 2026-09-30 through the command palette).
-- Given review mode, then the date input is disabled, the timeframe buttons are not (`:538-553`) and
-  the request carries `end_time` (executed 2026-09-30 for the default `5m`:
-  `timeframe=5&end_time=09:45`).
+- Given review mode, then the date input is disabled, the timeframe buttons are not
+  (`src/routes/ChartsPage.tsx:538-553`) and the request carries `end_time` (executed 2026-09-30 for
+  the default `5m`: `timeframe=5&end_time=09:45`).
 - Given 120 one minute bars, then `timeframe=1` returns them whole and `end_time=10:30` returns 61;
   an invalid `end_time` is 400 (`test_market_data_full_day`, `test_market_data_end_time_filter`,
   `test_market_data_end_time_invalid_format`, `tests/api/test_platform_api.py`). No test requests a
@@ -4917,9 +4921,10 @@ that the `session_id` column is nullable, `tests/gcp/test_schema_journal_migrati
 asserts a failed post; `tests/api/test_route_coverage.py` pins 200 for the post against a dead
 backend, which is the open-dev local file redirected to a tmp directory. Te stays unticked.
 
-**Code:** `src/routes/ChartsPage.tsx:105-106,639-685`, `src/hooks/useTradeMarking.ts:67-213`,
-`src/hooks/useJournalChartTrades.ts:114-140,390-417`, `src/hooks/useReplaySession.ts:135-195`,
-`platform/api/routers/journal.py:1088-1143`; test ids as CHARTS-04.
+**Code:** `src/routes/ChartsPage.tsx:105-106,223,639-685,750`,
+`src/hooks/useTradeMarking.ts:67-213`, `src/hooks/useJournalChartTrades.ts:114-140,390-417`,
+`src/hooks/useReplaySession.ts:135-195`, `platform/api/routers/journal.py:1088-1143`; test ids as
+CHARTS-04.
 
 ##### CHARTS-12 · Backtest my trades
 
@@ -4929,13 +4934,13 @@ the modal it opened, now titled `Backtest my trades, <ticker>`
 (`src/routes/ChartsPage.tsx:827-831`), and a code path for it: `useReplayTrades` still accepts
 `tradeIds` beside `sessionId` (`src/hooks/useJournalChartTrades.ts:552-562`), but its only caller is
 this page, and the only call sends `sessionId` from the effect that runs when a replay session stops
-(`:238-252`, `:226-229` says so). So the action exists only as the post-session scorecard of
-CHARTS-08, and that path is closed on this page: a session's trade is `active` because Mark Entry
-posts no exit (CHARTS-11), and nothing here closes a trade (`startExitMode` is called only from
-JournalPage, `:218-221`, see Gaps). So from this page alone a session ends with
-`Session ended: no closed trades to score` (CHARTS-14) and the modal never opens. The seed's journey
-3 (Backtest your own trades) cannot be walked: the Backtester section (CHARTS-07) shows runs
-computed once in February 2026, not a scoring of the trader's own journal.
+(`src/routes/ChartsPage.tsx:238-252`, `:226-229` says so). So the action exists only as the
+post-session scorecard of CHARTS-08, and that path is closed on this page: a session's trade is
+`active` because Mark Entry posts no exit (CHARTS-11), and nothing here closes a trade
+(`startExitMode` is called only from JournalPage, `:218-221`, see Gaps). So from this page alone a
+session ends with `Session ended: no closed trades to score` (CHARTS-14) and the modal never opens.
+The seed's journey 3 (Backtest your own trades) cannot be walked: the Backtester section (CHARTS-07)
+shows runs computed once in February 2026, not a scoring of the trader's own journal.
 
 **Needs:** The same route as CHARTS-08, `POST /api/backtest/replay-trades`, which accepts
 `trade_ids`, a `session_id` or both (`platform/api/routers/backtest.py:471-474,520-550`); it is
@@ -5029,15 +5034,16 @@ never sends a 200 with no bars: an empty day is a 404
 `Couldn't load this data` with `No data found in Cloud SQL or GCS for iwm date=20260425` (executed
 2026-09-30 through the real handler, CHARTS-15), and the two-line empty text is reached only by an
 answer with `count` 0 (executed with a mocked one; Gaps). The toolbar note
-`Session ended: no closed trades to score` (`:245-247`, test id `replay-session-end-note`,
-CHARTS-08) follows a session that ends with no closed trade of its own, which from this page alone
-is every session. The Similar setups card reads
+`Session ended: no closed trades to score` (`src/routes/ChartsPage.tsx:245-247`, test id
+`replay-session-end-note`, CHARTS-08) follows a session that ends with no closed trade of its own,
+which from this page alone is every session. The Similar setups card reads
 `Waits for the voter to fire, no setup currently active.` without a fire and
 `No historical matches in this bucket yet. Try widening the RSI band or wait for the backfill to finish for this ticker.`
 for an empty bucket (`SimilarSetupsCard.tsx:27-38,69-73`). The Backtester reads
 `No backtest results found` under its heading with no runs (`BacktesterSection.tsx:390-394`), with
 the amber banner of CHARTS-15 when the request failed. The Strategy conditions and Similar cards are
-absent below 14 bars (`:784,792`). A trade list with no trades draws nothing and says nothing.
+absent below 14 bars (`src/routes/ChartsPage.tsx:784,792`). A trade list with no trades draws
+nothing and says nothing.
 
 **Needs:** The requests of CHARTS-01, CHARTS-02 and CHARTS-05 to CHARTS-08; none of its own.
 
@@ -5077,10 +5083,10 @@ card (`src/routes/ChartsPage.tsx:717`, `src/components/shared/WidgetState.tsx:29
 button that refetches: the market-data hook throws the server's `detail`, so the text is the
 handler's own, `No data found in Cloud SQL or GCS for iwm date=20260425` for a day with no rows
 (executed 2026-09-30 through the real handler), or the server's words for a 500 (executed with
-mocked answers). The error branch written inside the card at `:722-733`, which would show
-`No market data available for this date` for a message containing `No data`, can never render,
-because `WidgetState` answers an error first (executed 2026-09-30 with a mocked error; Gaps). The
-Similar setups card prints the raw error, `similar-setups 503`, in red
+mocked answers). The error branch written inside the card at `src/routes/ChartsPage.tsx:722-733`,
+which would show `No market data available for this date` for a message containing `No data`, can
+never render, because `WidgetState` answers an error first (executed 2026-09-30 with a mocked error;
+Gaps). The Similar setups card prints the raw error, `similar-setups 503`, in red
 (`src/components/charts/SimilarSetupsCard.tsx:83-87`). The Backtester shows one amber banner,
 `No backtest results for <ticker>. Run scripts/run_backtest.py --ticker <ticker> first.`, for a
 failed run list or a failed results request whatever the status (`BacktesterSection.tsx:411-417`;
@@ -5194,8 +5200,8 @@ so it reflects the last gated answer, not any 401: a 401 on the market data, the
 indicators, the signal series or the similar request left the banner up, while a 401 on the
 reference or on the backtest list did not, because later successful answers cleared it (executed
 2026-09-30 in open mode, the other routes answering). The compact `DataGate` around the Strategy
-conditions, Similar setups and Backtester cards (`:780-820`) swaps them for `SignInEmptyState`
-(`Sign in to load data`) only when `blocked && !isLoading && !isSignedIn`
+conditions, Similar setups and Backtester cards (`src/routes/ChartsPage.tsx:780-820`) swaps them for
+`SignInEmptyState` (`Sign in to load data`) only when `blocked && !isLoading && !isSignedIn`
 (`SignInEmptyState.tsx:93-98`); `isSignedIn` is the Firebase state in firebase mode and always true
 in `iap` and `open` mode (`src/hooks/useUser.ts:81`), and in firebase mode a signed-out visitor
 never reaches the page, because `AuthGate` wraps every app route
