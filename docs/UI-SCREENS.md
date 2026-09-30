@@ -2125,14 +2125,14 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 
 ### SCREEN-DASHBOARD — `/dashboard`
 
-- **Purpose:** Daily starting point: market brief, movement read, expected move, most-active marquee, sector rotation.
+- **Purpose:** Daily starting point: the pre-market brief with the top playbook setup, daily KPIs, the intraday chart, live signals, upcoming catalysts, sector rotation, the AI take, news and the feature-flagged Movement Read. The most-active marquee is not mounted on this route.
 - **Matrix:** [03 § 04](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#04--dashboard)
 - **Status:** Production but needs remediation · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/DashboardPage.tsx` (843 lines)
-- **Child components:** `CandlestickChart`, `Card`, `CardHeader`, `Delta`, `DirTag`, `KpiTile`, `Metric`, `MicroLabel`, `MovementRead`, `Pill`, `PriceAreaChart`, `ScoreStars`, `SetupCardDetails`, `TickerCombobox`
+- **Component:** `src/routes/DashboardPage.tsx` (948 lines)
+- **Child components:** `CandlestickChart`, `Card`, `CardHeader`, `Delta`, `DirTag`, `KpiTile`, `Metric`, `MicroLabel`, `MovementRead`, `Pill`, `PriceAreaChart`, `ScoreStars`, `SetupCardDetails`, `TickerCombobox`, `WidgetState`
 - **API calls (from source):** `/api/catalysts/events`, `/api/dashboard/brief/`, `/api/market/data/`, `/api/market/reference/`, `/api/market/sectors`, `/api/playbook/`, `/api/signals/`
 - **Stores:** `useReviewDateStore`, `useTickerStore`
-- **E2E specs:** `tests/dashboard/dashboard-chart-fit.spec.ts`, `tests/dashboard/dashboard.spec.ts`, `tests/shared/most-active-bar.spec.ts`, `tests/dashboard/movement-read.spec.ts`
+- **E2E specs:** `tests/dashboard/dashboard-chart-fit.spec.ts`, `tests/dashboard/dashboard.spec.ts`, `tests/dashboard/movement-read.spec.ts`, `tests/dashboard/ticker-combobox.spec.ts`; two more only assert that something is absent from this route: `tests/shared/most-active-bar.spec.ts` (the marquee) and `tests/dashboard/data-pipeline-widget.spec.ts` (the retired data-pipeline widget)
 - **PR lineage:** [#649](https://github.com/TeneikaAskew/stocks/pull/649)/[#650](https://github.com/TeneikaAskew/stocks/pull/650) movement statement · [#729](https://github.com/TeneikaAskew/stocks/pull/729) enable + e2e · [#732](https://github.com/TeneikaAskew/stocks/pull/732) most-active bar · [#733](https://github.com/TeneikaAskew/stocks/pull/733) expected-move card (disabled by [#810](https://github.com/TeneikaAskew/stocks/pull/810))
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -2140,18 +2140,19 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/dashboard/brief/{ticker} | bias, reason, rsi, strat_candle, strat_combo, ftfc_score, ftfc_direction, signal_status, daily_indicators, live.price/session (types: `DashboardPage.tsx` BriefResponse; fixture: `tests/helpers/fixtures/dashboard.ts`) | premarket-brief 08:30 ET Mon-Fri → premarket_analysis | today's brief by 08:30 ET, else "unavailable" | `briefQ` (`useFetch`) → briefing strip |
+| GET /api/dashboard/brief/{ticker} | bias, reason, rsi, strat_candle, strat_combo, ftfc_score, ftfc_direction, signal_status, daily_indicators, live.price/session (types: `DashboardPage.tsx` BriefResponse; fixture: `tests/helpers/fixtures/dashboard.ts`) | premarket-brief 08:30 ET Mon-Fri → premarket_analysis; fetch-market-data 23:00 ET Mon-Fri → market_data_daily, into which fetch-premarket-refresh 08:20 ET Mon-Fri first inserts today's row without a close | the newest `premarket_analysis` row (`run_kind = 'live'`) and the newest `market_data_daily` row, served as stored with no date floor, so from 08:20 ET until the 23:00 ET fetch the daily row is today's placeholder with no close; `source: 'unavailable'` only when Cloud SQL is not configured, otherwise HTTP 200 with bias `neutral` when a read fails or finds nothing; re-requested every 15s while the market is open in live mode | `briefQ` (`useFetch`) → briefing strip, top setup |
 | GET /api/live/quote/{ticker} | price, change, change_pct, open/high/low, volume, prev_close (types: `useLiveQuote.ts` LiveQuote) |  | 15s poll while the tab is open | `useLiveQuote` → briefing strip hero price |
 | GET /api/live/status | is_open, session, next_open, current_time_et (types: `useLiveStatus.ts` LiveStatus) |  | 60s refetch, 30s staleTime | `useLiveStatus` → briefing strip market pill |
 | GET /api/playbook/{ticker} | cards[].name/direction/win_rate/avg_return/conditions/target_pct/stop_pct/horizons, analysis_date, age_days, max_age_days (types: `DashboardPage.tsx` PlaybookResponse) | phase6-playbook 04:30 ET Mon-Fri → playbook_cards | server refuses (503) a card set older than max_age_days; re-polled every 15min in live mode | `playbookQ` (`useFetch`) → top setup |
 | GET /api/signals/{ticker}?limit=20 | signals[].time/direction/score/conditions_met/return_pct (types: `DashboardPage.tsx` SignalsResponse) | historical-signals-watchlist 01:00 ET Tue-Sat → historical_signals |  | `signalsQ` (`useFetch`) → live signals table |
-| GET /api/catalysts/events?date_from&date_to | events_by_date[date][].ticker/title/catalyst_type/impact/sentiment_label/sentiment_score/source (types: `DashboardPage.tsx` CatalystsResponse/CatalystEvent) | fetch-news-sentiment hourly 08:00-17:00 ET Mon-Fri → news_sentiment | last 48 hours within the requested range | `catalysts` (`useFetch`) → catalysts list, News |
-| GET /api/market/sectors | sectors[].symbol/name/status/close/chg_1d_pct/chg_5d_pct/reason (types: `DashboardPage.tsx` SectorRow/SectorsResponse) | fetch-market-data 23:00 ET Mon-Fri → market_data_daily |  | `sectorsQ` (`useFetch`) → sector rotation |
-| GET /api/market/reference/{ticker}/{date} | open, close, high, low, week.high/low/avg_close/avg_rsi_14 (types: `DashboardPage.tsx` ReferenceResponse) | fetch-market-data 23:00 ET Mon-Fri → market_data_daily |  | `referenceQ` (`useFetch`) → daily KPIs |
-| GET /api/market/data/{ticker}/{date}?timeframe=60 | candlestick[].time/open/high/low/close, volume[].time/value (types: `DashboardPage.tsx` MarketDataResponse) | fetch-market-data 23:00 ET Mon-Fri → market_data_intraday |  | `hourlyQ` (`useFetch`) → intraday chart |
-| GET /api/insights/report/{ticker} | thesis, direction, conviction, key levels (types: `src/types/insights.ts` InsightReportEnvelope) | insight-pipeline 08:45 ET Mon-Fri → insight_reports | 60s staleTime | `useInsightReport` (`useInsights.ts`) → AI take |
+| GET /api/catalysts/events?date_from&date_to | events_by_date[date][].ticker/title/catalyst_type/impact/sentiment_label/sentiment_score/source (types: `DashboardPage.tsx` CatalystsResponse/CatalystEvent) | news_sentiment ← fetch-news-sentiment and fetch-news-sentiment-topics hourly 08:00-17:05 ET Mon-Fri; economic_events ← fetch-economic-events 07:00 ET; earnings_calendar ← fetch-earnings-calendar 19:00 ET; insider_transactions ← fetch-insider-transactions 07:00 ET; sec_filings ← fetch-sec-filings 07:00, 10:00, 13:00, 17:00 ET (all Mon-Fri); no Benzinga key on either service | news: the last 48 hours from now with relevance 0.7 or more, whatever `date_from` and `date_to` say; the other four: rows dated inside the requested range; the page lists events oldest date first, so backward-dated news sorts ahead of upcoming events | `catalysts` (`useFetch`) → catalysts list, News |
+| GET /api/market/sectors | sectors[].symbol/name/status/close/chg_1d_pct/chg_5d_pct/reason (types: `DashboardPage.tsx` SectorRow/SectorsResponse) | fetch-market-data 23:00 ET Mon-Fri → market_data_daily | the 10 calendar days before the newest date in `market_data_daily`, non-null closes only; cached 10 minutes; a database failure is a 503 | `sectorsQ` (`useFetch`) → sector rotation |
+| GET /api/market/reference/{ticker}/{date} | close (the only field the page reads; the response also carries open, high, low, source, stale_days and week.high/low/avg_close/avg_rsi_14) (types: `DashboardPage.tsx` ReferenceResponse) | fetch-market-data 23:00 ET Mon-Fri → market_data_daily; AlphaVantage TIME_SERIES_DAILY for dates under 30 days old | the trading day before `{date}`, which is the brief's latest daily date (the review date in review mode); AlphaVantage first, then Cloud SQL, then the GCS parquet listing, with `source` and `stale_days` set and never read by the page | `referenceQ` (`useFetch`) → daily KPIs |
+| GET /api/market/data/{ticker}/{date}?timeframe=60 | candlestick[].time/open/high/low/close, volume[].time/value (types: `DashboardPage.tsx` MarketDataResponse) | fetch-market-data 23:00 ET Mon-Fri and fetch-alphavantage-intraday 21:00 ET Mon-Sat → market_data_intraday | `{date}` is the month code YYYYMM of the brief's latest daily date; enabled only after the brief has resolved; a Cloud SQL failure falls through to the GCS parquet files with no signal in the response | `hourlyQ` (`useFetch`) → intraday chart |
+| GET /api/market/data/{ticker}/{date}?timeframe=1 | candlestick[].time/open/high/low/close, volume[].time/value (types: `useReviewQuote.ts` HistoricalDayResponse) | fetch-market-data 23:00 ET Mon-Fri and fetch-alphavantage-intraday 21:00 ET Mon-Sat → market_data_intraday | review mode only; `{date}` is the review day YYYYMMDD; 1 hour staleTime | `useReviewQuote` → briefing strip hero price |
+| GET /api/insights/report/{ticker} | report.thesis, direction, conviction, time_horizon, confidence_score (types: `src/types/insights.ts` InsightReportEnvelope) | insight-pipeline 08:45 ET Mon-Fri → insight_reports | 60s staleTime; `?as_of=` in review mode; a 404 is read as no report and any other failure is ignored by the page | `useInsightReport` (`useInsights.ts`) → AI take |
 | GET /api/movement-statement | headline, levels, expected_move, regime, continuation (types: `src/types/index.ts` MovementStatement) | premarket-brief 08:30 ET Mon-Fri → premarket_analysis (one of several inputs assembled server-side; see matrix DASHBOARD-21) | feature-flagged (MOVEMENT_STATEMENT_ENABLED); hidden in review mode | `useMovementStatement` → `MovementRead` |
-| store: ticker, review date |  | Zustand, per session |  | every card |
+| store: ticker, review date, chart style |  | Zustand `useTickerStore` (persisted as `ticker-store`), `useReviewDateStore` (in memory, lost on reload), `localStorage` `overview-chart` |  | every card |
 
 #### Displayed
 | ID | Element | Component |
@@ -2170,70 +2171,999 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| DASHBOARD-10 | Switch ticker | `TickerCombobox` writes `useTickerStore`; every card on the page re-keys to the new symbol. |
-| DASHBOARD-11 | Refresh | The Refresh button calls `window.location.reload()`. |
+| DASHBOARD-10 | Switch ticker | `TickerCombobox` writes `useTickerStore` (persisted as `ticker-store`); the ticker-scoped queries (brief, playbook, signals, AI take, quote, reference, hourly bars, Movement Read) are asked again for the new symbol, while Sector rotation, Catalysts and News are market-wide and keep their data. |
+| DASHBOARD-11 | Refresh | The Refresh button calls `window.location.reload()`, which reloads the whole document, asks for every request again and drops review mode and the 1D or 5D choice. |
 | DASHBOARD-12 | Candles or Area toggle | `pickChart` sets `chartStyle` state and persists the choice to `localStorage` (`overview-chart`). |
 | DASHBOARD-13 | 1D or 5D sector period | Toggles in-memory `sectorPeriod` state (not persisted), which re-derives the ranked sector rows from the same `/api/market/sectors` response. |
-| DASHBOARD-14 | Click a card (signals, catalysts, news, AI take) | `Card interactive` `onClick` calls `navigate()`: Live signals → `/signals`; Catalysts and News → `/catalysts`; AI take → `/insights`. |
-| DASHBOARD-15 | Review mode | The shell's replay control sets a review date/time; `DashboardPage` appends `date`/`end_date`/`end_time` to the brief, playbook and signals requests and reconstructs the chart and reference reads for that as-of moment. |
+| DASHBOARD-14 | Click a card (signals, catalysts, news, AI take) | `Card interactive` `onClick` calls `navigate()`: Live signals → `/signals`; Catalysts and News → `/catalysts`; AI take → `/insights`. The cards are plain `div` elements with no role or tabindex, so they are not keyboard operable. |
+| DASHBOARD-15 | Review mode | The Replay control in the header (`ReplayControl`, shown on `/dashboard`, `/live`, `/charts` and `/signals`) sets a review date and time in memory; `DashboardPage` then adds `date` to the brief and playbook requests, `end_date` and `end_time` to signals, `as_of` to the AI take and a seven-day window from the review date to catalysts, anchors the reference and hourly bars on that date and rebuilds the hero price from that day's 1-minute bars. Sector rotation and News are not review aware, and the Movement Read card is not mounted. |
 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| DASHBOARD-16 | loading | present | `WidgetState.tsx`'s `WidgetSkeleton` renders per card while its query is in flight. |
-| DASHBOARD-17 | empty | present | `DashboardPage.tsx` renders an `Unavailable` presentation rather than a fabricated zero when a card's data is genuinely absent. |
-| DASHBOARD-18 | error | present | `WidgetState.tsx`'s `WidgetError` renders per card on a failed fetch. |
-| DASHBOARD-19 | stale | present | `DashboardPage.tsx` computes `playbookAge`/`snapshotAgeLabel` from the response's own age fields and shows it rather than presenting old data as current. |
-| DASHBOARD-20 | permission | not tracked (new category); present | `WidgetState.tsx`'s `SignInEmptyState` renders per card when `authGate.ts` reports the session is auth-blocked. |
+| DASHBOARD-16 | loading | present | `WidgetState.tsx`'s `WidgetSkeleton` renders per wrapper (brief, reference, hourly bars, signals, sectors) while its query is in flight; the playbook, catalysts, AI take, quote and status queries have no loading state. |
+| DASHBOARD-17 | empty | present | Each card words its own empty line (`Unavailable`, `No signals yet for this ticker.` and so on); the KPI row is absent, without a message, when a close is missing; the brief handler answers HTTP 200 with a neutral bias when it has no data. |
+| DASHBOARD-18 | error | present | `WidgetState.tsx`'s `WidgetError` renders per wrapper on a failed fetch; the playbook shows its own `Playbook unavailable` line, and the catalysts, AI take, quote and status queries fail silently. |
+| DASHBOARD-19 | stale | present | `DashboardPage.tsx` computes `playbookAge`/`snapshotAgeLabel` from the response's own age fields and shows it under the Top setup; nothing else on the page is marked stale. |
+| DASHBOARD-20 | permission | not tracked (new category); present | `WidgetState.tsx`'s `SignInEmptyState` renders in a wrapper when that wrapper's own query failed with a 401 (`isAuthError` on the message); `authGate.ts` only keeps the intraday card mounted. |
 
 #### Journeys
-1. Morning brief to a trade idea: Opens /dashboard (DASHBOARD-01) → Reads the pre-market brief bullets and market pill (DASHBOARD-01) → Checks the Top setup, win rate, conditions, levels (DASHBOARD-02) → Clicks Live signals to go to /signals (DASHBOARD-05, DASHBOARD-14) → Or follows the setup to /playbook for the full card (DASHBOARD-02)
-2. Follow the ticker across the app: Switches ticker in the TickerCombobox (DASHBOARD-10) → Every card re-keys to the new symbol → Scans KPIs and the intraday chart (DASHBOARD-03, DASHBOARD-04) → Clicks AI take to go to /insights for that ticker (DASHBOARD-08, DASHBOARD-14) → Ticker focus persists on the next page
-3. Review a past session: Sets a review date in the replay control (DASHBOARD-15) → Market pill switches to HISTORICAL (DASHBOARD-01) → Brief, playbook, signals, catalysts and chart re-resolve as-of that date (DASHBOARD-15) → Movement Read hides so live data cannot leak in (DASHBOARD-21) → Compares the brief against what actually happened (DASHBOARD-01)
-4. Data is missing: Opens the page before the pipeline has run → Brief card shows an explicit "unavailable" reason (DASHBOARD-17) → Top setup shows "No playbook setups yet" (DASHBOARD-02, DASHBOARD-17) → KPIs render an em-dash instead of a fabricated zero (DASHBOARD-03, DASHBOARD-17)
+1. Morning brief to a trade idea: Opens /dashboard (DASHBOARD-01) → Reads the pre-market brief bullets and market pill (DASHBOARD-01) → Checks the Top setup, win rate, conditions, levels (DASHBOARD-02) → Clicks Live signals to go to /signals (DASHBOARD-05, DASHBOARD-14) → Opens /playbook from the navigation for the full card set, since the Top setup has no link to it (DASHBOARD-02)
+2. Follow the ticker across the app: Switches ticker in the TickerCombobox (DASHBOARD-10) → The ticker-scoped cards ask again for the new symbol, while Sector rotation, Catalysts and News stay as they were → Scans KPIs and the intraday chart (DASHBOARD-03, DASHBOARD-04) → Clicks AI take to go to /insights for that ticker (DASHBOARD-08, DASHBOARD-14) → Ticker focus persists on the next page
+3. Review a past session: Sets a review date in the replay control (DASHBOARD-15) → Market pill switches to HISTORICAL (DASHBOARD-01) → Brief, playbook, signals, AI take and the catalysts window re-resolve as-of that date and the Area chart is cut at the time, while Sector rotation, News and the Candles chart are not as-of (DASHBOARD-15) → Movement Read hides so live data cannot leak in (DASHBOARD-21) → Compares the brief against what actually happened (DASHBOARD-01) → Refresh returns the page to live (DASHBOARD-11)
+4. Data is missing: Opens the page before the pipeline has run → With Cloud SQL not configured the strip shows the server's unavailable reason, and with no rows it reads Daily bias NEUTRAL (DASHBOARD-01, DASHBOARD-17) → Top setup shows "No playbook setups yet" (DASHBOARD-02, DASHBOARD-17) → The KPI row is absent when a close is missing, and only the RSI tile can read an em-dash (DASHBOARD-03, DASHBOARD-17)
 
 #### Elements
 ##### DASHBOARD-01 · Briefing strip
 
+**Shows or does:** The first block of the page (`src/routes/DashboardPage.tsx:559-691`, one
+`WidgetState` around `briefQ`). Its left half carries the title "Pre-market brief" under the label
+`Today` or, in review mode, `As of` plus the date (`:571-577`), the market pill (`:576`, decided at
+`:525-533`: `HISTORICAL` in review mode, `OPEN` while `useLiveStatus` says `is_open`,
+`PRE-MARKET` or `AFTER HOURS` by `session`, otherwise `CLOSED`), the hero row (the ticker, the live
+price through `fmtPrice`, and a `Delta`, `:580-584`) and up to five bullets built by `briefBullets`
+(`:194-222`): `Daily bias <BIAS>` followed by `live $<price> (<session>)` when the response carries
+`live`, else `<date> close` when the daily row has a date; `FTFC <direction> · score <n>`;
+`Strat <candle> · <combo>`; `RSI(14) <n> · overbought | oversold | neutral` (70 and 30 inclusive);
+`Signal status: <text>`. A response with `source: 'unavailable'` or no body shows the `Unavailable`
+line with the server's `reason` (`:588-603`). The right half is the Top setup (DASHBOARD-02). The
+brief is re-requested every 15 seconds only while the market is open and not in review mode
+(`:325`); the hero price polls `/api/live/quote` every 15 seconds whatever the session
+(`useLiveQuote.ts:22-34`) and the pill polls `/api/live/status` every 60 seconds
+(`useLiveStatus.ts:12-23`). In review mode the hero price is rebuilt from the review day's 1-minute
+bars up to the review time (`useReviewQuote`, `:316-317`) instead of the quote.
+
+**Needs:** `GET /api/dashboard/brief/{ticker}` (`platform/api/routers/dashboard.py:82`; `?date=` in
+review mode), `GET /api/live/status`, `GET /api/live/quote/{ticker}`. The brief handler reads the
+newest `premarket_analysis` row with `run_kind = 'live'` and the newest `market_data_daily` row with
+no date floor and no filter on a missing close (`dashboard.py:104-203`); during the regular session,
+without `date`, it also recomputes RSI14, EMA9, EMA20 and SMA200 with a synthetic bar at the live
+quote's price (`_apply_live_overlay`, `dashboard.py:257-331`, through `lib/indicators.py`).
+
+**States:** DASHBOARD-16 (skeleton while `briefQ` loads), DASHBOARD-18 (the error box replaces the
+strip and the Top setup together), DASHBOARD-20 (sign-in card), DASHBOARD-17 (the `Unavailable`
+line). The hero price and the pill have no state of their own: a failed or unanswered quote reads
+`—`, a failed or unanswered status reads `CLOSED` (executed 2026-09-30, see Gaps).
+
+**Acceptance criteria:**
+- Given Cloud SQL is not configured, when the handler is called, then it answers `source:
+  'unavailable'` with a `reason` (`test_brief_unavailable_source`, `tests/api/test_platform_api.py`);
+  the strip then shows that reason instead of bullets (`DashboardPage.tsx:588-603`, read directly; no
+  test asserts the strip's text). This is the only path to the `Unavailable` line: a configured
+  database with no row or a failing read is a 200 (see below).
+- Given a live-mode response with `bias`, `ftfc_direction`, `strat_candle` and `rsi`, when the page
+  renders, then the first bullet reads `Daily bias <BIAS>` (`shows daily bias card`, `renders
+  Overview heading + pre-market brief for the active ticker`, `tests/dashboard/dashboard.spec.ts`:
+  presence of the text only; the other bullets, the pill and the hero price are asserted by no
+  test).
+- Given `premarket_analysis` carries `ftfc_direction` `bullish`, when the handler builds the
+  response, then `bias` is `bullish` and `has_premarket` is true (`test_brief_live`,
+  `tests/api/test_platform_api.py`); without it `bias` derives from RSI and the price against EMA20
+  (`dashboard.py:226-244`, read directly, no test).
+- Given `?date=`, when the handler reads, then both reads are bounded by that date
+  (`test_brief_with_historical_date`, `test_review_brief_returns_correct_date`).
+- Given the market is in its regular session and `date` is absent, when the brief is requested,
+  then the overlay replaces `close`, `rsi_14`, the EMAs and `stale_days` with live-derived values
+  (`dashboard.py:257-331`, read directly; no test runs `_apply_live_overlay`).
+- Given both reads return no row or raise, when the handler answers, then it is HTTP 200 with
+  `source: 'cloud_sql'`, `bias: 'neutral'` and `daily_indicators: {}`, and the strip reads
+  `Daily bias NEUTRAL` alone (executed 2026-09-30 against the real handler with faked query
+  results, and against the page with that body; no committed test; see Gaps).
+- Given the newest daily row is the premarket placeholder (production read 2026-09-30 09:26 ET:
+  IWM `date` 2026-09-30 with `close`, `rsi_14` and `atr_14` NULL, `updated_at` 12:24 UTC, execution
+  `db-query-2s56t`), when the handler answers, then `daily_indicators.close` is null and the strip
+  reads `Daily bias <BIAS> · 2026-09-30 close` (executed 2026-09-30; see Gaps).
+
+**Tests:** `tests/dashboard/dashboard.spec.ts` (the two presence tests above; the file's `beforeEach`
+serves the brief, quote and status). `tests/api/test_platform_api.py` (`TestDashboardBriefAPI`,
+`TestReviewModeIntegration`, `TestLiveMarketAPI`, `test_live_status`, which asserts only that the
+keys are present); `tests/api/test_route_coverage.py` only proves each route answers with a JSON
+status and no crash. `briefBullets`, the pill, the hero price and the overlay have no test of their
+own, so Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:194-222,316-327,525-533,559-691`,
+`src/hooks/useLiveStatus.ts`, `src/hooks/useLiveQuote.ts`, `src/hooks/useReviewQuote.ts`,
+`src/components/primitives/index.tsx` (`Pill`, `Metric`, `Delta`, `MicroLabel`); no test ids.
+
 ##### DASHBOARD-02 · Top setup
+
+**Shows or does:** The right half of the briefing block (`DashboardPage.tsx:607-688`). `topCard`
+(`:471-482`) picks one card from `playbook.cards`: with a bullish brief bias only `CALL` cards are
+candidates, with a bearish one only `PUT` cards, otherwise all (and all when no card has the wanted
+direction); among candidates the highest non-null `win_rate` wins (first on a tie), and when no
+candidate has a win rate the first candidate is shown with `—`. The card shows the name, the age
+line `Cards <as of Sep 5, 2026 (1d old)>` (test id `playbook-age`, `:618-625`), a `DirTag`, the
+win rate as stars (`round(win_rate / 20)`) and `<n>%`, the average return through
+`topSetupAvgReturn` (percent units, no re-multiplying, `:225-228`), up to five string conditions and
+`SetupCardDetails` (`src/components/playbook/SetupCardDetails.tsx:48-124`): trade levels (target and
+stop from `target_pct` and `stop_pct` off the price `heroQuote?.price ?? brief.live.price ??
+brief.daily_indicators.close`, direction-aware, needing a positive price) and the win rate and
+average bps by hold window with the best window starred. With no card it shows `Unavailable`:
+`Playbook unavailable: <server reason>` after a failed request, else `No playbook setups yet, run
+the pipeline to populate.` (`:674-687`). `dataUnlessError` (`:341`) drops the old payload when a
+refetch is refused, so a set the server has since called stale is not shown.
+
+**Needs:** `GET /api/playbook/{ticker}` (`platform/api/routers/playbook.py:306`; `?date=` in review
+mode; 60 second staleTime, re-polled every 15 minutes in live mode, `:136,328-337`) and the brief's
+`bias` for the direction filter. The handler reads `playbook_cards` for the newest `analysis_date`
+(bounded by `date`), refuses a set older than 7 days with a 503 that names the date and the
+`phase6-playbook` job, answers 404 when the ticker has no rows, and returns `analysis_date`,
+`generated_at`, `age_days` and `max_age_days` (`playbook.py:136-303,306-364`; one-hour cache whose
+age is re-judged on every hit).
+
+**States:** DASHBOARD-16 to DASHBOARD-20. The strip's `WidgetState` wraps this block, so a failed
+brief request replaces it with the error box (executed 2026-09-30); the playbook request has its own
+failure wording inside the card and no loading state (read directly: while it loads, the card reads
+`No playbook setups yet`).
+
+**Acceptance criteria:**
+- Given a fresh card set (`analysis_date` 2026-09-05, `age_days` 1), when the page renders, then the
+  card name shows and `playbook-age` reads `as of Sep 5, 2026 (1d old)` (`top setup shows the card
+  set date and age`, `tests/dashboard/dashboard.spec.ts`).
+- Given the server answers 503 with the stale-set detail, when the page renders, then the card
+  reads `Playbook unavailable` with the detail and never the empty-state copy (`top setup surfaces
+  the stale-cards refusal instead of a generic empty state`).
+- Given `avg_return` 0.29 (percent units), when formatted, then `+0.29%`; a null or undefined value
+  renders `—` (`topSetupAvgReturn`, `src/routes/DashboardPage.avgReturn.test.ts`).
+- Given a set exactly 7 days old, then it is served; one day older it is refused with a 503; a
+  cached set is re-judged on every hit; a `date` is judged against the requested date; no rows is a
+  404 and Cloud SQL not configured is a 503 (`test_playbook_age_boundary`,
+  `test_playbook_stale_set_is_refused_not_rendered`,
+  `test_playbook_cached_set_is_rechecked_on_every_hit`,
+  `test_playbook_as_of_is_judged_against_the_requested_date`,
+  `test_playbook_no_rows_is_404_never_markdown`, `test_playbook_cloud_sql_not_configured_is_503`,
+  `tests/api/test_playbook_evaluate.py`).
+- Given bullish or bearish bias and several cards, when `topCard` runs, then the highest win rate of
+  the matching direction is shown (`DashboardPage.tsx:471-482`, read directly; the default fixture
+  serves twelve cards but no test asserts which is chosen).
+- Given the newest set exists, when queried on 2026-09-30, then IWM, SPY and QQQ each hold 240 rows
+  for `analysis_date` 2026-09-30, `generated_at` 08:38 to 08:46 UTC (see the V-gate evidence comment).
+
+**Tests:** `tests/dashboard/dashboard.spec.ts` (the two tests above);
+`src/routes/DashboardPage.avgReturn.test.ts`; `tests/api/test_playbook_evaluate.py`;
+`tests/api/test_platform_api.py` (`TestPlaybookAPI.test_playbook`). The card choice, the star and
+percent rendering and `SetupCardDetails` (including its `direction ?? 'CALL'` default and its
+`live price` label on a price that may be the last close) have no test.
+
+**Code:** `src/routes/DashboardPage.tsx:225-228,328-344,471-482,607-688`,
+`src/components/playbook/SetupCardDetails.tsx`, `src/lib/dates.ts` (`snapshotAgeLabel`),
+`src/lib/queryData.ts`; test id `playbook-age`.
 
 ##### DASHBOARD-03 · Daily KPIs
 
+**Shows or does:** A row of four `KpiTile`s (`DashboardPage.tsx:693-713`) inside a `WidgetState` on
+`referenceQ`: `Prev close` (`reference.close`), `Latest close` (`brief.daily_indicators.close`),
+`2-day change` (`fmtPct` of `(latest - prev) / prev * 100`, with `±$x/sh` underneath, green or red by
+sign) and `RSI (14)` (`brief.rsi`, else `daily_indicators.rsi_14`; red strictly above 70, green
+strictly below 30, else amber, with the zone word underneath, which switches at 70 and 30
+inclusive; `—` and a neutral tone when missing). `kpiCards` (`:410-417`) is null when either close is
+missing, and then the whole row is absent with no message (executed 2026-09-30). The reference
+request is anchored on `daily_indicators.date` of the brief (else today; the review date in review
+mode, `:393-401`), and the endpoint returns the trading day before that date, so `Prev close` is the
+close before the latest daily row. While the market is open the brief's `close` is replaced by the
+live quote (the overlay of DASHBOARD-01), so `Latest close` then holds a live price (read in
+`dashboard.py:316-324`, no test runs it).
+
+**Needs:** `GET /api/market/reference/{ticker}/{date}` (`platform/api/main.py:1061`) and the
+brief's `daily_indicators.close`, `rsi_14` and `date`. For dates under 30 days old the handler asks
+AlphaVantage `TIME_SERIES_DAILY` first (`_fetch_av_daily_reference`, `main.py:200-241`; the handler
+is `main.py:1061-1205`), falls back to Cloud SQL `market_data_daily` and then to the GCS parquet
+listing, and returns `source`, `stale_days` and a five-session `week` block that this row does not
+read.
+
+**States:** DASHBOARD-16, DASHBOARD-18, DASHBOARD-20 through the `referenceQ` wrapper; a missing
+close is the absent row, not the empty state.
+
+**Acceptance criteria:**
+- Given the brief and the reference both answer, when the page renders, then the four labels `Prev
+  close`, `Latest close`, `2-day change` and `RSI (14)` are visible (`shows the daily KPI tiles`,
+  `tests/dashboard/dashboard.spec.ts`: labels only; no value or tone is asserted).
+- Given a date within 30 days and an AlphaVantage answer, when the handler runs, then the previous
+  session's OHLC comes from AlphaVantage; given an older date it comes from Cloud SQL
+  (`test_reference_recent_uses_alphavantage`, `test_reference_historical_uses_cloud_sql`,
+  `test_reference_returns_prev_day`, `tests/api/test_platform_api.py`).
+- Given the brief's newest daily row has no close, when the page renders, then no tile shows
+  (executed 2026-09-30: `Prev close`, `Latest close` and `RSI (14)` all absent). This is the
+  state of the page from the 08:20 ET premarket insert until the session opens (production read
+  2026-09-30 09:26 ET: the IWM row for that day had no close), and by the same code path after the
+  close until the 23:00 ET fetch fills the row (not observed; see Gaps).
+- Given a missing RSI with both closes present, when the row renders, then the RSI tile reads
+  `—` with a neutral tone (`DashboardPage.tsx:705-710`, read directly; no test).
+- Given `market_data_daily` on 2026-09-30, then IWM, SPY and QQQ each hold 2,619 rows with the last
+  real close on 2026-09-29 (see the V-gate evidence comment).
+
+**Tests:** `tests/dashboard/dashboard.spec.ts` (labels only); `tests/api/test_platform_api.py`
+(`TestReferenceAPI`, three tests, plus `test_reference_for_review_date`);
+`tests/api/test_route_coverage.py` (a 404 for an unknown date). The tile values, `2-day change` and
+the RSI tone are not asserted by any test, so Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:95-102,393-417,693-713`,
+`src/components/primitives/index.tsx` (`KpiTile`), `src/lib/format.ts` (`fmtPrice`, `fmtPct`,
+`fmtNum`).
+
 ##### DASHBOARD-04 · Intraday chart
+
+**Shows or does:** A card headed `<ticker> · intraday` with the caption `60-min bars · last 2
+sessions` and a Candles or Area switch (DASHBOARD-12), mounted only when hourly bars exist or the
+request is loading, failed or the session is auth-blocked (`DashboardPage.tsx:731-764`, the
+condition at `:732`). Bars come from `hourlyQ`, `GET /api/market/data/{ticker}/{YYYYMM}?timeframe=60`
+(the month of the anchor date), enabled only once the brief has answered (`:402-407`). Candles
+render `CandlestickChart` with every bar of the response, all sessions, no volume, in a fixed
+260 px slot (test id `intraday-chart-slot`, `:745-753`). Area renders `PriceAreaChart` with
+`pricePoints` (`:422-450`): bars whose ET-labelled hour is 4 to 16 (the times are ET wall clock
+carried as UTC seconds, so the code reads UTC getters), reduced to the last two calendar days
+present, cut at the review time in review mode, plus a dashed boundary at the start of the last day
+(`sessionBoundary`, `:452-468`); with no points it reads `No price data available`
+(`PriceAreaChart.tsx:113-122`). The caption's "last 2 sessions" therefore describes the Area style;
+the Candles style receives the whole month (see Gaps).
+
+**Needs:** `GET /api/market/data/{ticker}/{date}` (`platform/api/main.py:905`), reading
+`market_data_intraday` 1-minute rows through `_load_date_data` and resampling to the requested
+timeframe (`main.py:1595-1696`); the conversion to Eastern wall clock reads both stored
+conventions through `lib/eastern_time.py` (`stored_intraday_to_eastern`). A Cloud SQL failure or an
+empty month falls through to the GCS parquet files (`main.py:1667-1696`) with no signal in the
+response.
+
+**States:** DASHBOARD-16, DASHBOARD-18, DASHBOARD-20 through the `hourlyQ` wrapper; the card is
+absent until the brief request resolves and, when the brief fails, absent unless the session is
+auth-blocked, in which case it is mounted with no bars (executed 2026-09-30: the card was present
+with the brief and the market data refused with 401).
+
+**Acceptance criteria:**
+- Given 32 hourly bars, when the page renders with Candles, then the canvas stays inside the 260 px
+  slot (`candle chart stays inside its 260px card slot`,
+  `tests/dashboard/dashboard-chart-fit.spec.ts`).
+- Given Area is chosen, when the page renders, then a Recharts surface shows without a crash
+  (`intraday chart exposes the Candles / Area toggle and switches`,
+  `tests/dashboard/dashboard.spec.ts`).
+- Given a full day of 1-minute rows, when the endpoint runs, then the bars are returned, with
+  `end_time` cutting them and an invalid `end_time` a 400 (`test_market_data_full_day`,
+  `test_market_data_end_time_filter`, `test_market_data_end_time_invalid_format`); no rows is a 404
+  (`test_market_data_404_when_no_rows`).
+- Given rows stored in either time convention, when a session or a month is read, then the bars
+  come back as the same Eastern session and a month excludes its neighbour's spill
+  (`tests/api/test_intraday_loader_conventions.py`).
+- Given `timeframe=60`, then `_aggregate_timeframe` groups the 1-minute rows into hourly bars
+  (`main.py`, read directly); no test requests `timeframe=60` through the endpoint or calls
+  `_aggregate_timeframe`.
+- Given `market_data_intraday` on 2026-09-30, then IWM 1-minute rows run to 2026-09-30 00:00 UTC
+  (20:00 ET on 2026-09-29), 28,561 rows in the last 40 days (see the V-gate evidence comment).
+
+**Tests:** as above. No test asserts the bars a chart receives, the two-session trimming or the
+boundary line, so Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:402-407,422-468,731-764`,
+`src/components/charts/CandlestickChart.tsx`, `src/components/charts/PriceAreaChart.tsx`; test id
+`intraday-chart-slot`.
 
 ##### DASHBOARD-05 · Live signals table
 
+**Shows or does:** The left card of the signals and catalysts row (`DashboardPage.tsx:767-803`),
+headed `Live signals` with `<ticker> · <total count>` (the count is the ticker's whole signal
+history, `signalsResp.count.toLocaleString()`), showing the five most recent signals
+(`recentSignals`, `:485-488`: the response reversed, because the handler returns ascending order)
+as a four-column table: `Time` (`time.slice(5, 16)`, the raw string with no zone label), `Dir`
+(`DirTag`), `Score` (`conditions_met`, else `score/5`) and `Return` (`fmtPct(return_pct * 100)`,
+green when `>= 0`). With no signals it shows `No signals yet for this ticker.` The whole card is
+clickable (DASHBOARD-14). The request is `?limit=20`, plus `&end_date` and `&end_time` in review mode
+(`:345-348`).
+
+**Needs:** `GET /api/signals/{ticker}` (`platform/api/routers/signals.py:221`), which counts and
+reads `historical_signals` for the ticker (all `run_kind`s, disclosed on each row), newest 20 by
+`entry_time`, returned ascending; a failed read is a 503 (`signals.py:140-218,222-252`).
+
+**States:** DASHBOARD-16, DASHBOARD-18, DASHBOARD-20 through the `signalsQ` wrapper, which also
+holds the Catalysts card; DASHBOARD-17 for no rows.
+
+**Acceptance criteria:**
+- Given the ticker has signals, when the handler answers, then the newest rows come back ascending
+  with the count, direction and end-date filters honoured (`test_signals_live`,
+  `test_signals_with_direction_filter`, `test_signals_end_date_filter`,
+  `test_signals_end_date_and_time_filter`, `test_signals_empty_for_old_date`,
+  `tests/api/test_platform_api.py`); a Cloud SQL failure is a 503, not the parquet
+  (`TestSignalsAPIFailsLoud`).
+- Given a signal with `return_pct` 0.5, when the table renders, then the Return cell reads
+  `+50.00%`; given `null`, it reads `+0.00%` in green (executed 2026-09-30 in the page; see Gaps:
+  the column stores percentage points, so a 0.5 reading is +0.5%).
+- Given the newest production rows, when read on 2026-09-30, then IWM's latest `entry_time` is
+  2026-09-29 23:21 UTC, 190,159 rows, and the newest 500 `return_pct` values run from -0.34 to 4.53
+  with a mean absolute value of 0.13 (see the V-gate evidence comment).
+- Given rows before and after the writer's convention change, when the Time column prints, then it
+  mixes Eastern wall clock and UTC (production hour histogram, IWM, last 10 days; see Gaps).
+
+**Tests:** `tests/api/test_platform_api.py` as above. No Dashboard test renders a row: every
+Dashboard spec serves `signals: []`, so the table, its score column and its return column are
+untested at the page layer, and Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:86-93,345-349,485-488,767-803`; no test id.
+
 ##### DASHBOARD-06 · Catalysts list
+
+**Shows or does:** The right card of the signals and catalysts row (`DashboardPage.tsx:805-827`),
+headed `Catalysts` with `<n> upcoming` (n is at most 5). `allEvents` (`:494-499`) flattens the
+response's `events_by_date` in ascending date order, and `catalystFeed` (`:502`) is its first five,
+whatever their source. Each row shows `MM-DD`, a title (`title`, else `event`, else `<ticker>
+<type>`, clamped to two lines), `<ticker> · <type>` and an impact pill (`high` for `very high` or
+`high`, `med` for `medium`, `med` or an unknown or missing impact, `low`, `:153-164`). With none it
+shows `No catalysts in the next 7 days.` The request is `date_from` today (ET) and `date_to` seven
+days on (the review date and seven days after it in review mode, `:351-356`). The whole card is
+clickable to `/catalysts`.
+
+**Needs:** `GET /api/catalysts/events` (`platform/api/routers/catalysts.py:158`). With no
+`BENZINGA_API_KEY` in the environment of either service (read 2026-09-30) the handler serves only its
+five Cloud SQL reads (`_db_catalyst_events`, `catalysts.py:334-572`): `news_sentiment` (last 48 hours from now,
+relevance 0.7 or more, seven topics, `_news_sql` at `:101-124`, ignoring `date_from` and `date_to`),
+`economic_events` (high or medium), `earnings_calendar`, `insider_transactions` (three or more
+insiders on one side) and `sec_filings` (8-K items 1.01, 2.01, 5.02, 7.01, 8.01), the latter four
+within the requested dates. Each read catches its own failure, logs it and contributes no events,
+so a failed read is not visible in the response.
+
+**States:** DASHBOARD-16, DASHBOARD-18, DASHBOARD-20 through the `signalsQ` wrapper (the card
+belongs to the signals request, not to its own). The catalysts request itself has no state: while it
+loads and after it fails the card reads `0 upcoming` and `No catalysts in the next 7 days.`
+(executed 2026-09-30, see Gaps).
+
+**Acceptance criteria:**
+- Given the response holds news dated before today, when the card renders, then those rows come
+  first: with the default fixture the card reads `5 upcoming` and its first two rows are the two
+  `AV news` rows of yesterday, ahead of the AAPL earnings row (executed 2026-09-30; no committed
+  test asserts this card).
+- Given the news query, when written, then it is backward-looking (48 hours from now), matches
+  topics case-insensitively and does not depend on the requested window (`test_news_sql_is_backward_
+  looking_and_case_insensitive`, `test_news_topics_constant_covers_fetcher_topics`,
+  `tests/api/test_catalysts_news_filter.py`).
+- Given production data on 2026-09-30, when the five reads run for the page's window, then the news
+  filter returns 203, 382 and 79 rows for the UTC dates 09-28, 09-29 and 09-30, 22 high or medium
+  economic events and 173 earnings rows fall in the next 7 days, and 59 8-Ks were filed in the last
+  7 days (see the V-gate evidence comment). The first five rows of the date-ascending list are therefore news
+  dated 09-28, not upcoming events.
+- Given the page's window of today to seven days on, when the insider and 8-K reads run, then the
+  insider read cannot match, because the newest `transaction_date` is 2026-09-23, before the window,
+  and the 8-K read matches only the filings dated inside it, the newest `filing_date` being
+  2026-09-30 (see the V-gate evidence comment).
+
+**Tests:** `tests/api/test_catalysts_news_filter.py` (two tests on the SQL text and the topic list);
+`tests/api/test_route_coverage.py` (the route answers). `tests/dashboard/dashboard.spec.ts` serves
+this payload but asserts nothing on this card, so the row's ordering, labels and impact pills are
+untested and Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:108-113,153-164,351-356,494-502,805-827`; no test id.
 
 ##### DASHBOARD-07 · Sector rotation
 
+**Shows or does:** The first card of the third row (`DashboardPage.tsx:835-893`, test id
+`sector-rotation-card`), headed `Sector rotation` with `SPDRs · as of <date>` and the 1D or 5D
+control (DASHBOARD-13). Rows are the eleven SPDR sectors ranked descending by the active period's
+change, rows with no value last (`sectorRows`, `:369-379`); each shows the sector name, a bar whose
+width is the value's magnitude over the largest magnitude in the period (`sectorBarWidthPct`,
+`:237-241`; green for `>= 0`, red below, zero width and a muted colour for a missing value) and
+`fmtPct(value)`. A row with `status: 'unavailable'` shows the name, an empty bar and `—`, with the
+server's reason as its tooltip (`:857-865`). A whole-payload `status: 'unavailable'` shows the
+`Unavailable` line with the server's reason (`:852-853`). The `Loading sector data…` text (`:850-851`)
+cannot render, because `WidgetState` shows its skeleton first.
+
+**Needs:** `GET /api/market/sectors` (`platform/api/main.py:1402`): one batched query of the 10
+calendar days before the newest date in `market_data_daily`, closes for the eleven ETFs, non-null only, ranked
+in `_sector_rotation_from_df` (`main.py:1345-1399`): `chg_1d_pct` from the last two closes and
+`chg_5d_pct` from the last six (null under six rows), a symbol with no row or one row is
+`unavailable`; a database failure is a 503; the response is cached for ten minutes
+(`main.py:1402-1454`).
+
+**States:** DASHBOARD-16, DASHBOARD-18, DASHBOARD-20 through the `sectorsQ` wrapper, which also
+holds the AI take and News cards.
+
+**Acceptance criteria:**
+- Given four sectors (three ok, one unavailable), when the card renders at 1D, then the rows rank
+  Financials, Technology, Energy and the unavailable Consumer Discretionary last with `—`, and the
+  header reads `as of <as_of>` (`sector rotation card ranks sectors, shows an em-dash row, and 1D/5D
+  toggle switches values`, `tests/dashboard/dashboard.spec.ts`).
+- Given a magnitude of 2 over a maximum of 4, when the bar width is computed, then 50; a negative
+  value is scaled by magnitude; a zero maximum gives 0, never `NaN`
+  (`src/routes/DashboardPage.sectorBarWidthPct.test.ts`).
+- Given closes for a symbol, when the handler computes, then the changes come only from real prior
+  closes, a partial window omits the 5-day value, a null close degrades the symbol to `unavailable`,
+  a database failure is a 503 and a crash does not poison the cache
+  (`tests/api/test_market_sectors.py`, nine tests).
+- Given the table on 2026-09-30, then each of the eleven ETFs has 7 non-null closes in the 10-day
+  window with the latest on 2026-09-29 (see the V-gate evidence comment).
+
+**Tests:** the three files above; together they assert the ranking, the em-dash row, the caption,
+the bar width and the handler math, so the row is covered at every layer it crosses.
+
+**Code:** `src/routes/DashboardPage.tsx:118-130,237-247,361-387,832-945`,
+`platform/api/main.py:1320-1454`; test ids `sector-rotation-card`, `sector-row`.
+
 ##### DASHBOARD-08 · AI take
+
+**Shows or does:** A card headed `AI take` with `conf <n>%` (`confidence_score * 100`) when a report
+exists (`DashboardPage.tsx:895-912`): a `DirTag` (`long` green, `short` red, else neutral),
+`<conviction> conviction · <time_horizon>` and the thesis clamped to four lines; without a report
+`No insight report for <ticker>, generate one on the AI Insights page.` The card shows no date and no
+age. The request is `useInsightReport(ticker, reviewDate)` (`:358`,
+`src/hooks/useInsights.ts:68-81`): a 404 becomes `null`, any other failure throws and is ignored by
+the page. The whole card is clickable to `/insights`.
+
+**Needs:** `GET /api/insights/report/{ticker}` (`platform/api/routers/insights.py:764`; `?as_of=`
+in review mode), which reads the newest `insight_reports` row with `run_kind = 'live'` (as of the
+end of the given day when `as_of` is present), answers 404 with the ticker and cutoff when there is
+none and 503 through `_db_call` on an infrastructure failure (`insights.py:204-250,764-791`).
+
+**States:** DASHBOARD-16, DASHBOARD-18, DASHBOARD-20 through the `sectorsQ` wrapper. The report
+request has no state of its own: while it loads, after a 404, after a 500 and after a 401 the card
+reads the same `No insight report for IWM` line (executed 2026-09-30; see Gaps).
+
+**Acceptance criteria:**
+- Given the report route with no row, when requested, then it is a 404, and with a row `insights.py`
+  returns the envelope; the route answers with a JSON status and no crash
+  (`tests/api/test_route_coverage.py`, `GET /api/insights/report/{T}`; the fuller
+  `tests/lib/test_routers_insights_admin.py` skips without a test Postgres).
+- Given `as_of`, when the handler reads, then it never returns a report after the cutoff
+  (`_fetch_latest_report`, `insights.py:204-250`, read directly; no test on the Dashboard path).
+- Given production on 2026-09-30, then IWM, SPY and QQQ each have a live report from 12:55 UTC
+  (08:55 ET), 123, 113 and 117 live rows (see the V-gate evidence comment).
+
+**Tests:** no test asserts this card or the hook: the Playwright fixtures serve the report and
+`ticker-combobox.spec.ts` serves a 404 for AAPL, and none looks at the text. Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:358,513,895-912`, `src/hooks/useInsights.ts:68-81`,
+`src/types/insights.ts`; no test id.
 
 ##### DASHBOARD-09 · News
 
+**Shows or does:** The third card of the third row (`DashboardPage.tsx:914-943`, test id
+`news-card`), headed `News` with `<n> fresh` (n at most 4). `newsFeed` (`:508-511`) is the first
+four events of the same date-ascending list that feeds the Catalysts card whose `source` is
+`AV news`. Each row shows the title, `<ticker> · <source> · <today | yesterday | Mon D>` (day
+granularity only, `relativeDayLabel`, `:172-185`, computed in ET) and a pill with the sentiment
+label coloured by score (above 0.15 green, below -0.15 red, else neutral, a missing score counted as
+0, `:924-925`). With none it shows `No tagged news right now.` The whole card is clickable to
+`/catalysts`.
+
+**Needs:** the same `GET /api/catalysts/events` request as DASHBOARD-06; the `AV news` rows are the
+handler's `news_sentiment` read (`catalysts.py:101-124,353-410`: relevance 0.7 or more, seven
+topics, deduped per ticker, day and title, `source: 'AV news'`, `date` the UTC date of
+`published_ts`).
+
+**States:** DASHBOARD-16, DASHBOARD-18, DASHBOARD-20 through the `sectorsQ` wrapper; a failed
+catalysts request reads `0 fresh` and `No tagged news right now.` (executed 2026-09-30, see Gaps).
+
+**Acceptance criteria:**
+- Given two `AV news` rows dated yesterday among other sources, when the page renders, then the meta
+  reads `2 fresh` and both headlines show (`News card counts AV-news rows dated in the past and
+  shows both headlines`, `tests/dashboard/dashboard.spec.ts`, which pins the `source === 'AV news'`
+  match over the whole events array).
+- Given today, yesterday and an older date, when a row is labelled, then `today`, `yesterday` and
+  `Mon D`, in ET across the UTC day roll and never an hour (`relativeDayLabel`,
+  `src/routes/DashboardPage.relativeDayLabel.test.ts`, five tests).
+- Given the window, when the news is picked, then the four rows shown are the first four of the
+  oldest date, not the newest: in production on 2026-09-30 that is 203 rows dated 09-28 against 382
+  and 79 later (see the V-gate evidence comment and Gaps).
+- Given an article published after 20:00 ET, when its row is labelled, then the label is a date that
+  has not begun in ET: at 22:30 ET on 2026-07-07 a row carrying the UTC date `2026-07-08` (published
+  21:00 ET) reads `Jul 8` while `2026-07-07` reads `today` (executed 2026-09-30 through
+  `relativeDayLabel` in a scratch Vitest run; the row's `date` is `published_ts::date`, which is the
+  UTC calendar date on this database's UTC session; see Gaps).
+
+**Tests:** the Playwright test and the Vitest file above; `tests/api/test_catalysts_news_filter.py`
+covers only `_news_sql` and the topic list, and no test runs the handler's news mapping (the source
+tag, the dedupe, the impact). Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:172-185,494-511,914-943`,
+`platform/api/routers/catalysts.py:101-124,353-410`; test id `news-card`.
+
 ##### DASHBOARD-21 · Movement Read card (feature-flagged)
+
+**Shows or does:** `<MovementRead ticker={activeTicker} timeframe="15m" />`, mounted only outside
+review mode (`DashboardPage.tsx:729`; `MovementRead.test.tsx` asserts the mount is guarded). It
+renders nothing while disabled, loading, absent (a 404 means the flag is off), errored or without a
+statement (`MovementRead.tsx:123-144`). With a statement it shows a card `Movement Read` with
+`<ticker> · <timeframe>`: the headline (test id `movement-headline`) when its status is `OK`, else
+an em dash with an `unavailable` badge and the reason; the levels ladder, `Call levels` and `Put
+levels`, each rung with its price and `<rate>% (n=<sample>)` and a `low confidence` badge for a small
+sample, or the badge when the rung has no rate; a `Context` block (`context-modifiers`) with the
+expected-move size class and the regime mood; and, when the expected move is `OK`, the size light
+(`size-light-chip`: green at `p_expanded + p_explosive` 0.20 or more, amber from 0.10, else red), the
+ATR label, the line `Direction: not predicted`, a risk hint, an options idea at `p_explosive` 0.10 or
+more and a size calculator (`size-calculator`, inputs kept in `localStorage` `em.account` and
+`em.riskPct`), then the scope statement.
+
+**Needs:** `GET /api/movement-statement?ticker=&timeframe=`
+(`platform/api/routers/dashboard.py:530`), off unless `MOVEMENT_STATEMENT_ENABLED` is true (a 404
+otherwise; true on both services, read 2026-09-30), IWM, SPY and QQQ at 5m or 15m only (a 400
+otherwise), a 503 on an infrastructure failure, and otherwise the assembler's dict passed through
+with its per-field `UNAVAILABLE` envelopes (`dashboard.py:530-638`,
+`lib/movement_statement.py`). The hook retries any failure other than a 404 twice
+(`src/hooks/useMovementStatement.ts:58-63`).
+
+**States:** none of the shared states: a 404, a 400 (a ticker picked outside IWM, SPY and QQQ) or a
+500 all hide the card with no message, after two retries for the latter two (executed 2026-09-30:
+three requests, no badge; see Gaps). Field-level `UNAVAILABLE` shows the em dash and badge.
+
+**Acceptance criteria:**
+- Given a statement with a headline, both levels and an expected move, when the page renders, then
+  the headline, the `TIGHT` size class, `Call levels` and `Put levels` with `70% (n=115)` and
+  `45% (n=94)`, and no low-sample badge show (`movement-read card renders TYPE + validated SIZE +
+  regime (flag ON)`, `tests/dashboard/movement-read.spec.ts`); a young slot carries the badge on
+  that rung only; an untracked rung and a withheld expected move degrade only their own fields to
+  two `unavailable` badges; the big-move, tight and no-ATR affordance states and the calculator
+  work (the five other tests in the file).
+- Given a review date, when the page renders, then no `<MovementRead` mount is unguarded
+  (`Review-mode mount guard`, `src/components/dashboard/MovementRead.test.tsx`, a source-level
+  check; the executed page run 2026-09-30 also showed the card absent in review mode).
+- Given a picked ticker, when the statement is requested, then the fixture answers 501 for a
+  non-IWM ticker and the card does not show IWM's headline (`picking AAPL does not render the IWM
+  movement statement`, `tests/dashboard/ticker-combobox.spec.ts`).
+- Given the helpers, when formatting, then a null probability or rate is an em dash and never `0%`,
+  the size light, ATR label, risk hint, options idea and size calculator follow their thresholds
+  (`MovementRead.test.tsx`, `expectedMove.test.ts`).
+- Given the endpoint, then a flag off is a 404, a bad ticker or `30m` a 400, the assembler output is
+  passed through unchanged, a NaN close degrades levels to `UNAVAILABLE` and a backend outage is a
+  503 (`tests/api/test_movement_statement_router.py`, 22 tests: 144 passed together with
+  `tests/api/test_route_coverage.py`, and the module skips when it runs alone; its NaN-close test
+  fails when selected with `-k`, stocks#1225). The assembler's own tests
+  (`tests/lib/test_movement_statement.py`) fail alone in this sandbox (41 of 65, no lightgbm) and pass
+  after `tests/api/test_route_coverage.py` has run (187 passed together); both executed 2026-09-30.
+- Given production on 2026-09-30, then the flag is on for both services, IWM has 15m magnitude
+  predictions to 19:45 UTC on 09-29, `strat_features_15m` and its levels table to the same bar, and
+  the served IWM, SPY and QQQ 15m models list `vix_close` and `vix_tercile_*` as features (see the
+  V-gate evidence comment).
+
+**Tests:** the files named above. The FE layer (Playwright on main, Vitest), the handler and the
+assembler each assert the row's behaviour with real assertions.
+
+**Code:** `src/components/dashboard/MovementRead.tsx`, `src/components/dashboard/expectedMove.ts`,
+`src/hooks/useMovementStatement.ts`, `src/routes/DashboardPage.tsx:715-729`; test ids
+`movement-headline`, `context-modifiers`, `unavailable-badge`, `low-sample-badge`,
+`size-light-chip`, `expected-move-atr`, `direction-line`, `risk-hint`, `options-idea`,
+`size-calculator`, `calc-account`, `calc-risk`, `calc-result`.
 
 ##### DASHBOARD-10 · Switch ticker
 
+**Shows or does:** `TickerCombobox` (`src/components/shared/TickerCombobox.tsx`, mounted at
+`DashboardPage.tsx:547`) is a trigger button that shows `activeTicker` and opens a popover with the
+quick picks (IWM, SPY, QQQ), up to eight recent picks and, once one character is typed and 300 ms
+have passed, a live symbol search (`GET /api/insights/ticker/search?keywords=&limit=8`) whose rows
+carry a coverage badge (`full` for daily plus intraday, `daily`, `new`; a symbol with no coverage
+entry, or a failed lookup, reads `new`, and a failed lookup adds an inline hint). Enter picks the top
+search hit, or the highlighted row after an arrow key; a click picks a row; Escape or an outside click
+closes it (`:259-291`, `choose`). A pick upper-cases the symbol, writes `activeTicker` and the recents in `useTickerStore`
+(persisted as `ticker-store`, `src/stores/tickerStore.ts`), and closes the popover. A pick of a search
+row badged `new`, with a healthy coverage lookup, also posts the symbol to the watchlist and shows
+`Tracking <SYM>: daily data lands after tonight's fetch` for eight seconds, or `couldn't add <SYM> to
+tracking, <error>` when the write fails; the ticker is set in both cases. Every ticker-scoped query on
+the page is keyed by `activeTicker`, so the brief, playbook, signals, AI take, quote, reference,
+hourly bars and Movement Read are asked again for the new symbol (executed 2026-09-30 by a scratch
+page run picking AAPL: those eight requests, and no new request for the sector or catalyst cards,
+which are market-wide). The chosen ticker survives a reload (the trigger read AAPL after
+`page.reload()`); the review date is a separate store and is not touched.
+
+**Needs:** `GET /api/insights/ticker/search`, `GET /api/market/coverage?symbols=`,
+`POST /api/insights/watchlist/add` (body `{ticker}`), plus the whole ticker-scoped fan-out of
+DASHBOARD-01 to 09 and 21. The Movement Read endpoint answers only IWM, SPY and QQQ, so any other
+ticker gets a 400 there (see DASHBOARD-21).
+
+**States:** the popover has its own inline states (`ticker-search-error`, `ticker-coverage-error`,
+`ticker-ingest-notice`); the page's cards show DASHBOARD-16 to DASHBOARD-20 for the new symbol.
+
+**Acceptance criteria:**
+- Given the page has loaded, when the trigger is pressed, then the popover opens with the input
+  focused and IWM, SPY and QQQ offered (`trigger shows the active ticker and opens the popover`,
+  `quick picks (IWM/SPY/QQQ) render in the popover`, `tests/dashboard/ticker-combobox.spec.ts`).
+- Given `aa` is typed, then AAPL shows with its name and a `daily` badge (`typing "aa" surfaces AAPL
+  with a "daily" coverage badge`).
+- Given a pick by Enter after arrow keys, by Enter straight after typing, or by click, then the
+  panel closes and the trigger reads AAPL (`Enter picks the highlighted result and sets the header
+  ticker`, `Enter with no arrow-navigation picks the top search hit, not the first quick pick`,
+  `clicking the AAPL result directly sets the header ticker`); Escape closes without a change
+  (`Escape closes the popover without changing the ticker`).
+- Given the pick, then the Movement Read card does not show IWM's statement under AAPL (`picking AAPL
+  does not render the IWM movement statement`).
+- Given the search request fails, then an inline error shows, never a `No matches` line; given the
+  coverage request fails, then suggestions still show with the `new` badge and a hint (`search
+  failure renders an inline error, never an empty "no matches" lie`, `coverage failure still renders
+  suggestions plus an inline hint that badges may be inaccurate`).
+- Given a `new` pick, then the watchlist is posted with `{ticker: 'AAPL'}` and the tracking notice
+  shows; given a `full` pick, then nothing is posted; given a failed post, then the notice carries the
+  status and detail and the ticker is still set (`picking a "new"-badged suggestion auto-adds it to
+  the watchlist with an honest ingest notice`, `picking a "full"-badged suggestion does NOT auto-add
+  to the watchlist`, `watchlist-add failure shows a loud inline error but still sets the active
+  ticker`, and the coverage-error and bare-Enter variants in the same file).
+- Given the store, then the symbol is upper-cased, recents are newest first without duplicates and
+  capped at eight, and only `activeTicker` and `recentTickers` are persisted
+  (`src/stores/tickerStore.test.ts`); the row helpers (badge, merge, dedupe, default highlight,
+  debounce) are pure and tested (`src/components/shared/tickerCombobox.test.ts`).
+- Given the pick, then the ticker-scoped requests are asked again for the new symbol and the
+  market-wide ones are not (executed 2026-09-30, scratch run; no committed test asserts the
+  requests).
+
+**Tests:** `tests/dashboard/ticker-combobox.spec.ts` (twenty tests, all asserting the combobox and
+its consequences), `src/components/shared/tickerCombobox.test.ts`, `src/stores/tickerStore.test.ts`.
+The set covers picking, the failure paths and the store; the request fan-out after a pick is the
+part no test asserts.
+
+**Code:** `src/components/shared/TickerCombobox.tsx`, `src/hooks/useTickerSearch.ts`,
+`src/stores/tickerStore.ts`, `src/routes/DashboardPage.tsx:277,319-358,547`; test ids
+`ticker-combobox`, `ticker-combobox-panel`, `ticker-combobox-input`, `ticker-option-<SYM>`,
+`ticker-search-error`, `ticker-coverage-error`, `ticker-ingest-notice`.
+
 ##### DASHBOARD-11 · Refresh
+
+**Shows or does:** A ghost button labelled `Refresh` with a refresh icon, to the right of the ticker
+combobox (`DashboardPage.tsx:548-555`). Its handler is `window.location.reload()`: it loads the whole
+document again, so every request of the page is asked for again, the market-wide cards included, and
+all in-memory state is lost. What survives a reload: the ticker (`ticker-store`) and the chart style
+(`overview-chart`). What does not: review mode (the review store is in memory, so a reload returns to
+live; executed 2026-09-30: the header chip read `Replay · Sep 30, 4:00 PM` before and `Replay` after,
+and the Movement Read card came back), the 1D or 5D choice (back to 1D) and any popover state.
+
+**Needs:** nothing of its own. The reload re-issues the page's full fan-out.
+
+**States:** none of its own; after the reload the cards show DASHBOARD-16 again.
+
+**Acceptance criteria:**
+- Given the page has loaded, when Refresh is pressed, then the document loads a second time and the
+  brief endpoint is requested again (`Refresh reloads the document and asks for the data again`,
+  `tests/dashboard/dashboard.spec.ts`; added on the branch in solyra commit 589cd30; with the button
+  made a no-op the test failed `Expected: 2 Received: 1`, and with the real button it passed: 12
+  passed in the file, counting the warmup, the nine earlier tests and the two new ones).
+- Given review mode, when Refresh is pressed, then the page returns to live mode (executed
+  2026-09-30, scratch run; no committed test).
+
+**Tests:** the one test above, which exists only on this branch, so Te stays unticked until a CI run
+includes it.
+
+**Code:** `src/routes/DashboardPage.tsx:548-555`; no test id (the button is found by its role and
+name `Refresh`).
 
 ##### DASHBOARD-12 · Candles or Area toggle
 
+**Shows or does:** A two-button segmented control, `Candles` and `Area`, in the header of the
+intraday card (`DashboardPage.tsx:739-742`, classes `segctrl` and `active`). `chartStyle` starts from
+`localStorage` key `overview-chart` (`area` gives Area, anything else or an unreadable store gives
+Candles, `:282-284`); `pickChart` sets the state and writes the key (`candle` or `area`,
+`:285-288`). A storage failure is caught and the choice then lasts only until the next reload, with
+no message. The control exists only while the intraday card is mounted (DASHBOARD-04). Switching does
+not request bars again: both styles read the same `hourlyQ` response.
+
+**Needs:** browser storage only.
+
+**States:** none of its own.
+
+**Acceptance criteria:**
+- Given a first visit, when the card renders, then Candles is active, the fixed candle slot is
+  present and nothing is stored (`the Candles or Area choice is stored and survives a reload`,
+  `tests/dashboard/dashboard.spec.ts`, branch only).
+- Given Area is pressed, then the candle slot is removed, a Recharts surface shows and `overview-chart`
+  is `area` (same test; the surface alone is asserted on main by `intraday chart exposes the Candles /
+  Area toggle and switches`).
+- Given a reload, then Area is still active and the candle slot is still absent (same test).
+- Given Candles is pressed again, then the slot returns and `candle` is stored (same test; with the
+  storage write removed the test failed `Expected: "area" Received: null`, and with the real code it
+  passed).
+
+**Tests:** the two tests above. The main test asserts only that the Area surface appears; the
+memory is asserted only by the branch test, so Te stays unticked until a CI run includes it.
+
+**Code:** `src/routes/DashboardPage.tsx:282-288,731-764`; test id `intraday-chart-slot`.
+
 ##### DASHBOARD-13 · 1D or 5D sector period
+
+**Shows or does:** A two-button segmented control, `1D` and `5D`, in the header of the Sector rotation
+card (`DashboardPage.tsx:843-846`), next to the `SPDRs · as of <date>` caption. `sectorPeriod` is
+component state, default `1d`, not persisted (a reload returns to 1D). `sectorRows` re-sorts the
+rows descending by `chg_1d_pct` or `chg_5d_pct` with missing values last, and `sectorMaxAbs`
+rescales the bars for the active period (`:369-387`). The response is the one already fetched, so
+switching sends no request.
+
+**Needs:** the `GET /api/market/sectors` response of DASHBOARD-07, which carries both changes per
+symbol; the 5-day change is null when the symbol has fewer than six closes in the window.
+
+**States:** as DASHBOARD-07; a row with no value in the active period shows `—` with no bar.
+
+**Acceptance criteria:**
+- Given four sectors, when 1D is active, then Financials (2.5), Technology (1.25), Energy (-0.75) and
+  the unavailable Consumer Discretionary rank in that order with `—` last; when 5D is pressed, then
+  Energy (4.2), Technology (3.4), Financials (-1.1) and Consumer Discretionary rank in that order
+  (`sector rotation card ranks sectors, shows an em-dash row, and 1D/5D toggle switches values`,
+  `tests/dashboard/dashboard.spec.ts`).
+- Given a symbol with a 1-day change and no 5-day change, when 5D is active, then its row reads `—`
+  and sinks (executed 2026-09-30 in the page: 1D showed Real Estate +2.00% and Technology +1.00%, 5D
+  showed Technology +3.00% and Real Estate `—`); the handler returns a null 5-day change under six
+  closes (`test_sector_rotation_partial_window_no_5d`, `tests/api/test_market_sectors.py`).
+- Given a period's largest magnitude, then bar widths scale to it and never reach `NaN`
+  (`src/routes/DashboardPage.sectorBarWidthPct.test.ts`).
+
+**Tests:** the Playwright test on main and the Vitest file above; both assert the ranking and the
+scaling of the row.
+
+**Code:** `src/routes/DashboardPage.tsx:237-247,361-387,843-846`; test ids `sector-rotation-card`,
+`sector-row`.
 
 ##### DASHBOARD-14 · Click a card (signals, catalysts, news, AI take)
 
+**Shows or does:** Four cards are wrapped in `Card interactive onClick={() => navigate(...)}`: Live
+signals goes to `/signals` (`DashboardPage.tsx:770`), Catalysts to `/catalysts` (`:806`), AI take to
+`/insights` (`:896`) and News to `/catalysts` (`:915`). No query string is added: `/signals` and
+`/insights` read the ticker from the persisted ticker store (`/catalysts` lists every ticker and only
+writes it), and `/signals` also reads the review date from the review store. `Card` renders a plain
+`div` with an `onClick`, a pointer cursor and a hover border, no `role`, no `tabindex` and no key
+handler (`src/components/primitives/index.tsx:248-271`), so the four cards cannot be reached or
+activated from the keyboard (executed 2026-09-30, scratch run: all four are `DIV` with `tabindex` and
+`role` unset and a pointer cursor). The Top setup card, the Movement Read
+card, the intraday card and the sector card do not navigate anywhere; the Top setup has no link to
+`/playbook`.
+
+**Needs:** nothing from the API.
+
+**States:** none of its own.
+
+**Acceptance criteria:**
+- Given a click on the Live signals card, then the location becomes `/signals`; on Catalysts,
+  `/catalysts`; on AI take, `/insights`; on News, `/catalysts` (executed 2026-09-30, scratch run;
+  no committed test).
+- Given the four cards, when their elements are inspected, then each is a `DIV` with no `tabindex`
+  and no `role`, so none can take keyboard focus (executed 2026-09-30, scratch run: tag, `tabindex`,
+  `role` and cursor read from the DOM). The record's own target of keyboard operability is not met
+  (see Gaps).
+
+**Tests:** none. No spec clicks a card, so Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:770,806,896,915`, `src/components/primitives/index.tsx:248-271`
+(`Card`); no test ids.
+
 ##### DASHBOARD-15 · Review mode
+
+**Shows or does:** The `Replay` control in the app header (`src/components/shared/ReplayControl.tsx`,
+test ids `replay-toggle` and `replay-clear`) is shown only on `/dashboard`, `/live`, `/charts` and
+`/signals` (`REPLAY_ROUTES`, `:11`). Its popover offers a calendar with weekends, listed market
+holidays and future dates disabled, a `Latest session close` shortcut and a `Time (ET)` field
+(default 16:00); Apply writes `reviewDate` (`YYYY-MM-DD`) and `reviewTime` (`HH:MM`) to
+`useReviewDateStore` (`src/stores/reviewDateStore.ts`, in memory only) and the chip turns amber
+`Replay · <date time>`; the cross clears it. On the Dashboard `isReview` (`DashboardPage.tsx:298`)
+changes the page as follows: the label reads `As of` with the date and the pill `HISTORICAL`; the
+brief, playbook, signals, AI take and catalysts requests carry the date (`?date=`, `?date=`,
+`&end_date=&end_time=`, `?as_of=`, and `date_from` on the review date with `date_to` seven days
+later); the reference and hourly bars are anchored on the review date; the hero price is rebuilt from
+that day's 1-minute bars up to the review time with its change against the prior session close, or
+`—` when the day has no bars (`useReviewQuote`, `src/lib/reviewQuote.ts`); the Area chart is cut at
+the review cutoff (`reviewCutoffTs`); the brief and playbook polling stops; the Movement Read card
+is not mounted (`:729`). Two cards are not review aware: Sector rotation (`/api/market/sectors`
+takes no date) and News (the news read looks back from now and ignores the requested dates), and the
+Candles style is given the whole month of bars with no cutoff (`:747`). See Gaps.
+
+**Needs:** `GET /api/dashboard/brief/{t}?date=`, `GET /api/playbook/{t}?date=`,
+`GET /api/signals/{t}?limit=20&end_date=&end_time=`, `GET /api/insights/report/{t}?as_of=`,
+`GET /api/catalysts/events?date_from=&date_to=`, `GET /api/market/reference/{t}/{YYYYMMDD}`,
+`GET /api/market/data/{t}/{YYYYMM}?timeframe=60` and `GET /api/market/data/{t}/{YYYYMMDD}?timeframe=1`.
+
+**States:** DASHBOARD-16 to DASHBOARD-20 per card. There is no banner telling the reader that the
+sector and news cards are live.
+
+**Acceptance criteria:**
+- Given Apply of 2026-09-30 at 16:00, when the page's queries re-key, then the new requests are
+  exactly brief `?date=2026-09-30`, playbook `?date=2026-09-30`,
+  signals `?limit=20&end_date=2026-09-30&end_time=16:00`, insights `?as_of=2026-09-30`, reference
+  `/20260930`, hourly `/202609?timeframe=60` and the 1-minute day `/20260930?timeframe=1` (executed
+  2026-09-30, scratch run; no committed test). The catalysts request was not repeated in that run
+  because the review date equalled the fixture's today and the query key was unchanged; its
+  `date_from` is the review date and its `date_to` seven days later (`:351-356`, read directly).
+- Given review mode, then the pill reads `HISTORICAL`, the label reads `As of`, and the Movement Read
+  card is absent (same run; `Review-mode mount guard` in
+  `src/components/dashboard/MovementRead.test.tsx` asserts the guard in the source).
+- Given a review date without a time, then the cutoff is 16:00 ET, and an explicit time is honoured
+  (`reviewCutoffTs`, `src/hooks/useReviewQuote.test.ts`).
+- Given a prior close, then the review quote's change is against it; given none, then change and
+  change percent are null and never rebased on the open; given no bars, then no quote
+  (`buildReviewQuote`, `src/routes/reviewQuote.test.ts`).
+- Given `date`, then the brief handler bounds both reads by it, the signals handler honours
+  `end_date` and `end_time`, the playbook age is judged against the requested date, and the report
+  never comes from after the cutoff (`test_brief_with_historical_date`, `test_review_brief_returns_correct_date`,
+  `test_signals_end_date_and_time_filter`, `test_playbook_as_of_is_judged_against_the_requested_date`;
+  the `as_of` bound of the report is read in `insights.py:204-250`, no test).
+- Given Refresh or a reload, then review mode is gone (see DASHBOARD-11).
+
+**Tests:** the Vitest files and pytest tests above cover the helpers and the handlers. No test
+drives the Dashboard through the Replay control, so the page-level wiring is unasserted and Te stays
+unticked.
+
+**Code:** `src/components/shared/ReplayControl.tsx`, `src/stores/reviewDateStore.ts`,
+`src/hooks/useReviewQuote.ts`, `src/lib/reviewQuote.ts`,
+`src/routes/DashboardPage.tsx:297-317,345-358,393-407,422-450,547-555,729`; test ids `replay-toggle`,
+`replay-clear`.
 
 ##### DASHBOARD-16 · State: loading
 
+**Shows or does:** Five queries are wrapped in `WidgetState`: the brief (the strip and the Top setup,
+4 rows), the reference (the KPI row, compact, 2 rows), the hourly bars (inside the intraday card,
+compact, 5 rows), the signals (the Live signals and Catalysts cards, compact, 4 rows) and the
+sectors (Sector rotation, AI take and News, compact, 4 rows) (`DashboardPage.tsx:560,694,734,767,832`).
+While a wrapped query has no data and is fetching, `WidgetSkeleton` (`src/components/shared/WidgetState.tsx:11-27`)
+renders in place of the body: pulsing bars of decreasing width in a `role="status"` region labelled
+`Loading`. A failing request keeps the skeleton through its one retry (`retry: 1`, `src/App.tsx:34`)
+before the error or sign-in state replaces it. The intraday card is not mounted until the brief has
+resolved, because `hourlyQ` is enabled only then (`:402-407`), and then mounts with its own skeleton.
+Five queries have no loading state: the playbook, the catalysts, the AI take, the live quote and the
+live status. Once their wrapper has resolved they read as their empty or absent form while still
+in flight: `No playbook setups yet`, `0 upcoming`, `No insight report for IWM`, `—` and `CLOSED`
+(executed 2026-09-30 for the AI take while its request was held; see Gaps).
+
+**Needs:** none of its own.
+
+**States:** this row is the state.
+
+**Acceptance criteria:**
+- Given the brief, reference, signals and sectors requests are held, when the page loads, then four
+  skeletons are visible and the Movement Read card, which is not wrapped, is already shown; the
+  intraday card is absent (executed 2026-09-30, scratch run; one skeleton, the intraday card's, was
+  visible right after the brief resolved).
+- Given the request resolves, then the skeleton is replaced by the card body (same run).
+- Given a failing request, then the skeleton stays through the retry and is then replaced by
+  DASHBOARD-18 or DASHBOARD-20 (executed 2026-09-30 for the 401 and 503 cases).
+- No committed test asserts a skeleton on the Dashboard.
+
+**Tests:** none for the state. The `WidgetState` unit tests (`src/components/shared/WidgetState.test.ts`)
+cover the error helpers only. Te stays unticked.
+
+**Code:** `src/components/shared/WidgetState.tsx:11-27,93-115`,
+`src/routes/DashboardPage.tsx:402-407,560,694,734,767,832`, `src/App.tsx:30-37`.
+
 ##### DASHBOARD-17 · State: empty
+
+**Shows or does:** There is no single empty state. Each card words its own: the strip shows the
+`Unavailable` line with the server's `reason` when the brief's `source` is `unavailable` (`:588-603`,
+fallback text `Pre-market brief unavailable, Cloud SQL not connected or no brief for today.`); the KPI
+row is absent, with no message, when either close is missing (`kpiCards`, `:410-417`), and only the
+RSI tile can read `—`; the Top setup reads `No playbook setups yet, run the pipeline to populate.`
+(`:674-687`); Live signals reads `No signals yet for this ticker.` (`:776`); Catalysts reads `No
+catalysts in the next 7 days.` (`:812`); Sector rotation reads `Unavailable` with the reason for a
+whole-payload `unavailable`, and a row `—` with the reason as a tooltip (`:852-865`); AI take reads
+`No insight report for <ticker>, generate one on the AI Insights page.` (`:910`); News reads `No tagged
+news right now.` (`:920`); the Area chart reads `No price data available`
+(`src/components/charts/PriceAreaChart.tsx:113-122`). The intraday card is not mounted at all when the
+request succeeded with no bars. Nothing renders a fabricated zero for a missing daily value; the
+brief handler, however, answers a 200 `neutral` brief when it has no data (see DASHBOARD-01), and the
+AI take, Catalysts and News cards use their empty line for a failed request too (see Gaps).
+
+**Needs:** none of its own.
+
+**States:** this row is the state.
+
+**Acceptance criteria:**
+- Given a sector row with `status: 'unavailable'`, then it renders its name with `—` and no bar and
+  sinks to the bottom (`sector rotation card ranks sectors, shows an em-dash row, and 1D/5D toggle
+  switches values`, `tests/dashboard/dashboard.spec.ts`).
+- Given a playbook set the server refuses, then the refusal is worded in the card, not the empty
+  line (`top setup surfaces the stale-cards refusal instead of a generic empty state`, which asserts
+  the empty line is absent when the refusal shows).
+- Given a null average return, then `—` and never `0.00%` (`topSetupAvgReturn`,
+  `src/routes/DashboardPage.avgReturn.test.ts`).
+- Given no close on the newest daily row, then no KPI tile shows (executed 2026-09-30, scratch run).
+- The other empty lines listed above are read from the code; no committed test asserts them.
+
+**Tests:** the tests named above cover the sector row, the refusal and the average return. The
+empty lines of the strip, Top setup, signals, catalysts, AI take, news and chart have no test, so
+Te stays unticked.
+
+**Code:** `src/routes/DashboardPage.tsx:225-228,266-270,410-417,588-603,674-687,776,812,852-865,910,920`,
+`src/components/charts/PriceAreaChart.tsx:113-122`.
 
 ##### DASHBOARD-18 · State: error
 
+**Shows or does:** When a wrapped query fails with anything other than a 401, `WidgetError`
+(`src/components/shared/WidgetState.tsx:29-62`) replaces the card body: a `role="alert"` box with the
+text `Couldn't load this data`, the message (the server's `detail` with `(HTTP <status>)` appended
+by `responseErrorMessage`, `src/lib/format.ts:98-109`; a bare status code reads `Request failed
+(HTTP <status>)`) and a `Retry` button that refetches that query. The wrapper granularity decides
+what disappears: a failed brief takes the strip and the Top setup with it, a failed sectors request
+takes Sector rotation, AI take and News, a failed signals request takes Live signals and Catalysts
+(executed 2026-09-30: 503 on the brief and on the sectors gave two alerts, with the Top setup, AI
+take and News cards gone). Five requests sit outside a wrapper: the playbook shows its own
+`Playbook unavailable: <reason>` line, and the catalysts, AI take, quote and status fail silently
+as their empty or closed form (see Gaps). The Movement Read card hides on any error after two
+retries.
+
+**Needs:** none of its own.
+
+**States:** this row is the state.
+
+**Acceptance criteria:**
+- Given a 503 on a wrapped request, when the retry has failed, then the card shows `Couldn't load
+  this data` with the server's detail and status, and `Retry` (executed 2026-09-30, scratch run: `database
+  query failed: RuntimeError (HTTP 503)`).
+- Given a FastAPI `{detail}` body, then the message carries the detail and the status; given a body
+  without a string detail, then the bare status (`responseErrorMessage`, `src/lib/format.test.ts`,
+  three tests); a bare three-digit message expands to `Request failed (HTTP <n>)`, a real message
+  passes through and an empty one gives null (`errorMessage`, `src/components/shared/WidgetState.test.ts`).
+- Given the playbook is refused (503), then the Top setup shows `Playbook unavailable` with the
+  detail (`top setup surfaces the stale-cards refusal instead of a generic empty state`).
+- No committed test renders `WidgetError` on the Dashboard.
+
+**Tests:** the unit tests above cover the message helpers, the Playwright test covers the playbook
+refusal. The error box itself is asserted by no test, so Te stays unticked.
+
+**Code:** `src/components/shared/WidgetState.tsx:29-62,80-86,111-113`, `src/lib/format.ts:98-109`,
+`src/routes/DashboardPage.tsx:143,560,674-687,694,734,767,832`.
+
 ##### DASHBOARD-19 · State: stale
 
+**Shows or does:** Under the Top setup title the card set's age reads `Cards as of <Mon D, YYYY>
+(<n>d old)`, `(same day)` for 0, only the date when the age is missing, and nothing when the date is
+missing or malformed (`snapshotAgeLabel`, `src/lib/dates.ts`; test id `playbook-age`,
+`DashboardPage.tsx:344,618-625`). The server refuses a set older than seven days with a 503 naming the
+date and the job, and the page reads the payload through `dataUnlessError` so a refused refetch
+drops the previously fetched set instead of rendering it (`:341`, `src/lib/queryData.ts`). In live
+mode the playbook is asked again every 15 minutes, so a dashboard left open across the boundary
+picks up the refusal (`PLAYBOOK_REFETCH_MS`, `:136`). Nothing else on the page is marked stale: the
+brief's `stale_days` (`test_brief_stale_days_present`) is not declared in the page's types, the
+reference's `source` and `stale_days` are declared (`:97`) but never read, the quote's `last_updated` is
+not shown, and the strip's `· <date> close` is the only age cue for the daily row
+(and reads a placeholder day as a close, see DASHBOARD-01).
+
+**Needs:** `analysis_date`, `age_days` and `max_age_days` from `GET /api/playbook/{ticker}`.
+
+**States:** this row is the state.
+
+**Acceptance criteria:**
+- Given a set of 2026-09-05 with age 1, then the card reads `as of Sep 5, 2026 (1d old)`
+  (`top setup shows the card set date and age`, `tests/dashboard/dashboard.spec.ts`;
+  `snapshotAgeLabel` formats 85 days, same day, 1 day, a missing age and an invalid date,
+  `src/lib/dates.test.ts`).
+- Given the server refuses with 503, then the old set is not rendered and the refusal shows
+  (`top setup surfaces the stale-cards refusal instead of a generic empty state`; `dataUnlessError`,
+  `src/lib/queryData.test.ts`, three tests).
+- Given a set exactly 7 days old, then it is served, and one day older it is refused; a cached set is
+  judged again on every hit; a set is judged against the requested date in review mode
+  (`test_playbook_age_boundary`, `test_playbook_stale_set_is_refused_not_rendered`,
+  `test_playbook_cached_set_is_rechecked_on_every_hit`,
+  `test_playbook_as_of_is_judged_against_the_requested_date`, `tests/api/test_playbook_evaluate.py`).
+- Given production on 2026-09-30, then the newest set for IWM, SPY and QQQ is dated 2026-09-30,
+  generated 08:38 to 08:46 UTC (see the V-gate evidence comment).
+
+**Tests:** the Playwright tests on main, the Vitest files and the pytest tests above all assert the row.
+
+**Code:** `src/routes/DashboardPage.tsx:136,328-344,618-625`, `src/lib/dates.ts`,
+`src/lib/queryData.ts`, `platform/api/routers/playbook.py:136-303,306-364`; test id `playbook-age`.
+
 ##### DASHBOARD-20 · State: permission
+
+**Shows or does:** When a wrapped query fails with a message containing `401` or `unauthor`
+(`isAuthError`, `src/components/shared/WidgetState.tsx:75-78`), the card body is replaced by
+`SignInEmptyState` (`src/components/shared/SignInEmptyState.tsx:13-59`): a lock icon, `Sign in to load
+data`, a sentence saying the session has expired or the user is signed out (omitted in the compact
+cards), a `Sign in` button that reloads the document so the auth gate can show the sign-in screen, and a
+`Retry` link that refetches. `responseErrorMessage` keeps the status in the message (`Not authenticated
+(HTTP 401)`), which is what `isAuthError` matches. The trigger is each query's own error, not the
+global auth flag: `useAuthBlocked` (`src/lib/authGate.ts:45`) only keeps the intraday card mounted while
+gated calls answer 401 (`DashboardPage.tsx:732`). Executed 2026-09-30: with 401 on the brief, sectors,
+signals, reference and market-data requests, four `Sign in to load data` cards showed after the one
+retry (the strip block, the KPI row, the signals row and the sectors row) and the intraday card was
+mounted with no bars. The unwrapped requests give no sign-in state: the AI take reads `No insight report for
+IWM` on a 401 (executed the same day), and the catalysts, live quote and status read as their empty
+or closed forms.
+
+**Needs:** gated endpoints answering 401 without a token.
+
+**States:** this row is the state.
+
+**Acceptance criteria:**
+- Given no token, when the gated endpoints the page calls are requested, then each answers 401
+  `{"detail":"sign in to continue"}` (11 endpoints on the staging service, 2026-09-30; see the V-gate
+  evidence comment).
+- Given a 401 body `{detail: 'Not authenticated'}`, then the message is `Not authenticated (HTTP 401)`
+  and `isAuthError` is true for it (`keeps a 401 recognisable as an auth failure after detail
+  extraction`, `src/lib/format.test.ts`); a 401 status message and an `unauthorized` message are
+  detected and other failures are not (`src/components/shared/WidgetState.test.ts`).
+- Given a wrapped card answers 401, then `Sign in to load data` shows in that card after the retry
+  (executed 2026-09-30, scratch run; no committed test renders it).
+- Given the AI take request answers 401, then the card reads its empty line (executed 2026-09-30;
+  see Gaps).
+
+**Tests:** the unit tests above cover the message composition and the detector. No test renders the
+state, so Te stays unticked.
+
+**Code:** `src/components/shared/WidgetState.tsx:75-78,93-115`,
+`src/components/shared/SignInEmptyState.tsx`, `src/lib/authGate.ts:45`, `src/lib/format.ts:98-109`,
+`src/routes/DashboardPage.tsx:290-296,560,694,734,767,832`.
 
 ### SCREEN-LIVEMARKET — `/live`
 
