@@ -6863,7 +6863,8 @@ count is replaced by `signal explorer` (`:193`). The header sits outside `DataGa
 every state of the body.
 
 In these bodies, "executed 2026-10-01" means: the production rows were read through the stocks repo's `db_query_cr.sh` job script
-(executions `db-query-gslsl`, `db-query-28vss`, `db-query-wxq9f`, `db-query-7qttr`, `db-query-zjf94`), passed
+(executions `db-query-gslsl`, `db-query-28vss`, `db-query-wxq9f`, `db-query-7qttr` and `db-query-zjf94`, and `db-query-wcvmt`
+for the reads after the 01:00 ET run), passed
 through the real `get_signals` and `get_trade_summary` handlers with only the database read replaced, and the page was
 rendered hermetically with those answers (the V evidence comment in the matrix lists the statements); a variant
 payload, a held or failed request or a pinned clock is named where one was used.
@@ -6881,7 +6882,7 @@ A pick in the picker (executed, SPY): it sets `activeTicker` and the recents of 
 `GET /api/signals/SPY?limit=5000` and `GET /api/analytics/summary/SPY?days=90`. The filters, the sort and the
 review state live in `SignalsPage` and the review store, so they survive the pick: a direction of PUT, `6+` and a
 Score sort still applied to SPY's rows. A pick of a search row badged `new`, with a healthy coverage lookup, also
-posts the symbol to the watchlist (`TickerCombobox.tsx:259-291`). That write is owned by the signed-in user's
+posts the symbol to the watchlist (`src/components/shared/TickerCombobox.tsx:259-291`). That write is owned by the signed-in user's
 email, or by `default` when the request carries no identity (`platform/api/routers/insights.py:57-67,621,629`),
 and `historical-signals-watchlist` reads only the `default` owner (`scripts/run_historical_signals.py:129-140`
 calls `load_watchlist()` with no argument, whose owner defaults to `default`, `gcp/fetchers/_watchlist.py:411-412,457-458`).
@@ -6967,7 +6968,7 @@ in the page): `WIN RATE 52.9% 100W / 89L`, `Σ RETURN +3.70%`, `AVG RETURN / TRA
 handler calls every closed trade that is not above zero a loss (`platform/api/routers/analytics.py:173-174`).
 
 The label says backtest and the rows are live trades (matrix Gaps): the handler reads `trades` with
-`run_kind = 'live'` for the last 90 days from now (`analytics.py:146-152`), which are the monitor's logged fires,
+`run_kind = 'live'` for the last 90 days from now (`platform/api/routers/analytics.py:146-152`), which are the monitor's logged fires,
 one row per fire and at most five per ticker per day (`lib/config.py:240`, `max_daily_trades: int = 5`).
 
 Four properties of the block that the label does not say (executed 2026-10-01):
@@ -6976,7 +6977,7 @@ Four properties of the block that the label does not say (executed 2026-10-01):
   stays `GET /api/analytics/summary/IWM?days=90`, the 90 days run back from now) and the five tiles did not
   change while the table was cut at the review time (SIGNALS-07).
 - `Closed trades` counts open trades in its call and put split. The handler counts `callCount` and `putCount` over
-  every trade the query returned, open ones included (`analytics.py:116-117`): with three closed calls and two open
+  every trade the query returned, open ones included (`platform/api/routers/analytics.py:116-117`): with three closed calls and two open
   puts the real handler answered `closedTrades` 3, `callCount` 3 and `putCount` 2, and the tile read `3` over
   `3 call · 2 put`. The production window has no open trade (189 of 189 closed), so it does not show today.
 - It exists for three tickers. The monitor's live trades of the last 90 days are IWM (189 calls), QQQ (242 calls)
@@ -6985,7 +6986,7 @@ Four properties of the block that the label does not say (executed 2026-10-01):
 - A failed summary also leaves the block out with no message (503: no text anywhere on the page, SIGNALS-10).
 
 **Needs:** `GET /api/analytics/summary/{ticker}?days=90` (`useTradeSummary`, `src/hooks/useTradeAnalytics.ts:36-47`,
-enabled with a ticker, five minutes stale), answered by `get_trade_summary` (`analytics.py:131-178`): it reads
+enabled with a ticker, five minutes stale), answered by `get_trade_summary` (`platform/api/routers/analytics.py:131-178`): it reads
 `direction`, `return_pct`, `exit_time` and `entry_time` of `trades` for the ticker with `run_kind = 'live'` and an
 `entry_time` inside the window, strictly (503 on an outage, 500 on a defect, `:153-160`), calls a trade closed when
 it has an `exit_time` and a `return_pct` that is not NaN and active otherwise (`:164-176`), and aggregates in
@@ -7023,7 +7024,7 @@ no closed trades), SIGNALS-10 (a failed summary leaves it out silently) and SIGN
 - Given no token, then `GET /api/analytics/summary/IWM?days=90` answers 401 on staging (V evidence).
 
 **Tests:** On main, the page test above asserts three labels and one value, not the other tiles, the sub-lines, the
-tones or the units. `test_analytics_summary.py` asserts the query's `from trades` and `run_kind = 'live'` and its
+tones or the units. `tests/api/test_analytics_summary.py` asserts the query's `from trades` and `run_kind = 'live'` and its
 parameters on an empty frame (status 200 only), the 500 and the 503 and, by source inspection, the strict reader;
 `tests/api/test_route_coverage.py` pins the route at 503 against a dead backend and `POST /api/analytics/trade-stats`
 at 200 for an empty list. No test asserts a computed figure of the summary. Te stays unticked.
@@ -7169,7 +7170,7 @@ card replaces the table), SIGNALS-11 and SIGNALS-12.
 - Given the handler, then it answers `count`, `source` `cloud_sql`, the rows with `time` as a string and `ticker`
   set (`test_signals_live`, `tests/api/test_platform_api.py`, on main), an empty envelope with one query for a zero
   count (`test_signals_empty_for_old_date`) and a 503 or 500 for a failed query (`TestSignalsAPIFailsLoud`). The
-  newest-N read, the ascending order and the direction filter (`signals.py:165-170,188-212`) are in the SQL and are
+  newest-N read, the ascending order and the direction filter (`platform/api/routers/signals.py:165-170,188-212`) are in the SQL and are
   read here, not asserted: the test class returns pre-filtered mock rows, so `test_signals_with_direction_filter`
   holds for any SQL.
 - Given the stored time `2026-09-29 23:21:00+00:00`, then the cell reads `2026-09-29 23:21` whatever zone the row
@@ -7244,7 +7245,7 @@ the cap shows the footnote of SIGNALS-04.
 
 **Tests:** No test on main asserts a filter or the sort: the existing specs never press a direction button, choose
 a score, fill a date or click a header. The one test, added on this branch in solyra commit 8ffbb54, passed as
-written (the behaviour was already there) and was RED against each of five mutations of `SignalsPage.tsx` made in a
+written (the behaviour was already there) and was RED against each of five mutations of `src/routes/SignalsPage.tsx` made in a
 scratch copy: the direction filter removed (`expected 1 row, received 3`), `Number(score) > minScore` (`6+` left only
 `7.0`), the From filter removed (`expected 0 rows, received 3`), the To filter made exclusive (`expected 3 rows,
 received 0`) and `getSortedRowModel` removed (Score cells `7.0, 5.0, 6.0` for `7.0, 6.0, 5.0`). It has not run in
@@ -7302,8 +7303,8 @@ second describe block); no test id on the button.
 ##### SIGNALS-07 · Review mode
 
 **Shows or does:** Review mode is entered from the shell's Replay control, not from this page: a button in the top
-bar (`src/components/shared/ReplayControl.tsx`, test id `replay-toggle`, mounted by `TopTabs.tsx:203` and the
-sidebar-mode `Header.tsx:21`) that renders only on `/dashboard`, `/live`, `/charts` and `/signals` (`:11,112`). Its
+bar (`src/components/shared/ReplayControl.tsx`, test id `replay-toggle`, mounted by `src/components/layout/TopTabs.tsx:203` and the
+sidebar-mode `src/components/layout/Header.tsx:21`) that renders only on `/dashboard`, `/live`, `/charts` and `/signals` (`:11,112`). Its
 popover has a calendar with weekends, listed market holidays and future dates disabled (`:112-118,208-214`), `Latest
 session close` (`:143-146`, the latest weekday on or before today in Eastern time at 16:00), a `Time (ET)` field and
 `OK` (`replay-apply`, enabled when the draft differs from the committed moment); `OK` writes `reviewDate`
@@ -7311,7 +7312,7 @@ session close` (`:143-146`, the latest weekday on or before today in Eastern tim
 memory only), the chip turns amber `Replay · <date time>` and the ✕ (`replay-clear`) or `Back to live` clears both
 (SHELL-09 describes the control).
 
-With `reviewDate` set (`isReview`, `SignalsPage.tsx:137`) the page changes in four ways. (1) The signals request
+With `reviewDate` set (`isReview`, `src/routes/SignalsPage.tsx:137`) the page changes in four ways. (1) The signals request
 carries the moment: `GET /api/signals/{ticker}?limit=5000&end_date=<date>&end_time=<HH:MM>` (`:51-64,152-156`);
 the query key holds the date and time, so each moment is cached for five minutes and leaving review mode returns the
 cached live answer with no request. (2) The `To` input shows the review date, disabled, with the title `Set by
@@ -7330,17 +7331,17 @@ the tag.
 The cutoff's zone is wrong for recent rows. The handler casts `<end_date> <end_time>:00` with `CAST(... AS timestamptz)`
 in the database session (`platform/api/routers/signals.py:171-174`), whose zone is UTC (executed: `CAST('2026-09-25
 10:30:00' AS timestamptz)` returned `2026-09-25 10:30:00+00:00` with `TimeZone` `UTC`), while its docstring and the
-Replay control both say Eastern (`signals.py:228`, `ReplayControl.tsx:246`). For rows stored as true UTC, as those of
+Replay control both say Eastern (`platform/api/routers/signals.py:228`, `src/components/shared/ReplayControl.tsx:246`). For rows stored as true UTC, as those of
 2026-09-29 are (the day's first row is 08:00 UTC, 04:00 ET), a review time of 10:30 ET cuts at 06:30 ET: the live
 answer holds 87 rows stamped 2026-09-29, 44 of them stored at or before 10:30 ET (14:30 UTC), and the review showed
 12, none from after 06:30 ET, so the first hour of the regular session (09:30 ET, 13:30 UTC) was missing. For rows stored as Eastern wall clock
 (up to 2026-09-25, from the hour histogram) the same cast lands where the reviewer expects (inferred, not executed;
 matrix Gaps, stocks#1210).
 
-**Needs:** The signals handler with `end_date` and optionally `end_time` (`signals.py:171-174,227-228`): the
+**Needs:** The signals handler with `end_date` and optionally `end_time` (`platform/api/routers/signals.py:171-174,227-228`): the
 predicate `entry_time <= CAST(:cutoff AS timestamptz)` is in both the count and the rows query, and the cutoff is
 `<date> 23:59:59` without a time (`:172`); the page always has a time, since `OK` sets one. The Replay control
-itself reads `GET /api/config/market-hours` for the holiday list (`ReplayControl.tsx:47-58`, SHELL-09).
+itself reads `GET /api/config/market-hours` for the holiday list (`src/components/shared/ReplayControl.tsx:47-58`, SHELL-09).
 
 **States:** The `To` lock and the `global` tag are this row's presentation (SIGNALS-11 names the tag the page's only
 as-of marker). A failed or empty review request reads SIGNALS-10 or SIGNALS-09: a review date before the table's first row
