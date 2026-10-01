@@ -6702,7 +6702,7 @@ assertion of `Sign in to load`. Te stays unticked.
 | PLAYBOOK-10 | permission | not tracked (new category); present | `DataGate` wraps the page body below the header; it cannot trigger in practice: a signed-out visitor meets the sign-in screen first, and a signed-in user's 401 shows the shell's expired-session strip and the error box. |
 
 #### Journeys
-1. Wait for a card to light up: Opens /playbook during the session (PLAYBOOK-01) → Cards tint as conditions fill in (PLAYBOOK-05, PLAYBOOK-02) → Watches the met count and the percent rise and the border strengthen once every condition that could be judged is met; a card with a condition the evaluator cannot judge (six of today's twelve) never reaches 100%, and each change of the quote's price or volume repeats the first fill for a moment (PLAYBOOK-05) → Reads trade levels and win rate by hold window (PLAYBOOK-03) → Acts on the fully lit setup (PLAYBOOK-02)
+1. Wait for a card to light up: Opens /playbook during the session (PLAYBOOK-01) → Cards tint as conditions fill in (PLAYBOOK-05, PLAYBOOK-02) → Watches the met count and the percent rise and the border strengthen once every condition that could be judged is met; a card with a condition the evaluator cannot judge (six of today's twelve) never reaches 100%, and each change of the quote's price or volume, and each new minute bar, sends the cards back through the states of the first fill (the paused line, then `0/N`, then the counts) until the indicators and the evaluation have answered again, a time not observed against production (PLAYBOOK-05) → Reads trade levels and win rate by hold window (PLAYBOOK-03) → Acts on the fully lit setup (PLAYBOOK-02)
 2. Outside market hours: Opens the page with the market closed (PLAYBOOK-01) → Header reads "No live data, evaluation paused" (PLAYBOOK-01) → Every card reads `N conditions (no live data)` and every condition `no data` (PLAYBOOK-02) → Uses the cards as a reference rather than a live signal (PLAYBOOK-02)
 3. Nothing generated yet: Has an unprocessed ticker active, set on another page because this page has no picker (PLAYBOOK-04) → An amber box says the playbook was not found, with the server's reason (PLAYBOOK-08) → Names the phase6-playbook job to run (PLAYBOOK-08)
 
@@ -6728,7 +6728,7 @@ and "V evidence" the comment on stocks issue 1234 that the matrix links.
 drawn in every state. On the left an `h1` reading `<ticker> Playbook` (`:320-322`; the ticker is the store's `activeTicker`, `:265`)
 and under it the evaluation line (`:323-327`): `Cards light up as live market conditions are met` while the page holds a snapshot
 (`hasLiveData`, `:303`) and `No live data, evaluation paused` until it does, and again for the length of one indicators request each time
-the quote's price or volume changes (the indicators query is keyed on both and keeps no earlier answer, `src/hooks/useLiveIndicators.ts:28-35`;
+the quote's price or volume changes or a new minute bar arrives (the indicators query is keyed on the bar count, the last bar's time, the price, the volume and the average volume and keeps no earlier answer, `src/hooks/useLiveIndicators.ts:28-35`;
 executed under PLAYBOOK-05, matrix Gaps). On the right, only while a playbook answer is held and
 not refused (`:300,329-334`, test id `playbook-age`): `<n> setups` and, when the answer carries a `YYYY-MM-DD` `analysis_date`,
 ` · as of <Mon D, YYYY>` followed by `(same day)`, `(1d old)` or `(<n>d old)` from the server's `age_days`, or by nothing when the
@@ -6749,8 +6749,8 @@ with the handler's clock pinned the same set read `age_days` 0 at 19:59 ET and 1
 the 04:30 run (executed against the real handler; matrix Gaps).
 
 **Needs:** `GET /api/playbook/{ticker}` for the count and the age (`cards`, `analysis_date` and `age_days` are read; `ticker`, `source`,
-`generated_at` and `max_age_days` are sent and never read here), and for the line `GET /api/live/status`, `GET /api/live/history/{ticker}`
-and `POST /api/live/indicators` (PLAYBOOK-05). Production (V evidence, 2026-10-01, execution `db-query-vvlbg`): `playbook_cards` holds
+`generated_at` and `max_age_days` are sent and never read here), and for the line three calls described under PLAYBOOK-05: `GET /api/live/status` (the handler's Eastern clock), `GET /api/live/history/{ticker}` (the only vendor read of the three, AlphaVantage TIME_SERIES_INTRADAY)
+and `POST /api/live/indicators` (computed in the handler from the posted bars); the quote is not needed to light the line, but its price and volume key the indicators query. Production (V evidence, 2026-10-01, execution `db-query-vvlbg`): `playbook_cards` holds
 21 card sets of 12 cards for each of IWM, QQQ and SPY, the newest dated 2026-10-01 and written at 08:33:50, 08:42:18 and 08:38:17 UTC
 (04:33 to 04:42 ET) by the `phase6-playbook` run created at 08:30:01 UTC, which succeeded; the real handler answered 200 on those rows
 with `age_days` 0 and `max_age_days` 7.
@@ -6766,8 +6766,8 @@ a 200 with no cards reads `0 setups` (PLAYBOOK-07); the stale and permission sta
   (`snapshotAgeLabel`, three tests in `src/lib/dates.test.ts`; executed in the page).
 - Given the market closed, a failed status or a failed indicators call, then `No live data, evaluation paused`; given a snapshot, then
   `Cards light up as live market conditions are met` (executed; no test asserts either text).
-- Given a refresh of the quote that changes its price or volume, then the line reads `No live data, evaluation paused` until the indicators
-  call for the new values answers and `Cards light up as live market conditions are met` after (executed with mocked 600 ms answers,
+- Given a refresh of the quote that changes its price or volume, or a history refetch that returns a new last bar, then the line reads `No live data, evaluation paused` until the indicators
+  call for the new values answers and `Cards light up as live market conditions are met` after (executed with mocked 600 ms answers for each trigger,
   PLAYBOOK-05; matrix Gaps).
 - Given a refused or failed playbook request, then no count and no age (executed, PLAYBOOK-08).
 - Given a set written at 04:30 ET, then `age_days` is 0 until 20:00 ET and 1 from then on (executed against the real handler).
@@ -6935,16 +6935,16 @@ PLAYBOOK-06 until it answers (read; no previous data is kept as a placeholder).
   and `recentTickers` are stored and `quickPicks` is not (`persist partialize`).
 - Given the default store, when `/playbook` opens, then it asks for IWM and the heading reads `IWM Playbook` (every test in `playbook.spec.ts`,
   which asserts the heading only through a pattern that accepts any ticker).
-- Given `SPY` in the store, when `/playbook` opens, then the heading reads `SPY Playbook`, the card set is SPY's and no request names IWM
-  (executed; the test added on this branch asserts it).
+- Given `SPY` in the store, when `/playbook` opens, then the heading reads `SPY Playbook`, the card set is SPY's and none of the playbook, average-volume and reference requests names IWM
+  (executed, with the history and quote requests also naming SPY alone once the market is open; the test added on this branch asserts it for the three paths it records).
 - Given a ticker with no rows, then the 404 box above (executed).
 
 **Tests:** `src/stores/tickerStore.test.ts` covers the store and not this page. On main no test changes the ticker and watches this page
 ask for another symbol: every test in `tests/playbook/playbook.spec.ts` runs on the default `IWM`, and the heading test accepts any ticker
 (dropping the ticker from the heading passed all six tests, and so did fixing the playbook request on `IWM`, mutation). The test added
 on this branch (solyra `22b606f`), `the page follows the active ticker in the store and asks for that ticker only`, seeds the persisted store with `SPY` and
-asserts the heading, the card name, the age text and that the playbook request is `/api/playbook/SPY` alone, that no request names IWM
-and that the average-volume and reference reads are for SPY; it fails under four mutations (the playbook, average-volume and reference
+asserts the heading, the card name, the age text and that the playbook request is `/api/playbook/SPY` alone, that none of the playbook, average-volume and reference requests names IWM
+and that the average-volume and reference reads are for SPY (it records those three paths only, and with the market mocked closed the page asks for no history, quote, indicators or evaluation, executed); it fails under four mutations (the playbook, average-volume and reference
 hooks fixed on `IWM` and the heading fixed on `IWM`) and waits for a CI run that includes the branch's tests. Te stays unticked.
 
 **Code:** `src/stores/tickerStore.ts:14-34`, `src/routes/PlaybookPage.tsx:55-82,265-274,320-322`,
@@ -6960,7 +6960,7 @@ page assembles, and the page draws the answers into PLAYBOOK-02's progress line,
    are asked whatever the session (`:273-274`; executed with the market answered closed: both requested, history, quote, indicators and
    evaluation not).
 2. Indicators. Once the history holds a bar the page posts `{bars, current_price, current_volume, avg_volume_20d}` to
-   `POST /api/live/indicators` (`:276-284`, `src/hooks/useLiveIndicators.ts:26-50`) and keeps `indicators`.
+   `POST /api/live/indicators` (`:276-284`, `src/hooks/useLiveIndicators.ts:26-50`) and reads `indicators` from the answer to the call made for the current key (the bar count, the last bar's time, the price, the volume and the average volume, `:28-35`); it keeps no earlier answer, so under a new key `indicators` is undefined until that call answers (States).
 3. The snapshot. `buildSnapshot` (`src/lib/playbookEvaluator.ts:75-103`) is null without bars or without indicators; otherwise `price` is
    the quote's price, else the last bar's close; `prevClose`, `prevHigh` and `prevLow` are the reference's `close`, `high` and `low`, null
    when the reference answered a non-OK status (`useReference` returns null, `PlaybookPage.tsx:77`); `volumeToday` is the quote's volume;
@@ -7020,17 +7020,17 @@ reference reads are vendor-live and were not observed.
 
 **States:** The fill has six: no snapshot (the market closed, a failed status, history or indicators call: the cards read `N conditions (no
 live data)`, an em dash and `no data`), a snapshot with answers, a snapshot with a failed evaluation (every row `no data`, counted subjective),
-a snapshot gone stale (PLAYBOOK-09), and two transitions that repeat on every change of the quote's price or volume. The quote refetches
-every 15 seconds, the indicators query is keyed on its price and volume and keeps no earlier answer (`src/hooks/useLiveIndicators.ts:28-35`,
+a snapshot gone stale (PLAYBOOK-09), and two transitions that repeat on every change of the quote's price or volume and on every new minute bar. The quote refetches
+every 15 seconds and the history every 60 (`src/hooks/useLiveQuote.ts:31`, `src/hooks/useLiveHistory.ts:22`); the indicators query is keyed on the bar count, the last bar's time, the quote's price and volume and the average volume and keeps no earlier answer (`src/hooks/useLiveIndicators.ts:28-35`,
 no `placeholderData` anywhere, `src/App.tsx:30-37`), and the batch query is keyed on the snapshot's signature
-(`src/hooks/usePlaybookEvaluation.ts:57,85-114`). From the new quote until the indicators answer the snapshot is null again, so the header
+(`src/hooks/usePlaybookEvaluation.ts:57,85-114`). From the new quote or bar until the indicators answer the snapshot is null again, so the header
 and the cards fall back to the no-live-data text (`src/routes/PlaybookPage.tsx:286-296,303`); from the indicators' answer until the evaluation
 answers the batch has no data, so the cards read `0/N conditions met · N subjective`, `0%` and `no data` under the live line
 (`src/routes/PlaybookPage.tsx:314,363`). Executed on the unmodified
 page with a quote that returns a new price and volume on every call, and the indicators and the evaluation answered after 600 ms (mocked),
 one card of three conditions: at 1.0 s `No live data, evaluation paused` and `3 conditions (no live data)`, at 1.4 s `Cards light up as live
 market conditions are met` and `0/3 conditions met · 3 subjective` and `0%`, at 2.0 s `2/3 conditions met` and `67%`, and the same three
-states again at 15.8, 16.4 and 17.0 s and at 30.8, 31.4 and 32.0 s, when the quote refetched; the real latencies of the two calls were not
+states again at 15.8, 16.4 and 17.0 s and at 30.8, 31.4 and 32.0 s, when the quote refetched. With the quote constant (the same price and volume on each of its five calls, at 1.1, 16.1, 31.1, 46.1 and 61.1 s) and the history's 100-bar window sliding by one bar on its refetch at 61.1 s, the three states ran at 1.3, 1.8 and 2.4 s, the header line and the first card's progress did not change between 2.4 and 61.2 s, and the three states came again at 61.2, 61.8 and 62.4 s (executed, same mocks; the bar count stayed 100 and the last bar's time was the part of the key that changed). The real latencies of the two calls were not
 observed (matrix Gaps). A condition the evaluator cannot judge is `unknown` with its reason.
 
 **Acceptance criteria:**
@@ -7044,6 +7044,10 @@ observed (matrix Gaps). A condition the evaluator cannot judge is `unknown` with
 - Given a refresh of the quote that changes its price or volume, then the header and the cards read the no-live-data text until the
   indicators answer and `0/N conditions met · N subjective` until the evaluation answers, and the filled state returns (executed with
   mocked 600 ms answers; matrix Gaps).
+- Given a history refetch that returns a new last bar while the quote's price and volume are unchanged, then the same states follow, the
+  no-live-data text until the indicators answer and `0/N conditions met · N subjective` until the evaluation answers (executed in the scratch
+  copy with the quote answering the same price and volume on every call and the 100-bar window sliding by one bar at the refetch of 61.1 s, the
+  answers mocked at 600 ms; matrix Gaps).
 - Given a condition the server cannot judge, then it stays unknown and counts as subjective, whatever the reason (executed; matrix Gaps).
 - Given the handler's thresholds, then each branch judges as `tests/api/test_playbook_evaluate.py` asserts: RSI ranges and limits, price
   against VWAP and EMAs, the EMA cross, RVOL, the StochRSI turn, the opening-range breaks and trend, minutes since the open, the close in
@@ -7055,12 +7059,12 @@ observed (matrix Gaps). A condition the evaluator cannot judge is `unknown` with
 endpoint (flat conditions in order, batches by key, 400, 422); `tests/api/test_platform_api.py` asserts the quote handler
 (`TestLiveMarketAPI.test_live_quote` and seven tests of its missing, unparseable and non-finite fields and the 503 without a key), the history
 handler (`test_live_history`) and the reference handler (`TestReferenceAPI`: AlphaVantage for a recent date, Cloud SQL for a historical one,
-the previous day's row), and neither the average volume nor the indicators values; and `tests/api/test_route_coverage.py` pins the status of
-each of the eight routes against a dead backend (status 200; the playbook route, quote, history and average volume 503; indicators 200
+the previous day's row), and neither the average volume's answer nor the indicators values; and `tests/api/test_route_coverage.py` pins the status of
+each of the area's eight routes against a dead backend (status 200; the playbook route, quote, history and average volume 503; indicators 200
 for an empty body; reference 404; evaluation 422), with no body assertion. Two cautions: its inputs are not always the production texts (the opening-range
 break tests use `Price has broken above the opening range high`, which no production condition reads), and `test_stochrsi_phrase_does_not_match_rsi_rule`
 asserts only that `status` is one of the three values and, when there is a `detail`, that it does not read `RSI 55`: for its input the
-evaluator answers unknown with no detail, so it asserts nothing about the separation (executed). On the client side `src/hooks/usePlaybookEvaluation.test.ts`
+evaluator answers unknown with no detail, so it asserts nothing about the separation (executed). `tests/api/test_api_handler_dispatch.py` is an AST guard over every route handler of `platform/api/routers` and `platform/api/main.py` and asserts no answer: no `async def` route without an `await` (only `health_check` is exempt), no `await` of a plain `def`, and no call of a named blocking function such as `query_to_dataframe` on the event loop outside `await run_in_threadpool(...)`; for the average-volume handler, `async def` for its AlphaVantage fallback, the last of these pins the Cloud SQL read (`platform/api/routers/live.py:404-413`) to the threadpool, and a mutation of a scratch copy of `platform/api` that called that read directly made `test_no_async_route_performs_blocking_io` fail naming `get_avg_volume` and `query_to_dataframe` while the other three AST tests passed (executed; the five tests pass on the unchanged tree). On the client side `src/hooks/usePlaybookEvaluation.test.ts`
 asserts the batch key changes with the condition text and with the snapshot and is stable otherwise (`playbookBatchKey`, three tests) and
 `src/lib/playbookEvaluator.test.ts` the opening-range window and the minutes since the open (`computeORB`, three tests; `minutesSinceOpen`,
 four), and `src/mocks/contract.test.ts` (`every request body the app sends matches its operation request schema`) validates the flat and the
