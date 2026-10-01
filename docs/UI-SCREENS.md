@@ -7340,7 +7340,7 @@ stays unticked.
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/reports/list/{ticker} | reports[].phase and reports[].filename are read; the answer's ticker and reports[].path (a `gs://` URI) are typed and never read (types: `src/lib/reports.ts` ReportEntry/ReportListResponse) | no job: the `phase*.md` objects under `raw/reports/` of the bucket, written by `scripts/analysis/phase1_strat_mining.py` to `phase7_feedback_loop.py` (`save_report`, into the process's own `reports/` directory) and uploaded outside the repository's code on 2026-04-12 (every object created at 22:41:43 UTC); the daily `phase6-playbook` job saves its three tickers' `phase6_playbook_*.md` in its container only | 24-hour server cache per ticker over a 10-minute listing cache; 60s client staleTime; no age is read or shown (the objects are 172 days old, their text 221) | `useReportList` (inline in `ReportsPage.tsx`) → Picker bar, Report header |
+| GET /api/reports/list/{ticker} | reports[].phase and reports[].filename are read; the answer's ticker and reports[].path (a `gs://` URI) are typed and never read (types: `src/lib/reports.ts` ReportEntry/ReportListResponse) | no job: the `phase*.md` objects under `raw/reports/` of the bucket, written by `scripts/analysis/phase1_strat_mining.py` to `scripts/analysis/phase7_feedback_loop.py` (`save_report`, into the process's own `reports/` directory) and uploaded outside the repository's code on 2026-04-12 (every object created at 22:41:43 UTC); the daily `phase6-playbook` job saves its three tickers' `phase6_playbook_*.md` in its container only | 24-hour server cache per ticker over a 10-minute listing cache; 60s client staleTime; no age is read or shown (the objects are 172 days old, their text 221) | `useReportList` (inline in `ReportsPage.tsx`) → Picker bar, Report header |
 | GET /api/reports/{ticker}/{phase} | plain-text markdown body (`text/plain`), rendered through `renderReportHtml` (`src/lib/reports.ts`; marked with GFM and no soft breaks, then DOMPurify with its defaults); each text opens with its own `Generated:` line, which the page does not read | the same objects and the same absence of a job | 24-hour server cache per ticker and phase; 5min client staleTime | `useReportContent` (`ReportViewer`, inline in `ReportsPage.tsx`) → Report body |
 | store: ticker | activeTicker (recentTickers is stored with it) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette): this page and the header have no picker of their own | | the label, the list request and the body request |
 
@@ -7447,7 +7447,14 @@ outside the gate of REPORTS-10.
 (`tests/reports/reports.spec.ts`) asserts the option texts, the value, the page header, `1 / 2`, the rendered markdown heading, Previous disabled and
 Next enabled, for a list that is already ascending: sorting the groups descending, showing the raw phase in an option, a counter one too high, Next
 disabled one position early and a body requested for another ticker each failed it (mutations). `src/lib/reports.test.ts` asserts the grouping (three
-tests). The list handler is asserted weakly: `TestPlaybookAPI.test_reports_list` (`tests/api/test_platform_api.py`) asserts a 200 whose `ticker` is `IWM`
+tests). `src/mocks/contract.test.ts` finds the page's list call (`src/routes/ReportsPage.tsx:17`) among the operations of the vendored OpenAPI snapshot
+(`every /api request the app makes (verb + path) is a declared operation`: the literal renamed to `/api/reports/lst/` failed it) and validates the
+shared mock `MOCK_REPORT_LIST` against the response schema of that operation (`every mock payload for a typed 200 response matches its response schema
+(no undeclared fields)`: a filename that is a number, an undeclared field, a renamed filename, a missing path, a ticker that is a number and a removed
+mock route each failed it). `tests/api/test_openapi_snapshot.py` (`test_committed_openapi_snapshot_matches_app`) fails when the route or the
+`ReportListResponse` model changes without a regenerated `platform/api/openapi.json` (the route renamed, a field's type changed, a field added and the
+response model dropped each failed it, and a change of behaviour alone, the body handler no longer lower-casing the phase, passed). Neither file
+validates an entry that the handler builds. The list handler is asserted weakly: `TestPlaybookAPI.test_reports_list` (`tests/api/test_platform_api.py`) asserts a 200 whose `ticker` is `IWM`
 and whose `reports` hold the filename of a blob the stubbed listing returns; an answer that names the ticker in lower case, or an own entry whose
 filename loses its `.md`, failed it, while deleting the ticker-specific loop passed (the stub returns the same blob for both patterns, so the combined
 loop lists it), deleting the combined loop passed, and so did reversing the order, keeping the ticker suffix in `phase`, giving a combined entry's
@@ -7456,12 +7463,12 @@ and the list row of `test_operation_answers` (`tests/api/test_route_coverage.py`
 with an empty list failed both). `test_report_listing_endpoint_serves_phases` (`tests/lib/test_production_readiness.py`) accepts 200, 404, 500, 502 or
 503 and checks the shape only for a 200, so without storage credentials it passes on the 404 it gets (executed). `test_a_concurrent_report_list_hit_is_served_not_503ed`
 (`tests/api/test_threadpool_races.py`) asserts that a cached list is served, without listing the bucket, while a peer holds the claim. No test asserts
-the real list's order, the `phase` or `path` of an entry, the merge of the ticker's own and the combined reports, the options of an eleven-entry list,
+the real list's order, the values of `phase` and `path` that the handler builds for an entry, the merge of the ticker's own and the combined reports, the options of an eleven-entry list,
 the 24-hour cache or the 503 of a concurrent cold request. `route /reports loads without fatal errors` (`tests/shared/navigation.spec.ts`) mounts the
 page and earns nothing. Te stays unticked.
 
-**Code:** `src/routes/ReportsPage.tsx:13-23,71-94,96-160`, `src/lib/reports.ts:7-59`, `src/lib/reports.test.ts`;
-`platform/api/routers/playbook.py:367-437`, `platform/api/gcs_reader.py:72-103`; accessible names `Select report`, `Previous report` and
+**Code:** `src/routes/ReportsPage.tsx:13-23,71-94,96-160`, `src/lib/reports.ts:7-59`, `src/lib/reports.test.ts`, `src/mocks/contract.test.ts`, `src/mocks/reports.ts`;
+`platform/api/routers/playbook.py:367-437`, `platform/api/gcs_reader.py:72-103`, `platform/api/schemas.py:713-721`, `tests/api/test_openapi_snapshot.py`; accessible names `Select report`, `Previous report` and
 `Next report`; no test ids.
 
 ##### REPORTS-02 · Report header
@@ -7553,7 +7560,8 @@ not available.`); nothing marks the text old (REPORTS-09); REPORTS-10 replaces t
 - Given markdown with a script tag or an inline handler, then both are removed (`strips script tags and inline handlers from report
   markdown`, `src/routes/reportsSanitize.test.ts`, on main).
 - Given another active report, then that report's own text (executed through the real handlers; no test on main asserts it, because the
-  spec's mock answers every phase with the same markdown; the test added on this branch for REPORTS-05 asserts it for the steps).
+  spec's mock answers every phase with the same markdown; the test added on this branch for REPORTS-05 asserts the body's own
+  heading at each of its four positions).
 - Given an entry, then the body handler answers the bytes of that entry's object as `text/plain` (executed for 43 entries;
   `test_returns_plaintext_markdown_when_blob_exists` asserts a 200, `text/plain` and the stubbed text, not which object was asked for).
 - Given a failed or empty body, then REPORTS-08.
@@ -7568,12 +7576,16 @@ text (serving JSON failed it) without asserting which object was asked for; `tes
 both). Skipping the ticker-specific lookup, taking the shortest name instead of the longest, keeping the `raw/` prefix in the path, answering a download
 error as 500 or a missing object as 502 and never filling the 24-hour cache each passed every report test (handler mutations). At the page, requesting
 the body for another ticker failed the page test, and a body that is always the first report's, a suffix on the body request and a select that always
-shows the first entry passed all seven tests of the spec on main (mutations; the test added on this branch for REPORTS-05 fails all three). No test on
+shows the first entry passed all seven tests of the spec on main (mutations; the test added on this branch for REPORTS-05 fails all three).
+`src/mocks/contract.test.ts` finds the page's body call (`src/routes/ReportsPage.tsx:29`) among the declared operations (the literal renamed to
+`/api/report/` failed it), but the operation answers a bare `text/plain` string, so its payload test validates no body: a mock-mode body route
+removed, or answering a JSON object, passed all fourteen tests. `tests/api/test_openapi_snapshot.py` fails when the route or its docstring changes
+without a regenerated snapshot (the route gaining a path segment and a changed docstring each failed it) and asserts no behaviour. No test on
 main asserts that the body follows a choice (the spec's mock answers every phase with the same markdown), which object the handler serves for a phase, the
 24-hour cache, or what the sanitizer does with a style or form element. Te stays unticked.
 
-**Code:** `src/routes/ReportsPage.tsx:25-36,38-69,185-196`, `src/lib/reports.ts:62-68`, `src/index.css:167-286,537-538`;
-`platform/api/routers/playbook.py:112-120,440-498`, `platform/api/gcs_reader.py:75-103,181-188`; no test ids (the body is the
+**Code:** `src/routes/ReportsPage.tsx:25-36,38-69,185-196`, `src/lib/reports.ts:62-68`, `src/index.css:167-286,537-538`, `src/mocks/contract.test.ts`;
+`platform/api/routers/playbook.py:112-120,440-498`, `platform/api/gcs_reader.py:75-103,181-188`, `tests/api/test_openapi_snapshot.py`; no test ids (the body is the
 `.prose-report` element).
 
 ##### REPORTS-04 · Select a report
@@ -7634,8 +7646,11 @@ body requests were one per entry.
 - Given the spec's two-entry list, when Next and then Previous are clicked, then `2 / 2` with the header `Phase 6: Playbook` and Next
   disabled, then `1 / 2` with Previous disabled (`prev/next walk the pipeline order and disable at the ends`, on main).
 - Given the production list, when Next is clicked repeatedly, then the order above ends at `11 / 11` with Next disabled (executed).
-- Given three entries in the server's order, then the select, the header and the body follow each step and both buttons are enabled at the
-  middle entry (`Next and Previous show the report they step to, with both buttons enabled in between`, added on this branch).
+- Given three entries, when Next is clicked twice and then Previous once, then the counter and the report's own body show at each of the four
+  positions, the select's value and the page header at the middle entry, and the buttons read Previous disabled and Next enabled at the first entry,
+  both enabled at the middle one and Next disabled at the last (`Next and Previous show the report they step to, with both buttons enabled in
+  between`, added on this branch; the fixture lists the entries highest phase first, as the handler sends a ticker's own reports, and nothing asserts
+  the handler's order).
 - Given no entry, then both buttons are disabled (executed).
 
 **Tests:** On main one page test asserts the row: `prev/next walk the pipeline order and disable at the ends` asserts, for the spec's two-entry list, Next to `2 / 2`
@@ -7643,13 +7658,19 @@ with the heading `Phase 6: Playbook` and Next disabled, then Previous to `1 / 2`
 disabled at the second position, a step of two entries and a step that does not move each failed it, mutations). The list is already ascending, so the
 test's name, `walk the pipeline order`, is not what the real list does (matrix Gaps), and it asserts no body and no middle entry, where both buttons are
 enabled. The test added on this branch, `Next and Previous show the report they step to, with both buttons enabled in between` (solyra `e422a8a`,
-`tests/reports/reports.spec.ts`), uses three entries in the order the handler sends them, each answered with a body that names its phase, and asserts at each
-position the counter, the select's value, the page header, the body's own heading and the buttons' states, then Previous back to the middle entry. It passed
-on the unchanged page, which already does what it asserts, and each of ten one-line mutations of the scratch copy failed it: the body always the first
-report's, the select always showing the first entry and a suffix on the body request failed it and no test on main; Next disabled early, Previous
-disabled early, a step of two entries, a step that does not move, a counter one too high, the markdown shown as text and the body requested for another
-ticker failed the walk test or the picker test as well. It waits for a CI run that includes the branch's tests, and Te stays unticked: the body that
-follows a step is asserted by it alone.
+`tests/reports/reports.spec.ts`), lists three entries highest phase first (the fixture's order, the one in which the handler sends a ticker's own
+reports; nothing asserts the handler's) and answers each with a body that names its phase. It asserts, at the first entry, the counter, the body's own
+heading, Previous disabled and Next enabled; after Next, at the middle entry, the counter, the select's value, the page header, the body's own heading
+and both buttons enabled; after Next again, at the last entry, the counter, the body's own heading and Next disabled; and after Previous the counter
+and the body's own heading. It asserts the select's value and the page header at the middle entry only: a select that showed the first entry at the
+last entry, a select that showed the last entry at the first entry and a page header that was wrong at the first or at the last entry each passed all
+nine tests of the file (mutations, three-entry lists only), while the same select or header fault at the middle entry failed it, and only it, as did
+Next left enabled at the last entry, Previous disabled at the last entry (the click that steps back needs it enabled) and Previous enabled at the
+first entry. It passed on the unchanged page, which already does what it asserts, and each of ten one-line mutations of the scratch copy failed it:
+the body always the first report's, the select always showing the first entry and a suffix on the body request failed it and no test on main; Next
+disabled early, Previous disabled early, a step of two entries, a step that does not move, a counter one too high, the markdown shown as text and the
+body requested for another ticker failed the walk test or the picker test as well. It waits for a CI run that includes the branch's tests, and Te
+stays unticked: the body that follows a step is asserted by it alone.
 
 **Code:** `src/routes/ReportsPage.tsx:71-94,104-111,149-159`; accessible names `Previous report` and `Next report`.
 
