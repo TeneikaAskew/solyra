@@ -5319,11 +5319,11 @@ for the strings they carry and miss the string the server sends. Te stays untick
 - **Purpose:** Options flow, Greeks and the 2-D strike x expiration gamma grid.
 - **Matrix:** [03 § 07](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#07--options-flow)
 - **Status:** Production but needs remediation · **Blocking issue:** [#826](https://github.com/TeneikaAskew/stocks/issues/826) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/OptionsFlowPage.tsx` (68 lines)
-- **Child components:** `TickerCombobox`
+- **Component:** `src/routes/OptionsFlowPage.tsx` (71 lines)
+- **Child components:** `TickerCombobox`, `GammaMapSection` (`SwingMode`, `TrinityTab`), `FlowSection` (`FlowTab`, `ContractDrilldown`), `ProfilesTab`, `SignInBanner`, `DataGate`
 - **API calls (from source):** none found in the page component — issued by child components or hooks
 - **Stores:** `useTickerStore`
-- **E2E specs:** `tests/shared/gamma-levels.spec.ts`, `tests/options/options-flow.spec.ts`
+- **E2E specs:** `tests/options/options-flow.spec.ts`, `tests/options/demo-banners.spec.ts`, `tests/options/options-mobile-fit.spec.ts`, `tests/shared/gamma-levels.spec.ts`, `tests/shared/navigation.spec.ts` (the `Refresh` and `Glossary` test)
 - **PR lineage:** [#255](https://github.com/TeneikaAskew/stocks/pull/255) Cloudflare→FastAPI cutover · [#540](https://github.com/TeneikaAskew/stocks/pull/540)/[#541](https://github.com/TeneikaAskew/stocks/pull/541) grid math + endpoints · [#645](https://github.com/TeneikaAskew/stocks/pull/645) wire Swing Mode to real /grid
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -5331,72 +5331,1237 @@ for the strings they carry and miss the string the server sends. Te stays untick
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/options/dates/{ticker} | dates[] (types: `useOptionsDates.ts` OptionsDatesResponse; fixture: `tests/helpers/fixtures/options.ts`) | fetch-av-options-realtime every 5min 09:00-15:55 ET Mon-Fri → etf_options_snapshots | 5min staleTime | `useLatestOptionsDate`/`useAllOptionsDates` → date pickers across all views |
-| GET /api/options/{ticker}/grid (live) · GET /api/options/{ticker}/{date}/grid (historical) | cells[].strike/gex/net_gamma, summary (types: `useGammaGrid.ts` GammaGridCell/GammaGridSummary) | fetch-av-options-realtime every 5min 09:00-15:55 ET Mon-Fri → etf_options_snapshots | live grid refetches every 60s (50s staleTime); historical holds 1h | `useGammaGrid` → Swing Mode |
-| GET /api/options/{ticker}/{date}/levels | king/gate/flip strikes, spot (types: `useGammaLevels.ts` GammaLevelsResponse) | fetch-av-options-realtime every 5min 09:00-15:55 ET Mon-Fri → etf_options_snapshots | 1h staleTime | `useGammaLevels` → Swing Mode legend, Trinity Mode, Profiles taxonomy |
-| GET /api/options/{ticker}/{date} · GET /api/options/live/{ticker}/{date} | options[] chain records, snapshot_timestamp, metadata.source (types: `ProfilesTab.tsx` OptionsResponse) | fetch-av-options-backfill 21:00 ET Mon-Fri → etf_options_snapshots | 1h staleTime | `useOptionsData` (inline in `ProfilesTab`) → Profiles chain |
-| POST /api/options/greeks | per-strike delta/gamma/theta/vega, GEX by strike (types: `useOptionsGreeks.ts` GreeksResponse) | fetch-av-options-realtime every 5min 09:00-15:55 ET Mon-Fri and fetch-av-options-backfill 21:00 ET Mon-Fri → etf_options_snapshots |  | `useOptionsGreeks` → Profiles Greeks and gamma profile |
-| GET /api/insights/ticker/search · GET /api/market/coverage · POST /api/insights/watchlist/add | matches[], coverage flags, watchlist add result (types: `useTickerSearch.ts` TickerSearchResult/CoverageResult/WatchlistAddResult) |  |  | `TickerCombobox` (`useTickerSearch.ts`) → Symbol picker |
-| mock fixture: optionsFlowMock.ts | flow tape rows (no server type; `DemoDataBanner` marks it mock) | bundled in `src/data/optionsFlowMock.ts` |  | `FlowTab` → Flowseeker Live Feed |
-| mock fixture: contractDrilldownMock.ts | per-contract tape rows (no server type; `DemoDataBanner` marks it mock) | bundled in `src/data/contractDrilldownMock.ts` |  | `ContractDrilldown` → Flowseeker Contract Drilldown |
-| store: ticker |  | Zustand, per session |  | every view |
+| GET /api/options/dates/{ticker} | dates[] (types: `useOptionsDates.ts` OptionsDatesResponse; fixture: `tests/helpers/fixtures/options.ts`); Swing and Trinity ask with `?limit=1` and read the first date, Profiles asks for the whole list | fetch-av-options-realtime every 5min 09:00-15:55 ET Mon-Fri (SPY IWM QQQ) and fetch-av-options-backfill 21:00 ET Mon-Fri (SPY IWM QQQ SPX) → etf_options_snapshots | 5min staleTime; the server holds a list for 12h behind a newest-date probe | `useLatestOptionsDate` → Swing Mode and Trinity Mode (the newest date); `useAllOptionsDates` → the Profiles date stepper |
+| GET /api/options/{ticker}/grid (live) · GET /api/options/{ticker}/{date}/grid (historical) | data_source, snapshot_ts, spot, gamma_balance, gamma_flip, regime, total_gex, total_vex, cells[] (strike, expiration, gex, vex), expirations, strikes, warnings, reason (types: `useGammaGrid.ts` GammaGridCell/GammaGridSummary) | etf_options_snapshots (the newest REALTIME snapshot within 20 days, else the newest EOD one; an on-demand AlphaVantage fetch for a ticker outside SPY IWM QQQ) and daily_rates | live grid refetches every 60s (50s staleTime); historical holds 1h | `useGammaGrid` → Swing Mode |
+| GET /api/options/{ticker}/{date}/levels | spot, kings, gates, levels, gamma_balance, gamma_balance_levels, gamma_flip, regime, total_gex, warnings, chain_size (types: `useGammaLevels.ts` GammaLevelsResponse) | etf_options_snapshots (the date's newest snapshot) and daily_rates | 1h staleTime | `useGammaLevels` → Swing Mode legend, Trinity Mode, Profiles taxonomy |
+| GET /api/options/{ticker}/{date} · GET /api/options/live/{ticker}/{date} | options[] chain records, snapshot_timestamp, metadata.source (types: `ProfilesTab.tsx` OptionsResponse) | etf_options_snapshots (the date's newest snapshot, written by fetch-av-options-backfill 21:00 ET Mon-Fri or fetch-av-options-realtime) · AlphaVantage HISTORICAL_OPTIONS for the live proxy, asked after a 404 | 1h staleTime | `useOptionsData` (inline in `ProfilesTab`) → Profiles chain |
+| POST /api/options/greeks | aggregated[], gex_by_strike[] (gex, call_gex, put_gex), metrics (total_gex, total_vex, zero_gamma, max_pain, implied_move, put_call_ratio), nodes, config (types: `useOptionsGreeks.ts` GreeksResponse) | computed in `lib/gamma.py` from the chain rows in the request body; no table is read | 60s staleTime, keyed on the contract count and the spot | `useOptionsGreeks` → Profiles Greeks and gamma profile |
+| GET /api/insights/ticker/search · GET /api/market/coverage · POST /api/insights/watchlist/add | matches[], coverage flags, watchlist add result (types: `useTickerSearch.ts` TickerSearchResult/CoverageResult/WatchlistAddResult) | AlphaVantage SYMBOL_SEARCH (search); market_data_daily and market_data_intraday (coverage); watchlists (add) | 60s staleTime on search and coverage | `TickerCombobox` (`useTickerSearch.ts`) → Symbol picker |
+| mock fixture: optionsFlowMock.ts | flow tape rows (no server type; `DemoDataBanner` marks it mock) | bundled in `src/data/optionsFlowMock.ts` |  | `FlowTab` → Flow Live Feed |
+| mock fixture: contractDrilldownMock.ts | per-contract tape rows (no server type; `DemoDataBanner` marks it mock) | bundled in `src/data/contractDrilldownMock.ts` |  | `ContractDrilldown` → Flow Contract Drilldown |
+| store: ticker |  | Zustand, persisted in localStorage as `ticker-store` |  | Swing Mode, Profiles and the picker (Trinity and Flow ignore it) |
 
 #### Displayed
 | ID | Element | Component |
 |---|---|---|
-| OPTIONS-01 | Heatseeker: Swing Mode | `SwingMode` |
-| OPTIONS-02 | Heatseeker: Trinity Mode | `TrinityTab` |
-| OPTIONS-03 | Flowseeker: Live Feed | `FlowTab` |
-| OPTIONS-04 | Flowseeker: Contract Drilldown | `ContractDrilldown` |
+| OPTIONS-01 | Gamma Map: Swing Mode | `SwingMode` |
+| OPTIONS-02 | Gamma Map: Trinity Mode | `TrinityTab` |
+| OPTIONS-03 | Flow: Live Feed | `FlowTab` |
+| OPTIONS-04 | Flow: Contract Drilldown | `ContractDrilldown` |
 | OPTIONS-05 | Profiles | `ProfilesTab` |
 
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| OPTIONS-06 | Symbol picker | `TickerCombobox` writes `tickerStore`'s `activeTicker`, which drives every view on the page. |
+| OPTIONS-06 | Symbol picker | `TickerCombobox` writes `tickerStore`'s `activeTicker`, which drives Swing Mode and Profiles; Trinity's three symbols and the Flow views are fixed. |
 | OPTIONS-07 | View switcher | `OptionsFlowPage`'s `TABS` state switches Gamma Map, Flow and Profiles; each of `GammaMapSection` (Swing/Trinity) and `FlowSection` (Live Feed/Contract Drilldown) has its own inner mode toggle. |
-| OPTIONS-08 | Pick an expiration date | Re-fetches the grid, levels and chain for the picked date; `ProfilesTab` steps through snapshot dates with a chevron stepper (`dateIdx`), `SwingMode`'s expiry chips (`expiryFilter`) filter client-side only. |
+| OPTIONS-08 | Pick an expiration date | No view picks an expiration. `ProfilesTab` steps through snapshot dates with a chevron stepper (`dateIdx`) and loads that date's chain and levels; `SwingMode`'s expiry chips (`expiryFilter`) change only their own highlight and reach neither the request nor the grid. |
 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
 | OPTIONS-09 | loading | present | "Loading live grid…" (`SwingMode`); "Loading {symbol} levels…" (`TrinityTab`); "Loading available dates…" / "Loading options chain…" (`ProfilesTab`). |
-| OPTIONS-10 | empty | present | "No options dates available for…" / "No options data returned for…" (`ProfilesTab`); "No gamma levels available for…" (`TrinityTab`); "Data unavailable:…" with the server's reason (`SwingMode`). |
-| OPTIONS-11 | error | present | "Options chain unavailable" (`ProfilesTab`); Swing and Trinity reuse their empty copy for a failed request; the Profiles metrics bar falls back to `EMPTY_GREEKS` when the Greeks POST fails. |
-| OPTIONS-12 | stale | present | A `SourcePill` in `SwingMode` labels the snapshot `realtime`, `eod_fallback`, `stale_fallback` or `unavailable` (`classify_gamma_freshness`); the Profiles source footer shows the snapshot time via `isoToEtDisplay`. |
-| OPTIONS-13 | permission | not tracked (new category); present | `SignInBanner` ("Sign in to load options data") plus `DataGate` around the tab content. |
+| OPTIONS-10 | empty | present | "No options dates available for…" with the server's text and `Retry`, "No options data returned for…" and `Couldn't estimate spot from this chain` (`ProfilesTab`); "No gamma levels available for…" and "Chain too thin to build a ladder for…" (`TrinityTab`); "Data unavailable:…" with the server's reason (`SwingMode`). |
+| OPTIONS-11 | error | present | "Options chain unavailable" with the server's text and `Retry` (`ProfilesTab`); Swing and Trinity reuse their empty copy for a failed request; a failed levels or dates request shows no notice; the Profiles metrics bar falls back to `EMPTY_GREEKS` when the Greeks POST fails (solyra#74). |
+| OPTIONS-12 | stale | present | A `SourcePill` in `SwingMode` labels the snapshot `LIVE`, `EOD`, `STALE` or `UNAVAILABLE` from `realtime`, `eod_fallback`, `stale_fallback` or `unavailable` (`classify_gamma_freshness`), and the banner repeats it; the Profiles source footer labels a Cloud SQL chain `AlphaVantage EOD` with its date and a live-proxy chain `AlphaVantage Live` with its ET time (`isoToEtDisplay`). |
+| OPTIONS-13 | permission | not tracked (new category); present | `SignInBanner` ("Sign in to load options data") while a gated call answers 401; `DataGate` replaces the views only for a signed-out user. |
 
 #### Journeys
-1. Find the level that matters: Opens /options with Heatseeker in Swing Mode (OPTIONS-01) → the expiry chips only change their own highlight here; picking an expiration does not refetch the grid in Swing Mode (see the matrix Options Gaps) → Reads the strike by expiry grid for the largest positive GEX (OPTIONS-01) → Notes King, Gate and Flip from the legend and node list (OPTIONS-01) → Carries those levels to /charts as an overlay (CHARTS-10)
-2. Check index positioning: Switches Heatseeker to Trinity Mode (OPTIONS-02, OPTIONS-07) → Compares SPX, SPY and QQQ strike ladders (OPTIONS-02) → Identifies where dealer hedging concentrates (OPTIONS-02)
-3. Inspect flow (demo data): Switches to Flowseeker, Live Feed (OPTIONS-03, OPTIONS-07) → Demo-data banner states this view is mock (OPTIONS-03) → Opens Contract Drilldown for a per-contract tape (OPTIONS-04) → Switches to Profiles for real Greeks and gamma (OPTIONS-05, OPTIONS-07)
+1. Find the level that matters: Opens /options on the Gamma Map view in Swing Mode (OPTIONS-01) → the expiry chips only change their own highlight here; picking an expiration does not refetch the grid in Swing Mode (see the matrix Options Gaps) → Reads the strike by expiry grid for the largest positive GEX (OPTIONS-01) → Notes King, Gate and Flip from the legend and node list (OPTIONS-01) → Carries those levels to /charts as an overlay (CHARTS-10)
+2. Check index positioning: Switches the Gamma Map view to Trinity Mode (OPTIONS-02, OPTIONS-07) → Compares SPX, SPY and QQQ strike ladders (OPTIONS-02) → Identifies where dealer hedging concentrates (OPTIONS-02)
+3. Inspect flow (demo data): Switches to the Flow view, Live Feed (OPTIONS-03, OPTIONS-07) → Demo-data banner states this view is mock (OPTIONS-03) → Opens Contract Drilldown for a per-contract tape (OPTIONS-04) → Switches to Profiles for real Greeks and gamma (OPTIONS-05, OPTIONS-07)
 
 #### Elements
-##### OPTIONS-01 · Heatseeker: Swing Mode
+##### OPTIONS-01 · Gamma Map: Swing Mode
 
-##### OPTIONS-02 · Heatseeker: Trinity Mode
+**Shows or does:** The page opens on the Gamma Map view (`src/routes/OptionsFlowPage.tsx:32,65`) and
+`GammaMapSection` opens that view on Swing Mode (`src/components/options/GammaMapSection.tsx:26,48`),
+which mounts `SwingMode` (`src/components/options/SwingMode.tsx:791-968`) for the page's active
+ticker (`focusSymbol`, a leading `^` stripped, `SwingMode.tsx:799`). From top to bottom:
 
-##### OPTIONS-03 · Flowseeker: Live Feed
+- A banner (`.hs-demo-banner`, `SwingMode.tsx:913-934`). With a grid whose source is not
+  `unavailable` it reads `Heatmap grid & pivot rail show live <SYM> dealer exposure. Tactical read
+  is illustrative.` for `realtime`, `... <SYM> dealer exposure (end-of-day close) ...` for
+  `eod_fallback` and `... <SYM> dealer exposure (delayed snapshot) ...` for every other source,
+  `stale_fallback` and an unrecognized one alike. With no grid, or an `unavailable` one, it reads
+  `Live <SYM> grid unavailable, tactical read is illustrative.`
+- A toolbar (`SwingMode.tsx:241-319`): `Live` and `Historical` (live asks for `GET
+  /api/options/{sym}/grid`, historical for `GET /api/options/{sym}/{latestDate}/grid`), `GEX` and
+  `VEX` (which per-cell value the heatmap prints), the five expiry chips `All`, `0DTE`, `Weekly`,
+  `Monthly` and `Quarterly` (`SwingMode.tsx:47,285-293`; they change only their own highlight,
+  matrix Gaps), the source pill (`SourcePill`, `SwingMode.tsx:213-238`, OPTIONS-12), `Refresh`
+  (invalidates every `gamma-grid` query, `SwingMode.tsx:298-306`) and `Glossary` (navigates to
+  `/help`, `SwingMode.tsx:307-315`).
+- A legend strip (`Legend`, `SwingMode.tsx:322-447`), drawn only when the overlay is real
+  (`SwingMode.tsx:946`): Spot (the price or `—`), Spot method (`parity`, `delta`, ...), King, Gate
+  above and Gate below (each only when the server classified one), Flip, Hedge (only with the
+  levels taxonomy), Regime (`POSITIVE`, `NEGATIVE` or `UNCLEAR`), Total GEX and Total VEX
+  (`fmtBigGex`, `—` for a null).
+- A three-column stage (`SwingMode.tsx:948-965`): the Tactical read card on the left, the `Strike ×
+  Expiration heatmap` in the centre and, on the right, `Nodes & pivots` (drawn only when the overlay
+  is real, `SwingMode.tsx:510-570,962`) above `Pivot build · ranked` (`SwingMode.tsx:753-784`: the
+  ten strikes with the largest |net GEX|, each summed over the expirations).
 
-##### OPTIONS-04 · Flowseeker: Contract Drilldown
+The heatmap (`RealHeatmapGrid`, `SwingMode.tsx:578-750`) lists strikes high to low and up to twelve
+expirations left to right (`buildGrid(summary, metric, 'net', 12)`, `SwingMode.tsx:596`;
+`src/components/options/swingGridUtils.ts:38-82`). A cell is coloured on the 75th percentile of the
+non-zero magnitudes, so one outlier does not flatten the rest (`SwingMode.tsx:634-640`), and prints
+its value only at intensity 0.04 or more (`SwingMode.tsx:721`). The King row is the levels' King, or
+else the grid's largest |net GEX| strike, and the Spot and Flip rows are tagged
+(`SwingMode.tsx:644-699`). The header of a `realtime` grid adds `badge = intraday Δ vs prior
+snapshot` (`SwingMode.tsx:642,669`), but no badge can appear: the grid cell the API emits has no
+`pct_change` (`lib/gamma.py:138-175`, and the vendored OpenAPI `GammaGridCell`; the hook says so,
+`src/hooks/useGammaGrid.ts:10-16`).
+
+Which pieces are measured and which are not. The grid, the pivot rail, and (with `/levels`) the
+legend and the node list come from the API. Three things on the view are the Gamma Map design
+mock (`src/data/gammaMapMock.ts`) whatever the ticker: the Tactical read card
+(`SwingMode.tsx:450-499`: heading `Tactical read · SPY` from `HS.ticker`, text about a 593.42 spot, a
+588.50 flip and a 600 anchor, and `Confidence 72%`), the legend's Hedge chip
+(`HS.nodes.hedge[0]`, `SwingMode.tsx:415`) and the node list's Midpoint and Hedge rows
+(`SwingMode.tsx:524-533`). Executed 2026-10-01 (hermetic render of IWM with the populated fixtures):
+the heading read `Tactical read · SPY`, the legend `HEDGE 580` and the list `591 MIDPOINT +$273.0M`
+and `580 HEDGE FOMC 2026-06-12` beside the real `220 KING +$1.9M`. The banner says only that the
+tactical read is illustrative; nothing marks the Hedge chip or the two node rows (matrix Gaps).
+
+**Needs:** In order (`SwingMode.tsx:799-809`): `GET /api/options/dates/{sym}?limit=1`
+(`useLatestOptionsDate`, `src/hooks/useOptionsDates.ts:42-53`: one index descent, five minute stale
+time, no retry), whose first date becomes `latestDate`; `GET /api/options/{sym}/{latestDate}/levels`
+(`src/hooks/useGammaLevels.ts:74-98`, enabled only once a date exists, one hour stale time); and the
+grid (`src/hooks/useGammaGrid.ts:88-122`): live, `GET /api/options/{sym}/grid?strike_window_pct=6`,
+refetched every 60 seconds and stale after 50, or historical, `GET
+/api/options/{sym}/{latestDate}/grid?strike_window_pct=6`, stale after an hour and enabled only once a
+date exists. The grid's query key includes the date, so the live grid is asked for a second time
+when the dates answer lands (executed 2026-10-01: the opening load issued `GET
+/api/options/IWM/grid?strike_window_pct=6` twice). Historical mode asks for the newest listed date
+and offers no way to pick another (OPTIONS-08).
+
+Server side. The dates handler (`platform/api/routers/options.py:318-521`) answers 400 outside SPY,
+IWM, QQQ and SPX, 503 when the database is unreachable (never a fallback) and 404 when no snapshot
+was ever ingested. `/levels` (`platform/api/routers/options.py:809-847`) reads the chain through
+`get_options` (twelve hour cache per ticker and date, `options.py:524-630`; the Gaps say what that
+pins), selects `gamma` and no `*_computed` column (`options.py:562-579`), and returns
+`build_summary` (`lib/gamma.py:1014-1137`): the "GEX unavailable" summary when no contract carries
+gamma, and a null `gamma_flip` with one log line when the rate lookup raises
+(`lib/gamma.py:1086-1095`). The live grid (`platform/api/routers/grid.py:618-735`) is cached 60
+seconds and reads, in order: the newest REALTIME snapshot dated within 20 days (called `realtime`
+whatever its age, `grid.py:232-263`), else the newest EOD snapshot, labelled by
+`classify_gamma_freshness` (`eod_fallback` up to two trading days behind, `stale_fallback` up to
+five, `unavailable` beyond, `lib/agents/summarizers.py:160-177`), else, for a ticker outside SPY,
+IWM and QQQ, an on-demand AlphaVantage fetch that is written back (`grid.py:440-613`); an empty
+result is a 200 `unavailable` envelope (`grid.py:192-217`). The historical grid
+(`grid.py:738-811`) reads the newest EOD snapshot at or before the date and never calls the vendor.
+`build_grid_summary` (`lib/gamma.py:1156-1296`) has no gamma coverage gate (the `AUDIT-2026-09-07`
+marker, `grid.py:550`).
+
+How the overlay is built (`SwingMode.tsx:814-908`). With a levels answer that carries levels, the
+legend and nodes read it: the King is `kings[0]`, the two gates are the nearest classified gate
+above and below the spot, the Flip is `levels.gamma_balance` and only when that is absent the
+grid's `gamma_flip` (`SwingMode.tsx:843`), and Total VEX is the grid's, `null` when there is no grid.
+Without levels but with a grid that has cells, the grid supplies the spot, the Flip, the regime and
+the totals, and the King is the strike with the largest |net GEX|; gates are omitted. With neither,
+the placeholder is mock and the legend and node list are hidden. The Flip chip, the node row `Flip
+zero-gamma` and the dashed flip row are therefore the gamma balance, "the OI-weighted gamma-median
+balance price ... NOT a true dealer-gamma regime flip" that the API renamed on 2026-06-09
+(`lib/gamma.py:108-115,567-620`), and not `gamma_flip`, the Black-Scholes zero-gamma level
+(`lib/gamma.py:623-850`); `/help` defines the two apart (`src/routes/HelpPage.tsx:119-126`) and the
+Charts page draws both. Executed 2026-10-01 on the real IWM chain of 2026-09-30 (5600 contracts, read
+from Cloud SQL) through the real handlers: spot 277.995, `gamma_balance` 275.74 and `gamma_flip`
+290.44, and the rendered legend read `FLIP 275.74`; the second figure, 14.7 points higher, appears
+nowhere on the view (matrix Gaps). The fixtures show the same split: the Flip chip read `219.50`, the
+fixture's `gamma_balance`, while its `gamma_flip` is 219.75.
+
+What the view shows on the production chains of 2026-09-30 (executed 2026-10-01: the real handlers
+run on the chains read from Cloud SQL that day, and their answers rendered in the page; the V evidence
+comment in the matrix has the reads).
+
+- IWM, 2800 calls and 2800 puts: the banner `... IWM dealer exposure (end-of-day close) ...`, the pill
+  `EOD 07:00 PM ET` (the `23:00:00Z` stamp of the EOD rows) and the legend `SPOT 277.99 SPOT METHOD
+  parity KING 275 GATE ↑ 279 GATE ↓ 277 FLIP 275.74 HEDGE 580 REGIME NEGATIVE TOTAL GEX −$54.8M TOTAL
+  VEX −$420.2M`. Total GEX is the levels answer's (`total_gex` −54.79M, the whole chain) and Total VEX
+  the grid's (−420.2M, the strikes within six percent of the spot); the Profiles view reads −929.9M
+  for the same chain's Total VEX (OPTIONS-05), two figures under one name (matrix Gaps).
+- SPY, whose EOD chain holds calls only (matrix Gaps): the live grid answered from the REALTIME snapshot
+  of 19:55:25Z (`realtime`, the pill `LIVE 03:55 PM ET`, its own `total_gex` −38.2M and regime
+  `negative_gamma`), while `/levels` answered from the day's newest snapshot, the calls-only EOD
+  chain, so the legend read `SPOT 775.00 SPOT METHOD delta KING 760 ... REGIME POSITIVE TOTAL GEX
+  +$221.1M` beside a heatmap of the other snapshot.
+- SPX, whose chain carries no gamma at all (calls only, open interest 0 on every contract): the grid
+  is 1091 cells that are all zero, the spot is the median strike (`SPOT 7240.00 SPOT METHOD
+  median_strike`), and the legend read `KING 6810 FLIP — REGIME UNCLEAR TOTAL GEX +$0K TOTAL VEX +$0K`
+  with `6810 KING +$0K` in the node list: a King and two zero totals drawn from no gamma (matrix
+  Gaps).
+
+**States:** OPTIONS-09 to OPTIONS-13 describe each state on the page; what Swing shows is as follows
+(all executed 2026-10-01 in hermetic renders). Pending: the card reads `Loading live grid…`, and,
+because the pill and the banner read the grid's source with a default of `unavailable`
+(`SwingMode.tsx:943`), the pill reads `UNAVAILABLE` (hint `No snapshot available`) and the banner
+`Live IWM grid unavailable, tactical read is illustrative.` while the request is still in flight.
+In Historical mode, with the dates request pending or failed, the grid query is disabled
+(`SwingMode.tsx:807`), so the card reads `Data unavailable: No options grid available for this
+symbol.` and not a loading line. An `unavailable` envelope, or a grid with no cells, reads `Data
+unavailable: <reason>` (the envelope's `reason`, else its first warning, else the default text,
+`SwingMode.tsx:616-625`). A failed grid request (a 503, a 429) reads the same default text and the
+server's `detail` is dropped. The legend and node list still draw from `/levels` when that answers,
+so beside an unavailable grid they show a King, gates and totals, and Total VEX reads `+$0K`, the
+envelope's `total_vex` of 0.0 (a failed grid request shows `—` there; matrix Gaps). A failed or
+pending dates or levels request has no presentation of its own: neither query's error is read
+(`SwingMode.tsx:800-803`).
+
+**Acceptance criteria:**
+- Given IWM, the populated levels and a grid with `data_source` `eod_fallback`, when `/options`
+  loads, then the banner reads `Heatmap grid & pivot rail show IWM dealer exposure (end-of-day
+  close). Tactical read is illustrative.`, the pill `EOD` with a time in ET, the legend `SPOT 220.00`,
+  `SPOT METHOD parity`, `KING 220`, `GATE ↑ 221`, `GATE ↓ 218`, `FLIP 219.50`, `REGIME POSITIVE`,
+  `TOTAL GEX +$1.3M` and `TOTAL VEX −$350K`, and the heatmap header `Strike × Expiration heatmap ·
+  IWM` (executed 2026-10-01; no committed test asserts these values).
+- Given the page opens, then the dates request carries `limit=1` and the Profiles request none
+  (`the Swing view asks for one date; the Profiles picker asks for all`,
+  `tests/options/options-flow.spec.ts`, on main at eca7078).
+- Given the toolbar, when `Refresh` is pressed, then the live grid is requested again, and when
+  `Glossary` is pressed the URL becomes `/help` (`Refresh refetches the grid and Glossary navigates
+  to /help`, `tests/shared/navigation.spec.ts`, on main).
+- Given a grid, then strikes run high to low, columns are the expirations capped at twelve, the King
+  cell is the largest |net GEX|, the spot row is the strike nearest a real spot and no row is tagged
+  without one (`buildGrid`, `buildGrid — spot row honesty`, `selectValue`,
+  `src/components/options/swingGridUtils.test.ts`); values print as `+1.2M`, `-48K`, `+312`
+  (`formatGex`, the same file).
+- Given `data_source` `realtime` and `eod_fallback`, then the live grid is served with
+  `Cache-Control: public, max-age=60`, the historical one with `max-age=43200`, and an empty
+  database answers an `unavailable` envelope with HTTP 200 (`TestGridLive`, `TestGridHistorical`,
+  `tests/api/test_grid_router.py`).
+- Given a levels answer with `gamma_balance` 219.5 and `gamma_flip` 219.75, then the Flip chip
+  reads `219.50` (executed 2026-10-01; matrix Gaps).
+- Given a levels answer with levels, then the Hedge chip and the Midpoint and Hedge rows read the
+  mock's 580, 591 and 580, and the Tactical read card reads `Tactical read · SPY` whatever the
+  ticker (executed 2026-10-01; matrix Gaps).
+- Given the live grid and `/levels` come from different snapshots, then the legend reads `/levels`
+  and the heatmap the grid (executed 2026-10-01 on the SPY chains above; matrix Gaps).
+- Given a chain with no vendor gamma, then the grid answers 200 with every cell at zero and no
+  coverage warning, and the view draws a King and totals of `+$0K` (executed 2026-10-01 on the SPX
+  chain above; matrix Gaps).
+- Given an unrecognized source string, then the pill reads `UNAVAILABLE` with the hint
+  `Unrecognized data source`, and the banner `(delayed snapshot)` (executed 2026-10-01).
+- Given the grid request is held, then the pill reads `UNAVAILABLE` and the card `Loading live
+  grid…` (executed 2026-10-01; matrix Gaps).
+
+**Tests:** Main asserts three things about this view and a few helpers. `demo-banners.spec.ts`
+(`Gamma Map Swing Mode shows the demo banner`) asserts that the first `.hs-demo-banner` element is
+visible and no text in it; `options-mobile-fit.spec.ts` asserts, on two phone widths, that `.hs-grid`
+is visible, the document does not scroll sideways, no card box passes the viewport and the wide
+heatmap card is an `overflow-x: auto` scroller wider than its box; `navigation.spec.ts` and the
+dates-limit test of `options-flow.spec.ts` assert the toolbar buttons and the request URL as in the
+criteria. The pure helpers are asserted by `swingGridUtils.test.ts`, and the grid and levels
+handlers and the library by `tests/api/test_grid_router.py` (live and historical tiers, the
+unavailable envelope, the on-demand dispatch and its rate limit, route order),
+`tests/api/test_route_coverage.py` (the live and historical grid answer 503 with no database
+configured, which stops at `_require_cloud_sql`, and the dates route 503 against an unreachable one),
+and `tests/lib/test_gamma.py`
+(`TestBuildGridSummary`, `TestBuildSummary`, `TestComputeGammaBalance`, `TestComputeGammaFlipBS`,
+`test_differs_from_gamma_balance`, the coverage gate of `build_summary`). No test asserts a rendered
+cell, a legend chip, the pill, the node list, the pivot rail, the Historical, GEX and VEX buttons,
+or what the view shows with no grid; no test runs `build_grid_summary` on a chain with no gamma.
+
+**Code:** `src/routes/OptionsFlowPage.tsx:30-70`, `src/components/options/GammaMapSection.tsx:20-50`,
+`src/components/options/SwingMode.tsx:44-968`, `src/components/options/swingGridUtils.ts:1-112`,
+`src/hooks/useOptionsDates.ts:31-67`, `src/hooks/useGammaLevels.ts:74-98`,
+`src/hooks/useGammaGrid.ts:88-122`, `src/data/gammaMapMock.ts`, `src/lib/formatGex.ts:6-24`;
+`platform/api/routers/options.py:318-521,809-847`, `platform/api/routers/grid.py:192-613,618-811`,
+`lib/gamma.py:1014-1296`; no test id (the view is found by the classes `hs-demo-banner`,
+`hs-toolbar`, `hs-legend`, `hs-grid-card`, `hs-grid`, `hs-pill`).
+
+##### OPTIONS-02 · Gamma Map: Trinity Mode
+
+**Shows or does:** The second toggle of the Gamma Map view, `Trinity Mode`
+(`src/components/options/GammaMapSection.tsx:43-45`), replaces Swing with `TrinityTab`
+(`src/components/options/TrinityTab.tsx:174-201`): the heading `Trinity · synced index gamma` with
+`SPX · SPY · QQQ, strike ladders aligned`, three panels in a one, two or three column grid
+(`TrinityTab.tsx:186-190`) and a closing note card (`TrinityTab.tsx:192-199`). The symbols are fixed
+(`TRINITY_SYMBOLS`, `TrinityTab.tsx:13`) and independent of the page's picker; each panel asks for its
+own newest date and levels (`TrinityPanel`, `TrinityTab.tsx:47-172`). A panel's header shows the symbol,
+the spot when it is positive and a `King <strike>` chip when the server named a King
+(`TrinityTab.tsx:77-94`). Its body is a ladder of the response's `levels`, strikes high to low in a
+520 pixel scroller (`TrinityTab.tsx:64-66,115-168`): a column header `Strike · Put GEX · Call GEX`,
+and per strike a red bar growing left for a negative `net_gamma` and a green bar growing right for a
+positive one, both scaled to the largest |net gamma| of the panel, the King row gold with a `♔` and
+the row nearest the spot tinted (`nearestStrike`, `TrinityTab.tsx:36-44`), and a hover title `Net GEX
+<value> · OI <calls>c / <puts>p`. Nothing on a panel is a mock. The levels array holds the strikes
+within eight percent of the spot (`classify_levels`, `lib/gamma.py:943-1011`), so an index with five
+point strikes draws a long ladder.
+
+Executed 2026-10-01 (hermetic render, the populated fixtures): the panels read `SPY 220 King 220
+STRIKE PUT GEX CALL GEX 222 221 220 ♔ 219 218` and the same for QQQ; choosing SPY in the picker
+issued no new Trinity request for SPY (its dates and levels were already cached from Swing) and left
+the three headers as they were, while the Swing heading changed to SPY (OPTIONS-06).
+
+**Needs:** For each of SPX, SPY and QQQ: `GET /api/options/dates/{SYM}?limit=1`
+(`useLatestOptionsDate`, `src/hooks/useOptionsDates.ts:42-53`) and,
+once a date exists, `GET /api/options/{SYM}/{date}/levels` with no parameter
+(`src/hooks/useGammaLevels.ts:74-98`; the server's window is eight percent). The panel reads
+`spot.price`, `kings[0].strike` and each level's `strike`, `net_gamma`, `gex`, `call_oi` and `put_oi`;
+it reads no `warnings`, `regime` or `total_gex`. The handlers are the ones OPTIONS-01 describes
+(`platform/api/routers/options.py:318-521,809-847`). SPX has no realtime producer, only the nightly
+EOD fetch (matrix Backend notes), so its newest date is the last close. Production on 2026-10-01
+(the V evidence comment in the matrix): the SPX chain of every date from 2026-09-15 to 2026-09-30
+carries no vendor gamma and, but for 2026-09-21, no puts, and open interest on three of the twelve
+dates; the newest, 2026-09-30, is 4871 calls with open interest 0 on all of them. The real handler's
+answer to that chain is a 200 with `regime` `unknown`, empty `levels` and `kings`, a `spot` of 7240.0
+with `method` `median_strike`, and two warnings: `Spot estimated from median strike ...` and `Vendor
+gamma missing on ALL 4871 contracts ...`. Rendered, the SPX panel read `SPX 7,240` over `Chain too
+thin to build a ladder for SPX.`: the header's 7,240 is that median strike, shown as a spot with no
+mark. The SPY panel draws from the day's newest snapshot, the EOD chain of 2026-09-30, which holds
+calls only: `regime` `positive_gamma`, a ladder of 125 levels none of them negative, King 760 (matrix
+Gaps).
+
+**States:** OPTIONS-09 to OPTIONS-13 describe each state on the page; the panel's own (executed
+2026-10-01): pending reads `Loading <SYM> levels…` (`TrinityTab.tsx:97-101`); a failed dates request,
+a dates answer with no date, or a failed levels request (`datesQuery.isError || levelsQuery.isError ||
+(!loading && !latestDate)`, `TrinityTab.tsx:57`) reads `No gamma levels available for <SYM>.`
+(`TrinityTab.tsx:103-107`), whatever the status or the server's text (executed with a 503 on the SPX
+dates request and a 404 on the SPY levels one; QQQ still drew its ladder); an answer whose `levels`
+is empty reads `Chain too thin to build a ladder for <SYM>.` (`TrinityTab.tsx:109-113`). The last
+text states a cause the panel does not know: `/levels` also answers an empty `levels` list when the
+chain carries no vendor gamma, with a warning that says so (`lib/gamma.py:1057-1069`), and the panel
+never reads `warnings`, so a chain of thousands of contracts reads as too thin (executed 2026-10-01:
+the real handler's answer for the production SPX chain of 2026-09-30, 4871 contracts with no gamma,
+rendered in the page, read `Chain too thin to build a ladder for SPX.`; matrix Gaps).
+
+**Acceptance criteria:**
+- Given the populated levels for the three symbols, when Trinity Mode is chosen, then three panels
+  show in the order SPX, SPY, QQQ, each with its symbol, its spot, `King 220`, strikes high to low
+  and the King row marked `♔` (executed 2026-10-01; no committed test asserts a panel).
+- Given Trinity Mode is chosen, then each of SPX, SPY and QQQ asks for its newest date with
+  `limit=1`, and every options request is answered by a fixture route
+  (`Trinity Mode is intercepted too — none of SPX/SPY/QQQ reaches a real backend`,
+  `tests/options/options-flow.spec.ts`, on main at eca7078; it asserts the requests are issued and
+  none escapes, not what the panels draw).
+- Given a ladder and a spot, then the strike nearest the spot is tagged, an exact tie goes to the
+  higher strike, and a missing, zero or negative spot or an empty ladder tags nothing
+  (`nearestStrike`, five cases, `src/components/options/TrinityTab.test.ts`, on main).
+- Given a failed dates request, a missing date or a failed levels request, then the panel reads
+  `No gamma levels available for <SYM>.`; given an empty `levels`, `Chain too thin to build a ladder
+  for <SYM>.`; given a pending request, `Loading <SYM> levels…` (executed 2026-10-01).
+- Given a chain on which no contract carries gamma, then `/levels` answers 200 with empty `levels`
+  and `kings`, `regime` `unknown`, `total_gex` 0.0 and the warning `Vendor gamma missing on ALL <n>
+  contracts — GEX unavailable for this snapshot (feed outage?), not zero.`
+  (`test_build_summary_all_gamma_missing_is_unavailable_not_zero`, `tests/lib/test_gamma.py`; executed
+  2026-10-01 through the real handler on the production SPX chain of 2026-09-30), and the SPX panel
+  then reads `Chain too thin to build a ladder for SPX.` (executed 2026-10-01, rendered).
+- Given the picker is changed, then the three panels do not change (executed 2026-10-01).
+
+**Tests:** `src/components/options/TrinityTab.test.ts` (`nearestStrike` only) and the Trinity test of
+`options-flow.spec.ts` above, whose assertion is about the requests. On the server: the dates and
+levels handlers and the library as OPTIONS-01 credits them (`tests/api/test_route_coverage.py` pins
+the dates route to 503 and the levels route to 404 against an unreachable database, and
+`test_levels_actually_awaits_the_chain` that a stubbed chain answers 200 with its `chain_size`;
+`tests/lib/test_gamma.py` the classification and the coverage gate). No test renders a panel or reads
+the King chip, a ladder row or any of the three texts.
+
+**Code:** `src/components/options/TrinityTab.tsx:1-202`, `src/components/options/GammaMapSection.tsx:20-50`,
+`src/hooks/useOptionsDates.ts:42-53`, `src/hooks/useGammaLevels.ts:74-98`;
+`platform/api/routers/options.py:318-521,809-847`, `lib/gamma.py:943-1137`; no test id.
+
+##### OPTIONS-03 · Flow: Live Feed
+
+**Shows or does:** The Flow view (`src/routes/OptionsFlowPage.tsx:66`) opens on its `Live Feed` toggle
+(`src/components/options/FlowSection.tsx:20,48-49`), which mounts `FlowTab`
+(`src/components/options/FlowTab.tsx:98-346`). Every number on it is a bundled placeholder
+(`src/data/optionsFlowMock.ts`, whose header says it is not live and is to be deleted once a
+flow-tape endpoint exists); no endpoint of that name is in the API snapshot, and the three Flow files
+make no request and read no mock-mode switch (`grep` for `fetch` and `import.meta.env` finds nothing
+in them). Production therefore renders this view from the mock always, and the only disclosure is the
+`DemoDataBanner` (`role="status"`) at the top: `Demo data, not live.` and `No live flow feed
+connected, placeholder tape until an options flow-tape endpoint exists.`
+(`FlowTab.tsx:114`, `src/components/shared/DemoDataBanner.tsx:16-27`). Below it:
+
+- A scanner strip of five buckets (`FlowTab.tsx:120-132`): Sweeps 142 at $18.4M, Blocks 38 at $42.1M,
+  Splits 96 at $12.8M, Repeated strikes 28 at $8.2M and Golden sweeps 6 at $24.6M.
+- The `Live options feed` table (`FlowTab.tsx:135-280`): sixteen rows with the columns Time, Sym,
+  Strike, C/P, OTM, Exp, DTE, Spread (a bid, mark and ask mini bar), Side, Sentiment, Size, Chain
+  (a fill ratio bar) and Premium, and eight filter chips, `All`, `Sweeps`, `Calls`, `Puts`,
+  `Bullish`, `Bearish`, `> $100K` and `0–2 DTE` (`FlowTab.tsx:20,85-96`). The chips filter the
+  sixteen rows in the browser and no chip empties the table (executed 2026-10-01: `Sweeps` 7 rows, `>
+  $100K` 5 of 16).
+- A row click drills into the contract (`FlowTab.tsx:182-195`): `FlowSection` stores the row's
+  `{sym, strike, cp, expiry, dte}` and flips the inner toggle to `Contract Drilldown`
+  (`FlowSection.tsx:23-26`), OPTIONS-04.
+- A right rail (`FlowTab.tsx:283-344`): `Flow sentiment · today` (Bullish prem $142.4M, Bearish prem
+  $48.2M, C/P ratio 2.34, Net delta +$1.2B) and `Top tickers · premium` (SPY, NVDA, TSLA, QQQ, PLTR,
+  AAPL).
+
+Executed 2026-10-01 (hermetic render): the first row read `12:49:25 DVN 38 C +5.0% 01/23 4 0.10 0.13
+0.13 ASK BULLISH 328 Ask 90% $4K`. The times are a fixed morning, the expirations fall in January and
+the rail says `today`; none of it moves with the clock or with the page's ticker (picking SPY left the
+first row as DVN). Nothing on the view but the banner says it is a placeholder.
+
+**Needs:** Nothing: no request, no store, no setting. The Chain's `none (mock fixture ...)` cells are
+right: the view reads `FLOW_FEED`, `SCANNER_BUCKETS`, `FLOW_SENTIMENT` and `TOP_TICKERS` from the mock
+module (`FlowTab.tsx:4-13,105-109`).
+
+**States:** The view has no loading, empty or error state, because it has no data source; the banner
+is its only state. A `FlowTab` rendered without `onSelectContract` makes the rows inert, but
+`FlowSection` always passes it.
+
+**Acceptance criteria:**
+- Given Flow is chosen, then the banner `Demo data, not live.` is visible
+  (`Flow tab shows the demo banner text`, `tests/options/demo-banners.spec.ts`, on main at eca7078).
+- Given Flow is chosen, then the sixteen placeholder rows, the five scanner buckets and the rail
+  show, and `Sweeps` leaves seven rows and `> $100K` five (executed 2026-10-01; no committed test
+  asserts a row, a chip or the rail).
+- Given a row is clicked, then the Contract Drilldown opens for that row's contract (executed
+  2026-10-01; asserted on this branch by `the view switcher mounts one view at a time and each inner
+  toggle swaps its own view`, `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, which
+  has not run in CI).
+- Given the page's ticker changes, then the view does not change (executed 2026-10-01).
+
+**Tests:** On main, `demo-banners.spec.ts` asserts the banner text is visible after the click on the
+Flow button, and `options-mobile-fit.spec.ts` (`Flow tab does not overflow the viewport`, two phone
+widths) asserts that the document does not scroll sideways and no card passes the viewport. Neither
+asserts what the feed shows or does. The test added on this branch asserts the inner toggle and the
+drill-through, not the values. Te stays unticked.
+
+**Code:** `src/components/options/FlowTab.tsx:1-348`, `src/components/options/FlowSection.tsx:12-55`,
+`src/data/optionsFlowMock.ts`, `src/components/shared/DemoDataBanner.tsx`; no test id (the banner is
+found by its text, the table by its role).
+
+##### OPTIONS-04 · Flow: Contract Drilldown
+
+**Shows or does:** The second toggle of the Flow view, `Contract Drilldown`
+(`src/components/options/FlowSection.tsx:43-45`), mounts `ContractDrilldown`
+(`src/components/options/ContractDrilldown.tsx:77-246`). It is a placeholder like the Live Feed
+(OPTIONS-03): the banner at the top reads `Demo data, not live.` and `No contract-tape endpoint
+connected, placeholder drilldown until a per-contract tape exists.` (`ContractDrilldown.tsx:111`), and
+every figure comes from `src/data/contractDrilldownMock.ts`, a single SPY 605 call that expires
+2026-01-17. The view, top to bottom:
+
+- A header row (`ContractDrilldown.tsx:114-131`): the symbol, `$<strike>`, a `CALL` or `PUT` pill,
+  the expiry, `<n> DTE` and the contract id `<sym> <strike> <cp> <expiry>`.
+- A stats strip (`ContractDrilldown.tsx:87-94,134-141`): Volume 48,213, Open Int 31,905, Avg Fill
+  $1.42, Total Premium $6.85M, OTM % +0.3% and Multi % 34%.
+- A chain ratio bar (`ContractDrilldown.tsx:144-159`): Bid 28% with $1.92M, Ask 62% with $4.24M and
+  the middle as the remainder.
+- A `Volume over time · avg fill overlay` chart (`ContractDrilldown.tsx:162-201`, recharts): stacked
+  Ask, Mid, Bid and No-side counts per half hour with the average fill and the price as two lines, and
+  the day's totals as a legend.
+- A `Time-bucket detail` table (`ContractDrilldown.tsx:204-244`): fourteen half hours from 09:30 to
+  16:00 with Bid, Mid, Ask, Avg Fill, IV, RVOL, Volume and the three premiums.
+
+Which contract. With no selection the header is the mock's SPY 605 call, with the ISO expiry
+`2026-01-17`. Reached from a Live Feed row, `FlowSection` hands over that row's `{sym, strike, cp,
+expiry, dte}` (`FlowTab.tsx:187-193`) and only the header row and the contract id use it
+(`ContractDrilldown.tsx:82-84`); the stats, the ratio, the chart and the table stay the SPY 605 call's,
+as the file's own comment says (`ContractDrilldown.tsx:79-81`). Executed 2026-10-01 (hermetic render):
+after the first Live Feed row, `DVN 38 C 01/23` with 328 contracts at $0.13, the header read `DVN $38
+CALL 01/23 4 DTE` and the strip `VOLUME 48,213 OPEN INT 31,905 AVG FILL $1.42 TOTAL PREMIUM $6.85M OTM
+% +0.3% MULTI % 34%`, the SPY call's figures. The banner calls the drilldown a placeholder, but the
+header names the clicked contract above another contract's numbers (matrix Gaps).
+
+**Needs:** Nothing: no request, no store. The Chain's `none (mock fixture ...)` cells are right
+(`ContractDrilldown.tsx:11,78`). The selected contract lives in `FlowSection`'s state
+(`FlowSection.tsx:21`), so it is lost when another top view is chosen and Flow is mounted again.
+
+**States:** None of its own; the banner is the only state, as in OPTIONS-03.
+
+**Acceptance criteria:**
+- Given the toggle `Contract Drilldown` is chosen with no row picked, then the banner shows and the
+  header names SPY 605 CALL 2026-01-17 with 1 DTE (`src/data/contractDrilldownMock.ts:60-62`, and the
+  executed render of 2026-10-01 read `SPY $605 CALL 2026-01-17 1 DTE`).
+- Given a Live Feed row is clicked, then the toggle moves to `Contract Drilldown` and the header and
+  contract id name that row's contract, while the figures stay the placeholder's (executed
+  2026-10-01; the toggle move and the contract id are asserted on this branch by `the view switcher
+  mounts one view at a time and each inner toggle swaps its own view`,
+  `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, not yet run in CI).
+
+**Tests:** None on main: `demo-banners.spec.ts` opens the Flow tab on its Live Feed, and
+`options-mobile-fit.spec.ts` does not leave it, so no test on main mounts this view. The test added on
+this branch asserts the toggle and the contract id and no figure, so Te stays unticked.
+
+**Code:** `src/components/options/ContractDrilldown.tsx:1-247`,
+`src/components/options/FlowSection.tsx:12-55`, `src/data/contractDrilldownMock.ts`,
+`src/components/shared/DemoDataBanner.tsx`; no test id.
 
 ##### OPTIONS-05 · Profiles
 
+**Shows or does:** The Profiles view (`src/routes/OptionsFlowPage.tsx:67`) mounts `ProfilesTab`
+(`src/components/options/ProfilesTab.tsx:255-646`) for the page's active ticker. Top to bottom:
+
+- A toolbar (`ProfilesTab.tsx:350-425`): `GEX` and `VEX` (which Greek the first metric card shows and
+  the heatmap's header names; the bars stay GEX, below), `Net`, `Calls` and `Puts` (which side of each
+  strike the heatmap draws), the date
+  stepper (OPTIONS-08) and a `Spot:` number input. The input shows the typed override, else the
+  resolved spot to two decimals, with a chip naming the estimation method (`parity`, `delta`,
+  `median_strike` or `none`) while there is no override (`ProfilesTab.tsx:406-424`).
+- Notices (`ProfilesTab.tsx:428-501`): the dates error and the chain error (OPTIONS-11), the loading
+  line (OPTIONS-09), `Couldn't estimate spot from this chain` with the advice to enter a spot when
+  the chain has rows and no spot resolves (`ProfilesTab.tsx:479-491`), and a blue box listing the
+  levels answer's `warnings` (`ProfilesTab.tsx:494-501`).
+- A metrics bar of four cards, drawn whenever a spot is known (`finalSpot > 0`,
+  `ProfilesTab.tsx:503-528`): `Total GEX` or `Total VEX` (the Greeks answer's
+  `metrics.total_gex` or `total_vex` through `formatGEX`, with `Positive` or `Negative`), `Gamma Flip`
+  (`$<level>` from `/levels`'s `gamma_balance`, else the Greeks `zero_gamma`, else `--`, with the
+  regime's description under it), `Max Pain` (`$<strike>` or `--`) and `Put/Call OI` (two decimals,
+  `Bearish skew` above 1, else `Bullish skew`).
+- A levels row (`ProfilesTab.tsx:530-578`), drawn once `/levels` answered and a spot is known: the
+  regime chip (`Positive gamma`, `Negative gamma`, hidden when `unknown`), one `★ King $<strike>
+  (<distance>%)` per entry of `kings` (three on the real IWM answer below), one `◆ Gate $<strike>` per
+  gate and one `⇅ Flip $<strike>` per strike bracketing the gamma balance. Before `/levels` has answered, a fallback row shows the Greeks answer's King,
+  gatekeepers and midpoints (`ProfilesTab.tsx:580-597`).
+- The heatmap (`GEXHeatmap`, `ProfilesTab.tsx:72-235,599-620`): a D3 SVG of one horizontal bar per
+  strike inside the Greeks answer's range of the spot (`strike_range_pct`, fifteen percent), positive
+  green and negative purple, strike labels amber near the spot, a value label where a bar passes five
+  percent of the largest, a dashed zero line, a red spot line labelled `$<spot>`, and per strike a
+  `★` (the King), a `◆` (a gatekeeper) or a `●` (inside a midpoint band) from the Greeks `nodes`
+  (`ProfilesTab.tsx:126-131,173-184`). Its header reads `<GEX|VEX> by Strike, <Net|Calls Only|Puts
+  Only>: ±15% range (<n> strikes)`.
+- A footer (`ProfilesTab.tsx:631-645`): `Source: AlphaVantage EOD · Cloud SQL · <n> contracts ·
+  snapshot <date>` for a Cloud SQL chain and `Source: AlphaVantage Live · <n> contracts · snapshot
+  <date> <time> ET` for the live proxy, or `time unavailable` with no timestamp (OPTIONS-12).
+
+Executed 2026-10-01 (hermetic render, the populated fixtures): the date `2026-04-24`, `Spot: parity`
+with `220.00`, the cards `TOTAL GEX -23K Negative`, `GAMMA FLIP $219.50 Above gamma flip, pinning /
+range-bound`, `MAX PAIN $220` and `PUT/CALL OI 1.06 Bearish skew`, the chips `Positive gamma ★ King
+$220.00 (+0.0%) ◆ Gate $218.00 ◆ Gate $221.00 ⇅ Flip $219.00`, the header `GEX by Strike, Net: ±15%
+range (5 strikes)` and the EOD footer. `Gamma Flip` and the `⇅ Flip` chips are the gamma balance and
+its bracketing strikes (matrix Gaps, and the Flip paragraph of OPTIONS-01); the fixture's
+`gamma_flip` of 219.75 appears nowhere on the view.
+
+The `VEX` button changes the first card (`TOTAL VEX -506K Negative`) and the header (`VEX by Strike,
+...`) and not the bars: `GEXHeatmap` is given no metric (`ProfilesTab.tsx:612-618`), and the Greeks
+answer's `gex_by_strike` rows hold `gex`, `call_gex` and `put_gex` only (executed 2026-10-01: the bars
+and their labels were identical in the two modes, on the fixtures and on the real answer below;
+matrix Gaps).
+
+**Needs:** In order (`ProfilesTab.tsx:271-335`):
+
+- `GET /api/options/dates/{ticker}` with no `limit`, the full history up to a thousand dates
+  (`useAllOptionsDates`, `src/hooks/useOptionsDates.ts:56-67`: five minute stale time, no retry). The
+  chosen date is `dates[dateIdx]`, newest first, and `dateIdx` returns to 0 when the ticker changes
+  (`ProfilesTab.tsx:261-269`).
+- `GET /api/options/{ticker}/{date}`, the Cloud SQL chain, and on a 404 only `GET
+  /api/options/live/{ticker}/{date}`, the AlphaVantage proxy; any other status is an error
+  (`useOptionsData`, `ProfilesTab.tsx:40-61`: one hour stale time, no retry).
+- `GET /api/options/{ticker}/{date}/levels`, with `?spot=<override>` when an override is typed
+  (`ProfilesTab.tsx:302-305`, `src/hooks/useGammaLevels.ts:74-98`; the query key holds the override).
+  The input has no debounce, so each keystroke that changes the number asks again.
+- `POST /api/options/greeks` with the chain's `type`, `strike`, `open_interest`, `gamma`, `vega`,
+  `delta` and `volume` and a `spot_price` (`src/hooks/useOptionsGreeks.ts:104-143`), sent only when the
+  chain has rows and that spot is positive. The spot it is given is the override, else the local
+  delta proxy (`estimateSpotStrikeFromDeltas`, the strike of the contract whose delta is nearest
+  plus or minus 0.5, `src/components/options/swingGridUtils.ts:93-112`), else the server's spot
+  (`ProfilesTab.tsx:317-321`), while the spot line, the range and the metrics gate use the server's
+  spot first (`ProfilesTab.tsx:333-335`), so the bars and the line can rest on two estimates. The
+  hook retries once on failure (the app default), keys the query on the chain's contract count and the
+  spot only (`useOptionsGreeks.ts:111`) and keeps an answer for 60 seconds; stepping to a date whose
+  chain has the same count and spot asks for nothing new (executed 2026-10-01: with two fixture chains of
+  ten contracts and a spot of 220, the step issued the chain and levels requests and no second POST).
+- With no Greeks answer the page uses `EMPTY_GREEKS`, a zeroed object (`ProfilesTab.tsx:326`,
+  `useOptionsGreeks.ts:145-158`): OPTIONS-11.
+
+Server side (`platform/api/routers/options.py`): the chain handler (`:524-630`) selects the newest
+`snapshot_ts` of the date for `data_source = 'alphavantage'`, maps `calls` and `puts` to `call` and
+`put` and NaN to null, caches the answer twelve hours per ticker and date and, through the swallowing
+`query_to_dataframe`, answers 404 for an empty frame whether the table has no rows or the database is
+unreachable (`tests/api/test_route_coverage.py` pins that 404 with no backend); it selects `gamma` and
+no `*_computed` column (`options.py:562-579`). The live proxy (`:633-745`) calls AlphaVantage
+`HISTORICAL_OPTIONS` for the date, answers 503 without a key or on a timeout, 502 on a failed request,
+429 on the vendor's limit notice, 400 on its error message and 404 for no contracts, caches five
+minutes, and stamps `snapshot_timestamp` with its own clock at the request, not a vendor time
+(executed 2026-10-01 through the real handler: `snapshot_timestamp` 2026-10-01T00:38:42Z for a request
+for the date 2026-09-29, `metadata.source` `alphavantage_live`). `/levels` is OPTIONS-01's. The Greeks
+handler (`:753-806`) answers from `lib/gamma.py` and, for a non-positive `spot_price` or no options, a
+200 of zeros (`:765-780`) that the page never asks for. The vendored OpenAPI declares a typed 200 for
+all five routes. Run on the real IWM chain of 2026-09-30 (5600 contracts, 2800 calls and 2800
+puts, read from Cloud SQL on 2026-10-01): the chain handler answered 200 with `metadata` `{source:
+cloud_sql, data_source: alphavantage, row_count: 5600}`; `/levels` with spot 277.995 (`parity`,
+`K=278.0 C=0.09 P=0.10 exp=2026-09-30`), `negative_gamma`, `total_gex` −54.79M, `gamma_flip` 290.44,
+`gamma_balance` 275.74, three kings, five gates and 54 levels; and the Greeks handler, given that chain
+and spot, `total_gex` −54.79M, `total_vex` −929.87M, `zero_gamma` 216.82, `max_pain` 285.0,
+`implied_move` 14.98, `put_call_ratio` 2.28 and a King node at 278.
+
+**States:** OPTIONS-09 to OPTIONS-13 describe each state on the page. Executed 2026-10-01: while the
+dates are pending the stepper reads `No dates` and the page `Loading available dates…`; while the chain
+is pending, `Loading options chain…` with a skeleton, and, because the levels already gave a spot, the
+metrics bar and levels row show at once, the cards as `TOTAL GEX +0 Positive` and `PUT/CALL OI 0.00
+Bullish skew` (the zeroed Greeks; OPTIONS-11); a chain with no rows reads `No options data returned for
+<ticker> on <date>` and `Try navigating to a different date using the chevrons above.`, which the real
+chain handler cannot produce (it answers 404 for an empty frame), and a dates answer with an empty list
+renders `No dates` and nothing else, which the real dates handler cannot produce either (it answers
+404); a chain with no deltas and levels with no spot (`method` `none`) reads `Couldn't estimate spot
+from this chain` with the advice to enter one, the server's warning in the blue box, no metrics bar,
+no heatmap and no Greeks request.
+
+Executed 2026-10-01 with the real handlers' answers on the production chains of 2026-09-30, rendered
+in the page. IWM, complete: `TOTAL GEX -54.8M Negative`, `GAMMA FLIP $275.74 Below gamma flip,
+trending / vol-amplifying`, `MAX PAIN $285`, `PUT/CALL OI 2.28 Bearish skew`, three `★ King` chips,
+five `◆ Gate`, two `⇅ Flip`, the header `GEX by Strike, Net: ±15% range (95 strikes)` and the footer
+`Source: AlphaVantage EOD · Cloud SQL · 5600 contracts · snapshot 2026-09-30`. SPX (4871 calls, no
+gamma, open interest 0): `Spot: median_strike`, the blue box listing both warnings (`Spot estimated
+from median strike ...`, `Vendor gamma missing on ALL 4871 contracts ...`), and under it the cards
+`TOTAL GEX +0 Positive`, `GAMMA FLIP --`, `MAX PAIN $200` and `PUT/CALL OI 0.00 Bullish skew`, over
+365 strikes with no bar value: a zero, the lowest strike and a skew read from no data, beneath a
+warning that says there is none. SPY (the EOD chain holds calls only): `TOTAL GEX +221.1M Positive`,
+`GAMMA FLIP $770.42`, `MAX PAIN $50`, `PUT/CALL OI 0.00 Bullish skew`, ten `★ King` chips and no
+warning (matrix Gaps).
+
+**Acceptance criteria:**
+- Given the populated fixtures, when Profiles is chosen, then the view shows the date, the spot, the
+  four cards, the levels row, the heatmap header and the footer listed above (executed 2026-10-01;
+  the pieces a test on main asserts follow).
+- Given a Greeks answer with a King at 220, gatekeepers at 219 and 222 and a midpoint band of 220.5
+  to 221.5, then the heatmap draws one `★`, two `◆` and one `●`
+  (`renders King/Gatekeeper/Midpoint badges when the taxonomy is populated (Profiles tab)`,
+  `tests/options/options-flow.spec.ts`, on main at eca7078).
+- Given the levels fixture, then the spot-method chip, the `★ King $` and `◆ Gate $` chips, the
+  `Total GEX` and `Gamma Flip` labels and the regime label `Positive gamma` show
+  (`options page shows spot method chip when /levels resolves`, `options page shows King/Gate taxonomy
+  chips`, `options page renders the metrics bar`, `regime chip uses Positive/Negative/Unclear
+  wording`, `tests/shared/gamma-levels.spec.ts`, on main; the metrics test asserts the two labels and
+  no value).
+- Given the Cloud SQL chain answers 404 and the proxy answers with `metadata.source`
+  `alphavantage_live`, then the footer reads `AlphaVantage Live` (`falls back to live endpoint and
+  shows AlphaVantage Live badge`, `options-flow.spec.ts`, on main); executed 2026-10-01 with a
+  proxy timestamp of 20:00:05Z: `Source: AlphaVantage Live · 10 contracts · snapshot 2026-09-30 16:00
+  ET`.
+- Given a spot is typed, then `/levels` is asked with `?spot=<value>`, the Greeks are posted with that
+  `spot_price` and the chain is not asked again, the chip is hidden and the heatmap's spot line reads
+  the typed value (executed 2026-10-01 with 225).
+- Given a chain with no usable delta, then no contract is taken as the spot
+  (`estimateSpotStrikeFromDeltas`, four cases, `src/components/options/swingGridUtils.test.ts`).
+- Given a request for the Greeks, then the response keeps the keys `aggregated`, `gex_by_strike`,
+  `metrics`, `nodes` and `config`, the total equals the per-strike sum, a call-heavy strike is positive
+  and a put-heavy one negative, the King sits at the largest |gamma| and the put/call ratio is put OI
+  over call OI (`TestGreeksContractShape`, `TestGreeksMath`, `tests/api/test_options_router.py`,
+  which call the handler function directly).
+- Given the live proxy, then it maps AlphaVantage's rows to the Cloud SQL shape, answers the second
+  call from the cache and answers 503, 400, 429 or 404 as listed above (`tests/api/test_options_live.py`,
+  eleven handler tests and five on `_av_to_contracts`).
+- Given a failed Greeks request with a spot known, then the cards read `Total GEX +0` and `Put/Call
+  OI 0.00` (executed 2026-10-01; solyra#74; encoded as an expected failure on this branch, OPTIONS-11).
+- Given `VEX` is pressed, then the first card reads `Total VEX` and the header `VEX by Strike`, and
+  the bars keep their GEX values (executed 2026-10-01; matrix Gaps).
+- Given a chain with no gamma and no open interest, then the page lists the API's warnings and the
+  cards read `+0`, `--`, `$200` and `0.00` (executed 2026-10-01 on the production SPX chain; matrix
+  Gaps).
+
+**Tests:** On main, the Playwright tests above (page) and the pytest files above (handlers):
+`options-flow.spec.ts` and `gamma-levels.spec.ts` assert the badges, the chips, the labels and the
+live badge from mocked answers, `swingGridUtils.test.ts` the spot helper, `test_options_router.py`
+the Greeks handler, `test_options_live.py` the proxy, and `tests/lib/test_gamma.py` the aggregation
+behind both. The renders-strike-values and chart-axes tests of `options-flow.spec.ts` assert that
+a `/220/` text and the words `calls` and `puts` are visible, which is presence only and earns nothing
+on its own. No test asserts a metric value, the Greeks and levels requests' parameters, the spot input,
+the metric and side toggles, the EOD footer, the `Couldn't estimate spot` notice or the Cloud SQL
+chain handler's response body (it is reached only through `/levels` and answers 404 against a dead
+backend, `tests/api/test_route_coverage.py`); the dates handler's query is asserted only through its
+cache and its 503 (`tests/api/test_threadpool_races.py`, `test_options_dates_is_not_a_500`).
+
+**Code:** `src/components/options/ProfilesTab.tsx:1-648`, `src/hooks/useOptionsDates.ts:56-67`,
+`src/hooks/useGammaLevels.ts:74-145`, `src/hooks/useOptionsGreeks.ts:1-158`,
+`src/components/options/swingGridUtils.ts:84-112`, `src/lib/time.ts:20-35`;
+`platform/api/routers/options.py:318-847`, `lib/gamma.py:232-460,548-620,852-935`; no test id (the
+view is found by its text and the placeholder `price`).
+
 ##### OPTIONS-06 · Symbol picker
+
+**Shows or does:** The page's first control (`src/routes/OptionsFlowPage.tsx:37-41`): the label
+`Symbol` and the shared `TickerCombobox` (`src/components/shared/TickerCombobox.tsx`), a trigger
+button (`aria-label="Active ticker"`, test id `ticker-combobox`) that shows `activeTicker` and opens a
+popover with the quick picks IWM, SPY and QQQ, the recent picks and, once a character has been typed
+for 300 ms, a symbol search whose rows carry a coverage badge (`full`, `daily` or `new`). The
+component is the one DASHBOARD-10 describes in full (keyboard, the popover's own search, coverage and
+watchlist states, the `Tracking <SYM>: daily data lands after tonight's fetch` notice). A pick writes
+the upper-cased symbol to `activeTicker` and the recents in `useTickerStore`
+(`src/stores/tickerStore.ts:14-34`, persisted as `ticker-store`), and a pick of a search row badged
+`new`, with a healthy coverage lookup, also posts the symbol to the watchlist
+(`TickerCombobox.tsx:259-291`).
+
+What a pick does on this page (executed 2026-10-01, hermetic render, SPY then AAPL):
+
+- Gamma Map, Swing Mode and Profiles follow it. Swing reads `activeTicker` through `focusSymbol`
+  (`OptionsFlowPage.tsx:65`) and asked for `GET /api/options/dates/SPY?limit=1`, the live grid and
+  the levels for SPY; Profiles asks for `GET /api/options/dates/SPY`, the SPY chain and the Greeks
+  (`OptionsFlowPage.tsx:67`).
+- Trinity does not follow it: its three symbols are fixed (`TrinityTab.tsx:13`), and after the pick it
+  asked for SPX and QQQ only, SPY's dates and levels coming from the cache (OPTIONS-02).
+- The Flow view does not follow it: the placeholder tape's first row was still the DVN row
+  (OPTIONS-03).
+- Any symbol the search offers can be chosen, and the options routes accept only SPY, IWM, QQQ and SPX
+  (`VALID_TICKERS`, `platform/api/routers/options.py:86,150-157`). After the pick of AAPL from the
+  search, Profiles asked for `GET /api/options/dates/AAPL`, the route answered 400 `Ticker must be one
+  of ['IWM', 'QQQ', 'SPX', 'SPY'], got 'AAPL'`, and the view read `No options dates available for AAPL`
+  with that text and a `Retry` button. Swing asked for `GET /api/options/dates/AAPL?limit=1` (the same
+  400, unread) and `GET /api/options/AAPL/grid?strike_window_pct=6`: the grid router accepts any
+  alphanumeric symbol of ten characters or fewer (`platform/api/routers/grid.py:120-124`) and, with
+  nothing in Cloud SQL, fetches the chain from AlphaVantage on demand, at most ten distinct symbols per
+  client IP per minute, and writes it back (`grid.py:408-613,678-711`). With the on-demand fetch
+  refused (503, as in the render) the card read `Data unavailable: No options grid available for this
+  symbol.`; with it answering, Swing draws a grid but no gates (no levels request without a date) and
+  the legend's Hedge chip and the node list's mock Midpoint and Hedge rows do not appear, because
+  they need the levels taxonomy (`SwingMode.tsx:526-533`; executed with a populated grid and a 400 on
+  the dates). The vendor answer itself was not requested.
+
+**Needs:** `GET /api/insights/ticker/search?keywords=&limit=8` (`src/hooks/useTickerSearch.ts:55-68`,
+60 seconds stale), `GET /api/market/coverage?symbols=<the result symbols>`
+(`useTickerSearch.ts:84-95`) and, for a `new` pick, `POST /api/insights/watchlist/add` with
+`{ticker}` (`useTickerSearch.ts:101-125`). All three are gated; no endpoint serves a symbol filter for
+the options routes, so the picker cannot tell which symbols the page's views can show. Server side:
+
+- The search (`platform/api/routers/insights.py:544-556`) passes the keywords to AlphaVantage
+  `SYMBOL_SEARCH` with no filter on type or region (`lib/ticker_info.py:403-446`, at most 20 rows) and
+  answers an empty list, with a 200, when no key is configured or the vendor call fails
+  (`ticker_info.py:414-433`), so the picker reads `No matches for ...` for an outage (matrix Gaps).
+- Coverage (`platform/api/main.py:1231-1266`) runs two batched statements, `SELECT DISTINCT ticker`
+  from `market_data_daily` and from `market_data_intraday` with `ticker = ANY(<symbols>)`, through the
+  strict helper (503 on any failure, `main.py:1218-1228`), truncating the symbols to the first 50. The
+  intraday statement reads every row of the matching tickers before it removes duplicates
+  (CLAUDE.md 3.8, shape A). Executed 2026-10-01 against production for `SPY, IWM, QQQ, SPX, AAPL`: the daily statement
+answered AAPL, IWM, QQQ and SPY in 4,438 ms and the intraday one the same four in 4,344 ms; the
+`EXPLAIN (ANALYZE, BUFFERS)` of the intraday statement reports `Execution Time: 4671.042 ms` and
+`rows=4` from a parallel append that reads about 7.35 million rows (sequential scans of the `spy`,
+`qqq` and `iwm` partitions, an index-only scan of `other`). The handler has no cache and the hook
+holds an answer for 60 seconds, so each distinct set of search results pays that (matrix Gaps). SPX
+has no row in either table, so a search row for SPX carries the `new` badge (`coverageBadge`,
+`src/components/shared/TickerCombobox.tsx:24-28`).
+- The watchlist add (`insights.py:599-674`) writes the symbol to `watchlists` for the caller
+  (`gcp/fetchers/_watchlist.py`; a 503 with the database's text on a failed write), then, with the
+  vendors answering or not, reads AlphaVantage OVERVIEW and GLOBAL_QUOTE and FinViz peers for the
+  response, and re-reads the caller's list, answering an empty list when that read fails
+  (`insights.py:641-643`); the picker reads none of the response, only success or failure. Production
+on 2026-10-01: `watchlists` holds 18 rows from three sources (`avgo-peer` 9, `discord-replay` 3, `seed`
+6) and none from `ui`, the source the add writes (`insights.py:629`), and `ticker_info` holds no row at
+all, the cache `lib/ticker_info.py:61-98` fills (matrix Gaps).
+
+**States:** The popover's inline states are DASHBOARD-10's (`ticker-search-error`,
+`ticker-coverage-error`, `ticker-ingest-notice`); on this page a 401 on any of the three calls reads
+there too (`search unavailable (search 401)`, the coverage hint, `couldn't add <SYM> to tracking,
+HTTP 401: sign in to continue`). The page's views show OPTIONS-09 to OPTIONS-13 for the new symbol.
+
+**Acceptance criteria:**
+- Given the page has loaded, when the trigger is pressed, then the popover offers IWM, SPY and QQQ,
+  and a pick sets the trigger, the store and the recents (`tests/dashboard/ticker-combobox.spec.ts`,
+  the same component mounted on `/dashboard`, on main at eca7078, with the other criteria of
+  DASHBOARD-10; `src/stores/tickerStore.test.ts` and `src/components/shared/tickerCombobox.test.ts`).
+- Given SPY is picked on this page, then Swing and Profiles ask for SPY, Trinity and Flow do not
+  change (executed 2026-10-01; no committed test mounts the picker on `/options`).
+- Given a symbol outside SPY, IWM, QQQ and SPX is picked, then Profiles reads `No options dates
+  available for <SYM>` with the route's 400 text (executed 2026-10-01).
+- Given a request for `symbols=SPY,AAPL,IWM,QQQ,XLK`, then coverage runs two statements and answers
+  `{intraday, daily}` per symbol, and given a failing database it answers 503 with no coverage
+  (`test_coverage_endpoint_batches_queries`, `test_coverage_endpoint_503s_loud_on_db_failure`,
+  `test_coverage_from_frames_shapes`, `tests/api/test_market_coverage.py`).
+- Given keywords, the search answers the vendor's matches, and given empty keywords it answers 400
+  (`test_search_endpoint`, `test_search_endpoint_rejects_empty_keywords`, `TestSearchTickers`,
+  `tests/api/test_ticker_info.py`); given no key it returns an empty list
+  (`test_returns_empty_without_key`, the same file).
+- Given a watchlist add, then the owner is the signed-in user or `default`, two users do not share a
+  list, and the response carries the enrichment (`TestWatchlistMutationAPI`,
+  `tests/api/test_platform_api.py`; `test_watchlist_add_endpoint`, `tests/api/test_ticker_info.py`).
+- Given no token, then each of the three routes answers 401 on staging (V-gate evidence,
+  2026-10-01).
+
+**Tests:** On main, the component is asserted by twenty tests of `tests/dashboard/ticker-combobox.spec.ts`
+and the two Vitest files named above, and the three handlers by the pytest files named above (`tests/api/test_route_coverage.py` also
+pins, against a dead backend, the search at 200, the coverage at 503 and the watchlist add at 503) and
+`tests/gcp/test_watchlist_helper.py` for the watchlist write; `tests/shared/popover-fit.spec.ts`
+asserts the popover stays inside two phone viewports (on the Dashboard). No test mounts the picker on
+`/options` or asserts that Swing and Profiles follow a pick, that the other two views do not, or what
+a symbol outside the four reads; no test asserts the coverage statements' cost.
+
+**Code:** `src/routes/OptionsFlowPage.tsx:30-41`, `src/components/shared/TickerCombobox.tsx:147-513`,
+`src/hooks/useTickerSearch.ts:55-125`, `src/stores/tickerStore.ts:14-34`;
+`platform/api/routers/insights.py:544-674`, `platform/api/main.py:1218-1266`,
+`lib/ticker_info.py:403-446`; test ids `ticker-combobox`, `ticker-combobox-panel`,
+`ticker-combobox-input`, `ticker-option-<SYM>`, `ticker-search-error`, `ticker-coverage-error`,
+`ticker-ingest-notice`.
 
 ##### OPTIONS-07 · View switcher
 
+**Shows or does:** The segmented control at the right of the page toolbar
+(`src/routes/OptionsFlowPage.tsx:44-60`): three buttons, `Gamma Map`, `Flow` and `Profiles`, each
+with an icon, built from `TABS` (`OptionsFlowPage.tsx:24-28`). The chosen view is the `tab` state
+(`OptionsFlowPage.tsx:32`, initially `gamma-map`); the active button takes a brand tint and a pressed
+click calls `setTab` (`OptionsFlowPage.tsx:49-54`). Below the sign-in banner and `DataGate`, exactly
+one view is mounted: `GammaMapSection`, `FlowSection` or `ProfilesTab` (`OptionsFlowPage.tsx:63-68`).
+Two of the views hold a second switcher of their own, a HeroUI single-selection `ToggleButtonGroup`
+with `disallowEmptySelection`, which reads as a `radiogroup` of two `radio`s with `aria-checked`
+(executed 2026-10-01): Gamma Map has `Swing Mode` (the default) and `Trinity Mode`
+(`src/components/options/GammaMapSection.tsx:26-48`), and Flow has `Live Feed` (the default) and
+`Contract Drilldown` (`src/components/options/FlowSection.tsx:20-52`); a click on a feed row also
+moves Flow's toggle to the drilldown (`FlowSection.tsx:23-26`).
+
+A view is unmounted when another is chosen, so its local state is lost (executed 2026-10-01):
+Swing set to `Historical`, `VEX` and `0DTE`, then Trinity and back, read `Live`, `GEX` and `All`; the
+Profiles stepper moved two dates back read the newest date again after a visit to Flow; and Flow and
+Gamma Map return to their default toggle. React Query keeps the fetched data, so a return inside the
+stale times asks for nothing again. The three buttons are plain `button`s with no `aria-pressed`,
+`aria-selected` or `role`, and the container has no role or label, so the chosen view is shown by colour
+alone (executed 2026-10-01); Enter on a focused button changes the view, as on any button.
+
+**Needs:** Nothing: client state only. The Chain's `none (client state)` cells are right
+(`OptionsFlowPage.tsx:32,49`).
+
+**States:** None of its own. The control sits above `SignInBanner` and `DataGate`
+(`OptionsFlowPage.tsx:63-68`), so it stays usable in every state of the views below it.
+
+**Acceptance criteria:**
+- Given the page opens, then `Gamma Map` is the chosen view, Swing Mode shows, and Trinity, Flow and
+  Profiles are not mounted (executed 2026-10-01; asserted on this branch by `the view switcher mounts
+  one view at a time and each inner toggle swaps its own view`, `tests/options/options-flow.spec.ts`,
+  solyra commit `d82c20b`, not yet run in CI).
+- Given a button is pressed, then its view replaces the one shown and no other view is mounted; given
+  an inner toggle is pressed, then that section swaps its own two views; given a Live Feed row is
+  clicked, then the drilldown opens for that row's contract; given `Gamma Map` is pressed again, then
+  Swing shows (the same branch test; for each step the other four views are asserted absent).
+- Given the page opens, then the `Symbol` label and the three buttons are visible (`navigates to
+  /options`, `tests/options/options-flow.spec.ts`, on main at eca7078).
+- Given `Flow` is pressed, then `Demo data, not live.` is visible (`Flow tab shows the demo banner
+  text`, `tests/options/demo-banners.spec.ts`, on main); given `Profiles` is pressed, then its heatmap
+  content shows (the Profiles tests of `options-flow.spec.ts` and `gamma-levels.spec.ts`, on main);
+  given `Trinity Mode` is pressed, then the three Trinity requests are issued (the Trinity test of
+  `options-flow.spec.ts`, on main).
+- Given a phone viewport, then pressing `Flow` or `Profiles` leaves the document no wider than the
+  viewport (`Flow tab does not overflow the viewport`, `Profiles tab does not overflow the viewport`,
+  `tests/options/options-mobile-fit.spec.ts`, on main, two phone widths).
+- Given a view is left and entered again, then its local state is back to the default (executed
+  2026-10-01; no test).
+
+**Tests:** On main, each button is pressed by some test, to reach the view's content, and the page's
+landmarks are asserted, but no test on main asserts that a switch replaces the view, which view is
+chosen, either inner toggle's second view other than Trinity's requests, or the drill-through; those
+assertions exist only in the test added on this branch, so Te stays unticked until a CI run includes
+it.
+
+**Code:** `src/routes/OptionsFlowPage.tsx:22-70`, `src/components/options/GammaMapSection.tsx:15-50`,
+`src/components/options/FlowSection.tsx:15-55`; no test id (the buttons are found by role and name,
+the inner toggles by role `radio`).
+
 ##### OPTIONS-08 · Pick an expiration date
+
+**Shows or does:** The seed's `Pick an expiration date` does not exist as such: no view of the page
+picks an expiration. Two controls stand in its place.
+
+- The Profiles date stepper (`src/components/options/ProfilesTab.tsx:385-404`): two icon-only
+  chevron buttons around a monospaced date, in the Profiles toolbar. The date is `dates[dateIdx]`
+  from `GET /api/options/dates/{ticker}`, newest first, and `No dates` while there is none
+  (`ProfilesTab.tsx:271-279,395`). The left chevron steps to the previous snapshot date, an older one
+  (`ProfilesTab.tsx:388`), and is disabled on the oldest; the right one steps to a newer date and is
+  disabled on the newest, where the view opens (`ProfilesTab.tsx:398`). It steps snapshot dates, the
+  days on which a chain was ingested, not expirations. The chosen date drives the chain
+  (`GET /api/options/{ticker}/{date}`, the live proxy on a 404), `/levels` and, through the chain, the
+  Greeks (OPTIONS-05). The buttons have no accessible name, no `aria-label` and no title (executed
+  2026-10-01), so a screen reader announces two unlabelled buttons and the date.
+- Swing's expiry chips (`src/components/options/SwingMode.tsx:47,285-293`): `All`, `0DTE`, `Weekly`,
+  `Monthly` and `Quarterly`. `expiryFilter` is read only to set the pressed chip's `active` class
+  (`SwingMode.tsx:288`) and reaches neither the grid request nor `RealHeatmapGrid`
+  (`SwingMode.tsx:794,941-942,952-960`). Executed 2026-10-01: pressing each chip changed only the
+  highlight, issued no request, and left the grid's text and its two expiration columns (`04/24 0DTE`,
+  `05/15 21d`) as they were (matrix Gaps).
+
+Swing and Trinity cannot choose a date at all: both use the newest listed date (`dates[0]`), and
+Swing's `Historical` button asks for that same date (`GET /api/options/IWM/2026-04-24/grid`, executed
+2026-10-01, `SwingMode.tsx:799-808`), so it is the EOD grid of the newest date and not a way to look back.
+
+**Needs:** The stepper uses OPTIONS-05's calls: `GET /api/options/dates/{ticker}` without `limit`,
+then, for the chosen date, `GET /api/options/{ticker}/{date}` (and `GET /api/options/live/{ticker}/{date}`
+on a 404) and `GET /api/options/{ticker}/{date}/levels`, and the Greeks POST only when the chain's
+contract count or the spot differs from an answer already held (`src/hooks/useOptionsGreeks.ts:111`:
+the key holds neither date nor ticker). Executed 2026-10-01: from the newest of three dates, one step
+back issued `GET /api/options/IWM/2026-04-23` and `GET /api/options/IWM/2026-04-23/levels` and no
+Greeks POST, because both fixture chains held ten contracts at a spot of 220; a step forward to a date
+already visited issued nothing. The date index is state of the Profiles view: it returns to the newest
+date when the ticker changes (`ProfilesTab.tsx:261-269`) and when another view is chosen and Profiles
+is mounted again (executed 2026-10-01: two steps back, a visit to Flow and back read the newest date).
+The chips need nothing. The Chain's API cell is OPTIONS-05's and its Backend cell is right to say the
+chips are client state only; its wording that the stepper refetches "the chain, levels and Greeks per
+step" overstated the Greeks, corrected in the Chain.
+
+**States:** The stepper has none of its own. With no dates it reads `No dates` and both chevrons are
+disabled (`dates.length - 1` is below zero, `ProfilesTab.tsx:389,399`); the dates error, the chain error
+and the loading lines are OPTIONS-11 and OPTIONS-09.
+
+**Acceptance criteria:**
+- Given three snapshot dates, when Profiles is chosen, then the stepper reads the newest, the newer
+  chevron is disabled and the older one enabled; when the older chevron is pressed, then the stepper
+  reads the previous date, both chevrons are enabled, and that date's chain and levels are requested;
+  when it is pressed again, then the oldest date shows, the older chevron is disabled and its chain and
+  levels are requested; when the newer chevron is pressed, then the previous date shows again (executed
+  2026-10-01; asserted on this branch by `the Profiles date stepper walks the snapshot dates and loads
+  the chain and levels of the date it lands on`, `tests/options/options-flow.spec.ts`, solyra commit
+  `d82c20b`, not yet run in CI).
+- Given the page opens, then Swing asks for one date (`limit=1`) and Profiles for the whole list (`the
+  Swing view asks for one date; the Profiles picker asks for all`, `tests/options/options-flow.spec.ts`,
+  on main at eca7078).
+- Given an expiry chip is pressed, then only the chip's highlight changes: no request, no change to the
+  grid (executed 2026-10-01; no test).
+- Given the live grid, then it takes a `strike_window_pct` and an optional `expirations` list of ISO
+  dates that the page never sends (`platform/api/routers/grid.py:619-632`), so a real expiry filter
+  would need a request change as well as a handler (read; not executed).
+
+**Tests:** None on main asserts the stepper or the chips: the dates-limit test asserts the request
+URLs only. The test added on this branch asserts the stepper and not the chips, so Te stays unticked
+until a CI run includes it. The server side of the dates is asserted by `test_options_dates_is_not_a_500`
+and `test_the_final_four_guards_keep_the_split` (`tests/api/test_route_coverage.py`) and the cache tests
+of `tests/api/test_threadpool_races.py`, none of which runs the walk's SQL.
+
+**Code:** `src/components/options/ProfilesTab.tsx:255-293,385-404`,
+`src/components/options/SwingMode.tsx:47,241-319,791-808`, `src/hooks/useOptionsDates.ts:56-67`,
+`src/hooks/useOptionsGreeks.ts:104-143`; `platform/api/routers/options.py:318-521`; no test id (the
+chevrons are found through the date label they flank).
 
 ##### OPTIONS-09 · State: loading
 
+**Shows or does:** A state, not a control: what each of the three data views shows while its requests
+are in flight. The page itself has no loading state (`src/routes/OptionsFlowPage.tsx:22-70`) and the
+Flow view makes no request, so it has none either. The state is three separate pieces of copy:
+
+- Swing (`src/components/options/SwingMode.tsx:606-613`): the heatmap card keeps its header
+  `Strike × Expiration heatmap · <SYM>` and reads `Loading live grid…`. The banner and the source pill
+  read the grid's source with a default of `unavailable` (`SwingMode.tsx:943`), so while the request is
+  in flight the banner says `Live <SYM> grid unavailable, tactical read is illustrative.` and the pill
+  reads `UNAVAILABLE` (hint `No snapshot available`). With `/levels` also pending, the legend and the
+  node list are not drawn (`SwingMode.tsx:946`) and the pivot rail is absent.
+- Trinity (`src/components/options/TrinityTab.tsx:97-101`): each of the three panels reads `Loading
+  <SYM> levels…` under its header, until its own dates and levels requests both settle.
+- Profiles (`src/components/options/ProfilesTab.tsx:468-475`): with the dates pending, the stepper reads
+  `No dates` and a box reads `Loading available dates…` over a five-row skeleton (`WidgetSkeleton`);
+  with the chain pending, `Loading options chain…` over the same skeleton.
+
+What the pending views draw beside the loading line (executed 2026-10-01, hermetic renders, the
+request held open in each case):
+
+- Profiles, chain pending while `/levels` has answered: the metrics bar and the levels row are already
+  on screen, with the cards `TOTAL GEX +0 Positive`, `MAX PAIN --` and `PUT/CALL OI 0.00 Bullish skew`
+  beside `GAMMA FLIP $219.50`. The zeros are `EMPTY_GREEKS` (`ProfilesTab.tsx:326`,
+  `src/hooks/useOptionsGreeks.ts:145-158`), shown because a spot is known (`ProfilesTab.tsx:503`);
+  with the Greeks pending and no heatmap yet, the same zero cards stay (OPTIONS-11, matrix Gaps).
+- Swing in Historical mode with the dates pending: the grid query is disabled until a date exists
+  (`SwingMode.tsx:807`), so the card reads `Data unavailable: No options grid available for this
+  symbol.` and not a loading line (OPTIONS-10).
+
+**Needs:** Nothing of its own: the requests in flight are OPTIONS-01's, OPTIONS-02's and OPTIONS-05's.
+The app's query defaults hold an answer for five minutes and retry a failed request once
+(`src/App.tsx:30-36`), the dates and chain hooks opt out of the retry (`useOptionsDates.ts:56-67`,
+`ProfilesTab.tsx:40-61`), so a failing Greeks request is asked a second time before it counts as
+failed (executed 2026-10-01: a failing Greeks POST was issued twice).
+
+**States:** This is the loading state of the page's data views. Nothing marks it for assistive
+technology: the lines are plain text with no `role` or `aria-busy` (read, `SwingMode.tsx:608-612`,
+`TrinityTab.tsx:98-100`, `ProfilesTab.tsx:468-475`).
+
+**Acceptance criteria:**
+- Given the live grid request is held, then the card reads `Loading live grid…`, the pill `UNAVAILABLE`
+  and the banner `Live <SYM> grid unavailable, tactical read is illustrative.` (executed 2026-10-01; no
+  test).
+- Given the Trinity requests are held, then each panel reads `Loading <SYM> levels…` (executed
+  2026-10-01; no test).
+- Given the dates request is held, then the Profiles stepper reads `No dates` and the view `Loading
+  available dates…`; given the chain request is held, then it reads `Loading options chain…` (executed
+  2026-10-01; no test).
+- Given the chain is pending and `/levels` has answered, then the cards read `+0`, `--` and `0.00`
+  beside a real Gamma Flip (executed 2026-10-01; matrix Gaps).
+
+**Tests:** None. No test asserts a loading text: a search of `tests/` and `src/` for the three Profiles
+and Swing lines and the Trinity one finds them only in the components. Every Playwright test that opens
+`/options` passes through the state while its fixture routes answer, and none waits on or reads it.
+
+**Code:** `src/components/options/SwingMode.tsx:606-613,943`,
+`src/components/options/TrinityTab.tsx:56-60,97-101`,
+`src/components/options/ProfilesTab.tsx:271-279,468-475`, `src/hooks/useOptionsGreeks.ts:145-158`;
+no test id (the lines are found by their text).
+
 ##### OPTIONS-10 · State: empty
+
+**Shows or does:** A state, not a control: what each data view says when there is nothing to draw. The
+page has none of its own, and Flow cannot be empty. Five lines of copy, in four places:
+
+- Swing (`src/components/options/SwingMode.tsx:616-625`): `Data unavailable: <reason>` in the heatmap
+  card when the grid request failed, the envelope's `data_source` is `unavailable`, or the grid has no
+  columns. The reason is the envelope's `reason`, else its first warning, else `No options grid
+  available for this symbol.`. Executed 2026-10-01: an `unavailable` envelope with its reason read
+  `Data unavailable: no realtime or EOD chain found within the lookup window`; a 200 grid with no
+  cells and the warning `Could not estimate spot from this chain.` read `Data unavailable: Could not
+  estimate spot from this chain.`. The banner and pill follow the source (OPTIONS-09, OPTIONS-12), and
+  the legend and node list still draw when `/levels` answered, so beside the unavailable card they
+  show a King, gates and totals (matrix Gaps).
+- Trinity (`src/components/options/TrinityTab.tsx:103-113`): `No gamma levels available for <SYM>.`
+  when a dates or levels request failed or no date came back, and `Chain too thin to build a ladder for
+  <SYM>.` when `levels` is empty. The second states a cause the panel does not know: an empty `levels`
+  is also what a chain with no vendor gamma produces (OPTIONS-02; executed 2026-10-01 on the
+  production SPX chain of 2026-09-30, which read `SPX 7,240` over that text).
+- Profiles, no dates (`src/components/options/ProfilesTab.tsx:428-446`): `No options dates available
+  for <ticker>`, the server's `detail` beneath it and a `Retry` button. The box serves every failure
+  of the dates request, so a 404 for a ticker with no snapshots, the 400 for a symbol outside SPY, IWM,
+  QQQ and SPX and a 503 all read alike (OPTIONS-11). A 200 with an empty list reads only `No dates` in
+  the stepper and nothing else, which the real dates handler cannot answer (it answers 404 when no
+  snapshot was ever ingested, `platform/api/routers/options.py:318-521`).
+- Profiles, no contracts (`ProfilesTab.tsx:622-629`): `No options data returned for <ticker> on <date>`
+  and `Try navigating to a different date using the chevrons above.` when the chain answers 200 with no
+  rows. The real chain handler cannot answer it: it answers 404 for an empty frame
+  (`options.py:580-604`), and Profiles then asks the live proxy.
+- Profiles, no spot (`ProfilesTab.tsx:479-491`): `Couldn't estimate spot from this chain` with the
+  advice to enter a spot, when the chain has rows and no spot resolves (OPTIONS-05).
+
+Executed 2026-10-01 (hermetic renders): AAPL picked from the search read `No options dates available
+for AAPL` with the route's 400 text on Profiles, `Data unavailable: No options grid available for this
+symbol.` on Swing (grid 503) and `Live AAPL grid unavailable, ...` in the banner (OPTIONS-06).
+
+**Needs:** Nothing of its own: the answers are OPTIONS-01's, OPTIONS-02's and OPTIONS-05's.
+
+**States:** This is the empty state of the page's data views. Of the five lines, `No options data
+returned for ...` and the dates box with an empty list are not reachable through the real handlers;
+the others are reached by 404, 400, 503, an `unavailable` envelope or a chain with no gamma.
+
+**Acceptance criteria:**
+- Given the dates request answers an error, then Profiles reads `No options dates available for
+  <ticker>` with the server's `detail` and a `Retry` button (executed 2026-10-01 with the 404, 400 and
+  503 texts the real handler sends; no test).
+- Given the dates answer is 200 with no date, then the stepper reads `No dates` and nothing else
+  explains it (executed 2026-10-01; no test).
+- Given the chain answers 200 with no contracts, then Profiles reads `No options data returned for
+  <ticker> on <date>` and the advice (executed 2026-10-01; no test).
+- Given an `unavailable` grid envelope, then the card reads `Data unavailable: <reason>` (executed
+  2026-10-01; the server side: `TestGridLive`, `tests/api/test_grid_router.py`, asserts the envelope
+  and its HTTP 200).
+- Given a Trinity panel whose request failed or whose ladder is empty, then it reads `No gamma levels
+  available for <SYM>.` or `Chain too thin to build a ladder for <SYM>.` (executed 2026-10-01; no
+  test).
+
+**Tests:** None on the page: no test asserts any of the five lines (a search of `tests/` and `src/`
+finds the texts only in the components). The grid handler's `unavailable` envelope is asserted by
+`tests/api/test_grid_router.py` and `tests/api/test_route_coverage.py` pins the dates route at 503
+against an unreachable database, which is the status the Profiles box then reads. Every Playwright
+test that opens `/options` answers its requests with data, so none mounts these branches.
+
+**Code:** `src/components/options/SwingMode.tsx:606-625`,
+`src/components/options/TrinityTab.tsx:56-58,103-113`,
+`src/components/options/ProfilesTab.tsx:428-446,479-491,622-629`;
+`platform/api/routers/options.py:318-521,580-604`, `platform/api/routers/grid.py:192-217`; no test id.
 
 ##### OPTIONS-11 · State: error
 
+**Shows or does:** A state, not a control: what each data view does when a request fails. The page has
+none of its own. What each view reads, with the request that fails (executed 2026-10-01, hermetic
+renders; the response texts are the ones the real handlers send):
+
+- Profiles, the chain (`src/components/options/ProfilesTab.tsx:448-466`): a box `Options chain
+  unavailable`, the server's `detail` and a `Retry` button. The chain hook asks the live proxy only
+  after a 404 and throws the server's text for any other failure (`ProfilesTab.tsx:40-61`), so a 500
+  read `chain exploded` and a 404 whose live fallback answered 503 read `AlphaVantage API key not
+  configured. Set AV_API_KEY (or ALPHA_VANTAGE_API_KEY) in the environment / Secret Manager.`, the
+  operational text shown to the user verbatim. `Retry` asks again: a 503 `The options chain is being
+  computed now; retry shortly.` followed by a 200 drew the full view on the second request.
+- Profiles, the dates (`ProfilesTab.tsx:428-446`): the box of OPTIONS-10, `No options dates available
+  for <ticker>`, with `Could not read option snapshot dates for IWM: the database is unavailable.`
+  for a 503, and a `Retry` that recovered the same way.
+- Profiles, the Greeks (`ProfilesTab.tsx:326`): nothing. With a spot known from `/levels` a failed
+  request, asked twice, leaves the metrics bar on `EMPTY_GREEKS` (`src/hooks/useOptionsGreeks.ts:145-158`):
+  `TOTAL GEX +0 Positive`, `MAX PAIN --`, `PUT/CALL OI 0.00 Bullish skew` beside the real `GAMMA FLIP`,
+  and no heatmap, no box, no alert. A flat reading that cannot be told from a measured one
+  (CLAUDE.md Rule 4); filed as solyra#74 and encoded below.
+- Profiles, the levels: nothing. With `/levels` answering 503 the levels row and the regime chip are
+  absent, `GAMMA FLIP` falls back to the Greeks' `zero_gamma` (`--` in the fixture) and the rest of
+  the view draws as usual, with no notice.
+- Swing, the grid (`SwingMode.tsx:616-625`): `Data unavailable: No options grid available for this
+  symbol.`, the text of a symbol with no grid; the server's `detail` is dropped. The banner and pill
+  read `unavailable`, and the legend and node list still draw when `/levels` answered, with Total VEX
+  as `—` (a failed grid has no value to show; an `unavailable` envelope shows `+$0K`, OPTIONS-10).
+- Swing, the levels or the dates: nothing. With `/levels` 503 the legend and nodes draw from the grid
+  (the King the strike of largest |net GEX|, no gates, no Hedge chip); with the dates request 503 the
+  grid is asked for once and `/levels` not at all (executed: `GET /api/options/dates/IWM?limit=1`, then
+  `GET /api/options/IWM/grid?strike_window_pct=6`), and the view draws without a notice.
+- Trinity (`src/components/options/TrinityTab.tsx:57,103-107`): `No gamma levels available for <SYM>.`
+  for any failure of either request, whatever the status or the server's text (a 503 on the SPX dates
+  request and a 404 on the SPY levels one, with QQQ still drawing its ladder).
+- The 401 is OPTIONS-13.
+
+**Needs:** Nothing of its own: the failing requests are OPTIONS-01's, OPTIONS-02's and OPTIONS-05's.
+Server side, a database failure is not always a failure: the chain handler and the live grid read
+through the swallowing `query_to_dataframe`, so an unreachable database answers 404 `No earlier data
+ingested for this ticker` (and Profiles then asks the live proxy) and 200 `unavailable` with the
+no-chain reason; only the dates and coverage handlers answer 503 (matrix Gaps; `tests/api/
+test_route_coverage.py` pins the 404 and the 503 against a dead backend).
+
+**States:** This is the error state of the page's data views; OPTIONS-13 is the 401 and OPTIONS-10 the
+empty state, and several failures land in one of those two lines.
+
+**Acceptance criteria:**
+- Given the chain request fails with a status other than 404, then Profiles reads `Options chain
+  unavailable`, the server's `detail` and `Retry`, and `Retry` asks again (executed 2026-10-01; no
+  test).
+- Given the chain answers 404 and the live proxy fails, then the same box reads the proxy's `detail`
+  (executed 2026-10-01; no test; `test_options_live.py` asserts the proxy's statuses).
+- Given the Greeks request fails after a spot is known, then the view shows the Greeks as unavailable
+  and not `Total GEX +0` and `Put/Call OI 0.00`: it does not today (executed 2026-10-01, solyra#74).
+  `a failed Greeks request is reported as unavailable, not shown as a measured zero (solyra#74)`
+  (`tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, not yet run in CI) asserts
+  that, with the chain and the levels on screen and the Greeks request failed twice: neither `+0` nor
+  `0.00` is on the page and the word `unavailable` is. It is declared `test.fail`, so it is expected to
+  fail until #74 is fixed and flags the fix by passing; its RED is the real failure on `+0`.
+- Given the grid request fails, then Swing reads the no-grid text and the server's reason is lost
+  (executed 2026-10-01; no test).
+- Given a failed levels or dates request, then Swing and Profiles draw without a notice (executed
+  2026-10-01; no test).
+- Given a failed Trinity request, then the panel reads `No gamma levels available for <SYM>.` whatever
+  the failure (executed 2026-10-01; no test).
+
+**Tests:** None on main asserts an error text: no test on main answers a request with a failure on this
+page (a search of `tests/` finds the texts only in the components, and `EMPTY_GREEKS` only in the new
+test's comments). The test added on this branch asserts the Greeks failure above and is an expected
+failure, so Te stays unticked, and it can pass only after a product change this task does not make. On
+the server side `tests/api/test_route_coverage.py` pins the dates route at 503 and the chain route at 404
+against a dead backend.
+
+**Code:** `src/components/options/ProfilesTab.tsx:40-61,326,428-466`,
+`src/hooks/useOptionsGreeks.ts:104-158`, `src/components/options/SwingMode.tsx:616-625,799-808`,
+`src/components/options/TrinityTab.tsx:57,103-107`; `platform/api/routers/options.py:524-630`,
+`platform/api/routers/grid.py:192-285`; no test id.
+
 ##### OPTIONS-12 · State: stale
 
+**Shows or does:** A state, not a control: how the page tells the user which snapshot it is showing and
+how old it is. Two surfaces, one per data path.
+
+- Swing's source pill and banner (`src/components/options/SwingMode.tsx:213-238,913-934`). The pill
+  reads the grid's `data_source` through `SOURCE_PILL_META` (`SwingMode.tsx:213-218`) and, when the grid
+  has a `snapshot_ts`, the time in ET (`fmtTime`): `realtime` is `LIVE` (hint `Realtime · 5-min
+  snapshot`, with a pulsing dot, the only source that pulses), `eod_fallback` is `EOD` (`Realtime
+  missed · using yesterday close`), `stale_fallback` is `STALE` (`EOD > 2 sessions behind`),
+  `unavailable` is `UNAVAILABLE` (`No snapshot available`) and any other string is `UNAVAILABLE` with
+  the hint `Unrecognized data source`, so a renamed server value cannot read as a green `LIVE`. The
+  banner repeats the source in words (OPTIONS-01): `live <SYM> dealer exposure`, `(end-of-day close)`,
+  `(delayed snapshot)` for `stale_fallback` and every other string, or `grid unavailable`. Executed
+  2026-10-01 with each source in turn: `LIVE 03:55 PM ET`, `EOD 07:00 PM ET`, `STALE 07:00 PM ET`,
+  `UNAVAILABLE` and `UNAVAILABLE 03:55 PM ET` (hint `Unrecognized data source`).
+- Profiles' source footer (`src/components/options/ProfilesTab.tsx:631-645`): `Source: AlphaVantage
+  EOD · Cloud SQL · <n> contracts · snapshot <date>` for any chain the Cloud SQL handler answered, with
+  the snapshot's date only, and `Source: AlphaVantage Live · <n> contracts · snapshot <date> <time> ET`
+  for the live proxy (`metadata.source` `alphavantage_live`, converted by `isoToEtDisplay`,
+  `src/lib/time.ts:20-35`), or `time unavailable` with no timestamp. Executed 2026-10-01: the proxy
+  with a timestamp of 20:00:05Z read `snapshot 2026-09-30 16:00 ET`.
+
+How the server chooses the source for the live grid (`platform/api/routers/grid.py:232-285`): the
+newest REALTIME snapshot dated within 20 days is `realtime` whatever its age; with none, the newest
+EOD snapshot is classified by `classify_gamma_freshness` (`lib/agents/summarizers.py:160-177`):
+`eod_fallback` up to two trading days behind, `stale_fallback` up to five, `unavailable` beyond. The
+historical grid is always an EOD read.
+
+What the production data shows (executed 2026-10-01: the real handlers on the chains read from Cloud SQL,
+rendered in the page; the V evidence comment in the matrix has the reads):
+
+- The last REALTIME snapshot of 2026-09-30 is 19:55:25Z (15:55 ET, 84 snapshots on the session for
+  SPY and IWM, 83 for QQQ), and the nightly EOD rows for 2026-09-30 landed at 01:06Z, stamped
+  23:00:00Z. With both on file and the clock on 2026-10-01, the live grid answered `realtime` and the
+  pill read `LIVE 03:55 PM ET`; with only the EOD rows on file it answered `eod_fallback` and the pill
+  read `EOD 07:00 PM ET`. A `LIVE` pill that is a day old is the matrix Gaps' stocks#1211.
+- A REALTIME snapshot served by the Cloud SQL chain handler (the 15:55 ET SPY snapshot, 13,274
+  contracts, `metadata.source` `cloud_sql`) read `Source: AlphaVantage EOD · Cloud SQL · 13274 contracts
+  · snapshot 2026-09-30` in Profiles: labelled end-of-day, with the date and no time (matrix Gaps).
+
+**Needs:** The grid's `data_source` and `snapshot_ts` (OPTIONS-01) and the chain's `metadata.source` and
+`snapshot_timestamp` (OPTIONS-05); nothing of its own. The live proxy's `snapshot_timestamp` is the
+handler's own clock at the request, not a vendor time (OPTIONS-05).
+
+**States:** This is the stale state: `EOD`, `STALE` and `UNAVAILABLE` on the pill, `(end-of-day close)`
+and `(delayed snapshot)` in the banner, and the two footers. There is no staleness notice on Trinity
+or on the Flow views, and nothing marks a levels answer (the legend's source) as older than the grid
+beside it (OPTIONS-01).
+
+**Acceptance criteria:**
+- Given a grid whose `data_source` is each of `realtime`, `eod_fallback`, `stale_fallback` and
+  `unavailable`, then the pill reads `LIVE`, `EOD`, `STALE` and `UNAVAILABLE` with their hints and the
+  banner its wording (executed 2026-10-01; no test).
+- Given an unrecognized `data_source`, then the pill reads `UNAVAILABLE` with the hint `Unrecognized
+  data source` (executed 2026-10-01; no test).
+- Given the live proxy answers with `metadata.source` `alphavantage_live`, then the footer reads
+  `AlphaVantage Live` and the snapshot's ET time (`falls back to live endpoint and shows AlphaVantage
+  Live badge`, `tests/options/options-flow.spec.ts`, on main at eca7078; it asserts the words, and the
+  time was read in the 2026-10-01 render).
+- Given an ISO string with a zone, then `isoToEtDisplay` renders `YYYY-MM-DD HH:MM ET` and a string
+  without one falls back to its date (`isoToEtDisplay`, `src/lib/time.test.ts`, on main).
+- Given REALTIME rows, then the live grid answers `realtime`, and given EOD rows one day old, `eod_fallback`
+  (`test_realtime_path_returns_data_source_realtime`, `test_eod_fallback_when_no_realtime`,
+  `tests/api/test_grid_router.py`); given a chain three trading days behind, then the classifier answers
+  `stale_fallback`, and `unavailable` beyond five (`test_gamma_levels_stale_eod_returns_stale_fallback`,
+  `test_gamma_levels_hard_stale_returns_unavailable`, `tests/agents/test_agent_summarizers.py`, which
+  run the classifier through its other consumer, `summarize_gamma_levels`); no test runs `stale_fallback`
+  through the grid handler.
+- Given the live proxy, then it answers 503, 502, 429, 400 or 404 and caches five minutes
+  (`tests/api/test_options_live.py`).
+
+**Tests:** On main: `time.test.ts` asserts `isoToEtDisplay` only. `options-flow.spec.ts` asserts the
+footer's `AlphaVantage Live` words from a mocked proxy answer, with no time and no pill. The server side
+is asserted by `test_grid_router.py` (`realtime`, `eod_fallback` and the envelope),
+`test_agent_summarizers.py` (the classifier's three tiers) and `test_options_live.py` (the proxy). No
+test asserts the pill, a hint, the banner wording, the EOD footer, a `STALE` source on the grid handler
+or the `realtime` labelling of an old snapshot.
+
+**Code:** `src/components/options/SwingMode.tsx:205-238,913-945`,
+`src/components/options/ProfilesTab.tsx:631-645`, `src/lib/time.ts:20-35`;
+`platform/api/routers/grid.py:232-285`, `platform/api/routers/options.py:524-745`,
+`lib/agents/summarizers.py:160-177`; no test id (the pill is `.hs-pill`).
+
 ##### OPTIONS-13 · State: permission
+
+**Shows or does:** A state, not a control: what the page does when the API refuses the user. Two pieces,
+both above the views in `src/routes/OptionsFlowPage.tsx:63-68`, both driven by one flag.
+
+- The flag. The fetch wrapper `installAuthFetch` (`src/lib/authedFetch.ts:130-252`) sees every
+  response to a gated `/api/*` path: a 401 sets the flag (`markAuthBlocked`, `src/lib/authGate.ts`) and
+  any successful gated response clears it (`clearAuthBlocked`, `authedFetch.ts:156-160`). The paths in
+  `OPEN_PREFIXES` (`authedFetch.ts:45`) are open and never set it. Every options route and the three
+  picker routes are gated (V evidence: 401 on each without a token).
+- `SignInBanner` (`src/components/shared/SignInEmptyState.tsx:58-84`), a `role="alert"` strip while the
+  flag is set: `Sign in to load options data`, `Your session has expired or you are signed out.
+  Authenticate to stream live data here.` and a `Sign in` button that reloads the page, which routes
+  through the app's sign-in gate. It renders nothing while the flag is clear.
+- `DataGate` (`SignInEmptyState.tsx:93-98`) replaces the views with `SignInEmptyState` (`role="status"`,
+  `Sign in to load data`) only when the flag is set and the user is not signed in. In the open mode the
+  hermetic suite runs in, `useUser` reports signed in always (`src/hooks/useUser.ts:36-37`), so that
+  branch is reached only in Firebase mode by a signed-out user the app's sign-in gate has not yet
+  intercepted.
+
+What the views show under a 401 (executed 2026-10-01, hermetic render with the options routes answering
+401 `sign in to continue`, the user signed in): the banner, and in each view its own failure copy, with
+no word about signing in except the server's `detail` where a view prints it. Swing reads `Data
+unavailable: No options grid available for this symbol.`, the three Trinity panels `No gamma levels
+available for <SYM>.`, and Profiles `No options dates available for IWM` with `sign in to continue` and
+`Retry` (OPTIONS-10, OPTIONS-11). Only the banner says why.
+
+**Needs:** The 401 itself: the Chain names no call of its own. Staging answers 401 to each gated route
+the page calls with no token (the V evidence comment in the matrix: `GET /api/options/dates/{ticker}`
+with and without `limit`, `GET /api/options/{ticker}/{date}`, `GET /api/options/live/{ticker}/{date}`,
+`GET /api/options/{ticker}/{date}/levels`, both grids, `POST /api/options/greeks`, the symbol search,
+the coverage lookup and `POST /api/insights/watchlist/add`). The `OPEN_PREFIXES` list must match the
+backend's `_OPEN_API_PREFIXES` (CLAUDE.md, Auth).
+
+**States:** This is the permission state of the page. It cannot be rehearsed with a token: no staging
+test account exists, so the signed-in 401 (an expired session) is the case reached here.
+
+**Acceptance criteria:**
+- Given a gated call answers 401, then `Sign in to load options data` shows in an alert with a `Sign in`
+  button, and the views show their own failure copy (executed 2026-10-01; no test).
+- Given a gated call succeeds again, then the banner is gone (read, `authedFetch.ts:156-160`; no test).
+- Given no token, then each gated route the page calls answers 401 on staging (V evidence,
+  2026-10-01).
+- Given a 401 from a gated path, then the wrapper calls the callback registered with
+  `setOnUnauthorized`, and a 401 from an open path does not (`a 401 from a gated path fires
+  onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`,
+  on main). The callback is the wrapper's second hook, called in Firebase mode only
+  (`authedFetch.ts:249`): no code outside the tests registers one, and the banner's flag is set by
+  `markAuthBlocked` on the next line, which that test does not read.
+
+**Tests:** On main, `src/lib/authedFetch.test.ts` asserts the wrapper's callback on a gated and on an
+open 401; `tests/api/test_platform_auth.py` (`test_firebase_requires_valid_token`) asserts that the
+auth middleware answers 401 to a gated path without a token in firebase mode and 200 to the open paths,
+on a synthetic `/api/secret` route and not on an options route; and `tests/shared/auth-gate.spec.ts`
+(`firebase mode, signed out → login screen blocks the app`) asserts the sign-in screen for a signed-out
+user in firebase mode, on `/dashboard`. No test asserts the flag, the banner, `DataGate` or the views'
+copy under a 401: no test on main sets a 401 on an options route, and a search of `tests/` finds no
+assertion of `Sign in to load`. Te stays unticked.
+
+**Code:** `src/routes/OptionsFlowPage.tsx:63-68`, `src/components/shared/SignInEmptyState.tsx:58-98`,
+`src/lib/authGate.ts`, `src/lib/authedFetch.ts:68-75,130-252`, `src/hooks/useUser.ts:25-80`; no test id
+(the banner is found by role `alert` and its text).
 
 ### SCREEN-PLAYBOOK — `/playbook`
 
