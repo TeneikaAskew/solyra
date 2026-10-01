@@ -8765,12 +8765,12 @@ on a synthetic `/api/secret` route and not on a signals route) and the sign-in s
 
 ### SCREEN-JOURNAL — `/journal`
 
-- **Purpose:** One-stop trade cockpit: interactive chart marking, examples, broker CSV import, per-user trades.
+- **Purpose:** The trade cockpit for the active ticker: a chart of one session with the trades of the active view marked on it, a rail of that session's trades, seven figures and a table over the view's rows, and the controls that write the caller's own journal (a mark on the chart, a form, a broker CSV import). The default view, Examples, is the examples admin's rows plus every live regular-hours trade of the signal pipeline for the ticker, the same for every signed-in user; My journal is the caller's own rows. It also mines the caller's closed trades into a condition profile (My style) and downloads a view as CSV or writes it to a file on the server (Export to Pipeline). Examples read a hundred times what is stored for their returns, the import cannot commit on the production table, and most failures show nothing (matrix Gaps); no element shows the age of anything.
 - **Matrix:** [03 § 13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#13--journal)
-- **Status:** Production but needs remediation · **Blocking issue:** [#717](https://github.com/TeneikaAskew/stocks/issues/717) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/JournalPage.tsx` (945 lines)
-- **Child components:** `Card`, `CardHeader`, `ImportTradesModal`, `KpiTile`, `LoadingSpinner`, `PriceAreaChart`, `TickerCombobox`, `TradeMarkingChart`, `TradeRailCard`, `type TradeMarkingChartHandle`
-- **API calls (from source):** `/api/journal/export/`, `/api/journal/trades`
+- **Status:** Production but needs remediation · **Blocking issue:** [#716](https://github.com/TeneikaAskew/stocks/issues/716) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Component:** `src/routes/JournalPage.tsx` (970 lines)
+- **Child components:** `Card`, `CardHeader`, `DataGate`, `ImportTradesModal`, `KpiTile`, `LoadingSpinner`, `MyStylePanel`, `PriceAreaChart`, `TickerCombobox`, `TradeMarkingChart`, `TradeRailCard`, `type TradeMarkingChartHandle`
+- **API calls (from source):** `/api/journal/trades`, `/api/journal/examples/`, `/api/journal/export/`, `/api/journal/import/preview`, `/api/journal/import/commit`, `/api/style/mine-and-validate`, `/api/market/dates/`, `/api/market/data/`, `/api/config/market-hours`, `/api/insights/ticker/search`, `/api/market/coverage`, `/api/insights/watchlist/add`
 - **Stores:** `useSettingsStore`, `useTickerStore`
 - **E2E specs:** `tests/journal/journal-import.spec.ts`, `tests/journal/journal-onestop.spec.ts`, `tests/journal/journal.spec.ts`
 - **PR lineage:** [#626](https://github.com/TeneikaAskew/stocks/pull/626) per-user scoping · [#705](https://github.com/TeneikaAskew/stocks/pull/705) chart trades persist · [#718](https://github.com/TeneikaAskew/stocks/pull/718) one-stop cockpit · [#764](https://github.com/TeneikaAskew/stocks/pull/764) tz guard
@@ -8780,87 +8780,870 @@ on a synthetic `/api/secret` route and not on a signals route) and the sign-in s
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/journal/trades/{ticker} | ticker, source, count, trades[].id/direction/entry_ts/exit_ts/entry_price/exit_price/return_pct/notes/take_profits/stop_loss/status/source/session_id/created_at/time_stop_minutes (types: `useJournalChartTrades.ts` JournalRow/JournalTradesResponse) |  | 10s staleTime | `useJournalTradesFull` → Header row source label, Cockpit row, KPI tiles, Trade table |
-| GET /api/journal/examples/{ticker} | same shape as above, `source` `pipeline` rows read-only (types: `useJournalChartTrades.ts` JournalTradesResponse) | signal-monitor 09:25 ET Mon-Fri and signal-monitor-eod-resolver 16:30 ET Mon-Fri → trades | 30s staleTime | `useJournalExamples` → Cockpit row, KPI tiles, Trade table (Examples view) |
-| GET /api/market/data/{ticker}/{date} | ticker, date, timeframe, count, candlestick[].time/open/high/low/close, volume[].time/value/color (types: `useMarketData.ts` MarketDataResponse) | fetch-market-data 23:00 ET Mon-Fri and fetch-alphavantage-intraday 21:00 ET Mon-Sat → market_data_intraday | staleTime Infinity (historical bars do not change) | `useMarketData` → Cockpit row chart |
-| GET /api/market/dates/{ticker} | ticker, source, dates[], months[] (types: `useMarketData.ts` DatesResponse) | fetch-market-data 23:00 ET Mon-Fri and fetch-alphavantage-intraday 21:00 ET Mon-Sat → market_data_intraday | 5min staleTime | `useAvailableDates` → Header row trading-date picker |
-| POST /api/journal/trades | source, id, return_pct, status (types: `useJournalChartTrades.ts` JournalMutationResponse) |  |  | `useCreateChartTrade` (chart) / `useAddTrade` (inline in `JournalPage.tsx`, manual form) → Mark entry on the chart, Add trade manually |
-| PATCH /api/journal/trades/{trade_id} | source, id, return_pct, status (types: `useJournalChartTrades.ts` JournalMutationResponse) |  |  | `useCloseChartTrade` → Mark entry on the chart (exit) |
-| DELETE /api/journal/trades/{trade_id} | source, deleted (types: `useJournalChartTrades.ts` JournalDeleteResponse) |  |  | `useDeleteChartTrade` → Trade table delete button |
-| POST /api/style/mine-and-validate | profile.direction/conditions/support/total, aggregate_metrics.avg_expectancy_pct/avg_win_rate/total_trades_all_folds/total_folds, stability_score, staged, or status "unavailable"/reason (types: `useJournalChartTrades.ts` MineStyleResponse) |  |  | `useMineMyStyle` → My style panel |
-| POST /api/journal/import/preview | broker, trades[].ticker/direction/entry_ts/entry_price/exit_ts/exit_price/return_pct/quantity/status/duplicate, skipped[].raw_index/reason (types: `useJournalChartTrades.ts` ImportPreviewResponse) |  |  | `useImportPreview` → Import CSV modal (preview step) |
-| POST /api/journal/import/commit | imported, skipped_duplicates (types: `useJournalChartTrades.ts` ImportCommitResponse) |  |  | `useImportCommit` → Import CSV modal (commit step) |
-| POST /api/journal/export/{ticker} | success, trades_exported, output_path, filename (types: `useJournalChartTrades.ts` JournalExportResponse) |  |  | `exportPipeline` (inline in `JournalPage.tsx`) → Export to Pipeline |
-| GET /api/insights/ticker/search · GET /api/market/coverage · POST /api/insights/watchlist/add | matches[], coverage flags, watchlist add result (types: `useTickerSearch.ts`) |  | 60s staleTime (search) | `TickerCombobox` → Header row ticker picker |
-| store: ticker, chart timeframe |  | Zustand, per session |  | every card |
-| browser localStorage: import mapper presets |  | per browser |  | `ImportTradesModal` |
+| GET /api/journal/trades/{ticker} | `source` (the storage label) and `trades[]`: `id`, `direction`, `entry_ts`, `exit_ts`, `entry_price`, `exit_price`, `return_pct`, `notes`, `take_profits`, `stop_loss`, `status`, `source`, `session_id`, `time_stop_minutes`; the answer's `ticker` and `count` are typed and never read (types: `useJournalChartTrades.ts` JournalRow/JournalTradesResponse) | the user: `journal_entries` rows written by the form, the chart marks and broker imports (an import cannot commit on the production table, matrix Gaps), scoped to the verified email, or to the shared `local` owner in open mode; production holds 2 rows in all, both the examples admin's (V evidence, 2026-10-01) | 10s staleTime, the app's one retry; no age shown | `useJournalTradesFull` → Header row source label, Cockpit row, KPI tiles, Trade table, Export to Pipeline |
+| GET /api/journal/examples/{ticker} | same shape as above; a row's `source` is `chart` or `manual` for the examples admin's rows and `pipeline` for a trades row, which carries one take profit and `time_stop_minutes` and never a stop price (types: `useJournalChartTrades.ts` JournalTradesResponse) | the examples admin's `journal_entries` rows other than `replay`, and every live regular-hours `trades` row of the ticker joined to its nearest live `signal_alerts` row; `signal-monitor` (one long execution from 09:25 ET Mon-Fri) and `signal-monitor-eod-resolver` (16:30 ET Mon-Fri) write them; `return_pct` of a pipeline row is multiplied by 100 on the way out (matrix Gaps) | 30s staleTime, no retry; no age shown; the newest IWM row was entered 2026-10-01 19:46 UTC (V evidence) | `useJournalExamples` → Cockpit row, KPI tiles, Trade table, `CSV` |
+| GET /api/market/data/{ticker}/{date} | `count`, `candlestick[]` (`time`, `open`, `high`, `low`, `close`) and `volume[]` (`time`, `value`, `color`); `ticker`, `date` and `timeframe` are typed and not read (types: `useMarketData.ts` MarketDataResponse) | fetch-market-data 23:00 ET Mon-Fri and fetch-alphavantage-intraday 21:00 ET Mon-Sat → market_data_intraday | staleTime Infinity (a date's bars are read once per page life); the newest IWM bar is the 20:00 ET bar of 2026-09-30 (V evidence) | `useMarketData` → Cockpit row chart |
+| GET /api/market/dates/{ticker} | `dates[]` (`YYYYMMDD`, newest first); `source` and `months[]` are typed and not read (types: `useMarketData.ts` DatesResponse) | fetch-market-data 23:00 ET Mon-Fri and fetch-alphavantage-intraday 21:00 ET Mon-Sat → market_data_intraday; 2,944 IWM dates (V evidence) | 5min staleTime; the handler caches a list behind a probe of the newest bar | `useAvailableDates` → Header row trading-date input, Cockpit row (the charted date) |
+| GET /api/config/market-hours | `regular.open` and `regular.close` (types: `useConfig.ts`) | constants in `platform/api/routers/live.py`, no table and no job | 24h staleTime; 09:30 and 16:00 when the request fails | `useMarketHours` → Cockpit row chart (the RTH filter) |
+| POST /api/journal/trades | request: `ticker`, `direction`, `entry_date`, `entry_time`, `entry_price`, `exit_date`, `exit_time`, `exit_price`, `notes` from the form, and `ticker`, `direction`, `entry_date`, `entry_time`, `entry_price`, `stop_loss`, `take_profits`, `source: "chart"` from a mark; the answer (`source`, `id`, `return_pct`, `status`) is not read (types: `useJournalChartTrades.ts` JournalMutationResponse) | the user (inserts a `journal_entries` row; `return_pct` and `status` are derived on the server) | none: every success refetches the ticker's own journal | `useCreateChartTrade` (chart) / `useAddTrade` (inline in `JournalPage.tsx`, manual form) → Mark entry on the chart, Add trade manually |
+| PATCH /api/journal/trades/{trade_id} | request: `exit_date`, `exit_time`, `exit_price`; the answer is not read | the user (closes an `active` row of the caller) | none: a success refetches the ticker's own journal | `useCloseChartTrade` → Mark entry on the chart (exit) |
+| DELETE /api/journal/trades/{trade_id}?ticker= | the answer (`source`, `deleted`) is not read (types: `useJournalChartTrades.ts` JournalDeleteResponse) | the user (deletes the caller's row; the handler answers `deleted` whatever it matched) | none: a success refetches the ticker's own journal | `useDeleteChartTrade` → Trade table delete button, rail card Delete |
+| POST /api/style/mine-and-validate | `profile.direction`, `profile.conditions`, `profile.support`, `profile.total`, `aggregate_metrics.avg_expectancy_pct`, `avg_win_rate`, `total_trades_all_folds`, `total_folds`, `stability_score`, `staged`, or `status: "unavailable"` with `reason` (types: `useJournalChartTrades.ts` MineStyleResponse) | the caller's closed `manual` and `chart` rows and `market_data_intraday` bars through `lib/style_miner.py` and `lib/walk_forward.py`; it writes `user_style_results` and `playbook_cards_staging`, both empty in production (V evidence) | none: a mutation run on a click | `useMineMyStyle` → My style panel |
+| POST /api/journal/import/preview | `broker`, `trades[]` (`ticker`, `direction`, `entry_ts`, `entry_price`, `exit_ts`, `exit_price`, `return_pct`, `quantity`, `status`, `duplicate`) and `skipped[]` (`raw_index`, `reason`) (types: `useJournalChartTrades.ts` ImportPreviewResponse) | the uploaded CSV through `lib/broker_import.py`; a duplicate is flagged against the caller's own rows | none: a mutation run on a click | `useImportPreview` → Import CSV modal (preview step) |
+| POST /api/journal/import/commit | `imported` and `skipped_duplicates` (types: `useJournalChartTrades.ts` ImportCommitResponse) | the user (inserts one `journal_entries` row for each checked trade with `source` `import:<broker>`, which `character varying(10)` cannot hold: 500 on the production table, matrix Gaps) | none: a success refetches every ticker's own journal | `useImportCommit` → Import CSV modal (commit step) |
+| POST /api/journal/export/{ticker} | `trades_exported` and `filename` (types: `useJournalChartTrades.ts` JournalExportResponse) | the request's own trades, written to `data/signals/<ticker>_trade_tracker.csv` on the serving instance; no table | none | `exportPipeline` (inline in `JournalPage.tsx`) → Export to Pipeline |
+| GET /api/insights/ticker/search · GET /api/market/coverage · POST /api/insights/watchlist/add | `matches[]`, coverage flags and the watchlist add result (types: `useTickerSearch.ts`) | AlphaVantage SYMBOL_SEARCH, the stored bars and watchlists (SIGNALS-01 and OPTIONS-06 describe the picker) | 60s staleTime (search) | `TickerCombobox` → Header row ticker picker |
+| store: ticker, chart timeframe | `activeTicker`; `timeframe` (`1`, `5`, `15`, `30` or `60`, `5` on a fresh load) | Zustand, in memory (the ticker is persisted by its store, the timeframe is not) | | every card |
+| browser localStorage: import mapper presets | the six column names a user chose for a generic broker | the browser, key `journal-import-mapping-preset:<broker>`, one per chip | per browser | `ImportTradesModal` |
+
+Every journal route is gated and answers 401 without a token on staging (V evidence); the table reads `journal_entries`, `trades`, `signal_alerts` and `market_data_intraday`, and writes `journal_entries`, `user_style_results`, `playbook_cards_staging` and, through the picker, `watchlists`.
 
 #### Displayed
 | ID | Element | Component |
 |---|---|---|
-| JOURNAL-01 | Header row | inline in `JournalPage.tsx` (ticker title, `source` label, `TickerCombobox`, trading-date picker, view toggle) |
-| JOURNAL-02 | Cockpit row | inline in `JournalPage.tsx` (`PriceAreaChart` / `TradeMarkingChart`, mini-toolbar, `TradeRailCard`, `journalStats.ts` equity curve) |
-| JOURNAL-03 | KPI tiles | `KpiTile` (inline in `JournalPage.tsx`; `journalStats.ts` `computeJournalStats`) |
+| JOURNAL-01 | Header row | inline in `JournalPage.tsx` (the ticker title, the storage label, `TickerCombobox`, the trading-date input and `Overview`, and the header controls of JOURNAL-07 to JOURNAL-11) |
+| JOURNAL-02 | Cockpit row | inline in `JournalPage.tsx` (the chart toolbar, `TradeMarkingChart` over `CandlestickChart`, the trade rail of `TradeRailCard`, the equity curve from `journalStats.ts` drawn by `PriceAreaChart`) |
+| JOURNAL-03 | KPI tiles | `KpiTile` (inline in `JournalPage.tsx`; `journalStats.ts` `computeJournalStats`, `risk.ts` `riskReward`) |
 | JOURNAL-04 | My style panel | `MyStylePanel` |
 | JOURNAL-05 | Add-trade form | inline in `JournalPage.tsx` |
-| JOURNAL-06 | Trade table | inline in `JournalPage.tsx` (`risk.ts`) |
+| JOURNAL-06 | Trade table | inline in `JournalPage.tsx` (`risk.ts`, `tsToDisplay`) |
 
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| JOURNAL-07 | Mark entry on the chart | `TradeMarkingChart` drives `useTradeMarking`; clicking the entry bar, then picking CALL or PUT, then optional targets and a stop, posts through `useCreateChartTrade` (`source: "chart"`) and flips the view to My journal; the exit comes later, from the rail card, through `useCloseChartTrade`. |
-| JOURNAL-08 | Add trade manually | The Add-trade form's Save Trade button posts through `useAddTrade` (`source` defaults to `manual`), then clears the form and flips the view to My journal. |
-| JOURNAL-09 | Import CSV | `ImportTradesModal`: pick broker and file, then `useImportPreview` → review the preview and uncheck rows → `useImportCommit`, which refetches every ticker's journal. |
-| JOURNAL-10 | Export CSV | "CSV" downloads the active view through `tradesToCsv`; "Export to Pipeline" posts through `exportPipeline` (`POST /api/journal/export/{ticker}`), reporting the count on success and falling back to a local CSV download on failure. |
-| JOURNAL-11 | Switch view or session | The My journal / Examples toggle and the session-date input (`Overview` on clear) re-scope every card above. |
+| JOURNAL-07 | Mark entry on the chart | `Mark Entry` walks `useTradeMarking` over `TradeMarkingChart`: a click sets the entry time and price, `CALL` or `PUT` follows, then up to three targets and a stop, each skipped with Escape; the mark posts through `useCreateChartTrade` (`source: "chart"`) and flips the view to My journal without waiting for the answer. The exit comes later from the rail card's `Mark exit`, a click on the chart, through `useCloseChartTrade`. Nothing checks that a target or the stop is on the right side of the entry, the button does nothing without a chart, and a failed mark, exit or delete shows nothing. |
+| JOURNAL-08 | Add trade manually | The Add-trade form's `Save Trade` posts through `useAddTrade` (no `source`, so the handler stores `manual`), then clears the form, closes it and flips the view to My journal; a failed save shows `Failed to save trade, check API connection.` and keeps the form open. The form always carries an exit, and nothing checks the exit against the entry or the prices against zero. |
+| JOURNAL-09 | Import CSV | `ImportTradesModal`: pick a broker and a file (Robinhood and Webull are parsed natively, the other chips use the generic mapper and need a column that holds `CALL` or `PUT`), `useImportPreview` shows the paired trades, the duplicates unchecked and the skipped rows with reasons, and `useImportCommit` inserts the checked rows and refetches every ticker's journal. The commit answers 500 on the production table, whose `source` column is `character varying(10)`. |
+| JOURNAL-10 | Export CSV | `CSV` downloads the active view as `<ticker>_journal.csv` through `tradesToCsv`, six columns of times and direction with no price or return; `Export to Pipeline` (My journal only) posts the closed trades through `exportPipeline` (`POST /api/journal/export/{ticker}`), which writes `<ticker>_trade_tracker.csv` on the serving instance, and reports `Exported <n> closed trades`, falling back to a local download on any failure, in the success colour. |
+| JOURNAL-11 | Switch view or session | The Examples and My journal toggle and the session-date input (`Overview` on clear) re-scope the rows, the tiles, the table, the rail and the chart's day; the equity curve ignores the date. The view follows the own journal until a button is pressed, so a user with rows sees Examples first and then My journal. |
 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| JOURNAL-12 | loading | present | The chart's spinner; "Loading journal…" while the active view loads with no rows; `MyStylePanel`'s "Mining…"; "Saving…"; the import modal's "Parsing…" and "Importing…". |
-| JOURNAL-13 | empty | present | "No example trades for {ticker} yet." / "Log Your First Trade" depending on view; "No trades on this session, clear the date for the Overview."; an empty rail; "Close 2+ trades to see your equity curve."; "No market data available for this date". |
-| JOURNAL-14 | error | present | The manual form's "Failed to save trade, check API connection." is the only rendered mutation error; a failed own-journal read shows no error text (the source label falls back to "Local storage"); Examples, chart and style-mining each render their own message; the import preview and commit errors render; marks, exits and deletes render nothing on failure. |
-| JOURNAL-15 | stale | present | No element shows a row's age; the own journal and Examples queries hold 10s and 30s respectively before refetching. |
-| JOURNAL-16 | permission | not tracked (new category); present | `DataGate` wraps the page body; `AuthGate`'s `SignInScreen` renders for a signed-out visitor; every signed-in user sees the same Examples. |
+| JOURNAL-12 | loading | present | The chart's spinner once a date is charted, and until the dates list answers the chart card reads as a closed market; `Loading journal…` in the table area while the active view loads with no rows; `Mining…`, `Saving…`, `Parsing…` and `Importing…` on their buttons. The rail and the equity card read as empty and the storage label as local while the rows load, and a user with rows sees Examples until the own read answers. |
+| JOURNAL-13 | empty | present | `No example trades for <ticker> yet.` on Examples and `No trades logged for <ticker> yet.` with `Log Your First Trade` on My journal; `No trades on this session, clear the date for the Overview.` (also under an open form on an empty view); the rail's two empty lines; `Close 2+ trades to see your equity curve.`; `No market data available for this date` over `Markets may be closed (weekend or holiday)`. |
+| JOURNAL-14 | error | present | A failed Examples read shows an amber box and `Examples unavailable.`; a failed manual save shows `Failed to save trade, check API connection.`; the chart card, My style and the import modal show their own messages; a failed own-journal read, mark, exit or delete shows nothing (the label falls back to `Local storage`), and a failed export downloads a file under a success-coloured line. A database outage is read as too few trades by My style. |
+| JOURNAL-15 | stale | present | No element shows the age of a row, a figure or a bar; the own journal holds 10s, Examples 30s and the dates 5 minutes with no polling, and the chart can lag the rows by a session. |
+| JOURNAL-16 | permission | not tracked (new category); present | `DataGate` wraps the page body, and cannot trigger in practice: a signed-out visitor meets the sign-in screen first, and a signed-in user's 401 shows the shell's expired-session strip over a page that shows each failure as in JOURNAL-14; the own journal is scoped to the caller and every signed-in user sees the same Examples. |
 
 #### Journeys
-1. Log a trade from the chart: Opens /journal and picks the session date (JOURNAL-01, JOURNAL-11) → Clicks Mark entry (JOURNAL-07) → Clicks the entry bar, then picks CALL or PUT (JOURNAL-07) → Optionally sets up to three targets and a stop (JOURNAL-07) → The trade appears in the rail, tiles and table (JOURNAL-02, JOURNAL-03, JOURNAL-06) → Exits later from the rail card (JOURNAL-07); the seed describes entry, then exit, then CALL or PUT, which is not the code's order (see the matrix Journal Gaps)
-2. Bring in broker history: Clicks Import CSV (JOURNAL-09) → Picks the broker and file, Robinhood and Webull skip the mapper (JOURNAL-09) → Reviews the preview table and unchecks rows (JOURNAL-09) → Commits; result reads "Imported N · M duplicates skipped" (JOURNAL-09) → Trades land in My journal (JOURNAL-06, JOURNAL-11)
-3. Review performance: Clears the session date for the Overview (JOURNAL-11) → Reads the KPI tiles across all dates (JOURNAL-03) → Follows the cumulative equity curve (JOURNAL-02) → Opens "My style" to mine patterns from closed trades (JOURNAL-04) → Exports the view as CSV (JOURNAL-10)
-4. Learn from examples: Switches the view toggle to Examples (JOURNAL-11) → Studies curated trades on the same chart (JOURNAL-02) → Compares their levels with their own (JOURNAL-06) → Switches back to My journal (JOURNAL-11)
+1. Log a trade from the chart: Opens /journal and picks the session date (JOURNAL-01, JOURNAL-11) → Clicks Mark entry (JOURNAL-07) → Clicks the chart for the entry, then picks CALL or PUT (JOURNAL-07) → Optionally clicks up to three targets and a stop, each skipped with Escape (JOURNAL-07) → The trade appears in the rail, tiles and table of My journal (JOURNAL-02, JOURNAL-03, JOURNAL-06) → Exits later from the rail card with a click on the chart (JOURNAL-07); the seed describes entry, then exit, then CALL or PUT, which is not the code's order (see the matrix Journal Gaps)
+2. Bring in broker history: Clicks Import (JOURNAL-09) → Picks the broker and the file, Robinhood and Webull skip the mapper (JOURNAL-09) → Reviews the preview table, the duplicates unchecked and the skipped rows with reasons (JOURNAL-09) → Commits; the result reads "Imported N · M duplicates skipped" (JOURNAL-09) → Trades land in My journal (JOURNAL-06, JOURNAL-11); on the production table the commit fails with `import commit failed: 500` and nothing is stored (see the matrix Journal Gaps)
+3. Review performance: Clears the session date for the Overview (JOURNAL-11) → Reads the KPI tiles across all dates (JOURNAL-03) → Follows the cumulative equity curve (JOURNAL-02) → Opens "My style" to mine patterns from closed trades, which answers that it needs ten closed manual or chart trades (JOURNAL-04) → Exports the view as CSV (JOURNAL-10)
+4. Learn from examples: Opens the page with an empty journal, which shows Examples (JOURNAL-11) → Studies the pipeline's trades on the same chart, whose returns read a hundred times what is stored (JOURNAL-02, JOURNAL-06; see the matrix Journal Gaps) → Compares their levels with their own (JOURNAL-06) → Switches to My journal (JOURNAL-11)
+5. A request that fails: Marks an entry, saves the form or deletes a trade while the API is failing (JOURNAL-07, JOURNAL-08, JOURNAL-06) → The form shows `Failed to save trade, check API connection.` and stays open (JOURNAL-14); a mark has already flipped the view to My journal, an exit leaves the trade open and a delete leaves the row, each with no message (JOURNAL-14) → Reads Examples while their read fails: an amber box and `Examples unavailable.` (JOURNAL-14)
 
 #### Elements
+
+In every body below, "executed 2026-10-01" means that the page of solyra `c0bbd74` was rendered in a hermetic browser (a scratch copy of
+the source on the e2e launcher's Vite server) while the real stocks app of `34da872e` (`api.main:app`, with the journal, market, config and
+backtest routers) answered its journal, market-data and market-dates calls, served by uvicorn over a local PostgreSQL 16 that holds the
+production objects the page reads: `journal_entries` with the column definitions and indexes that production's `information_schema` and
+`pg_indexes` gave on 2026-10-01 (`source` and `status` are `character varying(10)`), the examples admin's one IWM row, the 812 live
+regular-hours IWM rows of `trades` with the `signal_alerts` row each one joins to, and the 889 one-minute IWM bars of the newest stored
+session, 2026-09-30, all read at 20:14 UTC by the `db_query_cr.sh` execution `db-query-drz7l` (the V evidence comment lists the
+statements). The cross-cutting calls of the shell (`/api/config/firebase`, `/api/me` and its siblings, `/api/live/status`,
+`/api/market/most-active`) were answered as `mockCommon` answers them, in `open` auth mode, so the caller was the `local` owner and the
+own journal began empty. Three things differ from production and are named where a body uses them: the dates list holds the two dates
+the one stored session reaches (20260930 and 20260929) where production lists 2,944; the export handler wrote into a scratch directory
+instead of `data/signals/` of the repository; and a handler failure the page cannot make the handler produce was "injected", which means
+the browser answered that request with the status and body named. "Mutation" means one line of the product code changed in a scratch
+copy and the named spec run; "read" marks what was only read in the code, and "V evidence" the comment on stocks issue 1234 that the
+matrix links.
+
 ##### JOURNAL-01 · Header row
+
+**Shows or does:** The first block of the page (`src/routes/JournalPage.tsx:349-486`), drawn in every state because it sits above
+`DataGate` (`:506`). On the left the title `<ticker> Trade Journal` (`h1`, `:352-354`, the store's `activeTicker`, `IWM Trade Journal`) and under
+it a storage label (`:355-360`): `Persisted in Cloud SQL` with a green database icon when the own-journal answer's `source` is `cloud_sql`, and
+otherwise `Local storage (set CLOUD_SQL_CONNECTION_NAME for persistence)` with an amber disk icon. The label reads `ownQuery.data?.source ??
+'local'` (`:223`), so it is the local text whenever the own-journal request has no answer, which holds while it loads and after it fails
+(executed: with that request held for 4 s the label read the local text until the answer came and then `Persisted in Cloud SQL`; after a 503,
+with the request made twice, the first and the app's single retry, and after a 401, it stayed on the local text with no error anywhere on the
+page for that query, matrix Gaps). On the right: the shared ticker picker (`TickerCombobox`, `:363`, the component DASHBOARD-10, OPTIONS-06
+and SIGNALS-01 describe), the date input (`:366-374`) and, once a date is set, the `Overview` button (`:375-384`, test id `clear-date`), then
+the controls of the other rows: `Mark Entry` and its step prompts (JOURNAL-07, `:386-433`), `Add Trade` (JOURNAL-08, `:435-440`), `Import`
+(JOURNAL-09, `:442-450`), `CSV`, shown while the active view has rows, and `Export to Pipeline`, shown on My journal while the own journal has
+rows (JOURNAL-10, `:452-467`), and the `Examples` and `My journal` toggle (JOURNAL-11, `:469-484`, test id `view-toggle`). Under the row, still
+outside the gate, three banners can show: the export status (JOURNAL-10, `:488-492`), `Failed to save trade, check API connection.`
+(JOURNAL-08 and JOURNAL-14, `:494-498`) and `Examples unavailable, the journal database didn't respond.` (JOURNAL-14, `:500-504`).
+
+The date input holds `YYYY-MM-DD` and takes its `min` and `max` from the oldest and newest entries of the dates list (`dates`, `YYYYMMDD`
+newest first, `:200-206`, 5 minute stale time); a change stores `YYYYMMDD` as `selectedDate` (`:371`), and clearing the input or pressing
+`Overview` stores the empty string, the all-dates scope. The list bounds only the browser's picker: a typed date outside it is stored and
+requested (executed: `2026-09-26`, a Saturday, produced `GET /api/market/data/IWM/20260926?timeframe=5`, twice because of the retry, and the
+chart card read `No market data available for this date`). `selectedDate`, the chosen view and the form state are state of the page, so a
+ticker pick keeps them (executed: a date of `2026-09-30` and `My journal` were still set after a pick of SPY, with the dates, bars, own-journal
+and examples requests made for SPY).
+
+What it drew on the production rows (executed, IWM): `IWM Trade Journal`, `Persisted in Cloud SQL` (the own read answered `cloud_sql` with no
+rows), an empty date input with `min` 2026-09-29 and `max` 2026-09-30 (the two dates of the scratch table; production lists 2,944 dates, the
+newest eight 20260930 to 20260921, V evidence), the picker button `IWM`, `Mark Entry`, `Add Trade`, `Import`, `CSV` (the Examples view has 813
+rows) and the toggle with `Examples` active. In `firebase` mode a signed-out visitor never reaches the row: the sign-in screen replaces the
+page and the only API request is `GET /api/config/firebase` (executed, JOURNAL-16).
+
+**Needs:** `GET /api/journal/trades/{ticker}` for the label only (`useJournalTradesFull`, `src/hooks/useJournalChartTrades.ts:312-323`, 10 s
+stale time and the app's single retry, `src/App.tsx:30-36`); the handler (`platform/api/routers/journal.py:882-922`) answers `source`
+`cloud_sql` with the caller's rows, and answers 503 `journal temporarily unavailable` for a signed-in caller when the database fails (executed
+with the database unreachable and an identity patched in, `:907-917`), while `open` mode, where the owner is `local`, falls to a local
+JSON file and answers `source` `local` (read, `:919-922`). `GET /api/market/dates/{ticker}` for the date input (`src/hooks/useMarketData.ts:52-63`;
+CHARTS-01 describes the handler: 503 on a database failure, the GCS parquet files only when Cloud SQL is not configured). The picker adds
+`GET /api/insights/ticker/search`, `GET /api/market/coverage` and, for a `new` pick, `POST /api/insights/watchlist/add`, all gated (V
+evidence: 401 on each without a token on staging). Production (V evidence, 2026-10-01): `journal_entries` holds 2 rows in all, both the
+examples admin's, so every other caller's own read answers an empty list; `watchlists` holds 18 rows (16 active, one owner), `ticker_info` none.
+
+**States:** The label is the only state the row shows for the own-journal read: the local text while it loads and after it fails (JOURNAL-12,
+JOURNAL-14). The date input has none of its own; an empty or failed dates list leaves it without `min` and `max` and the chart card reading
+`No market data available for this date` with `Markets may be closed (weekend or holiday)` under it, the toolbar `No session data` and the rail
+heading without a date, and no error text for the dates call (executed with a 503). The row is outside `DataGate` (JOURNAL-16).
+
+**Acceptance criteria:**
+- Given the own-journal request answers `source` `cloud_sql`, then the label reads `Persisted in Cloud SQL`; given it has not answered, or
+  has failed, or `source` is anything else, then it reads `Local storage (set CLOUD_SQL_CONNECTION_NAME for persistence)` (executed for
+  the first three; no test asserts either text).
+- Given a date list newest `20260930` and oldest `20260929`, then the date input carries `min` `2026-09-29` and `max` `2026-09-30`, and a
+  date typed outside them is requested as it is (executed).
+- Given a date is picked, then `Overview` shows and the scope label reads `Session: 09/30/2026`; given `Overview` is pressed, then the label
+  reads `Overview: all dates` (`scope label flips between Overview and Session when the date is selected/cleared`,
+  `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
+- Given a ticker pick, then the date, the view and the other page state stay (executed, SPY).
+- Given the page opens, then a heading with `journal` in it is visible (`renders journal heading`, `tests/journal/journal.spec.ts`, on main).
+- Given no token, then `GET /api/journal/trades/IWM`, `GET /api/market/dates/IWM` and the three picker routes answer 401 on staging (V
+  evidence).
+
+**Tests:** On main, `renders journal heading` asserts that an `h1` or `h2` containing `journal` is visible, which is the title, and `scope
+label flips between Overview and Session when the date is selected/cleared` fills the first date input with `2026-04-24`, asserts the scope
+label `Session: 04/24/2026`, presses `clear-date` and asserts `Overview: all dates`; it asserts the label and the button, not that the tiles
+or the table follow (JOURNAL-11). The picker is asserted by `tests/dashboard/ticker-combobox.spec.ts` (on `/dashboard`),
+`src/components/shared/tickerCombobox.test.ts` and `src/stores/tickerStore.test.ts`, never on this page, and its three handlers by
+`tests/api/test_market_coverage.py`, `tests/api/test_ticker_info.py` and `TestWatchlistMutationAPI` (`tests/api/test_platform_api.py`). The own-journal handler is asserted for
+its scoping (`test_get_is_scoped_to_user`, `test_two_users_are_isolated`, `test_open_mode_defaults_to_local` and
+`test_auth_mode_db_failure_fails_closed`, `tests/api/test_journal_user_scoping.py`: the SQL text and the `user_email` parameter handed to a
+mocked database layer, and the 503) and for its envelope (`TestJournalAPI.test_journal_list` asserts the keys `trades` and `source`,
+`tests/api/test_platform_api.py`); no test asserts the label, the date input's `min` and `max`, a typed date outside the list or the page's
+state across a ticker pick. Te stays unticked: the title and the scope label are asserted and the storage label, the row's other element,
+is not.
+
+**Code:** `src/routes/JournalPage.tsx:187-231,349-504`, `src/hooks/useJournalChartTrades.ts:312-323`, `src/hooks/useMarketData.ts:52-63`,
+`src/components/shared/TickerCombobox.tsx:147-513`, `src/stores/tickerStore.ts:14-34`; `platform/api/routers/journal.py:152-161,882-922`,
+`platform/api/main.py:607-902`; test ids `clear-date`, `view-toggle`, `import-trades-btn`, `ticker-combobox`.
 
 ##### JOURNAL-02 · Cockpit row
 
+**Shows or does:** The block under the banners, inside `DataGate` (`src/routes/JournalPage.tsx:506-653`), two columns that stack below the `lg`
+breakpoint. On the left a toolbar (`:514-552`): the timeframe buttons `1m 5m 15m 30m 1h` (`:516-530`, they write `timeframe` of
+`src/stores/settingsStore.ts:85,103-104`, in memory, `5` on a fresh load), the `Vol` and `RTH` toggles (`:531-548`, component state, both on)
+and the text `Session <date>` for the charted date or `No session data` (`:549-551`); then the chart card (`:555-606`, test id
+`journal-chart-card`, height `clamp(400px, calc(100vh - 340px), 900px)`) with a spinner while the market-data request loads (`:560-563`), the
+error text (`:564-572`), `TradeMarkingChart` over `CandlestickChart` when the answer has bars (`:573-598`; CHARTS-02 describes the canvas,
+the RTH filter and the shared markers), and otherwise `No market data available for this date` over `Markets may be closed (weekend or
+holiday)` (`:599-605`). On the right the rail (`:609-652`, 340 px wide from `lg`): the heading `Example trades, <date>` or `My trades, <date>`
+(`:611-614`), one `TradeRailCard` (`src/components/journal/TradeRailCard.tsx`) for each trade of the active view whose entry date is the
+charted date (`railTrades`, `:234-239`) or the line `No example trades on this session.` / `No trades on this session yet. Click "Mark Entry"
+to start.` (`:615-620`), and the equity-curve card (`:635-651`): `<ticker> equity curve`, `cumulative P&L %`, the curve when two or more rows
+carry a return and otherwise `Close 2+ trades to see your equity curve.`.
+
+The charted date is `selectedDate || dates[0]` (`:202`): the session picked in JOURNAL-11, else the newest date of the dates list. The rail
+and the chart therefore show one session, while the tiles, the table and the equity curve follow the scope of JOURNAL-03: the curve is always
+cumulative over every row of the active view (`curveStats`, `:270`, `src/lib/journalStats.ts:103-165`: the rows with a return, sorted by exit
+time, then entry time, summed). A trade of a day the dates list does not hold yet is in the table and the tiles and not on the rail or the
+chart (executed: a trade saved through the form for 2026-10-01, today in Eastern time, appeared in the table and the tiles while the rail read
+`My trades, 2026-09-30` with no card, because the nightly jobs write a session's bars after its close). A rail card
+(`TradeRailCard.tsx:54-160`) shows the direction badge, an `EX` badge on an Examples card and a `pipeline` badge on a pipeline row, the return
+centered and largest (`+1.14%`, an em dash when there is none), the entry time as `HH:MM`, the icon buttons Exit (an own card whose status is
+`active`) and Delete (every own card; hidden on an example card, `:115-133`), `$entry → $exit`, and `TP <levels> · SL <price or <N>m time-stop>
+· R:R <ratio>` with an em dash for any missing leg (`:136-160`). The chart's entry arrows, exit circles and TP and SL lines come from the same
+trades, gray and dashed in the Examples style (`src/components/journal/TradeMarkingChart.tsx:215-301`); the exit marker's dollar figure is
+`entry_price × return_pct / 100` (`src/hooks/useJournalChartTrades.ts:243`, read), so the Examples' return unit reaches it too. Hovering a card
+raises that trade's markers and lines (`hoveredTradeId`, `:252`).
+
+What it drew on the production rows (executed, IWM, Examples view): the toolbar with `5m` active and `Session 2026-09-30`, the heading
+`Example trades, 2026-09-30` over five cards, each `CALL`, `EX`, `pipeline`, one `-16.45% 09:34 $279.71 → $279.25 TP 280.50 · SL 20m
+time-stop · R:R` and an em dash (the first), the others with returns of -18.27%, -17.87%, -1.61% and -12.50%, five price lines on the chart
+(`data-price-lines` `5`: one take profit per trade and no stop, because a pipeline row has none), and an equity curve over 2026-05-01 to
+2026-10-01 whose axis ran from -2234.3% to +789.1%. The cards read -16.45% for a move of 0.16% because the Examples handler multiplies the
+stored percent by 100 (matrix Gaps, stocks#1219); the same figure draws the curve.
+
+**Needs:** `GET /api/market/data/{ticker}/{date}?timeframe=N` (`src/hooks/useMarketData.ts:34-50`, infinite stale time; handler
+`platform/api/main.py:905-1016`, CHARTS-02), `GET /api/market/dates/{ticker}` (CHARTS-01), `GET /api/config/market-hours` for the RTH window
+(`src/components/charts/CandlestickChart.tsx:173-178`, `src/hooks/useConfig.ts:68-78`, 24 h stale time, constants and no table,
+`platform/api/routers/config.py:131-143`, with 09:30 and 16:00 as the answer to a failed request), and the rows of the active view:
+`GET /api/journal/trades/{ticker}` (the caller's rows, JOURNAL-01) or `GET /api/journal/examples/{ticker}` (`useJournalExamples`,
+`useJournalChartTrades.ts:337-351`, 30 s stale time, no retry). The Examples handler (`platform/api/routers/journal.py:925-1085`) is a plain
+`def` that answers the union of two reads and a sort: the examples admin's `journal_entries` rows that are not `replay`, and every live
+`trades` row of the ticker entered between 09:30 and 16:00 Eastern, each joined to the nearest live `signal_alerts` row of the same ticker and
+direction within 5 seconds, which gives a row its one take profit (`target_price`) and its `time_stop_minutes` and never a stop price; the
+pipeline rows' `return_pct` is multiplied by 100 (`:531`). A failure of either read is a 503 `journal temporarily unavailable`, never a
+partial answer (executed with the database unreachable). Production (V evidence, 2026-10-01 20:14 UTC): 812 live regular-hours IWM rows in
+`trades` (810 closed, 2 still open before the 16:30 ET resolver), every one matched to an alert (812 with a target price and a time stop, 17
+with a broken level), newest entry 2026-10-01 19:46:39 UTC; the admin's one IWM row, an active chart mark of 2026-07-08; the answer was 813
+rows from 2026-05-01 to 2026-10-01 (executed). The stored `return_pct` of the 810 closed rows runs from -0.873631 to 0.875567 with a mean
+absolute value of 0.1989 and none above 1 in absolute value: percent units, as `signal-monitor` writes them. `market_data_intraday`: IWM
+2,021,759 one-minute rows, the newest bar 2026-10-01 00:00 UTC, the 20:00 ET bar of the 2026-09-30 session; `fetch-market-data` ran at 03:00
+UTC and `fetch-alphavantage-intraday` at 01:00 UTC on 2026-10-01, both successful. All of these routes are gated (V evidence: 401 on each
+without a token on staging).
+
+**States:** The chart card has four: the spinner (JOURNAL-12), an error, the empty text (JOURNAL-13) and the chart. The error text is
+`chartError.message` unless it contains `No data`, when it reads `No market data available for this date`: executed, a 500 with the detail
+`boom: the bars query failed` showed that text, a 404 `No data for IWM on 20260930` the friendly text, a 401 `sign in to continue`. A dates
+failure (503) leaves `chartDate` empty, so the query is disabled and the card shows the empty text and `Markets may be closed (weekend or
+holiday)` with `No session data` in the toolbar and no error (executed; the same text shows while the dates request is still pending). The
+rail and the curve have no loading state of their own: while the rows load they read `No example trades on this session.` (or the own-journal
+line) and `Close 2+ trades to see your equity curve.` (executed, JOURNAL-12). A failed Examples read leaves the rail on `No example trades on
+this session.` (JOURNAL-14).
+
+**Acceptance criteria:**
+- Given the Examples view of the production IWM rows, then the page lands on the newest listed date, shows `Example trades, 2026-09-30` with
+  its five cards and five price lines, and draws an equity curve over every date of the view (executed).
+- Given two closed example trades with TP1 222.5, TP2 224 and a stop 219 and none for the other, then the chart wrapper counts three price
+  lines (`closed example trades still draw their TP/SL lines on the chart`, `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
+- Given one own closed trade with a return of 1.14, then its rail card shows `+1.14%`, centered in the middle third of the card and in the
+  largest font on it (`rail card shows the return % centered and prominent`, the same file).
+- Given a rail card is hovered, then the card carries `data-highlighted` and the chart wrapper `data-highlighted-trade`, and both clear when the
+  pointer leaves (`hovering a rail card highlights its markers on the chart, and mouseleave clears it`, the same file).
+- Given a 390 px viewport, then the page has no horizontal scroll, the rail sits below the chart card and the card is at least 300 px wide
+  (`no page-level horizontal scroll, and the rail stacks below the chart (not beside it)`, the same file).
+- Given a stored row `2026-04-24 10:05:00`, then the rail card and the table both read `10:05` in a browser set to America/New_York (`the
+  table Entry time and the rail card time render the SAME naive-ET wall clock`, the same file).
+- Given fewer than two closed trades, then the card reads `Close 2+ trades to see your equity curve.` (`equity curve card shows a placeholder
+  when under 2 closed trades`, `tests/journal/journal.spec.ts`, on main).
+- Given the dates request fails, then the chart card reads `No market data available for this date` and no error shows (executed; matrix Gaps).
+- Given no token, then the five routes above answer 401 on staging (V evidence).
+
+**Tests:** On main the six Playwright tests above each assert one visible fact (a count attribute, a text, a position and a font size, two
+attributes, a layout, a time) and `defaults to Examples when own journal is empty` asserts the equity-curve text `equity curve` and the
+table, tiles and badges that JOURNAL-03 and JOURNAL-06 name; `rail card SL segment renders the time-stop text (no stop price), and the chart
+draws a TP line from take_profits` asserts the two `rail-sl` texts, a visible canvas and a `TP` text on a card, which is the presence of the
+canvas and not a drawn line. `exitMarkerSpec` is asserted by `src/components/journal/TradeMarkingChart.test.ts` (an unavailable return reads
+`Exit` and an em dash in neutral gray, a real one a signed dollar label, the Examples layer gray and prefixed), `journalRowToTradeEntry` by
+`src/hooks/journalChartTrades.test.ts` and `src/hooks/journalFixtureMapping.test.ts`, and the length of `equityPoints` (never its values) by
+`src/routes/journalStats.test.ts`. On the handler side `tests/api/test_journal_examples.py` asserts the union and its order, the field mapping
+of a pipeline row (and with it the ×100 conversion: a stored 0.01 is expected as 1.0, the premise that production's rows contradict), the
+admin-only scope, the 503s and, for the alert join, the text of its SQL (`LEFT JOIN LATERAL`, the live filter, the `sa2.id` tie-break key)
+with a Python stand-in that replays the tie-break, over in-memory frames and never a real query;
+`tests/api/test_intraday_loader_conventions.py` and `TestMarketDataAPI` in `tests/api/test_platform_api.py` assert the bars (CHARTS-02), and
+`tests/api/test_route_coverage.py` pins the examples route at 503, the trades route at 200, the dates route at 503, the data route at 404 and
+`GET /api/config/market-hours` at 200 against a dead backend. No test on main asserts a drawn candle, marker or line, the RTH filter, the
+timeframe, the equity curve's values or the rail's empty copy. Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:187-283,506-653`, `src/components/journal/TradeMarkingChart.tsx:36-53,215-322`,
+`src/components/journal/TradeRailCard.tsx:54-160`, `src/components/charts/CandlestickChart.tsx:60-86,173-178,279-282`,
+`src/hooks/useJournalChartTrades.ts:226-272,289-351`, `src/lib/journalStats.ts:103-165`, `src/hooks/useMarketData.ts:34-63`,
+`src/hooks/useConfig.ts:68-78`; `platform/api/routers/journal.py:453-575,925-1085`, `platform/api/main.py:605-1016`,
+`platform/api/routers/config.py:131-143`; test ids `journal-chart-card`, `trade-marking-chart`, `trade-rail-card`, `ex-badge`,
+`pipeline-badge`, `rail-return`, `rail-entry-time`, `rail-sl`.
+
 ##### JOURNAL-03 · KPI tiles
+
+**Shows or does:** The strip under the cockpit (`src/routes/JournalPage.tsx:655-700`), drawn only while the active view has at least one
+row (`viewRows.length > 0`, `:656`): the scope label (`:659-661`, test id `scope-label`, `Overview: all dates` or `Session: MM/DD/YYYY`,
+`:279-281`), the checkbox `Include practice sessions` (`:662-671`, test id `include-replay-toggle`, off), seven `KpiTile`s (`:673-687`) and up
+to two notes (`:688-698`). The tiles come from `computeJournalStats(viewRows, { includeReplay, date })` (`:262-269`,
+`src/lib/journalStats.ts:103-165`, the page's own client-side aggregates; the file's header explains why they are not the server's), over the
+rows whose `entry_ts` date is the scope date, or all rows, minus the rows whose `source` is `replay` unless the checkbox is on:
+- `Trades`: the number of rows in scope, with `<n>W / <n>L` under it; a win is a return above 0, a loss a return of 0 or below, and a row
+  with no return counts in the first figure and in neither of the others.
+- `Win rate`: wins over the rows that have a return, `toFixed(0)` and a `%`, green from 50 and red below (`:681`).
+- `Σ return`: the sum of the rows' `return_pct`, `+x.xx%`; `Avg / trade`: its mean; `Avg win`: the mean of the positive returns; each an em
+  dash when no row has a return, in the neutral tone except `Avg win`, which is always green (`:684`, executed: the dash of a null `Avg win`
+  was drawn in `rgb(34, 197, 94)`, the `--bull` colour, where the other null tiles are `rgb(226, 226, 232)`).
+- `Avg R:R`: the mean of `riskReward(entry, TP1, stop)` over the rows that have all three legs (`src/lib/risk.ts:9-13`: `|entry - TP1| /
+  |entry - stop|`, null on a missing leg or equal entry and stop), `toFixed(2)`.
+- `TP1 hit`: of the rows that have an exit price, a TP1 and a direction, the share whose exit reached TP1 (CALL at or above, PUT at or below),
+  `toFixed(0)` and a `%`, green from 50.
+`<n> open/unreturned trade(s) excluded from stats` shows while some row in scope has no return (`:688-692`), and `<n> practice trade(s)
+excluded from stats, toggle "Include practice sessions" to include them.` while the replay rows are filtered out (`:693-698`, test id
+`replay-exclusion-note`). The equity curve of JOURNAL-02 ignores the scope date and keeps the checkbox (`curveStats`, `:270`).
+
+The unit is the stored one: every figure is a sum or a mean of `return_pct` as the row carries it, a percent of the underlying for own
+rows (the form and the marks, `platform/api/routers/journal.py:341-355`), a percent of the option premium for imported rows (`:358-372`) and,
+for the pipeline rows of Examples, the stored percent multiplied by 100 (`:531`), so the figures mix units (matrix Gaps, stocks#716).
+
+What it drew on the production rows (executed, IWM, Examples view, Overview): `Trades 813 · 387W / 423L`, `Win rate 48%`, `Σ return -1441.38%`,
+`Avg / trade -1.78%`, `Avg win +18.95%`, `Avg R:R 2.14`, `TP1 hit 16%`, and `3 open/unreturned trade(s) excluded from stats` (two open
+pipeline rows and the admin's active mark). `Avg R:R` is the ratio of one row, the admin's July mark with its three legs (|291.857 - 293.799| /
+|291.857 - 292.765| = 2.14), because no pipeline row has a stop price; the other 812 do not count. The stored returns sum to -14.4138, so the
+tile reads a hundred times that: the real handler's answer holds 810 closed rows with `return_pct` summing to -1441.3849. With the session
+`2026-09-30` picked (JOURNAL-11): `Trades 5 · 0W / 5L`, `Win rate 0%`, `Σ return -66.69%`, `Avg / trade -13.34%`, `Avg win` an em dash, `Avg R:R`
+an em dash, `TP1 hit 0%`; with `2026-09-26`, a day with no row: `Trades 0 · 0W / 0L` and an em dash in the six others, with `No trades on this
+session, clear the date for the Overview.` under them (JOURNAL-13). On an own row written through the form (an entry at 279.01, an exit at
+280.50): `Trades 1 · 1W / 0L`, `Win rate 100%`, `Σ return +0.53%`, `Avg / trade +0.53%`, `Avg win +0.53%`, `Avg R:R` and `TP1 hit` em dashes.
+
+**Needs:** The rows of the active view and nothing else: `GET /api/journal/trades/{ticker}` or `GET /api/journal/examples/{ticker}`
+(JOURNAL-01, JOURNAL-02), with `return_pct`, `entry_ts`, `entry_price`, `exit_price`, `take_profits`, `direction` and `source` read.
+`return_pct` is null for an active trade, and for a closed one whose entry price is 0 (`platform/api/routers/journal.py:341-355`, the row's
+status is then `closed`); null stays null end to end and is excluded from every aggregate, so an unreturned row is not a 0% trade
+(`src/lib/journalStats.ts:105-118`). Production (V evidence): the Examples feed is current: the newest live entry is 2026-10-01 19:46 UTC and
+the newest alert the same instant, 812 live regular-hours IWM rows. The route answers 401 without a token on staging (V evidence).
+
+**States:** The strip is absent while the view has no rows, whether they are loading, empty or failed (JOURNAL-12, JOURNAL-13, JOURNAL-14), and
+reads zeros and dashes for a session with none (above). It shows no age (JOURNAL-15).
+
+**Acceptance criteria:**
+- Given the Examples rows of IWM, then the seven tiles read the figures above (executed, with the real handler's ×100 return).
+- Given one manual trade of +10% and one practice trade of -50%, then by default `+10.00%` shows, the Trades tile reads `1W / 0L`, and the
+  practice note shows; given the checkbox is ticked, then `-20.00%` (average) and `-40.00%` (sum) and `1W / 1L` show and the note hides
+  (`excludes replay trades from stats by default; toggle folds them in; exclusion note mentions practice trades`,
+  `tests/journal/journal.spec.ts`, on main at eca7078).
+- Given two Examples rows (a CALL with TP1 222.5 and stop 219, entry 220, exit 222.5, and a PUT with no plan), then `Trades`, `Win rate`,
+  `Σ return`, `Avg / trade`, `Avg win`, `Avg R:R` and `TP1 hit` are labelled, `2.50` and `100%` show and the Trades tile reads `1W / 1L`
+  (`defaults to Examples when own journal is empty`, whose title goes on with EX badges, 7 populated tiles and the em dashes of the risk columns,
+  `tests/journal/journal-onestop.spec.ts`, on main).
+- Given an Examples union of an admin row and a pipeline row, both wins, then the Trades tile reads `2W / 0L` (`renders a pipeline-labeled row
+  alongside an admin EX row; tiles aggregate both`, the same file).
+- Given entries with a null return, then no aggregate counts them, the win and loss counts add up to the number with a return, a replay
+  entry is excluded unless asked for, an unscored plan gives a null R:R, a CALL reaching TP1 counts as a hit and a PUT does when the exit is
+  at or below it, and a date scopes every aggregate (the 17 tests of `src/routes/journalStats.test.ts`).
+- Given a stop equal to the entry or a missing leg, then `riskReward` is null (`src/lib/risk.test.ts`).
+- Given a session date with no row, then the tiles read `0W / 0L` and dashes (executed; no test asserts it).
+
+**Tests:** On main: the two Playwright tests above and the Examples-default test assert the figures named, on mocked rows; the 17 cases of
+`src/routes/journalStats.test.ts` assert the aggregation (the length of `equityPoints`, not its values) and `src/lib/risk.test.ts` the ratio;
+`MOCK_MIXED_TRADES carries the exact aggregate the Task 5.3 spec asserts` (`src/hooks/journalFixtureMapping.test.ts`) ties the fixture to the
+figures. The feed is asserted by `tests/api/test_journal_examples.py` and `tests/api/test_journal_phase2.py` as JOURNAL-02 names them, with
+the same ×100 premise in `test_examples_pipeline_row_field_mapping` (a stored 0.01 is expected as 1.0), so the Examples figures the tiles
+show are asserted at the handler only under the unit that production's rows contradict. No test asserts the tone of a null tile, the
+session-with-no-rows strip or the figures on the production-shaped rows. Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:259-283,655-700`, `src/lib/journalStats.ts:87-172`, `src/lib/risk.ts:9-13`,
+`src/components/primitives/index.tsx:153-185`; `platform/api/routers/journal.py:341-372,453-575`; test ids `scope-label`,
+`include-replay-toggle`, `replay-exclusion-note`.
 
 ##### JOURNAL-04 · My style panel
 
+**Shows or does:** A card on the My journal view only (`src/components/journal/MyStylePanel.tsx:46-150`), mounted at `src/routes/JournalPage.tsx:710`
+as `{!isExamples && <MyStylePanel key={activeTicker} ticker={activeTicker} />}`: inside `DataGate`, under the KPI strip and above the form, and drawn
+whether or not the own journal has rows (executed: with My journal chosen on the empty own journal of SPY, the panel read the idle text above `No trades logged for SPY yet.`).
+The `key` remounts it on a ticker pick, so a result mined for one ticker never shows under another (the comment at `:702-709`; executed: an error
+banner shown on IWM was gone after a pick of SPY, with the idle text for SPY). The card has the header `My style` with
+`mined from your closed trades · walk-forward validated` (`:53`) and one button, `Mine my style` (`:56-64`, test id `mine-style-btn`), which posts
+`{ticker}` to `POST /api/style/mine-and-validate` (`useMineMyStyle`, `src/hooks/useJournalChartTrades.ts:749-773`, a mutation, so nothing is requested
+until the click). It has five states, in the order the file lists them (`:15-23`):
+- idle, with no result and no error: `Finds the market conditions your winning <ticker> trades share, then backtests them out-of-sample. Needs 10+
+  closed trades.` (`:71-76`);
+- pending: the button disabled and reading `Mining…`, with `Mining <ticker> closed trades and running the walk-forward validation, this takes a few
+  seconds.` (`:65-70`, executed with the request held for 2.5 s);
+- unavailable: the server's `reason` in an amber box (`:88-95`, test id `my-style-unavailable`), an expected state the file's header calls "not an error";
+- error: `Style mining failed: <message>` in a red box (`:79-86`, test id `my-style-error`), the message being the response's `detail`, or
+  `mine-and-validate failed: <status>` when the body is not JSON (`useJournalChartTrades.ts:757-768`; executed: a plain-text 500 gave
+  `Style mining failed: mine-and-validate failed: 500` and a 401 with the detail `sign in to continue` gave `Style mining failed: sign in to continue`);
+- success (`:97-147`, test id `my-style-result`): the direction badge (`CALL` green, otherwise red), one chip for each condition of the profile through
+  `styleConditionLabel` (`useJournalChartTrades.ts:705-736`: `RSI 25-50`, `RSI 50-75`, `Above VWAP`, `Below VWAP`, `StochRSI oversold`, `StochRSI
+  overbought`, `3+ up moves` and `3+ down moves` for the parameterised two, and any other string with its underscores replaced by spaces), a `staged`
+  badge when the answer says so (its tooltip reads `This profile was staged server-side for signal evaluation`), the sentence `Mined from <support> of
+  <total> closed trades · win rate <x>% · expectancy <+x.xx%> over <n> out-of-sample trades` (`:129-139`: the win rate is the 0 to 1 fraction times
+  100 with no decimals, the expectancy is already a percent, signed, with two decimals, and either is an em dash when null) and the line `Validated across
+  <n> folds · stability <x>%` (`:141-145`, test id `my-style-validation`), which reads `Stability <x>%` when the answer has no fold count.
+
+The handler (`platform/api/routers/backtest.py:690-910`, a plain `def`) reads the caller's own rows of the ticker whose `source` is `manual` or `chart`
+(`:711-723`, so a `replay` row and an imported row are not counted, whatever the panel's copy says) through the swallowing `query_to_dataframe`, keeps
+the closed ones (status `win`, `loss` or `breakeven` and an `exit_ts`, `:653-666`), and answers 200 `{"status": "unavailable", "reason": "need >= 10
+closed trades, have <n>"}` below ten (`:732-736`). With ten or more it loads the one-minute bars of each entry date (`_replay_bar_loader`, which is
+`_load_date_data` of `platform/api/main.py`), mines a condition profile for each direction with `lib/style_miner.py` (a direction needs five resolved
+entries and a condition shared by 60 percent of them, and an entry in the first 14 bars of its day or with no matching bar is left out of both counts),
+takes the top profile (highest support share, ties to more conditions), loads six months of bars through `DataLoader.load_best_available`
+(`:620-638`) and walk-forward validates the profile over three-month train and one-month test folds (`lib/walk_forward.py`, `:790-801`). It answers
+`unavailable` again for no profile, for no bars, for no fold and for a profile that fired no trade in any fold (`:748-822`), and otherwise inserts one
+row into `user_style_results`, upserts one candidate into `playbook_cards_staging` and answers `staged: true` (`:843-910`). Nothing reads either table
+(matrix Gaps): `PLAYBOOK_USER_CARDS` is `False` (`:613`), so the badge's tooltip describes an evaluation that does not happen.
+
+What it drew (executed, real handler over the scratch database, IWM, My journal): the idle text; with the request held, the pending state, with the
+button disabled; then the real answer for an own journal with no rows, `need >= 10 closed trades, have 0` in the amber box. With twelve closed manual and
+chart rows written through the real create route for the one stored session, the real handler read them, mined a profile and answered `200
+{"status": "unavailable", "reason": "no market data available for IWM"}`: the scratch environment sets no `CLOUD_SQL_CONNECTION_NAME`, and the six-month
+loader reads `market_data_intraday` only when it is set (`lib/data_loader.py:266-270`), so this run did not reach the fold loop. The success answer was not
+executed on real bars and is not checked here; the page renders it as the Playwright test below asserts.
+
+**Needs:** `POST /api/style/mine-and-validate` (JSON body `{ticker}`, `MineAndValidateRequest`), gated like every `/api/` route but the open prefixes (V
+evidence: 401 without a token on staging), answering with `MineStyleResponse` (a success object, or `status` and `reason`). The handler answers 503
+`journal database not configured` when Cloud SQL is not configured (`:702-703`). The caller's own `journal_entries` rows of the ticker, at least ten of
+them closed and chart or manual, and bars from `market_data_intraday` for each entry's day and for the last six months, which the scheduled jobs
+write (the Chain's Data cell). Production (V evidence, 2026-10-01 20:14 UTC): `journal_entries` holds two rows in all, both the examples admin's (a
+closed manual SPY row of 2026-07-10 and an active chart IWM row of 2026-07-08), `user_style_results` holds 0 rows and `playbook_cards_staging` 0, so no
+run has completed and written there and the panel can only answer `unavailable` today (for the admin, `have 1` on SPY and `have 0` on IWM); the newest
+one-minute IWM bar is 2026-10-01 00:00 UTC. The six months of bars were not read for this body: not checked.
+
+**States:** The five above. The panel has no empty or stale state of its own: with no rows it shows the idle text, and the answer carries no age. A
+Cloud SQL outage during the read of the closed rows is not an error state: the handler answers the same 200 `unavailable` as a short journal, `need >= 10
+closed trades, have 0` (executed with the database unreachable and a signed-in owner patched in, so the panel would show a reason that is not true,
+matrix Gaps). The panel is outside the Examples view, so a user on Examples never sees it (JOURNAL-11).
+
+**Acceptance criteria:**
+- Given the Examples view, then the panel is absent, and given My journal, then it is present (`absent on the Examples view, present on My journal`,
+  `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
+- Given the server answers `unavailable` with a reason, then the reason shows in the muted box and neither the error banner nor the result show
+  (`not-enough-signal envelope renders as a muted note with the server reason, not an error`, the same file).
+- Given a success answer with three conditions, 9 of 14 trades, a win rate of 0.57, an expectancy of 0.42, 63 trades, 5 folds and a stability of
+  0.8, then three chips read `RSI 50-75`, `Above VWAP` and `3+ up moves`, the sentence carries `Mined from 9 of 14 closed trades`, `57%`, `+0.42%` and
+  `63 out-of-sample trades`, the line reads `Validated across 5 folds · stability 80%`, the `staged` badge shows and the request body is `{"ticker":
+  "IWM"}` (`success renders condition chips, sample sizes and the fold/stability line; POST carries the ticker`, the same file).
+- Given the server answers 503 with a detail, then the detail shows in the red box after `Style mining failed:` and no result shows (`a genuine backend
+  failure surfaces as a loud inline error with the server detail`, the same file).
+- Given fewer than ten closed `manual` or `chart` trades, then the handler answers 200 `unavailable` with `need >= 10 closed trades, have <n>` and calls
+  neither the miner nor the writes, and given ten closed rows and three open ones, then the miner receives exactly the ten (`test_endpoint_fewer_than_ten_closed_trades_returns_unavailable`,
+  `test_endpoint_excludes_open_trades_before_mine_style`, `tests/lib/test_style_walk_forward.py`, run against stub loaders and a stub validator).
+- Given no profile, then 200 `unavailable` with `mining threshold` in the reason and no write; given a profile that fires no trade in any fold, then 200
+  `unavailable` with `zero trades` in the reason and no write; given a success, then the response carries the top profile with the expectancy as a
+  percent (0.0025 stored as 0.25), the win rate untouched, and exactly two writes, `user_style_results` with the 10 trades and the 42 test trades and
+  `playbook_cards_staging` with an `ON CONFLICT` upsert and 25 basis points; given Cloud SQL not configured, then 503 (`test_endpoint_no_profile_mined_returns_unavailable`,
+  `test_endpoint_zero_trades_across_folds_returns_unavailable`, `test_endpoint_success_persists_percent_converted_values`,
+  `test_endpoint_503_when_cloud_sql_not_configured`, the same file).
+- Given the answer holds no fold count, then the line reads `Stability <x>%` (read; no test).
+- Given the database fails while the closed rows are read, then the handler should not answer a reason about the trade count (executed: it does, matrix Gaps).
+
+**Tests:** On main the four Playwright tests above, on `MOCK_MINE_STYLE_SUCCESS` and `MOCK_MINE_STYLE_UNAVAILABLE` and a hand-made 503, assert the
+panel's primary behaviour: when it shows, the three answers and what each draws, the chips, the sample sizes, the validation line, the `staged` badge and
+the request body. Six handler tests in `tests/lib/test_style_walk_forward.py` assert the endpoint with `_replay_journal_query`, the bar loaders, `mine_style`
+and the validator replaced by stubs (the percent conversion, the open-trade exclusion, the floor of ten, the two inserts, the 503), and `tests/lib/test_style_miner.py`
+the miner (ten tests) and the rest of the file the profile-to-signal conversion and the fold mechanics. `tests/api/test_route_coverage.py` pins the route at
+200 against a dead backend, which is the swallowed read. `styleConditionLabel` is asserted by `src/hooks/journalChartTrades.test.ts` (`styleConditionLabel`).
+No test asserts the pending state, the idle text, the ticker remount, the red box on a non-JSON body, the `Stability <x>%` form, the six-month loader or
+a run on real tables, the real answer for a Cloud SQL failure (the outage reading above passes through unasserted, and the route-coverage pin
+expects it). Te is ticked: the page and the handler are each asserted for what the row does, and what no test asserts is in the Gaps.
+
+**Code:** `src/components/journal/MyStylePanel.tsx:25-151`, `src/routes/JournalPage.tsx:702-710`, `src/hooks/useJournalChartTrades.ts:657-773`;
+`platform/api/routers/backtest.py:600-910`, `lib/style_miner.py`, `lib/walk_forward.py`, `lib/data_loader.py:234-304,498-519`; test ids `my-style-panel`,
+`mine-style-btn`, `my-style-error`, `my-style-unavailable`, `my-style-result`, `my-style-condition`, `my-style-staged`, `my-style-validation`.
+
 ##### JOURNAL-05 · Add-trade form
+
+**Shows or does:** The panel at `src/routes/JournalPage.tsx:712-809`, drawn inside `DataGate` between My style and the trade table while the page state `showForm` is true.
+`Add Trade` in the header (`:435-440`) toggles it, `Log Your First Trade` in the empty My journal card sets it (`:826-838`), `Cancel` (`:795-798`) and a
+saved trade (`:290-295`) clear it. It is a form for one closed trade, headed `New Trade: <ticker>` (the store's `activeTicker`):
+- `Direction`: `CALL` and `PUT` buttons, `CALL` selected on a fresh form (green for CALL, red for PUT when selected);
+- `Entry Date` and `Exit Date`: date inputs, both defaulting to today's date in Eastern time (`defaultFormDates`, `:122-125`, from `todayET()`,
+  `src/lib/dates.ts:16-19`, so the evening hours of the UTC next day do not move it);
+- `Entry Time` and `Exit Time`: time inputs, `09:30` and `10:00`;
+- `Entry Price ($)` and `Exit Price ($)`: number inputs, step 0.01, placeholder `0.00`, empty;
+- `Notes (optional)`: a two-row textarea;
+- `Cancel` and `Save Trade`, which is disabled while either price is empty or a save is pending (`:802-804`) and reads `Saving…` while pending.
+
+The form has no stop or target fields and always carries an exit, so it can only make a closed trade; an open trade comes from a chart mark (JOURNAL-07).
+It checks nothing else before enabling Save: a price of `0` enables it, and nothing compares the exit with the entry or the price with zero (executed through
+the real create route: an exit 30 minutes before the entry was stored as a win of +0.3584%, an entry price of 0 gave a null return and status `closed`, and
+prices of -5 and -4 were stored as a loss of -20%). Clearing a date input and saving posts an empty date and the route answers 500 (executed, JOURNAL-08).
+`Cancel` closes the form and keeps what was typed (executed: the prices were still in the fields on reopening). The labels are `<label>` elements next to their
+inputs with no `for` and no nesting (read, `:722-790`), so the controls have no accessible name from them.
+
+Open on a view with no rows, the form replaces the empty-state card and the area under it reads `No trades on this session, clear the date for the Overview.` (executed
+on an empty My journal in the Overview scope, where no date is set to clear; `:812-826`).
+
+What it drew (executed, IWM, real create route over the scratch database, 2026-10-01 at about 16:50 ET): `New Trade: IWM`, `CALL` selected, both dates
+`2026-10-01`, `09:30` and `10:00`, Save disabled, still disabled with only the entry price typed, enabled with both.
+
+**Needs:** Nothing from the API to draw; the ticker, the form state and the client clock. Saving calls `POST /api/journal/trades` (JOURNAL-08).
+
+**States:** Closed (the default), open and empty, open and typed, saving (Save disabled and reading `Saving…`), and failed, where the banner of JOURNAL-14 shows above the table and the
+form stays open with its values (executed; the banner is still there after `Cancel` and a reopen, because it follows the mutation, not the form). There is no loading, empty or stale state of its own.
+
+**Acceptance criteria:**
+- Given the page opens, then no form shows; given `Add Trade` is pressed, then `New Trade: IWM` shows with `CALL` selected, today's Eastern date in both date inputs, `09:30` and `10:00`,
+  empty prices and Save disabled; given it is pressed again, then the form closes (executed; no test).
+- Given only the entry price is typed, then Save stays disabled, and given both prices are typed, then it is enabled (executed; no test).
+- Given the clock reads 2026-07-08 02:30 UTC, which is 22:30 on 2026-07-07 in Eastern time, then both default dates are `2026-07-07`, and given 2026-07-07 15:00 UTC, then both are
+  `2026-07-07`; the entry and exit defaults are always equal (the three tests of `src/routes/JournalPage.defaultFormDates.test.ts`, on main).
+- Given `Cancel` is pressed, then the form closes and the typed values return when it reopens (executed; no test).
+- Given a price of `0`, then Save is enabled and the trade is sent (executed; matrix Gaps).
+
+**Tests:** On main, `src/routes/JournalPage.defaultFormDates.test.ts` asserts the default dates (three tests, with fake timers). No test opens the form, types in it, asserts the disabled
+rule or the buttons: a search of `tests/` and `src/` for `Save Trade`, `Add Trade` and `New Trade` finds only the page itself. Te stays unticked: the one asserted piece is a date helper.
+
+**Code:** `src/routes/JournalPage.tsx:122-140,190-193,285-298,435-440,712-809`, `src/lib/dates.ts:16-19`.
 
 ##### JOURNAL-06 · Trade table
 
+**Shows or does:** The full-width table under the form (`src/routes/JournalPage.tsx:811-957`), inside `DataGate`: one row for each trade of the active view in the order the server sent them (newest
+entry first for both feeds), limited to the entries dated the picked session when a date is set (`tableRows`, `:269-271`) and to all of them in the Overview, with no paging (executed: 813 rows in the DOM at once on the
+Examples view of IWM). Unlike the tiles it does not drop practice rows when `Include practice sessions` is off: a `replay` row stays and carries a `practice` badge (`:869-874`). It has twelve columns:
+- `Date`, `Entry` and `Exit`: the date and the `HH:MM` of `entry_ts` and `exit_ts` read as a naive Eastern wall clock from the string's digits and never through `Date` (`tsToDisplay`, `:65-83`), an em dash when there is no exit;
+- `Dir`: `CALL` green or `PUT` red, with an `active` badge when the status is `active` or there is no exit, a `practice` badge on a `replay` row and a `pipeline` badge on a `pipeline` row (`:854-886`);
+- `Entry $` and `Exit $`: `$x.xx` or an em dash;
+- `Return`: `+x.xx%` green or `-x.xx%` red, an em dash when null;
+- `Stop`: `stopDisplayText` (a price, `<N>m time-stop` for a pipeline row that has the alert's time stop and no stop price, or an em dash, `src/lib/risk.ts`), `TPs`: the take-profit prices to two decimals joined by ` / `, `R:R`:
+  `riskReward(entry, TP1, stop)` to two decimals, each an em dash when a leg is missing (`:888-915`);
+- `Notes`: the note cut at 200 px or an em dash, and a final unlabelled column with a trash button: disabled on the Examples view (title `Examples are read-only teaching trades`), and on My journal it sends
+  `DELETE /api/journal/trades/<id>?ticker=<ticker>` (`useDeleteChartTrade`, `src/hooks/useJournalChartTrades.ts:450-464`) and refetches the ticker's journal. There is no confirmation: one press deletes (executed).
+
+The area above the table has its own states (`:811-835`): `Loading journal…` while the view loads and has no rows (JOURNAL-12), `No example trades for <ticker> yet.` or `Examples unavailable.` on Examples and `No trades logged for <ticker> yet.` with a
+`Log Your First Trade` button on My journal when the view has no rows and the form is closed (JOURNAL-13), and `No trades on this session, clear the date for the Overview.` when a session is picked that has none.
+
+The delete handler (`platform/api/routers/journal.py:1253-1307`, a plain `def`) runs one `DELETE ... WHERE id = :id AND user_email = :user_email` and answers `{source, deleted: <id>}` whatever it matched (executed: a second delete of the same id answered 200
+`deleted` again, matrix Gaps); a signed-in caller's database failure is 503, and an id that is not a UUID is a 500 (executed with `pipe-3201`, an Examples id the page never sends because Delete is disabled on those rows).
+
+What it drew on the production rows (executed, IWM, Examples view, Overview): the headers `Date`, `Dir`, `Entry`, `Entry $`, `Exit`, `Exit $`, `Return`, `Stop`, `TPs`, `R:R`, `Notes` and the delete column; 813 rows, the first
+`2026-10-01 CALL active pipeline 15:46 $279.00` with an em dash for the exit time, the exit price and the return, then `20m time-stop`, `279.78`, an em dash for R:R and `score 5.2` (the open entry of the day), and the third `2026-10-01 CALL pipeline 15:39 $279.14 15:59 $278.92 -7.88% 20m time-stop 279.92`, an em dash for R:R and `time_stop · score 4.4`: that
+trade moved -0.079% (the stored `-0.0788`), and the Examples handler's multiplication by 100 is why the column reads -7.88% (matrix Gaps, stocks#1219). Every pipeline row has a take profit and a time stop and none has a stop price, so the `Stop`
+column shows `20m time-stop` and `R:R` an em dash on each of them. With the session `2026-09-30` picked the table held 5 rows. After a trade saved through the form (JOURNAL-08) the row read `2026-10-01 CALL 09:30 $279.01 10:00 $280.50 +0.53%` with dashes
+for the plan columns, and after the real exit of a chart mark it read `2026-09-30 CALL 10:25 $279.36 13:20 $279.67 +0.11%` with an em dash for the stop, `280.10` for the targets and an em dash for R:R (JOURNAL-07).
+
+**Needs:** The rows of the active view: `GET /api/journal/trades/{ticker}` (the caller's rows, newest first, no limit, `ORDER BY entry_ts DESC`, `platform/api/routers/journal.py:882-922`) or `GET /api/journal/examples/{ticker}` (JOURNAL-02), and `DELETE
+/api/journal/trades/{trade_id}` for the button. All three are gated (V evidence: 401 without a token on staging). Production (V evidence, 2026-10-01 20:14 UTC): the Examples feed holds 812 live regular-hours IWM rows (810 closed, 2 open), 1,009 for SPY and 914 for QQQ,
+newest entry on 2026-10-01 for each; `journal_entries` holds two rows, both the examples admin's.
+
+**States:** The table's own states are above. A failed delete is silent: the row stays and nothing shows (executed with a 500: the request was sent, the row stayed, no banner). A deleted own row disappears when the refetch returns (executed). An own row for a date outside the
+dates list is in the table and absent from the rail and the chart (JOURNAL-02).
+
+**Acceptance criteria:**
+- Given the Examples view of the production IWM rows, then the table shows the twelve columns and 813 rows, the open entry first with an `active` and a `pipeline` badge, and a `Stop` of `20m time-stop` on each pipeline row (executed; `table Stop cell renders each pipeline row's OWN time_stop_minutes, never a fixed label`,
+  `tests/journal/journal-onestop.spec.ts`, on main at eca7078, asserts the two texts on mocked rows).
+- Given own trades with a note, then the note's text shows (`lists existing trades`, `tests/journal/journal.spec.ts`, on main); given a closed and an active trade, then both render and a single `active` badge shows
+  (`renders an active (null-exit) trade alongside a closed one without crashing`, the same file); given a `replay` row, then its row carries `practice` and the manual row does not (`replay-sourced rows carry a muted "practice" badge next to the direction cell`, the same file).
+- Given a planned own trade (entry 220, stop 218.5, take profits 223 and 225), then its Stop, TPs and R:R cells read `$218.50`, `223.00 / 225.00` and `2.00` (`risk columns render values for a planned trade in My journal`, `tests/journal/journal-onestop.spec.ts`).
+- Given a stored `2026-04-24 10:05:00`, then the table's entry time and the rail card's read `10:05` (`the table Entry time and the rail card time render the SAME naive-ET wall clock`, the same file).
+- Given a null or missing timestamp, an entry price, an exit price or a return, then the cell is an em dash, never `0` or `NaN` (`src/routes/journalNullSafety.test.ts`, `tsToDisplay` and the null cases).
+- Given the Examples view, then every delete button is disabled; given My journal, then pressing it sends `DELETE /api/journal/trades/<id>?ticker=IWM` and the row goes when the refetch returns (executed; no test).
+- Given the delete request fails, then the row should stay with a visible error (executed: it stays, and nothing shows, matrix Gaps and solyra#76).
+- Given no token, then the three routes answer 401 on staging (V evidence).
+
+**Tests:** On main the five Playwright tests above assert, on mocked rows, the note, the active and practice badges, the plan columns' values, the stop text and the wall-clock time; `src/routes/journalNullSafety.test.ts` asserts `tsToDisplay` (null,
+space and `T` forms, offsets ignored) and the CSV helpers, `src/lib/risk.test.ts` the ratio. The Examples rows and every number the Return column shows for them are asserted at the handler only under the premise that the stored return is a fraction
+(`tests/api/test_journal_examples.py`, JOURNAL-02 and JOURNAL-03), and no test asserts the table on production-shaped rows, the Return column's text, the delete button (pressing it, disabling it, its failure), the `Loading journal…` text or the 813-row weight. The owner scoping of the own read and of the
+delete is asserted against a mocked database layer (`test_get_is_scoped_to_user`, `test_delete_is_scoped_to_owner`, `tests/api/test_journal_user_scoping.py`). Te stays unticked: the default view's rows and the delete are not asserted at the page and the handler together.
+
+**Code:** `src/routes/JournalPage.tsx:65-83,262-283,811-957`, `src/lib/risk.ts`, `src/hooks/useJournalChartTrades.ts:450-464`; `platform/api/routers/journal.py:426-452,882-922,1253-1307`; test ids `table-entry-time`, `table-stop-cell`.
+
 ##### JOURNAL-07 · Mark entry on the chart
+
+**Shows or does:** The `Mark Entry` flow of the header (`src/routes/JournalPage.tsx:386-433`) over the chart of JOURNAL-02, driven by the state machine in `src/hooks/useTradeMarking.ts:67-213` that `TradeMarkingChart`
+(`src/components/journal/TradeMarkingChart.tsx`) hosts and the page steers through the chart's imperative handle (`tradeMarkingRef`, `:243-246`). With the machine idle the header shows `Mark Entry`; pressed, it walks these steps and
+shows the prompt of the step in amber, with an `x` that cancels:
+1. `Click chart to set entry price`: a click on the chart sets the entry time (the clicked bar's naive-Eastern epoch) and the entry price (the price at the click, not rounded to a tick: executed, `279.2608256880734`, shown as `$279.26`);
+2. `Select CALL or PUT`: two buttons in the header (`:408-425`, the chart is not clickable at this step);
+3. `Click TP1 (ESC to skip)`, `Click TP2 (ESC to skip)`, `Click TP3 (ESC to skip)`: each click adds a take-profit price, up to three; `Escape` at any of them skips the rest of the targets;
+4. `Click Stop Loss (ESC to skip)`: a click sets the stop price, and `Escape` skips it; either completes the mark and posts it.
+`Escape` at the first two steps and at the exit step cancels the whole thing (`useTradeMarking.ts:182-196`). Nothing checks that a target or the stop lies on the right side of the entry (executed: a CALL whose TP1 was clicked below the entry, `278.46` under `279.26`, was
+posted and stored, the handler accepting it as well). On completion the page calls `createChartTrade.mutate(vars)` and sets the view to My journal in the same breath, without waiting for the answer (`:585-590`): the post is `POST /api/journal/trades` with `{ticker, direction,
+entry_date, entry_time, entry_price, stop_loss, take_profits, source: "chart"}` (`useCreateChartTrade`, `src/hooks/useJournalChartTrades.ts:390-417`; a stop or targets that were skipped are left out) and a 2xx refetches the ticker's journal. The mark creates an open trade (JOURNAL-08 is the closed
+form), and a `replay` source exists only on the Charts page's replay trainer, never here.
+
+The exit is the second half of the row: a rail card of an own trade whose status is `active` carries an icon button titled `Mark exit` (`src/components/journal/TradeRailCard.tsx:115-123`); it calls `startExitMode(id)`, the header shows `Click chart to set exit price`, and the next chart click sends
+`PATCH /api/journal/trades/<id>` with `{exit_date, exit_time, exit_price}` (`useCloseChartTrade`, `:426-443`), after which the refetch shows the return, the status and the exit marker. The server computes the return and status from the row's stored entry (`close_trade`,
+`platform/api/routers/journal.py:1166-1250`): 404 for an id that is not the caller's, 409 when the trade is no longer active (also when a concurrent close won the race, `AND status = 'active'` on the update), `{source, id, return_pct, status}` otherwise.
+The create handler is JOURNAL-08's (`:1088-1143`): `take_profits` is capped at three (422 beyond, executed with four), `tp1` to `tp3` and `stop_loss` are columns, and a post with no exit has `return_pct` null and status `active`.
+
+Two silences. The button does nothing when the chart card has no bars (`tradeMarkingRef.current` is null, `:388`): with the dates request failing, `Mark Entry` was pressed and no prompt, no error and no state change followed (executed). And a failed post, exit or delete renders nothing:
+the page has already flipped to My journal, which then reads `No trades logged for IWM yet.` as if the mark had never been made, a failed exit leaves the trade open with no message, and neither shows an error (executed with injected 500s: the post went out, the view flipped, the own journal stayed empty, no banner; the exit request went out and the card kept
+an em dash for the return; matrix Gaps, filed as solyra#76).
+
+What it did (executed, IWM, the real handlers over the scratch database and the real chart in Chromium, canvas clicks): entry click at 15% of the width and 50% of the height, `CALL`, TP1 click at 30% and 30%, `Escape` twice posted `{"ticker": "IWM", "direction": "CALL", "entry_date": "2026-09-30", "entry_time": "10:25", "entry_price": 279.3586, "take_profits": [280.1049], "source": "chart"}`
+and the handler answered `200 {"source": "cloud_sql", "id": "<uuid>", "return_pct": null, "status": "active"}`; the page then showed My journal, `Trades 1 · 0W / 0L` with dashes in the other six tiles, one table row marked `active` and one rail card
+`CALL`, an em dash for the return, `10:25`, `$279.36 →` and an em dash for the exit, `TP 280.10 · SL` and an em dash, `R:R` and an em dash. The exit click at 60% of the width sent `{"exit_date": "2026-09-30", "exit_time": "13:20", "exit_price": 279.6720}`, the handler answered `win` with a return of 0.1122, and the card, the tiles and the table then read `+0.11%`, `Trades 1 · 1W / 0L` and
+`2026-09-30 CALL 10:25 $279.36 13:20 $279.67 +0.11%`. The rows are stored with `source` `chart`, `tp1` and the status.
+
+**Needs:** A drawn chart (JOURNAL-02: bars for the charted date), `POST /api/journal/trades` and `PATCH /api/journal/trades/{trade_id}`, both gated (V evidence: 401 without a token on staging). Production (V evidence): `journal_entries` has the columns and the lengths above (`chart` and `active` fit `character varying(10)`) and holds 2 rows, the examples admin's
+one active IWM chart mark of 2026-07-08 among them; nothing was written for this body. The mark's session must be a date whose bars exist, so a trade can be marked only on a date of the dates list.
+
+**States:** idle, one for each step above, cancelled, posted, and failed. A mark in flight has no pending state: the button is back to `Mark Entry` as soon as the last step is taken. There is no loading or stale state of its own.
+
+**Acceptance criteria:**
+- Given a drawn chart, when `Mark Entry` is pressed, then `Click chart to set entry price` shows, a click shows `Select CALL or PUT`, `CALL` shows `Click TP1`, a TP1 click shows `Click TP2`, `Escape` shows `Click Stop Loss`, and a second `Escape` posts `{ticker: "IWM", direction: "CALL", source: "chart"}` and leaves the view on
+  My journal with its empty state (`mark-entry flow on the JOURNAL chart POSTs source:"chart" and flips the view to My journal`, `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
+- Given the real handlers, then the same flow stores one active `chart` row with the clicked price and the first target, the page shows it in the rail, the tiles and the table, and an exit click closes it with a computed return and status (executed; the exit has no page test on main).
+- Given a post without an exit, then the handler returns a null `return_pct` and status `active`; given four targets, then 422; given an exit on an active trade, then the return follows the direction's sign, and given a trade already closed, then 409, and given an unknown id, then 404
+  (`test_create_active_trade_without_exit_returns_null_return_pct`, `test_take_profits_capped_at_three`, `test_patch_close_computes_percent_return_and_status`, `test_patch_close_conflicts_on_already_closed`, `test_patch_close_404_for_unknown_trade`, `test_patch_close_on_put_inverts_return_sign`,
+  `tests/api/test_journal_phase2.py`, run in the local-file branch; `test_patch_close_race_guard_returns_409_when_concurrent_close_wins` and `test_patch_close_succeeds_when_update_matches_one_row`, the same file, with patched database calls).
+- Given a mark or an exit whose request fails, then the page should say so (executed: it does not, matrix Gaps, solyra#76).
+- Given the chart has no bars, then `Mark Entry` should say why it cannot start (executed: it does nothing).
+- Given no token, then both routes answer 401 on staging (V evidence).
+
+**Tests:** On main one Playwright test drives the entry flow on the page against mocked routes and asserts the prompts, the post's `ticker`, `direction` and `source` and the flip to My journal; the exit step, the stop click, the request's prices and times, the rail and table after the answer and every failure are not asserted
+at the page. `src/hooks/journalChartTrades.test.ts` asserts the date and time the post is built from (`epochToJournalDateTime`) and the mapping back (`journalRowToTradeEntry`, including its round trip). The handler tests above run the create and close handlers in the local-file branch, which production does not use, or against patched calls
+(`TestJournalCRUD`, `tests/api/test_platform_api.py`, the Cloud SQL branch): no test runs the insert or the update against a table. The same state machine is exercised on the Charts page by `tests/charts/charts-cards.spec.ts` (CHARTS-02). Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:243-246,386-433,573-598`, `src/hooks/useTradeMarking.ts:17-213`, `src/components/journal/TradeMarkingChart.tsx`, `src/components/journal/TradeRailCard.tsx:115-123`, `src/hooks/useJournalChartTrades.ts:372-441`; `platform/api/routers/journal.py:193-231,648-720,1088-1250`.
 
 ##### JOURNAL-08 · Add trade manually
 
+**Shows or does:** `Save Trade` in the form of JOURNAL-05 (`src/routes/JournalPage.tsx:285-298,799-807`). `handleAdd` sends nothing when either price does not parse (`parseFloat`); otherwise
+`useAddTrade` (`:159-182`) posts `{ticker, direction, entry_date, entry_time, entry_price, exit_date, exit_time, exit_price, notes}` to `POST /api/journal/trades`, with no `source` (the handler
+defaults it to `manual`), no stop and no targets. On a 2xx it invalidates the ticker's journal query (`chartTradesKey`, the one cache entry the chart, rail, tiles and table read), resets the form, closes it and
+sets the view to My journal, so the user sees where the trade went (`:290-295`). On any other status the hook throws `Failed to save trade` without reading the status or the body, and the page shows
+`Failed to save trade, check API connection.` in a red box under the header (`:494-498`) with the form still open and its values kept. It is the only mutation error this page renders (JOURNAL-14).
+
+The handler (`platform/api/routers/journal.py:1088-1143`) uppercases the ticker and direction, builds `entry_ts` and `exit_ts` as `<date>T<time>:00`, computes `return_pct` as `(exit - entry) / entry * 100`, negated
+for a PUT, rounded to four places, and `None` for an entry of 0 (`_return_pct`, `:341-355`), derives the status (`win`, `loss`, `breakeven`, or `closed` when the return is unknown, `:400-410`), and inserts one
+`journal_entries` row for the caller (`_journal_owner`, `:152-161`, the verified email, or `local` in open mode) through `_insert_cloud_sql_trade` (`:648-720`). It answers `{source, id, return_pct, status}`. A signed-in
+caller whose write fails infrastructure-wise gets 503 `journal temporarily unavailable`; open mode falls back to a local JSON file; anything that is a defect re-raises as a 500 (`raise_unless_infrastructure`).
+It validates little: `direction`, `entry_date` and `entry_time` are free strings, so an empty date, a time with seconds or a direction other than the four-character column's values reaches the database and
+answers 500 (executed: `entry_date` empty, `entry_time` `10:00:30` and `STRADDLE` each gave 500).
+
+What it did (executed, IWM, the real handler over the scratch database with the page): entry `279.01`, exit `280.50`, CALL, `09:30` to `10:00` on 2026-10-01, notes `probe from the form` posted exactly the body above and the handler answered
+200 `{"source": "cloud_sql", "id": "<uuid>", "return_pct": 0.534, "status": "win"}` and stored `source` `manual`, `entry_ts` `2026-10-01 09:30:00+00`, `exit_ts` `2026-10-01 10:00:00+00` (a naive Eastern
+wall clock stored as a UTC instant, the convention the journal reads back as a wall clock). The page then showed the form closed, `My journal` active, `Trades 1 · 1W / 0L`, `Win rate 100%`, `Σ return +0.53%`, `Avg win +0.53%`, one table row
+(`2026-10-01 CALL 09:30 $279.01 10:00 $280.50 +0.53%`, risk columns dashes, the note) and, in the rail, `My trades, 2026-09-30` with no card, because 2026-10-01 is not yet a date the market-data list holds (JOURNAL-02). The same
+body with `PUT` was stored as a loss of -0.534 (`A2b`, executed).
+
+**Needs:** `POST /api/journal/trades` (`JournalTradeCreate`, `JournalMutationResponse`), gated (V evidence: 401 without a token on staging). Production (V evidence): `journal_entries` has the columns the insert names, with `source` and `status` as
+`character varying(10)` (`manual` and `win` fit), the unique index `uq_journal_entries_import_dedupe` that only imports use, and 2 rows, both the examples admin's; nothing was written for this body.
+
+**States:** Pending (Save disabled, `Saving…`), success, and failure (above). A trade written for a date the dates list lacks is not on the rail or the chart until the nightly jobs write the day's bars (JOURNAL-02).
+
+**Acceptance criteria:**
+- Given both prices typed, when `Save Trade` is pressed, then `POST /api/journal/trades` carries the form's fields as above, and given 200, then the form closes and resets, the view is My journal and the trade shows in the tiles and the
+  table (executed; no test on the page).
+- Given a CALL of 200 to 202 for `iwm`, then the handler uppercases the ticker, stores the timestamps `2026-04-25T10:00:00` and `2026-04-25T10:30:00`, returns a `return_pct` of 1.0 and inserts one row; given a PUT of 400 to 396, then the return is 1.0;
+  given an entry of 0, then it is `None` with status `closed` (`TestJournalCRUD.test_post_call_trade_round_trip_cloud_sql`, `test_post_put_trade_inverts_return_sign`, `test_post_zero_entry_price_returns_null_pct`, `tests/api/test_platform_api.py`;
+  `test_zero_entry_closed_create_keeps_return_null_and_status_closed`, `tests/api/test_journal_phase2.py`).
+- Given a signed-in caller, then the insert carries that caller's email and reads nothing back that could belong to another user (`test_post_stamps_owner`, `test_post_has_no_readback_to_leak_another_users_row`, `tests/api/test_journal_user_scoping.py`).
+- Given the request fails, then the red banner shows, the form stays open with its values and no trade is added (executed with the real 500 of an empty date; the JOURNAL-14 test this branch adds, solyra `6fd6ba4`, asserts the banner, one request and the kept values against an injected 500, and is not on main).
+- Given a request with no token, then it answers 401 (V evidence).
+
+**Tests:** On main the handler is asserted: the round trip with the SQL parameters, the PUT sign, the zero entry, the status override and its validation, the owner stamp and the cap of three targets (`tests/api/test_platform_api.py`, `tests/api/test_journal_phase2.py`,
+`tests/api/test_journal_user_scoping.py`, all against patched database calls). Nothing on the page is on main: no spec opens the form, saves it or sees the banner (matrix Gaps), and the hook `useAddTrade` is inline in the page, so no Vitest file reaches it. The test this branch adds for JOURNAL-14 (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`) opens the form, types the two prices, saves against an injected 500 and asserts the banner, exactly one `POST /api/journal/trades`, the form still open and both prices kept; it covers the failure branch only, so no test saves successfully on the page, and it waits for a CI run that includes the branch's tests. Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:159-182,285-298,494-498,799-807`; `platform/api/routers/journal.py:152-161,193-231,341-355,400-410,648-720,1088-1143`.
+
 ##### JOURNAL-09 · Import CSV
+
+**Shows or does:** The `Import` button of the header (`src/routes/JournalPage.tsx:442-450`, test id `import-trades-btn`, shown in every view) opens `ImportTradesModal` (`src/components/journal/ImportTradesModal.tsx`, mounted at
+`:962-966`), titled `Import trades from broker`, in three steps:
+1. **Select.** Six broker chips (`Robinhood`, `Webull`, `Schwab`, `Fidelity`, `IBKR`, `Other`) and a dashed drop area for a `.csv` file (`import-dropzone`, `import-file-input`). Robinhood and Webull are parsed natively by their headers; the other four go through the
+   one `generic` parser and show six selects, `Ticker`, `Direction (CALL/PUT)`, `Action (open/close)`, `Timestamp`, `Price` and `Quantity`, whose options are the header cells of the chosen file (read in the browser, split on commas, `:150-158`). Schwab, Fidelity and IBKR start from a guessed
+   preset of five columns (`:55-59`), `Direction` has none, and a mapping a user sets is kept in `localStorage` under `journal-import-mapping-preset:<broker>` (executed: the Schwab and `Other` keys held the six names after the selects were set). `Preview` is enabled with a file and a broker, and for a generic broker only
+   with all six selects set. An error from the preview shows in a red alert with the server's `detail` (`:239-246`).
+2. **Preview** (`POST /api/journal/import/preview`, a multipart form with the file, `broker` and for `generic` a JSON `mapping`). A table of the paired round trips (`import-preview-table`: a checkbox, `Ticker`, `Dir`, `Entry`, `Entry $`, `Exit`, `Exit $`, `Return`, `Qty`), a row flagged `duplicate: already in journal` starts unchecked and a row with no exit reads `imports as
+   active`, then `Skipped rows (<n>)` with `Row <n>: <reason>` for each input row the parser dropped (`import-skipped-list`), so no dropped row is silent. `Back` returns to step one, and `Import <n> trade(s)` (disabled at zero checked, `Importing…` while pending) commits the checked rows.
+3. **Result.** `Imported <n> · <m> duplicates skipped` and `Done`. A commit that fails shows its error in the same red alert on the preview and stays there. A success refetches every ticker's own journal (`useImportCommit`, `src/hooks/useJournalChartTrades.ts:866-907`: the bare `journal-chart-trades` key, because a statement can span tickers) and the page flips the view to My journal
+   (`onImported`, `:965`).
+
+The preview handler (`platform/api/routers/journal.py:1430-1518`, an `async def` that makes the blocking duplicate lookup inside it, matrix Gaps) reads the upload in chunks against a 5 MiB cap and answers 413 above it, 422 for non-UTF-8 text, an empty file, a header it cannot detect or a bad mapping, and 413 above 5,000 data rows
+(`MAX_IMPORT_BYTES`, `MAX_IMPORT_ROWS`, `:54-64`); it parses with `lib/broker_import.py`, pairs the long-option round trips first in first out (shares, short options, other activity codes and blank tickers become the `skipped` list), flags duplicates against the caller's own rows by
+`(ticker, direction, entry minute, price to four places)` and writes nothing. The commit handler (`:1521-1663`, a plain `def`) takes at most 5,000 trades and a broker in `{robinhood, webull, generic}`, ignores the `return_pct` and `status` the client sends and recomputes both
+(the percent change of the option premium with no CALL/PUT sign flip, `_import_return_pct`, `:358-372`), checks duplicates again and inserts one row for each trade for the caller with `source = "import:<broker>"` through the same `_insert_cloud_sql_trade` as the manual form, `ON CONFLICT DO NOTHING` against the partial unique index
+`uq_journal_entries_import_dedupe`, counting a conflict as a skipped duplicate. It makes one insert round trip for each trade, up to the cap (read; no timing was taken).
+
+**It cannot commit on the production table.** `journal_entries.source` is `character varying(10)` (V evidence from production's `information_schema`, and `gcp/schema.sql:1251` and the schema test `tests/gcp/test_schema_journal_migration.py`), and the smallest value the commit writes, `import:webull`, is 13 characters, `import:robinhood` 16 and `import:generic` 14. The insert fails with
+`value too long for type character varying(10)`, `raise_unless_infrastructure` re-raises it as the defect it is, and the route answers a bare 500. Executed on 2026-10-01: the preview of the repository's Robinhood sample (`tests/fixtures/robinhood_sample.csv` of solyra) through the page and the real handlers over a scratch table with production's column definitions
+showed the three round trips (`IWM CALL 2026-06-01 00:00 $1.42 → 2026-06-03 00:00 $1.71 +20.42% 2`, `SPY PUT 2026-06-02 00:00 $3.10 → 2026-06-05 00:00 $2.95 -4.84% 1`, `QQQ CALL 2026-06-04 00:00 $5.20` with an em dash for the exit and `imports as active`) and four skipped rows (a shares row with the reason `shares`, an em dash and `options only in v1`, then `short options not supported`, `unsupported activity type: CDIV` and `unsupported activity type: ACH`);
+`Import 3 trades` then showed `import commit failed: 500` in the alert, left the preview on screen, showed no result text and wrote no row. The same commit against the same table with `source` widened to `character varying(20)` as the only change answered 200 `{"imported": 3, "skipped_duplicates": 0}` and stored the rows as `import:robinhood`
+(win +20.4225, active, loss -4.8387). Production holds no row whose source starts with `import:` (V evidence). The tests do not meet this: the endpoint tests run in the local-file branch, where the source is a JSON string (`test_commit_writes_source_import_broker`
+asserts `import:robinhood`), and the schema test pins `VARCHAR(10)`.
+
+A generic mapping also needs a column that holds exactly `CALL` or `PUT` for `Direction`, which the guessed presets leave empty (executed with a hand-made Schwab-shaped file whose only candidate was the description `CALL ISHARES RUSSELL 2000 ETF`: both rows were skipped as `unrecognized direction`, `Import 0 trades` was disabled). The same modal with a normalized file under `Other` and the six columns
+chosen previewed two rows, one closed and one `imports as active`.
+
+**Needs:** `POST /api/journal/import/preview` and `POST /api/journal/import/commit`, both gated (V evidence: 401 without a token on staging), the caller's own `journal_entries` rows for the duplicate check, and a `journal_entries` table that can hold the source value, which production's cannot. The files are read in the browser and by the handler only; nothing is stored.
+Production (V evidence, 2026-10-01): `journal_entries` has the unique index `uq_journal_entries_import_dedupe` and 2 rows, none imported.
+
+**States:** Select (nothing chosen, broker chosen, file chosen, mapping incomplete), parsing (`Parsing…`, JOURNAL-12), preview with its skipped list, importing (`Importing…`), result, and an error alert on step one or two (JOURNAL-14). An empty preview (every row skipped) shows an empty table, the skipped list and a disabled `Import 0 trades`.
+
+**Acceptance criteria:**
+- Given a Robinhood file, when `Preview` is pressed, then the request is a multipart form, the table shows the duplicate row unchecked with `duplicate: already in journal`, the open row checked with `imports as active`, the third row checked with neither label, and the skipped list holds the four reasons; given the duplicate row is re-checked and `Import 3 trades` is
+  pressed, then the commit body carries the broker `robinhood` and three trades, `Imported 2 · 1 duplicates skipped` shows, the own journal is requested again, the view is My journal and `Done` closes the modal (`upload -> preview (duplicate + active labels) -> commit -> success copy + journal refetch`, `tests/journal/journal-import.spec.ts`, on main at eca7078, all against mocked routes).
+- Given the preview answers 422, then its `detail` shows and no preview table does (`preview failure (422) surfaces loudly, never silently swallowed`, the same file).
+- Given the real handlers and a production-shaped table, then the same commit should store the rows and answer the count (executed: 500 and no rows, matrix Gaps; with the column widened it stores three).
+- Given the handler: the Robinhood fixture previews as three trades and four skips, a preview writes nothing, a duplicate is flagged against an existing row, a second identical commit imports zero, a commit stores `import:robinhood`, an active trade stays active with a null exit, a client's `return_pct` is ignored and recomputed, a zero entry keeps a null return and status `closed`, an unlisted broker is 422, every listed one is 200, over 5,000 rows or 5 MiB is 413, a duplicate that differs only in seconds is still a duplicate and
+  one that differs in price is not, and a failed duplicate lookup is 503 for every owner (the endpoint tests of `tests/api/test_journal_import_endpoints.py`, in the local-file branch, with patched calls for the Cloud SQL lookup).
+- Given no token, then both routes answer 401 on staging (V evidence).
+
+**Tests:** On main two Playwright tests drive the modal against mocked routes (the full flow with the labels, the commit body, the refetch and the flip, and a preview failure) and 21 handler tests run in `tests/api/test_journal_import_endpoints.py`; the parser underneath is asserted by `tests/lib/test_broker_import.py`. Nothing runs the commit's insert against a table: the one test that names `Cloud SQL` patches the duplicate lookup. No test
+asserts a commit failure on the page, the generic mapper, the stored presets or the Schwab, Fidelity and IBKR chips. Te stays unticked: the commit, the row's one write, is asserted only where the production width cannot occur.
+
+**Code:** `src/routes/JournalPage.tsx:442-450,962-966`, `src/components/journal/ImportTradesModal.tsx:1-439`, `src/hooks/useJournalChartTrades.ts:775-907`; `platform/api/routers/journal.py:54-73,257-340,358-372,648-720,815-880,1430-1663`, `lib/broker_import.py`, `gcp/schema.sql:1239-1320`; test ids `import-trades-btn`, `import-dropzone`, `import-file-input`,
+`import-mapping-<field>`, `import-preview-table`, `import-skipped-list`.
 
 ##### JOURNAL-10 · Export CSV
 
+**Shows or does:** Two buttons in the header (`src/routes/JournalPage.tsx:452-467`) and the status line they share (`:488-492`).
+- `CSV` (`:452-459`) is drawn while the active view has at least one row (`viewRows.length > 0`, Examples or My journal) and downloads that view, one line for each row of the view, not limited to the picked session, through `tradesToCsv` (`:85-98`) and `downloadCsv` (`:108-114`, a `Blob` and a temporary link): the file is
+  named `<ticker lowercase>_journal.csv`, its header is `ID,Time,Trade_Type,Exit_Time,Stop_Loss_Time,Runner_Time`, and each line is the row number, `<entry date> <HH:MM>:00`, the direction, the exit in the same form or an empty cell for an open trade, and two empty cells. The file is the pipeline's trade-tracker shape, so it carries no price, return, note, source, stop or target
+  of the row (executed: an own journal of one closed CALL and one open PUT gave `1,2026-09-30 11:00:00,PUT,,,` and `2,2026-09-30 09:35:00,CALL,2026-09-30 10:05:00,,`, with no trailing newline).
+- `Export to Pipeline` (`:460-467`) is drawn on My journal while the own journal has a row. `exportPipeline` (`:300-345`) keeps the trades whose status is not `active` and that have an exit (`exportableTrades`, `:104-106`), posts `{trades: [{id, ticker, direction, entry_date, entry_time, entry_price, exit_date, exit_time, exit_price, notes}]}` to
+  `POST /api/journal/export/<ticker>` and, on a 2xx, shows `Exported <n> closed trades · <k> not closed, skipped → <filename>` (the `· <k> not closed, skipped` part only when some trade was left out). On any other status, or a network error, it downloads the closed trades as `<ticker>_journal.csv` and shows `API unavailable: downloaded CSV locally`. The line clears itself after 5 seconds and is
+  styled green with an alert icon in every case, including the fallback (executed: the class held `border-green-500/30 bg-green-500/10 text-[var(--bull)]` for both texts).
+
+The handler (`platform/api/routers/journal.py:1376-1428`, a plain `def`) validates the items (`JournalTradeExportItem` requires an exit, so an open trade is a 422, `:240-251`), writes `<ticker lowercase>_trade_tracker.csv` into `data/signals/` of the serving instance (`SIGNALS_DIR`, `:44`) with the same six columns through a temporary file and a rename under a lock, and answers
+`{success, trades_exported, output_path, filename}`, where `output_path` is the server's absolute path. It reads no database and does not look at the caller: two users exporting the same ticker write one file, the later one wins (read), and an export of no trades is a 200 that replaces the file with a header (executed: `trades_exported: 0`). Nothing reads the file (matrix Gaps).
+
+What it did (executed, IWM, the real handler over the scratch database, the export directory a scratch folder): with one closed and one open own trade, `CSV` saved `iwm_journal.csv` with the two lines above; `Export to Pipeline` posted one trade (`{"id": "1", "ticker": "IWM", "direction": "CALL", "entry_date": "2026-09-30", "entry_time": "09:35", "entry_price": 279.1, "exit_date": "2026-09-30", "exit_time": "10:05", "exit_price": 280.2, "notes": "closed one"}`), the handler answered 200, wrote `iwm_trade_tracker.csv` with the closed
+trade's two times, and the line read `Exported 1 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv` and was gone after 5 seconds. With the export route answering 503, the same button downloaded `iwm_journal.csv` holding the one closed trade and showed `API unavailable: downloaded CSV locally` in green. With only an open trade, it posted `{"trades": []}`, the handler wrote a header-only file
+and the line read `Exported 0 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv`.
+
+**Needs:** The rows of the active view (JOURNAL-01, JOURNAL-02) and, for `Export to Pipeline`, `POST /api/journal/export/{ticker}`, gated (V evidence: 401 without a token on staging). It needs a writable `data/signals/` on the serving instance; whether `solyra-api-prod` has one was not checked. No table is read or written.
+
+**States:** Both buttons are absent with no rows. `Export to Pipeline` is absent on Examples. The status line shows for 5 seconds after a click and has no pending state: the button can be pressed again while the request is out. A failure shows as the fallback line, in the success colour (JOURNAL-14).
+
+**Acceptance criteria:**
+- Given the own journal holds a closed and an open trade, when `CSV` is pressed, then `iwm_journal.csv` downloads with the header and one line for each trade, the open trade's exit cell empty (`CSV downloads the active view, and Export to Pipeline posts only the closed trades and reports the count`, `tests/journal/journal.spec.ts`, solyra `6fd6ba4`, added on this branch and not on main).
+- Given the same journal, when `Export to Pipeline` is pressed, then `POST /api/journal/export/IWM` carries only the closed trade and the line reads `Exported 1 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv` (the same test; executed against the real handler).
+- Given a closed and an open trade, then the CSV has the open trade's exit cell empty and no `null` or em dash, and the exportable set is the closed one (`serializes a closed trade with populated exit cell`, `serializes an active (null-exit) trade with an empty exit cell, not "null" or a throw`, `keeps closed trades and filters out active (null-exit) trades` and the three other cases of `exportableTrades`, `src/routes/journalNullSafety.test.ts`, on main).
+- Given an item with no exit price, then the handler answers 422 (`test_export_endpoint_422s_for_active_shaped_item`, `tests/api/test_journal_phase2.py`), and given an empty list, then 200 (`tests/api/test_route_coverage.py`, the export row).
+- Given the export request fails, then the page should not report it in the success colour (executed: it does, matrix Gaps).
+- Given no token, then the route answers 401 on staging (V evidence).
+
+**Tests:** On main the pure helpers are asserted (`tradesToCsv` for a closed row, an open row and a mix, `exportableTrades` for four cases; `src/routes/journalNullSafety.test.ts`), and the handler's 422 and the empty-list 200 are pinned; no test on main presses either button, reads the file or the line, or asserts what the handler writes (`mockJournalApi` in `tests/helpers/fixtures/journal.ts` carries an `onExport` hook and a `MOCK_JOURNAL_EXPORT` that no spec uses). This branch adds `CSV downloads the active view, and Export to Pipeline posts only the closed trades and reports the count` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): on an own journal of one closed and one open trade it presses `CSV` and reads the downloaded file (the name `iwm_journal.csv`, the six-column header, the two lines and the open trade's empty exit cell), then presses `Export to Pipeline` and asserts the request body field by field (the closed trade only) and the line `Exported 1 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv`. It passes on the unchanged page, and five one-line mutations of a scratch copy each failed it and no other test of the file (the header without `Runner_Time`, a file name that is not lowercased, an export that keeps the open trade, a changed line wording and a line without the skipped note). It does not assert the fallback download, the line clearing after 5 seconds, or the file the handler writes, and it waits for a CI run that includes the branch's tests, so Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:85-114,300-345,452-467,488-492`; `platform/api/routers/journal.py:40-48,240-256,1376-1428`; `src/hooks/useJournalChartTrades.ts` (`JournalExportResponse`).
+
 ##### JOURNAL-11 · Switch view or session
+
+**Shows or does:** Two controls of the header (`src/routes/JournalPage.tsx:366-384,469-484`) that re-scope everything under them.
+- **View.** A two-button toggle, `Examples` and `My journal` (`view-toggle`, the active one filled blue). `view` is `resolveJournalView(viewOverride, ownRows.length)` (`src/hooks/useJournalChartTrades.ts:362-367`): until the user presses a button, or a mark, a saved form or a committed import sets it (`setViewOverride('mine')`, `:295,589,965`), the page shows Examples while the own journal is empty and My journal
+  once it has a row, and a pressed button is kept for the life of the page, across ticker picks (executed). `isExamples` then picks the rows (`viewRows` is the Examples answer or the own answer, `:224-227`), and with them the tiles, the table, the rail, the equity curve and the `CSV` download, hides `Export to Pipeline` and the My style panel on Examples (JOURNAL-04, JOURNAL-10), draws the chart's markers in the gray Examples style and
+  disables the table's delete buttons. The default follows the own read: a user who has rows sees Examples while that request is in flight and My journal when it answers (executed: with the own request held for 3.5 s the page showed the Examples tiles, 813 rows and the `Example trades, 2026-09-30` rail, then flipped to My journal, `Trades 1 · 1W / 0L`).
+- **Session.** A date input (`:366-374`) and, once a date is set, `Overview` (`:375-384`, `clear-date`). A picked date becomes `selectedDate` (`YYYYMMDD`); `scopeIso` is the date in `YYYY-MM-DD`. It scopes the tiles and the table to the rows whose `entry_ts` starts with that date (`computeJournalStats(..., {date})` and `tableRows`, `:262-271`), the scope label to `Session: MM/DD/YYYY` (`:279-281`), and the chart and the rail to
+  that day (`chartDate = selectedDate || dates[0]`, `:202`, so the chart follows the pick and otherwise shows the newest listed date, and a day that is not in the dates list is requested anyway). The equity curve ignores it (JOURNAL-02). `Overview` or clearing the input sets the date to empty, the scope label to `Overview: all dates` and the chart back to the newest date.
+
+What it did (executed, IWM, Examples view of the production rows, the real handlers over the scratch database): in the Overview, `Overview: all dates`, 813 rows and `Trades 813 · 387W / 423L`; with `2026-09-30` picked, `Session: 09/30/2026`, 5 rows, `Trades 5 · 0W / 5L`, `Win rate 0%`, `Σ return -66.69%`, the rail `Example trades, 2026-09-30` with 5 cards and `Overview` shown; with `2026-09-26` typed, a Saturday outside the dates list,
+`Session: 09/26/2026`, `Trades 0 · 0W / 0L` with dashes, `No trades on this session, clear the date for the Overview.`, the rail `Example trades, 2026-09-26` over `No example trades on this session.` and the chart card `No market data available for this date` after `GET /api/market/data/IWM/20260926?timeframe=5` was requested twice (the page's single retry); `Overview` restored 813 rows. On
+an empty own journal, `My journal` replaced the rows with `No trades on this session yet. Click "Mark Entry" to start.` in the rail and `No trades logged for IWM yet.` with `Log Your First Trade`, removed the seven tiles (they are drawn only for a view that has rows), kept the chart and the equity card, and showed the My style panel; `Examples` restored all of it.
+
+**Needs:** The rows of both views (`GET /api/journal/trades/{ticker}` and `GET /api/journal/examples/{ticker}`, JOURNAL-01 and JOURNAL-02), `GET /api/market/dates/{ticker}` for the date input's `min` and `max` and `GET /api/market/data/{ticker}/{date}` for the chart of the picked day, all gated (V evidence: 401 without a token on staging). Both views' rows are read on every page load whichever one is shown (the two queries do not wait for the toggle).
+Production (V evidence): the dates list holds 2,944 IWM dates, the Examples view 812 live rows from 2026-05-01 and `journal_entries` two rows, so a signed-in user other than the examples admin has an empty own journal and starts on Examples.
+
+**States:** The toggle and the date input have none of their own. `Overview` is absent until a date is set. A date outside the list shows the empty text and a chart with no data (above). While the own read loads, Examples shows, and the label reads `Local storage` (JOURNAL-01, JOURNAL-12); after a failed own read the view stays on Examples (JOURNAL-14).
+
+**Acceptance criteria:**
+- Given an empty own journal, then the page opens on Examples with the Examples tiles, the `EX` badges and the risk columns, and given `My journal` is pressed, then its empty state shows and the chart card keeps its canvas and the `EX` badges are gone
+  (`defaults to Examples when own journal is empty`, whose title goes on with EX badges, 7 populated tiles and the em dashes of the risk columns, and `toggling to My journal shows the own empty state WITHOUT hiding the chart`, `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
+- Given a picked date, then the scope label reads `Session: 04/24/2026`, and given `Overview` is pressed, then it reads `Overview: all dates` (`scope label flips between Overview and Session when the date is selected/cleared`, the same file).
+- Given own trades on two dates, when one date is picked, then the table and the tiles hold only that date's trades and `Overview` restores them, and given the toggle is pressed, then the table holds the other view's rows (`a picked session narrows the tiles and the table, Overview restores them, and the toggle swaps the rows`, `tests/journal/journal.spec.ts`, solyra `6fd6ba4`, added on this branch and not on main).
+- Given a mark, a saved form or a committed import, then the view is My journal whatever it was (the mark's page test, JOURNAL-07; the others are not asserted).
+- Given own rows and a slow own read, then the page should not show the other view first (executed: it does, above; no test).
+- Given a date outside the dates list, then the page should say the date has no session (executed: it shows the empty text and requests the bars twice).
+- Given no token, then the four routes answer 401 on staging (V evidence).
+
+**Tests:** On main, three page tests assert the default view, the toggle to an empty My journal and the scope label; none asserts that the tiles, the table or the rail follow a picked date, that `Overview` restores them, that the toggle replaces a non-empty set of rows, the stickiness of the choice, or `resolveJournalView` (no unit test names it). This branch adds `a picked session narrows the tiles and the table, Overview restores them, and the toggle swaps the rows` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): on an own journal of a closed win of 2026-04-23 and an open trade of 2026-04-24 and an Examples union of two wins, it asserts the Overview (both rows, `1W / 0L`, the open-trade note), each picked date (only that date's row, `1W / 0L` and no note for the first, `0W / 0L` and the note for the second), `Overview` restoring both rows, and the toggle replacing the own rows with the union (`2W / 0L`) and bringing them back. It passes on the unchanged page, and four one-line mutations of a scratch copy each failed it (a table that ignores the session, tiles that ignore it, an `Overview` that does not clear it and a toggle that does nothing; the last also failed the JOURNAL-14 test and the existing `shows empty state when no trades`). It does not assert that the rail and the chart follow the pick, the stickiness of the choice across ticker picks, the default while the own read is in flight, or `resolveJournalView`, and it waits for a CI run that includes the branch's tests, so Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:195-283,366-384,469-484`, `src/hooks/useJournalChartTrades.ts:312-367`, `src/hooks/useMarketData.ts:34-63`, `src/lib/journalStats.ts:103-165`; test ids `view-toggle`, `clear-date`, `scope-label`.
 
 ##### JOURNAL-12 · State: loading
 
+**Shows or does:** The loading presentations of the page, each a part of another row and none with a request of its own:
+- The chart card's spinner (`src/routes/JournalPage.tsx:560-563`, `LoadingSpinner`, JOURNAL-02) while the bars of the charted date load. The bars query is disabled until there is a charted date (`enabled: !!ticker && !!date`, `src/hooks/useMarketData.ts:47`), so while the dates list is still loading there is no spinner: the card reads `No market data available for this date` over `Markets may be closed (weekend or holiday)` and the
+  toolbar `No session data` (executed with the dates request held for 2.5 s: at 1.2 s the card showed that text and the toolbar `No session data`, at 3.4 s the dates had arrived and the toolbar read `Session 2026-09-30`).
+- `Loading journal…` in the table area (`:811-815`, JOURNAL-06) while the active view's query is loading and it has no rows. It follows the active view only: a slow Examples read does not show it on My journal (read).
+- `Mining…` on the My style button and the line `Mining <ticker> closed trades and running the walk-forward validation, this takes a few seconds.` (`MyStylePanel.tsx:63-70`, JOURNAL-04), `Saving…` on `Save Trade` (`:805`, JOURNAL-05, JOURNAL-08), and in the import modal `Parsing…` on `Preview` (`ImportTradesModal.tsx:312`) and `Importing…` on the commit button (`:415-417`, JOURNAL-09); each disables its button.
+- Not loading, though they look it: the storage label reads `Local storage (set CLOUD_SQL_CONNECTION_NAME for persistence)` until the own read answers (JOURNAL-01), the rail reads `No example trades on this session.` (or `No trades on this session yet. Click "Mark Entry" to start.`) and the equity card `Close 2+ trades to see your equity curve.` while the rows load, because neither has a loading branch (executed at 1.2 s and 3.4 s with
+  the journal and bars requests held for 4 s), the seven tiles are simply absent, and the view is Examples until the own read answers, then flips to My journal for a user who has rows (JOURNAL-11). `CSV`, `Export to Pipeline` and the delete buttons show no pending state (JOURNAL-10, JOURNAL-06).
+
+What it drew (executed, IWM, the real handlers over the scratch database, the browser answering the four journal and market requests after 4 s, 4 s, 4 s and 2.5 s): at 1.2 s `Local storage (...)`, `No session data`, the chart card's empty text, the rail `Example trades` over `No example trades on this session.`, the equity placeholder and `Loading journal…`; at 3.4 s the same with `Session 2026-09-30` and the rail `Example trades, 2026-09-30`;
+at 6.9 s the label `Persisted in Cloud SQL`, the seven tiles (`Trades 813`) and the 813 rows with 5 rail cards.
+
+**Needs:** Nothing of its own: it is the interval before the answers of JOURNAL-01, JOURNAL-02, JOURNAL-06 and JOURNAL-09 arrive. TanStack Query's defaults here are 5 minutes of stale time and one retry (`src/App.tsx:30-36`); the own journal holds 10 s, Examples 30 s and no retry, the dates 5 minutes and the bars forever. A failing request keeps the loading text through the retry, which for the own journal and the dates list is one more full round trip (executed: the failed own read was requested twice).
+
+**States:** The ones above. There is no skeleton for the tiles, the rail or the table, and the page does not show how long it has been loading.
+
+**Acceptance criteria:**
+- Given the journal request is slow, when the page opens, then the table area reads `Loading journal…` and no tile shows (executed; no test).
+- Given the bars request is slow, then the chart card shows its spinner, and given the dates request is slow, then the card should not say the market may be closed (executed: it does).
+- Given a save, a mine, a parse or an import is in flight, then its button is disabled and reads `Saving…`, `Mining…`, `Parsing…` or `Importing…` (read for the labels; `Mining…` and its disabled button executed, JOURNAL-04).
+- Given the own journal is loading, then the rail and the equity card should not read as empty (executed: they do).
+
+**Tests:** No test asserts a loading state of this page. `route /journal loads without fatal errors` (`tests/shared/navigation.spec.ts`) and the perf-budget test `renders within perf budget (strict 5s)` (`tests/journal/journal.spec.ts`) mount the page and assert, respectively, that the nav and main elements are visible with no console error and that the load finishes inside the budget; neither looks at a loading element. No unit test mounts the page. Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:195-231,556-565,805,811-815`, `src/components/journal/MyStylePanel.tsx:56-76`, `src/components/journal/ImportTradesModal.tsx:305-315,410-418`, `src/hooks/useMarketData.ts:34-63`, `src/hooks/useJournalChartTrades.ts:312-351`, `src/App.tsx:30-36`.
+
 ##### JOURNAL-13 · State: empty
+
+**Shows or does:** The empty presentations of the page, one for each surface, with the copy each shows:
+- **Examples view, no rows** (`src/routes/JournalPage.tsx:816-823`): a card reading `No example trades for <ticker> yet.` (executed on SPY, for which the scratch table held no `trades` rows; with the Examples read failing the same card reads `Examples unavailable.`, JOURNAL-14). The tiles are not drawn, the rail reads `No example trades on this session.` and the equity card its placeholder.
+- **My journal view, no rows** (`:824-835`): `No trades logged for <ticker> yet.` over a `Log Your First Trade` button that opens the form (JOURNAL-05); the rail reads `No trades on this session yet. Click "Mark Entry" to start.` (`:615-620`), and the My style panel is still drawn above the card (JOURNAL-04). With the form open the card is replaced by the line of the next bullet (executed on an empty My journal).
+- **A picked session with no rows** (`:836-839`): `No trades on this session, clear the date for the Overview.` in place of the table, with the tiles drawn at zero and dashes (JOURNAL-03, executed on the Saturday 2026-09-26: `Trades 0 · 0W / 0L`) and the rail's empty line above. The same line shows when the form is open on a view with no rows and no date is set, where it advises clearing a date that was never set (executed).
+- **Equity card** (`:646-649`): `Close 2+ trades to see your equity curve.` while fewer than two rows of the view have a return (the curve needs two points, `curveStats.equityPoints.length > 1`).
+- **Chart card** (`:599-605`): `No market data available for this date` over `Markets may be closed (weekend or holiday)` when the answer holds no bars, and in the same words when the dates list is empty or still loading or failed (`chartDate` empty disables the bars query, JOURNAL-12, JOURNAL-14); the toolbar then reads `No session data`.
+The handlers' empty answers are 200 with no trades: an own read for a ticker with no rows (`get_trades`, `platform/api/routers/journal.py:896-908`, `trades: []`) and an Examples read for a ticker the pipeline has no rows for (`test_examples_unknown_ticker_returns_empty`). Neither is a failure and the strict reads never fabricate one: an outage is 503 (JOURNAL-14).
+
+What it drew (executed): on an empty own journal of IWM, `No trades logged for IWM yet.` and `Log Your First Trade`, `My trades, 2026-09-30` over the rail line, `Close 2+ trades to see your equity curve.`, the chart (the one stored session), and the My style panel; on SPY with no rows in the scratch table, `No example trades for SPY yet.`, `No session data`, the chart card's empty text and the rail line; with a date of 2026-09-26, the zero tiles and
+the scoped line; with the form open on an empty My journal, `No trades on this session, clear the date for the Overview.` under the form.
+
+**Needs:** The answers of `GET /api/journal/trades/{ticker}`, `GET /api/journal/examples/{ticker}`, `GET /api/market/dates/{ticker}` and `GET /api/market/data/{ticker}/{date}` (JOURNAL-01, JOURNAL-02, JOURNAL-06), each gated (V evidence: 401 without a token on staging). Production (V evidence, 2026-10-01): a signed-in user other than the examples admin has an empty own journal (`journal_entries` holds 2 rows, both the admin's), so My journal is empty for every ordinary user; the Examples feed holds rows for IWM (812), SPY (1,009) and QQQ (914), so the Examples empty card is not reachable on those three tickers and is for any other.
+
+**States:** Part of JOURNAL-02, JOURNAL-03 and JOURNAL-06, never a state of its own. An empty answer and a failed answer are different surfaces (JOURNAL-14): the failed Examples read says `Examples unavailable.`, the failed own read says nothing.
+
+**Acceptance criteria:**
+- Given the own journal is empty, then the page opens on Examples, and given `My journal` is pressed, then `No trades logged for IWM yet.` shows and the chart card keeps its canvas (`shows empty state when no trades`, `tests/journal/journal.spec.ts`, and `toggling to My journal shows the own empty state WITHOUT hiding the chart`, `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
+- Given fewer than two closed trades, then the equity card reads `Close 2+ trades to see your equity curve.` (`equity curve card shows a placeholder when under 2 closed trades`, `tests/journal/journal.spec.ts`).
+- Given an own journal for a ticker with no rows, then the handler answers 200 with an empty list, and given an unknown ticker on Examples, then 200 with an empty list (`TestJournalAPI.test_journal_list`, `tests/api/test_platform_api.py`, for the envelope; `test_examples_unknown_ticker_returns_empty`, `tests/api/test_journal_examples.py`).
+- Given a session with no row, then the tiles read zero and dashes and the table area `No trades on this session, clear the date for the Overview.` (executed; no test), and given the form is open with no rows and no date, then the page should not tell the user to clear a date (executed: it does).
+- Given a ticker with no Examples rows, then `No example trades for SPY yet.` shows (executed; the first test above matches it with a loose pattern, `/no.*trade|empty|add.*trade/i`, and no test asserts the text).
+- Given no bars, then the chart card shows its empty text and `No session data` shows in the toolbar (executed; no test asserts the text).
+
+**Tests:** On main three page tests touch the row: `shows empty state when no trades` asserts a loose pattern for the Examples card and then the exact `No trades logged for IWM yet.` after the toggle, `toggling to My journal ...` asserts the same text and the chart canvas, and `equity curve card shows a placeholder ...` asserts the equity card's two texts. No test asserts the Examples card's own text, the scoped line, the rail's two empty lines, the `Log Your First Trade` button or the chart card's empty text. The handlers' empty answers are asserted only for Examples (the unknown-ticker test).
+Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:599-620,646-649,811-839`; `platform/api/routers/journal.py:882-922,925-1085`.
 
 ##### JOURNAL-14 · State: error
 
+**Shows or does:** How each failing call is presented. Only some are, and the ones that are say little (executed with failures injected into the real page, the browser answering the request named; the real handlers answered the rest):
+- **Own journal read** (`GET /api/journal/trades/{ticker}`, `useJournalTradesFull`): no error text anywhere. The query retries once, then the storage label reads `Local storage (set CLOUD_SQL_CONNECTION_NAME for persistence)` (the read is `ownQuery.data?.source ?? 'local'`, `src/routes/JournalPage.tsx:223`) and the view stays on Examples (executed with two 503s: two requests, the label, no banner, no tile or text about the failure; matrix Gaps).
+- **Examples read** (`useJournalExamples`, no retry): while Examples is the view, an amber box `Examples unavailable, the journal database didn't respond.` (`:500-504`, test id `examples-unavailable`) over the page and the card `Examples unavailable.` in the table area (`:819-823`); the rail and the equity card read as empty. On My journal the box is not drawn (executed with a 503: one request, both texts, none on My journal).
+- **Chart** (`GET /api/market/data/...`): the card shows `chartError.message`, the response's `detail`, unless it contains `No data`, when it reads `No market data available for this date` (`:564-572`; executed: a 500 with `boom: the bars query failed` showed that text, a 404 `No data for IWM on 20260930` the friendly one and a 401 `sign in to continue`). A failed dates list shows no error: the card reads the empty text and the toolbar `No session data` (JOURNAL-12, JOURNAL-13).
+- **Manual form** (JOURNAL-05, JOURNAL-08): a red box `Failed to save trade, check API connection.` (`:494-498`) for every non-2xx, the form still open with its values (executed with the real handler's 500 for an empty entry date; the box stayed after `Cancel` and a reopen).
+- **Marks, exits and deletes**: nothing renders (JOURNAL-06, JOURNAL-07). A failed mark has already flipped the view to My journal, which then reads `No trades logged for IWM yet.`; a failed exit leaves the card open with an em dash for the return; a failed delete leaves the row (executed with injected 500s on each of the four requests, one request each, no text; matrix Gaps, [solyra#76](https://github.com/TeneikaAskew/solyra/issues/76), whose body describes exactly this).
+- **My style** (JOURNAL-04): `Style mining failed: <detail>` in a red box, and the server's `unavailable` reason in an amber one; a database outage during the read of the trades is not an error but the `unavailable` reason `need >= 10 closed trades, have 0` (executed).
+- **Import** (JOURNAL-09): a red alert with the server's `detail`, or `import preview failed: <status>` and `import commit failed: <status>`, on the step where it happened (executed: the commit's 500 on the production-shaped table).
+- **Export** (JOURNAL-10): any failure becomes a download of the closed trades and the line `API unavailable: downloaded CSV locally` in the success colour (executed).
+The handlers fail honestly where they read: an outage during a journal read, create, close, delete or import is 503 `journal temporarily unavailable` for a signed-in caller (the shared local file is never a fallback for one) and a defect is a 500 (`raise_unless_infrastructure`, `platform/api/http_errors.py:35-46`); the Examples handler is 503 for either of its two reads (executed with the database unreachable and a signed-in owner patched in: own read, Examples, create, delete, close and import preview each answered 503, `{"detail": "journal temporarily unavailable"}`). Three paths answer a success where the truth is a failure or a no-op: the style miner's trade read (200 `unavailable`), a delete that matches nothing (200 `deleted`) and an export of no trades (200 and a file emptied).
+
+**Needs:** The failing calls above; nothing of its own. Production (V evidence): `journal_entries` has `source` and `status` as `character varying(10)`, which is what makes the import commit fail (JOURNAL-09). No production failure was provoked or observed for this body.
+
+**States:** Part of the rows above. The page has no page-level error boundary for these calls and no retry control: the own journal and Examples refetch on window focus once stale (10 s and 30 s), and the dates list after 5 minutes (read).
+
+**Acceptance criteria:**
+- Given the Examples read fails, then the amber box and the `Examples unavailable.` card show on Examples and neither shows on My journal (`a failed Examples read says so in a banner and in the table area, and a failed manual save keeps the form open with its error`, `tests/journal/journal.spec.ts`, solyra `6fd6ba4`, added on this branch and not on main, and it asserts the box's absence on My journal; executed).
+- Given the manual save fails, then `Failed to save trade, check API connection.` shows and the form stays open with its values (the same test; executed).
+- Given the style call answers 503 with a detail, then the detail shows in the red box, and given it answers `unavailable`, then the reason shows in the muted box, not as an error (`a genuine backend failure surfaces as a loud inline error with the server detail`, `not-enough-signal envelope renders as a muted note with the server reason, not an error`, `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
+- Given the import preview answers 422, then its detail shows and no preview table does (`preview failure (422) surfaces loudly, never silently swallowed`, `tests/journal/journal-import.spec.ts`, on main).
+- Given a database outage, then a signed-in caller's own read answers 503 and never the shared local file (`test_auth_mode_db_failure_fails_closed`, `tests/api/test_journal_user_scoping.py`), both Examples reads answer 503 (`test_examples_503_on_db_query_failure`, `test_examples_503_when_pipeline_query_fails`, `tests/api/test_journal_examples.py`) and an import commit whose duplicate lookup fails answers 503 for every owner (`test_commit_is_503_when_the_dedupe_lookup_fails_even_for_the_local_owner`, `tests/api/test_journal_import_endpoints.py`); create, close and delete answer 503 in the same case (executed, no test).
+- Given the own journal read fails, a mark, an exit or a delete fails, the export fails or the style call hides an outage, then the page should say so (executed: it does not; matrix Gaps, solyra#76).
+- Given the dates read fails, then the card should not read as a closed market (executed: it does).
+
+**Tests:** On main the style panel's two failure shapes, the import preview's 422 and the handlers' 503s are asserted, the last against a mocked database layer, so none runs a real failure. This branch adds `a failed Examples read says so in a banner and in the table area, and a failed manual save keeps the form open with its error` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): with the Examples read answering 503 it asserts the amber box's text, the card's `Examples unavailable.`, the absence of the quiet `No example trades for IWM yet.` copy and the box's absence after a press of `My journal`, and with the create route answering 500 it saves the form and asserts the red box, exactly one request, the form still open and both prices kept. It passes on the unchanged page, and six one-line mutations of a scratch copy each failed it and no other test of the file (the banner never drawn, drawn on My journal, the card in the quiet copy, a form that closes on failure, a changed error text and an error never drawn). Still no test asserts the own read's failure, a failed mark, exit or delete, the chart card's error text, the commit's failure on the page or the export fallback, and the added test waits for a CI run that includes the branch's tests, so Te stays unticked.
+
+**Code:** `src/routes/JournalPage.tsx:223,300-345,494-504,560-572,585-591,628,819-823,942`, `src/components/journal/MyStylePanel.tsx:79-95`, `src/components/journal/ImportTradesModal.tsx:291-298,394-401`, `src/hooks/useJournalChartTrades.ts:312-351,390-464`; `platform/api/http_errors.py:35-58`, `platform/api/routers/journal.py:882-1307`; test ids `examples-unavailable`, `my-style-error`, `my-style-unavailable`.
+
 ##### JOURNAL-15 · State: stale
 
+**Shows or does:** Nothing. No element of the page shows the age of any figure, row or bar, and none marks one as old: not the storage label, the tiles, the table, the rail cards, the equity card, the chart toolbar (`Session <date>` is the date charted, not a freshness) or the My style result (executed over every state of JOURNAL-12 to JOURNAL-14). What the page assumes about freshness is in its caches and its schedules.
+- **Client caches** (TanStack Query, `src/App.tsx:30-36` gives every query 5 minutes of stale time and one retry unless the hook says otherwise): the own journal 10 s (`useJournalTradesFull`, `src/hooks/useJournalChartTrades.ts:312-323`), Examples 30 s with no retry (`:337-351`), the dates list 5 minutes (`src/hooks/useMarketData.ts:52-63`), the bars of a date forever (`:34-50`), the market hours 24 h, the picker's search 60 s. Nothing polls: a query refetches when a stale cache is mounted again, on window focus, or when a mutation invalidates the ticker's journal (a mark,
+  an exit, a delete, a saved form, an import). A tab left open on a trading day keeps showing the Examples it last fetched until it is focused again.
+- **Server caches.** The dates list is cached per ticker behind a freshness probe of the newest bar (`platform/api/main.py:607-740`); the Examples and own reads are not cached.
+- **Producers** (the Chain's Data cells): `signal-monitor` writes the live `trades` and `signal_alerts` rows through the session and `signal-monitor-eod-resolver` closes what is left open at 16:30 ET; `fetch-alphavantage-intraday` (21:00 ET) and `fetch-market-data` (23:00 ET) write the day's bars after the close. So the Examples feed leads the chart: on 2026-10-01 the table's first row was dated 2026-10-01 while the chart and the rail were on 2026-09-30, the newest session with bars (executed).
+
+What the schedules did on 2026-10-01 (V evidence, read at 20:40 to 21:10 UTC): the five triggers `signal-monitor-daily` (`25 9 * * 1-5`), `signal-monitor-eod-resolver-daily` (`30 16 * * 1-5`), `av-intraday-nightly` (`0 21 * * 1-6`), `av-intraday-monthly` (`0 21 1 * *`) and `fetch-market-data-daily` (`0 23 * * 1-5`), all `America/New_York` and enabled; `fetch-alphavantage-intraday-sbb7c` (01:00:11 to 01:01:33 UTC) and `fetch-market-data-6mbwj` (03:00:05 to 03:01:55 UTC) succeeded; the day's long `signal-monitor-dmnvv` execution ran 13:25:03 to 20:01:01 UTC and succeeded, and
+`signal-monitor-eod-resolver-qkdnk` ran at 20:30 UTC and succeeded. The tables at 20:14 UTC: `trades` live rows up to 2026-10-01 19:46:39 UTC for IWM, 13:38:47 UTC for SPY and 13:46:59 UTC for QQQ (812, 1,009 and 914 live regular-hours rows), `signal_alerts` live up to 19:46:39 UTC, `market_data_intraday` one-minute bars up to 2026-10-01 00:00 UTC for IWM and SPY and 2026-09-30 23:59 UTC for QQQ (the 20:00 ET bar of the 2026-09-30 session), and two IWM rows open until the resolver ran. The same journey on 2026-09-30 did not end well: the long execution `signal-monitor-nwmlx` of that day started 13:25:03 UTC and ended with one failed task at 14:11:41 UTC, and the page shows 5 IWM Examples rows for that session, entered 09:30 to 09:34 ET, with nothing on screen to say whether the session is complete (what ended the execution was not investigated). The reading of 2026-09-28 found the newest live entries on 2026-09-25 for SPY and QQQ and 2026-09-23 for IWM (execution `db-query-ld8s6`), so the feed has gone quiet for days before and the page would have shown it as current.
+
+**Needs:** Nothing of its own: the freshness of JOURNAL-02, JOURNAL-03 and JOURNAL-06's data, which no request carries (the Examples answer holds no as-of time; the dates answer's `source` is the only provenance field and the page does not read it).
+
+**States:** None is present. A feed that stopped, an incomplete session and a cached answer of 30 seconds ago all look the same.
+
+**Acceptance criteria:**
+- Given any state of the page, then no element shows the age of a row, a figure or a bar (executed; no test).
+- Given the Examples feed has not received a row for a day, then the page should say how old the newest row is (not reachable on demand; the 2026-09-28 reading shows the feed quiet for days and the 2026-09-30 execution ended with a failed task).
+- Given a mutation, then the ticker's journal refetches (the import spec polls the own-journal request count after a commit, `upload -> preview (duplicate + active labels) -> commit -> success copy + journal refetch`, `tests/journal/journal-import.spec.ts`, on main at eca7078; the hook's stale times are asserted by no test).
+
+**Tests:** No test asserts a stale or age state of this page, and the hooks' stale times are asserted by none. The import spec's refetch check is the only test that touches a cache. Te stays unticked.
+
+**Code:** `src/hooks/useJournalChartTrades.ts:312-351`, `src/hooks/useMarketData.ts:34-63`, `src/App.tsx:30-36`; `platform/api/main.py:607-740`, `platform/api/routers/journal.py:882-1085`.
+
 ##### JOURNAL-16 · State: permission
+
+**Shows or does:** The permission handling of the page, which is the shell's and one wrapper's, and cannot show its own block here.
+- **The wrapper.** `DataGate` (`src/components/shared/SignInEmptyState.tsx:93-98`) wraps the page body from the chart row to the import modal (`src/routes/JournalPage.tsx:506-967`; the header row and the three banners sit above it, outside it). It replaces the body with `SignInEmptyState` (`Sign in to load data`, `Your session has expired or you are signed out. Sign in again to see live values here.` and a `Sign in` button that reloads) only when a gated call has answered 401 (`useAuthBlocked`, `src/lib/authGate.ts`) and `!isLoading && !isSignedIn`,
+  and `isSignedIn` is `firebaseMode ? signedIn : true` (`src/hooks/useUser.ts:81`). In `firebase` mode `AuthGate` shows the sign-in screen to a visitor with no session before any page mounts (executed with `/journal` opened signed out against a `firebase` answer of `/api/config/firebase`: the screen with the heading `Sign in`, no `Trade Journal` text, and `GET /api/config/firebase` as the only API request). In `open` and `iap` modes the user is always signed in. So
+  the block cannot be reached on this page, which the Reports page shares (REPORTS-10).
+- **A signed-in user whose session fails.** Every gated call that answers 401 marks the session blocked, and the shell, not the page, says so: `Session expired` and a `Sign in` button in the top bar, the strip `Your session expired, so live data is not loading.` with a `Sign in` button (`src/components/shared/AuthStatusIndicator.tsx:160-180`) and `SIGN IN TO LOAD DATA` in the most-active bar. The page keeps its body and shows each failure as JOURNAL-14 does: the amber Examples box and card, the label `Local storage ...`, the chart card's empty text, and `Style mining failed: sign in to continue` on a mine (executed in `open` mode with a 401 on every journal and market route).
+- **The server.** Every `/api/` route the page calls is gated by the auth middleware, which answers 401 `{"detail": "sign in to continue"}` without a bearer token on staging (`AUTH_MODE=firebase`; V evidence); `solyra-api-prod` runs `AUTH_MODE=iap` and answers 302 from its IAP front door before the handler (V evidence). The own journal is scoped to the verified email (`_journal_owner`, `platform/api/routers/journal.py:152-161`), and in `open` mode every caller is the shared `local` owner; a signed-in caller whose database read fails gets 503 and never
+  the shared file (JOURNAL-14). Examples are the same for every signed-in user: the examples admin's rows other than `replay` and the pipeline's live rows, whoever asks. No element of the page reads the user's role.
+
+**Needs:** The 401 of each gated route without a token (V evidence, staging, 2026-10-01): `GET /api/journal/trades/{ticker}`, `GET /api/journal/examples/{ticker}`, `POST /api/journal/trades`, `PATCH` and `DELETE /api/journal/trades/{trade_id}`, `POST /api/journal/export/{ticker}`, `POST /api/journal/import/preview` and `/commit`, `POST /api/style/mine-and-validate`, `GET /api/market/dates/{ticker}`, `GET /api/market/data/{ticker}/{date}`, `GET /api/config/market-hours`, `GET /api/insights/ticker/search`, `GET /api/market/coverage` and `POST /api/insights/watchlist/add`. The identity comes from the Firebase token on staging and the IAP header on prod.
+
+**States:** Signed out (`firebase` mode): the sign-in screen, no page. Signed in with a failing session: the shell's strip over a page that shows each failure as in JOURNAL-14. The wrapper's block: not reachable (above).
+
+**Acceptance criteria:**
+- Given no token, then each of the routes above answers 401 on staging and the production service answers 302 from IAP (V evidence).
+- Given `firebase` mode and no session, then the sign-in screen shows and the app does not (`firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main, which opens `/dashboard`; executed for `/journal`, where the only API request was `GET /api/config/firebase`).
+- Given a signed-in user whose calls answer 401, then the shell's strip shows and the page should say each failure as a permission failure (executed: the page says `Examples unavailable, the journal database didn't respond.`, which names the wrong cause, and nothing for the own read).
+- Given a gated path answers 401, then the fetch layer reports the session blocked, and given an open path answers 401, then it does not (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on main).
+- Given two signed-in users, then each reads only their own journal rows (`test_get_is_scoped_to_user`, `test_two_users_are_isolated`, `test_open_mode_defaults_to_local`, `test_auth_mode_db_failure_fails_closed`, `tests/api/test_journal_user_scoping.py`, against a mocked database layer), and Examples never carry another user's rows and the admin constant is the bound owner (`test_examples_never_leaks_other_users_rows`, `tests/api/test_journal_examples.py`).
+- Given `firebase` mode and no bearer token, then the own and Examples reads both answer 401, and with a token both answer 200 (`test_examples_requires_auth_like_trades_get`, the same file, through the real middleware with the token check replaced).
+
+**Tests:** On main the fetch layer's 401 handling is asserted (`src/lib/authedFetch.test.ts`), the sign-in screen for a signed-out visitor on one route (`tests/shared/auth-gate.spec.ts`), the owner scoping of the journal handlers against a mocked database layer, the 401 of the two journal reads through the real middleware (`test_examples_requires_auth_like_trades_get`) and the middleware's firebase check on a synthetic route (`test_firebase_requires_valid_token`, `tests/api/test_platform_auth.py`). No test asserts `DataGate`, the shell's strip or the most-active bar on a 401, or what this page shows when its calls answer 401 (the amber Examples box, the label, the chart card).
+The wrapper's block has no test and no way to appear (above). Te stays unticked: the page's handling of a 401 is asserted nowhere.
+
+**Code:** `src/components/shared/SignInEmptyState.tsx:93-98`, `src/lib/authGate.ts:1-60`, `src/hooks/useUser.ts:81`, `src/components/shared/AuthStatusIndicator.tsx:160-180`, `src/lib/authedFetch.ts:45-92`, `src/routes/JournalPage.tsx:506-967`; `platform/api/routers/journal.py:152-161`, `platform/api/auth.py`.
 
 ### SCREEN-INSIGHTS — `/insights`
 
