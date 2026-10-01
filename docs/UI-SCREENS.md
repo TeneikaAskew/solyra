@@ -9073,10 +9073,11 @@ gate's 401 and 403 are asserted only in `tests/lib/test_routers_insights_admin.p
 - **Purpose:** Earnings, economic events, news and SEC filings as trade context.
 - **Matrix:** [03 § 10](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#10--catalysts)
 - **Status:** Production but needs remediation · **Blocking issue:** [#863](https://github.com/TeneikaAskew/stocks/issues/863) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/CatalystsPage.tsx` (625 lines)
+- **Component:** `src/routes/CatalystsPage.tsx` (635 lines)
+- **Child components:** `DateRangePicker`, `DataGate`
 - **API calls (from source):** `/api/catalysts/events`, `/api/catalysts/types`
 - **Stores:** `useThemeStore`, `useTickerStore`
-- **E2E specs:** `tests/catalysts/catalysts.spec.ts`
+- **E2E specs:** `tests/catalysts/catalysts.spec.ts`; the picker's viewport fit is also asserted by `tests/shared/popover-fit.spec.ts`
 - **PR lineage:** [#624](https://github.com/TeneikaAskew/stocks/pull/624) earnings router origin · [#220](https://github.com/TeneikaAskew/stocks/pull/220) catalyst proximity · [#532](https://github.com/TeneikaAskew/stocks/pull/532) $-attribution
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -9084,18 +9085,18 @@ gate's 401 and 403 are asserted only in `tests/lib/test_routers_insights_admin.p
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/catalysts/events?date_from&date_to | status, source, date_range, total, events_by_date[date][].ticker/company_name/catalyst_type/event/title/expected_impact/impact/confirmed/source/sentiment_score/sentiment_label/relevance_score/url/items/insiders/total_value/country/actual/forecast/previous (types: `CatalystsPage.tsx` CatalystEvent/CatalystsResponse) | fetch-news-sentiment hourly 08:00-17:00 ET Mon-Fri → news_sentiment | 5min staleTime; news bounded to the last 48 hours regardless of the requested range | `useCatalystEvents` (inline in `CatalystsPage.tsx`) → Hot Now, Impact tier filter, Type chips, Event timeline |
-| GET /api/catalysts/types | benzinga_types, wsh_only_types, upgrade_note (types: `CatalystsPage.tsx` CatalystTypesResponse) |  | 1hr staleTime | `useCatalystTypes` (inline in `CatalystsPage.tsx`) → Type chips, WSH upgrade banner |
-| store: ticker, theme |  | Zustand, per session |  | Open insight report, Type chip colors |
+| GET /api/catalysts/events?date_from&date_to | source and events_by_date[date][].date/ticker/catalyst_type/title/event/impact/expected_impact/source/sentiment_score/sentiment_label are drawn; status, date_range, total and, per event, company_name/confirmed/details/relevance_score/url/items/primary_doc/accession_number/insiders/total_value/country/actual/forecast/previous are typed and never drawn (types: `CatalystsPage.tsx` CatalystEvent/CatalystsResponse; sample payload `buildCatalystEvents` in `src/mocks/catalysts.ts`) | the five reads of `_db_catalyst_events`, with no Benzinga (no key on either service): news_sentiment ← fetch-news-sentiment hourly 08:00-17:00 ET, fetch-news-sentiment-topics hourly at :05 and fetch-news-sentiment-earnings 06:00 ET, Mon-Fri, AlphaVantage NEWS_SENTIMENT; economic_events ← fetch-economic-events 07:00 ET Mon-Fri, ForexFactory and FRED; earnings_calendar ← fetch-earnings-calendar 19:00 ET Mon-Fri and Sun, AlphaVantage, Unusual Whales, Earnings Whispers and Yahoo, kept only to the fetch date plus 7 days; insider_transactions ← fetch-insider-transactions 07:00 ET Mon-Fri, AlphaVantage INSIDER_TRANSACTIONS; sec_filings ← fetch-sec-filings 07:00, 10:00, 13:00 and 17:00 ET Mon-Fri, SEC EDGAR | 5min staleTime, no polling; a range fetched under five minutes ago is served from the cache and only Refresh refetches it; news bounded to the last 48 hours regardless of the requested range; the answer carries no write time for any source | `useCatalystEvents` (inline in `CatalystsPage.tsx`) → Hot Now, Impact tier filter, Type chips, Event timeline |
+| GET /api/catalysts/types | wsh_only_types[].label is drawn; benzinga_types, upgrade_note and each type's color and icon are typed and never drawn (types: `CatalystsPage.tsx` CatalystTypesResponse; `MOCK_CATALYST_TYPES` in `src/mocks/catalysts.ts`, whose `wsh_only_types` is empty) | static: the `BENZINGA_TYPES` and `WSH_ONLY_TYPES` dictionaries and a fixed note in `platform/api/routers/catalysts.py`, no table and no producer | 1hr staleTime | `useCatalystTypes` (inline in `CatalystsPage.tsx`) → WSH upgrade banner only; the type chips are built from the events and `TYPE_CONFIG` |
+| store: ticker, theme | activeTicker (written by Open insight report), theme (the tones of badges and chips) | Zustand, persisted in the browser's localStorage: `ticker-store` (activeTicker and recentTickers) and `platform-theme` |  | Open insight report, Type chip colors |
 
 #### Displayed
 | ID | Element | Component |
 |---|---|---|
 | CATALYSTS-01 | Hot Now | inline in `CatalystsPage.tsx` (`hotEvents`) |
-| CATALYSTS-02 | Impact tier filter | inline in `CatalystsPage.tsx` (`Min impact:` select, header H/M/L counters) |
-| CATALYSTS-03 | Type chips | inline in `CatalystsPage.tsx` (`TYPE_CONFIG`, `useCatalystTypes`) |
+| CATALYSTS-02 | Impact tier filter | inline in `CatalystsPage.tsx` (`Min impact:` buttons, header H/M/L counters) |
+| CATALYSTS-03 | Type chips | inline in `CatalystsPage.tsx` (`TYPE_CONFIG` and the types of the fetched events) |
 | CATALYSTS-04 | Event timeline | inline in `CatalystsPage.tsx` (`DateGroup`, `EventRow`) |
-| CATALYSTS-05 | WSH upgrade banner | `WSHUpgradeBanner` (inline in `CatalystsPage.tsx`) |
+| CATALYSTS-05 | WSH upgrade banner | `WSHUpgradeBanner` (inline in `CatalystsPage.tsx`, fed by `useCatalystTypes`) |
 
 #### Actions
 | ID | Action | What happens |
@@ -9103,50 +9104,775 @@ gate's 401 and 403 are asserted only in `tests/lib/test_routers_insights_admin.p
 | CATALYSTS-06 | Change date range | `DateRangePicker`, default today−3 to today+14, with a `Today` reset and a Refresh button that refetches the same request. |
 | CATALYSTS-07 | Filter by impact or type | Client-side `passes`: type, then minimum impact, applied to the timeline only; Hot Now ignores both filters. |
 | CATALYSTS-08 | Expand an event | The title button toggles truncation; nothing else opens. |
-| CATALYSTS-09 | Open insight report | `handleOpenTicker` sets `useTickerStore` and navigates to `/insights`. |
+| CATALYSTS-09 | Open insight report | `handleOpenTicker` sets `useTickerStore` and navigates to `/insights`, from the ticker button or the hover `View` button; `MACRO` rows have neither. |
 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| CATALYSTS-10 | loading | present | A spinner while `isLoading`; the header meanwhile reads "0 events". |
+| CATALYSTS-10 | loading | present | A spinner with no label while `isLoading`; the header meanwhile reads "0 events", and Hot Now, the chips and the timeline are absent. |
 | CATALYSTS-11 | empty | absent | No empty branch among the loading, error and timeline blocks: a range with no events shows only "0 events" and the filter bars. |
 | CATALYSTS-12 | error | present | "Failed to load catalysts: Failed to fetch catalysts", the hook's one fixed message whatever the actual status. |
-| CATALYSTS-13 | stale | present | The header's `source` string (`Benzinga` when absent) is the only provenance; the response carries no write time for any source. |
-| CATALYSTS-14 | permission | not tracked (new category); present | `DataGate` wraps the body below the header and range controls. |
+| CATALYSTS-13 | stale | absent | No stale branch: the header's `source` string (`Benzinga + DB (news + sec, <n>)`, `Benzinga` when absent) is the only provenance; the response carries no write time for any source. |
+| CATALYSTS-14 | permission | not tracked (new category); present | `DataGate` wraps the body below the header and range controls; it cannot trigger in practice, and a signed-in user's 401 shows the shell's expired-session strip and the error box. |
 
 #### Journeys
-1. Plan the week: Opens /catalysts (CATALYSTS-01) → Reads Hot Now for today and tomorrow (CATALYSTS-01) → Sets the range to cover the coming week (CATALYSTS-06) → Filters to high impact only (CATALYSTS-02, CATALYSTS-07) → Notes the dates to avoid holding through (CATALYSTS-04)
-2. Investigate one event: Filters by type, earnings (CATALYSTS-03, CATALYSTS-07) → Expands an event for detail and sentiment (CATALYSTS-08) → Clicks "Open insight report" (CATALYSTS-09) → Lands on /insights for that ticker (CATALYSTS-09)
-3. Range with nothing in it: Narrows the range to a quiet week (CATALYSTS-06) → The timeline has no rows (CATALYSTS-11) → No explicit empty state is shown, a known gap (CATALYSTS-11)
+1. Plan the week: Opens /catalysts (CATALYSTS-01) → Reads Hot Now for today and tomorrow, ten rows at most, with news ahead of scheduled events (CATALYSTS-01) → Widens or narrows the range from its default of today minus 3 to today plus 14 (CATALYSTS-06), though the earnings calendar ends a week ahead → Filters to high impact only (CATALYSTS-02, CATALYSTS-07), which removes news, economic and 8-K rows and no earnings → Notes the dates to avoid holding through (CATALYSTS-04), past the cards dated before today
+2. Investigate one event: Filters by type, earnings (CATALYSTS-03, CATALYSTS-07) → Expands an event, which shows its whole title and nothing more; the sentiment is on the row already (CATALYSTS-08) → Clicks the ticker, or the hover `View` button (CATALYSTS-09) → Lands on /insights with that ticker active, or on `No report yet` when the pipeline has none (CATALYSTS-09)
+3. Range with nothing in it: Narrows the range to a quiet week (CATALYSTS-06) → The last 48 hours of news is still listed under its own dates, so the timeline is empty only when that news is empty too or a filter hides every row (CATALYSTS-04, CATALYSTS-07) → The header reads `0 events`, or still counts events over an empty timeline, and no explicit empty state is shown, a known gap (CATALYSTS-11)
 
 #### Elements
+
+In every body below, "executed 2026-10-01" means that the production rows were read through the stocks repo's
+`db_query_cr.sh` job script (the handler's own five SELECTs for the page's default range, 2026-09-28 to 2026-10-15, and for
+2026-09-18 to 2026-09-25, execution `db-query-5hlkw`, 08:14 ET; the freshness reads are `db-query-256dl`, 08:12 ET, and
+`db-query-tzdxz`, 08:36 ET) and passed through the real `get_catalyst_events` and `get_catalyst_types` handlers on a starlette
+`TestClient`, with only the database connection replaced by a function that returns those rows as a frame built the way
+`pd.read_sql` builds one (`DataFrame.from_records`), the cached Benzinga file absent and `BENZINGA_API_KEY` unset as on the
+deployed services, and that the page was rendered hermetically with those answers in a scratch copy of solyra at the
+`8f76116` source, in a browser whose time zone was UTC unless a body says otherwise. "Executed on a throwaway Postgres 16"
+means that the real SQL ran through the real `query_to_dataframe` over `pg8000` against tables with the real column types
+holding rows written for the case. A variant payload (a held, failed, empty or 401 answer, an event with its optional fields
+absent, the e2e fixture) is named where it is used; "mutation" means one product line changed in that scratch copy and the
+committed specs run; "read" marks what was only read in the code, "counted in the response" what was computed from an answer
+the page received, and "V evidence" the comment on stocks issue 1234 that the matrix links.
+
 ##### CATALYSTS-01 · Hot Now
+
+**Shows or does:** A panel above the filters headed `Hot now` with the caption `high-impact, today + tomorrow`, drawn only
+when it has a row (`hotEvents.length > 0`, `src/routes/CatalystsPage.tsx:520-541`; the selection is `:446-458`). It takes
+every event of the answer dated today or tomorrow in Eastern time (`todayET()` and one day on, compared as strings with
+the event's `date`), keeps those with impact High or Very High, sorts them by impact and then by date, and shows the
+first ten as the same `EventRow` the timeline uses (CATALYSTS-04: dot, ticker button, badge, expandable title, arrow,
+source, `View`). Both filters are ignored: neither Min impact nor a type chip changes it (executed, with each setting of
+CATALYSTS-02 and CATALYSTS-03). Ties on impact and date keep the order the handler appended the events in, news first,
+then economic, earnings, insider and 8-K (`platform/api/routers/catalysts.py:353-570`; JavaScript's sort is stable). With
+no such event nothing is drawn, no message either; the panel is part of what `DataGate` replaces (CATALYSTS-14).
+
+What the production answer draws (executed 2026-10-01): 61 events dated today (45) or tomorrow (16) are High
+(counted in the response: today 30 earnings rows, 12 `EARNINGS_NEWS`, 2 `MERGER_ACQUISITION` and 1 `IPO`; tomorrow 12
+earnings rows and 4 High economic events, `Employment Situation`, `Non-Farm Employment Change`, `Average Hourly
+Earnings m/m` and `Unemployment Rate`). The panel drew ten, all of them `AV news` rows dated
+today (GOOGL, NVDA, BSET, GNS, JBL, ADSE, ANSS, SNPS, MCK and CALM): none of today's 30 earnings reporters, none of
+tomorrow's events. The same Synopsys headline fills two of the ten, once for ANSS and once for SNPS. The panel says
+neither how many qualifying events there are nor that it stops at ten, and the dates it compares are not all ET days:
+a news row is dated by the UTC day of its `published_ts`, so 19 of the 54 news rows dated 2026-10-01 were published
+between 20:20 ET and midnight on 09-30 (V evidence).
+
+**Needs:** The events request of CATALYSTS-04 (`GET /api/catalysts/events`), in particular the rows the handler tiers
+High: every `earnings_calendar` row of the day (`catalysts.py:475`), news at relevance 0.9 and absolute sentiment 0.4
+(`:394-398`), a high-importance `economic_events` row, an 8-K with item 1.01 or 2.01, and never an insider cluster
+(Medium, `:519`). Production (V evidence, 2026-10-01, executions `db-query-256dl` and `db-query-5hlkw`): `earnings_calendar`
+holds 49 rows for today (30 tickers, fetched by the 19:00 ET run of 09-30) and 12 for tomorrow, `economic_events` four
+high events for 10-02, and `news_sentiment` 54 qualifying rows dated 10-01, 15 of them High, newest 10:02 UTC.
+
+**States:** Absent while the request loads, after it fails and for an answer with nothing High today or tomorrow, with no
+message in any of the three (CATALYSTS-10 to CATALYSTS-12); no stale marker (CATALYSTS-13); inside `DataGate`
+(CATALYSTS-14).
+
+**Acceptance criteria:**
+- Given High events dated today or tomorrow, when the page renders, then `Hot now` and its caption show at most ten of
+  them (executed: 10 of 61; `renders Hot Now panel for today/tomorrow high-impact events` asserts that the header text
+  and the AVGO headline are visible).
+- Given more than ten, then the ten are the first by impact and date with ties in the handler's order, so news rows
+  before scheduled events (executed: all ten were news rows dated today; matrix Gaps).
+- Given Min impact or a type chip, then the panel does not change (executed with `High`, `Medium`, `Earnings`, `Economic`,
+  `8-K` and `IPO`: ten rows each time).
+- Given only Medium or Low events today and tomorrow, then no panel (read, `:451`; the executed run drew only High rows,
+  and the Medium rows of today were not among them).
+- Given an answer with no events, a failed request or a request still loading, then no panel (executed).
+- Given a news row published after 20:00 ET, then it is dated the next day, so it can be listed as tomorrow's before
+  the day has begun (read from the date rule, `catalysts.py:111`; counted in the production rows, V evidence).
+
+**Tests:** On main one page test, `renders Hot Now panel for today/tomorrow high-impact events`
+(`tests/catalysts/catalysts.spec.ts`), asserts that text matching `hot now` is visible and that the AVGO headline is
+visible. The headline also sits in the timeline's today card, so `.first()` is satisfied without the panel's rows:
+in a scratch copy of the page (2026-10-01) removing the panel failed it, keeping the header and removing the rows passed,
+ignoring the today-and-tomorrow window passed it (`lists upcoming events` failed instead, because AAPL's headline then
+appeared twice) and admitting Medium events passed. No test asserts the ten-row cap, the order, the exclusion of Medium events, that the
+filters leave it alone or any handler-side tiering (`tests/api/test_catalysts_news_filter.py` covers `_news_sql` and the
+topic list, `tests/api/test_route_coverage.py` the route's 200 against a dead backend). Te stays unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:446-458,520-541`; `platform/api/routers/catalysts.py:353-570`; no test ids.
 
 ##### CATALYSTS-02 · Impact tier filter
 
+**Shows or does:** Two things the Displayed table groups under one row. (1) The `Min impact:` bar, three buttons `All`,
+`Medium` and `High` (`src/routes/CatalystsPage.tsx:543-561`, state `minImpact`, default `All`): `High` keeps events whose
+impact is High or Very High, `Medium` keeps Medium and above (so it hides only Low), `All` keeps everything
+(`passes`, `:431-436`). It filters the timeline only (CATALYSTS-04); Hot Now ignores it (CATALYSTS-01), and so does the
+header. The selected button is told apart by colour alone: no `aria-pressed`. (2) The counters in the header line under
+the title, `<n> events <h>H / <m>M / <l>L · <source>` (`:461-471,483-488`, drawn in capitals by the `label-micro` class):
+`n` is every event of the answer, `h` those whose impact is High or Very High, `m` Medium and `l` every other label.
+An event with no impact at all counts as Medium (`impactKey` defaults to `Medium`, `:67-73`), a label the page does not
+know counts as `l` while the filter ranks it as Medium (`impactScore`, `:75-77`). The counters cover every fetched
+event, independent of both filters, and include the news dated outside the range (CATALYSTS-04).
+
+What the production answer draws (executed 2026-10-01): `1565 events 1113H / 287M / 165L ·
+Benzinga + DB (news + sec, 1565)`, which equals the tiers in the answer (counted: 1,113 High, of which 897 are earnings
+rows, 197 news rows, 14 economic and 5 8-K rows; 287 Medium; 165 Low, all news). `High` left 1,113 rows over 10 of the 13
+cards, `Medium` 1,400 rows over 13 cards and `All` 1,565, and each click took 0.9 s to 1.6 s to redraw (sandbox
+figures); the header and Hot Now did not change under any setting. Two events with no impact, drawn in the hermetic page,
+read `2M`. Because every earnings row is High, `High` removes only news, economic and 8-K rows: 452 of 1,565.
+
+**Needs:** The `impact` of each event, as the handler tiers it (CATALYSTS-04, CATALYSTS-01): earnings High; news High at
+relevance 0.9 and absolute sentiment 0.4, Medium at 0.7 and 0.2, else Low (a NULL sentiment fails both and reads Low, executed on
+a throwaway Postgres 16: the row is sent with `sentiment_score` null and impact `Low`); economic by importance; 8-K High
+with item 1.01 or 2.01; insider always Medium. Production (V evidence, 2026-10-01): 638 news rows pass the page's filter,
+206 of them High and 262 Medium by the same thresholds in SQL (the handler's dedupe leaves 197 and 255), none with a
+NULL sentiment or relevance in the last 30 days (14,301 rows); the freshness of the five tables is in CATALYSTS-04.
+
+**States:** The counters read `0 events 0H / 0M / 0L` while the request loads, after it fails and for an empty answer
+(CATALYSTS-10 to CATALYSTS-12, executed); the buttons stay. No stale marker (CATALYSTS-13). The bar sits inside `DataGate`,
+the header outside it (CATALYSTS-14).
+
+**Acceptance criteria:**
+- Given the production answer, then the header reads `1565 events 1113H / 287M / 165L` and the three numbers add up to
+  the first (executed).
+- Given `High`, then the timeline holds the High and Very High rows only and the header and Hot Now are unchanged
+  (executed: 1,113 rows; `Min-impact filter restricts the timeline` asserts that the Medium `Investor Day` row leaves
+  the timeline and `Q2 2026 Earnings` stays).
+- Given `Medium`, then only Low rows leave (executed: 1,400 rows; asserted by no test).
+- Given `All`, then every row returns (executed).
+- Given an event with no impact, then it counts as Medium in the header (executed: two such events read `2M`) and passes
+  `Medium` (read, `impactScore`); the handler always sets an impact for the events it builds.
+
+**Tests:** On main two page tests in `tests/catalysts/catalysts.spec.ts`: `renders impact tier counters in header`
+asserts that text matching `\d+\s*events` and `\d+H\s*/\s*\d+M\s*/\s*\d+L` is visible, a shape and no number
+(in a scratch copy of the page, 2026-10-01, counting every High event as zero passed it), and `Min-impact filter
+restricts the timeline` asserts that after `High` is clicked the Medium `Investor Day` row is gone from the timeline
+and `Q2 2026 Earnings` is visible (ignoring the `High` setting in a scratch copy failed it, ignoring the `Medium`
+setting passed). Nothing asserts the counters' values or the `Medium` setting. The
+tiering is asserted on the handler side by no test (the handler's mapping is not run by `tests/api/test_catalysts_news_filter.py`,
+and `tests/api/test_route_coverage.py` pins only the route's 200 against a dead backend). Te stays unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:60-77,403-404,431-436,461-471,483-488,543-561`;
+`platform/api/routers/catalysts.py:394-398,434,475,519,559-565`; no test ids.
+
 ##### CATALYSTS-03 · Type chips
+
+**Shows or does:** A row of chips under the Min impact bar, drawn only when the answer has an event with a type
+(`allTypes.size > 0`, `src/routes/CatalystsPage.tsx:474-475,563-604`): `All Types` and one chip per `catalyst_type`
+present in the fetched events, sorted by the raw type key and not by label, each labelled `TYPE_CONFIG[type]?.label`
+or, for a type the table does not list, the raw key (`INSIDER_BUY` and `INSIDER_SELL` have no entry,
+`TYPE_CONFIG` `:120-145`). A click selects that type (`activeFilter`), a second click on it or a click on `All Types`
+clears it; one type at a time, and it combines with Min impact (CATALYSTS-02, CATALYSTS-07). The chips are built from the
+events and the page's own table: `useCatalystTypes` (`GET /api/catalysts/types`) feeds only the Wall Street Horizon
+banner (CATALYSTS-05), and the chips draw nothing from it. A selected chip takes the type's tone as its background with
+white text; the selection is shown by colour alone, no `aria-pressed`.
+
+What the production answer draws (executed 2026-10-01): `All Types`, `Earnings`, `Earnings News`, `Economic`,
+`IPO`, `M&A`, `News` and `8-K`, in the order of the raw keys `EARNINGS`, `EARNINGS_NEWS`, `ECONOMIC`, `IPO`,
+`MERGER_ACQUISITION`, `NEWS_CATALYST`, `SEC_8K`, over 897, 393, 44, 4, 48, 163 and 16 events (counted in the response).
+`Economic` mixes the 35 calendar rows, which show `MACRO`, with 9 news rows typed `ECONOMIC` by their topic, which show a
+ticker. `Earnings` left 897 rows over 8 cards, `Economic` with `High` 18 rows over 5 cards, `8-K` 16 rows over 3 and
+`8-K` with `High` 5; the header and Hot Now did not change. For the range 2026-09-18 to 2026-09-25 a chip `INSIDER_BUY`
+appears with the raw key. A selection outlives its type: with `INSIDER_BUY` selected and the range set back to the
+default, which has no cluster, no chip was selected, `All Types` was not highlighted, the timeline held no row and the header
+still counted 1,565 events (executed). A selected chip of a type with no `TYPE_CONFIG` entry has white text and no
+background (executed in the light theme: `rgb(255, 255, 255)` on a transparent button over a near-white page, where a
+selected `Earnings` chip is white on red).
+
+**Needs:** The `catalyst_type` of each event as the handler sets it (CATALYSTS-04): `EARNINGS`, `EARNINGS_NEWS`,
+`MERGER_ACQUISITION`, `IPO`, `ECONOMIC`, `NEWS_CATALYST`, `INSIDER_BUY`, `INSIDER_SELL` and `SEC_8K` (`catalysts.py:384-393`, `:432`, `:473`, `:507`, `:563`), plus Benzinga's own types when a key is set (none is). Production (V
+evidence, 2026-10-01): the same five tables as CATALYSTS-04; seven of the nine types occur in the default range.
+
+**States:** No chips while the request loads, after it fails and for an empty answer (CATALYSTS-10 to CATALYSTS-12,
+executed); no stale marker (CATALYSTS-13); inside `DataGate` (CATALYSTS-14).
+
+**Acceptance criteria:**
+- Given the production answer, then the chips are `All Types, Earnings, Earnings News, Economic, IPO, M&A, News, 8-K`
+  (executed; `shows filter chips` asserts only that text matching `earnings` is visible, which the AAPL row's badge and
+  title also satisfy).
+- Given a type chip, when it is clicked, then the timeline keeps that type's rows and the header and Hot Now stay
+  (executed: `Earnings` 897 rows; asserted by no test).
+- Given the active chip, when it is clicked again or `All Types` is, then every row returns (executed).
+- Given a type with no label in `TYPE_CONFIG`, then its chip and badge show the raw key (executed: `INSIDER_BUY` shows
+  as its raw key; matrix Gaps).
+- Given a selected type that the next answer lacks, then the selection stays with no visible sign (executed; matrix Gaps).
+
+**Tests:** None asserts the row: `shows filter chips` (`tests/catalysts/catalysts.spec.ts`) mounts the page and
+asserts that text matching `earnings` is visible (first match), and in a scratch copy of the page (2026-10-01) removing the
+whole chip row left every test of the spec passing; ignoring the type filter in `passes` passed too
+(the page tests never click a chip). The handler's types are asserted by no test. Te stays unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:97-145,403,431-441,474-475,563-604`; `platform/api/routers/catalysts.py:384-393`;
+no test ids.
 
 ##### CATALYSTS-04 · Event timeline
 
+**Shows or does:** The list below the filters: one card per date in the answer's `events_by_date`, oldest date first,
+each with its rows (`filteredDates`, `src/routes/CatalystsPage.tsx:438-441`; `DateGroup`, `:313-352`; `EventRow`,
+`:255-311`). The page never reads the requested range: it draws every date the answer holds. A card is headed by the
+date as `Mon, Sep 28, 2026` (`formatDate`, `:190-193`), a `TODAY` pill and a ring on today's card (ET,
+`getRelativeLabel`, `:195-205`) and `<relative> · <n> events` (`3 days ago`, `YESTERDAY`, `TODAY`, `TOMORROW`,
+`in 4 days`; the noun is always `events`, so a card of one reads `1 events`). Rows inside a card sort by impact (Very
+High, High, Medium, Low), then by ticker (`:320-325`). A row shows, left to right, an impact dot (colour by tier, with
+a title and an `aria-label` of `<tier> impact`), the ticker as a button or the text `MACRO` for a macro or tickerless
+event (CATALYSTS-09), a type badge (`TYPE_CONFIG`; an unlisted type shows its raw key, an absent one `other`), the title
+as a button that expands it (CATALYSTS-08; `title`, else `event`, else `<ticker> <type>`), a sentiment arrow and its
+absolute value when `sentiment_score` is a number of 0.1 or more in size (`▲` green above zero, `▼` red below, tooltip
+`Sentiment 0.80 (Somewhat-Bullish)`, `:239-253`), the event's `source` string from the `md` breakpoint up, and a `View`
+button that appears on hover (CATALYSTS-09). Everything sits inside `DataGate` (CATALYSTS-14).
+
+What the production answer draws (executed 2026-10-01, the default range 2026-09-28 to 2026-10-15): 1,565
+events in 13 cards, 299 on 09-28, 521 on 09-29, 583 on 09-30, 88 today, 17 tomorrow, then 17, 21, 8, 2, 1, 1, 2 and 5
+on the later dates. 1,403 of the 1,565 (90%) are dated before today, so today's card is the fourth and the page does
+not scroll to it. All 1,565 rows are in the page at once, with no paging or virtualisation (1,575 `EventRow`s with the
+ten of Hot Now); in the hermetic page the first paint of that answer took 3.4 s and a filter click 0.9 s to 1.6 s
+(sandbox figures, not production latency). By source: 897 earnings rows (`AV earnings_calendar`), 617 news rows
+(`AV news`), 35 economic rows (`FRED/Calendar`, `MACRO`) and 16 8-Ks (`SEC EDGAR`), no insider cluster.
+
+- **An earnings row** reads `<company> earnings (<time>, est <eps>)` (`catalysts.py:467-474`): 785 of the 897 titles read
+  `est nan` (a NULL `eps_estimate` reaches the title as NaN, see the matrix Gaps) and 323 read `unknown` as the time.
+- **A news row** carries the headline cut at 200 characters, the arrow when the score is 0.1 or more in size (550 of the 617; the
+  other 67 show none) and the source `AV news`; a headline tagged to several tickers is one row per ticker (111
+  headlines fill 262 of the 617 rows).
+- **An economic row** is `MACRO` with the event name and the source `FRED/Calendar`; nine news rows typed `ECONOMIC`
+  carry a ticker instead.
+- **An 8-K row** is a title that starts `8-K` and lists the item labels (`Material Definitive Agreement`,
+  `Officer Departure / Election`, `Reg-FD Disclosure`, ...), 5 High and 11 Medium.
+- **An insider row** exists only when the range reaches a cluster: none for 2026-09-28 to 2026-10-15, and for
+  2026-09-18 to 2026-09-25 three rows, `10 insiders buying ~$0.0M`, `3 insiders buying ~$nanM` and
+  `8 insiders buying ~$0.0M` with the raw badge `INSIDER_BUY` (`TYPE_CONFIG` has no entry for it).
+
+The answer also carries `url`, `relevance_score`, `items`, `primary_doc`, `accession_number`, `insiders`,
+`total_value`, `country`, `actual`, `forecast` and `previous`, typed at `:21-58` and never drawn: no row links to its
+article or filing (executed: the page's only anchors are the three navigation links and the Wall Street Horizon link),
+and an economic row shows no actual, forecast or previous.
+
+**Needs:** `GET /api/catalysts/events?date_from=<today minus 3>&date_to=<today plus 14>` (ET dates computed once when the
+page mounts, `:396-397`), cached for five minutes and never polled (`useCatalystEvents`, `:159-174`), answered by
+`get_catalyst_events` (`platform/api/routers/catalysts.py:158-328`). Neither service has a `BENZINGA_API_KEY` variable (read
+2026-10-01) and the image holds no cached Benzinga file (`platform/Dockerfile:40-45`), so the answer is
+the five reads of `_db_catalyst_events` (`:334-572`), each caught on its own and merged after the Benzinga list:
+
+| read | filter | rows become | tier |
+|---|---|---|---|
+| `news_sentiment` (`:353-410`) | `published_ts` in the last 48 hours from now, relevance 0.7 or more, one of seven topics (case-insensitive, `_news_sql` `:101-121`), the range ignored | one per ticker, day (`published_ts::date`, a UTC day) and headline; type by topic (`MERGER_ACQUISITION`, `IPO`, `ECONOMIC`, `EARNINGS_NEWS`, else `NEWS_CATALYST`) | High at relevance 0.9 and absolute sentiment 0.4, Medium at 0.7 and 0.2, else Low (`:394-398`) |
+| `economic_events` (`:412-440`) | `event_date` in the range, importance high or medium | `MACRO`, type `ECONOMIC`, with country, actual, forecast and previous | High for `high`, else Medium |
+| `earnings_calendar` (`:442-477`) | `earnings_date` in the range; one row per ticker and day, the first one read | `EARNINGS`, `<company> earnings (<time>, est <eps>)` | always High (`:475`) |
+| `insider_transactions` (`:479-523`) | `transaction_date` in the range, three or more distinct insiders on one side of one ticker and day | `INSIDER_BUY` (`A`) or `INSIDER_SELL`, `<n> insiders buying ~$<x>M` | always Medium (`:519`) |
+| `sec_filings` (`:525-570`) | `filing_date` in the range, form 8-K, an item among 1.01, 2.01, 5.02, 7.01, 8.01 | `SEC_8K`, `8-K` plus the item labels | High with item 1.01 or 2.01, else Medium |
+
+Within a date the events keep the order of those reads, news first, then economic, earnings, insider and 8-K; the answer
+names its provenance as `Benzinga + DB (news + sec, <n>)` (CATALYSTS-13). Producers (read in `gcp/deploy.sh` and the
+fetchers, and each trigger and the latest execution of each job read from GCP on 2026-10-01, V evidence):
+`news_sentiment` by `fetch-news-sentiment` (`news-sentiment-hourly`, `0 8-17 * * 1-5`), `fetch-news-sentiment-topics`
+(`news-topics-hourly`, `5 8-17 * * 1-5`) and `fetch-news-sentiment-earnings` (`news-sentiment-earnings-0600`,
+`0 6 * * 1-5`), all `gcp.fetchers.fetch_news_sentiment` against AlphaVantage NEWS_SENTIMENT, plus the unscheduled
+`backfill-ticker`, `gcp/fetchers/fetch_rss_news.py` (no job and no trigger) and `scripts/backfill_news_sentiment.py`;
+`economic_events` by `fetch-economic-events` (`economic-events-daily`, `0 7 * * 1-5`; ForexFactory's weekly feeds and
+the FRED release dates); `earnings_calendar` by `fetch-earnings-calendar` (`daily-earnings-refresh-calendar`
+`0 19 * * 1-5` and `weekly-earnings-refresh-calendar` `0 19 * * 0`; AlphaVantage EARNINGS_CALENDAR, Unusual Whales,
+Earnings Whispers and Yahoo, and it keeps only `today minus 1` to `today plus 7`,
+`scripts/fetch_earnings_calendar.py:1534-1549`), with `evaluate-ew-strikes` writing only its `ew_*` columns;
+`insider_transactions` by `fetch-insider-transactions` (`insider-transactions-daily`, `0 7 * * 1-5`; AlphaVantage
+INSIDER_TRANSACTIONS); `sec_filings` by `fetch-sec-filings` (`sec-filings-intraday`, `0 7,10,13,17 * * 1-5`; SEC EDGAR
+submissions). Every trigger runs in America/New_York and was ENABLED.
+
+Production (V evidence, 2026-10-01 08:12 ET, executions `db-query-256dl`, `db-query-5hlkw` and `db-query-tzdxz`):
+`news_sentiment` 225,356 rows, newest `published_ts` 10:02:50 UTC and newest `inserted_at` 12:01:22 UTC, the minute the
+08:00 ET job finished (638 rows pass the page's filter, 247, 337 and 54 for the UTC dates 09-29, 09-30 and 10-01);
+`economic_events` 3,042 rows to 2026-10-30, 35 high or medium in the range (14 high, 21 medium); `earnings_calendar`
+63,647 rows, newest `fetched_at` 2026-09-30 23:00:38 UTC (the 19:00 ET run) and `earnings_date` to 2026-10-07, 1,022
+rows in the range over 8 dates; `insider_transactions` 1,814,432 rows, newest `transaction_date` 2026-09-23 and newest
+`inserted_at` 11:03:50 UTC today, no cluster in the range (the newest is 2026-09-23); `sec_filings` 4,730 rows, newest
+`filing_date` 2026-10-01, 16 8-Ks with a material item in the range (2, 8 and 6 on 09-28, 09-29 and 09-30).
+
+**States:** Loading, empty, error, stale and permission are CATALYSTS-10 to CATALYSTS-14: the timeline is blank while the
+request loads and after it fails (CATALYSTS-10, CATALYSTS-12), draws nothing and no message for an answer with no events
+(CATALYSTS-11), carries no marker of how old any source is (CATALYSTS-13), and is replaced by `Sign in to load data` in
+the one case CATALYSTS-14 describes.
+
+**Acceptance criteria:**
+- Given the production answer, when the page renders, then 13 cards sit oldest first with the labels `3 days ago`,
+  `2 days ago`, `YESTERDAY`, `TODAY`, `TOMORROW` and `in 4 days` to `in 14 days`, the `TODAY` pill on the fourth
+  (executed; the 1,403 events before today are counted in the response).
+- Given a card, then its rows sort by impact and then ticker (read, `:320-325`; the first row of today's card was
+  `ACN`, the first High ticker, executed).
+- Given a news row with a score of 0.1 or more in size, then an arrow and the score show, `▲` for a positive one, and none
+  shows below 0.1 (`news rows show a sentiment indicator` asserts that a `▲` is visible for the fixture's one bullish
+  row; executed on 617 production rows: 550 with an arrow, 67 without).
+- Given an event with no ticker or `MACRO`, then the ticker cell is the text `MACRO` and offers no link (executed;
+  CATALYSTS-09).
+- Given the answer holds news dated outside the requested range, then those cards are drawn (executed: for the range
+  2026-09-18 to 2026-09-25 the same 617 news rows, dated 09-29 to 10-01, were drawn after the range's last day; matrix
+  Gaps).
+- Given an earnings row whose estimate is NULL, then the title should say the estimate is missing; it reads `est nan`
+  (executed on a throwaway Postgres 16 through `pg8000` and on 785 of 897 production rows; matrix Gaps).
+- Given an insider cluster with no traded value, then the title reads `~$0.0M`, and `~$nanM` when every value is NULL
+  (executed on production clusters and on a throwaway Postgres 16; matrix Gaps).
+- Given a range that no cluster falls in, then no insider row shows (executed: none for 2026-09-28 to 2026-10-15, whose
+  window the newest cluster, 2026-09-23, precedes; matrix Gaps).
+
+**Tests:** On main two page tests, both from `tests/catalysts/catalysts.spec.ts`: `lists upcoming events` asserts that text
+matching `AAPL` (first match) and `Q2 2026 Earnings` are visible, the fixture's earnings row four days ahead, and `news
+rows show a sentiment indicator` that a `▲` is visible (first match). Mutations of a scratch copy of the page
+(2026-10-01) show what that buys: removing the timeline fails the first (and `Min-impact filter restricts the timeline`), reversing the
+arrows fails the second, and drawing the cards newest first passed. The mapping of the five
+reads (tiers, titles, the dedupe, the order) is asserted by no test: `tests/api/test_catalysts_news_filter.py` covers
+`_news_sql` and the topic list (`test_news_sql_is_backward_looking_and_case_insensitive`,
+`test_news_topics_constant_covers_fetcher_topics`), `tests/api/test_route_coverage.py` pins the route's 200 against a dead
+backend (`:325`, no body) and the threadpool tests replace `_db_catalyst_events` altogether. The producers have their
+own tests (`tests/gcp/test_fetch_economic_events.py`, `tests/gcp/test_fetch_earnings_calendar_persist.py`,
+`tests/gcp/test_fetch_earnings_calendar_yahoo.py`, `tests/gcp/test_fetch_news_sentiment_args.py`,
+`tests/gcp/test_fetch_news_sentiment_explode.py`, `tests/gcp/test_fetch_news_sentiment_incremental.py`,
+`tests/gcp/test_sec_filings_retry.py`, `tests/gcp/test_phase2_fetchers.py`), none of which reads this route.
+`tests/api/test_earnings_router.py` tests `/api/earnings/*`, which no solyra source calls and this page does not read.
+Te stays unticked: the page tests assert one row and one arrow and nothing asserts the handler's mapping.
+
+**Code:** `src/routes/CatalystsPage.tsx:21-58,67-81,159-174,190-205,226-253,255-352,396-397,425-441,618-628`;
+`platform/api/routers/catalysts.py:101-121,158-328,334-572`; no test ids.
+
 ##### CATALYSTS-05 · WSH upgrade banner
+
+**Shows or does:** A dashed-border card under the timeline (`WSHUpgradeBanner`, `src/routes/CatalystsPage.tsx:354-390`,
+mounted at `:630-631`): a lock, the heading `Wall Street Horizon Upgrade`, the sentence
+`These event types require WSH via IBKR TWS API ($49-149/mo):`, one locked, theme-neutral chip per entry of the answer's
+`wsh_only_types` (the server's hex colours are not used, `:367-369`) and a `Learn more about WSH` link to
+`https://www.wallstreethorizon.com/ibkr-wsh` (`target="_blank"`, `rel="noopener noreferrer"`). It draws whenever the
+types request has answered, whether or not the events have (`if (!types) return null`, `:355`), so it also shows while the
+events load, after they fail and for an empty answer (executed). The price and the product name are written in the page,
+not read from the answer: `upgrade_note`, `benzinga_types` and each type's `color` and `icon` are typed
+(`CatalystTypesResponse`, `:91-95`) and never drawn. It is inside `DataGate` (CATALYSTS-14).
+
+What the real handler's answer draws (executed 2026-10-01: `get_catalyst_types` through a starlette `TestClient`, the page
+rendered with it): the three chips `Production Update`, `Interim Statement` and `Sales Update`, the link as above. The
+e2e fixture's `MOCK_CATALYST_TYPES` has `wsh_only_types: {}`, which draws the card with the sentence and the link and no
+chip (`src/mocks/catalysts.ts:121-130`, executed). When the types request fails (a 500 or a 401) the card is absent,
+with no error and nothing else on the page changed (executed: two requests, the retry, then nothing).
+
+**Needs:** `GET /api/catalysts/types`, cached for an hour (`useCatalystTypes`, `:176-186`), answered by
+`get_catalyst_types` (`platform/api/routers/catalysts.py:773-787`) from the module's `BENZINGA_TYPES` and `WSH_ONLY_TYPES`
+dictionaries (`:50-78`) and a fixed note: no table and no producer, no vendor on the request path. The link goes to the
+vendor's site, and the vendor's own wording of the price ($49-149/mo) is copied into the page without a check: not checked
+here. The link answered HTTP 200 from the sandbox on 2026-10-01 (`curl`, no redirect). Staging answers the types route 401
+without a token (V evidence, 2026-10-01); the route is gated, so the static answer cannot be read without a session.
+
+**States:** Absent until the types request answers and when it fails, with no message; unaffected by the events request
+(CATALYSTS-10 to CATALYSTS-12); no stale marker, the content being static (CATALYSTS-13); inside `DataGate` (CATALYSTS-14).
+
+**Acceptance criteria:**
+- Given the types request has answered, then the card shows the heading, the sentence, one chip per `wsh_only_types`
+  entry and the link, with the events loading, failed or empty as well as loaded (executed).
+- Given the real answer, then the chips read `Production Update`, `Interim Statement` and `Sales Update` (executed on
+  `get_catalyst_types`).
+- Given the link, then it opens `https://www.wallstreethorizon.com/ibkr-wsh` in a new tab with `rel="noopener noreferrer"`
+  (executed in the page; the target answered 200).
+- Given the types request fails, then no card and no error text (executed).
+- Given `upgrade_note`, then the page does not draw it (executed: the note is absent from the card; matrix Gaps).
+
+**Tests:** None asserts the card. On main `GET /api/catalysts/types` is pinned at 200 against a dead backend by
+`tests/api/test_route_coverage.py` (`Req("GET", "/api/catalysts/types", 200)`, `:329`, no body asserted), and removing the
+card from a scratch copy of the page (2026-10-01) left every test of `tests/catalysts/catalysts.spec.ts` passing. Te stays
+unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:91-95,176-186,354-390,630-631`; `platform/api/routers/catalysts.py:50-78,773-787`;
+`src/mocks/catalysts.ts:121-130`; no test ids.
 
 ##### CATALYSTS-06 · Change date range
 
+**Shows or does:** Three controls in the header, right of the title (`src/routes/CatalystsPage.tsx:491-516`), all outside
+`DataGate`. (1) `DateRangePicker` (`src/components/shared/DateRangePicker.tsx`, test id `date-range-picker`): one button
+that shows `Sep 28` and `Oct 15` with an en dash between them and opens a dialog (`role="dialog"`, `aria-label="Select date range"`) holding a one-month
+`RangeCalendar` (`aria-label` `Catalyst date range, <month>`), with `Cancel` and `OK` (test id `date-range-apply`). Clicking two days makes a draft; `OK` applies it, `Cancel`, Escape or a click outside
+drop it. The default is today minus 3 to today plus 14 in Eastern time, taken once when the page mounts
+(`:396-397`). (2) `Today` (`:500-506`), title `Reset to default range (today-3 → today+14)`, which sets that default again
+from the current ET date. (3) `Refresh` (`:507-514`), which refetches the request of the range in force
+(`handleRefresh`, `:416-420`), is disabled while that runs or while the first load is pending (`:509`) and spins its icon.
+
+A new range is a new request, `GET /api/catalysts/events?date_from=<from>&date_to=<to>`, and a new cache key
+(`['catalysts', from, to, false]`, `:161`): the page keeps no earlier answer on screen while it loads, so Hot Now, the chips
+and the timeline vanish, the header reads `0 events 0H / 0M / 0L · Benzinga` and a spinner shows until the answer comes
+(executed: held request, CATALYSTS-10). `Today` back to a range that is cached and under five minutes old makes no
+request (executed: the default range, left and returned to, with zero new requests); `Refresh` always does, with the same
+parameters and never `refresh=true` (the hook is called with `false`, `:406`, so the handler's Benzinga refresh cannot be
+reached from the page, stocks#1223). The range bounds the Benzinga list and four of the five database reads, not the
+news (CATALYSTS-04), and the page draws whatever dates come back.
+
+The trigger and the dialog's header label each day as `<month> <day>` from a `CalendarDate` turned into midnight Eastern
+and formatted in the browser's own zone (`fmtShort`, `DateRangePicker.tsx:10-15`), so in a browser west of New York the
+label is a day early: for the request `date_from=2026-09-28&date_to=2026-10-15` a Los Angeles browser showed `Sep 27` and `Oct 14`
+(executed with `timezoneId: 'America/Los_Angeles'`; the calendar's own cells stay right). Nothing limits the range's
+length.
+
+**Needs:** The events request of CATALYSTS-04 for the picked dates. A range after the calendar's reach returns the news
+and economic events and no earnings: `earnings_calendar` holds rows only to the fetch date plus 7 days
+(`scripts/fetch_earnings_calendar.py:1534-1549`; the newest is 2026-10-07), so the default range's second week held 11
+events, all economic (executed 2026-10-01, V evidence). The insider read returned three clusters for 2026-09-18 to
+2026-09-25 and none for the default range (executed).
+
+**States:** While a new range loads: CATALYSTS-10; after it fails: CATALYSTS-12; for a range with no events:
+CATALYSTS-11. A type chip selected before the change stays selected whether or not the new answer has that type
+(CATALYSTS-03, executed). `Refresh` is disabled while a request runs and enabled after a failure (executed).
+
+**Acceptance criteria:**
+- Given the page just mounted, then the range is today minus 3 to today plus 14 and the request carries those dates
+  (executed: `?date_from=2026-09-28&date_to=2026-10-15`; asserted on this branch).
+- Given two days picked and `OK`, then the trigger shows the new range and exactly one request carries it (executed:
+  `?date_from=2026-10-05&date_to=2026-10-09`; asserted on this branch).
+- Given a draft and `Cancel`, then the range, the label and the requests stay as they were (executed; asserted on this
+  branch).
+- Given a changed range and `Today`, then the default range returns, and no request is made while its answer is cached
+  and fresh (executed: zero requests; the label is asserted on this branch).
+- Given `Refresh`, then the same range is requested again without `refresh` (executed).
+- Given a browser west of New York, then the trigger's label should name the requested days; it names the day before
+  (executed in Los Angeles; matrix Gaps).
+
+**Tests:** On main `tests/shared/popover-fit.spec.ts` (`date-range picker stays on screen (Catalysts)`, at 390 px and
+411 px, on main at eca7078) opens the picker and asserts that the dialog is visible and inside the viewport; it picks
+nothing. In a scratch copy of the page (2026-10-01) making `onChange` do nothing, or `Today` do nothing, left every test of
+`tests/catalysts/catalysts.spec.ts` and that test passing. On this branch (solyra commit 7690974, not yet run in CI)
+`OK requests the picked range, Cancel discards it and Today restores the default`
+(`tests/catalysts/catalysts.spec.ts`, browser pinned to America/New_York) asserts the default range's two dates in the
+first request and the trigger's label, that a picked range followed by `Cancel` leaves the label and the request count
+alone, that `OK` sends one request with the picked `date_from` and `date_to` and shows them, and that `Today` restores
+the default label; it does not assert `Refresh`, the loading blank or the label in another time zone. Te stays unticked:
+the row's only range-changing assertion is a test added on this branch, which waits for a CI run that includes it.
+
+**Code:** `src/routes/CatalystsPage.tsx:159-174,396-406,416-420,491-516`;
+`src/components/shared/DateRangePicker.tsx:10-15,29-151`; `scripts/fetch_earnings_calendar.py:1534-1549`; test ids `date-range-picker`, `date-range-apply`.
+
 ##### CATALYSTS-07 · Filter by impact or type
+
+**Shows or does:** The two filters of CATALYSTS-02 and CATALYSTS-03 acting together on the fetched events. `passes`
+(`src/routes/CatalystsPage.tsx:431-436`) rejects an event whose `catalyst_type` is not the selected chip, then one whose
+impact is below the Min impact setting; `filteredDates` (`:438-441`) applies it to each date's events, drops a date left
+with none and keeps the dates in ascending order, and the timeline draws what is left (CATALYSTS-04). The filters change the
+timeline and nothing else: Hot Now (`:446-458`), the header counters (`:461-471`) and the chips (`:474-475`) are computed
+from every event. The two settings are page state (`:403-404`), not stored and not in the URL: they survive a change of
+range (CATALYSTS-03, executed) and are lost when the page is left (executed: once the Insights page had rendered, the browser's back button returned
+to `All` and `All Types` with the cached answer and no request; the range, held in the same kind of state, `:396-404`,
+is read as back at its default).
+
+What a combination does on the production answer (executed 2026-10-01): `High` 1,113 of 1,565 rows; `Medium`
+1,400; `Earnings` 897 over 8 cards; `Economic` with `High` 18 rows over 5 cards; `8-K` 16 rows over 3 cards, with `High`
+5; `IPO` with `High` 2. Every click redrew the timeline in 0.9 s to 1.6 s (sandbox figures). A combination that excludes
+every row draws no row and no message while the header still counts all 1,565 events.
+
+**Needs:** The fetched events (CATALYSTS-04); no request of its own.
+
+**States:** Always available once the page has mounted: the bars show while the request loads and after it fails
+(CATALYSTS-10, CATALYSTS-12); a combination with no row is the empty timeline of CATALYSTS-11 without its header change;
+inside `DataGate` (CATALYSTS-14).
+
+**Acceptance criteria:**
+- Given a Min impact setting and a chip, when both are set, then a row must pass both (executed: `Economic` and `High`,
+  18 rows).
+- Given only a chip, then the timeline holds that type's rows (executed: `Earnings`, 897).
+- Given only `High` or `Medium`, then the timeline holds the events at or above it (executed: 1,113 and 1,400; `Min-impact
+  filter restricts the timeline` asserts that `High` removes the Medium `Investor Day` row and keeps `Q2 2026 Earnings`).
+- Given `All` and `All Types`, then every row returns (executed).
+- Given any setting, then Hot Now, the header counters and the chips are unchanged (executed).
+- Given a combination that leaves nothing, then the timeline is empty, without a message (executed; matrix Gaps).
+- Given the range changed, then the settings stay, and given the page left and re-entered, then they reset to `All` and
+  `All Types` (executed, here and in CATALYSTS-03).
+
+**Tests:** On main one page test, `Min-impact filter restricts the timeline` (`tests/catalysts/catalysts.spec.ts`):
+it clicks `High`, asserts that no element matches `Investor Day` (the fixture's one Medium row, in the timeline only) and
+that `Q2 2026 Earnings` is visible (first match). In a scratch copy of the page (2026-10-01) ignoring the `High` setting
+failed it, ignoring the `Medium` setting passed, and so did ignoring the type filter (no page test clicks a chip), and
+the `High` test cannot see Hot Now or the counters not changing. Nothing asserts a chip filter, the combination, the
+`Medium` setting or the empty combination. Te stays unticked: half of the row, the type filter, has no assertion.
+
+**Code:** `src/routes/CatalystsPage.tsx:403-404,431-441,446-458,461-475,543-604`; no test ids.
 
 ##### CATALYSTS-08 · Expand an event
 
+**Shows or does:** In every row the title is a button (`type="button"`, `aria-expanded`, `title` `Show full title` or
+`Collapse details`, `src/routes/CatalystsPage.tsx:278-292`) that toggles that row's `expanded` state (`:260`). Collapsed,
+the title is one truncated line (`truncate`); expanded, it wraps over as many lines as it needs (`break-words`) and the
+chevron turns 180 degrees. Nothing else opens: no panel, no link, no field the row did not already show (the `url`,
+`actual`, `forecast`, `previous`, the insider value and the 8-K items the answer carries are never drawn, matrix Gaps),
+so `Collapse details` promises more than the control does. On a title that fits its row, expanding changes nothing you can
+see (executed: a row's height was 37 px before and after, for two titles that fit at 1280 px); below the `sm` breakpoint the
+title takes a line of its own at the end of the row (`order-last basis-full`, `:283`).
+
+The state belongs to one rendered row. The same event appears in Hot Now and in its date card as two rows that toggle
+independently (executed: expanding the Hot Now copy of GOOGL left the timeline copy collapsed), and a row that a filter
+removes and restores comes back collapsed (executed: an expanded McKesson row after `Economic` and then `All Types`).
+
+**Needs:** Nothing: client state over the title the row already has.
+
+**States:** None of its own. Rows exist only with data, so loading, empty and error (CATALYSTS-10 to CATALYSTS-12) have
+none to expand, and under permission (CATALYSTS-14) they are replaced.
+
+**Acceptance criteria:**
+- Given a collapsed title, when it is clicked, then `aria-expanded` is `true`, the `title` reads `Collapse details`, the text
+  wraps (`break-words`) and the chevron turns (executed; `an event title toggles its own expanded state on click`, added
+  on this branch, asserts `aria-expanded` and the `title`, not the wrapping or the chevron).
+- Given an expanded title, when it is clicked again, then it collapses (executed; asserted on this branch).
+- Given the same event in Hot Now and in the timeline, then expanding one leaves the other collapsed (executed; asserted on
+  this branch).
+- Given a row removed by a filter and restored, then it is collapsed (executed).
+- Given an expansion, then nothing but the title changes: no link and no new field appears (executed; matrix Gaps).
+
+**Tests:** None on main: in a scratch copy of the page (2026-10-01) making the toggle do nothing left every test of
+`tests/catalysts/catalysts.spec.ts` passing, so nothing asserts the control, only the rendering of the rows that hold it. On
+this branch (solyra commit 7690974, not yet run in CI) `an event title toggles its own expanded state on click` asserts the above on the
+fixture's AVGO row, which shows twice; it asserts nothing about truncation, the chevron or the other rows. Te stays
+unticked: the only assertion is a test added on this branch, which waits for a CI run that includes it.
+
+**Code:** `src/routes/CatalystsPage.tsx:255-311`; test ids none (`aria-expanded` and the `title` are the hooks).
+
 ##### CATALYSTS-09 · Open insight report
+
+**Shows or does:** Two controls in every row that has a ticker open that ticker's insight report: the ticker button (`title`
+`Open <ticker> insight report`, `src/routes/CatalystsPage.tsx:269-276`) and a `View` button at the row's end (`title` `Open
+insight report`, `:299-308`) that is transparent until the row is hovered and stays transparent under keyboard focus
+(executed: opacity 0 focused, 1 hovered), so a keyboard user can tab to it and cannot see it. Both call `handleOpenTicker`
+(`:410-414`), which does nothing for an empty ticker or `MACRO` and otherwise sets the ticker store's `activeTicker` to the
+upper-cased ticker and navigates to `/insights`. A `MACRO` or tickerless row draws the text `MACRO` and neither control
+(executed, and the handler's economic rows are all `MACRO`). The store accepts any string, persists `activeTicker` in the
+browser's localStorage under `ticker-store` (`src/stores/tickerStore.ts:14-33`) and is not told about the page's other
+state: `recentTickers` is not updated, and the filters of this page are lost when it is left (executed, CATALYSTS-07).
+
+What the destination shows (executed 2026-10-01, with no report mocked): the AI Insights header combobox reads the
+clicked ticker (GOOGL from Hot Now, ACN from the `View` button of a timeline row) and the page its empty state
+(INSIGHTS-01, INSIGHTS-12); a lower-case ticker reaches the store upper-cased (`brk.b` as `BRK.B`). The change is global:
+`activeTicker` is the ticker every ticker-scoped page reads (matrix Dashboard and Insights areas).
+
+**Needs:** Nothing from the API on this page. The destination loads INSIGHTS-01's chain for the ticker; the tickers on this
+page come from news, earnings, 8-K and insider rows and need not be ones the pipeline reports on (the report is a 404
+and `No report yet` for those).
+
+**States:** None of its own: absent for `MACRO` rows and wherever the rows are (CATALYSTS-10 to CATALYSTS-12), replaced under
+permission (CATALYSTS-14).
+
+**Acceptance criteria:**
+- Given a row with a ticker, when its ticker button is clicked, then the URL becomes `/insights` and `activeTicker` is that
+  ticker (executed; `clicking a ticker navigates to /insights with that ticker active` asserts the URL only, and
+  `opening an insight report makes that ticker active on /insights, and a MACRO row has no link`, added on this branch,
+  asserts the combobox).
+- Given a row with a ticker, when its `View` button is clicked, then the same (executed: ACN).
+- Given a `MACRO` row, then no ticker button and no `View` button (executed; asserted on this branch for the CPI row).
+- Given a ticker in lower case, then the store holds it upper-cased (executed).
+- Given a keyboard user, then the `View` button is reachable and not visible (executed; matrix Gaps).
+
+**Tests:** On main one page test, `clicking a ticker navigates to /insights with that ticker active`
+(`tests/catalysts/catalysts.spec.ts`), clicks the first `AVGO` button and asserts that the URL matches `/insights`; its
+title claims the active ticker, which it does not assert (in a scratch copy of the page, 2026-10-01, removing the
+`setTicker` call passed it, and pointing `navigate` at `/dashboard` failed it). The store's half is asserted on main by
+`src/stores/tickerStore.test.ts` (`uppercases the active ticker`, `persists activeTicker + recentTickers and omits quickPicks`),
+which never calls `handleOpenTicker`. On this branch (solyra commit 7690974, not yet
+run in CI) `opening an insight report makes that ticker active on /insights, and a MACRO row has no link` asserts that
+tomorrow's `CPI release` row has no button named `MACRO` and that, after the AVGO ticker button is clicked, the URL becomes
+`/insights` and the header combobox contains `AVGO`; it asserts nothing about the `View` button, lower-case tickers or the
+page's own state. Te stays unticked: the row's assertion of the active ticker is a test added on this branch, which waits
+for a CI run that includes it.
+
+**Code:** `src/routes/CatalystsPage.tsx:255-311,394-414`; `src/stores/tickerStore.ts:14-33`; no test ids (the buttons'
+`title` attributes are the hooks).
 
 ##### CATALYSTS-10 · State: loading
 
+**Shows or does:** While the events request has no answer for the range in force (`isLoading`: the first load, and each
+range with no cached answer), a centred spinning icon (`RefreshCw`, `animate-spin`, `py-12`) sits where the timeline
+starts, below the filter bars (`src/routes/CatalystsPage.tsx:606-611`). It carries no text, no role and no accessible name
+(executed: no `status` or `alert` element on the page). The state blanks the rows that need the answer: Hot Now
+(CATALYSTS-01), the header's counters, which read `0 events 0H / 0M / 0L · Benzinga` (CATALYSTS-02), the type chips
+(CATALYSTS-03) and the timeline (CATALYSTS-04). The title, the range controls, the Min impact bar and, once the types
+request has answered, the Wall Street Horizon card (CATALYSTS-05) stay, and `Refresh` is disabled (`:509`; executed with
+the request held). The page keeps no earlier answer while a new range loads: an answer that was on screen vanishes at
+once (executed: Hot Now, chips and rows gone, one spinner, with the new request held). A range whose answer is cached
+and under five minutes old has no loading state and sends no request (CATALYSTS-06, executed), and past five minutes the
+old answer stays on screen while a refetch runs, with no spinner (read: `isLoading` is false once data exists). A failing
+request keeps `isLoading` true through the one retry the client's default allows (`retry: 1`, `src/App.tsx:30-36`; read) and
+then becomes CATALYSTS-12 (executed: two requests and the error box after 2.4 s in the hermetic page).
+
+**Needs:** The latency of `GET /api/catalysts/events`, which was not measured for the endpoint. The five statements the
+handler issues took 23 ms to 75 ms each in the `db-query` job (223 ms together, dispatch B, V evidence); that is the SQL,
+not the request, which adds the connection, the five frames and the response.
+
+**States:** This is the loading state of CATALYSTS-01 to CATALYSTS-04, the rows it blanks, and the types request has none of
+its own (the card is simply absent until it answers, CATALYSTS-05).
+
+**Acceptance criteria:**
+- Given a first load or an uncached range, then a spinner shows, the header reads zeros, and Hot Now, the chips and the
+  timeline are absent (executed with the request held).
+- Given the request held, then `Refresh` is disabled and the Min impact bar and the range controls are present (executed).
+- Given the answer arrives, then the spinner goes and the rows appear (executed).
+- Given a cached, fresh range, then no spinner and no request (executed: `Today` back to the default range).
+- Given a failing request, then the spinner stays until the retry fails (read; executed: the error box after 2.4 s, two
+  requests).
+- Given the spinner, then it names itself to assistive technology (it does not; matrix Gaps).
+
+**Tests:** None asserts it. Every test of `tests/catalysts/catalysts.spec.ts` waits for `networkidle` and asserts the loaded
+page (the loading state shows for a moment before that), and removing the spinner from a scratch copy of the page
+(2026-10-01) left every test passing. Te stays unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:159-174,406,461-471,483-488,509,606-611`; `src/App.tsx:30-36`; no test ids.
+
 ##### CATALYSTS-11 · State: empty
+
+**Shows or does:** There is no empty branch (`src/routes/CatalystsPage.tsx:606-628` holds the spinner, the error box and
+the timeline, and the timeline maps over zero cards). An answer with no events draws the header `0 events 0H / 0M / 0L ·
+<source>`, the range controls, the Min impact bar, no chips (the row needs a type), no Hot Now, no timeline and the Wall
+Street Horizon card; no sentence says that the range holds nothing and no element has a role (executed: the real handler's
+answer for a range whose reads all returned nothing, `{"status":"ok","source":"Benzinga","date_range":{...},"total":0,
+"events_by_date":{}}`, rendered in the hermetic page). The rows replaced are the ones loading and error also replace:
+CATALYSTS-01 to CATALYSTS-04. The record's seed journey, a quiet week with an empty timeline, does not happen on a live range:
+the news read ignores the range, so the timeline is empty only when the last 48 hours of news is empty too (a weekend or a
+Monday morning, matrix Gaps) or when every read fails.
+
+A filter combination that excludes every row is a second empty with a different look: the header still counts every event
+and the timeline is blank with no message (CATALYSTS-07, executed).
+
+**Needs:** An answer with `events_by_date` empty. Production returned 1,565 events on 2026-10-01 (V evidence), so the state
+was not observed there; the matrix Gaps record the Monday 2026-09-28 04:48 ET read in which the 48-hour news window held
+no row. A database outage produces the same answer and the same page (executed: the real handler with every read raising or
+returning an empty frame answered 200, `source: Benzinga`, total 0), so a failed read cannot be told from a quiet range
+(CATALYSTS-12, matrix Gaps).
+
+**States:** This is the empty state of CATALYSTS-01 to CATALYSTS-04; there is no stale or error variant of it.
+
+**Acceptance criteria:**
+- Given an answer with no events, when the page renders, then it draws the zero header, the controls, the Min impact bar
+  and the Wall Street Horizon card and nothing else (executed).
+- Given every read failing, then the same page (executed).
+- Given an empty answer, then a message should say that nothing falls in the range; none does (matrix Gaps).
+- Given a filter combination with no row, then an empty timeline under a header that still counts events (executed).
+
+**Tests:** None asserts it: `buildCatalystEventsEmpty` is exported by `src/mocks/catalysts.ts` and re-exported by
+`tests/helpers/fixtures/catalysts.ts` and no spec uses it (its comment says it drives "the page's empty state", which the
+page does not have). Te stays unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:425-441,483-488,564,606-628`; `src/mocks/catalysts.ts:105-117`; no test ids.
 
 ##### CATALYSTS-12 · State: error
 
+**Shows or does:** When the events request answers with a non-2xx status or fails (`useCatalystEvents` throws
+`Failed to fetch catalysts` for any `!r.ok`, `src/routes/CatalystsPage.tsx:168-169`, after the one retry of the client's
+default), a red box reads `Failed to load catalysts: Failed to fetch catalysts` (`:612-616`): one fixed message whatever
+the status, with no code, no reason and no retry button (executed with a 500 and with a 401). It has no `role`. The
+header keeps its zeros (`0 events 0H / 0M / 0L · Benzinga`), Hot Now, the chips and the timeline are absent, and the title,
+the range controls, the Min impact bar and the Wall Street Horizon card (when the types request succeeded) stay. `Refresh`
+is enabled and a successful one removes the box (executed). The types request has no error branch at all: its failure draws
+nothing (CATALYSTS-05).
+
+The box is reachable only by a transport failure, a gated 401 or an unhandled 5xx. The handler turns a database outage into
+a 200 with no events (`catalysts.py:358-362` and its four siblings, over `gcp/database.py:239-241`), which the page draws as
+the empty page of CATALYSTS-11 (executed: every read raising or returning an empty frame answered 200, `source: Benzinga`).
+The rows replaced are CATALYSTS-01 to CATALYSTS-04.
+
+**Needs:** A non-2xx answer from `GET /api/catalysts/events`. On staging the gated route answers 401 without a token
+(V evidence), which in `open` mode draws this box (CATALYSTS-14); production does not produce a 5xx on demand and none was
+observed.
+
+**States:** This is the error state of CATALYSTS-01 to CATALYSTS-04; the stale and permission states are CATALYSTS-13 and
+CATALYSTS-14.
+
+**Acceptance criteria:**
+- Given a 500 on the events request, when the page renders, then after one retry (two requests, 2.4 s in the hermetic
+  page) the box shows with the fixed message, the zero header stays and the Wall Street Horizon card still shows (executed).
+- Given a 401 on both routes in `open` mode, then the same box shows, the card is absent and no `Sign in to load data`
+  appears (executed; CATALYSTS-14).
+- Given a later successful `Refresh`, then the box is gone and the rows are back (executed).
+- Given a database outage, then no box: the handler answers 200 and the page draws the empty page (executed; matrix Gaps).
+- Given any failure, then the message should say what failed; it does not (matrix Gaps).
+
+**Tests:** On main `tests/api/test_route_coverage.py` pins `GET /api/catalysts/events` at 200 against a dead backend
+(`Req("GET", "/api/catalysts/events", 200)`, `:325`, no body asserted), which is the quiet-range defect and not an error
+state; no page test renders the box, and removing it from a scratch copy of the page (2026-10-01) left every
+test of `tests/catalysts/catalysts.spec.ts` passing. Te stays unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:159-174,406,612-616`;
+`platform/api/routers/catalysts.py:358-362,421-425,450-454,494-498,535-539`; `gcp/database.py:239-241`; no test ids.
+
 ##### CATALYSTS-13 · State: stale
 
+**Shows or does:** There is no stale state. The page's only provenance is the `source` string at the end of the header line,
+`{data?.source ?? 'Benzinga'}` (`src/routes/CatalystsPage.tsx:488`): while no answer has arrived, after a failure and
+for an answer without a `source` it reads `Benzinga`, and for an answer the handler built it reads what the handler
+wrote (`catalysts.py:318-328`): `Benzinga`, `Benzinga + DB (news + sec, <n>)`, or `Benzinga (fetch in flight)` while another
+request's Benzinga batch is running. The response carries no write time, as-of or age for any source, and the page compares
+no data with the clock: the only clock use is the cards' `TODAY` label and Hot Now's window. The label names a source that
+contributed nothing (neither service has a Benzinga key) and miscounts the others: on 2026-10-01 it read
+`Benzinga + DB (news + sec, 1565)`, where 1,565 is every database event, 897 of them earnings rows, 617 news, 35 economic and
+16 8-Ks (executed, counted in the response); `news + sec` names two of the four. The stale state would cover CATALYSTS-01 to
+CATALYSTS-04; its one trace, the source string, is part of the header of CATALYSTS-02.
+
+What a reader cannot see (V evidence, 2026-10-01): the calendar's last run was the 19:00 ET job of 09-30 and its rows end
+at 2026-10-07; the newest news row was published 06:02 ET and the last hourly job finished at 08:01 ET; the insider table
+ingests daily (07:03 ET today) but its newest transaction is dated 2026-09-23, so no cluster matched the range; the 48-hour
+news window is empty over a weekend (matrix Gaps).
+
+**Needs:** The envelope's `source` (CATALYSTS-04). No other field could carry freshness today.
+
+**States:** The state of CATALYSTS-02's header line. It has no loading form beyond the `Benzinga` default, and the permission
+and error states draw the same default.
+
+**Acceptance criteria:**
+- Given the production answer, then the header ends `Benzinga + DB (news + sec, 1565)` (executed).
+- Given an answer with no database event, then it ends `Benzinga` (executed with the real handler's empty answer).
+- Given no answer yet or a failed request, then it ends `Benzinga` (executed).
+- Given a source older than the session expects, then a marker should show; none does, and the response has nothing to
+  mark it with (matrix Gaps).
+
+**Tests:** None asserts it. `renders impact tier counters in header` matches the counts and not the source, and replacing
+the string with a constant in a scratch copy of the page (2026-10-01) left every test passing. `tests/api/test_threadpool_races.py`
+(`test_a_pending_catalyst_fetch_is_not_reported_as_a_source`) asserts that the handler's source `Benzinga (fetch in flight)`
+is written, by reading the source text of the router, for a branch the deployed services cannot reach with no key. Te stays
+unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:483-488`; `platform/api/routers/catalysts.py:305-328`; no test ids.
+
 ##### CATALYSTS-14 · State: permission
+
+**Shows or does:** A state with three presentations, one of them out of reach. (1) `DataGate` wraps everything below the
+header and the range controls (`src/routes/CatalystsPage.tsx:519-632`: Hot Now, the Min impact bar, the chips, the spinner,
+the error box, the timeline and the Wall Street Horizon card) and, when a gated call has answered 401 and the user is
+signed out (`blocked && !isLoading && !isSignedIn`), replaces it with `SignInEmptyState`, a `role="status"` block reading
+`Sign in to load data` with a `Sign in` button that reloads the page (
+`src/components/shared/SignInEmptyState.tsx:12-51,93-98`); the title, the counters and the range controls stay. (2) For a signed-in user whose token is refused, `DataGate`
+does nothing, because `isSignedIn` is true. (3) The page does not use `SignInBanner`.
+
+The replacement is unreachable in practice. In `firebase` mode a signed-out visitor never sees the page: `AuthGate`
+renders the sign-in screen in its place (`src/components/auth/AuthGate.tsx:14-30`; executed 2026-10-01 with `/catalysts`
+opened signed out: the sign-in screen showed, there was no `Catalysts` heading and the only API request was
+`GET /api/config/firebase`). In `open` and `iap` modes `useUser` reports signed in always
+(`src/hooks/useUser.ts:22-27,81`), so the condition cannot hold.
+
+What a signed-in user sees on a 401 (executed 2026-10-01, `open` mode as the hermetic suite runs, both routes answering 401
+`sign in to continue`): the shell's strip `Your session expired, so live data is not loading.` with a `Sign in` button,
+`role="status"`, and the nav pill `Session expired` (`src/components/shared/AuthStatusIndicator.tsx:23-33,156-182`,
+SHELL-16); on the page the header zeros, the filter bar, the red box `Failed to load catalysts: Failed to fetch catalysts`
+(CATALYSTS-12) and no Wall Street Horizon card (its request is the second 401); `Sign in to load data` appears nowhere. The
+flag behind the strip is set by the fetch wrapper on any gated 401 and cleared by any later gated success
+(`src/lib/authedFetch.ts:155-166,247-250`, `src/lib/authGate.ts:14-47`), so it follows the last answer (read).
+
+**Needs:** The 401 itself. Both routes the page calls are gated: staging answered 401 without a token to
+`GET /api/catalysts/events?date_from=2026-09-28&date_to=2026-10-15` and `GET /api/catalysts/types`, and 200 to
+`GET /api/health` and `GET /api/config/firebase` (`authMode: firebase`) in the same run (V evidence, 2026-10-01).
+`solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to the same three paths and to
+`/api/health`, so the 401 proof is staging's. The wrapper's `OPEN_PREFIXES` must match the backend's
+`_OPEN_API_PREFIXES` (CLAUDE.md, Auth).
+
+**States:** This is the permission state of Hot Now, the filters, the chips, the timeline and the Wall Street Horizon card
+(CATALYSTS-01 to CATALYSTS-05) and of the spinner and the error box that share their block, and the actions CATALYSTS-07 to
+CATALYSTS-09 live inside it; the header and the range controls (CATALYSTS-06) stay.
+
+**Acceptance criteria:**
+- Given no token, then each gated route answers 401 on staging and `GET /api/health` 200 (V evidence).
+- Given a signed-in user and a 401 on both routes, then the shell shows its expired-session strip and the page its error
+  box, with no `Sign in to load data` and no sign-in prompt of its own (executed).
+- Given a signed-out user in `firebase` mode, then the sign-in screen replaces the page and no catalysts request is sent
+  (executed; the screen is asserted on `/dashboard` by `firebase mode, signed out → login screen blocks the
+  app`, `tests/shared/auth-gate.spec.ts`, on main at eca7078).
+- Given a gated 401, then the wrapper calls the callback registered with `setOnUnauthorized`, and a 401 from an open path
+  does not (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`,
+  `src/lib/authedFetch.test.ts`, on main); no code outside the tests registers one, so no behaviour hangs on it, and the flag
+  behind the strip, set on the next line, is not read by that test.
+
+**Tests:** On main: `src/lib/authedFetch.test.ts` as above, `tests/api/test_platform_auth.py`
+(`test_firebase_requires_valid_token`: a gated path answers 401 without a token in `firebase` mode and the open paths 200,
+on a synthetic `/api/secret` route and not on a catalysts route) and the sign-in screen test above. No test asserts
+`DataGate`, the strip on this page, the page's 401 form or a 401 on a catalysts route. Te stays unticked.
+
+**Code:** `src/routes/CatalystsPage.tsx:519-632`, `src/components/shared/SignInEmptyState.tsx:12-98`,
+`src/components/auth/AuthGate.tsx:14-30`, `src/lib/authGate.ts:14-47`, `src/lib/authedFetch.ts:45,155-166,247-250`,
+`src/hooks/useUser.ts:22-27,81-82`, `src/components/shared/AuthStatusIndicator.tsx:23-33,156-182`; test ids `auth-status`,
+`auth-status-banner` (the shell's); the page's own state has none.
 
 ### SCREEN-ADMIN — `/admin`
 
