@@ -9162,7 +9162,7 @@ between 20:20 ET and midnight on 09-30 (V evidence).
 High: every `earnings_calendar` row of the day (`catalysts.py:475`), news at relevance 0.9 and absolute sentiment 0.4
 (`:394-398`), a high-importance `economic_events` row, an 8-K with item 1.01 or 2.01, and never an insider cluster
 (Medium, `:519`). Production (V evidence, 2026-10-01, executions `db-query-256dl` and `db-query-5hlkw`): `earnings_calendar`
-holds 49 rows for today (30 tickers, fetched by the 19:00 ET run of 09-30) and 12 for tomorrow, `economic_events` four
+holds 49 rows for today (30 tickers; the table's newest `fetched_at` is the 19:00 ET run of 09-30) and 12 for tomorrow, `economic_events` four
 high events for 10-02, and `news_sentiment` 54 qualifying rows dated 10-01, 15 of them High, newest 10:02 UTC.
 
 **States:** Absent while the request loads, after it fails and for an answer with nothing High today or tomorrow, with no
@@ -9844,7 +9844,7 @@ flag behind the strip is set by the fetch wrapper on any gated 401 and cleared b
 **Needs:** The 401 itself. Both routes the page calls are gated: staging answered 401 without a token to
 `GET /api/catalysts/events?date_from=2026-09-28&date_to=2026-10-15` and `GET /api/catalysts/types`, and 200 to
 `GET /api/health` and `GET /api/config/firebase` (`authMode: firebase`) in the same run (V evidence, 2026-10-01).
-`solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to the same three paths and to
+`solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to the same two catalysts paths and to
 `/api/health`, so the 401 proof is staging's. The wrapper's `OPEN_PREFIXES` must match the backend's
 `_OPEN_API_PREFIXES` (CLAUDE.md, Auth).
 
