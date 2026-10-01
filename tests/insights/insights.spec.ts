@@ -11,11 +11,17 @@
  *   - empty state shows the CTA when /report returns 404
  *   - refresh runs the queued -> running -> done polling loop and
  *     eventually reloads the report
+ *
+ * Three further flows sit at the end of the file: the partial-report banner
+ * of a degraded report, the Watchlist tab's Generate report running live
+ * with a cutoff set, and the error surfaces of the report, ranking and chat.
  */
 import { test, expect } from '@playwright/test';
 import { M } from '../helpers/mocks';
 import {
   MOCK_INSIGHT_REPORT,
+  MOCK_INSIGHT_REPORT_DEGRADED,
+  MOCK_WATCHLIST,
   mockInsightsApi,
   runStatus,
 } from '../helpers/fixtures/insights';
@@ -215,5 +221,103 @@ test.describe('AI Insights — point-in-time replay', () => {
     await expect.poll(() => refreshUrls.length).toBeGreaterThanOrEqual(1);
 
     expect(new URL(refreshUrls[0]).search).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Degraded report, the cutoff's watchlist exception, and the error surfaces
+// ---------------------------------------------------------------------------
+
+test.describe('AI Insights — degraded and failed states', () => {
+  test('a degraded report shows the partial-report banner naming each failed section, a complete one shows none', async ({
+    page,
+  }) => {
+    await mockInsightsApi(page, { report: MOCK_INSIGHT_REPORT_DEGRADED });
+    await page.goto('/insights');
+    await page.waitForLoadState('networkidle');
+
+    // The fixture lists one failed section, `judge`; the banner names it,
+    // and the header card still renders the degraded report below it.
+    const banner = page.getByText(/Partial report: the following sections were unavailable/);
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('judge');
+    await expect(page.locator('h2').filter({ hasText: 'IWM' })).toBeVisible();
+
+    // Re-registered after the helper so it wins (Playwright matches
+    // newest-first): the same page on a report with no failed sections.
+    await page.route('**/api/insights/report/IWM', (route) => route.fulfill(M.ok(MOCK_INSIGHT_REPORT)));
+    await page.reload();
+    await expect(page.locator('h2').filter({ hasText: 'IWM' })).toBeVisible();
+    await expect(page.getByText(/Partial report/)).toHaveCount(0);
+  });
+
+  test("a watchlist row's Generate report runs live even while a cutoff is set", async ({ page }) => {
+    const refreshUrls: string[] = [];
+    await mockInsightsApi(page, { watchlist: MOCK_WATCHLIST, onRefresh: (url) => refreshUrls.push(url) });
+    // Clicking a row switches the active ticker to AAPL, so every AAPL
+    // endpoint the page then calls needs an answer (an unmocked /api call
+    // would fall through to the dev proxy).
+    await page.route('**/api/insights/report/AAPL', (r) => r.fulfill(M.notFound()));
+    await page.route('**/api/insights/report/AAPL/history**', (r) =>
+      r.fulfill(M.ok({ ticker: 'AAPL', count: 0, reports: [] }))
+    );
+    await page.route('**/api/dashboard/brief/AAPL', (r) =>
+      r.fulfill(M.ok({ ticker: 'AAPL', source: 'unavailable', reason: 'no brief for today' }))
+    );
+    const aaplRefreshUrls: string[] = [];
+    await page.route('**/api/insights/report/AAPL/refresh**', (r) => {
+      aaplRefreshUrls.push(r.request().url());
+      return r.fulfill(M.ok({ run_id: '00000000-0000-0000-0000-000000000002', ticker: 'AAPL', status: 'queued' }));
+    });
+
+    await page.goto('/insights');
+    await page.waitForLoadState('networkidle');
+    await page.getByLabel('Point-in-time cutoff').fill('2026-04-26T13:15');
+    await expect(page.locator('button', { hasText: 'Replay' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Watchlist' }).click();
+    await expect(page.getByText('2 ranked of 42 candidates')).toBeVisible();
+    // The AAPL row of the shared ranking fixture.
+    const aaplRow = page.locator('div.rounded-lg', { hasText: 'AAPL' }).filter({
+      has: page.getByRole('button', { name: 'Generate report' }),
+    });
+    await aaplRow.getByRole('button', { name: 'Generate report' }).click();
+    await expect.poll(() => aaplRefreshUrls.length).toBeGreaterThanOrEqual(1);
+
+    // Live: no cutoff on the URL, and nothing went to the IWM refresh route.
+    const url = new URL(aaplRefreshUrls[0]);
+    expect(url.pathname).toBe('/api/insights/report/AAPL/refresh');
+    expect(url.search).toBe('');
+    expect(refreshUrls).toHaveLength(0);
+    // The page switched to AAPL's Briefing tab, and the user's cutoff is still set.
+    await expect(page.getByText(/no report yet/i)).toBeVisible();
+    await expect(page.getByLabel('Point-in-time cutoff')).toHaveValue('2026-04-26T13:15');
+    await expect(page.locator('button', { hasText: 'Replay' })).toBeVisible();
+  });
+
+  test('a failed report, ranking or chat request says so on the page with its status', async ({ page }) => {
+    await mockInsightsApi(page);
+    const fail503 = { status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'down' }) };
+    await page.route('**/api/insights/report/IWM', (r) => r.fulfill(fail503));
+    await page.route('**/api/insights/watchlist**', (r) => r.fulfill(fail503));
+    await page.route('**/api/insights/chat', (r) => r.fulfill(fail503));
+
+    await page.goto('/insights');
+    // The report query retries once before it reports the failure.
+    await expect(page.getByText('Failed to load report: insights 503')).toBeVisible({ timeout: 15_000 });
+    // The page chrome around the failed card is still there.
+    await expect(page.getByRole('heading', { name: 'AI Insights' })).toBeVisible();
+    await expect(page.getByLabel('Point-in-time cutoff')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Watchlist' }).click();
+    await expect(page.getByText('Failed to load watchlist: watchlist 503')).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole('button', { name: 'Chat' }).click();
+    const input = page.getByPlaceholder('Ask about IWM...');
+    await input.fill('what is the gamma regime');
+    await input.press('Enter');
+    // The user's message stays, followed by an assistant bubble carrying the status.
+    await expect(page.getByText('what is the gamma regime')).toBeVisible();
+    await expect(page.getByText(/^Error: 503/)).toBeVisible();
   });
 });
