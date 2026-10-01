@@ -6654,12 +6654,12 @@ assertion of `Sign in to load`. Te stays unticked.
 
 ### SCREEN-PLAYBOOK — `/playbook`
 
-- **Purpose:** The day’s structured setups — trigger, invalidation, targets — with as-of review mode.
+- **Purpose:** The day’s structured setups for the active ticker (conditions, win rate, average return, target and stop off the live price, win rate by hold window) and, during the session, how many of each setup's conditions the live market meets. There is no as-of review mode on this page: it never sends `date`, and the Replay control is not shown on `/playbook`.
 - **Matrix:** [03 § 11](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#11--playbook)
 - **Status:** Broken · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/PlaybookPage.tsx` (355 lines)
-- **Child components:** `SetupCardDetails`, `type SetupHorizon`
-- **API calls (from source):** `/api/market/reference/`, `/api/playbook/`
+- **Component:** `src/routes/PlaybookPage.tsx` (372 lines)
+- **Child components:** `SetupCardDetails`, `type SetupHorizon`, `DataGate`
+- **API calls (from source):** `/api/playbook/`, `/api/market/reference/`, and through hooks `/api/live/status`, `/api/live/history/`, `/api/live/quote/`, `/api/live/avg-volume/`, `/api/live/indicators`, `/api/playbook/evaluate`
 - **Stores:** `useTickerStore`
 - **E2E specs:** `tests/playbook/playbook.spec.ts`
 - **PR lineage:** [#444](https://github.com/TeneikaAskew/stocks/pull/444) EOD outcome tracking + as-of cutoff · [#620](https://github.com/TeneikaAskew/stocks/pull/620) as-of review mode · [#774](https://github.com/TeneikaAskew/stocks/pull/774) silent resolver outage fix
@@ -6669,15 +6669,15 @@ assertion of `Sign in to load`. Te stays unticked.
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/playbook/{ticker} | ticker, cards[].id/name/description/direction/conditions/win_rate/avg_return/target_pct/stop_pct/horizons/best_horizon_min/best_horizon_win_rate/best_horizon_avg_bps, analysis_date, age_days (types: `PlaybookPage.tsx` PlaybookCard/PlaybookResponse) | phase6-playbook 04:30 ET Mon-Fri → playbook_cards | one-hour staleTime, refetched every 15min; 503 past `max_age_days` | `usePlaybook` (inline in `PlaybookPage.tsx`) → Header, Setup cards, Trade levels |
-| GET /api/market/reference/{ticker}/{date} | ticker, date, open, high, low, close (types: `PlaybookPage.tsx` ReferenceResponse) | fetch-market-data 23:00 ET Mon-Fri → market_data_daily | one-hour staleTime | `useReference` (inline in `PlaybookPage.tsx`) → evaluation snapshot's prior close |
-| GET /api/live/status | is_open, session, next_open, current_time_et (types: `useLiveStatus.ts` LiveStatus) |  | 60s refetch, 30s staleTime | `useLiveStatus` → Header evaluation line, snapshot |
-| GET /api/live/quote/{ticker} | price, open, high, low, volume, change, change_pct, prev_close, last_updated (types: `useLiveQuote.ts` LiveQuote) |  | fetched only while the session is open, pre-market or after-hours | `useLiveQuote` → Trade levels (target/stop off the live price), snapshot |
-| GET /api/live/history/{ticker} | ticker, interval, count, market_session, market_open, bars[] (types: `useLiveHistory.ts` LiveHistory) |  | 60s refetch, 30s staleTime; fetched only while the session is open, pre-market or after-hours | `useLiveHistory` → evaluation snapshot |
-| GET /api/live/avg-volume/{ticker} | ticker, avg_volume_20d, sample_size, last_date, source (types: `useLiveHistory.ts` AvgVolume) | fetch-market-data 23:00 ET Mon-Fri and fetch-earnings-history 19:15 ET Mon-Fri → market_data_daily | one-hour staleTime | `useAvgVolume` → evaluation snapshot |
-| POST /api/live/indicators | indicators, signals.call/put, chart_voter (types: `useLiveIndicators.ts` IndicatorsResponse) |  | keyed on bar count, last bar time and current price, not time-based | `useLiveIndicators` → evaluation snapshot |
-| POST /api/playbook/evaluate | results_by_key keyed by card id (types: `usePlaybookEvaluation.ts` PlaybookEvaluateResponse, `lib/playbookEvaluator.ts` EvalResult) |  | 30s staleTime | `usePlaybookBatch` (`usePlaybookEvaluation.ts`) → Setup cards condition rows, progress bar |
-| store: ticker |  | Zustand, per session |  | every card |
+| GET /api/playbook/{ticker} | cards[].id/name/description/direction/conditions/win_rate/avg_return/target_pct/stop_pct/horizons/best_horizon_min, analysis_date and age_days are read; ticker and cards[].best_horizon_win_rate/best_horizon_avg_bps are typed and never drawn, and source, generated_at and max_age_days are sent and never read (types: `PlaybookPage.tsx` PlaybookCard/PlaybookResponse) | phase6-playbook 04:30 ET Mon-Fri → playbook_cards (IWM, QQQ and SPY only) | one-hour staleTime, refetched every 15min; 503 past `max_age_days` (7); `age_days` is counted against the UTC date | `usePlaybook` (inline in `PlaybookPage.tsx`) → Header, Setup cards, Trade levels |
+| GET /api/market/reference/{ticker}/{date} | close, high and low are read; ticker, date and open are typed and never read, and source, stale_days and week are sent and never read (types: `PlaybookPage.tsx` ReferenceResponse) | AlphaVantage TIME_SERIES_DAILY for a date under 30 days old, which is always so here (the date asked is today's, Eastern); behind it the handler reads market_data_daily ← fetch-market-data 23:00 ET Mon-Fri, then the GCS parquets | one-hour staleTime; a non-OK answer becomes null | `useReference` (inline in `PlaybookPage.tsx`) → evaluation snapshot's prior close, high and low |
+| GET /api/live/status | is_open and session are read; next_open and current_time_et are typed and never read here (types: `useLiveStatus.ts` LiveStatus) | the handler's clock and its holiday list, no table | 60s refetch, 30s staleTime | `useLiveStatus` → the session gate of the history and quote requests |
+| GET /api/live/quote/{ticker} | price and volume are read; ticker, open, high, low, change, change_pct, prev_close, last_updated, market_session and market_open are typed and never read here (types: `useLiveQuote.ts` LiveQuote) | AlphaVantage GLOBAL_QUOTE | 15s refetch, 10s staleTime; fetched only while the session is open, pre-market or after-hours | `useLiveQuote` → Trade levels (target and stop off the price), snapshot's price and volumeToday |
+| GET /api/live/history/{ticker} | bars is read; ticker, interval, count, market_session and market_open are typed and never read here (types: `useLiveHistory.ts` LiveHistory) | AlphaVantage TIME_SERIES_INTRADAY, compact: the last 100 one-minute bars | 60s refetch, 30s staleTime; fetched only while the session is open, pre-market or after-hours | `useLiveHistory` → evaluation snapshot (last bar, opening range, minutes since the open), indicators request |
+| GET /api/live/avg-volume/{ticker} | avg_volume_20d is read; ticker, sample_size, last_date and source are typed and never read here (types: `useLiveHistory.ts` AvgVolume) | market_data_daily (the 20 newest rows with a volume) ← fetch-market-data 23:00 ET Mon-Fri and fetch-earnings-history 19:15 ET Mon-Fri; AlphaVantage TIME_SERIES_DAILY when the table gives under 5 rows or the read fails | one-hour staleTime | `useAvgVolume` → evaluation snapshot, indicators request |
+| POST /api/live/indicators | indicators is read; signals and chart_voter are typed and never read here (types: `useLiveIndicators.ts` IndicatorsResponse) | `lib/indicators.py` through the handler, no table | keyed on bar count, last bar time, price, volume and average volume, 10s staleTime, not time-based | `useLiveIndicators` → evaluation snapshot |
+| POST /api/playbook/evaluate | results_by_key keyed by card id (types: `usePlaybookEvaluation.ts` PlaybookEvaluateResponse, `src/lib/playbookEvaluator.ts` EvalResult) | the router's `_eval_condition`, no table | 30s staleTime; asked again when the snapshot's price, volume, opening range, minutes or indicators change or the card set does | `usePlaybookBatch` (`usePlaybookEvaluation.ts`) → Setup cards condition rows, progress line and border |
+| store: ticker | activeTicker (recentTickers is stored with it) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette) |  | every card |
 
 #### Displayed
 | ID | Element | Component |
@@ -6689,43 +6689,599 @@ assertion of `Sign in to load`. Te stays unticked.
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| PLAYBOOK-04 | Switch ticker | The page has no picker of its own: `usePlaybook` re-keys on `useTickerStore`'s `activeTicker`, set elsewhere (the header combobox); the command palette's ticker entries navigate to `/charts` instead. |
-| PLAYBOOK-05 | Watch conditions fill | `buildSnapshot` (`lib/playbookEvaluator.ts`) assembles bars, quote and indicators into a `MarketSnapshot`; `usePlaybookBatch` posts one batched evaluation per snapshot and cards tint brighter as more conditions come back met. |
+| PLAYBOOK-04 | Switch ticker | The page has no picker of its own and the header has none: `usePlaybook` re-keys on `useTickerStore`'s `activeTicker`, which is persisted and set elsewhere (`TickerCombobox` on Dashboard, Options Flow, Signals, Insights and Journal, a watchlist row on Insights, a ticker click on Catalysts); the command palette's ticker entries navigate to `/charts` instead. |
+| PLAYBOOK-05 | Watch conditions fill | `buildSnapshot` (`src/lib/playbookEvaluator.ts`) assembles the bars, the quote, the average volume, the reference and the indicators into a `MarketSnapshot` (null without bars or indicators); `usePlaybookBatch` posts one batched evaluation per snapshot and card set, and each card shows its met count, a percent of all its conditions and a stronger border once every condition that could be judged is met. |
 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| PLAYBOOK-06 | loading | present | "Loading playbook…" |
-| PLAYBOOK-07 | empty | present | "No playbook cards found for {ticker}", reached only by a 200 with no cards, which the handler never sends; a ticker without rows gets a 404, shown as the error state instead. |
-| PLAYBOOK-08 | error | present | "Playbook unavailable for {ticker}: {server reason}"; an evaluation failure is not read, so every condition falls back to "no data" rather than showing the failure. |
-| PLAYBOOK-09 | stale | present | The card set's `analysis_date` and age (`snapshotAgeLabel`) render next to the setup count; a refused (503) set is dropped rather than shown as current. |
-| PLAYBOOK-10 | permission | not tracked (new category); present | `DataGate` wraps the page body. |
+| PLAYBOOK-06 | loading | present | "Loading playbook…" in a plain box, no skeleton or spinner, for the whole first fetch including its one retry; the header keeps its title and its line and drops the count and the age. |
+| PLAYBOOK-07 | empty | present | "No playbook cards found for {ticker}", reached only by a 200 with no cards, which the handler never sends; a ticker without rows gets a 404, shown as the error state instead. The text names `scripts/run_pipeline.py`, the backtest pipeline, and not the job that writes the cards. |
+| PLAYBOOK-08 | error | present | "Playbook unavailable for {ticker}: {server reason} (HTTP {status})" after the one retry, with the cards, the count and the age gone; an evaluation, history, quote, indicators or status failure is not read, so every condition falls back to "no data" or the header to "No live data, evaluation paused" rather than showing the failure. |
+| PLAYBOOK-09 | stale | present | The card set's `analysis_date` and age (`snapshotAgeLabel`) render next to the setup count; a refused (503) set is dropped rather than shown as current. The live evaluation has no age marker: a page left open past the close keeps its last snapshot. |
+| PLAYBOOK-10 | permission | not tracked (new category); present | `DataGate` wraps the page body below the header; it cannot trigger in practice: a signed-out visitor meets the sign-in screen first, and a signed-in user's 401 shows the shell's expired-session strip and the error box. |
 
 #### Journeys
-1. Wait for a card to light up: Opens /playbook during the session (PLAYBOOK-01) → Cards tint as conditions fill in (PLAYBOOK-05, PLAYBOOK-02) → Watches the progress bar reach every auto-evaluable condition (PLAYBOOK-05) → Reads trade levels and win rate by hold window (PLAYBOOK-03) → Acts on the fully lit setup (PLAYBOOK-02)
-2. Outside market hours: Opens the page with the market closed (PLAYBOOK-01) → Header reads "No live data, evaluation paused" (PLAYBOOK-01) → Every condition shows unknown (PLAYBOOK-05) → Uses the cards as a reference rather than a live signal (PLAYBOOK-02)
-3. Nothing generated yet: Switches to an unprocessed ticker (PLAYBOOK-04) → An amber card explains the playbook was not found (PLAYBOOK-08) → Points at the phase 6 playbook generation step (PLAYBOOK-08)
+1. Wait for a card to light up: Opens /playbook during the session (PLAYBOOK-01) → Cards tint as conditions fill in (PLAYBOOK-05, PLAYBOOK-02) → Watches the met count and the percent rise and the border strengthen once every condition that could be judged is met; a card with a condition the evaluator cannot judge (six of today's twelve) never reaches 100% (PLAYBOOK-05) → Reads trade levels and win rate by hold window (PLAYBOOK-03) → Acts on the fully lit setup (PLAYBOOK-02)
+2. Outside market hours: Opens the page with the market closed (PLAYBOOK-01) → Header reads "No live data, evaluation paused" (PLAYBOOK-01) → Every card reads `N conditions (no live data)` and every condition `no data` (PLAYBOOK-02) → Uses the cards as a reference rather than a live signal (PLAYBOOK-02)
+3. Nothing generated yet: Has an unprocessed ticker active, set on another page because this page has no picker (PLAYBOOK-04) → An amber box says the playbook was not found, with the server's reason (PLAYBOOK-08) → Names the phase6-playbook job to run (PLAYBOOK-08)
 
 #### Elements
+
+In every body below, "executed 2026-10-01" means that the page was rendered in a hermetic browser (a scratch copy of solyra at the
+`7e8b283` source on the e2e launcher's Vite server, the browser's time zone UTC unless a body says otherwise) while it talked to
+the real stocks handlers of `5bdf32b`, `get_playbook`, `evaluate_playbook` and `compute_live_indicators`, served by uvicorn with only
+the database connection replaced: `gcp.database.query_to_dataframe_strict` returned the production `playbook_cards` rows of
+execution `db-query-vvlbg` (2026-10-01, 14:39 UTC, 10:39 ET; the handler's own SELECT for IWM, SPY and QQQ) as a frame built the way
+`pd.read_sql` builds one (`DataFrame.from_records`). The five reads that call a vendor or `market_data_daily` (status, quote,
+history, average volume and reference) were answered by the browser: the average volume and the previous session's open, high, low
+and close are the production values of the same dispatch, the history is a synthetic series of one-minute bars (a deterministic
+wiggle around 279.9 ending at the time a body names) and the quote's volume an assumed 9,000,000 shares. A body that names a clock,
+a status code or an edit of the answer says so. "Executed with the real evaluator" means the same of `POST /api/playbook/evaluate`
+with the snapshot a body names. "Mutation" means one line of the product code changed in that scratch copy and the committed spec
+run; "read" marks what was only read in the code, "counted in the response" what was computed from an answer the page received,
+and "V evidence" the comment on stocks issue 1234 that the matrix links.
+
 ##### PLAYBOOK-01 · Header
+
+**Shows or does:** The block above the cards (`src/routes/PlaybookPage.tsx:318-335`). It sits outside `DataGate` (`:337`), so it is
+drawn in every state. On the left an `h1` reading `<ticker> Playbook` (`:320-322`; the ticker is the store's `activeTicker`, `:265`)
+and under it the evaluation line (`:323-327`): `Cards light up as live market conditions are met` while the page holds a snapshot
+(`hasLiveData`, `:303`) and `No live data, evaluation paused` until it does. On the right, only while a playbook answer is held and
+not refused (`:300,329-334`, test id `playbook-age`): `<n> setups` and, when the answer carries a `YYYY-MM-DD` `analysis_date`,
+` · as of <Mon D, YYYY>` followed by `(same day)`, `(1d old)` or `(<n>d old)` from the server's `age_days`, or by nothing when the
+answer has no `age_days` (`snapshotAgeLabel`, `src/lib/dates.ts:39-58`). The count has no singular: one card reads `1 setups`.
+
+What it drew on the production answer (executed, IWM): `IWM Playbook`, `No live data, evaluation paused` with the market answered
+closed, `Cards light up as live market conditions are met` once the five live reads were answered as a regular session, and
+`12 setups · as of Oct 1, 2026 (same day)`. Variants of the same answer: `age_days` 0 gave `(same day)`, 1 `(1d old)`, 5 `(5d old)`,
+an answer without `age_days` `as of Oct 1, 2026`, and one without `analysis_date`, or with `10/01/2026`, only `12 setups`.
+
+The line follows the snapshot, not the status: with `/api/live/status` regular and the history answered but `POST /api/live/indicators`
+answering 500 the line stayed `No live data, evaluation paused`, and with the status itself answering 500 the history and the quote
+were never requested and the line stayed paused (executed). `buildSnapshot` returns null without bars or without indicators
+(`src/lib/playbookEvaluator.ts:82-84`). A page left open past the close keeps its last snapshot and the live line (PLAYBOOK-09).
+
+The age is the server's, counted against the UTC date, `(UTC today - analysis_date).days` (`platform/api/routers/playbook.py:277-280,324`):
+with the handler's clock pinned the same set read `age_days` 0 at 19:59 ET and 1 at 20:00 ET, and 1 at 04:29 ET the next morning, before
+the 04:30 run (executed against the real handler; matrix Gaps).
+
+**Needs:** `GET /api/playbook/{ticker}` for the count and the age (`cards`, `analysis_date` and `age_days` are read; `ticker`, `source`,
+`generated_at` and `max_age_days` are sent and never read here), and for the line `GET /api/live/status`, `GET /api/live/history/{ticker}`
+and `POST /api/live/indicators` (PLAYBOOK-05). Production (V evidence, 2026-10-01, execution `db-query-vvlbg`): `playbook_cards` holds
+21 card sets of 12 cards for each of IWM, QQQ and SPY, the newest dated 2026-10-01 and written at 08:33:50, 08:42:18 and 08:38:17 UTC
+(04:33 to 04:42 ET) by the `phase6-playbook` run created at 08:30:01 UTC, which succeeded; the real handler answered 200 on those rows
+with `age_days` 0 and `max_age_days` 7.
+
+**States:** Title and line are drawn in every state. Loading and error leave out the count and the age (PLAYBOOK-06, PLAYBOOK-08);
+a 200 with no cards reads `0 setups` (PLAYBOOK-07); the stale and permission states are PLAYBOOK-09 and PLAYBOOK-10.
+
+**Acceptance criteria:**
+- Given the default store and an answer dated 2026-09-05 with `age_days` 1, when `/playbook` opens, then the right side reads
+  `1 setups · as of Sep 5, 2026 (1d old)` (`shows the card set date and age next to the setup count`).
+- Given the production answer, then `IWM Playbook` and `12 setups · as of Oct 1, 2026 (same day)` (executed).
+- Given an answer without `age_days`, then `as of <date>` alone; without a valid `analysis_date`, then the count alone
+  (`snapshotAgeLabel`, three tests in `src/lib/dates.test.ts`; executed in the page).
+- Given the market closed, a failed status or a failed indicators call, then `No live data, evaluation paused`; given a snapshot, then
+  `Cards light up as live market conditions are met` (executed; no test asserts either text).
+- Given a refused or failed playbook request, then no count and no age (executed, PLAYBOOK-08).
+- Given a set written at 04:30 ET, then `age_days` is 0 until 20:00 ET and 1 from then on (executed against the real handler).
+
+**Tests:** On main two page tests: `renders ticker playbook heading` asserts that a heading matching `/IWM.*Playbook|Playbook/i` is
+visible, so any heading containing `Playbook` satisfies it (dropping the ticker from the title passed all six tests, mutation), and
+`shows the card set date and age next to the setup count` asserts the exact text of `playbook-age` (removing the count, removing
+the age and changing `1d old` to `1 day old` each failed it, mutation). `src/lib/dates.test.ts` (`snapshotAgeLabel`) asserts the three
+age forms, the missing age and the missing date. On the handler side `test_playbook_fresh_set_is_served_with_its_date`
+(`tests/api/test_playbook_evaluate.py`) asserts the dated answer with `age_days` 1 and `max_age_days`, and
+`test_playbook_age_days_helper` the day count. No test asserts the ticker in the title or either evaluation line (changing both texts and
+forcing `hasLiveData` true passed all six tests, mutation). Te stays unticked.
+
+**Code:** `src/routes/PlaybookPage.tsx:264-335`, `src/lib/dates.ts:39-58`, `src/lib/playbookEvaluator.ts:75-103`,
+`platform/api/routers/playbook.py:277-280,306-364`; test id `playbook-age`.
 
 ##### PLAYBOOK-02 · Setup cards
 
+**Shows or does:** A grid of `PlaybookCardUI` (`src/routes/PlaybookPage.tsx:158-260`, `:358-368`, two columns from the `sm` breakpoint and three
+from `xl`), one card per entry of the answer in the order the handler sent, which is `card_num` (`platform/api/routers/playbook.py:151-172`).
+Each card: the card's name with an arrow for CALL or PUT and none for anything else (`:186-194`), the description when it is not empty
+(`:195-199`), a badge holding `card.direction` (green for CALL, red for PUT, blue for any other value, `:86-118,201-203`), the progress
+block when the card has conditions (`:206-229`), one `ConditionRow` per condition (`:120-156,231-236`) and the stats line (`:238-254`),
+then `SetupCardDetails` (PLAYBOOK-03). The progress block reads `<met>/<total> conditions met` with ` · <n> subjective` when n conditions
+came back unknown and `<pct>%` with a bar, or `<total> conditions (no live data)` with an em dash and an empty bar when there is no snapshot.
+A condition row holds an icon (a check when met, a circle when unmet, a question mark when unknown), the condition text, and under it the
+evaluator's `detail` for a met or unmet condition or its `reason` for an unknown one; with no evaluation it reads `no data` (`:363`).
+The stats line reads `Win Rate: <n>%` (`toFixed(0)`) and `Avg Return: <sign><n.n>%` (`toFixed(1)`, green when `>= 0`, red below),
+each only when the value is not null. The fill, the border and the progress follow the evaluation (PLAYBOOK-05).
+
+What the production answer drew (executed, IWM, market answered closed): 12 cards from `IWM CARD 1: Bullish Continuation (2U-2U-2U)`
+to `IWM CARD 12: FTFC Maximum Conviction (All Aligned)`, seven CALL (1, 3, 5, 6, 9, 11, 12) and five PUT, each with the first three setup
+bullets joined by `; ` as its description and 4 to 6 condition rows (54 in all, the same text for IWM, SPY and QQQ), every row reading
+`no data`, `N conditions (no live data)` and an em dash in the progress block, and win rates from `37%` to `47%`. `Avg Return` read `+0.0%`
+on seven cards and `-0.0%` on five: the server sends `avg_return` in percent rounded to two decimals (`playbook.py:198,252`) from per-trade
+averages of -1.28 to +0.88 basis points, so all 36 production cards (IWM, SPY, QQQ) carry -0.0, 0.0, -0.01 or 0.01, the page keeps one
+decimal, and `-0.0 >= 0` is true in JavaScript: card 1 (average -0.49 bps) read a green `+0.0%` and card 5 (-0.51 bps) a red `-0.0%`.
+
+**Needs:** `GET /api/playbook/{ticker}` (PLAYBOOK-01), and for the progress, the rows' detail and the tint `POST /api/playbook/evaluate`
+(PLAYBOOK-05). Production (V evidence): the latest set of each ticker holds 12 cards, 7 CALL and 5 PUT, with `win_rate`,
+`avg_return_bps`, `target_pct`, `stop_pct` and four `horizons` on every one (36 of 36), a non-empty `conditions` list on every one, and
+no NULL; `direction` holds only CALL (441 rows) and PUT (315) in the whole table, and no `conditions` element is anything but a string.
+
+**States:** Absent while loading (PLAYBOOK-06), after an error or a refused set (PLAYBOOK-08) and for an answer with no cards, which
+shows PLAYBOOK-07's text instead; inside `DataGate` (PLAYBOOK-10).
+
+**Acceptance criteria:**
+- Given an answer of n cards, then n cards in the answer's order, each with name, description, badge, conditions and stats (executed:
+  12 on the production answer; `shows setup with conditions` asserts the first card's name).
+- Given no snapshot, then each card reads `N conditions (no live data)` and an em dash, and each condition `no data` (executed).
+- Given a card with `win_rate` or `avg_return` null, then that half of the stats line is absent (read, `:241,246`; the latest production
+  set has none null).
+- Given an `avg_return` of -0.0, 0.0, -0.01 or 0.01, as on all 36 production cards, then `+0.0%` in green or `-0.0%` in red (executed).
+- Given a `direction` other than CALL or PUT, then a blue badge and no arrow (read; the table holds none and the producer writes only CALL
+  and PUT, `scripts/analysis/phase6_playbook.py:391-728`).
+- Given the handler's NULL handling, then a NULL `win_rate` or `avg_return_bps` reaches the page as null and not as 0
+  (`test_cards_from_db_converts_and_preserves_nulls`).
+
+**Tests:** On main one page test, `shows setup with conditions`, asserts that text matching `long breakout` is visible, which is the card's
+name (removing the name failed it, removing every condition row passed it and removing the direction badge passed it, mutation); no test
+asserts a condition row, the badge, the stats line or the progress block. On the handler side `test_cards_from_db_converts_and_preserves_nulls`
+(`tests/api/test_playbook_evaluate.py`) asserts the fraction-to-percent `win_rate` (48.0), the basis-point-to-percent `avg_return` (-0.10),
+the JSON-string forms of `conditions` and `horizons`, and that NaN becomes null; `TestPlaybookAPI.test_playbook`
+(`tests/api/test_platform_api.py`) asserts the wire name, direction, `win_rate` 62.5 and conditions of one card; `test_route_coverage.py`
+pins the route's 503 against a dead backend with no body. Te stays unticked: the page layer asserts the name only.
+
+**Code:** `src/routes/PlaybookPage.tsx:86-260,358-368`, `platform/api/routers/playbook.py:136-274`; no test ids.
+
 ##### PLAYBOOK-03 · Trade levels
+
+**Shows or does:** `SetupCardDetails` (`src/components/playbook/SetupCardDetails.tsx:48-124`), the last block of each card, with up to two
+parts and nothing at all when the card has neither (`:63-64`). (1) `Trade levels · at $<price>` (`:68-92`), drawn only when the page holds
+a positive quote price and the card has both `target_pct` and `stop_pct` (`:55`; the price is `quote?.price`, `PlaybookPage.tsx:365`): a
+`▲ Target` row, a `● Entry` row marked `live price` and a `▼ Stop` row, each with the price, and the caption `Price-only, no fees. Win rate =
+how often target hits before stop, not the move size.` A card that is not PUT puts the target above the entry and the stop below, a PUT
+card the reverse (`:52,57-59`); the sub-labels are always `+<t>% · <t x 100> bps · +$<price x t / 100>` for the target and
+`-<s>% · <s x 100> bps · -$<price x s / 100>` for the stop (`:76,83`). (2) `Win rate / avg bps by hold window` (`:94-121`): one cell per
+`horizons` entry holding `<minutes>m` with a star on the card's `best_horizon_min` (`:101,109`), the window's win rate (`toFixed(0)`, an em dash
+when null) and its average in basis points with a sign and two decimals (`fmtBps`, `:31-34`).
+
+The price comes from the quote request, which the page makes only while the status is regular, pre-market or after-hours
+(`PlaybookPage.tsx:268-272`), so with the market closed, or with the status failing, part (1) is absent and part (2) stands alone
+(executed). With the status answered regular and a quote of $279.92 (executed, IWM): a CALL card drew `+0.30% · 30 bps · +$0.84` and
+`$280.76` as target, `live price` and `$279.92` as entry, `-0.15% · 15 bps · -$0.42` and `$279.50` as stop; a PUT card drew
+`+0.38% · 38 bps · +$1.06` and `$278.86`, then `-0.20% · 20 bps · -$0.56` and `$280.48`.
+
+On the production answer each card has four windows, 5, 15, 30 and 60 minutes; the card's `win_rate` is the 30-minute window's on all
+36 cards (counted in the production rows), and the star marks the window of highest average return, which is negative on 8 of the 12
+cards of each ticker: for IWM card 1 the cells read `5m ★ 46% -0.22`, `15m 43% -0.30`, `30m 39% -0.49`, `60m 36% -0.74` (executed).
+
+Three things the block says or does that the code behind it does not support. The caption says the win rate is how often the target hits
+before the stop, but the producer counts a trade as a win when its realised return is above zero, and a trade that touches neither level
+is marked to its close at the time stop (`scripts/analysis/phase6_playbook.py:213-221`): the real `_score_trades` scored one trade that
+drifted up 1 basis point in 30 minutes, with a 30 bp target and a 15 bp stop never touched, as `win_rate` 1.0 (executed). A card whose
+`direction` is not PUT is drawn as a CALL, `NEUTRAL` and a missing direction included (`:52`): the schema allows NEUTRAL, the producer
+writes only CALL and PUT, and a card edited to NEUTRAL drew the CALL levels, with a blue badge (executed). And `best_horizon_win_rate`
+and `best_horizon_avg_bps` are typed and sent but never drawn (matrix Gaps).
+
+**Needs:** `GET /api/playbook/{ticker}` (`target_pct`, `stop_pct`, `horizons` and `best_horizon_min` are drawn) and `GET /api/live/quote/{ticker}`
+for the price (AlphaVantage GLOBAL_QUOTE, gated, fetched every 15 seconds while the session is open, pre-market or after-hours,
+`src/hooks/useLiveQuote.ts:22-34`). Production (V evidence): all 36 latest cards hold `target_pct`, `stop_pct` and four `horizons` (IWM
+`+0.30% / -0.15%` for CALL and `+0.38% / -0.20%` for PUT, SPY `+0.15% / -0.10%` and `+0.20% / -0.12%`, QQQ `+0.25% / -0.12%` for both,
+and card 8 of each ticker carrying a `+0.20%` target); the quote is a vendor-live read that no session-free request reaches.
+
+**States:** Absent with no quote price or no `target_pct` and `stop_pct` (part 1) and with no `horizons` (part 2); absent while the card
+is absent (PLAYBOOK-06 to PLAYBOOK-08); no stale marker on the price; inside `DataGate` (PLAYBOOK-10).
+
+**Acceptance criteria:**
+- Given a positive price and both percentages, when the card renders, then `Trade levels · at $<price>` with the target, entry and stop
+  rows above (executed for a CALL and a PUT card).
+- Given a PUT card, then the target price is below the entry and the stop above it (executed).
+- Given no price, the market closed or the status failing, then no levels and the hold-window cells alone (executed).
+- Given `horizons`, then one cell per window with the star on `best_horizon_min` (executed on the production answer).
+- Given a `direction` of NEUTRAL or none, then the levels are drawn as for a CALL (executed; matrix Gaps).
+- Given the answer's `target_pct` of `"+0.30%"`, then the handler sends the magnitude 0.30 and the page applies the direction
+  (`test_cards_from_db_converts_and_preserves_nulls`).
+
+**Tests:** No test on main renders this block with a price: the e2e fixture has no `target_pct` and no `horizons` and the market is
+mocked closed, so the component returns null, and no Vitest file imports it. On the handler side `test_cards_from_db_converts_and_preserves_nulls`
+(`tests/api/test_playbook_evaluate.py`) asserts `target_pct` 0.30 and `stop_pct` 0.15 parsed from `"+0.30%"` and `"-0.15%"`, the horizon
+win rates as percents and averages in raw basis points, `best_horizon_min` 60, `best_horizon_win_rate` 36.0 and `best_horizon_avg_bps` -0.18,
+and null for a NULL; `test_route_coverage.py` pins the route's 503 against a dead backend. Te stays unticked.
+
+**Code:** `src/components/playbook/SetupCardDetails.tsx:13-124`, `src/routes/PlaybookPage.tsx:256-257,268-272,365`,
+`scripts/analysis/phase6_playbook.py:114-268`, `platform/api/routers/playbook.py:179-265`; no test ids.
 
 ##### PLAYBOOK-04 · Switch ticker
 
+**Shows or does:** Nothing of its own: the page has no ticker control, and the header has none either (`src/components/layout/Header.tsx:7-13`
+says the ticker lives in a per-page combobox). `activeTicker` comes from `useTickerStore` (`src/routes/PlaybookPage.tsx:265`, default
+`IWM`, persisted as `ticker-store` together with `recentTickers`, `src/stores/tickerStore.ts:14-34`) and is set elsewhere: by
+`TickerCombobox`, which is mounted on Dashboard, Options Flow, Signals, Insights and Journal only (`src/routes/DashboardPage.tsx:547`,
+`OptionsFlowPage.tsx:41`, `SignalsPage.tsx:197`, `InsightsPage.tsx:117`, `JournalPage.tsx:363`); by a watchlist row click on Insights
+(`InsightsPage.tsx:94-99`) and a ticker click on Catalysts (`CatalystsPage.tsx:409-414`); or by a ticker row of the command palette,
+which also navigates to `/charts` (`src/components/layout/CommandPalette.tsx:44-52`). The only link to `/playbook` is the Learn menu
+(`src/components/layout/navConfig.ts:79`), and the Replay control is not shown on this route (`src/components/shared/ReplayControl.tsx:11,112`).
+
+The page follows whatever the store holds: `usePlaybook(activeTicker)` keys its query on the ticker (`PlaybookPage.tsx:55-69`), and the
+heading, the average-volume read and the reference read carry it too, and with the market open so do the history, the quote and the
+evaluation. With `SPY` persisted (executed) the page drew `SPY Playbook` and `SPY CARD 1: Bullish Continuation (2U-2U-2U)`, and asked
+for `/api/playbook/SPY`, `/api/live/avg-volume/SPY` and `/api/market/reference/SPY/20261001`, and with the status answered regular
+also `/api/live/history/SPY`, `/api/live/quote/SPY`, `POST /api/live/indicators` and `POST /api/playbook/evaluate`; the persisted entry
+was unchanged. With `AAPL` persisted (executed, the real handler) the page drew `AAPL Playbook` and the amber box
+`Playbook unavailable for AAPL: No playbook_cards rows for 'AAPL'. Run the phase6-playbook Cloud Run job (--write-db). (HTTP 404)`:
+`playbook_cards` holds IWM, QQQ and SPY only (V evidence), so every other symbol the combobox offers reads this way.
+
+**Needs:** The persisted `ticker-store` entry in `localStorage`; no endpoint of its own. The query keys of the five ticker-scoped reads
+carry the symbol (`PlaybookPage.tsx:57,74`, `src/hooks/useLiveHistory.ts:15,37`, `src/hooks/useLiveQuote.ts:24`).
+
+**States:** none of its own: a ticker with no rows draws the error state (PLAYBOOK-08); a changed ticker starts a new query, which draws
+PLAYBOOK-06 until it answers (read; no previous data is kept as a placeholder).
+
+**Acceptance criteria:**
+- Given `setTicker('aapl')`, then the active ticker is `AAPL` (`uppercases the active ticker`, `src/stores/tickerStore.test.ts`); given
+  `pushRecent`, then the list is newest first, deduplicated without regard to case and capped at 8; given persistence, then `activeTicker`
+  and `recentTickers` are stored and `quickPicks` is not (`persist partialize`).
+- Given the default store, when `/playbook` opens, then it asks for IWM and the heading reads `IWM Playbook` (every test in `playbook.spec.ts`,
+  which asserts the heading only through a pattern that accepts any ticker).
+- Given `SPY` in the store, when `/playbook` opens, then the heading reads `SPY Playbook`, the card set is SPY's and no request names IWM
+  (executed; the test added on this branch asserts it).
+- Given a ticker with no rows, then the 404 box above (executed).
+
+**Tests:** `src/stores/tickerStore.test.ts` covers the store and not this page. On main no test changes the ticker and watches this page
+ask for another symbol: every test in `tests/playbook/playbook.spec.ts` runs on the default `IWM`, and the heading test accepts any ticker
+(dropping the ticker from the heading passed all six tests, and so did fixing the playbook request on `IWM`, mutation). The test added
+on this branch (solyra `22b606f`), `the page follows the active ticker in the store and asks for that ticker only`, seeds the persisted store with `SPY` and
+asserts the heading, the card name, the age text and that the playbook request is `/api/playbook/SPY` alone, that no request names IWM
+and that the average-volume and reference reads are for SPY; it fails under four mutations (the playbook, average-volume and reference
+hooks fixed on `IWM` and the heading fixed on `IWM`) and waits for a CI run that includes the branch's tests. Te stays unticked.
+
+**Code:** `src/stores/tickerStore.ts:14-34`, `src/routes/PlaybookPage.tsx:55-82,265-274,320-322`,
+`src/components/layout/CommandPalette.tsx:44-52`, `src/components/layout/Header.tsx:7-13`; no test id.
+
 ##### PLAYBOOK-05 · Watch conditions fill
+
+**Shows or does:** The live fill of the cards. The server evaluates every card's condition text against a snapshot of the market that the
+page assembles, and the page draws the answers into PLAYBOOK-02's progress line, rows and tint. Step by step:
+1. The gate. `GET /api/live/status` is read every 60 seconds (`src/hooks/useLiveStatus.ts:12-23`); `is_open`, or a session of `pre-market` or
+   `after-hours`, turns on `GET /api/live/history/{ticker}` (every 60 seconds) and `GET /api/live/quote/{ticker}` (every 15 seconds)
+   (`src/routes/PlaybookPage.tsx:268-272`). `GET /api/live/avg-volume/{ticker}` and `GET /api/market/reference/{ticker}/{ET date, YYYYMMDD}`
+   are asked whatever the session (`:273-274`; executed with the market answered closed: both requested, history, quote, indicators and
+   evaluation not).
+2. Indicators. Once the history holds a bar the page posts `{bars, current_price, current_volume, avg_volume_20d}` to
+   `POST /api/live/indicators` (`:276-284`, `src/hooks/useLiveIndicators.ts:26-50`) and keeps `indicators`.
+3. The snapshot. `buildSnapshot` (`src/lib/playbookEvaluator.ts:75-103`) is null without bars or without indicators; otherwise `price` is
+   the quote's price, else the last bar's close; `prevClose`, `prevHigh` and `prevLow` are the reference's `close`, `high` and `low`, null
+   when the reference answered a non-OK status (`useReference` returns null, `PlaybookPage.tsx:77`); `volumeToday` is the quote's volume;
+   `avgVolume20d` the average; `orbHigh` and `orbLow` the extremes of the bars timed 09:30 to 09:59 (`computeORB`, `:40-56`); `minutesSinceOpen`
+   the minutes from 09:30 to the last bar, null before 09:30 (`:59-69`); `stochKPrev` from the indicators.
+4. The evaluation. One `POST /api/playbook/evaluate` with `{snapshot, batches}`, `batches` keyed by card id (`card_1` to `card_12`) with
+   the condition texts (`PlaybookPage.tsx:307-313`, `src/hooks/usePlaybookEvaluation.ts:50-74`), asked again when the snapshot's price,
+   volume, orbs, minutes or indicators change or the card set does (`:85-115`; stale after 30 seconds). The handler
+   (`platform/api/routers/playbook.py:747-771`) judges each text with `_eval_condition` (`:582-744`): met, unmet, or unknown with a reason
+   (`missing data`, `RSI n/a`, `EMA<n> n/a`, `StochRSI n/a`, `ORB n/a`, `market closed`, `no bar`, `no reference level`, `subjective`,
+   `strat pattern` or `unrecognized`).
+5. The fill. For each card the page counts the met and the unknown results (`PlaybookPage.tsx:164-169`) and draws `<met>/<total> conditions
+   met`, ` · <unknown> subjective` and the percent of all conditions; the border is idle until something is met, stronger when every condition
+   that was not unknown is met ("fully lit": `allAutoMet = autoEvaluable > 0 && metCount === autoEvaluable` with `autoEvaluable = total -
+   unknownCount`, `:171-178`), and each row shows the evaluator's `detail` or `reason`.
+
+Which side computes what: the server computes every indicator (`lib/indicators.py` through `/api/live/indicators`) and every condition and
+threshold (`PRICE_PROXIMITY_PCT` 0.5%, the StochRSI defaults 20 and 80 and the regexes, `playbook.py:510-513,582-744`); the page shapes the
+snapshot (the quote or the last close as price, the minutes since the open) and counts the answers. It derives one value itself, the opening
+range, as the high and low of the bars timed 09:30 to 09:59 (`computeORB`), where the library's `calculate_orb` also takes the bar at the window's
+end (`<=`, `lib/indicators.py:636`) and the router's `ORB_WINDOW_MINUTES` (`platform/api/routers/playbook.py:511`) is read by nothing (matrix Gaps).
+There is no client-side condition math (CLAUDE.md, Rule 5; `src/lib/playbookEvaluator.ts:3-8`).
+
+What the production conditions ask for (executed with the real evaluator, a snapshot with every field present): of the 54 condition texts of
+a ticker's 12 cards 40 were judged, 19 met and 21 unmet at the numbers used, and 14 came back unknown whatever the data: 10 `unrecognized`
+(for example `StochRSI crossed above 20 (turning up)`, `Order block nearby (institutional interest)`, `Volume increasing on bounce`,
+`VWAP is nearby (target)`, `Bearish divergence (price higher, RSI lower)`), 3 `strat pattern` and 1 `subjective`. Cards 8, 9, 10 and 11 can
+judge one condition of four, cards 5 and 12 all but one. A card is fully lit on its judged conditions alone: in the executed run of the open
+market (synthetic bars and a quote ending at 10:40 ET, the real indicators and evaluator) card 11 was fully lit with `1/4 conditions met · 3
+subjective` and card 1 with `2/5 conditions met` was not.
+
+Other things the evaluation does that the text does not say (executed unless marked read). After about 11:38 ET the last 100 one-minute
+bars hold no bar from 09:30 to 09:59 (the history handler asks for the compact series and its docstring says the last 100 bars,
+`platform/api/routers/live.py:317,326-331`, read), so with the
+bars ending at 12:00 ET `orbHigh` and `orbLow` were null and `ORB 30m trend is bullish` read `ORB n/a`. With the session pre-market
+`minutesSinceOpen` was null and `At least 30 min after market open` read `market closed`; after-hours it was 450 and met. `RVOL > 1.0` divides
+the quote's volume so far by the 20-session average daily volume (`playbook.py:636-645`): with 9,000,000 shares, an assumed figure, against the
+production IWM average of 23,080,481.55 (V evidence) the evaluator printed `RVOL 0.39 > 1.0`, so the condition can pass only once the day's
+volume exceeds an average whole day (Live Market Gaps have the same line for its strength panel). `Price at or near support level (prev day
+low, VWAP, order block)` and its resistance twin are judged against the previous day's low or high alone (`:727-736`, `0.81% from prev low`),
+and `RSI was elevated (> 60) at breakout` is judged as the latest RSI above 60. A failed reference read left `prevClose`, `prevHigh` and
+`prevLow` null and the support condition at `no reference level`. When the evaluation answered 500 the header still read `Cards light up as live
+market conditions are met` and every card `0/N conditions met · N subjective` with `no data` rows (PLAYBOOK-08), and a page left open past the
+close kept its last snapshot (PLAYBOOK-09).
+
+**Needs:** The six reads above, `GET /api/live/status`, `GET /api/live/history/{ticker}` (AlphaVantage TIME_SERIES_INTRADAY), `GET /api/live/quote/{ticker}`
+(GLOBAL_QUOTE), `GET /api/live/avg-volume/{ticker}` (`market_data_daily`, the latest 20 sessions with a volume; AlphaVantage TIME_SERIES_DAILY
+when the table answers under 5 rows or fails, `live.py:385-476`), `GET /api/market/reference/{ticker}/{date}` (AlphaVantage TIME_SERIES_DAILY
+for a date under 30 days old, Cloud SQL `market_data_daily` then, `platform/api/main.py:1061-1136`) and `POST /api/live/indicators`
+(`live.py:527-607`), plus `POST /api/playbook/evaluate` and the cards of PLAYBOOK-01. All are gated (staging answered 401 to each without a
+token, V evidence). Production (V evidence, execution `db-query-vvlbg`): `market_data_daily` holds 2,620 rows each for IWM, QQQ and SPY, the
+newest dated 2026-10-01 and, for 2,619 of them, with a volume: that newest row is the premarket placeholder (NULL open, high, low, close and
+volume, written at 12:21 UTC, 08:21 ET) which the average-volume query skips, so the 20 sessions read are 2026-09-02 to 2026-09-30, the newest written at 03:00:44 UTC by the
+23:00 ET `fetch-market-data` run (latest execution 2026-10-01 03:00 UTC, succeeded), and average 23,080,481.55 for IWM, 45,000,036.10 for SPY and
+33,011,828.45 for QQQ; the stored prior session of IWM is 2026-09-30, open 280.17, high 280.475, low 277.86, close 277.89. The history, quote and
+reference reads are vendor-live and were not observed.
+
+**States:** The fill has four: no snapshot (the market closed, a failed status, history or indicators call: the cards read `N conditions (no
+live data)`, an em dash and `no data`), a snapshot with answers, a snapshot with a failed evaluation (every row `no data`, counted subjective)
+and a snapshot gone stale (PLAYBOOK-09). A condition the evaluator cannot judge is `unknown` with its reason.
+
+**Acceptance criteria:**
+- Given the market regular, pre-market or after-hours, when the history, the quote, the average volume, the reference and the indicators
+  have answered, then one evaluation is posted with the five reads in the snapshot and every card's conditions keyed by card id
+  (executed; the test added on this branch asserts it).
+- Given the answers, then each card reads `<met>/<total> conditions met` with the subjective count and each row the detail or reason, and
+  a card whose every judged condition is met has the stronger border (executed; asserted by the branch test).
+- Given the market closed or no snapshot, then no history, quote, indicators or evaluation is requested and the line reads `No live data,
+  evaluation paused` (executed).
+- Given a condition the server cannot judge, then it stays unknown and counts as subjective, whatever the reason (executed; matrix Gaps).
+- Given the handler's thresholds, then each branch judges as `tests/api/test_playbook_evaluate.py` asserts: RSI ranges and limits, price
+  against VWAP and EMAs, the EMA cross, RVOL, the StochRSI turn, the opening-range breaks and trend, minutes since the open, the close in
+  the bar's half, proximity to the previous low or high, and the unknown fall-throughs.
+- Given a request with neither `conditions` nor `batches`, then 400, and a snapshot without `indicators`, then 422
+  (`test_evaluate_400_when_neither_conditions_nor_batches`, `test_evaluate_validates_snapshot_shape`; executed on the real app).
+
+**Tests:** On the handler side `tests/api/test_playbook_evaluate.py` has a test per branch of `_eval_condition` and four HTTP tests of the
+endpoint (flat conditions in order, batches by key, 400, 422). Two cautions: its inputs are not always the production texts (the opening-range
+break tests use `Price has broken above the opening range high`, which no production condition reads), and `test_stochrsi_phrase_does_not_match_rsi_rule`
+asserts only that `status` is one of the three values and, when there is a `detail`, that it does not read `RSI 55`: for its input the
+evaluator answers unknown with no detail, so it asserts nothing about the separation (executed). On the client side `src/hooks/usePlaybookEvaluation.test.ts`
+asserts the batch key changes with the condition text and with the snapshot and is stable otherwise (`playbookBatchKey`, three tests) and
+`src/lib/playbookEvaluator.test.ts` the opening-range window and the minutes since the open (`computeORB`, three tests; `minutesSinceOpen`,
+four). On main no page test asserts the gate, the posted snapshot, the progress, the detail or the tint (every spec test runs with the market
+mocked closed), no test asserts `buildSnapshot`, and no test asserts the `indicators` values the page reads
+(`tests/api/test_live_chart_voter.py` asserts the `chart_voter` and `signals` keys, which this page does not read). The test added on this
+branch (solyra `22b606f`), `during the session the cards fill from the posted snapshot, and a card is fully lit once every judgeable condition is met`, asserts
+the posted `batches` and the snapshot fields (price, volume, average volume, prior close, high and low, the last bar, the minutes since the
+open, the indicators), the counts and details of two cards and the idle and strong borders; it failed under ten one-line mutations of the page (the batched body without its batches, the snapshot without the quote's price, the
+average volume or the prior close, no condition counted as met, no card ever fully lit, an unknown condition counted as judged, the page always
+reading no live data, a session gate that never opens and the `subjective` label renamed) and left the other new test and the six existing tests
+passing; it waits for a CI run that includes the branch's tests. Te stays unticked.
+
+**Code:** `src/routes/PlaybookPage.tsx:164-178,264-314`, `src/lib/playbookEvaluator.ts:39-103`, `src/hooks/usePlaybookEvaluation.ts:50-115`,
+`src/hooks/useLiveStatus.ts`, `src/hooks/useLiveQuote.ts`, `src/hooks/useLiveHistory.ts`, `src/hooks/useLiveIndicators.ts:26-50`,
+`platform/api/routers/playbook.py:510-744,747-771`, `platform/api/routers/live.py:174-186,189-312,315-382,385-476,527-607`,
+`platform/api/main.py:1061-1136`; no test ids.
 
 ##### PLAYBOOK-06 · State: loading
 
+**Shows or does:** While the playbook request has not answered, a box reading `Loading playbook…` (`src/routes/PlaybookPage.tsx:345-349`: a
+surface with centred text, no skeleton and no spinner), inside `DataGate` (`:337`). It is drawn for the whole first fetch, retry included:
+the client retries a failed request once, a second later (`retry: 1`, `src/App.tsx:30-37`), so a failing request keeps the box through that
+second before the error box replaces it (PLAYBOOK-08). A background refetch (every 15 minutes, `:64-67`) does not draw it, since the query
+already holds data; a changed ticker is a new query and does (read). Nothing else is blanked by it: the header keeps its title and its
+line, which reads `No live data, evaluation paused` because no snapshot exists yet, and drops the count and the age (`:329`, no `playbook`).
+Held request, executed (IWM): `IWM Playbook`, `No live data, evaluation paused`, no count, `Loading playbook…` and no card; releasing the
+request brought the count and the age (`playbook-age`).
+
+**Needs:** The playbook request pending (`GET /api/playbook/{ticker}`, PLAYBOOK-01). The average-volume, reference and status reads
+are independent of it. The handler's own latency was not observed (the request is gated and no session was available).
+
+**States:** This is the loading state of the count and age of PLAYBOOK-01, of the cards of PLAYBOOK-02 and of the levels inside them
+(PLAYBOOK-03): all three are absent until the request answers.
+
+**Acceptance criteria:**
+- Given the playbook request pending, when the page renders, then `Loading playbook…` shows with the title, the paused line and no count,
+  and no card (executed).
+- Given the answer, then the box goes and the count and the age show (executed).
+- Given a request that fails, then the box stays through the one retry and the error box then replaces it (executed, PLAYBOOK-08).
+
+**Tests:** No test asserts it. Every test in `tests/playbook/playbook.spec.ts` answers the playbook request at once and asserts the settled
+page, and removing the box passed all six tests (mutation). Te stays unticked.
+
+**Code:** `src/routes/PlaybookPage.tsx:55-69,329,345-349`, `src/App.tsx:30-37`; no test id.
+
 ##### PLAYBOOK-07 · State: empty
+
+**Shows or does:** The box `No playbook cards found for <ticker>. Generate a playbook by running scripts/run_pipeline.py.`
+(`src/routes/PlaybookPage.tsx:351-356`, the script name in a `code` element), drawn when the request has finished, did not fail and holds
+no card (`!isLoading && !isError && cards.length === 0`); the header then reads `0 setups`, with the age when the answer carries a date
+(executed: `0 setups`, and `0 setups · as of Oct 1, 2026 (same day)` for an answer with a date).
+
+The only way in is a 200 whose `cards` list is empty, and the handler never sends one: a ticker with no rows is a 404
+(`platform/api/routers/playbook.py:341-348`) and a set it builds has one card per row, so at least one (`:230-265`). Executed against the
+real handler with `AAPL` in the store: the answer was the 404 and the page drew the amber box of PLAYBOOK-08, not this box; the box
+appeared only for a 200 with `cards: []` that the browser supplied.
+
+The box also names the wrong script. `scripts/run_pipeline.py` is the backtest pipeline: it runs `run_backtest.py`, `run_timeframe_sweep.py`,
+`run_walk_forward.py` and `generate_backtest_report.py` (`scripts/run_pipeline.py:176-235`) and no step writes `playbook_cards` (read). The
+writer is `scripts/analysis/phase6_playbook.py --write-db`, run as the `phase6-playbook` Cloud Run job at 04:30 ET on weekdays
+(`gcp/deploy.sh:1584-1607,4504`), and the 404's own text names that job (PLAYBOOK-08).
+
+**Needs:** A 200 with no cards, which no handler path produces. `playbook_cards` holds IWM, QQQ and SPY only (V evidence), so an empty
+answer for another symbol never arises either: it is the 404.
+
+**States:** This is the empty state of the cards of PLAYBOOK-02 and of the levels inside them (PLAYBOOK-03), and it adds `0 setups` to
+PLAYBOOK-01; it replaces the grid only.
+
+**Acceptance criteria:**
+- Given an answer `{ticker, cards: []}`, when the page renders, then `0 setups` and the box above (executed; `shows empty-state when no cards`
+  asserts the copy).
+- Given a ticker with no rows, then the handler answers 404 and the page shows the error box instead of this one (executed;
+  `test_playbook_no_rows_is_404_never_markdown`).
+- Given the box, then it names `scripts/run_pipeline.py`, which runs backtests and writes no cards (read; matrix Gaps).
+
+**Tests:** One page test, `shows empty-state when no cards`, asserts that text matching `/no playbook|no.*card|run.*pipeline|empty/i` is
+visible for `{ ticker: 'IWM', cards: [] }`, a body the handler never sends (removing the box failed it, mutation; the loose pattern would
+also accept other wording that contains `pipeline`). On the handler side `test_playbook_no_rows_is_404_never_markdown` asserts the 404 for no
+rows, with the writer job named and no markdown fallback, and `test_cards_from_db_selects_one_date_and_bounds_as_of` that no rows give None
+(`tests/api/test_playbook_evaluate.py`). No handler test can reach an empty 200 because the handler has none. Te stays unticked: the page test
+asserts the copy for a body that production never sends.
+
+**Code:** `src/routes/PlaybookPage.tsx:351-356`, `platform/api/routers/playbook.py:230-265,341-348`, `scripts/run_pipeline.py:176-235`,
+`gcp/deploy.sh:1584-1607`; no test id.
 
 ##### PLAYBOOK-08 · State: error
 
+**Shows or does:** When the playbook query is in error, after its one retry, an amber box `Playbook unavailable for <ticker>: <reason>`
+(`src/routes/PlaybookPage.tsx:338-343`). The reason is the server's `detail` followed by ` (HTTP <status>)` when the body is JSON with a
+string `detail` (`responseErrorMessage`, `src/lib/format.ts:98-109`), `Request failed (HTTP <status>)` for any other body
+(`errorMessage`, `src/components/shared/WidgetState.tsx:80-85`), and `request failed` when there is no message. The old payload is not
+kept: `dataUnlessError` returns nothing while the query is in error (`PlaybookPage.tsx:298-300`, `src/lib/queryData.ts:9-11`), so the cards,
+the count and the age go, and the header keeps its title and its paused or live line. Executed against the real handler and edited
+answers (IWM unless named):
+- a ticker with no rows (`AAPL`, the real 404): `Playbook unavailable for AAPL: No playbook_cards rows for 'AAPL'. Run the phase6-playbook Cloud
+  Run job (--write-db). (HTTP 404)`;
+- a refused stale set (503, the handler's wording): `Playbook unavailable for IWM: playbook_cards for IWM is stale: latest analysis_date
+  2026-06-13 is 85 days old (today; max 7).` followed by the handler's closing sentence and `(HTTP 503)`;
+- a 500 with a plain-text body, which is what the real app answers when the database read raises (`Internal Server Error`, executed with
+  the strict query replaced by one that raises): `Playbook unavailable for IWM: Request failed (HTTP 500)`;
+- a 401: `Playbook unavailable for IWM: sign in to continue (HTTP 401)` (PLAYBOOK-10).
+After 15 minutes a refetch answering 503 removed the 12 cards, the count and the age and drew the box; the next refetch that answered 200
+brought them back (executed with the clock moved).
+
+What the handler answers (`platform/api/routers/playbook.py:306-364`): 404 when the ticker has no rows (`:341-348`, the text names the
+`phase6-playbook` job), 503 when the newest set is older than 7 days (`_raise_if_stale`, `:283-303`, naming the date, the age, the maximum
+and the job), 503 when Cloud SQL is not configured (`:334-339`), 422 for a bad `date` (`:318-323`), and a raise, so a 500, when the read
+fails (`_cards_from_db` uses the strict query, `:149`).
+
+What the box does not cover. The evaluation, the history, the quote and the indicators fail silently: with the evaluation answering 500 and
+a snapshot held, the header still read `Cards light up as live market conditions are met`, no box showed and every card read `0/N conditions
+met · N subjective` with `no data` under each condition (`:313-314,363`); with the indicators answering 500 the history was fetched and
+the line stayed `No live data, evaluation paused`; with the status answering 500 the history and the quote were never requested; a failed
+reference read became null and the support condition read `no reference level` (all executed). Failing live data and a missing
+snapshot read the same.
+
+**Needs:** The playbook answer's failure to be a non-OK status. Production (V evidence) holds a current set for all three tickers, so
+none of these paths is visible there.
+
+**States:** This is the error state of the count and age of PLAYBOOK-01, of the cards of PLAYBOOK-02 and of the levels inside them
+(PLAYBOOK-03). A refused set is the same state with the server's reason (PLAYBOOK-09), and a 401 is PLAYBOOK-10's.
+
+**Acceptance criteria:**
+- Given a 503 for a stale set, when the page renders, then `Playbook unavailable for IWM` with the server's reason shows and the card does
+  not (`a stale card set (503) is reported with the server reason, not rendered`).
+- Given a 404, a 500 without a message or a 401, then the box with the detail and the status, `Request failed (HTTP 500)` or the 401 text
+  (executed; the page test asserts the 503 only).
+- Given a body that is JSON with a string `detail`, then `<detail> (HTTP <status>)`; given any other body, then the bare status
+  (`responseErrorMessage`, `src/lib/format.test.ts`).
+- Given a set older than 7 days, then the handler answers 503 with the date, the age and the job, a set exactly 7 days old is served, a
+  cached set is judged again on every hit, no rows is a 404 and Cloud SQL not configured a 503
+  (`test_playbook_stale_set_is_refused_not_rendered`, `test_playbook_age_boundary`, `test_playbook_cached_set_is_rechecked_on_every_hit`,
+  `test_playbook_no_rows_is_404_never_markdown`, `test_playbook_cloud_sql_not_configured_is_503`).
+- Given a failing evaluation, history, quote, indicators or status call, then no box shows (executed; matrix Gaps).
+
+**Tests:** One page test on main, `a stale card set (503) is reported with the server reason, not rendered`, asserts the text matching
+`playbook unavailable for IWM`, the text `2026-06-13 is 85 days old` and that the card name is absent (changing the prefix failed it and so
+did dropping the reason, mutation); it does not assert the ` (HTTP 503)` suffix, the 404, the 500 or the 401 forms or the retry, and it
+cannot reach the refused-refetch path, since its first request fails (bypassing `dataUnlessError` passed all six tests, mutation).
+`src/lib/format.test.ts` (`responseErrorMessage`, three tests) asserts the detail with its status, a 401 staying recognisable and the bare
+status fallbacks. On the handler side the five tests named above, `test_cards_from_db_db_failure_propagates` (the helper raises, which
+is not the HTTP 500), `test_evaluate_400_when_neither_conditions_nor_batches` and `test_evaluate_validates_snapshot_shape`; and
+`tests/api/test_route_coverage.py` pins the route's 503 and the evaluation's 422 (`{"snapshot": {}}`) against a dead backend. No test asserts
+what the page does when the evaluation, the history, the quote, the indicators or the status call fails. Te is ticked on the page test
+of the refused set and the handler and formatter tests above, which leave unasserted what the matrix Gaps list.
+
+**Code:** `src/routes/PlaybookPage.tsx:55-69,298-314,338-343`, `src/lib/format.ts:98-109`, `src/components/shared/WidgetState.tsx:80-85`,
+`src/lib/queryData.ts`, `platform/api/routers/playbook.py:283-364`; no test id.
+
 ##### PLAYBOOK-09 · State: stale
 
+**Shows or does:** Two presentations of how old the data is, and one gap. (1) The card set's date and age beside the count,
+`as of <Mon D, YYYY> (<same day | 1d old | <n>d old>)` (`src/routes/PlaybookPage.tsx:329-334`, `snapshotAgeLabel`, `src/lib/dates.ts:39-58`),
+from the server's `analysis_date` and `age_days`, which it counts against the UTC date (PLAYBOOK-01). (2) A set the server has refused is
+not drawn: the handler answers 503 for a set older than 7 days (`MAX_PLAYBOOK_AGE_DAYS`, `platform/api/routers/playbook.py:82,283-303`),
+judging a cached set again on every hit (`:326-332`), and the page drops the cached cards of an errored query (`dataUnlessError`,
+`PlaybookPage.tsx:298-300`) and re-asks every 15 minutes (`:64-67`), so a page left open across the date boundary meets the 503
+(PLAYBOOK-08). Executed: with the playbook answer refused at the next 15-minute refetch the 12 cards, the count and the age went and the box
+showed, and the following good refetch restored them; with the answer's age at 0, 1 and 5 days the label read `(same day)`, `(1d old)` and
+`(5d old)`. The page never sends `date`, so the handler's as-of mode, the Dashboard's review mode, is not part of this page.
+
+(3) The live evaluation has no age marker. After the status turned closed at 20:05 ET the header still read `Cards light up as live market
+conditions are met` and card 1 still read `2/5 conditions met` with its details, because a disabled query keeps its data; the history and
+the quote were each requested once more in the minute of the flip and not again, and only the status was requested in the next two minutes
+(executed with the clock moved by 61 and then 120 seconds). A snapshot taken at the close therefore stays on screen as live until the page is
+reloaded or the market reopens.
+
+**Needs:** `analysis_date` and `age_days` of the playbook answer (`generated_at` and `max_age_days` are sent and not read). The freshness the
+page accepts is the server's: up to 7 days, then 503. Production (V evidence, 2026-10-01, execution `db-query-vvlbg`): the newest set of each
+ticker is dated 2026-10-01 and was written at 04:33 to 04:42 ET by the 04:30 ET `phase6-playbook` run (trigger `phase6-playbook-daily`
+ENABLED, America/New_York, `30 4 * * 1-5`; latest execution created 08:30:01 UTC and completed 08:42:21 UTC, succeeded), and sets exist for every
+weekday from 2026-09-17 to 2026-10-01, 12 cards each, so the label reads `(same day)` between the run and 20:00 ET and `(1d old)` from
+then on; a weekend or a holiday adds days (up to 4 over a long weekend, within the 7).
+
+**States:** This is the stale state of the count and age of PLAYBOOK-01, of the cards of PLAYBOOK-02 and of the levels of PLAYBOOK-03; the
+live fill (PLAYBOOK-05) has none.
+
+**Acceptance criteria:**
+- Given an answer dated 2026-09-05 with `age_days` 1, when the page renders, then `as of Sep 5, 2026 (1d old)` beside `1 setups`
+  (`shows the card set date and age next to the setup count`).
+- Given a set 85 days old, then the handler answers 503 naming the date, the age and the job, and the page shows the box and no card (`a
+  stale card set (503) is reported with the server reason, not rendered`, `test_playbook_stale_set_is_refused_not_rendered`).
+- Given a set exactly 7 days old, then it is served, and 8 days is refused; a set cached while fresh is refused once it crosses the limit
+  (`test_playbook_age_boundary`, `test_playbook_cached_set_is_rechecked_on_every_hit`).
+- Given an errored refetch of a query that holds data, then the data is dropped (`dataUnlessError`, `src/lib/queryData.test.ts`; executed in
+  the page, no page test).
+- Given the live status turning closed, then the evaluation keeps its last snapshot and its live line (executed; matrix Gaps).
+- Given an answer without `age_days` or a valid `analysis_date`, then the age or the whole label is omitted and never invented
+  (`src/lib/dates.test.ts`).
+
+**Tests:** On main the page layer asserts the label (`shows the card set date and age next to the setup count`, exact text; changing
+`1d old` to `1 day old` failed it, mutation) and the refusal of a first request (`a stale card set (503) is reported with the server reason,
+not rendered`); `src/lib/dates.test.ts` (`snapshotAgeLabel`, three tests) and `src/lib/queryData.test.ts` (`dataUnlessError`, three tests)
+assert the label forms and the drop of retained data; on the handler side `tests/api/test_playbook_evaluate.py` asserts the freshness
+contract: `test_playbook_fresh_set_is_served_with_its_date`, `test_playbook_stale_set_is_refused_not_rendered`, `test_playbook_age_boundary`,
+`test_playbook_cached_set_is_rechecked_on_every_hit`, `test_playbook_age_days_helper` and the as-of pair
+(`test_playbook_as_of_is_judged_against_the_requested_date`, `test_playbook_as_of_bad_date_is_422`), which this page never calls. No page test
+reaches a refused refetch (bypassing `dataUnlessError` passed all six tests, mutation) or asserts the UTC counting or the live snapshot's age
+(executed only). Te is ticked on that coverage.
+
+**Code:** `src/routes/PlaybookPage.tsx:64-67,298-302,329-334`, `src/lib/dates.ts:39-58`, `src/lib/queryData.ts:9-11`,
+`platform/api/routers/playbook.py:82,277-303,306-364`; test id `playbook-age`.
+
 ##### PLAYBOOK-10 · State: permission
+
+**Shows or does:** A state with three presentations, one of them out of reach. (1) `DataGate` wraps everything below the header
+(`src/routes/PlaybookPage.tsx:337-369`: the error, loading and empty boxes and the card grid) and, when a gated call has answered 401 and the
+user is signed out (`blocked && !isLoading && !isSignedIn`), replaces it with `SignInEmptyState`, a `role="status"` block reading
+`Sign in to load data` with a `Sign in` button that reloads the page (`src/components/shared/SignInEmptyState.tsx:12-51,93-98`); the title,
+the evaluation line and the count stay. (2) For a signed-in user whose token is refused, `DataGate` does nothing, because `isSignedIn` is true.
+(3) The page does not use `SignInBanner`.
+
+The replacement is unreachable in practice. In `firebase` mode a signed-out visitor never sees the page: `AuthGate` renders the sign-in screen
+in its place (`src/components/auth/AuthGate.tsx:14-30`; executed with `/playbook` opened signed out: the sign-in screen showed, there was no
+`Playbook` heading and the only API request was `GET /api/config/firebase`). In `open` and `iap` modes `useUser` reports signed in always
+(`src/hooks/useUser.ts:22-27,81`), so the condition cannot hold.
+
+What a signed-in user sees on a 401 (executed, `open` mode as the hermetic suite runs, the playbook request answering 401 `sign in to
+continue`): the header `IWM Playbook` with the paused line and no count, the amber box `Playbook unavailable for IWM: sign in to continue
+(HTTP 401)` (PLAYBOOK-08) and, from the shell, the strip `Your session expired, so live data is not loading.` with a `Sign in` button,
+`role="status"` (`src/components/shared/AuthStatusIndicator.tsx:156-182`, SHELL-16); `Sign in to load data` appears nowhere. The flag behind
+the strip is set by the fetch wrapper on any gated 401 and cleared by any later gated success (`src/lib/authedFetch.ts:155-166,247-250`,
+`src/lib/authGate.ts:14-47`), so it follows the last answer (read).
+
+**Needs:** The 401 itself. All eight gated calls the page makes answered 401 without a token on staging, `GET /api/playbook/IWM`,
+`GET /api/live/status`, `GET /api/live/history/IWM`, `GET /api/live/quote/IWM`, `GET /api/live/avg-volume/IWM`,
+`GET /api/market/reference/IWM/20261001`, `POST /api/live/indicators` and `POST /api/playbook/evaluate`, as did `GET /api/playbook/IWM?date=...`, and
+`GET /api/health` and `GET /api/config/firebase` answered 200 in the same run (`authMode: firebase`) (V evidence, 2026-10-01).
+`solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to `/api/playbook/IWM`, `/api/live/status` and
+`/api/health`, so the 401 proof is staging's. The wrapper's `OPEN_PREFIXES` must match the backend's `_OPEN_API_PREFIXES` (CLAUDE.md, Auth).
+
+**States:** This is the permission state of the count and age of PLAYBOOK-01 (through the playbook request's 401), of the cards of
+PLAYBOOK-02 and of the levels of PLAYBOOK-03, and of the boxes of PLAYBOOK-06 to PLAYBOOK-08 that share the gate; the live fill of
+PLAYBOOK-05 fails silently under the same 401s (PLAYBOOK-08). The title and the evaluation line stay.
+
+**Acceptance criteria:**
+- Given no token, then each gated route answers 401 on staging and `GET /api/health` 200 (V evidence).
+- Given a signed-in user and a 401 on the playbook request, then the shell shows its expired-session strip and the page its error box, with
+  no `Sign in to load data` and no sign-in prompt of its own (executed).
+- Given a signed-out user in `firebase` mode, then the sign-in screen replaces the page and no playbook request is sent (executed; the screen
+  is asserted on `/dashboard` by `firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main at
+  eca7078).
+- Given a gated 401, then the wrapper calls the callback registered with `setOnUnauthorized`, and a 401 from an open path does not (`a 401 from
+  a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on main); no
+  code outside the tests registers one, so no behaviour hangs on it, and the flag behind the strip, set on the next line, is not read by that test.
+
+**Tests:** On main: `src/lib/authedFetch.test.ts` as above, `tests/api/test_platform_auth.py` (`test_firebase_requires_valid_token`: a gated
+path answers 401 without a token in `firebase` mode and the open paths 200, on a synthetic `/api/secret` route and not on a playbook route)
+and the sign-in screen test above. No test asserts `DataGate`, the strip on this page, the page's 401 form or a 401 on a playbook route. Te
+stays unticked.
+
+**Code:** `src/routes/PlaybookPage.tsx:337-369`, `src/components/shared/SignInEmptyState.tsx:12-98`, `src/components/auth/AuthGate.tsx:14-30`,
+`src/lib/authGate.ts:14-47`, `src/lib/authedFetch.ts:45,155-166,247-250`, `src/hooks/useUser.ts:22-27,81-82`,
+`src/components/shared/AuthStatusIndicator.tsx:156-182`; test ids `auth-status`, `auth-status-banner` (the shell's); the page's own state has none.
 
 ### SCREEN-REPORTS — `/reports`
 
