@@ -69,10 +69,15 @@ test.describe('Signal Explorer', () => {
  * option (5+ to 8+), so the score filter would have nothing to bite on. These
  * tests keep its three rows and times (CALL 18:00, PUT 17:30, CALL 17:00 on
  * 2026-04-24) and give them scores of 7, 5 and 6.
+ *
+ * The rows are served oldest first, as the handler returns them (it reads the
+ * newest N and orders them `time ASC`). The shared fixture lists them newest
+ * first, which is the order the page's default sort would produce anyway, so
+ * a fixture served that way cannot tell whether the default sort is there.
  */
 const SCORED: SignalsResponse = {
   ...MOCK_SIGNALS,
-  signals: MOCK_SIGNALS.signals.map((s, i) => ({ ...s, score: [7, 5, 6][i] })),
+  signals: MOCK_SIGNALS.signals.map((s, i) => ({ ...s, score: [7, 5, 6][i] })).reverse(),
 };
 
 test.describe('Signal Explorer: filter, sort, Clear and review mode', () => {
@@ -90,7 +95,7 @@ test.describe('Signal Explorer: filter, sort, Clear and review mode', () => {
     const rows = page.locator('tbody tr');
     const label = page.locator('h1 + div');
     await expect(rows).toHaveCount(3);
-    // Newest first until a header is clicked.
+    // The rows arrive oldest first; the page's default sort (Time descending) shows them newest first.
     await expect(cells(page, 1)).toHaveText(['2026-04-24 18:00', '2026-04-24 17:30', '2026-04-24 17:00']);
     await expect(label).toHaveText('IWM · 3 signals');
 
