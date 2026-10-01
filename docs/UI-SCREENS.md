@@ -7810,7 +7810,7 @@ on a synthetic `/api/secret` route and not on a signals route) and the sign-in s
 | GET /api/insights/report/{ticker}/history?limit=20 (the Agents tab asks `limit=8`) | ticker, count, reports[].id/as_of/direction/conviction/thesis/cost_usd (types: `src/types/insights.ts` InsightHistoryRow/InsightHistoryResponse); each row also carries `run_kind`, which the page does not read, and `count` is the number of rows returned, not the ticker's total | insight-pipeline 08:45 ET Mon-Fri and auto-refresh-top-n 08:10 ET Mon-Fri → insight_reports, every `run_kind` | 60s staleTime | `useInsightHistory` (`useInsights.ts`) → History tab, and the Agents tab's `Recent runs` |
 | POST /api/insights/report/{ticker}/refresh (optional as_of) · GET /api/insights/runs/{run_id} | run_id, ticker, status (refresh); id, status, trigger, started_at, finished_at, error, report_id (run status) (types: `src/types/insights.ts` RefreshResponse/RunStatus) | the API itself: an insight_runs row and the upserted insight_reports row (`run_kind` `live`, or `replay` with a cutoff), run in the API process on the deployed services today (trigger `local_dev`) or by the insight-pipeline job through Cloud Tasks in production | run status polled every 3s while `queued` or `running`, with no limit and no stop on an error | `useRefreshInsight` / `useRunStatus` (`useInsights.ts`) → Generate or refresh a report, Set a point-in-time cutoff |
 | GET /api/admin/routes | routes[].role/provider/model/updated_at/updated_by (types: `useAdmin.ts` RouteListResponse) | model_routing: seed rows in `gcp/schema.sql` and `PUT /api/admin/routes/{role}`; read here through the admin gate | 30s staleTime | `useAdminRoutes` (`useAdmin.ts`) → Agents tab (`AgentsPanel`) |
-| GET /api/insights/watchlist | run_id, as_of, candidate_count, excluded_count, ranked[].ticker/score/pct_of_max/catalyst_types/catalyst_metadata/score_breakdown, weights_used, duration_ms (types: `src/types/watchlist.ts` WatchlistResponse) | the caller's own watchlists rows (the candidates, written by the adds of INSIGHTS-09), tagged and scored from earnings_calendar, sec_filings, insider_transactions, top_movers_daily, economic_events, market_data_daily, etf_options_snapshots, news_sentiment and earnings_history by their fetch jobs; each call also writes a ranker_runs row | 5min staleTime; the ranker took 10.8 s to 46.1 s for 16 candidates in production's newest ranker_runs rows | `useWatchlist` (`useWatchlist.ts`) → Watchlist tab (`WatchlistPanel`) |
+| GET /api/insights/watchlist | run_id, as_of, candidate_count, excluded_count, ranked[].ticker/score/pct_of_max/catalyst_types/catalyst_metadata/score_breakdown, weights_used, duration_ms (types: `src/types/watchlist.ts` WatchlistResponse) | the caller's own watchlists rows (the candidates, written by the adds of INSIGHTS-09), tagged and scored from earnings_calendar, sec_filings, insider_transactions, top_movers_daily, economic_events, market_data_daily, etf_options_snapshots, news_sentiment and earnings_history by their fetch jobs; each call also writes a ranker_runs row | 5min staleTime; the newest four `ranker_runs` rows, written in the minutes of the 08:10 ET `auto-refresh-top-n` job's executions, record 10.8 s to 46.1 s for 16 candidates, and the endpoint's own latency was not measured | `useWatchlist` (`useWatchlist.ts`) → Watchlist tab (`WatchlistPanel`) |
 | GET /api/insights/ticker/search · POST /api/insights/watchlist/add | results[].symbol/name/type/region/currency/match_score (search); ticker/added/info/quote/peers/watchlist (add; the page reads `added`, `info` and `quote`) (types: `useTickerSearch.ts` TickerSearchResult/WatchlistAddResult) | AlphaVantage SYMBOL_SEARCH (search), OVERVIEW and GLOBAL_QUOTE and FinViz peers (add) on the request path; the add writes the caller's watchlists row (`source` `ui`) and the ticker_info cache | 60s staleTime (search) | `useTickerSearch` / `useAddToWatchlist` (`useTickerSearch.ts`) → Watchlist tab's `TickerSearchPanel` |
 | POST /api/insights/chat | message, mode, ticker, history (request, the last six turns); streamed plain-text reply, no `response_model` | Vertex AI Gemini `gemini-3.1-flash-lite`, streamed on the request path; no table is read |  | `ChatView` (inline in `InsightsPage.tsx`) → Chat tab |
 | store: ticker |  | Zustand `useTickerStore`, persisted as `ticker-store` in localStorage (`activeTicker`, `recentTickers`) | | every tab |
@@ -8218,9 +8218,10 @@ drawn, only the run id and the duration. Permission (INSIGHTS-15): a 401 reads a
 - Given a click on `Generate report` with a cutoff set, then the page switches to that ticker's Briefing tab and posts
   the refresh with no `as_of`, and the cutoff input keeps its value (executed). The test added on this branch,
   `a watchlist row's Generate report runs live even while a cutoff is set`, asserts that the first request to the
-  row's ticker's refresh route has that path and an empty query string, that none reached the active ticker's refresh
-  route, that text matching `/no report yet/i` shows and that the cutoff input holds its value with the `Replay`
-  button still shown; it does not assert the request's method.
+  row's ticker's refresh route has that path and an empty query string, that none reached the IWM refresh route (the
+  ticker active before the click, and the one route the helper's `onRefresh` recorder watches,
+  `tests/helpers/fixtures/insights.ts:74-75`), that text matching `/no report yet/i` shows and that the cutoff input
+  holds its value with the `Replay` button still shown; it does not assert the request's method.
 - Given no token, then the route answers 401 on staging (V evidence, 2026-10-01).
 
 **Tests:** On main no Playwright test opens the tab. On the handler side `TestInsightsWatchlistAPI`
@@ -8288,7 +8289,11 @@ no time. Permission (INSIGHTS-15): a 401 reads as an `Error: 401 Unauthorized` b
 **Tests:** On main no test opens the tab: `mockInsightsApi` serves the stream route with `MOCK_CHAT_REPLY` and no spec
 reads it. `tests/api/test_route_coverage.py` pins `POST /api/insights/chat` with an empty message at 400 only, and
 solyra `src/mocks/contract.test.ts` validates a sample chat request body against the vendored snapshot (the shape of
-the request, not the page). Nothing asserts the tab's layout, the modes, the transcript or the streaming state. Te
+the request, not the page). Nothing on main asserts the tab's layout, the modes, the transcript or the streaming
+state. On this branch `a failed report, ranking or chat request says so on the page with its status`
+(`tests/insights/insights.spec.ts`) clicks the Chat tab, sends one message to a route answering 503 and asserts that the
+message text and text beginning `Error: 503` are each visible on the page, in no asserted order; it asserts nothing
+about the layout, the modes, the empty text, the streaming state or a successful reply, and it has not run in CI. Te
 stays unticked.
 
 **Code:** `src/routes/InsightsPage.tsx:466-605` (the tab: `:468,473,536-603`; no hook, the call is inline in `send`);
@@ -8718,11 +8723,12 @@ answer with status 200, which is what the page then shows as the reply. Permissi
 
 **Tests:** On main no Playwright or unit test sends a message. `tests/api/test_route_coverage.py` asserts only that
 `POST /api/insights/chat` with `{"message": ""}` answers 400 before touching Gemini, and solyra
-`src/mocks/contract.test.ts` validates a sample request body against the vendored snapshot. Nothing asserts the
-stream, the model, the six-turn window, the error bubbles or the `Gemini error:` body. On this branch
+`src/mocks/contract.test.ts` validates a sample request body against the vendored snapshot. Nothing on main asserts
+the stream, the model, the six-turn window, the error bubbles or the `Gemini error:` body. On this branch
 `a failed report, ranking or chat request says so on the page with its status` (`tests/insights/insights.spec.ts`)
-asserts that after a 503 from the chat route the user's message stays on the page and text beginning `Error: 503`
-follows it; it has not run in CI. Te stays unticked.
+sends a message to a route answering 503 and asserts that the message text and text beginning `Error: 503` are each
+visible on the page; both are found by text over the whole page, so neither their order nor their place in the
+transcript is asserted; it has not run in CI. Te stays unticked.
 
 **Code:** `src/routes/InsightsPage.tsx:466-534`; `platform/api/routers/insights.py:930-1074`; no test ids.
 
@@ -8909,7 +8915,7 @@ controls (INSIGHTS-01 to INSIGHTS-05, INSIGHTS-07, INSIGHTS-09). The permission 
 - Given the ranking route answers 503, then `Failed to load watchlist: watchlist 503` shows and the filter bar stays
   (executed; the same test asserts the text and not the filter bar).
 - Given the chat route answers 503, then the transcript shows the user's message and `Error: 503` (executed; the same
-  test asserts both).
+  test finds both texts on the page, in no asserted order).
 - Given a History entry's by-id read answers 404, then `Failed to load report: insights by-id 404` shows (executed).
 - Given the brief request fails, then the red `Brief lookup failed` card shows (executed).
 - Given the history route fails, then `No history yet.` shows, and given any roster failure
@@ -8924,9 +8930,10 @@ the 503 of the report, history, by-id, runs, refresh and roster routes against a
 `test_an_internal_defect_is_not_reported_as_an_outage` checking that a defect stays a 500. On this branch
 `a failed report, ranking or chat request says so on the page with its status` (`tests/insights/insights.spec.ts`)
 asserts `Failed to load report: insights 503` with the `AI Insights` heading and the cutoff input still on screen,
-`Failed to load watchlist: watchlist 503`, and the user's message followed by text beginning `Error: 503`; it clicks the
-Watchlist and Chat tab buttons to reach the last two and asserts nothing about the other tabs, the `Re-analyze` button
-or the filter bar; it has not run in CI. The forms of the Agents tab, History, the
+`Failed to load watchlist: watchlist 503`, and, after a chat send answered 503, the message text and text beginning
+`Error: 503`, each found by text on the page with no order or place asserted; it clicks the Watchlist and Chat tab
+buttons to reach the last two and asserts nothing about the other tabs, the `Re-analyze` button or the filter bar; it
+has not run in CI. The forms of the Agents tab, History, the
 brief card, the refresh, the status poll and the add are asserted by no test. Te stays unticked: the page side waits
 for a CI run that includes the branch's tests.
 
