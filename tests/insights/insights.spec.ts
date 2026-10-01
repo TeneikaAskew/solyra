@@ -229,15 +229,15 @@ test.describe('AI Insights — point-in-time replay', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('AI Insights — degraded and failed states', () => {
-  test('a degraded report shows the partial-report banner naming each failed section, a complete one shows none', async ({
+  test('a degraded report shows the partial-report banner and its section name, a complete one shows none', async ({
     page,
   }) => {
     await mockInsightsApi(page, { report: MOCK_INSIGHT_REPORT_DEGRADED });
     await page.goto('/insights');
     await page.waitForLoadState('networkidle');
 
-    // The fixture lists one failed section, `judge`; the banner names it,
-    // and the header card still renders the degraded report below it.
+    // The fixture lists one failed section, `judge`; the banner carries the
+    // sentence and that name, and the report's heading is on the page.
     const banner = page.getByText(/Partial report: the following sections were unavailable/);
     await expect(banner).toBeVisible();
     await expect(banner).toContainText('judge');
