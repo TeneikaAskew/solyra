@@ -9487,7 +9487,8 @@ and the timeline vanish, the header reads `0 events 0H / 0M / 0L · Benzinga` an
 (executed: held request, CATALYSTS-10). `Today` back to a range that is cached and under five minutes old makes no
 request (executed: the default range, left and returned to, with zero new requests); `Refresh` always does, with the same
 parameters and never `refresh=true` (the hook is called with `false`, `:406`, so the handler's Benzinga refresh cannot be
-reached from the page, stocks#1223). The range bounds the Benzinga list and four of the five database reads, not the
+reached from the page; stocks#1223 covers only the label that names Benzinga without a key, so this finding is not filed,
+matrix Gaps). The range bounds the Benzinga list and four of the five database reads, not the
 news (CATALYSTS-04), and the page draws whatever dates come back.
 
 The trigger and the dialog's header label each day as `<month> <day>` from a `CalendarDate` turned into midnight Eastern
@@ -9786,7 +9787,10 @@ test of `tests/catalysts/catalysts.spec.ts` passing. Te stays unticked.
 for an answer without a `source` it reads `Benzinga`, and for an answer the handler built it reads what the handler
 wrote (`catalysts.py:318-328`): `Benzinga`, `Benzinga + DB (news + sec, <n>)`, or `Benzinga (fetch in flight)` while another
 request's Benzinga batch is running. The response carries no write time, as-of or age for any source, and the page compares
-no data with the clock: the only clock use is the cards' `TODAY` label and Hot Now's window. The label names a source that
+no data with the clock to judge its age: the clock only sets the default range (`src/routes/CatalystsPage.tsx:396-401`),
+the cards' relative labels (`TODAY`, `TOMORROW`, `YESTERDAY`, `in <n> days`, `<n> days ago`; `getRelativeLabel`, `:195-205`)
+with the `TODAY` pill and ring that follow from the label (`DateGroup`, `:318-335`), and Hot Now's window (`:446-458`). The
+label names a source that
 contributed nothing (neither service has a Benzinga key) and miscounts the others: on 2026-10-01 it read
 `Benzinga + DB (news + sec, 1565)`, where 1,565 is every database event, 897 of them earnings rows, 617 news, 35 economic and
 16 8-Ks (executed, counted in the response); `news + sec` names two of the four. The stale state would cover CATALYSTS-01 to
