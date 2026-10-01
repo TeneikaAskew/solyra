@@ -5456,11 +5456,13 @@ marker, `grid.py:550`).
 
 How the overlay is built (`SwingMode.tsx:814-908`). With a levels answer that carries levels, the
 legend and nodes read it: the King is `kings[0]`, the first entry of the list, which `build_summary`
-fills in strike order (`lib/gamma.py:1115`), so it is the lowest-strike King and not the one of
-largest |net GEX| that the gold cell, the pivot rail and `/help` (`src/routes/HelpPage.tsx:123`)
-mean by the word (matrix Gaps); the two gates are the nearest classified gate above and below the
-spot, the Flip is `levels.gamma_balance` and only when that is absent the grid's `gamma_flip`
-(`SwingMode.tsx:843`), and Total VEX is the grid's, `null` when there is no grid.
+fills in strike order (`lib/gamma.py:1115`), so it is the lowest-strike King and not the largest
+one, which the gold cell (the largest single |net GEX| cell among the visible expirations), the
+pivot rail (the strike with the largest |net GEX| summed over the expirations) and `/help`
+(`src/routes/HelpPage.tsx:123`, the strike with the largest absolute net GEX) each take for the word
+(matrix Gaps); the two gates are the nearest classified gate above and below the spot, the Flip is
+`levels.gamma_balance` and only when that is absent the grid's `gamma_flip` (`SwingMode.tsx:843`),
+and Total VEX is the grid's, `null` when there is no grid.
 Without levels but with a grid that has cells, the grid supplies the spot, the Flip, the regime and
 the totals, and the King is the strike with the largest |net GEX|; gates are omitted. With neither,
 the placeholder is mock and the legend and node list are hidden. The Flip chip, the node row `Flip
@@ -5546,9 +5548,10 @@ pending dates or levels request has no presentation of its own: neither query's 
 - Given the live grid and `/levels` come from different snapshots, then the legend reads `/levels`
   and the heatmap the grid (executed 2026-10-01 on the SPY chains above; matrix Gaps).
 - Given a levels answer with several kings, then the legend, the node list and the row tagged `king`
-  read the first, the lowest strike, while the outlined cell and the first bar of the pivot rail are
-  the strike of largest |net GEX| (executed 2026-10-01 on the real IWM answers: 275 against 278;
-  matrix Gaps).
+  read the first, the lowest strike, while the outlined cell is the largest single |net GEX| cell
+  (one strike and one expiration, among the visible expirations) and the first bar of the pivot rail
+  is the strike with the largest |net GEX| summed over the expirations (executed 2026-10-01 on the
+  real IWM answers: the legend 275, the cell and the rail 278; matrix Gaps).
 - Given a chain with no vendor gamma, then the grid answers 200 with every cell at zero and no
   coverage warning, and the view draws a King and totals of `+$0K` (executed 2026-10-01 on the SPX
   chain above; matrix Gaps).
@@ -5871,11 +5874,18 @@ matrix Gaps).
   keys the query on the chain's contract count and the spot only (`useOptionsGreeks.ts:111`) and
   keeps an answer for 60 seconds (`useOptionsGreeks.ts:141`). Stepping to a date whose chain has the
   same count and spot therefore asks for nothing new inside that time, and the cards keep the
-  previous date's Greeks beside the new chain; after it the Greeks are asked again and the old
-  answer stays on the cards until the new one arrives (executed 2026-10-01: with two fixture chains
-  of ten contracts and a spot of 220, the step issued the chain and levels requests and no second
-  POST, and with each POST answered by a different Total GEX the card kept the first answer; 62
-  seconds later a step posted at once and the card changed when its answer arrived; matrix Gaps).
+  previous date's Greeks beside the new chain. After it, a step asks again only when it changes the
+  query the hook holds or finds it disabled (`@tanstack/query-core` 5.102.8,
+  `queryObserver.js:330-332`): a chain not yet fetched is `[]` while it loads, so the key's count is
+  0 and `enabled` false (the cards read `TOTAL GEX +0 Positive` meanwhile), and when the chain
+  arrives the query changes again, so a stale answer on that key is asked for again while it stays
+  on the cards until the new one arrives; a cached chain with the same count and spot keeps the key
+  and `enabled`, so nothing is asked, however old the answer is (executed 2026-10-01: with two
+  fixture chains of ten contracts and a spot of 220, the step issued the chain and levels requests
+  and no second POST, and with each POST answered by a different Total GEX the card kept the first
+  answer; after 64 seconds two steps to cached chains issued no POST and left `+1.0M`, and a step to
+  a chain not yet fetched read `+0` while it loaded and then posted at once, the card reading
+  `+1.0M` until the second answer, `+2.0M`, arrived; matrix Gaps).
 - With no Greeks answer the page uses `EMPTY_GREEKS`, a zeroed object (`ProfilesTab.tsx:326`,
   `useOptionsGreeks.ts:145-158`): OPTIONS-11.
 
@@ -6100,16 +6110,19 @@ HTTP 401: sign in to continue`). The page's views show OPTIONS-09 to OPTIONS-13 
 
 **Tests:** On main, the component is asserted by twenty tests of
 `tests/dashboard/ticker-combobox.spec.ts` and the two Vitest files named above, and the three
-handlers by the pytest files named above (`tests/api/test_route_coverage.py` also pins, against a
-dead backend, the search at 200, the coverage at 503 and the watchlist add at 503), the add with its
-write patched out; `tests/shared/popover-fit.spec.ts` asserts the popover stays inside two phone
-viewports (on the Dashboard). The write itself, `add_to_watchlist`
-(`gcp/fetchers/_watchlist.py:492-557`), is asserted by no test: `tests/gcp/test_watchlist_helper.py`
-covers the loader, its helpers, the fallback alert and the membership lookup and never calls it, the
-handler tests patch it out, and `tests/gcp/test_backfill_ticker.py` tests the CLI's own function of
-that name (`gcp/backfill_ticker.py:308`). No test mounts the picker on `/options` or asserts that
-Swing and Profiles follow a pick, that the other two views do not, or what a symbol outside the four
-reads; no test asserts the coverage statements' cost.
+handlers by the pytest files named above: the add by tests that patch its write out, and, in
+`tests/api/test_route_coverage.py`, the search at 200, the coverage at 503 and the watchlist add at
+503 against a dead backend, where the real write is entered and raises (executed 2026-10-01 with a
+spy that calls through: the real function was entered and raised the harness's `_BackendDown`);
+`tests/shared/popover-fit.spec.ts` asserts the popover stays inside two phone viewports (on the
+Dashboard). The write itself, `add_to_watchlist` (`gcp/fetchers/_watchlist.py:492-557`), is asserted
+by no test: `tests/gcp/test_watchlist_helper.py` covers the loader, its helpers, the fallback alert
+and the membership lookup and never calls it, `tests/api/test_platform_api.py` and
+`tests/api/test_ticker_info.py` patch it out, `tests/api/test_route_coverage.py` enters it against a
+dead backend and asserts only the router's 503, and `tests/gcp/test_backfill_ticker.py` tests the
+CLI's own function of that name (`gcp/backfill_ticker.py:308`). No test mounts the picker on
+`/options` or asserts that Swing and Profiles follow a pick, that the other two views do not, or
+what a symbol outside the four reads; no test asserts the coverage statements' cost.
 
 **Code:** `src/routes/OptionsFlowPage.tsx:30-41`, `src/components/shared/TickerCombobox.tsx:147-513`,
 `src/hooks/useTickerSearch.ts:55-125`, `src/stores/tickerStore.ts:14-34`;
@@ -6208,18 +6221,24 @@ Swing's `Historical` button asks for that same date (`GET /api/options/IWM/2026-
 **Needs:** The stepper uses OPTIONS-05's calls: `GET /api/options/dates/{ticker}` without `limit`,
 then, for the chosen date, `GET /api/options/{ticker}/{date}` (and `GET
 /api/options/live/{ticker}/{date}` on a 404) and `GET /api/options/{ticker}/{date}/levels`, and the
-Greeks POST when the chain's contract count or the spot differs from the answer held, or when that
-answer is more than 60 seconds old (`src/hooks/useOptionsGreeks.ts:111,141`: the key holds neither
-date nor ticker). Executed 2026-10-01: from the newest of three dates, one step back issued `GET
-/api/options/IWM/2026-04-23` and `GET /api/options/IWM/2026-04-23/levels` and no Greeks POST,
+Greeks POST when the step gives the hook a key it holds no answer for (a contract count and spot not
+asked for before; `src/hooks/useOptionsGreeks.ts:111`: the key holds neither date nor ticker) and,
+once the answer it holds is more than 60 seconds old (`:141`), when the step goes to a chain not yet
+fetched. `@tanstack/query-core` 5.102.8 re-requests a stale answer on a step only when the hook's
+query changes or `enabled` was false (`queryObserver.js:330-332`): a chain not yet fetched is `[]`
+while it loads, so the key's count is 0 and `enabled` false, and the query changes again when the
+chain arrives, whereas a cached chain with the same count and spot keeps both and nothing is asked,
+however old the answer. Executed 2026-10-01: from the newest of three dates, one step back issued
+`GET /api/options/IWM/2026-04-23` and `GET /api/options/IWM/2026-04-23/levels` and no Greeks POST,
 because both fixture chains held ten contracts at a spot of 220; a step forward to a date already
 visited issued nothing. With each Greeks POST answered by a different Total GEX, the card kept the
 first answer, `+1.0M`, after the step, so the previous date's Greeks sat beside the new date's
-chain; 62 seconds later the next step posted at once and the card read `+1.0M` until the second
-answer, `+2.0M`, arrived (matrix Gaps). The date index is state of the Profiles view: it returns to
-the newest date when the ticker changes (`ProfilesTab.tsx:261-269`) and when another view is chosen
-and Profiles is mounted again (executed 2026-10-01: two steps back, a visit to Flow and back read
-the newest date).
+chain, and it read `TOTAL GEX +0 Positive` while the chain of a date not yet visited loaded. After
+64 seconds, two steps to cached chains issued no POST and left `+1.0M`, and a step to a chain not
+yet fetched posted at once, the card reading `+1.0M` until the second answer, `+2.0M`, arrived
+(matrix Gaps). The date index is state of the Profiles view: it returns to the newest date when the
+ticker changes (`ProfilesTab.tsx:261-269`) and when another view is chosen and Profiles is mounted
+again (executed 2026-10-01: two steps back, a visit to Flow and back read the newest date).
 The chips need nothing. The Chain's API cell is OPTIONS-05's and its Backend cell is right to say the
 chips are client state only; its wording that the stepper refetches "the chain, levels and Greeks per
 step" overstated the Greeks, corrected in the Chain.
