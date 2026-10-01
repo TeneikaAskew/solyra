@@ -6839,7 +6839,7 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 |---|---|---|---|
 | SIGNALS-08 | loading | present | "Loading signals…" in place of the table; the label reads "signal explorer" and the Performance block is absent until its own request answers. |
 | SIGNALS-09 | empty | present | "No signals match your filters", for filters that exclude everything and for a ticker the table holds no rows for; the Performance block hides itself entirely when there are no closed trades. |
-| SIGNALS-10 | error | present | "Signal data not found for {ticker}. Run the signals generation pipeline first." is rendered the same way for a 503 outage, a 500 defect, a 404 and a 401, after one retry; a failed Performance summary instead renders nothing. |
+| SIGNALS-10 | error | present | "Signal data not found for {ticker}. Run the signals generation pipeline first." is rendered the same way for a 503 outage, a 500 defect, a 404 and a 401, after one retry, and a failed refetch of a cached key puts it in place of the table while the label keeps the cached count; a failed Performance summary instead renders nothing. |
 | SIGNALS-11 | stale | present only in review mode | The `global` tag on the To date in review mode is the page's only as-of marker; in live mode nothing states the age of the rows or of the summary. |
 | SIGNALS-12 | permission | not tracked (new category); present but unreachable | `SignInEmptyState`'s `DataGate` replaces the body only for a signed-out user, whom the app's sign-in gate never lets reach the page; a signed-in user's 401 reads as SIGNALS-10 under the shell's expired-session strip. |
 
@@ -6850,6 +6850,13 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 4. The signals request fails: Opens /signals during an outage (SIGNALS-10) → After one retry an amber card reads "Signal data not found for IWM. Run the signals generation pipeline first.", the same for a 503, a 500 and a 401 (SIGNALS-10) → The table is gone and the Performance block stays if its own request answered (SIGNALS-02)
 
 #### Elements
+
+In every body below, "executed 2026-10-01" means that the production rows were read through the stocks repo's
+`db_query_cr.sh` job script and passed through the real `get_signals` and `get_trade_summary` handlers with only the
+database read replaced, and that the page was rendered hermetically with those answers (a variant payload, a held or
+failed request or a pinned clock is named where one was used), while "read" marks what was only read in the code;
+SIGNALS-01 lists the executions.
+
 ##### SIGNALS-01 · Header
 
 **Shows or does:** The first row of the page (`src/routes/SignalsPage.tsx:188-198`): the title `Signals`
@@ -6858,9 +6865,10 @@ component DASHBOARD-10 and OPTIONS-06 describe). The label reads `<ticker> · <c
 `<ticker>` is `activeTicker` of `useTickerStore`, `<count>` is `count` of the signals response formatted with
 `toLocaleString()`, and ` · <n> shown` follows when the filters leave fewer rows than the response returned
 (`filtered.length !== allSignals.length`, `:194`). The label's own style draws it in capitals (`MicroLabel`,
-`uppercase`); the text in the DOM is `IWM · 190,159 signals`. Until the first answer, and after a failed one, the
-count is replaced by `signal explorer` (`:193`). The header sits outside `DataGate`, so it stays on screen in
-every state of the body.
+`uppercase`); the text in the DOM is `IWM · 190,159 signals`. Until the first answer, and after a failed first
+request, the count is replaced by `signal explorer` (`:193` tests `data`, so this holds only while the key has no
+cached answer: when a refetch of a cached key fails the label keeps the cached count, SIGNALS-10). The header sits
+outside `DataGate`, so it stays on screen in every state of the body.
 
 In these bodies, "executed 2026-10-01" means: the production rows were read through the stocks repo's `db_query_cr.sh` job script
 (executions `db-query-gslsl`, `db-query-28vss`, `db-query-wxq9f`, `db-query-7qttr` and `db-query-zjf94`, and `db-query-wcvmt`
@@ -6904,7 +6912,8 @@ and refuses to run (exit 1) when the `default` list holds more than 25 tickers (
 
 **States:** The popover's own states are DASHBOARD-10's (`ticker-search-error`, `ticker-coverage-error`,
 `ticker-ingest-notice`). The label has the states of the request it reads: `signal explorer` while it loads or
-after it fails (SIGNALS-08, SIGNALS-10), `0 signals` when it answers no rows (SIGNALS-09).
+after it fails with no cached answer (SIGNALS-08, SIGNALS-10), the cached count when a refetch fails (SIGNALS-10),
+`0 signals` when it answers no rows (SIGNALS-09).
 
 **Acceptance criteria:**
 - Given the handler answers 200 with `count` 190,159 and 5,000 rows, when the page renders, then the title reads
@@ -6913,8 +6922,9 @@ after it fails (SIGNALS-08, SIGNALS-10), `0 signals` when it answers no rows (SI
   branch, see Tests).
 - Given filters that leave 2,543 of the 5,000 returned rows, then the label adds ` · 2,543 shown` (executed; the
   form ` · 1 shown` is asserted on this branch, see Tests).
-- Given the request is pending or has failed (503, 500, 404 or 401), then the label reads `IWM · signal explorer`
-  (executed).
+- Given the request is pending or has failed with no cached answer (503, 500, 404 or 401), then the label reads
+  `IWM · signal explorer` (executed); given a cached answer whose refetch then fails, the label keeps the cached
+  count, `IWM · 3 signals` (executed, SIGNALS-10).
 - Given a ticker the handler holds no rows for, then the label reads `IWM · 0 signals` and no error shows
   (executed, `count` 0).
 - Given a pick of SPY, then `GET /api/signals/SPY?limit=5000` and `GET /api/analytics/summary/SPY?days=90` are
@@ -6969,7 +6979,11 @@ handler calls every closed trade that is not above zero a loss (`platform/api/ro
 
 The label says backtest and the rows are live trades (matrix Gaps): the handler reads `trades` with
 `run_kind = 'live'` for the last 90 days from now (`platform/api/routers/analytics.py:146-152`), which are the monitor's logged fires,
-one row per fire and at most five per ticker per day (`lib/config.py:240`, `max_daily_trades: int = 5`).
+one row per fire whose trade-log write succeeded and at most five per ticker per day (`lib/config.py:240`,
+`max_daily_trades: int = 5`). A fire whose trade-log write raises is counted in `persist_trade_failure_count` and
+logged, not raised, and its `signal_alerts` row exists without a `trades` row (`gcp/signal_monitor.py:1792-1797`; no job
+path reads the counter, only `tests/gcp/test_signal_monitor_persist.py:295` does), so the block undercounts that fire;
+whether any fire in the window was lost this way is not checked (matrix Gaps).
 
 Four properties of the block that the label does not say (executed 2026-10-01):
 
@@ -7184,8 +7198,10 @@ card replaces the table), SIGNALS-11 and SIGNALS-12.
 contains `2.0`, and `168 call · 132 put` contains both words), so they pass with an empty table (executed with an
 empty signals response) and with a failed request. `route /signals loads without fatal errors`
 (`tests/shared/navigation.spec.ts`) asserts the nav, `main` and a clean console. The handler tests are as above.
-On this branch the filter and sort test reads the Time, Dir and Score cells of the three fixture rows and the
-count label (not yet run in CI). Te stays unticked: no test on main asserts what the table draws.
+On this branch the filter and sort test, with the rows served oldest first as the handler returns them, reads the
+three Time cells at load and the one after PUT, the Score cells after `6+`, `7+` and each Score sort, the Dir cells of
+the two CALL rows and the count label at load and after PUT (not yet run in CI). Te stays unticked: no test on main
+asserts what the table draws.
 
 **Code:** `src/routes/SignalsPage.tsx:25-64,66-131,163-183,307-352`, `src/components/primitives/index.tsx:60-68`;
 `platform/api/routers/signals.py:59-83,140-251`, `platform/api/schemas.py:607-632`,
@@ -7205,12 +7221,17 @@ date and a bar stored as Eastern wall clock to its own. The sort is TanStack Tab
 and the sort, so the table shows the top 500 of the filtered, sorted window. `columnFilters` and the `Dir` column's
 `filterFn` (`:81-82,140`) are never set: dead code.
 
-What a header click does (executed 2026-10-01, the real window): a first click on a numeric column sorts
-descending (`Score`: the 7.0 rows first; `RSI` and `Volume` the same), a second ascending, a third removes the sort
-(`Score`); a first click on a string column sorts ascending (`Time` and `Dir`), a second descending, a third
-removes it (`Time`). With no sort the table shows the response's order, which is oldest first (the handler orders rows
-ascending), with no indicator: after three clicks on `Time` the first row read `2026-07-21 04:02`, the oldest of the
-window, and no header carried a chevron. Filter and sort compose: `CALL` over a Score sort kept the sort.
+What a header click does (executed 2026-10-01, the real window, the rows in the order the handler returns them, oldest
+first): the table starts sorted by `Time` descending (`:139`), so the first row reads `2026-09-29 23:21` and `Time`
+carries a down chevron. A click on a numeric column (`Score`, `Price`, `RSI`, `EMA9`, `Volume`) sorts descending, a
+second click ascending and a third removes the sort, a fourth sorts descending again; a click on a string column
+(`Time`, `Dir`) sorts ascending, then descending, then removes the sort. With no sort the table shows the response's
+order, oldest first, with no chevron. From the initial state `Time` is already at its descending step, so its clicks
+run: 1 removes the sort (first row `2026-07-21 04:02`, no chevron), 2 ascending (the same first row, chevron up), 3
+descending (`2026-09-29 23:21`, chevron down), 4 removes the sort again. After another column has been sorted, or when
+the table has no sort, `Time` starts at its ascending step (Score descending, then `Time`: ascending, descending, no
+sort, ascending). `Dir` runs ascending (`CALL` first), descending (`PUT` first), none. Filter and sort compose: `CALL`
+over a Score sort kept the sort.
 
 Scope: the window is the newest 5,000 rows (SIGNALS-01, SIGNALS-04). The handler accepts `direction` and `min_score`
 and applies them in SQL (`platform/api/routers/signals.py:224-226,165-170`), but the page sends neither, and
@@ -7234,22 +7255,31 @@ the cap shows the footnote of SIGNALS-04.
 - Given `Min score` of 6, then rows scoring 6 or more stay (executed: 822), and given 8 then none (executed: the
   empty message).
 - Given a `From` and a `To`, then rows whose stored date is inside the range, ends included, stay (executed: 746).
-- Given a header click, then the rows sort as above and the chevron shows the direction, and a third click returns the
-  response order without an indicator (executed).
+- Given the initial state, then the newest row is first and `Time` carries a down chevron; given clicks on `Time`, then
+  they give the response order with no chevron, ascending, descending and the response order again; given clicks on
+  `Score`, descending, ascending and the response order; given clicks on `Dir`, ascending, descending and the response
+  order (executed, the chevron following each step).
 - Given a filter and a sort together, then both apply and the first 500 rows of the result show (executed).
 - Given the new test `the direction buttons, Min score, the date range and the column headers act on the fetched
-  rows`, added on this branch, then on the three-row fixture it asserts the Time, Dir and Score cells and the
-  count label after `PUT`, after `6+`, `7+` and `8+`, after a `From` and a `To` on either side of the rows' date
-  and after Score sorts, and its mutations of the product (direction filter ignored, `>` for `>=`, From ignored, To
-  exclusive, sorting removed) each failed it.
+  rows`, added on this branch, then on the three-row fixture, served oldest first as the handler returns it, it asserts
+  the Time cells and the count label at load and after `PUT`, the Score cells after `6+` and `7+` and after each Score
+  sort, the row count after `PUT`, `8+` and each `From` and `To` step on either side of the rows' date, the message at
+  `8+`, and the Dir and Score cells of the two CALL rows when CALL is combined with the sort; its mutations of the
+  product (direction filter ignored, `>` for `>=`, From ignored, To exclusive, sorting removed, default sort emptied)
+  each failed it.
 
 **Tests:** No test on main asserts a filter or the sort: the existing specs never press a direction button, choose
-a score, fill a date or click a header. The one test, added on this branch in solyra commit 8ffbb54, passed as
-written (the behaviour was already there) and was RED against each of five mutations of `src/routes/SignalsPage.tsx` made in a
-scratch copy: the direction filter removed (`expected 1 row, received 3`), `Number(score) > minScore` (`6+` left only
-`7.0`), the From filter removed (`expected 0 rows, received 3`), the To filter made exclusive (`expected 3 rows,
-received 0`) and `getSortedRowModel` removed (Score cells `7.0, 5.0, 6.0` for `7.0, 6.0, 5.0`). It has not run in
-CI. Te stays unticked and the matrix Gaps say it waits for a CI run that includes the branch's tests.
+a score, fill a date or click a header. The one test, added on this branch in solyra commit 8ffbb54 and changed in the
+commit `test(signals): serve rows oldest first to pin the default sort`, passed as written (the behaviour was already
+there) and is RED against each of six mutations of `src/routes/SignalsPage.tsx` made in a scratch copy: the direction
+filter removed (`expected 1 row, received 3`), `Number(score) > minScore` (`6+` left only `7.0`), the From filter
+removed (`expected 0 rows, received 3`), the To filter made exclusive (`expected 3 rows, received 0`),
+`getSortedRowModel` removed (the Time cells at load read `17:00, 17:30, 18:00` for `18:00, 17:30, 17:00`, the order the
+rows arrive in) and the default sort emptied (`useState<SortingState>([])`, the same Time cells). The first version
+served the fixture newest first, the order the default sort produces, so it passed with the default sort emptied and
+its `getSortedRowModel` mutation failed only at the Score sort (Score cells `7.0, 5.0, 6.0` for `7.0, 6.0, 5.0`); the
+later commit serves the rows oldest first, as the handler returns them, and all six fail it. It has not run in CI. Te
+stays unticked and the matrix Gaps say it waits for a CI run that includes the branch's tests.
 
 **Code:** `src/routes/SignalsPage.tsx:67-131,139-183,226-257,311-323`; `platform/api/routers/signals.py:165-170,224-226`;
 test: `tests/signals/signals.spec.ts` (the filter and sort test of the second describe block); no test id on the
@@ -7293,7 +7323,7 @@ Three details (executed on the real window):
 **Tests:** None on main asserts `Clear`. The new test, added on this branch in solyra commit 8ffbb54, passed as
 written and was RED against six mutations made in a scratch copy: `Clear` leaving the minimum score, the From, the To
 or the direction (each failed at `expected Clear count 0, received 1`, since a filter left set keeps the button
-drawn), `Clear` also resetting the sort (Score cells `7.0, 5.0, 6.0` for `7.0, 6.0, 5.0`) and `Clear` always drawn
+drawn), `Clear` also resetting the sort (Score cells `6.0, 5.0, 7.0` for `7.0, 6.0, 5.0`, the order the rows arrive in) and `Clear` always drawn
 (`expected 0, received 1` on the first render). It has not run in CI. Te stays unticked and the matrix Gaps say it
 waits for a CI run that includes the branch's tests. No test covers the held `To` value.
 
@@ -7462,12 +7492,19 @@ asserts only the status and the SQL). Te is ticked on these two (matrix Gaps lis
 
 **Shows or does:** A state: when the signals request fails (`isError`, `src/routes/SignalsPage.tsx:294-299`) an amber card
 with an alert-triangle icon reads `Signal data not found for <ticker>. Run the signals generation pipeline first.`
-and the table is not drawn; the label reads `<ticker> · signal explorer` (`:193`), and the filter bar and the
-Performance block stay (SIGNALS-03, SIGNALS-02). The card is the same for every failure of the request, an outage, a
+and the table is not drawn; with no cached answer the label reads `<ticker> · signal explorer` (`:193` tests
+`data`), and the filter bar and the Performance block stay (SIGNALS-03, SIGNALS-02). The card is the same for every failure of the request, an outage, a
 defect, a missing route, a refused token or a network error (executed 2026-10-01, the signals route answering 503, 500,
 404 and 401): after about two seconds and one retry (`src/App.tsx:30-37`, `retry: 1`: two signals requests were logged for
 each), the same text appeared, with no status, no server `detail`, no `Retry` button
 and no `role` (`getByRole('alert')` found nothing).
+
+A failed refetch of a cached key shows the same card over rows the page still holds (executed 2026-10-01: the signals
+route answered 200 and then 503, the clock was moved six minutes past the five-minute `staleTime` and the tab was given
+focus back, so the library refetched, tried once more and gave up, two 503 answers in all): the card appeared, the
+table was gone (`:307` draws it only while `!isError`), the label kept the cached count, `IWM · 3 signals`, and the
+Performance block and the filter bar stayed. The cached rows are held and hidden behind `Run the signals generation
+pipeline first`, and nothing says that they are old or that the refresh is what failed.
 
 The advice is wrong for what it follows. The server's own text is unused (`signals temporarily unavailable` for an
 outage), and the case the card describes, a ticker the pipeline has not processed, is not an error at all: the handler
@@ -7487,12 +7524,16 @@ unavailable` for an outage and a 500 for a defect (`:153-160`, `platform/api/htt
 strict reader, so no empty frame is served for a failed query.
 
 **States:** This is the error state of the table and the label (SIGNALS-04, SIGNALS-01) and, silently, of the
-Performance block (SIGNALS-02). A 401 reads the same and adds the shell's strip (SIGNALS-12).
+Performance block (SIGNALS-02). A 401 reads the same and adds the shell's strip (SIGNALS-12). On a failed refetch it
+is the error state of a table the page still holds data for (SIGNALS-11).
 
 **Acceptance criteria:**
-- Given the signals request fails with 503, 500, 404 or 401, then after the retry the card reads `Signal data not
-  found for IWM. Run the signals generation pipeline first.`, no table is drawn and the label reads `IWM · signal
-  explorer` (executed 2026-10-01).
+- Given the signals request fails with 503, 500, 404 or 401 and no answer is cached, then after the retry the card
+  reads `Signal data not found for IWM. Run the signals generation pipeline first.`, no table is drawn and the label
+  reads `IWM · signal explorer` (executed 2026-10-01).
+- Given a cached answer older than five minutes and a refetch that fails with a 503 after its retry, then the same
+  card shows, no table is drawn, the label keeps the cached count `IWM · 3 signals` and the Performance block and the
+  filter bar stay (executed 2026-10-01).
 - Given the signals request fails and the summary answers, then the five tiles and the filter bar stay (executed).
 - Given the summary request fails, then the block is absent and no text mentions it (executed).
 - Given an infrastructure failure of the read, then the handler answers 503, given a defect then 500, and given no
@@ -7504,11 +7545,11 @@ Performance block (SIGNALS-02). A 401 reads the same and adds the shell's strip 
 - Given a failed request, then the card carries neither the status nor the server's reason (executed; matrix Gaps).
 
 **Tests:** On main, the handler tests above and the route-coverage rows. No test asserts the card, the label's
-fallback, the silent summary or the retry: no spec fails a request on this page, and the regex of `shows empty
+fallback, the failed refetch, the silent summary or the retry: no spec fails a request on this page, and the regex of `shows empty
 state when no alerts` would match the card's text only if the response failed. Te stays unticked: the page layer of
 this state is asserted by nothing.
 
-**Code:** `src/routes/SignalsPage.tsx:51-64,152,191-195,294-299`, `src/hooks/useTradeAnalytics.ts:36-47`,
+**Code:** `src/routes/SignalsPage.tsx:51-64,152,191-195,294-299,307`, `src/hooks/useTradeAnalytics.ts:36-47`,
 `src/App.tsx:30-37`; `platform/api/routers/signals.py:59-83,90-137`, `platform/api/routers/analytics.py:131-178`,
 `platform/api/http_errors.py`; no test id and no `role` on the card.
 
@@ -7532,14 +7573,22 @@ What the reader is not told (executed 2026-10-01 against production, 00:28 ET, a
   newest entry 13:34 UTC, exit 13:55 UTC) while the table's newest row was 2026-09-29.
 - The client keeps an answer for five minutes (`staleTime`, `:62` and `src/hooks/useTradeAnalytics.ts:45`) and has no
   `refetchInterval`, so a stale key is fetched again only when the library's defaults call for it, such as the window
-  regaining focus (read), and the response carries no timestamp of its own (`SignalsResponse` has none).
+  regaining focus (executed: a `visibilitychange` event after a six-minute clock jump refetched both requests), and the
+  response carries no timestamp of its own (`SignalsResponse` has none).
+- A refresh that fails leaves rows the page cannot vouch for under an error card. Executed 2026-10-01 (the signals
+  route answered 200 and then 503, the clock was moved six minutes past `staleTime` and the tab was given focus back):
+  SIGNALS-10's card replaced the table while the label kept the cached count, `IWM · 3 signals`, so the cached rows were
+  held and hidden and nothing said that they were old. A failed refresh of the summary instead leaves the cached tiles
+  on screen unmarked (the same run with the summary route answering 503: `Win rate` still read `62.0%`, no card, no
+  text).
 
 **Needs:** Nothing of its own. The facts above come from `historical_signals.inserted_at` and `entry_time`, the
 scheduler and the job executions the V evidence lists (`historical-signals-watchlist-tqxh5` completed
 2026-09-30 05:04 UTC); the page reads none of them.
 
 **States:** This is the stale state of the table (SIGNALS-04) and of the Performance block (SIGNALS-02), and the
-`global` tag is the review-mode marker of the filter bar's `To` date (SIGNALS-03).
+`global` tag is the review-mode marker of the filter bar's `To` date (SIGNALS-03). A failed refetch of the table's key
+turns it into SIGNALS-10's card over cached data.
 
 **Acceptance criteria:**
 - Given review mode, then the `To` date shows the review date with an amber `global` tag (executed; the new review-mode
@@ -7548,11 +7597,14 @@ scheduler and the job executions the V evidence lists (`historical-signals-watch
   `main` outside the table's rows, on the real-window render, holds no date, `ago`, `updated` or `as of`).
 - Given production at 00:28 ET on 2026-10-01, then IWM's newest row is from the session before the last one closed
   (read: `max(entry_time)` 2026-09-29 23:21 UTC, `max(inserted_at)` 2026-09-30 05:03 UTC).
+- Given a cached signals answer older than five minutes and a failed refetch, then SIGNALS-10's card replaces the table
+  and the label keeps the cached count; given a failed refetch of the summary, then the cached tiles stay with no
+  marker (executed 2026-10-01).
 
 **Tests:** None on main asserts the tag or any age presentation, and no test could assert an age marker the page does
 not have. Te stays unticked.
 
-**Code:** `src/routes/SignalsPage.tsx:62,152-156,279-281`, `src/hooks/useTradeAnalytics.ts:45`;
+**Code:** `src/routes/SignalsPage.tsx:62,152-156,193,279-281,294-299,307`, `src/hooks/useTradeAnalytics.ts:45`;
 `gcp/deploy.sh:5060` (the schedule), `scripts/run_historical_signals.py:167-245`; no test id on the tag.
 
 ##### SIGNALS-12 · State: permission
@@ -7571,7 +7623,7 @@ request was `GET /api/config/firebase`). In `open` and `iap` modes `useUser` rep
 (`src/hooks/useUser.ts:25-27,81`), so `DataGate`'s condition cannot hold.
 
 What a signed-in user sees on a 401 (executed 2026-10-01, `open` mode as the hermetic suite runs, the signals and
-summary routes answering 401 `sign in to continue`): the shell's strip `Your session expired, so live data is not
+summary routes answering 401 `sign in to continue` from the first request): the shell's strip `Your session expired, so live data is not
 loading.` with a `Sign in` button, `role="status"`, and the nav pill `Session expired`
 (`src/components/shared/AuthStatusIndicator.tsx:23-33,156-182`, SHELL-16); on the page itself the SIGNALS-10 card
 `Signal data not found for IWM. Run the signals generation pipeline first.`, the label `IWM · signal explorer` and no
