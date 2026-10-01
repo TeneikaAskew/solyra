@@ -7836,11 +7836,11 @@ on a synthetic `/api/secret` route and not on a signals route) and the sign-in s
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| INSIGHTS-11 | loading | present | Spinners for the Briefing and History bodies, the Watchlist ranking and the Chat stream, and `queued…` or `running…` beside the cutoff while a run is polled; the Agents tab has no spinner (it shows `—`, `No per-agent breakdown yet...` and `Loading routing…` until each request answers) and the House Views card reads `Brief unavailable` while its request is pending. |
-| INSIGHTS-12 | empty | present | "No report yet" with a Generate Report button; each card's own empty copy; "No history yet."; the Agents and Watchlist panels' own empty copy. |
+| INSIGHTS-11 | loading | present | Spinners for the Briefing and History bodies, the Watchlist ranking and the Chat stream, `Searching...` and the `Add` button's spinner in the ticker search, and `queued…` or `running…` beside the cutoff while a run is polled; the Agents tab has no spinner (it shows `—`, `No per-agent breakdown yet...` and `Loading routing…` until each request answers) and the House Views card reads `Brief unavailable` while its request is pending. |
+| INSIGHTS-12 | empty | present | "No report yet" with a Generate Report button; each card's own empty copy; "No history yet."; the Agents and Watchlist panels' own empty copy; the Chat tab's `Ask a question about ...`; the search's no-matches line. |
 | INSIGHTS-13 | error | present | "Failed to load report: {message}"; the red brief card; the Agents tab's one admin message for any roster failure; "Failed to load watchlist:"; "Failed to add:"; a failed chat send as an `Error:` bubble in the transcript; History has no error branch (a failure reads "No history yet."), and a failed refresh, a failed run and a failed status poll show nothing on the page. |
 | INSIGHTS-14 | stale | present | "Viewing historical report, not the current latest." while a History entry is open; the live report carries only its time, with no stale marker, and the Agents tab shows that time in UTC. |
-| INSIGHTS-15 | permission | not tracked (new category); present | `DataGate` wraps every tab body but cannot trigger in practice (`firebase` mode keeps a signed-out user off the page, `open` and `iap` modes are always signed in); a signed-in user's 401 shows the shell's expired-session strip and each tab's own error form; the Agents tab reads any failure of `/api/admin/routes` as its admin-required message. |
+| INSIGHTS-15 | permission | not tracked (new category); present | `DataGate` wraps every tab body but cannot trigger in practice (`firebase` mode keeps a signed-out user off the page, `open` and `iap` modes are always signed in); a signed-in user's 401 shows the shell's expired-session strip and each tab's own error form, an add's `Failed to add: HTTP 401: ...` and nothing for a refresh; the Agents tab reads any failure of `/api/admin/routes` as its admin-required message. |
 
 #### Journeys
 1. Read the day's council report: Opens /insights (INSIGHTS-01) → Reads the thesis, direction, conviction and confidence (INSIGHTS-01) → Compares the House Views card's brief with the insight's direction (INSIGHTS-01) → Checks key levels and risk flags (INSIGHTS-01) → Reads the bull and bear cases (INSIGHTS-01), since the page has no card for the judge's verdict → Picks the persona plan matching their style (INSIGHTS-01)
@@ -8186,8 +8186,9 @@ empty list on any error (`_watchlist.py:344-387`), and returns exactly the user'
 non-default owner (`:457-458`). Production (V evidence, 2026-10-01): `watchlists` holds 16 active rows, all owned by
 `default` (3 `in_insight`, 3 `in_brief`, none with source `ui`), the newest added 2026-05-04; `ranker_runs` holds 112
 rows from 2026-04-25 to 2026-09-30, 109 with 16 candidates, 3 with 5 and none with 0, the newest written at 12:17:30
-UTC on 2026-09-30, inside that morning's `auto-refresh-top-n` execution (12:10:02 to 12:17:35 UTC, succeeded), and the
-newest four took 10.8 s to 46.1 s (executions `db-query-m5sb8` and `db-query-7vlmp`). The tables behind the tags and
+UTC on 2026-09-30, inside that morning's `auto-refresh-top-n` execution (created 12:10:02, started 12:16:40, completed
+12:17:35 UTC, succeeded), and the newest four, written in the minutes of that job's executions, record 10.8 s to 46.1 s
+(executions `db-query-m5sb8` and `db-query-7vlmp`). The tables behind the tags and
 the scores were fresh: `earnings_calendar` fetched 2026-09-30 23:00 UTC, `sec_filings` newest filing 2026-09-30,
 `insider_transactions` newest transaction 2026-09-23, `top_movers_daily` 2026-09-30, `economic_events` through
 2026-10-30, `market_data_daily` 2026-09-30, `news_sentiment` 2026-09-30 20:25 UTC and `earnings_history` 2026-09-30,
@@ -8215,8 +8216,11 @@ drawn, only the run id and the duration. Permission (INSIGHTS-15): a 401 reads a
   `user_id`, and `default` without identity (`test_watchlist_threads_signed_in_user`,
   `test_watchlist_threads_default_owner_when_no_auth`).
 - Given a click on `Generate report` with a cutoff set, then the page switches to that ticker's Briefing tab and posts
-  the refresh with no `as_of`, and the cutoff input keeps its value (executed; asserted on this branch by
-  `a watchlist row's Generate report runs live even while a cutoff is set`).
+  the refresh with no `as_of`, and the cutoff input keeps its value (executed). The test added on this branch,
+  `a watchlist row's Generate report runs live even while a cutoff is set`, asserts that the first request to the
+  row's ticker's refresh route has that path and an empty query string, that none reached the active ticker's refresh
+  route, that text matching `/no report yet/i` shows and that the cutoff input holds its value with the `Replay`
+  button still shown; it does not assert the request's method.
 - Given no token, then the route answers 401 on staging (V evidence, 2026-10-01).
 
 **Tests:** On main no Playwright test opens the tab. On the handler side `TestInsightsWatchlistAPI`
@@ -8229,7 +8233,8 @@ queries, `rank_tickers` sorting and excluding, the candidate gate, and `load_wat
 route at 200 against a dead backend, which is the empty ranking of the Gaps. Nothing asserts the tab's rendering, the
 empty ranking for an owner with no rows through the handler, or the `ranker_runs` write. On this branch
 `a watchlist row's Generate report runs live even while a cutoff is set` (`tests/insights/insights.spec.ts`) asserts
-the live refresh of a row with a cutoff set; it has not run in CI. Te stays unticked.
+that the row's refresh carries no `as_of` while the cutoff input stays set; of the tab itself it only waits for the
+ranking's count line and clicks the row's button; it has not run in CI. Te stays unticked.
 
 **Code:** `src/components/insights/WatchlistPanel.tsx:25-203,483-607`, `src/routes/InsightsPage.tsx:98-105,239-244`,
 `src/hooks/useWatchlist.ts:17-34`, `src/types/watchlist.ts:1-40`; `platform/api/routers/insights.py:57-67,709-756`,
@@ -8326,12 +8331,14 @@ how old a section is. Permission (INSIGHTS-15).
 
 **Acceptance criteria:**
 - Given `failed_sections` is empty, then nothing renders and the header is the first block (executed on the IWM row;
-  asserted on this branch by
-  `a degraded report shows the partial-report banner naming each failed section, a complete one shows none`,
-  `tests/insights/insights.spec.ts`).
+  on this branch
+  `a degraded report shows the partial-report banner and its section name, a complete one shows none`,
+  `tests/insights/insights.spec.ts`, asserts that no `Partial report` text shows once the complete fixture has loaded,
+  and not that the header is then the first block).
 - Given `['options', 'gamma']`, then one strip reads
   `Partial report: the following sections were unavailable: options, gamma` above the header (executed on the AVGO
-  row; asserted on this branch by the same test).
+  row; the test added on this branch uses the one-section fixture `['judge']` and asserts the sentence and that name,
+  not the join of two names or the position of the strip).
 - Given `failed_section_reasons` holds causes, then the page draws none of them (executed on AVGO).
 - Given a History entry with failed sections, then the banner draws under the historical strip (executed on the
   2026-04-24 row).
@@ -8343,9 +8350,11 @@ how old a section is. Permission (INSIGHTS-15).
 
 **Tests:** On main no test asserts the banner: `renders a full report with all cards` mounts a complete report whose
 list is empty and does not look for it. On this branch
-`a degraded report shows the partial-report banner naming each failed section, a complete one shows none` asserts the
-sentence and the section names for `MOCK_INSIGHT_REPORT_DEGRADED` and their absence for the complete fixture
-(`tests/insights/insights.spec.ts`; it has not run in CI). The data side is asserted by
+`a degraded report shows the partial-report banner and its section name, a complete one shows none` asserts, for
+`MOCK_INSIGHT_REPORT_DEGRADED` (the one section `judge`), the sentence, that name and the `IWM` heading on the page
+and, after a reload on the complete fixture, no `Partial report` text (`tests/insights/insights.spec.ts`; it has not
+run in CI); it does not assert the position of the strip, the join of several names or that the stored reasons are
+not drawn. The data side is asserted by
 `tests/agents/test_agent_orchestrator.py` (`test_pipeline_marks_failed_analysts`, five parametrised
 `test_pipeline_isolates_individual_analyst_failures` cases, `test_pipeline_isolates_multiple_partial_failures`,
 `test_pipeline_marks_persona_plans_when_the_deterministic_plan_fails`,
@@ -8538,8 +8547,9 @@ screen unless opened from History. Permission (INSIGHTS-15).
   zone).
 - Given a zone-less cutoff, then the server reads it as UTC, so `10:30` means 06:30 EDT (executed on the handler).
 - Given a cutoff in the future or malformed, then the handler answers 400 and the page draws nothing (executed).
-- Given a Watchlist row's `Generate report` with a cutoff set, then the refresh is live (executed; asserted on this
-  branch by `a watchlist row's Generate report runs live even while a cutoff is set`).
+- Given a Watchlist row's `Generate report` with a cutoff set, then the refresh is live (executed; the test added on
+  this branch, `a watchlist row's Generate report runs live even while a cutoff is set`, asserts that the row's refresh
+  request has no query string while the cutoff input stays set).
 - Given no token, then the route answers 401 on staging (V evidence, 2026-10-01).
 
 **Tests:** On main, `tests/insights/insights.spec.ts` holds five tests for the control: the cap on the input, the
@@ -8554,7 +8564,8 @@ asserts that the job stamps `replay` or `live` on its canonical row, and `tests/
 checks by source text that the router's upsert carries `run_kind` through the conflict (presence only). Nothing
 asserts the API's replay write, its response or the three reads that ignore the cutoff. On this branch
 `a watchlist row's Generate report runs live even while a cutoff is set` (`tests/insights/insights.spec.ts`) asserts
-that exception; it has not run in CI. Te stays unticked.
+that exception, the row's refresh carrying no `as_of` while the cutoff input stays set; it has not run in CI. Te stays
+unticked.
 
 **Code:** `src/routes/InsightsPage.tsx:47,78-105,159-194`, `src/hooks/useInsights.ts:124-156`;
 `platform/api/routers/insights.py:95-133,411-486,841-898`, `lib/agents/orchestrator.py:660-661`,
@@ -8710,19 +8721,22 @@ answer with status 200, which is what the page then shows as the reply. Permissi
 `src/mocks/contract.test.ts` validates a sample request body against the vendored snapshot. Nothing asserts the
 stream, the model, the six-turn window, the error bubbles or the `Gemini error:` body. On this branch
 `a failed report, ranking or chat request says so on the page with its status` (`tests/insights/insights.spec.ts`)
-asserts that a 503 from the chat route draws `Error: 503` in the transcript; it has not run in CI. Te stays unticked.
+asserts that after a 503 from the chat route the user's message stays on the page and text beginning `Error: 503`
+follows it; it has not run in CI. Te stays unticked.
 
 **Code:** `src/routes/InsightsPage.tsx:466-534`; `platform/api/routers/insights.py:930-1074`; no test ids.
 
 ##### INSIGHTS-11 · State: loading
 
 **Shows or does:** A state with no request of its own: it is what the page draws while the requests of INSIGHTS-01,
-INSIGHTS-03, INSIGHTS-04, INSIGHTS-05 and INSIGHTS-07 are pending, and the Agents tab's placeholder text while
-INSIGHTS-02's are. Briefing: `ReportView` returns a centred spinner in place of the whole stack while the report, or
-for a History entry the by-id read, is loading (`src/routes/InsightsPage.tsx:204-206,307-313`). History: the same
+INSIGHTS-03, INSIGHTS-04, INSIGHTS-05, INSIGHTS-07 and INSIGHTS-09 are pending, and the Agents tab's placeholder text
+while INSIGHTS-02's are. Briefing: `ReportView` returns a centred spinner in place of the whole stack while the report,
+or for a History entry the by-id read, is loading (`src/routes/InsightsPage.tsx:204-206,307-313`). History: the same
 spinner while the history is loading (`:227,404-410`). Watchlist: a spinner in a box under the filter bar, which stays
 (`src/components/insights/WatchlistPanel.tsx:153-156`). Chat: a spinner after the last bubble, with the input and the
-send button disabled (`InsightsPage.tsx:574-576,592,597`). A run: `queued…` or `running…` with a small spinner beside
+send button disabled (`InsightsPage.tsx:574-576,592,597`). Add: `Searching...` under the input while a search loads and
+a spinner in the `Add` button while an add is pending (`src/components/insights/WatchlistPanel.tsx:301-305,311-316`,
+read). A run: `queued…` or `running…` with a small spinner beside
 the cutoff, and a spinning icon on the main button and the empty state's button (`:153-158,188-192,333,336`). The
 Agents tab has no spinner: until each request answers its tiles read `—`, the cost block reads
 `No per-agent breakdown yet, generate an insight report for this ticker.`, the roster reads `Loading routing…` and
@@ -8742,14 +8756,19 @@ status of `queued` then `running`, the label followed (INSIGHTS-07); on the Agen
 at `—` and the cost block at `No per-agent breakdown yet...` while the roster listed its seven roles, the roster held
 read `Loading routing…`, and the history held read `No prior runs for IWM.`.
 
-**Needs:** Nothing of its own: the pending requests of the rows above. How long they stay pending in production: the
-newest four `ranker_runs` rows, written by the same `rank_tickers` the Watchlist tab calls, took 10.8 s to 46.1 s for
-16 candidates, against a hook comment that calls the ranker cheap at about 5 s (`src/hooks/useWatchlist.ts:11-15`, V
-evidence); the live IWM reports record 22 to 34 s of `latency_ms` (V evidence), which is how long a refresh run takes
-to reach `done`; the browser requests carry no timeout, so a request that never answers keeps its spinner (read).
+**Needs:** Nothing of its own: the pending requests of the rows above. How long they stay pending in production was
+not measured, and three nearby measurements are not that. The newest four `ranker_runs` rows, written in the minutes of
+the 08:10 ET `auto-refresh-top-n` job's executions by the same `rank_tickers` the Watchlist tab calls, record 10.8 s to
+46.1 s for 16 candidates, against a hook comment that calls the ranker cheap at about 5 s
+(`src/hooks/useWatchlist.ts:11-15`, V evidence); the endpoint's own latency was not measured. The newest live IWM
+report records `latency_ms` 25626, the pipeline's own time for that report (V evidence). The ten `local_dev` runs, the
+kind a click on the page creates under the current settings (read), took 17.4 s to 22.8 s from `started_at` to
+`finished_at`, the newest from 2026-04-25 (V evidence). None of the three times a click today. The browser requests
+carry no timeout, so a request that never answers keeps its spinner (read).
 
-**States:** This is the loading state of the Briefing, History, Watchlist, Chat and run surfaces (INSIGHTS-01,
-INSIGHTS-03, INSIGHTS-04, INSIGHTS-05, INSIGHTS-07) and, as placeholder text, of the Agents tab (INSIGHTS-02).
+**States:** This is the loading state of the Briefing, History, Watchlist, Chat, run and search surfaces (INSIGHTS-01,
+INSIGHTS-03, INSIGHTS-04, INSIGHTS-05, INSIGHTS-07, INSIGHTS-09) and, as placeholder text, of the Agents tab
+(INSIGHTS-02).
 
 **Acceptance criteria:**
 - Given the report request is pending with no cached answer, then a spinner replaces the card stack and the heading,
@@ -8757,6 +8776,8 @@ INSIGHTS-03, INSIGHTS-04, INSIGHTS-05, INSIGHTS-07) and, as placeholder text, of
 - Given the history request is pending, then the History tab draws a spinner; given the ranking is pending, the
   Watchlist tab draws a spinner under its filter bar (executed).
 - Given a chat reply is streaming, then a spinner shows and the input and the send button are disabled (executed).
+- Given a search is loading, then `Searching...` shows under the input, and given an add is pending, the `Add` button
+  shows a spinner (read).
 - Given a run is `queued` or `running`, then the label and the disabled buttons show (executed; INSIGHTS-07).
 - Given the brief request is pending, then the House Views card reads `Brief unavailable`, the text of the unavailable
   state (executed; matrix Gaps).
@@ -8768,9 +8789,9 @@ INSIGHTS-03, INSIGHTS-04, INSIGHTS-05, INSIGHTS-07) and, as placeholder text, of
 unticked.
 
 **Code:** `src/routes/InsightsPage.tsx:153-158,188-192,204-206,227,307-313,404-410,574-576`,
-`src/components/insights/WatchlistPanel.tsx:153-156`, `src/components/insights/AgentsPanel.tsx:41-123`,
-`src/components/insights/ReportCards.tsx:529-537`, `src/hooks/useInsights.ts:24-58`; no test ids (the spinners are
-`animate-spin` icons).
+`src/components/insights/WatchlistPanel.tsx:153-156,301-305,311-316`,
+`src/components/insights/AgentsPanel.tsx:41-123`, `src/components/insights/ReportCards.tsx:529-537`,
+`src/hooks/useInsights.ts:24-58`; no test ids (the spinners are `animate-spin` icons).
 
 ##### INSIGHTS-12 · State: empty
 
@@ -8789,7 +8810,9 @@ Briefing, no live report: a 404 from `GET /api/insights/report/{ticker}` is read
 `No per-agent breakdown yet, generate an insight report for this ticker.`, `Loading routing…` for an empty roster and
 `No prior runs for <ticker>.` (`AgentsPanel.tsx:53-56,89-90,121-123`). Watchlist: `No candidates ranked.` with
 `Either no catalyst tickers met the liquidity gate, or the catalyst data tables are empty. Once Phase 2 fetchers have run a full day, this list will populate.`
-(`WatchlistPanel.tsx:164-173`).
+(`WatchlistPanel.tsx:164-173`). Chat: `Ask a question about <ticker> in <mode> mode.` while the transcript is empty
+(`InsightsPage.tsx:557-561`). Search: `No matches for "<query>". Press Enter or Add to add it directly.` when a query
+returns nothing (`WatchlistPanel.tsx:344-348`).
 
 Executed (2026-10-01, the production executions are listed at INSIGHTS-01): ARM, which has no live row, drew
 `No report yet` and `Generate Report` on the Briefing tab (the real handler answered 404
@@ -8799,14 +8822,16 @@ empty copy above, word for word, and an empty history drew `No history yet.` and
 `No prior runs for IWM.`. The empty copies are not rare in production: of the 46 reports of the last 10 days, none
 carries a supporting signal or a similar past trade, so those two cards always draw their empty copy (V evidence;
 matrix Gaps). The same `No candidates ranked.` text is what a signed-in user who owns no watchlist row sees, and what
-a database outage shows (INSIGHTS-04; executed on the handler and the page).
+a database outage shows (INSIGHTS-04; executed on the handler and the page). The Chat tab with no message drew
+`Ask a question about IWM in chat mode.` and, after a click on `market`, the same sentence with `market`; a search for
+`zzzz` that returned no matches drew `No matches for "zzzz". Press Enter or Add to add it directly.` (executed).
 
 **Needs:** Nothing of its own: a 404 from the report route, and 200 answers with empty lists from the history route,
 the roster route and the ranking route. Production (V evidence, 2026-10-01): 164 tickers have at least one report and
 785 live reports exist; ARM and CARS have reports and no live one.
 
-**States:** This is the empty state of the Briefing tab, its cards, the History tab, the Agents tab and the Watchlist
-tab (INSIGHTS-01 to INSIGHTS-04).
+**States:** This is the empty state of the Briefing tab, its cards, the History tab, the Agents tab, the Watchlist tab
+and the Chat tab (INSIGHTS-01 to INSIGHTS-05), and of the add's search (INSIGHTS-09).
 
 **Acceptance criteria:**
 - Given a 404 from the report route, then the tab reads `No report yet` with a `Generate Report` button (executed;
@@ -8815,6 +8840,9 @@ tab (INSIGHTS-01 to INSIGHTS-04).
 - Given an empty history, then `No history yet.` shows; given an empty roster, then `Loading routing…` shows and stays
   (executed).
 - Given a ranking of no rows, then `No candidates ranked.` and its sentence show (executed).
+- Given a Chat tab with no message, then `Ask a question about <ticker> in <mode> mode.` shows, with the selected mode
+  (executed); given a search with no results, then `No matches for "<query>". Press Enter or Add to add it directly.`
+  shows (executed).
 - Given the handler holds no live row, then it answers 404 with a detail naming the refresh route (executed on ARM).
 
 **Tests:** On main `shows empty-state CTA when no report exists` (`tests/insights/insights.spec.ts`) serves a 404 for
@@ -8822,12 +8850,12 @@ the report and asserts that text matching `/no report yet/i` and a button matchi
 it does not look at the other copies. On the handler side the 404 is asserted only by
 `test_get_insight_report_404_when_missing` in `tests/lib/test_routers_insights_admin.py`, which skips in CI, and
 `tests/api/test_route_coverage.py` holds the report route at 503, not 404. No test asserts the card copies,
-`No history yet.`, the Agents or Watchlist text. Te stays unticked: the handler's 404 is asserted only by a module
-that skips in CI.
+`No history yet.`, the Agents, Watchlist, Chat or search text. Te stays unticked: the handler's 404 is asserted only by
+a module that skips in CI.
 
-**Code:** `src/routes/InsightsPage.tsx:321-340,411-417`, `src/hooks/useInsights.ts:68-81`,
+**Code:** `src/routes/InsightsPage.tsx:321-340,411-417,557-561`, `src/hooks/useInsights.ts:68-81`,
 `src/components/insights/ReportCards.tsx:126-128,199-200,245-246,277-282,362-368,393-401,429-437`,
-`src/components/insights/AgentsPanel.tsx:53-56,89-90,121-123`, `src/components/insights/WatchlistPanel.tsx:164-173`;
+`src/components/insights/AgentsPanel.tsx:53-56,89-90,121-123`, `src/components/insights/WatchlistPanel.tsx:164-173,344-348`;
 `platform/api/routers/insights.py:764-782`; no test ids.
 
 ##### INSIGHTS-13 · State: error
@@ -8873,12 +8901,15 @@ controls (INSIGHTS-01 to INSIGHTS-05, INSIGHTS-07, INSIGHTS-09). The permission 
 
 **Acceptance criteria:**
 - Given the report route answers 503, then `Failed to load report: insights 503` shows in a red box and the page's
-  heading, tabs and run controls stay (executed; asserted on this branch by
-  `a failed report, ranking or chat request says so on the page with its status`, `tests/insights/insights.spec.ts`).
+  heading, tabs and run controls stay (executed: the text, the `AI Insights` heading, the five tab buttons, the cutoff
+  input and the `Re-analyze` button were on the page). The test added on this branch,
+  `a failed report, ranking or chat request says so on the page with its status` (`tests/insights/insights.spec.ts`),
+  asserts that text, the `AI Insights` heading and the cutoff input, and clicks the Watchlist and Chat tab buttons
+  afterwards.
 - Given the ranking route answers 503, then `Failed to load watchlist: watchlist 503` shows and the filter bar stays
-  (executed; asserted on this branch by the same test).
-- Given the chat route answers 503, then the transcript shows the user's message and `Error: 503` (executed; asserted
-  on this branch by the same test).
+  (executed; the same test asserts the text and not the filter bar).
+- Given the chat route answers 503, then the transcript shows the user's message and `Error: 503` (executed; the same
+  test asserts both).
 - Given a History entry's by-id read answers 404, then `Failed to load report: insights by-id 404` shows (executed).
 - Given the brief request fails, then the red `Brief lookup failed` card shows (executed).
 - Given the history route fails, then `No history yet.` shows, and given any roster failure
@@ -8892,7 +8923,10 @@ the 503 of the report, history, by-id, runs, refresh and roster routes against a
 `test_insight_report_lookups_are_503_not_a_bare_500` injecting the driver error and
 `test_an_internal_defect_is_not_reported_as_an_outage` checking that a defect stays a 500. On this branch
 `a failed report, ranking or chat request says so on the page with its status` (`tests/insights/insights.spec.ts`)
-asserts the report, ranking and chat forms above; it has not run in CI. The forms of the Agents tab, History, the
+asserts `Failed to load report: insights 503` with the `AI Insights` heading and the cutoff input still on screen,
+`Failed to load watchlist: watchlist 503`, and the user's message followed by text beginning `Error: 503`; it clicks the
+Watchlist and Chat tab buttons to reach the last two and asserts nothing about the other tabs, the `Re-analyze` button
+or the filter bar; it has not run in CI. The forms of the Agents tab, History, the
 brief card, the refresh, the status poll and the add are asserted by no test. Te stays unticked: the page side waits
 for a CI run that includes the branch's tests.
 
@@ -8910,8 +8944,9 @@ it. While a History entry is open the Briefing tab shows a warn strip above the 
 `new Date(as_of).toLocaleString()` in the browser's zone (`src/components/insights/ReportCards.tsx:85-86`), the
 History rows the same (`InsightsPage.tsx:442-444`), while the Agents tab draws the UTC date as its `As of` tile and
 `YYYY-MM-DD HH:MM` in UTC for each recent run (`src/components/insights/AgentsPanel.tsx:44,137`). Nothing else marks
-age: the live Briefing serves the newest live row whatever its age, with no `stale` badge, no relative time and no
-check against the session; the brief behind House Views returns a `stale_days` the card never reads
+age (read): the live Briefing serves the newest live row whatever its age, with no `stale` badge, no relative time and
+no check against the session (`InsightsPage.tsx:357-362` hands the header the report, its `as_of`, the cost and the
+latency; matrix Gaps); the brief behind House Views returns a `stale_days` the card never reads
 (`platform/api/routers/dashboard.py:171-183`).
 
 Executed (2026-10-01, the production executions are listed at INSIGHTS-01): the IWM report of 2026-04-24, served as if
@@ -8935,8 +8970,9 @@ empty and error of the by-id read are INSIGHTS-11 to INSIGHTS-13; permission INS
 - Given a History entry is open, then the strip `Viewing historical report, not the current latest.` shows with
   `Back to latest`; given a click on it, on the Briefing tab or a pick of another ticker, then the strip goes and the
   live report returns (executed; INSIGHTS-03).
-- Given a live report of any age, then the header shows its time and no stale marker (executed on a report of
-  2026-04-24; matrix Gaps).
+- Given a live report of any age, then the header shows its time and no stale marker (executed on the production
+  report of 2026-04-24 served as the live one, and read at `InsightsPage.tsx:357-362` and `ReportCards.tsx:85-86`;
+  matrix Gaps, `A report of any age is served as current`).
 - Given the same report on the Briefing, History and Agents tabs, then the Briefing and History times are in the
   browser's zone and the Agents tab's in UTC (executed with America/New_York).
 
@@ -8944,8 +8980,9 @@ empty and error of the by-id read are INSIGHTS-11 to INSIGHTS-13; permission INS
 `renders a full report with all cards` (`tests/insights/insights.spec.ts`) mounts a report without asserting the
 timestamp. Te stays unticked.
 
-**Code:** `src/routes/InsightsPage.tsx:58-62,345-355,442-444`, `src/components/insights/ReportCards.tsx:77,85-86`,
-`src/components/insights/AgentsPanel.tsx:44,137`; `platform/api/routers/dashboard.py:166-203`; no test ids.
+**Code:** `src/routes/InsightsPage.tsx:58-62,345-355,357-362,442-444`,
+`src/components/insights/ReportCards.tsx:77,85-86`, `src/components/insights/AgentsPanel.tsx:44,137`;
+`platform/api/routers/dashboard.py:166-203`; no test ids.
 
 ##### INSIGHTS-15 · State: permission
 
@@ -8972,9 +9009,12 @@ the page calls answering 401 `sign in to continue`): the shell's strip
 tab reads `Failed to load report: insights 401`, History `No history yet.`, Agents
 `Admin access required to view per-agent routing.`, Watchlist `Failed to load watchlist: watchlist 401` and Chat,
 after a message, `Error: 401 Unauthorized`; `Sign in to load data` appears nowhere. A refresh from the run controls
-logs its 401 to the console only (INSIGHTS-07). The flag behind the strip is set by the fetch wrapper on any gated 401
-and cleared by any later gated success (`src/lib/authedFetch.ts:155-166,247-250`, `src/lib/authGate.ts:14-47`), so it
-follows the last answer (read).
+logs its 401 to the console only (INSIGHTS-07, `InsightsPage.tsx:86-89`, read). An add answered 401 reads
+`Failed to add: HTTP 401: sign in to continue` under the search input (INSIGHTS-09, read: the message is built at
+`src/hooks/useTickerSearch.ts:109-120` and drawn at `WatchlistPanel.tsx:353-358`, the same form executed with a 503),
+and a search that fails shows nothing (executed with a 500). The flag behind the strip is set by the fetch wrapper on
+any gated 401 and cleared by any later gated success (`src/lib/authedFetch.ts:155-166,247-250`,
+`src/lib/authGate.ts:14-47`), so it follows the last answer (read).
 
 **Needs:** The 401 itself. Every route the page calls is gated: staging answered 401 without a token to
 `GET /api/insights/report/IWM`, `GET /api/insights/reports/{id}`, `GET /api/dashboard/brief/IWM`,
@@ -8987,14 +9027,16 @@ handler: 401 with no identity, 403 for a signed-in non-admin, 200 for the admin)
 match the backend's `_OPEN_API_PREFIXES` (CLAUDE.md, Auth).
 
 **States:** This is the permission state of the Briefing, History, Agents, Watchlist and Chat bodies (INSIGHTS-01 to
-INSIGHTS-05), whose gated calls the 401 blanks, and of the run controls, whose refresh it fails silently
-(INSIGHTS-07).
+INSIGHTS-05), whose gated calls the 401 blanks, of the run controls, whose refresh it fails silently (INSIGHTS-07), and
+of the add, whose error line it fills (INSIGHTS-09).
 
 **Acceptance criteria:**
 - Given no token, then each gated route above answers 401 on staging and `GET /api/health` 200 (V evidence,
   2026-10-01).
 - Given a signed-in user and a 401 on every call, then the shell shows its expired-session strip and each tab its
   error form, with no `Sign in to load data` and no sign-in prompt of its own (executed).
+- Given an add answered 401, then `Failed to add: HTTP 401: sign in to continue` shows under the search input, and
+  given a refresh answered 401, only the console logs it (read for the two statuses; the add's form executed with 503).
 - Given a signed-out user in `firebase` mode, then the sign-in screen replaces the page and the page requests nothing
   (executed; the screen is asserted on `/dashboard` by `firebase mode, signed out → login screen blocks the app`,
   `tests/shared/auth-gate.spec.ts`, on main at eca7078).
@@ -9012,9 +9054,10 @@ INSIGHTS-05), whose gated calls the 401 blanks, and of the run controls, whose r
 gate's 401 and 403 are asserted only in `tests/lib/test_routers_insights_admin.py`, which skips in CI. No test asserts
 `DataGate`, the strip on this page, the page's 401 forms or a 401 on an insights route. Te stays unticked.
 
-**Code:** `src/routes/InsightsPage.tsx:112-195,199,248`, `src/components/shared/SignInEmptyState.tsx:12-98`,
+**Code:** `src/routes/InsightsPage.tsx:86-89,112-195,199,248`, `src/components/shared/SignInEmptyState.tsx:12-98`,
 `src/components/auth/AuthGate.tsx:14-30`, `src/lib/authGate.ts:14-47`, `src/lib/authedFetch.ts:45,155-166,247-250`,
 `src/hooks/useUser.ts:25-27,81-82`, `src/components/insights/AgentsPanel.tsx:85-88`,
+`src/components/insights/WatchlistPanel.tsx:353-358`, `src/hooks/useTickerSearch.ts:109-120`,
 `src/components/shared/AuthStatusIndicator.tsx:23-33,156-182`; `platform/api/routers/admin.py:52-67`; test ids
 `auth-status`, `auth-status-banner` (the shell's); the page's own state has none.
 
