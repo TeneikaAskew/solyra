@@ -7325,13 +7325,14 @@ stays unticked.
 
 ### SCREEN-REPORTS — `/reports`
 
-- **Purpose:** Backtest, walk-forward and replay-trainer results; analytics summaries.
+- **Purpose:** The phase analysis reports for the active ticker, read one at a time from a grouped picker: Phase 1 to Phase 7 (strat pattern mining, indicator confirmation, ORB strategies, setup discovery, additional dimensions, the playbook and the feedback loop), each written per ticker and combined, as markdown. The text comes from objects in a GCS bucket and the page shows no age for it. It does not show backtest, walk-forward or replay-trainer results or analytics summaries.
 - **Matrix:** [03 § 12](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#12--reports)
 - **Status:** Production but needs remediation · **Blocking issue:** [#813](https://github.com/TeneikaAskew/stocks/issues/813) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/ReportsPage.tsx` (153 lines)
+- **Component:** `src/routes/ReportsPage.tsx` (200 lines)
+- **Child components:** `DataGate`, and in the same file `NavButton` and `ReportViewer`
 - **API calls (from source):** `/api/reports/`, `/api/reports/list/`
 - **Stores:** `useTickerStore`
-- **E2E specs:** `tests/charts/replay-trainer.spec.ts`, `tests/reports/reports.spec.ts`
+- **E2E specs:** `tests/reports/reports.spec.ts`
 - **PR lineage:** [#513](https://github.com/TeneikaAskew/stocks/pull/513) backtest→Cloud Run · [#548](https://github.com/TeneikaAskew/stocks/pull/548) walk-forward stage · [#706](https://github.com/TeneikaAskew/stocks/pull/706) backtest my trades · [#710](https://github.com/TeneikaAskew/stocks/pull/710) bar-replay trainer
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
@@ -7339,11 +7340,11 @@ stays unticked.
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/reports/list/{ticker} | ticker, reports[].filename/phase/path (types: `lib/reports.ts` ReportEntry/ReportListResponse) |  | 24-hour server cache; 60s client staleTime | `useReportList` (inline in `ReportsPage.tsx`) → Picker bar |
-| GET /api/reports/{ticker}/{phase} | plain-text markdown body, rendered through `renderReportHtml` (`lib/reports.ts`; marked, then DOMPurify) |  | 24-hour server cache; 5min client staleTime | `useReportContent` (`ReportViewer`, inline in `ReportsPage.tsx`) → Report header, Report body |
-| store: ticker |  | Zustand, per session |  | every element |
+| GET /api/reports/list/{ticker} | reports[].phase and reports[].filename are read; the answer's ticker and reports[].path (a `gs://` URI) are typed and never read (types: `src/lib/reports.ts` ReportEntry/ReportListResponse) | no job: the `phase*.md` objects under `raw/reports/` of the bucket, written by `scripts/analysis/phase1_strat_mining.py` to `phase7_feedback_loop.py` (`save_report`, into the process's own `reports/` directory) and uploaded outside the repository's code on 2026-04-12 (every object created at 22:41:43 UTC); the daily `phase6-playbook` job saves its three tickers' `phase6_playbook_*.md` in its container only | 24-hour server cache per ticker over a 10-minute listing cache; 60s client staleTime; no age is read or shown (the objects are 172 days old, their text 221) | `useReportList` (inline in `ReportsPage.tsx`) → Picker bar, Report header |
+| GET /api/reports/{ticker}/{phase} | plain-text markdown body (`text/plain`), rendered through `renderReportHtml` (`src/lib/reports.ts`; marked with GFM and no soft breaks, then DOMPurify with its defaults); each text opens with its own `Generated:` line, which the page does not read | the same objects and the same absence of a job | 24-hour server cache per ticker and phase; 5min client staleTime | `useReportContent` (`ReportViewer`, inline in `ReportsPage.tsx`) → Report body |
+| store: ticker | activeTicker (recentTickers is stored with it) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette): this page and the header have no picker of their own | | the label, the list request and the body request |
 
-No table backs either endpoint: both read markdown objects from the GCS bucket `adept-mountain-474619-d4-trading-data` prefix `raw/reports/`, so the Produced by column is blank rather than naming a Cloud Run job.
+No table backs either endpoint: both read markdown objects from the GCS bucket `adept-mountain-474619-d4-trading-data` prefix `raw/reports/`, which `solyra-api-prod` and `solyra-api-staging` read as `trading-platform-svc@` (`roles/storage.objectViewer`). No code or workflow in the stocks repository writes the prefix (matrix Backend notes), so the Produced by column names the scripts that write such files and the upload they wait for rather than a Cloud Run job.
 
 #### Displayed
 | ID | Element | Component |
@@ -7355,43 +7356,499 @@ No table backs either endpoint: both read markdown objects from the GCS bucket `
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| REPORTS-04 | Select a report | The grouped `<select>` calls `setSelectedPhase`. |
-| REPORTS-05 | Previous or Next | `NavButton` calls `go(delta)`, which steps through `reports` in the order the server returned them (reverse of the picker's own ascending groups). |
+| REPORTS-04 | Select a report | The grouped `<select>` calls `setSelectedPhase` with the chosen option's value, a phase name; the choice is kept in component state only. |
+| REPORTS-05 | Previous or Next | `NavButton` calls `go(delta)`, which steps through `reports` in the order the server returned them: the ticker's own reports from the highest phase down, then the combined reports from Phase 7 down, while the picker's groups ascend. |
 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| REPORTS-06 | loading | present | "Loading report…" in `ReportViewer`; the picker `<select>` stays disabled while the list loads. |
-| REPORTS-07 | empty | present | "No reports yet. Run the analysis pipeline to generate them.", reached only by a 200 with an empty list, which the handler never sends; an empty listing is a 404, shown as the error state instead. |
-| REPORTS-08 | error | present | "Could not load the report list for {ticker}." for a failed list; "Report not available." in `ReportViewer` for a failed or missing report body. |
-| REPORTS-09 | stale | present | Nothing shows a report's age: the header renders the phase label and filename only, no generated-at time. |
-| REPORTS-10 | permission | not tracked (new category); present | `DataGate` wraps the list error, empty state, report header and body; the picker bar itself sits outside it and still renders, with an empty list, when signed out. |
+| REPORTS-06 | loading | present | While the list loads, the select is disabled and reads "No reports", the counter is an em dash, there is no header and the box is empty: no text says the page is loading. Once the list has answered, "Loading report…" in `ReportViewer` while the body loads. A failed request stays in this state through its one retry. |
+| REPORTS-07 | empty | present | "No reports yet. Run the analysis pipeline to generate them.", reached only by a 200 with an empty list, which the handler never sends; an empty listing is a 404, shown as the error state instead. The instruction names no job and none writes the prefix, and the box below reads "Select a report above" beside a disabled select. |
+| REPORTS-08 | error | present | "Could not load the report list for {ticker}." for a failed list (the select disabled and reading "No reports", no header, and "Select a report above" below); "Report not available." in `ReportViewer` for a failed, missing or empty report body, with the select, the counter and the header unchanged. The server's reason is shown in neither. |
+| REPORTS-09 | stale | present | Nothing shows a report's age: the header renders the phase label and filename only, and the list answer carries no time. The text's own "Generated:" line, 2026-02-22 in all 23 reports, is the only age and the page does not read it. |
+| REPORTS-10 | permission | not tracked (new category); present | `DataGate` wraps the list banner, the empty message, the report header and the body, and the picker bar sits outside it; it cannot trigger in practice: a signed-out visitor meets the sign-in screen first, and a signed-in user's 401 shows the shell's expired-session strip and the list banner. |
 
 #### Journeys
-1. Read the pipeline end to end: Opens /reports (REPORTS-01) → The first report loads automatically (REPORTS-01, REPORTS-03); it is Phase 6, the server's reverse order, not Phase 1 as the seed describes (see the matrix Reports Gaps) → Steps through with Next, which walks backward through the pipeline from there (REPORTS-05) → Reads the walk-forward tables (REPORTS-03) → Notes which setups degraded out-of-sample (REPORTS-03)
-2. Jump to one phase: Opens the grouped dropdown (REPORTS-01) → Picks the phase by name (REPORTS-04) → Reads the body; the filename shows the source (REPORTS-03, REPORTS-02)
-3. No reports yet: Switches ticker → The list comes back empty as a 404, shown as "Could not load the report list for {ticker}." (REPORTS-08); the seed's "no reports yet" empty-state copy is never reached in code (see the matrix Reports Gaps)
+1. Read the pipeline end to end: Opens /reports (REPORTS-01) → The first report loads automatically (REPORTS-01, REPORTS-03); it is Phase 6, the server's reverse order, not Phase 1 as the seed describes (see the matrix Reports Gaps) → Steps through with Next, which walks backward through the ticker's own reports from Phase 6 to Phase 1, crosses to the combined reports at Phase 7 and walks back to the combined Phase 1 (REPORTS-05) → Reads the rolling-window tables of the Phase 5 walk-forward section (REPORTS-03) → Reads the combined Phase 6 report's note that its results are in-sample, which points at a walk-forward report the bucket does not hold: no listed report shows out-of-sample degradation (REPORTS-03, see the matrix Reports Gaps)
+2. Jump to one phase: Opens the grouped dropdown (REPORTS-01) → Picks the phase by name (REPORTS-04) → Reads the body; the filename shows the source (REPORTS-03, REPORTS-02); the choice is not kept across a reload or a visit to another page (REPORTS-04)
+3. A ticker with no reports of its own: Has another ticker active, set on another page because this page has no picker (REPORTS-01) → The picker lists the five combined reports under that ticker's name and lands on Phase 7 (REPORTS-01) → Reads reports that cover IWM, SPY and QQQ under the other ticker's name (REPORTS-03, see the matrix Reports Gaps); the seed's "no reports yet" empty list is never answered, since an empty listing is a 404 (REPORTS-07)
+4. A report that cannot be read: Opens /reports and picks a report whose object cannot be read (REPORTS-04) → The header, the picker and the counter stay and the body area says "Report not available." (REPORTS-08, REPORTS-02)
 
 #### Elements
+
+In every body below, "executed 2026-10-01" means that the page was rendered in a hermetic browser (a scratch copy of solyra at the
+`9c70fc1` source on the e2e launcher's Vite server) while it talked to the real stocks handlers of `476bea1`, `list_reports` and
+`get_report` (`platform/api/routers/playbook.py`), served by uvicorn with only the storage client replaced: `api.gcs_reader._client` was a
+stand-in whose `list_blobs` returned the 45 object names that `gcloud storage ls -l -r` listed under
+`gs://adept-mountain-474619-d4-trading-data/raw/reports/` at 17:33 UTC (24 markdown objects at the top level and 21 CSV files under
+`data/`) and whose blobs returned the bytes downloaded from those objects at the same time. The listing regex, its sort and ten-minute
+cache, `download_text`, `_download_markdown`, the handlers, their 24-hour caches and their one-fill-per-key claim are the production code.
+A body that names a failure says how it was made: "injected" means the stand-in raised (a storage listing or download error), and a
+status or a payload "answered by the browser" was fabricated by the browser for that request. "Mutation" means one line of the product
+code changed in that scratch copy and the committed spec run, "handler mutation" one line of `platform/api/routers/playbook.py` changed
+in a scratch copy of stocks and the report tests of `tests/api/test_platform_api.py`, `tests/api/test_route_coverage.py`,
+`tests/lib/test_production_readiness.py` and `tests/api/test_threadpool_races.py` run; "read" marks what was only read in the code and
+"V evidence" the comment on stocks issue 1234 that the matrix links.
+
 ##### REPORTS-01 · Picker bar
+
+**Shows or does:** The row of controls above the report (`src/routes/ReportsPage.tsx:115-160`), outside `DataGate` (`:162`), so it is
+drawn in every state the page can be in. Left to right: the label `Reports: <ticker>` (`:118-120`, the store's `activeTicker`, drawn in
+capitals by CSS; the DOM text is `Reports: IWM`); a native `select` named `Select report` (`:126-143`) holding one `optgroup` per phase
+number and one option per report; the position `<n> / <N>`, or an em dash while no report is active (`:151-153`); and the Previous and
+Next buttons (`:71-94,150,154-158`, REPORTS-05).
+
+The groups come from `groupReportsByPhase` (`src/lib/reports.ts:38-59`): an entry whose phase starts `phase<digits>` goes to the group
+`Phase <digits>`, the groups sort ascending by that number, an entry that does not match goes to a group named by its phase and sorts
+last, and the entries of a group keep the order the server sent. An option reads `phaseLabel(phase)` (`:18-25`): `phase<N>` becomes
+`Phase <N>:`, underscores become spaces and every word's first letter is capitalised, so `phase1` (the spec's mock) reads `Phase 1:` and
+`phase5d_cross_ticker` reads `Phase 5:D Cross Ticker` (executed in the page and in `phaseLabel`). The select's value is the chosen phase
+or, until one is chosen, the first entry of the list as the server sent it (`:104,129`), so the first entry is what the page lands on. The
+select is disabled while the list loads and when the list holds no entry (`:130`); with no entry it holds the one option `No reports`
+(`:133`).
+
+What it drew on the production list (executed, IWM): `Reports: IWM`; seven groups, Phase 1 to Phase 7, holding eleven options: Phase 1
+`Phase 1: Strat Mining` and `Phase 1: Strat Mining Combined`, Phase 2 `Phase 2: Indicator Confirmation`, Phase 3 `Phase 3: Orb
+Strategies`, Phase 4 `Phase 4: Setup Discovery` and `Phase 4: Setup Comparison`, Phase 5 `Phase 5: Dimensions` and `Phase 5:D Cross
+Ticker`, Phase 6 `Phase 6: Playbook` and `Phase 6: Playbook Combined`, Phase 7 `Phase 7: Feedback Loop`; `Phase 6: Playbook` selected,
+`1 / 11`, Previous disabled and Next enabled. The dropdown lists phases ascending and the page lands on the highest, because the handler
+sends a ticker's own reports newest name first (matrix Gaps). For a ticker with no reports of its own (executed, AAPL) the list is the
+five combined reports, the label reads `Reports: AAPL` and the page lands on `Phase 7: Feedback Loop` at `1 / 5`.
+
+**Needs:** `GET /api/reports/list/{ticker}` (`ReportsPage.tsx:13-23`, 60 s staleTime): `reports[].phase` and `reports[].filename` are
+read; the answer's `ticker` and `reports[].path` (a `gs://` URI) are typed and never read (`src/lib/reports.ts:7-16`). The handler
+(`platform/api/routers/playbook.py:367-437`) lists the bucket twice through `gcs_reader.list_matching_blobs`: the objects named
+`phase*_<ticker>.md` (an entry's `phase` is its name without the ticker suffix), then every `phase*.md` that is not already listed and
+does not end in another known ticker (`spy`, `qqq`, `iwm`, `spx`; a combined entry's `phase` is its name), each listing sorted descending
+by name. The answer is cached 24 hours per ticker and the listing under it ten minutes (`platform/api/routers/playbook.py:100-101`,
+`platform/api/gcs_reader.py:72-103`). A listing that finds nothing is a 404 (`:429-433`), and a listing that fails is the same 404
+(REPORTS-08). Production (V evidence, 2026-10-01): the prefix holds 24 markdown objects, every one created at 22:41:43 UTC on 2026-04-12,
+23 of them named `phase*.md`, and the real handler answered 200 with 11 entries for IWM, SPY and QQQ and 5 for AAPL and SPX (executed);
+`timeframe_combo_analysis.md` is in the prefix and is not listed, because the patterns need a name that starts `phase`.
+
+**States:** Loading: the select disabled and reading `No reports`, the counter an em dash and both buttons disabled (REPORTS-06). Empty
+and error: the same, with the message or the banner below (REPORTS-07, REPORTS-08). The bar has no stale marker (REPORTS-09) and sits
+outside the gate of REPORTS-10.
+
+**Acceptance criteria:**
+- Given the production list of IWM, then seven groups `Phase 1` to `Phase 7`, eleven options, `Phase 6: Playbook` selected, `1 / 11`,
+  Previous disabled and Next enabled (executed).
+- Given the spec's two-entry list, then the options `Phase 1:` and `Phase 6: Playbook`, the value `phase1`, `1 / 2`, Previous disabled and
+  Next enabled (`picker lists every phase report and lands on the first`, on main).
+- Given entries in any order, then groups ascending by phase number, variants under their number, an unparseable phase last and none
+  dropped (`groupReportsByPhase`, three tests in `src/lib/reports.test.ts`, on main).
+- Given the list request in flight, then the select is disabled and reads `No reports` and the counter is an em dash, with no text that
+  says the page is loading (executed, the list answer held for two seconds).
+- Given a ticker with no reports of its own, then the picker lists the five combined reports under that ticker's name (executed, AAPL;
+  matrix Gaps).
+- Given a failed or empty list, then REPORTS-07 and REPORTS-08.
+
+**Tests:** On main: `renders reports heading` asserts only that the text `Reports: IWM` is visible. `picker lists every phase report and lands on the first`
+(`tests/reports/reports.spec.ts`) asserts the option texts, the value, the page header, `1 / 2`, the rendered markdown heading, Previous disabled and
+Next enabled, for a list that is already ascending: sorting the groups descending, showing the raw phase in an option, a counter one too high, Next
+disabled one position early and a body requested for another ticker each failed it (mutations). `src/lib/reports.test.ts` asserts the grouping (three
+tests). The list handler is asserted weakly: `TestPlaybookAPI.test_reports_list` (`tests/api/test_platform_api.py`) asserts a 200 whose `ticker` is `IWM`
+and whose `reports` hold the filename of a blob the stubbed listing returns; an answer that names the ticker in lower case, or an own entry whose
+filename loses its `.md`, failed it, while deleting the ticker-specific loop passed (the stub returns the same blob for both patterns, so the combined
+loop lists it), deleting the combined loop passed, and so did reversing the order, keeping the ticker suffix in `phase`, giving a combined entry's
+`phase` its extension, changing `path`, listing an own file twice and listing another ticker's files (handler mutations). `test_reports_list_404_when_empty`
+and the list row of `test_operation_answers` (`tests/api/test_route_coverage.py`) assert the 404 for an empty listing and against a dead backend (a 200
+with an empty list failed both). `test_report_listing_endpoint_serves_phases` (`tests/lib/test_production_readiness.py`) accepts 200, 404, 500, 502 or
+503 and checks the shape only for a 200, so without storage credentials it passes on the 404 it gets (executed). `test_a_concurrent_report_list_hit_is_served_not_503ed`
+(`tests/api/test_threadpool_races.py`) asserts that a cached list is served, without listing the bucket, while a peer holds the claim. No test asserts
+the real list's order, the `phase` or `path` of an entry, the merge of the ticker's own and the combined reports, the options of an eleven-entry list,
+the 24-hour cache or the 503 of a concurrent cold request. `route /reports loads without fatal errors` (`tests/shared/navigation.spec.ts`) mounts the
+page and earns nothing. Te stays unticked.
+
+**Code:** `src/routes/ReportsPage.tsx:13-23,71-94,96-160`, `src/lib/reports.ts:7-59`, `src/lib/reports.test.ts`;
+`platform/api/routers/playbook.py:367-437`, `platform/api/gcs_reader.py:72-103`; accessible names `Select report`, `Previous report` and
+`Next report`; no test ids.
 
 ##### REPORTS-02 · Report header
 
+**Shows or does:** The two lines above the report (`src/routes/ReportsPage.tsx:175-183`), inside `DataGate`: an `h1` reading
+`phaseLabel(phase)` of the active report (`:178-180`, the label of its option, `src/lib/reports.ts:18-25`) and under it the report's
+filename (`:181`, one line, cut with an ellipsis when it is long). It is drawn only once the list has answered and a report is active
+(`activeReport`, `:106,176`): not while the list loads, fails or is empty; it stays while the body loads or fails. It carries no date or
+age. The page therefore has two `h1` elements, because the report's own markdown title follows (executed: the header `Phase 6: Playbook`
+over the body's `Phase 6: IWM Playbook`).
+
+What it drew (executed, IWM): `Phase 6: Playbook` over `phase6_playbook_iwm.md` on landing; stepping through the list gave `Phase 5:
+Dimensions` over `phase5_dimensions_iwm.md`, `Phase 4: Setup Discovery`, `Phase 3: Orb Strategies`, `Phase 2: Indicator Confirmation`,
+`Phase 1: Strat Mining` over `phase1_strat_mining_iwm.md`, then `Phase 7: Feedback Loop` over `phase7_feedback_loop.md`, `Phase 6:
+Playbook Combined`, `Phase 5:D Cross Ticker` over `phase5d_cross_ticker.md` (whose body is titled `Phase 5D: Cross-Ticker Correlation &
+Confirmation`), `Phase 4: Setup Comparison` and `Phase 1: Strat Mining Combined`. A combined report's filename names no ticker, so under
+`Reports: IWM` the header can read `phase7_feedback_loop.md`, a report that is not about IWM alone.
+
+**Needs:** The list answer of REPORTS-01, with no call of its own: `phase` for the label and `filename` for the line. Production (V
+evidence, 2026-10-01): the filenames above are objects of the prefix, and each of the 23 `phase*.md` objects opens with its own
+`Generated:` line, `2026-02-22 06:20:55` to `2026-02-22 23:54:33`, which the header does not show (REPORTS-09).
+
+**States:** Drawn whenever a report is active, so under it the body can load (REPORTS-06) or fail (REPORTS-08); absent while the list
+loads, fails or is empty (REPORTS-06, REPORTS-07, REPORTS-08); replaced with the rest of the gated block by REPORTS-10.
+
+**Acceptance criteria:**
+- Given the active report `phase6_playbook`, then `Phase 6: Playbook` over `phase6_playbook_iwm.md` (executed; `selecting a phase from the
+  picker switches the report` asserts both texts for the spec's list, on main).
+- Given the first entry of the spec's list, then the header reads exactly `Phase 1:` (`picker lists every phase report and lands on the
+  first`, on main).
+- Given a combined report, then its filename carries no ticker (executed).
+- Given a failed body, then the header stays (executed; asserted by the test added on this branch for REPORTS-08).
+- Given a failed or empty list, then no header (executed).
+
+**Tests:** On main two page tests assert the header: `picker lists every phase report and lands on the first` asserts that a heading named exactly `Phase 1:` is
+visible (showing the raw phase in the header failed it, mutation), and `selecting a phase from the picker switches the report` asserts the heading
+`Phase 6: Playbook` and the text `phase6_playbook_iwm.md` (showing the phase in place of the filename failed it, mutation). The `filename` field the line
+shows is asserted by `test_reports_list` (`tests/api/test_platform_api.py`; an own entry whose filename loses its `.md` failed it), the `phase` field the
+label is made from by no test (an own entry that keeps the ticker suffix and a combined entry whose `phase` keeps its extension both passed, handler
+mutations), and no Vitest test covers `phaseLabel`. No test on main asserts the header for a combined report, for a real phase name or the header staying
+under a failed body; the test added on this branch for REPORTS-08 asserts the last and waits for a CI run that includes the branch's tests. Te stays
+unticked.
+
+**Code:** `src/routes/ReportsPage.tsx:104-106,175-183`, `src/lib/reports.ts:18-25`; no test ids (the page's `h1` and the filename `p`
+are found by role and text).
+
 ##### REPORTS-03 · Report body
+
+**Shows or does:** The report text, rendered (`ReportViewer`, `src/routes/ReportsPage.tsx:38-69`, mounted at `:187-188`).
+`useReportContent` requests `/api/reports/{ticker}/{phase}` for the active phase (`:25-36`) and reads the answer as text; the viewer
+renders it through `renderReportHtml` (`src/lib/reports.ts:62-68`): `marked` with GFM and no soft line breaks, then `DOMPurify.sanitize`
+with its defaults, set with `dangerouslySetInnerHTML` into a `div.prose-report` 75 characters wide (`max-w-[75ch]`, centred) inside the
+scrolling box of `:186`; tables scroll inside themselves (`src/index.css:176-181`). While the request is in flight the box reads `Loading
+report…` and when it failed or the text is empty `Report not available.` (REPORTS-06, REPORTS-08). No body is requested until the list has
+answered, and none when the list holds no entry (`:187-195`).
+
+What it drew (executed, all eleven IWM reports, the real handler's bytes): each rendered. `Phase 6: IWM Playbook` held 1 `h1`, 12 `h3`,
+246 list items, 54 disabled checkboxes (its `- [ ]` task lists), 12 rules and 10,987 characters; the combined Phase 1 report held 4 `h1`,
+17 `h2`, 66 `h3` and 109 tables; the Phase 5 report's section `5G. Walk-Forward Validation` is rolling-window tables with a `Stable?`
+column. In the report the page lands on, the lines `Generated: 2026-02-22 23:45:24` and `Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00 (1,089,011
+bars)` merge into one paragraph, because soft line breaks are off. For each of the 43 entries that the real list handler returned for
+IWM, SPY, QQQ, AAPL and SPX, the real body handler answered the bytes of exactly that entry's object, as `text/plain; charset=utf-8`
+(executed).
+
+The sanitizer is DOMPurify with no options. Executed with the real function (jsdom): a `<script>` element, inline `onerror` and `onload`
+handlers, a `javascript:` link target (the anchor stays without `href`), `target`, `<iframe>`, `<meta>`, `<base>` and `<link>` are
+removed; a `<style>` element that is not the first thing in the text, a `<form action=...>` with its input and button, a remote `<img>`
+and a `data:` image survive, and in the browser a `<style>` element in a report text changed the colour of the page's own header `h1`, which
+sits outside the report (matrix Gaps). None of the 24 objects contains an HTML tag or a link (searched), so no production report exercises
+any of it.
+
+**Needs:** `GET /api/reports/{ticker}/{phase}` (5 minute staleTime per ticker and phase, `:34`; the server caches the text 24 hours per
+ticker and phase, `platform/api/routers/playbook.py:102-103`). The handler (`:440-498`) lower-cases both, looks for the objects named
+`<phase>*_<ticker>.md` (the phase is a filename prefix: `phase6` serves `phase6_playbook_iwm.md`, executed), else for `<phase>*.md` not
+ending in another known ticker, takes the longest filename, strips `raw/` and downloads it (`_download_markdown`, `:112-120`): 404 when
+nothing matches or the object is missing, 502 for any other download error. It answers `text/plain` with no response model (the vendored
+snapshot types it as a bare string). Production (V evidence, 2026-10-01): the 23 `phase*.md` objects are 1,142 to 61,119 bytes, 372,233 in
+all; the one the page lands on, `phase6_playbook_iwm.md` (12,443 bytes), opens `# Phase 6: IWM Playbook`, `Generated: 2026-02-22
+23:45:24`, `Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00 (1,089,011 bars)`.
+
+**States:** Loading and error are REPORTS-06 and REPORTS-08; an empty text reads as an error (executed: a 200 with no bytes gave `Report
+not available.`); nothing marks the text old (REPORTS-09); REPORTS-10 replaces the box with the rest of the gated block.
+
+**Acceptance criteria:**
+- Given the active report, then its text rendered as headings, lists, tables and rules in the 75-character column (executed; `picker lists
+  every phase report and lands on the first` asserts the heading `Phase 1: IWM Backtest` of the spec's markdown, and the four tests of
+  `src/routes/reportsFixtureRender.test.ts` assert headings, the GFM table, the list items and no script in the rendered fixture, all on
+  main).
+- Given markdown with a script tag or an inline handler, then both are removed (`strips script tags and inline handlers from report
+  markdown`, `src/routes/reportsSanitize.test.ts`, on main).
+- Given another active report, then that report's own text (executed through the real handlers; no test on main asserts it, because the
+  spec's mock answers every phase with the same markdown; the test added on this branch for REPORTS-05 asserts it for the steps).
+- Given an entry, then the body handler answers the bytes of that entry's object as `text/plain` (executed for 43 entries;
+  `test_returns_plaintext_markdown_when_blob_exists` asserts a 200, `text/plain` and the stubbed text, not which object was asked for).
+- Given a failed or empty body, then REPORTS-08.
+
+**Tests:** On main: `picker lists every phase report and lands on the first` asserts the rendered heading `Phase 1: IWM Backtest` of the shared mock (leaving the
+markdown unrendered failed it, mutation); the four tests of `src/routes/reportsFixtureRender.test.ts` assert, on the fixture, the headings, the GFM
+table (the reason `marked` is configured with `gfm: true`), the list items and the absence of `<script` and `javascript:`; `src/routes/reportsSanitize.test.ts`
+asserts that a script tag and an `onerror` handler are removed and the heading kept, and nothing about `<style>`, `<form>` or images. The body handler:
+`TestReportMarkdownAPI.test_returns_plaintext_markdown_when_blob_exists` (`tests/api/test_platform_api.py`) asserts a 200, `text/plain` and the stubbed
+text (serving JSON failed it) without asserting which object was asked for; `test_returns_404_when_no_matching_phase` and the body row of
+`test_operation_answers` (`tests/api/test_route_coverage.py`) assert the 404 for no match and against a dead backend (a 200 with an empty body failed
+both). Skipping the ticker-specific lookup, taking the shortest name instead of the longest, keeping the `raw/` prefix in the path, answering a download
+error as 500 or a missing object as 502 and never filling the 24-hour cache each passed every report test (handler mutations). At the page, requesting
+the body for another ticker failed the page test, and a body that is always the first report's, a suffix on the body request and a select that always
+shows the first entry passed all seven tests of the spec on main (mutations; the test added on this branch for REPORTS-05 fails all three). No test on
+main asserts that the body follows a choice (the spec's mock answers every phase with the same markdown), which object the handler serves for a phase, the
+24-hour cache, or what the sanitizer does with a style or form element. Te stays unticked.
+
+**Code:** `src/routes/ReportsPage.tsx:25-36,38-69,185-196`, `src/lib/reports.ts:62-68`, `src/index.css:167-286,537-538`;
+`platform/api/routers/playbook.py:112-120,440-498`, `platform/api/gcs_reader.py:75-103,181-188`; no test ids (the body is the
+`.prose-report` element).
 
 ##### REPORTS-04 · Select a report
 
+**Shows or does:** The select's `onChange` (`src/routes/ReportsPage.tsx:131`) sets `selectedPhase` to the chosen option's value, a phase
+name. `activePhase` follows (`:104`), so the select's value, the counter, the header and the body (REPORTS-01, REPORTS-02, REPORTS-03)
+change together, and the body of that phase is requested unless the page already holds it (5 minute staleTime per ticker and phase,
+`:34`). A native select: one choice per entry, no search. The choice lives in component state only (`:98`): a reload, or leaving the page
+and coming back, returns to the first entry of the list (executed: after choosing `phase3_orb_strategies`, a reload, and a visit to the
+rendered `/playbook` page and back through the nav or with history back, each showed the first entry, `Phase 6: Playbook`, again).
+
+Executed, IWM: each of the eleven options chosen in turn gave its report: `Phase 1: Strat Mining` at `6 / 11`, `Phase 1: Strat Mining
+Combined` at `11 / 11`, `Phase 2` at `5 / 11`, `Phase 3` at `4 / 11`, `Phase 4: Setup Discovery` at `3 / 11`, `Phase 4: Setup
+Comparison` at `10 / 11`, `Phase 5: Dimensions` at `2 / 11`, `Phase 5:D Cross Ticker` at `9 / 11`, `Phase 6: Playbook` at `1 / 11`, `Phase
+6: Playbook Combined` at `8 / 11` and `Phase 7: Feedback Loop` at `7 / 11`, each with its own filename in the header and its own body.
+
+**Needs:** The list answer (the options) and the body route (the chosen report): REPORTS-01 and REPORTS-03.
+
+**States:** The select is disabled while the list loads and when the list holds no entry or failed (REPORTS-06, REPORTS-07,
+REPORTS-08). A choice whose body is slow or fails shows REPORTS-06 or REPORTS-08 under the new header.
+
+**Acceptance criteria:**
+- Given the production list, when each option is chosen, then the counter, the header and the body show that report (executed for all
+  eleven).
+- Given the spec's list, when `phase6_playbook` is chosen, then the header `Phase 6: Playbook`, the filename `phase6_playbook_iwm.md` and
+  `2 / 2` (`selecting a phase from the picker switches the report`, on main).
+- Given a choice, when the page is reloaded or left and revisited, then the first entry is active again (executed).
+- Given no entry, then the select is disabled (REPORTS-07; `an empty list shows the honest empty state` asserts it, on main).
+
+**Tests:** On main one page test asserts the row: `selecting a phase from the picker switches the report` asserts, after `selectOption('phase6_playbook')` on the
+spec's two-entry list, the heading `Phase 6: Playbook`, the text `phase6_playbook_iwm.md` and `2 / 2` (showing the phase in place of the filename and
+a counter one too high each failed it, mutations). It asserts neither the body nor the request: the shared mock answers every phase with the same markdown,
+so a body that is always the first report's, and a select that keeps showing the first entry, passed it (mutations; the test added on this branch for
+REPORTS-05 fails both). The body route behind a choice is asserted as REPORTS-03. `an empty list shows the honest empty state` asserts the disabled
+select (making it never disabled failed it, mutation). No test asserts the choice with the production list's eleven entries, the only list with the ticker's
+own and the combined reports, or that the choice is lost on a reload. Te stays unticked: the body that follows a choice is asserted by no test on main.
+
+**Code:** `src/routes/ReportsPage.tsx:98,104-106,126-143`; accessible name `Select report`.
+
 ##### REPORTS-05 · Previous or Next
+
+**Shows or does:** Two icon buttons (`NavButton`, `src/routes/ReportsPage.tsx:71-94`) either side of the counter (`:149-159`).
+`go(delta)` (`:108-111`) takes `reports[activeIndex + delta]`, the neighbour in the list as the server sent it, and makes it the chosen
+phase; at an end nothing happens. Previous is disabled when `activeIndex <= 0`, which includes no active report, and Next when there is no
+active report or the active one is the last (`:150,156`). Because the list is the server's order and not the dropdown's ascending groups,
+Next from the landing report goes toward lower phases. Executed (IWM, eleven entries): Next from `1 / 11` (`Phase 6: Playbook`) visited
+`Phase 5: Dimensions`, `Phase 4: Setup Discovery`, `Phase 3: Orb Strategies`, `Phase 2: Indicator Confirmation` and `Phase 1: Strat
+Mining`, crossed from the ticker's own reports to the combined ones at `Phase 7: Feedback Loop` (`7 / 11`), and went on through `Phase 6:
+Playbook Combined`, `Phase 5:D Cross Ticker` and `Phase 4: Setup Comparison` to `Phase 1: Strat Mining Combined` (`11 / 11`, Next
+disabled); Previous retraced the same path to `1 / 11` with Previous disabled. Every step showed that report's header and body; the eleven
+body requests were one per entry.
+
+**Needs:** The list (the neighbours) and the body route (each report): REPORTS-01 and REPORTS-03.
+
+**States:** Both buttons are disabled while the list loads and when it is empty or failed, because no report is active (executed).
+
+**Acceptance criteria:**
+- Given the spec's two-entry list, when Next and then Previous are clicked, then `2 / 2` with the header `Phase 6: Playbook` and Next
+  disabled, then `1 / 2` with Previous disabled (`prev/next walk the pipeline order and disable at the ends`, on main).
+- Given the production list, when Next is clicked repeatedly, then the order above ends at `11 / 11` with Next disabled (executed).
+- Given three entries in the server's order, then the select, the header and the body follow each step and both buttons are enabled at the
+  middle entry (`Next and Previous show the report they step to, with both buttons enabled in between`, added on this branch).
+- Given no entry, then both buttons are disabled (executed).
+
+**Tests:** On main one page test asserts the row: `prev/next walk the pipeline order and disable at the ends` asserts, for the spec's two-entry list, Next to `2 / 2`
+with the heading `Phase 6: Playbook` and Next disabled, then Previous to `1 / 2` with Previous disabled (a Next disabled one position early, a Previous
+disabled at the second position, a step of two entries and a step that does not move each failed it, mutations). The list is already ascending, so the
+test's name, `walk the pipeline order`, is not what the real list does (matrix Gaps), and it asserts no body and no middle entry, where both buttons are
+enabled. The test added on this branch, `Next and Previous show the report they step to, with both buttons enabled in between` (solyra `e422a8a`,
+`tests/reports/reports.spec.ts`), uses three entries in the order the handler sends them, each answered with a body that names its phase, and asserts at each
+position the counter, the select's value, the page header, the body's own heading and the buttons' states, then Previous back to the middle entry. It passed
+on the unchanged page, which already does what it asserts, and each of ten one-line mutations of the scratch copy failed it: the body always the first
+report's, the select always showing the first entry and a suffix on the body request failed it and no test on main; Next disabled early, Previous
+disabled early, a step of two entries, a step that does not move, a counter one too high, the markdown shown as text and the body requested for another
+ticker failed the walk test or the picker test as well. It waits for a CI run that includes the branch's tests, and Te stays unticked: the body that
+follows a step is asserted by it alone.
+
+**Code:** `src/routes/ReportsPage.tsx:71-94,104-111,149-159`; accessible names `Previous report` and `Next report`.
 
 ##### REPORTS-06 · State: loading
 
+**Shows or does:** Two loading presentations, one after the other. While the list loads (`useReportList`, `isLoading`): the select is
+disabled and reads `No reports`, the counter is an em dash, both buttons are disabled, there is no header, and the box below is empty;
+nothing says that the page is loading, because `Select a report above` is suppressed while the list loads (`src/routes/ReportsPage.tsx:190`)
+and `Loading report…` belongs to the body (executed with the list answer held for two seconds). Once the list has answered, the select,
+the counter and the header show the active report and the box reads `Loading report…`, centred plain text with no spinner (`:46-52`;
+executed with the body answer held for two seconds). A request that fails stays in this state through its one retry (`retry: 1`,
+`src/App.tsx:30-37`): the list route was called twice before the banner appeared, and so was the body route before its message (executed);
+the delay before the retry is the library's default, one second for the first retry (read in `@tanstack/query-core` 5.102.8).
+
+**Needs:** None of its own: the state of REPORTS-01, REPORTS-02 and REPORTS-03 (the picker bar and the header before the list answers, and
+the body while it loads).
+
+**States:** The list's loading and the body's loading are separate and sequential; the body is not requested before the list answers.
+
+**Acceptance criteria:**
+- Given the list request in flight, then the select is disabled and reads `No reports`, the counter is an em dash, there is no header and
+  the box holds no text (executed).
+- Given the list answered and the body in flight, then the header, the counter and the select show the active report and the box reads
+  `Loading report…` (executed).
+- Given a request that fails, then the state lasts through one retry before REPORTS-08 (executed: two calls).
+
+**Tests:** No test asserts either loading state. The specs answer every request at once: skipping the viewer's loading branch (the box then reads `Report not
+available.` while the body loads), making the select enabled while the list loads and changing the prompt under the list each passed all nine tests of
+the spec (mutations). `route /reports loads without fatal errors` (`tests/shared/navigation.spec.ts`) mounts the page with every route answered and
+asserts only the `nav` and `main` elements and no console error, which earns nothing. Te stays unticked.
+
+**Code:** `src/routes/ReportsPage.tsx:25-36,46-52,130,190`, `src/App.tsx:30-37`.
+
 ##### REPORTS-07 · State: empty
+
+**Shows or does:** `No reports yet. Run the analysis pipeline to generate them.` in muted text (`src/routes/ReportsPage.tsx:169-173`) when
+the list has loaded without error and holds no entry. It is unreachable with the real handler: an empty listing is a 404
+(`platform/api/routers/playbook.py:429-433`), which the page shows as the error state of REPORTS-08. With a 200 `{"ticker": "IWM",
+"reports": []}` answered by the browser (executed) the page showed the message, the select disabled and reading `No reports`, the counter
+an em dash and no header, and the box below read `Select a report above`, which contradicts the disabled select (`:187-195`). The
+instruction names no job and none writes the prefix (matrix Gaps): the objects in it were uploaded outside the repository's code.
+
+**Needs:** The list, answered 200 with an empty `reports`, which the handler never sends.
+
+**States:** This is the empty state of REPORTS-01 and REPORTS-02 (a disabled picker and no header) and of REPORTS-03 (no body is
+requested, and the box says `Select a report above`).
+
+**Acceptance criteria:**
+- Given a 200 with no reports, then the message, a disabled select reading `No reports`, no header and no body request (executed; `an
+  empty list shows the honest empty state` asserts the message and the disabled select, on main).
+- Given a listing that finds nothing, then the handler answers 404, `No reports found for ticker 'IWM' in GCS` (executed with an empty
+  prefix; `test_reports_list_404_when_empty` asserts it, on main), and the page shows the error state of REPORTS-08, not this one
+  (executed with the list answering 404).
+
+**Tests:** On main: `an empty list shows the honest empty state` asserts the message `No reports yet. Run the analysis pipeline to generate them.` and the disabled
+select for a 200 payload, `{ticker: 'IWM', reports: []}`, that the handler never sends (changing the message and making the select never disabled each
+failed it, mutations), and `test_reports_list_404_when_empty` (`tests/api/test_platform_api.py`) asserts the 404 that the handler does send (a 200 with an
+empty list failed it and the list row of `test_operation_answers`, which pins the 404 against a dead backend). No test shows the page for the real 404;
+the error test of REPORTS-08 uses a 500, and the same branch handles both. Te stays unticked: the one state the page can show for an empty listing is
+the error state, and the empty copy is reachable only by a response the handler never sends.
+
+**Code:** `src/routes/ReportsPage.tsx:100-106,169-173,187-195`, `platform/api/routers/playbook.py:429-433`.
 
 ##### REPORTS-08 · State: error
 
+**Shows or does:** Two failure presentations. (1) The list: after one retry, `Could not load the report list for {ticker}.` in an amber
+bordered box with a warning icon (`src/routes/ReportsPage.tsx:163-168`), for any failure of the list request (a non-OK answer or a network
+error). The select is disabled and reads `No reports`, the counter is an em dash, there is no header, and the box below reads `Select a
+report above` although the select is disabled (executed with the list answering 500; `:187-195`). (2) The body: `Report not available.`
+with a warning icon (`:54-61`) for any non-OK answer or an empty text; the select, the counter and the header stay (executed with the body
+answering 502 and with a 200 of no bytes). The page shows no reason: the server's `detail` is dropped, and a missing object and a storage
+failure read the same.
+
+What the real handlers answered (executed; failures injected where it says so): the real list gave 200 with 11 entries, so no failure is
+reachable without an injection. With the storage listing raising (injected), `list_matching_blobs` swallowed it (`platform/api/gcs_reader.py:93-95`)
+and both routes answered 404, `No reports found for ticker 'IWM' in GCS` for the list and `No report found for ticker 'IWM' phase
+'phase6_playbook' in GCS` for the body, not the 502 that `reports/README.md` promises for an unreachable bucket. With the listing working
+and the download raising (injected), the body route answered 502 `Failed to download report from GCS: <the exception's text>`
+(`_download_markdown`, `playbook.py:112-120`); with the object missing, 404 `Report not found in GCS: reports/<name>`; for a phase that
+matches no object (`phase99`), 404. A concurrent cold request for a list or a text that another request is filling answered 503 `The
+report list is being read now; retry shortly.` or `The report text is being read now; retry shortly.` with `Retry-After: 5` (two threads;
+`playbook.py:386-391,461-466`); the client does not read the header: it retries once, so a 503 followed by a 200 recovered the list and two 503 in a row showed the banner
+(executed with the browser answering 503, two calls each).
+
+A 401 on the list takes the list presentation and the shell adds the strip `Your session expired, so live data is not loading.` (REPORTS-10;
+executed); a 401 on a body would read `Report not available.` like any non-OK answer (read).
+
+**Needs:** The non-OK answers of the two routes; nothing of its own.
+
+**States:** The list banner replaces the picker's content, the header and the body (REPORTS-01 to REPORTS-03); the body message replaces
+the body only. The page has no retry button for either.
+
+**Acceptance criteria:**
+- Given the list answering 500, then the banner `Could not load the report list for IWM.` (`a failed list load shows the error banner,
+  not an empty picker (Rule 4)`, on main).
+- Given the list failing, then a disabled select reading `No reports`, no header and the prompt `Select a report above` (executed; no test
+  asserts any of it).
+- Given the body answering 502, then `Report not available.` with the select, the counter and the header unchanged and no list banner
+  (`a failed report body shows "Report not available." under the report header, not a blank page`, added on this branch; executed).
+- Given a storage failure on the listing, then both routes answer 404 (`test_operation_answers[GET /api/reports/list/IWM]` and
+  `test_operation_answers[GET /api/reports/IWM/premarket]` assert the 404 against a dead backend, on main; executed with the stand-in
+  raising).
+- Given a download error, then 502, and a missing object, 404 (read in `_download_markdown` and executed; no test asserts either: changing
+  each status passed every report test, handler mutations).
+
+**Tests:** On main: `a failed list load shows the error banner, not an empty picker (Rule 4)` asserts the banner text `Could not load the report list for IWM.` for a
+list answering 500 (never drawing the banner failed it, mutation) and nothing about the disabled select, the missing header or the prompt below. The
+handler's statuses: the two report rows of `test_operation_answers` (`tests/api/test_route_coverage.py`) pin 404 for both routes against a dead backend (a
+200 for an empty list or an empty body failed them), and the two 404 tests of `tests/api/test_platform_api.py` assert the list's and the body's 404;
+answering a download error as 500 or a missing object as 502, and answering a concurrent cold request as an empty 200, each passed every report test
+(handler mutations). No test on main asserts the body's `Report not available.`, an empty body, a 502 or 503 answer or the retry. The test added on this
+branch, `a failed report body shows "Report not available." under the report header, not a blank page` (solyra `e422a8a`), answers the body 502 and asserts the
+message, the enabled select, `1 / 2`, the page header and the absence of the list banner and of the rendered report. It passed on the unchanged page, and
+each of four one-line mutations of the scratch copy failed it (a changed message, a failed body that draws nothing, a failed body that shows the list
+banner's text and a counter one too high), the first three and no test on main. It waits for a CI run that includes the branch's tests, and Te stays
+unticked: the body half of the row is asserted by that test alone.
+
+**Code:** `src/routes/ReportsPage.tsx:13-36,54-61,100,163-168,187-195`, `src/App.tsx:30-37`;
+`platform/api/routers/playbook.py:112-120,386-391,429-433,461-485`, `platform/api/gcs_reader.py:93-95`.
+
 ##### REPORTS-09 · State: stale
 
+**Shows or does:** Nothing: the page has no stale presentation. The list answer carries no time (`ReportEntry` is `filename`, `phase` and
+`path`, `platform/api/routers/playbook.py:404-427`), the header shows a label and a filename (REPORTS-02), and the client's 60 second and 5
+minute staleTime and the server's 24-hour caches are cache lifetimes, not a bound on the age of the text. The only age a reader can see is
+inside the text: each of the 23 `phase*.md` objects opens with its own `Generated: 2026-02-22 <time>` line, which renders as text under the
+report's title (executed: `Generated: 2026-02-22 23:45:24 Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00
+(1,089,011 bars)` for the report the page lands on), and the page neither reads nor labels it.
+
+Production (V evidence, 2026-10-01): the objects were created at 22:41:43 UTC on 2026-04-12, 172 days before the read, and their text is
+221 days old; the `phase6-playbook` job that writes `playbook_cards`, dated 2026-10-01, saves its own markdown in its container (matrix
+Backend notes). The page shows the February text with no marker, while the Playbook page shows cards dated 2026-10-01.
+
+**Needs:** Nothing: there is no age field to read.
+
+**States:** This is the stale state of REPORTS-02 and REPORTS-03, and it is absent.
+
+**Acceptance criteria:**
+- Given any report, then the header and the page show no age and no stale marker, and the text's own `Generated:` line is the only age
+  (executed).
+- The behaviour a stale state would need, a bound on the age of an object and a label when it is passed, is not in the code (matrix Gaps).
+
+**Tests:** No test asserts it: there is no age to assert. `route /reports loads without fatal errors` (`tests/shared/navigation.spec.ts`) mounts the page and earns
+nothing. Te stays unticked.
+
+**Code:** `src/routes/ReportsPage.tsx:175-183`, `platform/api/routers/playbook.py:404-427`, `src/lib/reports.ts:7-16`.
+
 ##### REPORTS-10 · State: permission
+
+**Shows or does:** A state with three presentations, one of them out of reach. (1) `DataGate` wraps everything below the picker bar
+(`src/routes/ReportsPage.tsx:162-197`: the list banner, the empty message, the header and the body box) and, when a gated call has
+answered 401 and the user is signed out (`blocked && !isLoading && !isSignedIn`), replaces it with `SignInEmptyState`, a `role="status"`
+block reading `Sign in to load data` with a `Sign in` button that reloads the page (`src/components/shared/SignInEmptyState.tsx:12-51,93-98`);
+the picker bar stays. (2) For a signed-in user whose token is refused, `DataGate` does nothing, because `isSignedIn` is true. (3) The
+page does not use `SignInBanner`.
+
+The replacement is unreachable in practice. In `firebase` mode a signed-out visitor never sees the page: `AuthGate` renders the sign-in
+screen in its place (`src/components/auth/AuthGate.tsx:14-30`; executed with `/reports` opened signed out: the sign-in screen showed,
+there was no `Reports:` label and no picker, and the only API request was `GET /api/config/firebase`). In `open` and `iap` modes `useUser`
+reports signed in always (`src/hooks/useUser.ts:22-27,81`), so the condition cannot hold (matrix Gaps).
+
+What a signed-in user sees on a 401 (executed, `open` mode as the hermetic suite runs, the list answering 401 `sign in to continue`): the
+banner `Could not load the report list for IWM.` (REPORTS-08) with a disabled select reading `No reports`, and from the shell the strip
+`Your session expired, so live data is not loading.` with a `Sign in` button, `role="status"`
+(`src/components/shared/AuthStatusIndicator.tsx:156-182`, SHELL-16); `Sign in to load data` appears nowhere. The flag behind the strip is
+set by the fetch wrapper on any gated 401 and cleared by any later gated success (`src/lib/authedFetch.ts:155-166,247-250`,
+`src/lib/authGate.ts:14-47`), so it follows the last answer (read).
+
+**Needs:** The 401 itself. Both gated routes answered 401 `{"detail":"sign in to continue"}` without a token on staging,
+`GET /api/reports/list/IWM` and `GET /api/reports/IWM/phase6_playbook`, as did `GET /api/reports/list/AAPL` and `GET
+/api/reports/IWM/phase99`, and `GET /api/health` and `GET /api/config/firebase` answered 200 in the same run (`authMode: firebase`) (V
+evidence, 2026-10-01). `solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to both routes and
+to `/api/health`, so the 401 proof is staging's. The wrapper's `OPEN_PREFIXES` must match the backend's `_OPEN_API_PREFIXES` (CLAUDE.md,
+Auth).
+
+**States:** This is the permission state of the picker's list (REPORTS-01), of the header (REPORTS-02) and of the body (REPORTS-03), and of
+the list banner, the empty message and the body message that share the gate (REPORTS-07, REPORTS-08); the picker bar itself stays.
+
+**Acceptance criteria:**
+- Given no token, then each gated route answers 401 on staging and `GET /api/health` 200 (V evidence).
+- Given a signed-in user and a 401 on the list, then the shell shows its expired-session strip and the page its list banner, with no `Sign
+  in to load data` and no sign-in prompt of its own (executed).
+- Given a signed-out user in `firebase` mode, then the sign-in screen replaces the page and no report request is sent (executed; the screen
+  is asserted on `/dashboard` by `firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main at
+  eca7078).
+- Given a gated 401, then the wrapper calls the callback registered with `setOnUnauthorized`, and a 401 from an open path does not (`a 401
+  from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on
+  main); no code outside the tests registers one, so no behaviour hangs on it, and the flag behind the strip, set on the next line, is not
+  read by that test.
+
+**Tests:** On main: `src/lib/authedFetch.test.ts` as above, `tests/api/test_platform_auth.py` (`test_firebase_requires_valid_token`: a
+gated path answers 401 without a token in `firebase` mode and the open paths 200, on a synthetic `/api/secret` route and not on a report
+route) and the sign-in screen test above. No test asserts `DataGate`, the strip on this page, the page's 401 form or a 401 on a report
+route. Te stays unticked.
+
+**Code:** `src/routes/ReportsPage.tsx:162-197`, `src/components/shared/SignInEmptyState.tsx:12-98`,
+`src/components/auth/AuthGate.tsx:14-30`, `src/lib/authGate.ts:14-47`, `src/lib/authedFetch.ts:45,155-166,247-250`,
+`src/hooks/useUser.ts:22-27,81-82`, `src/components/shared/AuthStatusIndicator.tsx:156-182`; test ids `auth-status` and
+`auth-status-banner` (the shell's); the page's own state has none.
 
 ### SCREEN-SIGNALS — `/signals`
 
