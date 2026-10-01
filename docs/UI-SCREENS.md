@@ -9215,8 +9215,9 @@ figures); the header and Hot Now did not change under any setting. Two events wi
 read `2M`. Because every earnings row is High, `High` removes only news, economic and 8-K rows: 452 of 1,565.
 
 **Needs:** The `impact` of each event, as the handler tiers it (CATALYSTS-04, CATALYSTS-01): earnings High; news High at
-relevance 0.9 and absolute sentiment 0.4, Medium at 0.7 and 0.2, else Low (a NULL sentiment fails both and reads Low, executed on
-a throwaway Postgres 16: the row is sent with `sentiment_score` null and impact `Low`); economic by importance; 8-K High
+relevance 0.9 and absolute sentiment 0.4, Medium at 0.7 and 0.2, else Low (a NULL sentiment fails both and reads Low, executed through
+the real handler on a throwaway Postgres 16: the row is sent with `sentiment_score` null when another row of the read has a
+score and with 0.0 when every row of the read is NULL, impact `Low` either way; matrix Gaps); economic by importance; 8-K High
 with item 1.01 or 2.01; insider always Medium. Production (V evidence, 2026-10-01): 638 news rows pass the page's filter,
 206 of them High and 262 Medium by the same thresholds in SQL (the handler's dedupe leaves 197 and 255), none with a
 NULL sentiment or relevance in the last 30 days (14,301 rows); the freshness of the five tables is in CATALYSTS-04.
@@ -9309,7 +9310,8 @@ date as `Mon, Sep 28, 2026` (`formatDate`, `:190-193`), a `TODAY` pill and a rin
 High, High, Medium, Low), then by ticker (`:320-325`). A row shows, left to right, an impact dot (colour by tier, with
 a title and an `aria-label` of `<tier> impact`), the ticker as a button or the text `MACRO` for a macro or tickerless
 event (CATALYSTS-09), a type badge (`TYPE_CONFIG`; an unlisted type shows its raw key, an absent one `other`), the title
-as a button that expands it (CATALYSTS-08; `title`, else `event`, else `<ticker> <type>`), a sentiment arrow and its
+as a button that expands it (CATALYSTS-08; `title`, else `event`, else `<ticker> <type>`, which prints `undefined undefined` for an event with none of
+the four, matrix Gaps), a sentiment arrow and its
 absolute value when `sentiment_score` is a number of 0.1 or more in size (`▲` green above zero, `▼` red below, tooltip
 `Sentiment 0.80 (Somewhat-Bullish)`, `:239-253`), the event's `source` string from the `md` breakpoint up, and a `View`
 button that appears on hover (CATALYSTS-09). Everything sits inside `DataGate` (CATALYSTS-14).
@@ -9323,7 +9325,8 @@ ten of Hot Now); in the hermetic page the first paint of that answer took 3.4 s 
 (`AV news`), 35 economic rows (`FRED/Calendar`, `MACRO`) and 16 8-Ks (`SEC EDGAR`), no insider cluster.
 
 - **An earnings row** reads `<company> earnings (<time>, est <eps>)` (`catalysts.py:467-474`): 785 of the 897 titles read
-  `est nan` (a NULL `eps_estimate` reaches the title as NaN, see the matrix Gaps) and 323 read `unknown` as the time.
+  `est nan` (a NULL `eps_estimate` reaches the title as NaN in a read that also holds an estimate, while an all-NULL column
+  adds no estimate text; see the matrix Gaps) and 323 read `unknown` as the time.
 - **A news row** carries the headline cut at 200 characters, the arrow when the score is 0.1 or more in size (550 of the 617; the
   other 67 show none) and the source `AV news`; a headline tagged to several tickers is one row per ticker (111
   headlines fill 262 of the 617 rows).
@@ -9398,10 +9401,12 @@ the one case CATALYSTS-14 describes.
 - Given the answer holds news dated outside the requested range, then those cards are drawn (executed: for the range
   2026-09-18 to 2026-09-25 the same 617 news rows, dated 09-29 to 10-01, were drawn after the range's last day; matrix
   Gaps).
-- Given an earnings row whose estimate is NULL, then the title should say the estimate is missing; it reads `est nan`
-  (executed on a throwaway Postgres 16 through `pg8000` and on 785 of 897 production rows; matrix Gaps).
-- Given an insider cluster with no traded value, then the title reads `~$0.0M`, and `~$nanM` when every value is NULL
-  (executed on production clusters and on a throwaway Postgres 16; matrix Gaps).
+- Given an earnings row whose estimate is NULL, then the title should say the estimate is missing; it reads `est nan` in a
+  read that also holds an estimate (executed on a throwaway Postgres 16 through `pg8000` and on 785 of 897 production
+  rows) and adds no estimate text when every estimate of the read is NULL (executed; matrix Gaps).
+- Given an insider cluster with no traded value, then the title reads `~$0.0M` for a value of 0, `~$nanM` for a NULL value
+  in a read where another cluster has a value, and `~$0.0M` when every value of the read is NULL (executed on production
+  clusters and on a throwaway Postgres 16; matrix Gaps).
 - Given a range that no cluster falls in, then no insider row shows (executed: none for 2026-09-28 to 2026-10-15, whose
   window the newest cluster, 2026-09-23, precedes; matrix Gaps).
 
@@ -9793,7 +9798,7 @@ with the `TODAY` pill and ring that follow from the label (`DateGroup`, `:318-33
 label names a source that
 contributed nothing (neither service has a Benzinga key) and miscounts the others: on 2026-10-01 it read
 `Benzinga + DB (news + sec, 1565)`, where 1,565 is every database event, 897 of them earnings rows, 617 news, 35 economic and
-16 8-Ks (executed, counted in the response); `news + sec` names two of the four. The stale state would cover CATALYSTS-01 to
+16 8-Ks (executed, counted in the response); `news + sec` names two of the five database sources, four of which contributed that day. The stale state would cover CATALYSTS-01 to
 CATALYSTS-04; its one trace, the source string, is part of the header of CATALYSTS-02.
 
 What a reader cannot see (V evidence, 2026-10-01): the calendar's last run was the 19:00 ET job of 09-30 and its rows end
