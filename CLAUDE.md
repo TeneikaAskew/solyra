@@ -1,6 +1,6 @@
 # Project Instructions for Claude Code — Solyra
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `1d8188474d8c` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## Before any change (read this first)
 Any edit, fix, refactor, or feature, however small: invoke the `product-delivery` skill before touching code.
@@ -25,7 +25,7 @@ options/gamma analysis, signals, the trade journal, AI insights, and catalysts.
 pipeline (`lib/`), and the GCP jobs live in the **stocks** repo
 (`TeneikaAskew/stocks`) and deploy together as the `solyra-api-prod` Cloud Run
 service. Solyra's dev server proxies `/api/*` to that backend, so the browser
-sees same-origin requests and none of the ~73 bare `fetch('/api/...')` call
+sees same-origin requests and none of the ~87 bare `fetch('/api/...')` call
 sites need to know where the API actually is.
 
 | | |
@@ -342,8 +342,13 @@ standalone exports.
 
 ### E2E — Playwright
 
-In `tests/`, and **hermetic**: every `/api` call is intercepted with
-`page.route`, so they need no backend and no network.
+In `tests/`. Every `/api` call a test asserts on is intercepted with
+`page.route`, so they need no **backend** (25 requests escape interception
+during teardown per `docs/TEST_COVERAGE_AUDIT.md`, accepted noise, not a
+fixture gap). They are not fully network-isolated, though: `src/index.css`
+loads Montserrat from `fonts.googleapis.com`, a real external request
+`playwright.config.ts` works around with `ignoreHTTPSErrors: true` rather
+than mocking.
 
 **Layout — one folder per page/area.** Every spec lives under
 `tests/<page>/` (`tests/dashboard/`, `tests/charts/`, `tests/admin/`, …),
@@ -449,11 +454,35 @@ so every gated call would 401.
 `src/lib/authedFetch.ts` monkeypatches `window.fetch` to (1) re-point `/api/*`
 at an absolute origin when one is configured (using `apiTargets.ts`) and
 (2) attach the Firebase ID token. It's a global wrapper because the app makes
-~73 bare relative `fetch('/api/...')` calls across ~30 files with no central
-client.
+~87 bare relative `fetch('/api/...')` calls across ~34 files with no central
+client (`grep -rE "fetch\(\s*['"\`]/api/" src`, per `docs/DOC_REGISTRY.md`'s
+Claims table — that count includes the 19 occurrences across 2 test files,
+`authedFetch.test.ts` and `contract.test.ts`, that exercise the wrapper
+itself rather than needing it; production call sites are ~68 across ~32
+files. The registry's derivation grammar has no path-exclude, so the
+tracked count intentionally includes tests rather than silently
+undercounting).
 
-`OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`) must stay in
-sync with the backend's `api/auth._OPEN_API_PREFIXES` in stocks.
+`OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`,
+`/api/waitlist`) must stay in sync with the backend's open-path list in
+`stocks/platform/api/auth.py`. That list now splits `_OPEN_API_EXACT =
+("/api/me",)` from `_OPEN_API_PREFIXES = ("/api/health", "/api/config/firebase",
+"/api/waitlist")` — the exact/prefix split keeps `/api/me/preferences` and
+`/api/me/profile` gated server-side, where a flat prefix match used to open
+them. Solyra's `OPEN_PREFIXES` stays a flat list on purpose (it decides which
+401s mean "signed out", not which paths skip the bearer token — see the
+comment above it in `authedFetch.ts`), but treating `/api/me` as a prefix here
+has a real, currently-unaddressed consequence now that the backend gates
+`/api/me/preferences` and `/api/me/profile`: `isGatedApiPath()` classifies
+both as open (`gated = false`), and the stale-token retry (`authedFetch.ts`
+around the `resp.status === 401 && gated` check) and `markAuthBlocked()`
+handling only run when `gated` is true. A stale cached token hitting either
+endpoint therefore returns a 401 that is never retried with a refreshed
+token and never flagged as a blocked session — the settings page is left
+showing a load/save error a token refresh would have fixed, instead of
+self-healing the way every other gated path does. Not fixed in this pass
+(a behavior change to `authedFetch.ts`, not a documentation fix); flagging
+so it isn't mistaken for settled.
 
 ---
 

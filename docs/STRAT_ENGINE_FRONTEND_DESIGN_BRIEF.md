@@ -8,7 +8,7 @@
 
 # Strat Engine — Frontend Design Brief
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 **For:** the designer / design agent that will lay out the frontend surfaces.
 **From:** the backend + product close-out.

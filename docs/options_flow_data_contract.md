@@ -1,21 +1,47 @@
 # Options Flow — backend data contract (Skylit-aligned UI)
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `20a92dc3b488` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The redesigned Options Flow page (`src/routes/OptionsFlowPage.tsx`) follows
-Skylit's product model. Three views are **real-data backed today**; three are
+Skylit's product model. Three views are **real-data backed today**; two are
 built against **labeled demo mocks** because no backend endpoint exists yet.
 This doc specifies the endpoints needed to make the mocked views real.
 
+**Corrected 2026-09-28 — Swing was misclassified as mock.** `SwingMode.tsx`'s
+heatmap grid and pivot rail are real (`useGammaGrid` → `/api/options/{ticker}/grid`
+or `/api/options/{ticker}/{date}/grid`, combined with `useGammaLevels` for the
+King/Gate/Flip node taxonomy) — the component's own comment calls the grid
+"the centerpiece (real /grid)". Real is not "entirely real", though: the
+`TacticalCard` overlay stays illustrative (the on-screen banner says so —
+"Tactical read is illustrative"), and separately, the Legend and node list
+also mix in mock Midpoint and Hedge chips from `gammaMapMock.ts`'s `HS.nodes`
+whenever real `/levels` data is present — `SwingMode.tsx`'s own comment says
+why: "Midpoint / Hedge nodes have no backend source — show them only
+alongside the real /levels taxonomy, never as mock next to a grid-derived
+overlay." That is a deliberate, permanent design choice (no backend for
+these two node types is proposed anywhere in this doc), not a gap to close.
+§A below, which
+proposed a `/surface` endpoint to make Swing real, is superseded by the grid
+endpoint that already ships this — combining `/grid`'s per-cell GEX/VEX with
+`/levels`'s node taxonomy covers everything §A asked for. Left below for
+the record rather than deleted; do not build it.
+
 | View | Tab · Mode | Data today | Real source needed |
 |------|-----------|-----------|--------------------|
-| GEX/VEX profile | Profiles | **Real** — `/api/options/{t}/{date}/levels` + `POST /api/options/greeks` | — |
-| Trinity 3-panel | Gamma Map · Trinity | **Real** — `useGammaLevels` for SPX/SPY/QQQ | — |
-| Swing 2D heatmap | Gamma Map · Swing | Mock `src/data/gammaMapMock.ts` | **(A)** per-expiration GEX/VEX surface |
+| GEX/VEX profile | Profiles | **Real** — `/api/options/dates/{t}` (date list), `/api/options/{t}/{date}` + `/api/options/live/{t}/{date}` fallback (chain, via `ProfilesTab.tsx`'s local `useOptionsData`), `/api/options/{t}/{date}/levels` (taxonomy) + `POST /api/options/greeks` | — |
+| Trinity 3-panel | Gamma Map · Trinity | **Real** — `/api/options/dates/{t}?limit=1` (via `useLatestOptionsDate`, gates the query) + `useGammaLevels` for SPX/SPY/QQQ | — |
+| Swing 2D heatmap | Gamma Map · Swing | **Real** — same `/api/options/dates/{t}?limit=1` gate, then heatmap/grid (`useGammaGrid` + `useGammaLevels`); illustrative-only from `src/data/gammaMapMock.ts`: the tactical-read overlay, plus the Legend's Hedge chip and NodeList's Midpoint/Hedge rows (mixed in even when `/levels` is real — see note above) | — |
 | Live flow tape | Flow · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |
 | Contract drilldown | Flow · Drilldown | Mock `src/data/contractDrilldownMock.ts` | **(C)** per-contract tape |
 
-## (A) Per-expiration dealer-exposure surface — Swing Mode
+## (A) Per-expiration dealer-exposure surface — Swing Mode — SUPERSEDED, do not build
+
+**Do not build this.** Written when Swing's grid was still mocked; the real
+`/grid` endpoint (`useGammaGrid.ts`) now returns per-cell (strike ×
+expiration) GEX/VEX/OI directly, and `/levels` (`useGammaLevels.ts`) already
+supplies the node (King/Gate/Flip) taxonomy this proposal's `nodes` field
+duplicates. Kept for the record, not as a spec to implement:
+
 The current chain endpoints return a single snapshot collapsed across
 expirations, so per-cell (strike × expiration) GEX/VEX can't be computed
 client-side. Proposed:
@@ -59,5 +85,11 @@ GET /api/flow/contract/{occ_symbol}?window=
                 volume, bid_premium, mid_premium, ask_premium }] }
 ```
 
-When each endpoint lands, swap the matching `src/data/*Mock.ts` import for a
-TanStack Query hook and remove the "Demo data" banner in that view.
+When (B) or (C) lands, swap the matching `src/data/*Mock.ts` import for a
+TanStack Query hook and remove that view's demo banner. Swing's own banner
+stays, but its disclosure is incomplete: it labels only the tactical-read
+overlay as illustrative, not the Legend's Hedge chip or NodeList's
+Midpoint/Hedge rows (see the note above) — those render unlabeled whenever
+real `/levels` data is present. None of the three have a proposed real
+source in this doc; closing the banner's gap is a UI fix, not a backend one,
+so it's out of scope here beyond flagging it.

@@ -1,6 +1,6 @@
 # Documentation registry
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-18 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `956dd9092f33` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 Which documents this repo maintains, who owns each one, and what code each one
 describes. `scripts/docs-audit.mjs` reads the tables below; the prose around
@@ -96,8 +96,11 @@ single-branch CI clone, where no such ref exists. Pass `--since origin/main`
 when the recorded provenance has to name a mainline commit.
 
 Placement is "the first paragraph after the first H1", never a fixed line
-number: seven living docs here open with an HTML comment block and carry their
-H1 on line 9, where a line-3 insert would land inside the comment.
+number: six living docs here (`FRONTEND.md`, `docs/UI-SCREENS.md`,
+`docs/E2E_TEST_PLAN.md`, `docs/REDESIGN.md`,
+`docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md`,
+`docs/solyra-landing-page-plan.md`) open with an HTML comment block and carry
+their H1 on line 9, where a line-3 insert would land inside the comment.
 
 ## Registry
 
@@ -113,15 +116,15 @@ renames are ignored, so a file-move wave does not flag every document.
 | C | docs/expected-move-affordances-design.md | | |
 | C | docs/journal-one-stop-shop-design.md | | |
 | C | docs/solyra-landing-page-design.md | | |
-| D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json | |
-| D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows | |
-| D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/App.tsx | |
-| D | docs/UI-SCREENS.md | src/routes, src/components, src/App.tsx | |
-| D | docs/DESIGN_SYSTEM.md | src/index.css, vite.config.ts, src/components/primitives, src/stores/themeStore.ts, src/lib/chartTheme.ts | |
-| D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs | |
+| D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json, src, src/index.css | |
+| D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows, src/index.css, playwright.config.ts | |
+| D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/App.tsx, tsconfig.json, tsconfig.test.json | |
+| D | docs/UI-SCREENS.md | src/routes, src/components, src/App.tsx, src/hooks/usePreferences.ts, src/hooks/useProfile.ts, tests/settings/settings.spec.ts | |
+| D | docs/DESIGN_SYSTEM.md | src/index.css, vite.config.ts, src/components/primitives, src/stores/themeStore.ts, src/lib/chartTheme.ts, src/stores/settingsStore.ts, src/routes/SettingsPage.tsx | |
+| D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs, .github/workflows/ci.yml, src/index.css, src/App.tsx | |
 | D | docs/REDESIGN.md | src/components, src/index.css | |
 | D | docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md | src/routes/AdminPage.tsx, src/hooks/useAdmin.ts | |
-| D | docs/options_flow_data_contract.md | src/types, src/hooks/useOptionsGreeks.ts | |
+| D | docs/options_flow_data_contract.md | src/types, src/hooks/useOptionsGreeks.ts, src/hooks/useGammaLevels.ts, src/hooks/useGammaGrid.ts, src/hooks/useOptionsDates.ts, src/components/options/SwingMode.tsx, src/components/options/ProfilesTab.tsx, src/components/options/TrinityTab.tsx, src/components/options/FlowTab.tsx, src/components/options/ContractDrilldown.tsx, src/data/gammaMapMock.ts, src/data/optionsFlowMock.ts, src/data/contractDrilldownMock.ts | |
 | D | docs/solyra-landing-page-plan.md | src/components/landing | |
 | D | docs/product/02-FEATURE-CATALOG.md | | |
 | D | docs/DOC_REGISTRY.md | scripts/docs-audit.mjs | |
@@ -161,3 +164,4 @@ different thing.
 | CLAUDE.md | ~(\d+) bare relative | grep-count src fetch\(\s*['"`]/api/ |
 | CLAUDE.md | across ~(\d+) files | grep-files src fetch\(\s*['"`]/api/ |
 | CLAUDE.md | (\d+) files under `src/` and | grep-files src,tests Rule 3\.7\|§3\.7 |
+| README.md | ~(\d+) bare | grep-count src fetch\(\s*['"`]/api/ |

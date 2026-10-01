@@ -1,6 +1,6 @@
 # Design System Document
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 ## 1. Overview & Creative North Star: "The Obsidian Analyst"
 
@@ -13,6 +13,30 @@ By moving away from the bright greens of the reference material and adopting a s
 ## 2. Colors & Surface Philosophy
 
 The palette is anchored in deep charcoals and obsidian blacks, providing a high-contrast stage for critical data points.
+
+> **Corrected 2026-09-28 — the described blue is one of twelve selectable
+> accents, it is not the default, and even "blue" only means these hex
+> values in dark mode.** Everything below describes the `blue` accent in
+> **dark theme** (`src/index.css`'s base `:root` block, `--brand: #8bceff`,
+> which `blue` "needs no overrides" to reach — see the comment at
+> `src/index.css:303`). Under `[data-theme="light"]` the base variables
+> are redefined regardless of accent — `--brand: #0072c6`,
+> `--brand-container: #004f8a`, `--brand-glow: #3b9fde` (`src/index.css:90-92`)
+> — so light-mode `blue` does not match this section either; that
+> variant isn't documented here. `src/stores/settingsStore.ts:45` also
+> defaults new users to **`dawn`**
+> (`--brand: #ff7a4d`, orange), applied as a body class at module load
+> (`applyShellClasses(initial.density, initial.accent)`, line 96) before
+> any component renders. The full set — `dawn`, `blue`, `amber`, `violet`,
+> `cyan`, `teal`, `pink`, `magenta`, `orange`, `yellow`, `indigo`, `rose`
+> (`src/stores/settingsStore.ts`'s `ACCENTS` array) — each remaps
+> `--brand`/`--brand-glow`/`--outline` via an `.accent-*` class
+> (`src/index.css:299-316`), user-selectable in Settings › Appearance
+> (`SettingsPage.tsx`'s `ACCENT_SWATCH`) and persisted to `localStorage`.
+> This document was written around the `blue` accent only and was not
+> re-audited against the other eleven for this correction — treat every
+> hex value below as "true for the `blue` accent," not as a repo-wide
+> constant.
 
 > **Naming note:** this document uses Material-style role names
 > (`surface-container-low`, `primary`, …). The implemented custom properties
@@ -217,11 +241,15 @@ the paths below were `platform/src/...` in that repo.
 imports **Montserrat** only (`:1`), and uses it for both display and body.
 
 The §3 type scale is only partially implemented, and not at the documented
-sizes. Of the table's nine rows, `src/index.css` defines classes for two:
-`.display-lg` at **3rem**, not the specified 3.5rem, and `.headline-sm` at
-the specified 1.125rem — plus a `.label-micro` (11px) the table doesn't
-name. The remaining rows (`display-md`, `display-sm`, `headline-lg`,
-`body-*`, `label-*`) have no implementation yet.
+sizes. Of the table's nine rows, `src/index.css` defines classes for three:
+`.display-lg` at **3rem**, not the specified 3.5rem; `.headline-sm` at the
+specified 1.125rem; and `display-sm`'s spec (1.75rem / 700) is implemented
+exactly, but under a different class name — `.metric-value`, whose own
+comment ("Display-sm: KPI card value, matches NVDA reference '$175.31'") is
+the same example this doc's own §5 KPI Card Anatomy diagram labels
+`display-sm`. Plus a `.label-micro` (11px) the table doesn't name. The
+remaining rows (`display-md`, `headline-lg`, `body-*`, `label-*`) have no
+implementation yet.
 
 These are recorded rather than silently reconciled, because closing them is
 a design decision: load the specified pair or ratify Montserrat, and either

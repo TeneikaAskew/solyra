@@ -1,6 +1,6 @@
 # Solyra
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** 2026-09-28 · **Depth:** verified · **Against:** `b4502d21e52f` · **Last scanned:** 2026-09-28 · **Owner:** TBD
 
 The frontend for the trading platform — a React + TypeScript single-page app
 covering the market dashboard, live quotes, charts, options/gamma analysis,
@@ -10,7 +10,7 @@ signals, the trade journal, AI insights, and catalysts.
 pipeline, and the GCP jobs live in the **stocks** repo and are deployed
 together as the `solyra-api-prod` Cloud Run service. Solyra's dev server
 proxies `/api/*` to that backend, so the browser still sees same-origin
-requests and none of the ~73 bare `fetch('/api/...')` call sites need to know
+requests and none of the ~87 bare `fetch('/api/...')` call sites need to know
 where the API actually is.
 
 Built with [Lovable](https://lovable.dev).
@@ -79,9 +79,20 @@ mock.
 documentation auditor is tested beside itself at `scripts/docs-audit.test.mjs`,
 which `npm test` also runs.
 
-**E2E** — Playwright, in `tests/`. These are **hermetic**: every `/api` call is
-intercepted with `page.route`, so they need no backend and no network. Test
-data lives in `tests/helpers/`:
+**E2E** — Playwright, in `tests/`. These need no **backend**: every `/api`
+call a test asserts on is intercepted with `page.route`. (A small number of
+requests — `docs/TEST_COVERAGE_AUDIT.md` records 25 — can still escape
+interception after a test's own assertions finish, in the teardown window
+between a mutation's refetch or a navigation's fan-out and Playwright tearing
+the context down; these are accepted, logged-but-harmless `ECONNREFUSED`
+noise against Vite's dead proxy, not a missing fixture.) They are **not**
+fully network-isolated: `src/index.css:1` loads Montserrat from
+`fonts.googleapis.com`, a real external request `playwright.config.ts`
+explicitly works around (`ignoreHTTPSErrors: true`, since "the headless shell
+lacks system root CAs, so the Montserrat Google-Fonts CDN load throws
+ERR_CERT and trips the 'no console errors' assertions") rather than mocking —
+an offline or egress-restricted runner can still fail on it. Test data lives
+in `tests/helpers/`:
 
 - `mocks.ts` — `mockCommon` (the cross-cutting endpoints every page hits) plus
   the `M` fulfil helpers.
