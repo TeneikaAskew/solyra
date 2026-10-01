@@ -4573,7 +4573,8 @@ under the heading with no runs; an amber banner
 `No backtest results for <ticker>. Run scripts/run_backtest.py --ticker <ticker> first.` for any
 list or results error of any status (`src/components/backtest/BacktesterSection.tsx:411-417`;
 executed 2026-09-30 with a 404 and a 401, and with the request held); no error state of its own for
-a failed equity read, which only leaves the chart out. CHARTS-13 to CHARTS-15, CHARTS-17.
+a failed equity read, which only leaves the chart out. Its states are CHARTS-13 to CHARTS-15 and
+CHARTS-17.
 
 **Acceptance criteria:**
 - Given two runs and a result of three trades with an equity curve, when the section renders, then
@@ -4742,7 +4743,7 @@ The `timeframe` parameter takes any integer and treats 1 or less as no resample 
 Both routes are gated and answered 401 without a token (V-gate evidence).
 
 **States:** The date input is disabled in review mode and empty until the list arrives; a failed day
-request shows CHARTS-15; nothing else changes. CHARTS-13 to CHARTS-17.
+request shows CHARTS-15; nothing else changes. Its states are CHARTS-13 to CHARTS-17.
 
 **Acceptance criteria:**
 - Given the dates `20260424`, `20260423` and `20260422`, when `15m`, `1h`, `1m` and `30m` are
@@ -4826,25 +4827,27 @@ execution `db-query-gv8xf`), and IWM's newest chain has 5,600 contracts, all wit
 `daily_rates` runs to 2026-09-28 (dispatch A statements 11 to 13). Cloud SQL holds no SPX bars
 (`market_data_intraday` and `market_data_daily` have no row for `SPX`, `^SPX` or `SPXW`, same
 execution), so the dates list for SPX is empty and the toggle has no date to ask for unless one is
-typed, and the legacy GCS files that the market-data loader falls to hold SPX minute files only for
-2025-09-02 to 2025-12-17 (matrix Charts Gaps). All routes are gated and answered 401 without a token
-(V-gate evidence).
+typed, and the legacy GCS files that the market-data loader falls to hold SPX minute files for
+2025-09-02 to 2025-12-17 and a year file of daily rows for 2025-08-25 to 2025-12-17 (matrix Charts
+Gaps). All routes are gated and answered 401 without a token (V-gate evidence).
 
 **States:** `Sig` is disabled in a session; `Gamma` is absent for other tickers and present for SPX,
 where it cannot draw: with no SPX bars in Cloud SQL the dates list is empty, no date is selected and
 the toggle does nothing and says nothing (executed 2026-09-30 with SPX chosen in the combobox), a
-typed date outside the 2025 window of the legacy GCS files ends in the chart card's
-`Couldn't load this data` with no canvas, and the newest SPX chain has no `gamma`, so the levels
-answer would be the unavailable summary, which the page does not read (matrix Charts Gaps). `Ref`
-and `Gamma` have no loading, empty or error text, and a failed read is indistinguishable from an
-empty one: a Cloud SQL outage reads as a 404 that claims the ticker was never ingested,
+typed date that the legacy GCS files do not hold, which is any outside 2025-08-25 to 2025-12-17 and
+each weekend or holiday inside it, ends in the chart card's `Couldn't load this data` with no
+canvas, a typed date they do hold draws a daily bar that the default `RTH` window hides or a day
+stamped in UTC that the window cuts, and the newest SPX chain has no `gamma`, so the levels answer
+would be the unavailable summary, which the page does not read (matrix Charts Gaps). `Ref` and
+`Gamma` have no loading, empty or error text, and a failed read is indistinguishable from an empty
+one: a Cloud SQL outage reads as a 404 that claims the ticker was never ingested,
 `No AlphaVantage options data for IWM on 2026-09-04. No earlier data ingested for this ticker.`
 (executed 2026-09-30 through the real handler with the connection refused), because the chain is
 read with the swallowing `query_to_dataframe` (`platform/api/routers/options.py:580,591`). A
 `daily_rates` lookup that raises leaves the flip `null` with no entry in the answer's `warnings`
 (`lib/gamma.py:1086-1095`, read; executed 2026-09-30 through the real library), so the
-`⇅ Gamma Flip` line is missing and nothing says why (matrix Charts Gaps).
-CHARTS-13 to CHARTS-17.
+`⇅ Gamma Flip` line is missing and nothing says why (matrix Charts Gaps). Its states are CHARTS-13
+to CHARTS-17.
 
 **Acceptance criteria:**
 - Given the page loads, then `Vol` and `RTH` are active and `Ref`, `Gamma` and `Sig` are not, each
