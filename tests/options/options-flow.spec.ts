@@ -273,8 +273,9 @@ test.describe('options dates: the limit contract', () => {
  * The first two pin behaviour that already works and that nothing asserted: the
  * specs above click into Flow, Profiles and Trinity to reach their content, but
  * none asserts that a switch REPLACES the view, and nothing steps the date
- * control. The third states a requirement the page does not meet yet; see its
- * comment.
+ * control. The last two go together: the plain test pins the state a failed
+ * Greeks request leaves the page in, and the `test.fail` after it states what the
+ * page does not do yet in that state; see their comments.
  */
 test.describe('Options Flow — view switcher, date stepper and error honesty', () => {
   test.beforeEach(async ({ page }) => {
@@ -388,15 +389,16 @@ test.describe('Options Flow — view switcher, date stepper and error honesty', 
     await expect(older).toBeEnabled();
   });
 
-  // solyra#74. ProfilesTab falls back to EMPTY_GREEKS whenever it has no Greeks
-  // answer (src/components/options/ProfilesTab.tsx:326, src/hooks/useOptionsGreeks.ts:145-158),
-  // so with a spot resolved from /levels a FAILED Greeks request reads "Total GEX
-  // +0 Positive" and "Put/Call OI 0.00 Bullish skew", with no error anywhere: a
-  // flat reading that is indistinguishable from a measured one (CLAUDE.md Rule 4).
-  // This test states what the issue asks for, so it fails today; `test.fail`
-  // records that. When #74 is fixed it will start passing, Playwright will then
-  // report "expected to fail, but passed", and this `test.fail` is the line to remove.
-  test.fail('a failed Greeks request is reported as unavailable, not shown as a measured zero (solyra#74)', async ({
+  // The state the test after this one examines, asserted on its own. These checks
+  // used to open that test's body, where the failure of any of them (the page not
+  // rendering, the chain or the levels missing, the retry not happening) read as
+  // the expected failure of a `test.fail` and made the declared defect look
+  // reproduced when it was never reached. Here such a failure is a red test.
+  // The footer is the one a Cloud SQL chain gets (ProfilesTab.tsx:631-645) and no
+  // other test on main asserts it; the King chip proves /levels answered; two
+  // Greeks requests are the first attempt and the app's single retry, so the
+  // request has failed for good.
+  test('a failed Greeks request leaves the EOD footer and the King chip on screen and is attempted twice', async ({
     page,
   }) => {
     let greeksPosts = 0;
@@ -411,21 +413,50 @@ test.describe('Options Flow — view switcher, date stepper and error honesty', 
     await page.goto('/options');
     await openProfilesTab(page);
 
-    // Steady state first, or the negative checks below could pass before the
-    // page has rendered anything: the chain and the levels are on screen, and
-    // the Greeks request has failed for good (one retry, so two attempts).
-    await expect(page.getByText(/^Source:/)).toBeVisible();
+    await expect(
+      page.getByText('Source: AlphaVantage EOD · Cloud SQL · 10 contracts · snapshot 2026-04-24', { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(/★ King \$/)).toBeVisible();
     await expect.poll(() => greeksPosts).toBe(2);
-    await page.waitForLoadState('networkidle');
+  });
 
-    // No zero that reads as a measurement: neither the "+0" Total GEX value nor
-    // the "0.00" Put/Call OI value of EMPTY_GREEKS is on the page. Counted on the
-    // values, not read off the two cards, so the check holds whether a fix hides
-    // the cards or replaces their values.
-    await expect(page.getByText('+0', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('0.00', { exact: true })).toHaveCount(0);
-    // ... and the failure is said out loud, in words, somewhere on the page.
-    await expect(page.getByText(/unavailable/i).first()).toBeVisible();
+  // solyra#74. ProfilesTab falls back to EMPTY_GREEKS whenever it has no Greeks
+  // answer (src/components/options/ProfilesTab.tsx:326, src/hooks/useOptionsGreeks.ts:145-158),
+  // so with a spot resolved from /levels a FAILED Greeks request reads "Total GEX
+  // +0 Positive" and "Put/Call OI 0.00 Bullish skew", with no error anywhere: a
+  // flat reading that is indistinguishable from a measured one (CLAUDE.md Rule 4).
+  // This test states what the issue asks for, so it fails today; `test.fail`
+  // records that. When #74 is fixed it will start passing, Playwright will then
+  // report "expected to fail, but passed", and this `test.fail` is the line to remove.
+  //
+  // It holds the defect assertion and nothing else. That the page gets as far as
+  // the failed state (footer, King chip, two attempts) is the plain test above, so
+  // that an unrelated failure here cannot pass for the expected one. The three
+  // checks are retried together until they hold at the same moment: taken one
+  // after another, the two negative checks would pass on a page that has not
+  // shown its zero cards yet.
+  test.fail('a failed Greeks request is reported as unavailable, not shown as a measured zero (solyra#74)', async ({
+    page,
+  }) => {
+    await page.route('**/api/options/greeks', (r) =>
+      r.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'greeks exploded' }),
+      }),
+    );
+    await page.goto('/options');
+    await openProfilesTab(page);
+
+    await expect(async () => {
+      // No zero that reads as a measurement: neither the "+0" Total GEX value nor
+      // the "0.00" Put/Call OI value of EMPTY_GREEKS is on the page. Counted on the
+      // values, not read off the two cards, so the check holds whether a fix hides
+      // the cards or replaces their values.
+      await expect(page.getByText('+0', { exact: true })).toHaveCount(0, { timeout: 1_000 });
+      await expect(page.getByText('0.00', { exact: true })).toHaveCount(0, { timeout: 1_000 });
+      // ... and the failure is said out loud, in words, somewhere on the page.
+      await expect(page.getByText(/unavailable/i).first()).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
   });
 });
