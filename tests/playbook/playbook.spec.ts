@@ -150,7 +150,8 @@ test.describe('Playbook', () => {
       direction: 'PUT',
       conditions: ['RSI 35-60', 'Below VWAP', 'Higher timeframe supports the direction'],
     };
-    // What the server's evaluator answers per condition text (platform/api/routers/playbook.py).
+    // Canned answers per condition text. The texts are this spec's own, so the real evaluator
+    // (platform/api/routers/playbook.py) would answer some of them differently.
     const ANSWER: Record<string, { status: string; detail?: string; reason?: string }> = {
       'RSI 40-65': { status: 'met', detail: 'RSI 55.0 in [40.0, 65.0]' },
       'Above VWAP': { status: 'met', detail: '221.50 > VWAP 220.20' },
@@ -216,6 +217,8 @@ test.describe('Playbook', () => {
     await expect(one).toContainText('RSI 55.0 in [40.0, 65.0]');
     await expect(one).toContainText('EMA9 220.50 < EMA20 221.00');
     await expect(two).toContainText('2/3 conditions met · 1 subjective');
+    // The percent divides by every condition, the subjective one included: 2 of 3 is 67%, not 100%.
+    await expect(two).toContainText('67%');
     await expect(two).toContainText('subjective');
 
     // Tint: a card with a judgeable condition unmet stays at the idle border; the card whose every
