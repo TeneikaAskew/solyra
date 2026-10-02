@@ -12872,8 +12872,8 @@ the role-drift presentation on top of that and waits for a CI run that includes 
 - **Matrix:** [03 § 15](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#15--settings)
 - **Status:** Incomplete · **Blocking issue:** none · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
 - **Component:** `src/routes/SettingsPage.tsx` (492 lines)
-- **Child components:** none (`Section`, `Field` and `ToggleRow` are defined inside `SettingsPage.tsx`)
-- **API calls (from source):** `/api/me/preferences` (GET and PUT, through `usePreferencesSync`, which `AppShell.tsx` mounts, and `usePreferencesStatus`), `/api/me/profile` (GET and PUT, through `useProfile`), `/api/me` (through `useUser`)
+- **Child components:** none (`Section`, `Field` and `ToggleRow` are defined inside `src/routes/SettingsPage.tsx`)
+- **API calls (from source):** `/api/me/preferences` (GET and PUT, through `usePreferencesSync`, which `src/components/layout/AppShell.tsx` mounts, and `usePreferencesStatus`), `/api/me/profile` (GET and PUT, through `useProfile`), `/api/me` (through `useUser`)
 - **Stores:** `useSettingsStore`, `useThemeStore`, and the React Query entries `['me','preferences']`, `['me','profile']` and `['me', uid]`
 - **E2E specs:** `tests/settings/settings.spec.ts`
 - **PR lineage:** [#611](https://github.com/TeneikaAskew/stocks/pull/611) platform redesign · [#589](https://github.com/TeneikaAskew/stocks/pull/589) app shell
@@ -12883,29 +12883,29 @@ the role-drift presentation on top of that and waits for a CI run that includes 
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/me/preferences | theme, nav_pattern, density, accent (types: `src/types/preferences.ts` UserPreferences) | the user, through `PUT /api/me/preferences`: `user_preferences`, one row on 2026-10-02 with all four columns set and its newest `updated_at` 2026-09-05 (V evidence); a 404 when the caller has no row | five-minute stale time, one retry; applied once per session and never again; no age shown | `usePreferencesSync` (mounted once in `AppShell.tsx`) / `usePreferencesStatus` (read-only, `SettingsPage.tsx`) → Appearance tab, Toggle appearance |
+| GET /api/me/preferences | theme, nav_pattern, density, accent (types: `src/types/preferences.ts` UserPreferences) | the user, through `PUT /api/me/preferences`: `user_preferences`, one row on 2026-10-02 with all four columns set and its newest `updated_at` 2026-09-05 (V evidence); a 404 when the caller has no row | five-minute stale time, one retry; applied once per session and never again; no age shown | `usePreferencesSync` (mounted once in `src/components/layout/AppShell.tsx`) / `usePreferencesStatus` (read-only, `src/routes/SettingsPage.tsx`) → Appearance tab, Toggle appearance |
 | PUT /api/me/preferences | request: theme, nav_pattern, density, accent, all four on every change (types: `src/types/preferences.ts` UserPreferencesUpdate); the answer replaces the cached read | the user (one upsert of the fields sent into `user_preferences`) | none: written at each change and not retried | `usePreferencesSync` → Toggle appearance |
-| GET /api/me/profile | display_name, timezone, default_ticker, default_timeframe, account_size, risk_per_trade_pct, notify_daily_digest, notify_catalyst_alerts, notify_signal_alerts, number_format, date_format, show_extended_hours (types: `src/types/profile.ts` UserProfile) | the user, through `PUT /api/me/profile`: `user_profile`, no row on 2026-10-02 (V evidence), so every read is a 404 today; read by nothing but this page | five-minute stale time, one retry; a changed answer replaces the draft, unsaved edits included; no age shown | `useProfile` (`useProfile.ts`) → Profile tab, Trading tab, Notifications tab, Save changes or Discard |
+| GET /api/me/profile | display_name, timezone, default_ticker, default_timeframe, account_size, risk_per_trade_pct, notify_daily_digest, notify_catalyst_alerts, notify_signal_alerts, number_format, date_format, show_extended_hours (types: `src/types/profile.ts` UserProfile) | the user, through `PUT /api/me/profile`: `user_profile`, no row on 2026-10-02 (V evidence), so every read is a 404 today; read by nothing but this page | five-minute stale time, one retry; a changed answer replaces the draft, unsaved edits included; no age shown | `useProfile` (`src/hooks/useProfile.ts`) → Profile tab, Trading tab, Notifications tab, Save changes or Discard |
 | PUT /api/me/profile | request: the changed fields only (types: `src/types/profile.ts` UserProfileUpdate); the answer, the full stored row, becomes the cached read | the user (one upsert of the fields sent into `user_profile`; an explicit null clears a field) | none: written when Save changes is pressed | `useProfile` → Save changes or Discard |
-| GET /api/me | email, is_admin, is_dev (types: `useUser.ts` MeResponse) | the verified identity (the Firebase token's email, the IAP header's, none in open mode) and one `user_roles` lookup, where a failed lookup reads as no role; an open path | 30s staleTime, keyed by the Firebase uid, one retry | `useUser` (`useUser.ts`) → Account tab, the identity block of the Profile tab, `Sending to` on the Notifications tab |
-| GET /api/config/firebase (read once at boot) | authMode (types: `runtimeConfig.ts` RuntimeConfig) | the service's `AUTH_MODE` setting (`firebase` on staging, `iap` on production); an open path | read once when the app boots | `getAuthMode` (`runtimeConfig.ts`) → Account tab (`Auth mode`), Sign out |
-| store: theme, nav pattern, density, accent | | Zustand, mirrored in `localStorage` keys `platform-theme` and `platform-shell-settings`, and never cleared by a sign-out | | `themeStore.ts`, `settingsStore.ts` → every Appearance control, AppShell nav pattern |
+| GET /api/me | email, is_admin, is_dev (types: `src/hooks/useUser.ts` MeResponse) | the verified identity (the Firebase token's email, the IAP header's, none in open mode) and one `user_roles` lookup, where a failed lookup reads as no role; an open path | 30s staleTime, keyed by the Firebase uid, one retry | `useUser` (`src/hooks/useUser.ts`) → Account tab, the identity block of the Profile tab, `Sending to` on the Notifications tab |
+| GET /api/config/firebase (read once at boot) | authMode (types: `src/lib/runtimeConfig.ts` RuntimeConfig) | the service's `AUTH_MODE` setting (`firebase` on staging, `iap` on production); an open path | read once when the app boots | `getAuthMode` (`src/lib/runtimeConfig.ts`) → Account tab (`Auth mode`), Sign out |
+| store: theme, nav pattern, density, accent | | Zustand, mirrored in `localStorage` keys `platform-theme` and `platform-shell-settings`, and never cleared by a sign-out | | `src/stores/themeStore.ts`, `src/stores/settingsStore.ts` → every Appearance control, AppShell nav pattern |
 
 Every route above except `GET /api/me` and `GET /api/config/firebase` is gated: on staging each answers 401 without a token and on production IAP answers before any handler (V evidence). The page reads and writes `user_preferences` and `user_profile` and reads `user_roles`; no schedule or job feeds any of the three, and no code outside the two routers reads the first two.
 
 #### Displayed
 | ID | Element | Component |
 |---|---|---|
-| SETTINGS-01 | Profile tab | inline in `SettingsPage.tsx` (`useProfile`) |
-| SETTINGS-02 | Appearance tab | inline in `SettingsPage.tsx` (`useThemeStore`, `useSettingsStore`) |
-| SETTINGS-03 | Trading tab | inline in `SettingsPage.tsx` (`useProfile`, `profileDiff`) |
-| SETTINGS-04 | Notifications tab | inline in `SettingsPage.tsx` (`useProfile`) |
-| SETTINGS-05 | Account tab | inline in `SettingsPage.tsx` (`useUser`, `runtimeConfig.ts` `getAuthMode`) |
+| SETTINGS-01 | Profile tab | inline in `src/routes/SettingsPage.tsx` (`useProfile`) |
+| SETTINGS-02 | Appearance tab | inline in `src/routes/SettingsPage.tsx` (`useThemeStore`, `useSettingsStore`) |
+| SETTINGS-03 | Trading tab | inline in `src/routes/SettingsPage.tsx` (`useProfile`, `profileDiff`) |
+| SETTINGS-04 | Notifications tab | inline in `src/routes/SettingsPage.tsx` (`useProfile`) |
+| SETTINGS-05 | Account tab | inline in `src/routes/SettingsPage.tsx` (`useUser`, `src/lib/runtimeConfig.ts` `getAuthMode`) |
 
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| SETTINGS-06 | Toggle appearance | Each control calls its store's setter directly; `usePreferencesSync` (mounted once in `AppShell.tsx`) writes it through via `PUT /api/me/preferences`, always with all four fields, skipping the pass right after hydration and any value the server already holds. A pick made while the stored values load is lost or never stored, and a refused write leaves the pick applied on this device (matrix Gaps). |
+| SETTINGS-06 | Toggle appearance | Each control calls its store's setter directly; `usePreferencesSync` (mounted once in `src/components/layout/AppShell.tsx`) writes it through via `PUT /api/me/preferences`, always with all four fields, skipping the pass right after hydration and any value the server already holds. A pick made while the stored values load is lost or never stored, and a refused write is not retried and leaves the pick applied on this device while the account keeps the old value, until the next change sends all four values again or the next session applies the stored values over the pick (matrix Gaps). |
 | SETTINGS-07 | Save changes or Discard | `Save changes` sends `profileDiff` (changed fields only) through `useProfile`'s `save`, one draft over the Profile, Trading and Notifications tabs; `Discard` resets the draft to the stored values without persisting anything, and does not clear a failed save's error (matrix Gaps). |
 | SETTINGS-08 | Sign out | Enabled only when signed in with `AUTH_MODE` `firebase`; calls `firebaseSignOut` (`src/lib/firebase.ts`) and, unlike the header's button and the account menu's, does not clear the query cache, so the next account to sign in reads the previous account's cached profile for the stale time (matrix Gaps); otherwise disabled with a note that the session is managed outside the app. |
 
@@ -12927,7 +12927,7 @@ Every route above except `GET /api/me` and `GET /api/config/firebase` is gated: 
 
 #### Elements
 
-In every body below, "executed" means one of three things, named where a body needs it. Page: the page of solyra `8568d2a` rendered in a hermetic Chromium browser (the e2e launcher's Vite server, an en-US locale) with the Settings routes answered by Playwright route mocks, in `open` auth mode unless a body says `firebase` or `iap`; in `firebase` mode the real Firebase Auth SDK ran against a mocked Identity Toolkit (every `identitytoolkit.googleapis.com` call answered), the way `tests/shared/auth-gate.spec.ts` does, and answers were keyed by the bearer token so two accounts could be told apart. Handler: the real `platform/api/routers/profile.py` and `preferences.py` of stocks `a7caf059`, and where a body says so the real app `api.main.app` with its auth middleware, driven through FastAPI's `TestClient` with a fake engine substituted at `gcp.database.get_engine`, so their own branches ran and nothing reached a database. Mutation: one line of the product code changed in a scratch copy and the named spec run. "Read" marks what was only read in the code, "V evidence" the comment on stocks issue 1234 that the matrix links, and "not checked" what was neither run nor read to a conclusion.
+In every body below, "executed" means one of three things, named where a body needs it. Page: the page of solyra `8568d2a` (no file under `src/` has changed since) rendered in a hermetic Chromium browser (the e2e launcher's Vite server, an en-US locale) with the Settings routes answered by Playwright route mocks, in `open` auth mode unless a body says `firebase` or `iap`; in `firebase` mode the real Firebase Auth SDK ran against a mocked Identity Toolkit (every `identitytoolkit.googleapis.com` call answered), the way `tests/shared/auth-gate.spec.ts` does, and answers were keyed by the bearer token so two accounts could be told apart. Handler: the real `platform/api/routers/profile.py` and `platform/api/routers/preferences.py` of stocks `a7caf059`, and where a body says so the real app `api.main.app` with its auth middleware, driven through FastAPI's `TestClient` with a fake engine substituted at `gcp.database.get_engine`, so their own branches ran and nothing reached a database; where a body says `against a real Postgres`, the same routers ran over a throwaway local Postgres 16 that held the `set_updated_at` function and the `user_preferences` and `user_profile` tables and triggers exactly as `gcp/schema.sql` defines them, so the SQL they build ran. Mutation: one line of the product code changed in a scratch copy and the named spec run. "Read" marks what was only read in the code, "V evidence" the comment on stocks issue 1234 that the matrix links, and "not checked" what was neither run nor read to a conclusion.
 
 ##### SETTINGS-01 · Profile tab
 
@@ -12967,7 +12967,7 @@ retry). The profile handler (`platform/api/routers/profile.py:145-159`) reads th
 exception, and otherwise the twelve fields with their nulls intact (executed over the handler). `/api/me` (`platform/api/main.py:282-305`)
 is an open path: the verified email, `is_admin` and `is_dev` from one `user_roles` lookup (`stored_role_for`,
 `platform/api/auth.py:229-264`). The hook keeps only values it knows: a blank string, a number that is not finite, a value outside an enum
-list or a boolean that is not a boolean becomes null (`sanitizeProfile`, `useProfile.ts:28-62`, read).
+list or a boolean that is not a boolean becomes null (`sanitizeProfile`, `src/hooks/useProfile.ts:28-62`, read).
 
 `user_profile` held no row on 2026-10-02 and `user_roles` two, one `admin` and one `dev` (V evidence). `GET /api/me/profile` answers 401
 without a token on staging and IAP answers 302 on production (V evidence), so this tab is not ticked at V: what it shows is a signed-in
@@ -13001,8 +13001,13 @@ diff and confirms` and `a failed save is rendered, never reported as saved (Rule
 answers 503 against a dead backend, `GET /api/me` 200), and `/api/me`'s flags by `tests/api/test_platform_auth.py`
 (`test_me_dev_role_sets_is_dev_not_is_admin`, `test_me_admin_role_sets_is_admin_not_is_dev`, `test_me_env_fallback_admin_without_table_row`,
 `test_me_plain_user_and_anonymous`); the three pytest files run in the lean CI job. `src/mocks/contract.test.ts` checks that the app's `GET
-/api/me/profile` is a declared operation and that the mock answer `MOCK_PROFILE` carries no field the schema does not declare (Vitest; the
-contract, not the page). Te stays unticked: no test on main asserts a stored profile, the identity block or any field but Display name.
+/api/me/profile` and `GET /api/me` are declared operations (`every /api request the app makes (verb + path) is a declared operation`) and
+that their mock answers, `MOCK_PROFILE` and `MOCK_ME_DEV`, carry no field the schema does not declare (`every mock payload for a typed 200
+response matches its response schema (no undeclared fields)`; Vitest; the contract, not the page). `tests/api/test_openapi_snapshot.py` (in
+the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
+(`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `ProfileResponse` or to `MeResponse` is caught there; it
+asserts nothing about a handler or the page. Te stays unticked: no test on main asserts a stored profile, the identity block or any field
+but Display name.
 
 **Code:** `src/routes/SettingsPage.tsx:36-43,63-94,123-150,174-298`, `src/hooks/useProfile.ts:21-62,76-81,93-122`,
 `src/hooks/useUser.ts:21-85`, `src/types/profile.ts`, `src/mocks/common.ts:53-66`; `platform/api/routers/profile.py:57-72,108-159`,
@@ -13031,9 +13036,10 @@ Executed with the server holding `light`, `sidebar`, `comfy` and `teal`: the pag
 `src/hooks/usePreferences.ts:119-226`: key `['me','preferences']`, five-minute stale time, one retry); the page reads only its status
 (`usePreferencesStatus`, `:229-231`). The handler (`platform/api/routers/preferences.py:132-146`) answers the four fields of the caller's
 `user_preferences` row, 404 `no preferences stored` when there is none and 503 `preferences temporarily unavailable` for any exception. The
-hook keeps only values it knows: a value outside the lists becomes null and the local value stands (`sanitizePreferences`,
-`usePreferences.ts:72-80`). Local state: `src/stores/themeStore.ts` (`platform-theme`, `data-theme` on `<html>`) and
-`src/stores/settingsStore.ts` (`platform-shell-settings`; density and accent also as classes on `<body>`, `:58-71`).
+hook keeps only values it knows: a value outside the lists becomes null (`sanitizePreferences`, `src/hooks/usePreferences.ts:72-80`) and
+hydration skips a null field, so the local value stands (`src/hooks/usePreferences.ts:171-176`). Local state: `src/stores/themeStore.ts`
+(`platform-theme`, `data-theme` on `<html>`) and `src/stores/settingsStore.ts` (`platform-shell-settings`; density and accent also as
+classes on `<body>`, `:58-71`).
 
 `user_preferences` held one row on 2026-10-02, all four columns set, its newest `updated_at` 2026-09-05 23:58:57 UTC (V evidence). The gated
 route answers 401 without a token on staging and IAP answers 302 on production (V evidence), so this tab is not ticked at V: what it shows
@@ -13055,8 +13061,12 @@ SETTINGS-13.
   (`density and accent picks land on <body> and write through`).
 - Given the server holds appearance values, when the session starts, then they are applied and the tab shows them selected (executed; no
   test applies a stored value, every settings spec answers all-null).
-- Given a stored value outside the lists, then it is ignored and the local value stands (`nulls unknown values instead of coercing them to a
-  default`, `src/hooks/usePreferences.test.ts`).
+- Given a stored value outside the lists, then it is ignored and the local value stands (executed: with `solarized`, `bottom-bar`, `compact`
+  and `chartreuse` stored, the page kept `dark` and the classes `density-dense accent-dawn`, wrote nothing to `localStorage` and sent no
+  write, and with `light`, `bottom-bar`, `compact` and `violet` stored it applied `light` and `violet` and kept `top-tabs` and `dense`;
+  `nulls unknown values instead of coercing them to a default` in `src/hooks/usePreferences.test.ts` asserts only that `sanitizePreferences`
+  returns null for such values, and the skip of a null field that keeps the local value is code, `src/hooks/usePreferences.ts:171-176`, that
+  no test asserts).
 - Given no stored settings, then the store starts at `top-tabs`, `dense` and `dawn` with those classes on `<body>`, a partial stored object
   is merged over the defaults and corrupt JSON falls back to them (`defaults to top-tabs / dense / dawn and applies the body classes`,
   `merges a PARTIAL persisted object over the defaults`, `falls back to defaults on corrupt stored JSON (user preference, not data)`,
@@ -13073,9 +13083,16 @@ no residue and persisting the triple, `setAccent`, `setNavPattern`; `src/stores/
 `tests/api/test_preferences_router.py` (404, a stored row with its nulls intact, 503, the partial upsert, the explicit null, the empty body,
 five 422 cases, the unknown field, 503 on write, the 401 fail-closed and the normalized owner) and pinned by
 `tests/api/test_route_coverage.py` (`GET /api/me/preferences` 503 against a dead backend; `PUT` 422 with `body_ran=False`, so its body never
-reaches the handler's own code). `src/mocks/contract.test.ts` checks the `PUT` request sample and the mock answer against the schema. Te is
-ticked: the controls, their effect and their write are asserted on the page, the stores and the handler on main; what no test asserts, a
-stored value applied at the start of a session, a selected state, the swatch names and a no-op re-click, is in the matrix Gaps.
+reaches the handler's own code). `src/mocks/contract.test.ts` checks that both verbs are declared operations (`every /api request the app
+makes (verb + path) is a declared operation`), that the mock answers, `MOCK_PREFERENCES_EMPTY` for the `GET` (a 200 with all-null fields,
+not the 404) and the echo for the `PUT`, match the response schema (`every mock payload for a typed 200 response matches its response schema
+(no undeclared fields)`) and that the four-field `PUT` sample matches the request schema (`every request body the app sends matches its
+operation request schema`): the contract, not the page. `tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed
+`platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
+(`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `PreferencesResponse` or to `PreferencesUpdate` is caught
+there; it asserts nothing about a handler or the page. Te is ticked: the controls, their effect and their write are asserted on the page,
+the stores and the handler on main; what no test asserts, a stored value applied at the start of a session, a selected state, the swatch
+names and a no-op re-click, is in the matrix Gaps.
 
 **Code:** `src/routes/SettingsPage.tsx:29-34,125-127,300-369`, `src/hooks/usePreferences.ts:29-98,119-231`,
 `src/stores/settingsStore.ts:20-125`, `src/stores/themeStore.ts:1-45`, `src/components/layout/AppShell.tsx:32`, `src/types/preferences.ts`,
@@ -13127,18 +13144,26 @@ The tab is not ticked at V: its data is a signed-in user's row behind a gated ro
 - Given a stored account size and one stray character typed into the box, then the box empties and Save sends `account_size: null`
   (executed; a defect, matrix Gaps).
 - Given a partial body, then one upsert sets only the provided columns and returns the stored row, an explicit null clears a field and an
-  empty body writes nothing (`test_put_partial_sets_only_provided_fields`, `test_put_explicit_null_clears_the_field`,
-  `test_put_empty_body_is_valid_and_returns_stored_row`, `tests/api/test_profile_router.py`).
+  empty body writes no column (a new user gets an all-NULL row and an existing row has its `updated_at` moved by the update trigger,
+  `gcp/schema.sql:4950-4952`; executed against a real Postgres) (`test_put_partial_sets_only_provided_fields`,
+  `test_put_explicit_null_clears_the_field`, `test_put_empty_body_is_valid_and_returns_stored_row`, `tests/api/test_profile_router.py`, the
+  last asserting only a 200, the returned row, that `EXCLUDED.display_name` is absent from the statement and that `user_email` is the only
+  bound parameter, not the row's effects).
 - Given a timeframe outside the list, a non-numeric or non-finite size or risk, or a number too large for JSON, then 422 and no database
   call (`test_put_unknown_enum_value_is_422`, seven cases including `default_timeframe` `2W`, `account_size` `lots` and `Infinity`,
   `risk_per_trade_pct` `NaN`; `test_put_overflowing_json_number_is_rejected_before_the_db`).
 - Given a size of -5 or a risk of 500, then the handler stores it (executed over the handler; no test; matrix Gaps).
 
 **Tests:** No Playwright test opens this tab: the profile specs type into Display name only. Vitest `src/mocks/contract.test.ts` checks that
-the `PUT /api/me/profile` request samples, dense and sparse, validate against the request schema and that the dense one carries every
-profile field (`every request body the app sends matches its operation request schema`, `the profile sample covers every field a partial
-update can send`). The handler is asserted by `tests/api/test_profile_router.py` (the tests above, run in the lean CI job). Te stays
-unticked: the page layer is asserted by nothing.
+both profile verbs are declared operations (`every /api request the app makes (verb + path) is a declared operation`), that the mock
+answers, `MOCK_PROFILE` for the `GET` and the echo for the `PUT`, match the response schema (`every mock payload for a typed 200 response
+matches its response schema (no undeclared fields)`), that the `PUT /api/me/profile` request samples, dense and sparse, validate against the
+request schema and that the dense one carries every profile field (`every request body the app sends matches its operation request schema`,
+`the profile sample covers every field a partial update can send`). The handler is asserted by `tests/api/test_profile_router.py` (the tests
+above, run in the lean CI job). `tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed
+`platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
+(`test_committed_openapi_snapshot_matches_app`), so a change to either profile route, to `ProfileResponse` or to `ProfileUpdate` is caught
+there; it asserts nothing about a handler or the page. Te stays unticked: the page layer is asserted by nothing.
 
 **Code:** `src/routes/SettingsPage.tsx:76-94,371-424`, `src/hooks/useProfile.ts:36-74,83-91`, `src/types/profile.ts:14-74`;
 `platform/api/routers/profile.py:75-105,162-206`; `gcp/schema.sql:4931-4952`.
@@ -13180,8 +13205,13 @@ SETTINGS-12. Permission: SETTINGS-13.
   (`test_put_unknown_enum_value_is_422`, `tests/api/test_profile_router.py`).
 
 **Tests:** No Playwright test opens this tab. The handler is asserted by `tests/api/test_profile_router.py` (the 422 above and the partial
-upsert, in the lean CI job), and `src/mocks/contract.test.ts` checks the sparse request sample `{notify_daily_digest: false}` against the
-request schema. Te stays unticked: the page layer is asserted by nothing.
+upsert, in the lean CI job), and `src/mocks/contract.test.ts` checks that both profile verbs are declared operations and that their mock
+answers match the response schema (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed
+200 response matches its response schema (no undeclared fields)`) and that the sparse request sample `{notify_daily_digest: false}` matches
+the request schema (`every request body the app sends matches its operation request schema`); `tests/api/test_openapi_snapshot.py` (in the
+lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
+(`test_committed_openapi_snapshot_matches_app`), so a change to either profile route, to `ProfileResponse` or to `ProfileUpdate` is caught
+there. Te stays unticked: the page layer is asserted by nothing.
 
 **Code:** `src/routes/SettingsPage.tsx:97-121,426-452`, `src/hooks/useProfile.ts:32-34,64-74`;
 `platform/api/routers/profile.py:75-105,162-206`; `gcp/schema.sql:4931-4952`.
@@ -13220,8 +13250,8 @@ on staging and `GET /api/config/firebase` answers 200 with `authMode: firebase`;
 IAP (V evidence, 2026-10-02). `user_roles` held two rows, one `admin` and one `dev` (V evidence).
 
 V is ticked on those two open answers. What the tick does not cover: a signed-in account's email, role or flags (the anonymous call returns
-before it reaches `user_roles`, `auth.py:242-243`), the tab as a signed-in user sees it, and production's own answer, which is IAP's; the
-display defects above are in the matrix Gaps.
+before it reaches `user_roles`, `platform/api/auth.py:242-243`), the tab as a signed-in user sees it, and production's own answer, which is
+IAP's; the display defects above are in the matrix Gaps.
 
 **States:** Loading and error: none (above). Empty: an anonymous or failed answer reads `—` and `Member`. Stale: held 30 s, no age shown
 (SETTINGS-12). Permission: SETTINGS-13.
@@ -13242,8 +13272,14 @@ display defects above are in the matrix Gaps.
 
 **Tests:** No Playwright or Vitest test asserts this tab: no spec opens it, and `src/hooks/useUser.ts` has no test. The handler's flags are
 asserted by the four `test_me_*` tests of `tests/api/test_platform_auth.py` (in the lean CI job), the middleware's open path by
-`test_firebase_requires_valid_token` on a stub app, and the route's status is pinned by `tests/api/test_route_coverage.py`. Te stays
-unticked: the page layer is asserted by nothing.
+`test_firebase_requires_valid_token` on a stub app, and the route's status is pinned by `tests/api/test_route_coverage.py`. The shapes are
+pinned by `src/mocks/contract.test.ts`, which checks that `GET /api/me` (requested by `src/hooks/useUser.ts`) and `GET /api/config/firebase`
+(requested by `src/components/auth/ConfigGate.tsx`) are declared operations and that their mock answers, `MOCK_ME_DEV` and
+`MOCK_FIREBASE_CONFIG_OPEN`, match the response schemas (`every /api request the app makes (verb + path) is a declared operation`, `every
+mock payload for a typed 200 response matches its response schema (no undeclared fields)`; Vitest), and by
+`tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors,
+stops matching the one the app generates (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `MeResponse` or to
+`RuntimeConfigResponse` is caught there; neither asserts what the tab shows. Te stays unticked: the page layer is asserted by nothing.
 
 **Code:** `src/routes/SettingsPage.tsx:454-489`, `src/hooks/useUser.ts:21-85`, `src/lib/runtimeConfig.ts:13-34`,
 `src/components/auth/ConfigGate.tsx:34-80`, `src/components/auth/AuthGate.tsx:14-30`, `src/components/layout/AppShell.tsx:40-42`;
@@ -13268,17 +13304,21 @@ Executed on the page:
 - The first change PUTs all four fields: one click on `Light` stored `{theme: light, nav_pattern: top-tabs, density: dense, accent: dawn}`,
   so the device's other three values, defaults included, became the account's stored choices and a stored null can no longer mean "no
   opinion" for them (matrix Gaps).
-- A write the server refuses leaves the change applied on this device, shows in the header (SETTINGS-11) and is not retried; the next change
-  sends all four fields again and, when the server accepts it, the header returns to `Synced to your account.`.
+- A write the server refuses leaves the change applied on this device, shows in the header (SETTINGS-11) and is not retried: the mutation
+  sets no `retry` (`src/hooks/usePreferences.ts:154-157`), the app's `QueryClient` sets `retry: 1` for queries only (`src/App.tsx:30-37`),
+  and with the `PUT` answering 500 one write had been sent 8 s later. The account keeps its old value (the server held `dark` while the
+  device read `light`). The next change sends all four fields again, so the account learns the pick with it, and, when the server accepts
+  it, the header returns to `Synced to your account.`; a new session instead applies the stored values over the pick and sends nothing, so
+  the pick is lost without a message (matrix Gaps).
 - A pick made while the stored values are still loading is applied at once and then either reverted when the stored values arrive (the
   server held `dark`; the page went back to `dark`) or never sent at all (the server held nothing; `light` stayed on screen and in
   `localStorage` and no write was made) (matrix Gaps).
 
 **Needs:** `PUT /api/me/preferences` (`platform/api/routers/preferences.py:149-194`): one `INSERT ... ON CONFLICT (user_email) DO UPDATE` of
 the provided columns returning the row, 422 for a field or value outside the lists, 503 for any exception, 401 in `firebase` mode with no
-identity. The answer replaces the cached read (`onSuccess: setQueryData`, `usePreferences.ts:154-157`). The browser keys `platform-theme`
-and `platform-shell-settings`. `user_preferences` held one row on 2026-10-02 (V evidence); this action is not ticked at V (a write; the
-route answers 401 without a token on staging).
+identity. The answer replaces the cached read (`onSuccess: setQueryData`, `src/hooks/usePreferences.ts:154-157`). The browser keys
+`platform-theme` and `platform-shell-settings`. `user_preferences` held one row on 2026-10-02 (V evidence); this action is not ticked at V
+(a write; the route answers 401 without a token on staging).
 
 **States:** Loading: SETTINGS-09. Error: a refused write shows in the header and the pick still applies (SETTINGS-11). Stale: SETTINGS-12.
 Permission: SETTINGS-13.
@@ -13289,15 +13329,18 @@ Permission: SETTINGS-13.
   on <body> and write through`, `tests/settings/settings.spec.ts`, on main).
 - Given the stored values arrive, then none is written back (executed; no test).
 - Given the write is refused, then the header says so and the pick stays applied (executed; `a failed profile read and a failed appearance
-  write are each announced, never swallowed (Rule 4)` asserts it, added on this branch, not on main).
+  write are each announced, never swallowed (Rule 4)` asserts it, added on this branch, not on main); it is not retried, the next change
+  sends all four values again, and a new session applies the stored values over the pick (executed; matrix Gaps).
 - Given a pick made while the stored values load, then it is reverted or never stored (executed; matrix Gaps).
 - Given a partial body, then one upsert sets only the provided columns and returns the row, an explicit null clears one, an empty body
-  writes nothing, a value outside the lists or an unknown field is 422 with no database call, and a failure is 503
-  (`test_put_partial_sets_only_provided_fields`, `test_put_explicit_null_clears_the_field`,
+  writes no column (a new user gets an all-NULL row and an existing row has its `updated_at` moved by the update trigger,
+  `gcp/schema.sql:4914-4916`; executed against a real Postgres), a value outside the lists or an unknown field is 422 with no database call,
+  and a failure is 503 (`test_put_partial_sets_only_provided_fields`, `test_put_explicit_null_clears_the_field`,
   `test_put_empty_body_is_valid_and_returns_stored_row`, `test_put_unknown_enum_value_is_422`,
-  `test_put_unknown_field_is_422_not_silently_dropped`, `test_put_db_failure_is_loud_503`, `tests/api/test_preferences_router.py`); the
-  owner is the verified identity, lower-cased (`test_owner_is_the_server_verified_identity`) and a `firebase` request with none is 401
-  (`test_firebase_mode_without_identity_fails_closed_401`).
+  `test_put_unknown_field_is_422_not_silently_dropped`, `test_put_db_failure_is_loud_503`, `tests/api/test_preferences_router.py`, the
+  empty-body test asserting only a 200, the returned row, that `EXCLUDED.theme` is absent from the statement and that `user_email` is the
+  only bound parameter); the owner is the verified identity, lower-cased (`test_owner_is_the_server_verified_identity`) and a `firebase`
+  request with none is 401 (`test_firebase_mode_without_identity_fails_closed_401`).
 - Given a store change, then it applies and persists (`toggleTheme flips, applies, and persists on every flip`,
   `src/stores/themeStore.test.ts`; `setDensity swaps the body class with NO stale residue and persists the triple`, `setAccent swaps only
   the accent class and keeps the current density`, `setNavPattern persists without touching the body classes`,
@@ -13307,10 +13350,16 @@ Permission: SETTINGS-13.
 **Tests:** The tests above, on main: the three page tests assert each control's effect and the last payload (they do not assert that nothing
 was written before the click, the three skips, a refused write or a pick during loading), the Vitest files assert the stores and the payload
 mapping, `tests/api/test_preferences_router.py` the handler (in the lean CI job), and `tests/api/test_route_coverage.py` pins `PUT
-/api/me/preferences` at 422 with `body_ran=False`, so its body never reaches the handler's code. `src/mocks/contract.test.ts` checks the
-request sample against the schema. Te is ticked: the write-through is asserted on the page, in the stores and in the handler; what is not
-asserted, the skips, a refused write on main, a pick during loading and the write from the header's toggle (SHELL-10), is in the matrix
-Gaps.
+/api/me/preferences` at 422 with `body_ran=False`, so its body never reaches the handler's code. `src/mocks/contract.test.ts` checks that
+`PUT /api/me/preferences` is a declared operation (`every /api request the app makes (verb + path) is a declared operation`), that its mock
+answer, the echo, matches the response schema (`every mock payload for a typed 200 response matches its response schema (no undeclared
+fields)`) and that the four-field sample matches the request schema (`every request body the app sends matches its operation request
+schema`): the contract, not the page. `tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed
+`platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
+(`test_committed_openapi_snapshot_matches_app`), so a change to the route, to `PreferencesResponse` or to `PreferencesUpdate` is caught
+there; it asserts nothing about a handler or the page. Te is ticked: the write-through is asserted on the page, in the stores and in the
+handler; what is not asserted, the skips, a refused write on main, a pick during loading and the write from the header's toggle (SHELL-10),
+is in the matrix Gaps.
 
 **Code:** `src/routes/SettingsPage.tsx:300-369`, `src/hooks/usePreferences.ts:83-90,119-226`, `src/stores/themeStore.ts:30-45`,
 `src/stores/settingsStore.ts:58-125`, `src/components/layout/AppShell.tsx:32`, `src/components/layout/Header.tsx:24`,
@@ -13322,14 +13371,14 @@ Gaps.
 Account (`src/routes/SettingsPage.tsx:152-172`, rendered at `:296,422,450`; executed): `Save changes`, `Discard` (only while the form
 differs from the stored profile) and one status line. The bar is sticky at the bottom of the viewport.
 - The form is one draft over all three tabs. `dirty` is any field whose draft value differs from the stored one by `!==` (`profileDiff`,
-  `src/hooks/useProfile.ts:65-74`, `SettingsPage.tsx:139-140`): an edit on Profile and one on Trading, then a visit to Notifications, showed
-  `Unsaved changes.` there, and one Save sent both fields (executed).
+  `src/hooks/useProfile.ts:65-74`, `src/routes/SettingsPage.tsx:139-140`): an edit on Profile and one on Trading, then a visit to
+  Notifications, showed `Unsaved changes.` there, and one Save sent both fields (executed).
 - `Save changes` (disabled unless dirty and not saving) calls `save(diff)`, which PUTs only the changed fields (`saveProfile`,
-  `useProfile.ts:83-91`). While the request is in flight it reads `Saving…` and is disabled, `Discard` is disabled, the boxes stay editable
-  and the status line still reads `Unsaved changes.` (executed). On success the answer, the full stored row, becomes the stored profile and
-  the draft is re-seeded from it (`onSuccess: setQueryData`, `useProfile.ts:103-106`, `SettingsPage.tsx:133-137`), and the line reads
-  `Saved.` until the next edit (executed). On failure the line reads `Could not save your profile (HTTP <status>)` in red and never `Saved.`
-  (executed with 500 and 422).
+  `src/hooks/useProfile.ts:83-91`). While the request is in flight it reads `Saving…` and is disabled, `Discard` is disabled, the boxes stay
+  editable and the status line still reads `Unsaved changes.` (executed). On success the answer, the full stored row, becomes the stored
+  profile and the draft is re-seeded from it (`onSuccess: setQueryData`, `src/hooks/useProfile.ts:103-106`,
+  `src/routes/SettingsPage.tsx:133-137`), and the line reads `Saved.` until the next edit (executed). On failure the line reads `Could not
+  save your profile (HTTP <status>)` in red and never `Saved.` (executed with 500 and 422).
 - `Discard` (`src/routes/SettingsPage.tsx:157-161`) sets the draft to the stored profile and persists nothing (executed with a stored
   profile: after an edit and Discard the box read the stored value again, `Discard` and the dirty line were gone, `Save changes` was
   disabled, no request had been sent and the next Save carried only its own field).
@@ -13364,22 +13413,30 @@ Permission: a 401 shows as the same error (SETTINGS-13).
 - Given a failed save followed by another edit or by Discard, then the error line stays (executed; matrix Gaps).
 - Given an edit on one tab and another on a second tab, then one Save sends both (executed; no test).
 - Given a partial body, then one upsert sets only the provided columns and returns the stored row, an explicit null clears a field and an
-  empty body writes nothing (`test_put_partial_sets_only_provided_fields`, `test_put_explicit_null_clears_the_field`,
-  `test_put_empty_body_is_valid_and_returns_stored_row`, `tests/api/test_profile_router.py`); an unknown field, a value outside the lists, a
-  non-finite or overflowing number is 422 with no database call (`test_put_unknown_field_is_422_not_silently_dropped`,
-  `test_put_unknown_enum_value_is_422`, `test_put_overflowing_json_number_is_rejected_before_the_db`); a failure is 503
-  (`test_put_db_failure_is_loud_503`); the owner is the verified identity, lower-cased (`test_owner_is_the_server_verified_identity`).
+  empty body writes no column (a new user gets an all-NULL row and an existing row has its `updated_at` moved by the update trigger,
+  `gcp/schema.sql:4950-4952`; executed against a real Postgres) (`test_put_partial_sets_only_provided_fields`,
+  `test_put_explicit_null_clears_the_field`, `test_put_empty_body_is_valid_and_returns_stored_row`, `tests/api/test_profile_router.py`, the
+  last asserting only a 200, the returned row, that `EXCLUDED.display_name` is absent from the statement and that `user_email` is the only
+  bound parameter); an unknown field, a value outside the lists, a non-finite or overflowing number is 422 with no database call
+  (`test_put_unknown_field_is_422_not_silently_dropped`, `test_put_unknown_enum_value_is_422`,
+  `test_put_overflowing_json_number_is_rejected_before_the_db`); a failure is 503 (`test_put_db_failure_is_loud_503`); the owner is the
+  verified identity, lower-cased (`test_owner_is_the_server_verified_identity`).
 
 **Tests:** On main, the first two page tests above assert the save and its failure: the dirty line, the enabled button, the exact diff body
 `{display_name: 'Teneika A.'}` and `Saved.`, and the error text with no `Saved.`. They never use `Discard`. The handler is asserted by the
 pytest tests above (in the lean CI job) and pinned by `tests/api/test_route_coverage.py` (`PUT /api/me/profile` answers 503 against a dead
-backend), and `src/mocks/contract.test.ts` checks the dense and sparse request samples against the request schema. This branch adds `Discard
-returns the draft to the stored values and persists nothing` (solyra `tests/settings/settings.spec.ts`: a stored profile, an edit, Discard,
-the box back to the stored value, the dirty line and `Discard` gone, `Save changes` disabled, then a Save of another field whose body is
-`{timezone: 'Europe/London'}` alone); it passed on the unchanged page, so it was shown to fail by mutation, four changes of one line each to
-a scratch copy of the product code, that removed the reset of the draft, reset it to the all-null shell instead of the stored profile, saved
-the half-typed draft, and never rendered the button (see the Gaps). Te stays unticked: `Discard` is asserted only by that test, which waits
-for a CI run that includes the branch's tests.
+backend), and `src/mocks/contract.test.ts` checks that `PUT /api/me/profile` is a declared operation (`every /api request the app makes
+(verb + path) is a declared operation`), that its mock answer, the echo, matches the response schema (`every mock payload for a typed 200
+response matches its response schema (no undeclared fields)`) and that the dense and sparse request samples, the sparse ones including the
+empty body, match the request schema (`every request body the app sends matches its operation request schema`);
+`tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors,
+stops matching the one the app generates (`test_committed_openapi_snapshot_matches_app`), so a change to the route, to `ProfileResponse` or
+to `ProfileUpdate` is caught there. This branch adds `Discard returns the draft to the stored values and persists nothing` (solyra
+`tests/settings/settings.spec.ts`: a stored profile, an edit, Discard, the box back to the stored value, the dirty line and `Discard` gone,
+`Save changes` disabled, then a Save of another field whose body is `{timezone: 'Europe/London'}` alone); it passed on the unchanged page,
+so it was shown to fail by mutation, four changes of one line each to a scratch copy of the product code, that removed the reset of the
+draft, reset it to the all-null shell instead of the stored profile, saved the half-typed draft, and never rendered the button (see the
+Gaps). Te stays unticked: `Discard` is asserted only by that test, which waits for a CI run that includes the branch's tests.
 
 **Code:** `src/routes/SettingsPage.tsx:123-172,296,422,450`, `src/hooks/useProfile.ts:64-74,83-91,93-122`, `src/types/profile.ts:60-74`;
 `platform/api/routers/profile.py:75-105,162-206`.
@@ -13446,15 +13503,17 @@ row:
   already on screen). An error from either read takes the line first (SETTINGS-11).
 - The forms, SETTINGS-01, SETTINGS-03 and SETTINGS-04: not blanked and not disabled. The boxes render empty with `Not set`, the switches
   off, and accept typing; when the answer lands the draft is re-seeded and the typed text is replaced by the stored values with the dirty
-  line gone (executed: `typed while loading` became `Solyra Dev` and `Unsaved changes.` vanished; `SettingsPage.tsx:133-137`; matrix Gaps).
+  line gone (executed: `typed while loading` became `Solyra Dev` and `Unsaved changes.` vanished; `src/routes/SettingsPage.tsx:133-137`;
+  matrix Gaps).
 - Appearance, SETTINGS-02: the controls show the local choice and work before the read lands, and a pick made then is lost or never stored
   (executed, both cases; SETTINGS-06; matrix Gaps). The write has no pending presentation at all: the syncer publishes `saving` and the page
-  never reads it (`src/hooks/usePreferences.ts:214-221`, `SettingsPage.tsx:127`; read; matrix Gaps).
-- Save, SETTINGS-07: `Saving…` on a disabled button and a disabled `Discard` while the PUT is in flight (`SettingsPage.tsx:154-160`); the
-  boxes stay editable and the status line still reads `Unsaved changes.` (executed with the PUT held).
+  never reads it (`src/hooks/usePreferences.ts:214-221`, `src/routes/SettingsPage.tsx:127`; read; matrix Gaps).
+- Save, SETTINGS-07: `Saving…` on a disabled button and a disabled `Discard` while the PUT is in flight
+  (`src/routes/SettingsPage.tsx:154-160`); the boxes stay editable and the status line still reads `Unsaved changes.` (executed with the PUT
+  held).
 
 A failing read keeps its loading line through the app's one retry: the profile request was made twice before the error showed (executed;
-that the line stays through the retry is read, `useProfile.ts:96-101`).
+that the line stays through the retry is read, `src/hooks/useProfile.ts:96-101`).
 
 Not covered by a loading presentation: the identity block and the Account tab, SETTINGS-01 and SETTINGS-05. Until `/api/me` answers they
 read an em-dash placeholder for the email and `Role Member` (executed with the request held in `open` mode; matrix Gaps); in `firebase` mode
@@ -13490,15 +13549,16 @@ and `no preferences stored`), and the hooks read a 404 as nothing stored, not as
 both routes answering 404):
 - Profile, Trading and Notifications (SETTINGS-01, SETTINGS-03, SETTINGS-04): every box empty with the placeholder `Not set`, both selects
   on `Not set`, the switches off, the avatar reading `?` (or the email's letter) and an em-dash placeholder for the name and the email,
-  `Sending to —.`, and `Save changes` disabled with no `Discard` (`stored` falls back to the all-null `EMPTY_PROFILE`, `useProfile.ts:112`,
-  `src/types/profile.ts:60-74`).
+  `Sending to —.`, and `Save changes` disabled with no `Discard` (`stored` falls back to the all-null `EMPTY_PROFILE`,
+  `src/hooks/useProfile.ts:112`, `src/types/profile.ts:60-74`).
 - Appearance (SETTINGS-02, SETTINGS-06): the local values stand, no stored value is applied and nothing is written at the start of the
   session (executed: a pick on screen stayed, and no write followed).
 - The status line reads `Synced to your account.`, exactly as for a loaded row, so the page does not say that nothing is stored (executed;
   matrix Gaps).
 
-A stored row whose columns are all null reads the same as no row: the first `PUT {}` creates one (`profile.py:179-184`), and an all-null
-answer leaves every box empty (read).
+A stored row whose columns are all null reads the same as no row: the first `PUT {}` creates one (`platform/api/routers/profile.py:179-184`;
+executed against a real Postgres: one row with every data column NULL, and the next `GET` answers 200 with the nulls instead of 404), and an
+all-null answer leaves every box empty (read).
 
 **Needs:** The 404 branches of `GET /api/me/profile` and `GET /api/me/preferences`. `user_profile` held no row on 2026-10-02, so every
 profile read is a 404 today, and `user_preferences` held one row (V evidence). The 404 itself needs a signed-in call, since both routes
@@ -13518,7 +13578,13 @@ answer 401 without a token on staging; this state is not ticked at V.
 **Tests:** The handlers' 404s are asserted by the two pytest tests above (in the lean CI job). On the page, the one spec that mocks nothing
 stored answers 200 with all-null preferences and an empty profile, which exercises the all-null branch of `sanitizePreferences` and
 `sanitizeProfile`, not the 404 branch of either hook, and asserts only the `Synced to your account.` line; no test asserts a `Not set` box,
-an empty switch, a disabled Save or the 404 branch. Te stays unticked: the page layer is asserted by nothing.
+an empty switch, a disabled Save or the 404 branch. `src/mocks/contract.test.ts` checks that both `GET` routes are declared operations and
+that their mock answers, `MOCK_PROFILE` and `MOCK_PREFERENCES_EMPTY` (a 200 with all-null fields, which is the all-null branch above and not
+the 404), match the response schemas (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a
+typed 200 response matches its response schema (no undeclared fields)`), and `tests/api/test_openapi_snapshot.py` (in the lean CI job) fails
+when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
+(`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `ProfileResponse` or to `PreferencesResponse` is caught
+there; the document declares no 404, so neither pins the empty answer. Te stays unticked: the page layer is asserted by nothing.
 
 **Code:** `src/routes/SettingsPage.tsx:132-142,174-195`, `src/hooks/useProfile.ts:76-81,108-122`,
 `src/hooks/usePreferences.ts:92-98,159-189`, `src/types/profile.ts:60-74`; `platform/api/routers/profile.py:145-159`,
@@ -13574,8 +13640,12 @@ pinned by `tests/api/test_route_coverage.py` (`GET` 503 against a dead backend f
 the profile read and the appearance write (the third criterion, solyra `tests/settings/settings.spec.ts`); it passed on the unchanged page,
 so it was shown to fail by mutation, two changes of one line each to a scratch copy of the product code, that dropped the profile read line
 from the header and dropped a failed write from the sync status; with the second, the seven tests on main stay green, so only the new test
-sees it (see the Gaps). Te stays unticked: the two presentations above wait for a CI run that includes the branch's tests, and the
-precedence and the retained save error are asserted by nothing.
+sees it (see the Gaps). The routes' 200 answers, request samples and models are pinned as in SETTINGS-02 and SETTINGS-03 by
+`src/mocks/contract.test.ts` (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200
+response matches its response schema (no undeclared fields)`, `every request body the app sends matches its operation request schema`) and
+`tests/api/test_openapi_snapshot.py` (`test_committed_openapi_snapshot_matches_app`); the document declares a 422 for the two `PUT` routes
+and no 503, and no check asserts a failure answer. Te stays unticked: the two presentations above wait for a CI run that includes the
+branch's tests, and the precedence and the retained save error are asserted by nothing.
 
 **Code:** `src/routes/SettingsPage.tsx:152-172,174-195`, `src/hooks/useProfile.ts:76-91,93-122`,
 `src/hooks/usePreferences.ts:92-108,214-221`; `platform/api/routers/preferences.py:132-194`, `platform/api/routers/profile.py:145-206`,
@@ -13595,9 +13665,9 @@ precedence and the retained save error are asserted by nothing.
   `accent-dawn`. A newer answer takes effect only on a reload, or when the shell remounts after a sign-out (`AuthGate` unmounts `AppShell`,
   which owns the syncer), at which point the cached answer is applied again (read; SETTINGS-08).
 - The profile is held five minutes (`src/hooks/useProfile.ts:99`); after that a mount or a window focus requests it again, and when the
-  answer differs, the draft is replaced by it without notice, unsaved edits included (`SettingsPage.tsx:133-137`). Executed with the same
-  clock move and a server value changed to `Changed On Another Device`: `My unsaved text` in Display name was replaced by it, and `Unsaved
-  changes.` vanished (matrix Gaps). `/api/me` is held 30 s (`src/hooks/useUser.ts:75`).
+  answer differs, the draft is replaced by it without notice, unsaved edits included (`src/routes/SettingsPage.tsx:133-137`). Executed with
+  the same clock move and a server value changed to `Changed On Another Device`: `My unsaved text` in Display name was replaced by it, and
+  `Unsaved changes.` vanished (matrix Gaps). `/api/me` is held 30 s (`src/hooks/useUser.ts:75`).
 
 **Needs:** Nothing of its own: the cache lives of the three reads, five minutes for the profile and the preferences and 30 s for `/api/me`,
 and the TanStack defaults of the app (`src/App.tsx:30-37`).
@@ -13615,7 +13685,11 @@ way to apply a newer appearance.
 
 **Tests:** Only the first criterion is asserted: that spec waits for the line and asserts it appears, which also proves the sync loop starts
 under StrictMode (its own comment). No test applies a stored value, moves the clock or changes an answer between two reads;
-`src/hooks/usePreferences.test.ts` covers only `sanitizePreferences` and `toPayload`, and there is no `useProfile` test. Te stays unticked.
+`src/hooks/usePreferences.test.ts` covers only `sanitizePreferences` and `toPayload`, and there is no `useProfile` test.
+`src/mocks/contract.test.ts` checks that the two `GET` routes are declared operations and that their mock answers match the response schemas
+(`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response
+schema (no undeclared fields)`), and `tests/api/test_openapi_snapshot.py` (`test_committed_openapi_snapshot_matches_app`) pins both routes
+and their models; neither response model carries a time, so neither can assert one. Te stays unticked.
 
 **Code:** `src/routes/SettingsPage.tsx:132-142,182-194`, `src/hooks/usePreferences.ts:119-226`, `src/hooks/useProfile.ts:93-122`,
 `src/hooks/useUser.ts:50-85`, `src/App.tsx:30-37`; `platform/api/routers/preferences.py:110-146`,
@@ -13635,16 +13709,16 @@ under StrictMode (its own comment). No test applies a stored value, moves the cl
   garbage token 401 `invalid or expired sign-in`. Staging answered the same on 2026-10-02 (the four route and verb pairs with no token: 401
   `sign in to continue`; V evidence), and production's IAP answered 302 to Google's sign-in for a `GET` and 401 `Invalid IAP credentials:
   empty token` for a `PUT`, before any handler. Each router also fails closed when the request reaches it with no identity: in `firebase`
-  mode `_prefs_owner` and `_profile_owner` answer 401 (`preferences.py:87-107`, `profile.py:108-120`), but in `open` mode and in `iap` mode
-  with no identity header they serve the shared `local` owner's row (executed over the routers: `GET` and `PUT` answered 200 with the owner
-  key `local` in both; matrix Gaps).
+  mode `_prefs_owner` and `_profile_owner` answer 401 (`platform/api/routers/preferences.py:87-107`,
+  `platform/api/routers/profile.py:108-120`), but in `open` mode and in `iap` mode with no identity header they serve the shared `local`
+  owner's row (executed over the routers: `GET` and `PUT` answered 200 with the owner key `local` in both; matrix Gaps).
 - What a signed-in account sees when a route refuses it is the error of its own row, not a sign-in state. A 401 from `GET /api/me/profile`
   or `GET /api/me/preferences` read as `Could not load your profile (HTTP 401)` and `Appearance not synced, Could not load preferences (HTTP
   401). Changes still apply on this device.`, of which only the second showed (executed with a signed-in `firebase` account: each read made
   twice, React Query's one retry). The client treats `/api/me` and everything below it as open (`OPEN_PREFIXES`,
-  `src/lib/authedFetch.ts:45,89-92`), while the server opens `/api/me` alone (`_OPEN_API_EXACT`, `auth.py:69`), so such a 401 is not retried
-  with a fresh token (`:153,235-246`), does not mark the session blocked and shows no `Session expired` (executed: no `securetoken` call and
-  no strip text), and does not take the user to the sign-in screen (matrix Gaps).
+  `src/lib/authedFetch.ts:45,89-92`), while the server opens `/api/me` alone (`_OPEN_API_EXACT`, `platform/api/auth.py:69`), so such a 401
+  is not retried with a fresh token (`:153,235-246`), does not mark the session blocked and shows no `Session expired` (executed: no
+  `securetoken` call and no strip text), and does not take the user to the sign-in screen (matrix Gaps).
 
 **Needs:** The two gated routes and the middleware above. `GET /api/config/firebase` is open (200 on staging, 302 from IAP on production; V
 evidence). The bearer token is attached by `window.fetch`'s wrapper to every `/api` request when signed in
@@ -13669,7 +13743,7 @@ route.
 - Given `iap` mode, then the owner is the IAP header's email, lower-cased (`test_owner_is_the_server_verified_identity` in both router
   files).
 - Given `firebase` mode with the real app, then both routes answer 401 with no token (executed; the two router files test the routers alone
-  and `test_platform_auth.py` a stub app; matrix Gaps).
+  and `tests/api/test_platform_auth.py` a stub app; matrix Gaps).
 - Given a signed-in account whose token the routes refuse, then the page shows the load errors above and no sign-in state (executed; matrix
   Gaps).
 - Given `open` or `iap` mode with no identity, then the routers serve the `local` row (executed; matrix Gaps).
@@ -13679,9 +13753,14 @@ route.
 navigation, with `/dashboard` as the route), and the routes' gate by the two router files'
 `test_firebase_mode_without_identity_fails_closed_401` (GET and PUT, 401, no database call), `test_owner_is_the_server_verified_identity`
 and `tests/api/test_platform_auth.py` (`test_firebase_requires_valid_token`, `test_firebase_open_me_is_exact_match_and_subpaths_are_gated`),
-all in the lean CI job. Not asserted on main: the middleware on the real app for these two routes, `iap` mode with no header, and what the
-page shows for a 401 or a 403 from a route. Te is ticked: the denied card and the 401 gate are both asserted on main, and what is not is in
-the matrix Gaps.
+all in the lean CI job. The routes' shapes are pinned by `src/mocks/contract.test.ts` (the four route and verb pairs are declared
+operations, their 200 mock answers match the response schemas and the `PUT` samples the request schemas: `every /api request the app makes
+(verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`,
+`every request body the app sends matches its operation request schema`) and by `tests/api/test_openapi_snapshot.py`
+(`test_committed_openapi_snapshot_matches_app`: the four operations and their models, until the committed `platform/api/openapi.json` is
+regenerated); the document declares no 401, so neither asserts a refusal. Not asserted on main: the middleware on the real app for these two
+routes, `iap` mode with no header, and what the page shows for a 401 or a 403 from a route. Te is ticked: the sign-in screen and the 401
+gate are both asserted on main, and what is not is in the matrix Gaps.
 
 **Code:** `src/components/auth/AuthGate.tsx:14-30`, `src/lib/authedFetch.ts:45-102,150-250`, `src/hooks/useUser.ts:21-85`,
 `src/App.tsx:70-98`; `platform/api/auth.py:56-70,141-213`, `platform/api/routers/preferences.py:87-107`,
