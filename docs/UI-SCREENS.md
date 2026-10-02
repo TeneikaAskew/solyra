@@ -11819,9 +11819,9 @@ admin router of `cbb58e20` produced. Handler: that router (and `predict_one`, an
 fakes substituted only at its own indirections, the Firebase Admin SDK module, the `user_roles` reads and writes, the lease statements and
 the Cloud Run client, so its own branches ran; its data-sources answer was computed over the staging service's own `GET
 /api/health/freshness` report (an open endpoint, read 2026-10-02 00:26 UTC) and its state answer over the real objects of the bucket's
-`research/strat_engine/` prefix, read with the session's service account. Mutation: one line of the product code changed in a scratch copy
-and the named spec run. "Read" marks what was only read in the code, and "V evidence" the comment on stocks issue 1234 that the matrix
-links.
+`research/strat_engine/` prefix, read with the session's service account. Mutation: one statement or block of the product code changed in a
+scratch copy and the named spec or tests run. "Read" marks what was only read in the code, and "V evidence" the comment on stocks issue 1234
+that the matrix links.
 
 ##### ADMIN-01 · Users and roles tab
 
@@ -12213,9 +12213,11 @@ while a role error is on it (ADMIN-04).
 - Given `firebase` mode and a Disable of another account, then the Admin SDK updates it and revokes its refresh tokens
   (`test_status_disable_updates_and_revokes`, `tests/api/test_admin_users_datasources.py`); given an Enable, then it updates and revokes
   nothing (`test_status_enable_does_not_revoke`).
-- Given a Disable of the caller's own account or of the `ADMIN_EMAIL` account, then 409 and no update
-  (`test_status_cannot_disable_self_or_break_glass`); given an unknown uid, then 404 (`test_status_unknown_uid_is_404`); given `iap` mode,
-  then 409 (`test_status_refused_in_iap_mode`).
+- Given a Disable of the account that is both the caller and the `ADMIN_EMAIL` account, then 409 and no update, the self refusal answering
+  first (`test_status_cannot_disable_self_or_break_glass`, which asserts only this case); given a Disable of the caller's own account when
+  it is not the `ADMIN_EMAIL` account, or of the `ADMIN_EMAIL` account by another admin, then 409 by the handler's code (`:1171-1181`, read)
+  and by no test; given an unknown uid, then 404 (`test_status_unknown_uid_is_404`); given `iap` mode, then 409
+  (`test_status_refused_in_iap_mode`).
 - Given production's `iap` mode, then a click on `Disable` shows the 409 as raw text and nothing changes (executed over the handler and the
   page; solyra#78; no page test).
 - Given a status write in flight, then every `Access` button is disabled and the chips are not (executed; no test).
@@ -12224,9 +12226,14 @@ while a role error is on it (ADMIN-04).
 the uid of the clicked row (`disable and enable buttons PUT the flipped status`); stocks `tests/api/test_admin_users_datasources.py` asserts
 the handler (`test_status_disable_updates_and_revokes`, `test_status_enable_does_not_revoke`,
 `test_status_cannot_disable_self_or_break_glass`, `test_status_unknown_uid_is_404`, `test_status_refused_in_iap_mode`) and
-`tests/api/test_route_coverage.py` pins the route at 503 against a dead backend. Both pytest files run in the lean CI job. No test on main
-asserts the page's answer to a 409, the disabled buttons while a write is in flight or the refetch. Te is ticked: the page's labels and
-request and the handler's five branches are asserted.
+`tests/api/test_route_coverage.py` pins the route at 503 against a dead backend. Both pytest files run in the lean CI job. The one case of
+`test_status_cannot_disable_self_or_break_glass` is the account that is both the caller and the `ADMIN_EMAIL` account
+(`tests/api/test_admin_users_datasources.py:332-341`), so the self refusal (`platform/api/routers/admin.py:1171-1176`) answers first and the
+break-glass refusal (`:1177-1181`) is never reached: with either refusal removed alone, in a scratch copy, all six status tests stay green,
+and with both removed only this test fails (executed). No test on main asserts the break-glass refusal for another admin, the self refusal
+for an admin who is not the `ADMIN_EMAIL` account, the page's answer to a 409, the disabled buttons while a write is in flight or the
+refetch. Te is ticked: the page's labels and request and the handler's other branches (a Disable with its revocation, an Enable without one,
+an unknown uid, the `iap` refusal and the combined caller and break-glass refusal) are asserted.
 
 **Code:** `src/components/admin/UsersPanel.tsx:149-164`, `src/hooks/useAdmin.ts:297-307`; `platform/api/routers/admin.py:1137-1200`,
 `platform/api/auth.py:55,136`; test id `status-<uid>`.
@@ -12379,12 +12386,12 @@ and `test_admin_update_route` PUTs provider `anthropic` and asserts 200, for whi
 adds `a provider change re-points the model select, a refused save shows the server reason and an accepted save updates the row` to
 `tests/admin/admin-tabs.spec.ts` (solyra `f2c6863`): it asserts the first model of the chosen provider and its `(no creds)` label, `Save`
 enabled, the PUT body, the refusal text with the row unchanged, then after a credentialed save the refetched row with `admin-ui`, the select
-value and `Save` disabled. It passed on the existing behaviour, so it was shown to fail by mutation, five one-line changes to a scratch copy
-of the product code, each failing it for the stated reason: the model not re-pointed (`AdminPage.tsx:266-267`, the select read an empty
-value), the save error not rendered (`:308-312`, no refusal text), the routes not refetched (`useAdmin.ts:227-229`, no `admin-ui` in the
-row), `Save` held disabled (`:294`) and a different model sent (`:219`, a different body). No test asserts the unhandled rejection, the
-draft lost on a tab round trip or the error line's persistence. Te stays unticked: no test that runs in CI asserts the handler's answers,
-and this branch's test waits for a CI run that includes the branch's tests.
+value and `Save` disabled. It passed on the existing behaviour, so it was shown to fail by mutation, five changes to a scratch copy of the
+product code, one statement or block each, each failing it for the stated reason: the model not re-pointed (`AdminPage.tsx:266-267`, the
+select read an empty value), the save error not rendered (`:308-312`, no refusal text), the routes not refetched (`useAdmin.ts:227-229`, no
+`admin-ui` in the row), `Save` held disabled (`:294`) and a different model sent (`:219`, a different body). No test asserts the unhandled
+rejection, the draft lost on a tab round trip or the error line's persistence. Te stays unticked: no test that runs in CI asserts the
+handler's answers, and this branch's test waits for a CI run that includes the branch's tests.
 
 **Code:** `src/routes/AdminPage.tsx:157-344`, `src/hooks/useAdmin.ts:25-67,207-231`; `platform/api/routers/admin.py:157-213`,
 `lib/agents/model_routing.py:164-226,238-256`, `lib/agents/pricing.py:160-163`, `lib/agents/llm_client.py:113-115`,
@@ -12483,11 +12490,12 @@ nothing and the handler's answers by tests that do not run.
 ##### ADMIN-09 · State: loading
 
 **Shows or does:** The loading presentations of the page, each a part of another row and none with a request of its own. The rows it is the
-state of are ADMIN-01 to ADMIN-08, the ones whose content the interval replaces or disables, and each bullet names its row:
-- The page and every tab (ADMIN-01 to ADMIN-08): until `/api/me` answers, `AdminPage` returns a bare spinner and nothing else, no `Admin`
-  heading, no tabs and no text (`src/routes/AdminPage.tsx:40-46`; executed with `/api/me` held for 1.5 s: one spinner, no `h1`, an empty
-  `main`). In `firebase` mode the same spinner shows until Firebase reports its sign-in state (`src/hooks/useUser.ts:82`, read). Before
-  either, the route's own chunk loads behind `PageLoader`, a larger spinner (`src/App.tsx:39-45,94`, read).
+state of are ADMIN-01 to ADMIN-08 and ADMIN-13, the ones whose content the interval replaces or disables, and each bullet names its row:
+- The page, every tab and the denied card (ADMIN-01 to ADMIN-08 and ADMIN-13): until `/api/me` answers, `AdminPage` returns a bare spinner
+  and nothing else, no `Admin` heading, no tabs, no card and no text (`src/routes/AdminPage.tsx:40-46`; executed with `/api/me` held for
+  1.5 s: one spinner, no `h1`, an empty `main`). In `firebase` mode the same spinner shows until Firebase reports its sign-in state
+  (`src/hooks/useUser.ts:82`, read). Before either, the route's own chunk loads behind `PageLoader`, a larger spinner
+  (`src/App.tsx:39-45,94`, read).
 - ADMIN-01: one spinner replaces the search and the table (`src/components/admin/UsersPanel.tsx:50-56`, executed).
 - ADMIN-02: one spinner replaces the chips and the table (`src/components/admin/DataSourcesPanel.tsx:32-38`, executed), for as long as the
   audit takes: a cold audit took 51 and 67 s on staging (V evidence), and the spinner has no text and the request no timeout (read).
@@ -12506,15 +12514,16 @@ state of are ADMIN-01 to ADMIN-08, the ones whose content the interval replaces 
 A failing read keeps its loading presentation through the app's one retry, so the error of ADMIN-11 shows after a second round trip
 (executed: the users request and `/api/me` were each made twice).
 
-**Needs:** Nothing of its own: the requests in flight are those of ADMIN-01 to ADMIN-08. TanStack Query's defaults here are five minutes of
-stale time and one retry for queries (`src/App.tsx:30-36`); `/api/me`, the users, the data sources and the routes hold 30 s, the models five
-minutes, and the brief and the state 60 s; a mutation is not retried (read).
+**Needs:** Nothing of its own: the requests in flight are those of ADMIN-01 to ADMIN-08 and the `GET /api/me` of ADMIN-13
+(`platform/api/main.py:282-305`), which the page spinner waits on (`src/routes/AdminPage.tsx:40-46`). TanStack Query's defaults here are
+five minutes of stale time and one retry for queries (`src/App.tsx:30-36`); `/api/me`, the users, the data sources and the routes hold 30 s,
+the models five minutes, and the brief and the state 60 s; a mutation is not retried (read).
 
 **States:** The ones above. No spinner carries text, the users and data tables have no skeleton, and the page does not show how long it has
 been loading.
 
 **Acceptance criteria:**
-- Given `/api/me` has not answered, then a spinner shows and no heading, tab or panel (executed; no test).
+- Given `/api/me` has not answered, then a spinner shows and no heading, tab, panel or denied card (executed; no test).
 - Given `/api/me` answered admin and the users request has not, then the users panel is a spinner (executed; no test).
 - Given the Models tab is opened and none of its four requests has answered, then eleven spinners show, one for the routing table, nine in
   the brief and one for the state (executed; no test).
@@ -12778,16 +12787,19 @@ and a failing `/api/me`. Stocks `tests/api/test_platform_auth.py` asserts `/api/
 `is_admin_email` over a stubbed lookup (`test_admin_env_fallback_matches_without_touching_db`, `test_admin_from_user_roles_table`,
 `test_non_admin_denied`, `test_admin_check_denies_when_lookup_fails`, `test_admin_email_is_normalized`, `test_no_identity_is_not_admin`;
 `test_is_admin_email_binds_against_a_real_engine` skips for want of a test Postgres), and `tests/api/test_admin_users_datasources.py`
-asserts 401 and 403 for the five user and data-source requests (`test_endpoints_require_admin`). This branch adds `an account that /api/me
-calls admin, whose admin routes answer 403, sees the rejection on every tab and never an empty table` to `tests/admin/admin-tabs.spec.ts`
-(solyra `f2c6863`): it asserts the rejection text of the users, data and routing panels, the absence of their tables and of the denied card.
-It passed on the existing behaviour, so it was shown to fail by mutation, five one-line changes to a scratch copy of the product code, each
-failing it for the stated reason: a 403 no longer read as `unauthorized` (`useAdmin.ts:14`, the users line read the raw 403 text), the users
-error branch dropped (`UsersPanel.tsx:58-67`), the routing panel's server-rejected wording dropped (`AdminPage.tsx:182-184`), the data
-sources error branch dropped (`DataSourcesPanel.tsx:40-49`) and the denied card shown to an admin whose routes answer 403
-(`AdminPage.tsx:48`). No test on main asserts the card's text, that a denied page makes no admin request, a 401 or a 403 from an admin route
-for an account `/api/me` calls admin, or the gate of the route, model, brief, state and predict routes in a test that runs in CI. Te stays
-unticked: the added test waits for a CI run that includes the branch's tests.
+asserts 401 and 403 for the five user and data-source requests (`test_endpoints_require_admin`). No test on main asserts the card's text,
+that a denied page makes no admin request, a 401 or a 403 from an admin route for an account `/api/me` calls admin, or the gate of the
+route, model, brief, state and predict routes in a test that runs in CI. This branch adds `an account that /api/me calls admin, whose admin
+routes answer 403, sees the rejection on every tab and never an empty table` to `tests/admin/admin-tabs.spec.ts` (solyra `f2c6863`, not on
+main): it asserts the rejection text of the users, data and routing panels, the absence of their tables and of the denied card, the
+role-drift presentation that main leaves unasserted. It passed on the existing behaviour, so it was shown to fail by mutation, five changes
+to a scratch copy of the product code, one statement or block each, each failing it for the stated reason: a 403 no longer read as
+`unauthorized` (`useAdmin.ts:14`, the users line read the raw 403 text), the users error branch dropped (`UsersPanel.tsx:58-67`), the
+routing panel's server-rejected wording dropped (`AdminPage.tsx:182-184`), the data sources error branch dropped
+(`DataSourcesPanel.tsx:40-49`) and the denied card shown to an admin whose routes answer 403 (`AdminPage.tsx:48`). Te is ticked: the page's
+gate, the denied card for an anonymous, a non-admin and a failing `/api/me` account, is asserted by four Playwright tests on main, and the
+routes' gate, `/api/me`'s flags, `is_admin_email` and the 401 and 403 of five routes by pytest in the lean CI job. The branch's test adds
+the role-drift presentation on top of that and waits for a CI run that includes the branch's tests; the tick does not rest on it.
 
 **Code:** `src/routes/AdminPage.tsx:36-53,136-151`, `src/hooks/useUser.ts:21-85`, `src/hooks/useAdmin.ts:12-15`,
 `src/lib/authedFetch.ts:158,249`, `src/components/shared/AuthStatusIndicator.tsx:43`, `src/components/layout/navConfig.ts:89`,
