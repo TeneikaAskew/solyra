@@ -12808,63 +12808,390 @@ the role-drift presentation on top of that and waits for a CI run that includes 
 
 ### SCREEN-HELP — `/help`
 
-- **Purpose:** Glossary and cross-framework term reference.
+- **Purpose:** A glossary of 131 hand-written entries in 11 categories, searchable by term and one-line text and filterable by category, where a row opens to its detail and six rows quote indicator thresholds that the page reads from `GET /api/config/indicators`. It sits behind sign-in like every app route and has no loading, error or stale presentation: a failed config read shows fallback thresholds with nothing to say so, and the StochRSI fallback (20 and 80) differs from the server's (30 and 70). The search reads the term and the short text only, the empty state offers no way back, nothing links to an entry (no `TermHover` exists), and no control carries its state to assistive technology (matrix Gaps).
 - **Matrix:** [03 § 16](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#16--help-and-glossary)
 - **Status:** Production · **Blocking issue:** — · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/HelpPage.tsx` (296 lines)
-- **API calls (from source):** none found in the page component — issued by child components or hooks
-- **E2E specs:** `tests/help/help.spec.ts`
-- **PR lineage:** [#539](https://github.com/TeneikaAskew/stocks/pull/539) gamma glossary + endpoint · [#546](https://github.com/TeneikaAskew/stocks/pull/546) TermHover · [#423](https://github.com/TeneikaAskew/stocks/pull/423) 11 Strat entries
+- **Component:** `src/routes/HelpPage.tsx` (295 lines)
+- **Child components:** none (the box, the pills and the rows are inline in `src/routes/HelpPage.tsx`)
+- **API calls (from source):** `/api/config/indicators` (GET, through `useIndicatorConfig`, `src/hooks/useConfig.ts`); the app shell makes its own calls
+- **Stores:** none (component state `search`, `activeCategory` and `expanded`, and the React Query entry `['config','indicators']`)
+- **E2E specs:** `tests/help/help.spec.ts`, and for parts of the page `tests/shared/gamma-levels.spec.ts` (`Gamma Levels: Help page glossary`) and `tests/shared/navigation.spec.ts` (`route /help loads without fatal errors`, and `Refresh refetches the grid and Glossary navigates to /help`)
+- **PR lineage:** [#539](https://github.com/TeneikaAskew/stocks/pull/539) gamma glossary + endpoint · [#546](https://github.com/TeneikaAskew/stocks/pull/546) TermHover (never wired into a page, and since deleted: HELP-08) · [#423](https://github.com/TeneikaAskew/stocks/pull/423) 11 Strat entries
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
   WCAG 2.1 AA contrast, and acceptance tests for every state listed absent above.
 
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/config/indicators | rsi.{period, fast_period, oversold, overbought, zones, call_range, put_range, call_exit, put_exit}, ema.periods, atr.{period, high_threshold}, rvol.{period, signal_threshold}, stoch_rsi.{period, k_period, d_period, oversold, overbought}, signal.min_conditions (types: `useConfig.ts` IndicatorConfig) |  | 24hr staleTime; the documented `lib/config.py` defaults substitute while the query is loading or failed, with no visible marker | `useIndicatorConfig` (`useConfig.ts`) → `buildGlossary` → the six entries whose detail reads the live thresholds |
-| static content: 131 glossary entries in 11 categories |  |  |  | `buildGlossary` (inline in `HelpPage.tsx`) → Search box, Category pills, Glossary entries |
+| GET /api/config/indicators | rsi.{period, oversold, overbought}, ema.periods[0] and [1], stoch_rsi.{oversold, overbought}, rvol.signal_threshold, signal.min_conditions (types: `src/hooks/useConfig.ts` IndicatorConfig; the answer carries 22 leaf fields and the page reads these nine) | `get_indicator_config` in `platform/api/routers/config.py`: literals for the RSI thresholds, the five zones, ATR 2.0 and RVOL 1.0, and the `AppConfig` defaults of `lib/config.py` for the rest, since neither service's image holds an `alert_config.json` (V evidence); a gated route, 401 on staging and IAP's 302 on production | 24hr staleTime and gcTime, one retry; the literal fallbacks (RSI 14, 30 and 70, EMA 9 and 20, StochRSI 20 and 80, RVOL 1.0, 3 conditions) substitute while the query is pending or failed, with no visible marker, and the StochRSI fallback differs from the server's 30 and 70 | `useIndicatorConfig` (`src/hooks/useConfig.ts`) → `buildGlossary` → the six entries whose detail reads the live thresholds |
+| static content: 131 glossary entries in 11 categories |  | literals in `buildGlossary` (`src/routes/HelpPage.tsx:16-190`); the deployed host serves the same 131 (V evidence) |  | `buildGlossary` → Search box, Category pills, Glossary entries |
+
+No schedule or job feeds this page and it reads no table. `GET /api/glossary/gamma` serves a separate dictionary of 14 terms from `lib/gamma_glossary.py` and nothing in this app calls it.
 
 #### Displayed
 | ID | Element | Component |
 |---|---|---|
-| HELP-01 | Search box | inline in `HelpPage.tsx` |
-| HELP-02 | Category pills | inline in `HelpPage.tsx` (`categories`) |
-| HELP-03 | Glossary entries | inline in `HelpPage.tsx` (`buildGlossary`) |
-| HELP-08 | TermHover links from other pages | none on this page; the Options Gamma Map's `Term` spans (`SwingMode.tsx`) show their own tooltip from a mock glossary and its `Glossary` button opens `/help` with no term or anchor |
+| HELP-01 | Search box | inline in `src/routes/HelpPage.tsx` |
+| HELP-02 | Category pills | inline in `src/routes/HelpPage.tsx` (`categories`) |
+| HELP-03 | Glossary entries | inline in `src/routes/HelpPage.tsx` (`buildGlossary`) |
+| HELP-08 | TermHover links from other pages | none: no `TermHover` exists; the Options Gamma Map's `Term` spans (`src/components/options/SwingMode.tsx`) show their own `title` tooltip from a mock glossary, and its `Glossary` button opens `/help` with no term or anchor |
 
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| HELP-05 | Search | `filtered`: the term or short text contains the query, ignoring case, within the active category. |
-| HELP-06 | Filter by category | A pill selects its category; a second click on the same pill returns to all. |
+| HELP-05 | Search | `filtered`: the term or short text contains the query, ignoring case, within the active category; the expanded detail and the category are not searched and the query is not trimmed. |
+| HELP-06 | Filter by category | A pill selects its category, and a second click on the same pill returns to all; another pill replaces it, `All` resets it, and the search stays. |
 | HELP-07 | Expand an entry | The row toggles one expanded entry, showing its detail text; six entries render the config's live values there. |
 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| HELP-04 | empty | present | "No matching terms found." |
+| HELP-04 | empty | present | "No matching terms found." replaces the rows when the box matches nothing; the pills keep their counts, and nothing offers a way back or names the active category (matrix Gaps). |
+
+Not tracked as rows: loading is the route's `PageLoader` while the lazy chunk loads and nothing for the config read; error is nothing for a failed read, while an answer lacking an object the page reads replaces the page with the route's error screen; stale is nothing; permission is `AuthGate`'s sign-in screen in `firebase` mode, for the whole page (matrix Gaps).
 
 #### Journeys
-1. Look up a term: Opens /help (HELP-01) → Types "gamma" in the search box (HELP-01, HELP-05) → Expands the King Node (★) entry (HELP-07, HELP-03) → Reads the definition and its cross-references to Gate and Flip (HELP-03)
-2. Browse one framework: Clicks the category pill labeled "The Strat" (HELP-02, HELP-06) → Scans the entries for that framework (HELP-03) → Expands 2-1-2 and FTFC to learn the vocabulary (HELP-07, HELP-03)
-3. Arrive from elsewhere: Hovers a Term span on the Options Gamma Map (HELP-08) → its tooltip reads a separate mock glossary and the Glossary button opens /help with no term or anchor carried over; no link into a specific entry exists today (see the matrix Help Gaps) → Searches for the term manually (HELP-01, HELP-05)
+1. Look up a term: Opens /help (HELP-01) → Types "king" in the search box (HELP-01, HELP-05), which lists King Node (★) and Gate Node (◆); "gamma" lists nine entries and not King Node (executed) → Expands the King Node (★) entry (HELP-07, HELP-03) → Reads the definition; it names no Gate or Flip, and the entries carry no links to each other, so the next term is another search (HELP-05)
+2. Browse one framework: Clicks the category pill labeled "The Strat" (HELP-02, HELP-06) → Scans its 23 entries (HELP-03) → Expands Strat Combo, whose text uses 2-1-2 as its example (there is no entry named 2-1-2), and FTFC (Full Timeframe Continuity) to learn the vocabulary (HELP-07, HELP-03)
+3. Arrive from elsewhere: Hovers a Term span on the Options Gamma Map (HELP-08) → a native tooltip shows the mock glossary's text, and the span is not a link → Clicks the Gamma Map's Glossary button (HELP-08) → /help opens with all 131 rows and nothing selected; no term, anchor or query is carried over, and none is read if one is added (see the matrix Help Gaps) → Searches for the term manually (HELP-01, HELP-05)
+4. Look up a threshold: Types "oversold" (HELP-01, HELP-05) → "No matching terms found." although the RSI and StochRSI entries define it, because the box does not read the expanded text (HELP-04, HELP-05) → Opens the Indicators pill instead (HELP-02, HELP-06) → Expands StochRSI (HELP-07) → Reads its thresholds, the server's 30 and 70 or, while the config read is pending or has failed, the fallbacks 20 and 80, with nothing to say which (HELP-03; see the matrix Help Gaps)
 
 #### Elements
+
+In every body below, "executed" means one of four things, named where a body needs it. Page: the page of solyra `645a325` (no file under `src/` has changed since) rendered in a hermetic Chromium browser (the e2e launcher's Vite server, an en-US locale) in `open` auth mode, with the Help routes answered by Playwright route mocks (`mockHelpApi`, `tests/helpers/fixtures/help.ts`) unless a body names another answer for `/api/config/indicators`; the probe specs that did this are scratch files and are not in the repository. Handler: the real `get_indicator_config` of `platform/api/routers/config.py` and `public_glossary` of `lib/gamma_glossary.py` of stocks `54829c93`, called in Python from a directory with no `alert_config.json` (the way both services' images have it) and, where a body says so, from the stocks root, which has one. Deployed: the host `https://solyra-stocks.lovable.app` and the two Cloud Run images, read on 2026-10-02 (V evidence). Mutation: one line of the product code changed in a scratch copy and the named specs run. "Read" marks what was only read in the code, "V evidence" the comment on stocks issue 1234 that the matrix links, and "not checked" what was neither run nor read to a conclusion.
+
 ##### HELP-01 · Search box
+
+**Shows or does:** The search box under the page heading (`src/routes/HelpPage.tsx:217-227`): a decorative magnifier (`aria-hidden`) and a
+plain `<input type="text">` with the placeholder `Search terms...` and no label, `name`, `id` or `aria-label`, so its accessible name is the
+placeholder (executed: `textbox "Search terms..."`). Every keystroke sets the `search` state (`src/routes/HelpPage.tsx:193`, `:223`) and the
+list narrows at once (HELP-05): there is no debounce and no submit, and Enter and Escape do nothing and leave the text in the box
+(executed). Within the page's content it is the first stop of the tab order: from the box Tab visits `All`, the eleven pills and then the
+rows (executed). The text is component state only: nothing is written to the URL as it is typed, and a reload, or a link such as
+`/help?q=king`, leaves the box empty with every entry listed (executed; matrix Gaps).
+
+**Needs:** Nothing: it makes no request. The glossary it filters is in the page (HELP-03).
+
+**States:** Always enabled, and empty on arrival. A query that matches nothing is HELP-04. The page sits behind `ConfigGate` and `AuthGate`
+(`src/App.tsx:73-82`, `src/components/layout/AppGroup.tsx:13-18`), so in `firebase` mode a signed-out visitor sees the sign-in screen and
+not this box (executed on the deployed host; V evidence). It has no loading, error or stale presentation.
+
+**Acceptance criteria:**
+- Given the page has loaded, then the box is visible and empty and reads `Search terms...` (`search input is present`,
+  `tests/help/help.spec.ts`, on main, asserts only that the first match of `input[type="text"], input[placeholder*="search" i]` is visible;
+  the placeholder and the empty value are executed).
+- Given text is typed, then the list narrows as it is typed (HELP-05; `search narrows the list by term or short text, ignoring case, and
+  says when nothing matches`, `tests/help/help.spec.ts`, added on this branch, not on main; executed).
+- Given Enter or Escape is pressed in the box, then nothing happens and the text stays (executed; no test).
+- Given the page is reloaded, or `/help?q=king` is opened, then the box is empty and all 131 entries show (executed; matrix Gaps).
+- Given only the keyboard, then from the box Tab reaches `All`, the pills and then the rows (executed; no test).
+- Given a screen reader, then the box is announced by its placeholder alone and the number of matches is not announced (executed: no
+  `aria-live` region; matrix Gaps).
+
+**Tests:** `search input is present` asserts presence only: the first match of `input[type="text"], input[placeholder*="search" i]` is
+visible, which any text input on the page would satisfy. `search "King Node" returns the gamma entry` (`tests/shared/gamma-levels.spec.ts`)
+types `King Node` into `getByPlaceholder(/Search/)` and asserts that the `King Node (★)` entry is visible; that holds when the box filters
+nothing (mutation: `matchesSearch = true` at `src/routes/HelpPage.tsx:203` leaves all seven Help tests on main green) and fails when the
+query is not lower-cased (mutation). Te stays unticked: the box's effect on the list is asserted on main by neither test, and the test that
+asserts it was added on this branch and waits for a CI run that includes the branch's tests (matrix Gaps).
+
+**Code:** `src/routes/HelpPage.tsx:193,217-227`, `src/App.tsx:73-82`, `src/components/layout/AppGroup.tsx:13-18`.
 
 ##### HELP-02 · Category pills
 
+**Shows or does:** The pill row between the box and the list (`src/routes/HelpPage.tsx:229-257`): `All (131)` first (`:231-240`, the length
+of the whole glossary), then one pill per category in the order its first entry appears in the page's array (`:200`, `:241-256`):
+`Performance (7)`, `The Strat (23)`, `Indicators (9)`, `ORB (2)`, `Options (22)`, `Earnings Brief (31)`, `Gamma Levels (12)`, `Signals (4)`,
+`Playbook (4)`, `Dashboard (4)` and `Structural Levels (13)`, which add up to 131 (executed). The categories are read from the entries (`new
+Set(glossary.map(g => g.category))`), so an entry with a new category string adds a pill and no pill can be empty (the smallest, `ORB`,
+holds two entries). Each number counts the whole glossary and never moves with the search (executed), so with a query typed a pill can
+promise rows the list does not show. The active pill is filled with the accent colour and the others are outlined (`:233-237`, `:247-251`);
+that colour is the only cue: no pill carries `aria-pressed`, and the only `aria-*` attribute on the page's content is an icon's
+`aria-hidden` (executed). Each pill is a native `<button>`: Tab reaches it and Enter or Space activates it (executed). The row wraps
+(`flex-wrap`, `:230`).
+
+**Needs:** Nothing: it makes no request. The pills come from the entries (HELP-03), not from the config read.
+
+**States:** Present from the first paint. When the box matches nothing the row stays as it is and HELP-04 shows below it. Behind sign-in as
+HELP-01. It has no loading, error or stale presentation.
+
+**Acceptance criteria:**
+- Given the page has loaded, then the row reads `All (131)` and the eleven pills above, with `All` filled (executed).
+- Given any pill is clicked, then the rows shown equal its number and every row carries its category's badge (executed for all eleven; `a
+  category pill narrows the list, a second click returns to all, and another pill switches`, `tests/help/help.spec.ts`, added on this
+  branch, not on main, asserts the number for `The Strat` and `Options`).
+- Given a query that matches nothing, then the pills keep their numbers and an active pill stays active (executed; matrix Gaps).
+- Given only the keyboard, then Tab visits `All` and the pills in order and Enter or Space activates each (executed; no test).
+- Given a screen reader, then no pill announces whether it is the active one (executed; matrix Gaps).
+
+**Tests:** `Gamma Levels category pill exists` (`tests/shared/gamma-levels.spec.ts`) asserts that a button named like `Gamma Levels (n)` is
+visible: the label and a number in parentheses, presence only. With every pill announcing one entry too many (mutation: `.length + 1` at
+`src/routes/HelpPage.tsx:242`) all seven Help tests on main stay green. The number against the rows is asserted only by the test added on
+this branch, which waits for a CI run that includes the branch's tests; Te stays unticked (matrix Gaps).
+
+**Code:** `src/routes/HelpPage.tsx:194,200,229-257`.
+
 ##### HELP-03 · Glossary entries
+
+**Shows or does:** The list under the pills (`src/routes/HelpPage.tsx:259-292`): one row for each entry that passes the box and the active
+pill (HELP-05, HELP-06), in the order of the page's array and not alphabetically (the first rows are `Win Rate`, `Profit Factor` and `Total
+Return`, and the Earnings Brief entries come in two runs, `:108-114` and `:164-188`). A row (`:265-289`) is one button: the term in bold, a
+category badge, the one-line `short` text and a `+` marker, which turns into a minus sign when the row is open (HELP-07). There are 131
+entries with 131 distinct terms, and each opens to a non-empty detail (executed). They are literals in `buildGlossary` (`:16-190`), except
+six `detail` strings that interpolate nine values read from the indicator config: RSI (`:63`: period, oversold, overbought), EMA (`:64`: the
+first two periods), RVOL (`:69`: the signal threshold), StochRSI (`:71`: oversold, overbought), Signal Score (`:131`) and Base Score
+(`:132`), both the minimum conditions.
+
+The config read is `useIndicatorConfig()` (`:198`, `src/hooks/useConfig.ts:55-66`), which asks `GET /api/config/indicators`. While it is
+pending, and for good when it fails, the nine values fall back to literals (`:17-25`): RSI 14, 30 and 70, EMA 9 and 20, StochRSI 20 and 80,
+RVOL 1.0 and 3 conditions. Executed, the six details read: with the real handler's answer (RSI 14, 30 and 70, EMA 9 and 20, RVOL 1.0,
+StochRSI 30 and 70, 3 conditions) `Below 30 = oversold`, `RSI 14 (14-period)`, `EMA 9 (fast) and EMA 20 (slow)`, `requires RVOL > 1.0`,
+StochRSI `Below 30 = oversold. Above 70 = overbought` and `A score of 3/5 is the minimum`; with the shared mock of the specs
+(`src/mocks/help.ts`) StochRSI reads `Below 20 ... Above 80` and Signal Score `A score of 7/5 is the minimum`; with the read failing (a 500:
+two requests about a second apart) or held, the fallbacks, and nothing on the page marks the difference (the text outside the rows stayed
+the heading, the subtitle and the pills); and an open StochRSI row changed in place from `Below 20 ... Above 80` to `Below 30 ... Above 70`
+when a held read was answered (matrix Gaps).
+
+What the page says about the King: `King Node (★)` reads `The strike with the largest absolute net GEX in the visible window.`
+(`src/routes/HelpPage.tsx:123`) and `Gate Node (◆)` reads `A secondary high-gamma strike (≥20% of the King's |GEX|).`
+(`src/routes/HelpPage.tsx:124`). The Options Flow legend reads `kings[0]`, the lowest-strike King, which is not the largest: the executed
+measurement is in the Options Flow Gaps of the matrix (section 07, `The King chip on Swing and Trinity is the lowest-strike King, not the
+largest`) and is not repeated here. The Gamma Map's tooltip and the server's dictionary define the King in two further ways (HELP-08; matrix
+Gaps).
+
+**Needs:** `GET /api/config/indicators`, gated (401 on staging and IAP's 302 on production without a token; V evidence), through
+`useIndicatorConfig`. The handler (`platform/api/routers/config.py:75-128`) answers the RSI thresholds, the five RSI zones, ATR 2.0 and RVOL
+1.0 from literals, the RSI and EMA periods from `IndicatorConfig` (`lib/config.py:21-38`) and the StochRSI thresholds and `min_conditions`
+from `SignalConfig` (`lib/config.py:423-436`); neither service's image holds an `alert_config.json`, so `load_config` returns those defaults
+(`lib/config.py:704-718`; V evidence: both images read from the registry). Executed with no file in the working directory the nine values
+the page reads are 14, 30, 70, 9, 20, 30.0, 70.0, 1.0 and 3, and they are the same with the repository's file; only `call_range` and
+`put_range`, which no page renders, differ. The page reads nine fields of that answer, not the whole shape: `rsi.period`, `rsi.oversold`,
+`rsi.overbought`, `ema.periods[0]` and `[1]`, `stoch_rsi.oversold`, `stoch_rsi.overbought`, `rvol.signal_threshold` and
+`signal.min_conditions`. The answer is held 24 hours (`src/hooks/useConfig.ts:63-64`) with one retry (`src/App.tsx:30-37`).
+
+**States:** Loading: the route's `PageLoader` while the lazy chunk loads (`src/App.tsx:95`) and nothing for the config read, since the rows
+are there at once with the fallbacks. Empty: HELP-04. Error: none for the read (executed: a 500 shows nothing, and a 401 shows only the
+shell's `Session expired` pill, SHELL-16, with the page unchanged); an answer that lacks an object the page reads (`{}`) throws in
+`buildGlossary` (`cfg?.rsi.period`, `:17`, and the eight reads after it) and the route's error screen (`Page error`, SHELL-06) replaces the
+whole page (executed), while a missing field inside an object that is present falls back per field (`signal: {}` read `3`; matrix Gaps).
+Stale: none, the answer is held 24 hours with no marker. Permission: the sign-in screen in `firebase` mode (executed on the deployed host).
+
+**Acceptance criteria:**
+- Given the page has loaded, then it lists 131 entries and the pill numbers add up to 131 (executed; `search narrows the list by term or
+  short text, ignoring case, and says when nothing matches`, added on this branch, asserts the rows equal the `All` number).
+- Given the Gamma Levels pill is clicked, then `GEX (Gamma Exposure)`, `Gamma Flip`, `King Node (★)`, `Gate Node (◆)`, `Regime: Positive
+  Gamma` and `Regime: Negative Gamma` are visible, and under The Strat `Failed 2U`, `Failed 2D`, `22 Continuation` and `212 Reversal` are
+  (`clicking the Gamma Levels pill filters the glossary` and `Failed 2U / Failed 2D entries exist under The Strat category`,
+  `tests/shared/gamma-levels.spec.ts`, on main; they assert the ten terms are visible and would pass with every entry listed).
+- Given the config answers with the real handler's values, then the six rows quote them (executed; no test).
+- Given the config read fails or is pending, then the six rows quote the fallbacks and nothing says so (executed; matrix Gaps).
+- Given the answer lacks the `rsi` object, then the route's error screen replaces the page (executed; matrix Gaps).
+- Given a signed-out visitor on the deployed host, then the sign-in screen shows and not the glossary (executed; V evidence).
+
+**Tests:** No test on main asserts an entry beyond ten terms: `renders Help heading` (`tests/help/help.spec.ts`) asserts the `h1`, `renders
+within perf budget (strict 3s, static page)` the load time, and `route /help loads without fatal errors` (`tests/shared/navigation.spec.ts`)
+a `nav`, a `main` and a quiet console. The two Help tests of `tests/shared/gamma-levels.spec.ts` that open the pills assert the ten terms
+above and nothing of their short text, badge or detail; no test opens a row (HELP-07). The config route is pinned as a contract and not as
+thresholds: `test_operation_answers` for `GET /api/config/indicators` (`tests/api/test_route_coverage.py`) pins the status 200 with a JSON
+envelope against a dead backend (the handler reads no database), `src/mocks/contract.test.ts` checks that the request of
+`src/hooks/useConfig.ts` is a declared operation and that the shared mock's answer matches `IndicatorConfigResponse` (`every /api request
+the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no
+undeclared fields)`), and `tests/api/test_openapi_snapshot.py` (`test_committed_openapi_snapshot_matches_app`) fails when the committed
+`platform/api/openapi.json`, the document solyra vendors, stops matching the route or the model; none asserts a value, and the mock differs
+from the real answer in six of 22 fields (matrix Gaps). Te stays unticked: the page layer is the presence of ten terms and the handler layer
+is a status and a shape.
+
+**Code:** `src/routes/HelpPage.tsx:16-190,192-200,259-292`, `src/hooks/useConfig.ts:13-42,55-66`, `src/App.tsx:30-37,95`;
+`platform/api/routers/config.py:75-128`, `lib/config.py:21-38,423-436,704-718`.
 
 ##### HELP-08 · TermHover links from other pages
 
+**Shows or does:** Nothing under this name exists. A `TermHover` component and a `useGammaGlossary` hook were built for the glossary
+endpoint in stocks PR #546 (merged 2026-05-31, commit `e1ce147` in solyra's history), whose own description says it is "not yet wired into
+any page"; no page ever imported them, and both were deleted in `4f2c87b` (`docs/TEST_COVERAGE_AUDIT.md` section 3 gives the forensics; the
+tree holds neither file, executed by `ls`). What exists instead is two links into the glossary, neither carrying a term, and a stand-in for
+a hover glossary. The header's Support menu has `Help & Glossary` (`src/components/layout/navConfig.ts:91`; SHELL-01). The Options Gamma
+Map's toolbar has a `Glossary` button (`src/components/options/SwingMode.tsx:307-315`) that calls `navigate('/help')`: executed, it lands on
+`/help` with 131 rows, an empty box, `All` active and no row open, and a link with a term in it (`/help?term=King%20Node`,
+`/help#king-node`, `/help?q=king`, `/help?category=Gamma%20Levels`) is ignored in the same way. The stand-in is the Gamma Map's `Term`
+component (`src/components/options/SwingMode.tsx:129-138`), which wraps a term in `<span class="hs-term" title="<name>: <short>">`, with the
+text taken from a mock `glossary` of 13 keys (`src/data/gammaMapMock.ts:255-319`); with the mock grid it showed 13 such spans, none inside
+an anchor and none focusable (executed), so the text can only show as the browser's native tooltip, which neither the keyboard nor touch
+reaches (read), and nothing links to the Help entry. A key missing from the mock renders its children plain.
+
+The two glossaries do not agree. The Gamma Map's tooltip defines the King as `Strike where |Net GEX| ≥ 50% of max in window, primary dealer
+magnet / pin.` (`src/data/gammaMapMock.ts:256-261`), which allows several Kings; this page's `King Node (★)` entry gives the strike with the
+largest absolute net GEX in the visible window (`src/routes/HelpPage.tsx:123`); and the dictionary that `GET /api/glossary/gamma` serves
+gives the same short definition (the strike with the largest absolute net GEX in the window) and lets several Kings coexist within 50% of
+the maximum in its long text (`lib/gamma_glossary.py:99-122`). What the Options Flow legend shows for the King is in the Options Flow Gaps
+of the matrix (section 07). `GET /api/glossary/gamma` has no caller in solyra: it serves 14 terms (executed), five of which (`midpoint`,
+`hedge_node`, `opex_node`, `vex`, `dte`) have no entry of that name on this page (matrix Gaps).
+
+**Needs:** Nothing: no request. The tooltip text is a bundled mock, and no read of `GET /api/glossary/gamma` exists.
+
+**States:** None of its own. The Gamma Map and its `Term` spans need a signed-in session in `firebase` mode, like every app route.
+
+**Acceptance criteria:**
+- Given a term on the Gamma Map, then its span carries a `title` with the mock glossary's text for it and is neither a link nor focusable
+  (executed: the attribute, no anchor and no `tabindex`; the native tooltip itself was not captured; no test).
+- Given the `Glossary` button is clicked, then the URL becomes `/help` and nothing is preselected (`Refresh refetches the grid and Glossary
+  navigates to /help`, `tests/shared/navigation.spec.ts`, on main, asserts the URL only; executed for the rest).
+- Given a URL that names a term, then the Help page ignores it (executed; matrix Gaps).
+- Given a `TermHover` is looked for in the tree, then none is found (executed; matrix Gaps).
+
+**Tests:** `Refresh refetches the grid and Glossary navigates to /help` (`tests/shared/navigation.spec.ts`) clicks the Glossary button and
+waits for the URL `**/help`; it asserts neither the Help page, nor a `Term` span, nor a tooltip, and no other test touches a `Term`. Te
+stays unticked: the row's element does not exist, and the only assertion nearby is the toolbar button's navigation.
+
+**Code:** `src/components/options/SwingMode.tsx:20,129-138,307-315`, `src/data/gammaMapMock.ts:255-319`,
+`src/components/layout/navConfig.ts:91`; `lib/gamma_glossary.py:99-122,454-466`, `platform/api/routers/glossary.py:30-54`.
+
 ##### HELP-05 · Search
+
+**What happens:** `filtered` (`src/routes/HelpPage.tsx:202-206`) keeps an entry when the box is empty or the lower-cased query is contained
+in the lower-cased term or in the lower-cased `short` text, and the active pill allows its category (`matchesCat`, `:204`; HELP-06). It is a
+plain substring test: no regular expression (a typed `(` matches the 53 entries that contain one), no word boundaries, no ranking, no
+highlighting and no trimming. Executed: `king node` lists 1 entry (`King Node (★)`); `KING` and `King` list 2 (`King Node (★)` and `Gate
+Node (◆)`, whose short text says `the King's`); `★` lists 1; `2-1-2` lists `Strat Combo`, by its short text; `rsi` lists 5, the two RSI
+entries and `Iron Condor`, `MAE / MFE` and `Archetype: reversal_play`, whose short text has `rsi` inside `version`, `Excursion` and
+`reversing`; `gamma` lists 9 entries (`Gamma`, `GEX (Gamma Exposure)`, `Gamma Flip`, `Gamma Balance`, the two regimes, `Gate Node (◆)`,
+`Gamma Balance Tag (⇅)` and `Zero Gamma`) and not `King Node (★)`. A single space lists all 131 entries, ` king` lists only `Gate Node (◆)`
+and `king ` only `King Node (★)`: the query is not trimmed. What it does not read: the expanded `detail` (`oversold` and `Rob Smith` list
+nothing, though the RSI, StochRSI and The Strat entries contain them) and the category (`Structural Levels` lists the 2 entries whose short
+text says so, not the 13 of the category). With a pill active it narrows within the category (executed: `The Strat` with `gap` lists `Gap
+High / Gap Low`, and with the pill cleared 5 entries match `gap`). The list changes on each keystroke, and the pills' numbers do not move
+(executed).
+
+**Needs:** Nothing but the entries (HELP-03); no request.
+
+**States:** A result is the list of HELP-03; no match is HELP-04. Behind sign-in as HELP-01.
+
+**Acceptance criteria:**
+- Given `GATE NODE` is typed, then `Gate Node (◆)` is listed, `Win Rate` is gone and every row left contains the query in any case (`search
+  narrows the list by term or short text, ignoring case, and says when nothing matches`, `tests/help/help.spec.ts`, added on this branch,
+  not on main).
+- Given `King Node` is typed, then `King Node (★)` is visible (`search "King Node" returns the gamma entry`,
+  `tests/shared/gamma-levels.spec.ts`, on main; it asserts only that the entry is visible).
+- Given `peak-to-trough` is typed, then `Max Drawdown (Max DD)` is listed, matched by its short text and not by its term (the added test).
+- Given a word that is only in an expanded text is typed, then nothing matches (executed; matrix Gaps).
+- Given a query with a leading space is typed, then an entry that starts with the word does not match (executed; matrix Gaps).
+- Given a pill is active, then the query narrows within its category (executed).
+
+**Tests:** `search "King Node" returns the gamma entry` types `King Node` and asserts that `King Node (★)` is visible. By mutation it fails
+when the query is not lower-cased (`includes(search)` for `includes(search.toLowerCase())` at `src/routes/HelpPage.tsx:203`) and stays green
+when the search filters nothing (`matchesSearch = true`) and when it ignores the short text, so it cannot tell a search from a list that
+shows everything. The test added on this branch asserts the narrowing, the case, the short text and the empty state, and fails under each of
+those four mutations (the one test; see the matrix Gaps for the runs). Te stays unticked: on main only the weak assertion exists, and the
+added test waits for a CI run that includes the branch's tests.
+
+**Code:** `src/routes/HelpPage.tsx:193,202-206`.
 
 ##### HELP-06 · Filter by category
 
+**What happens:** A category pill's `onClick` (`src/routes/HelpPage.tsx:246`) sets `activeCategory` to its category, or back to `null` when
+it is already the active one; `All` sets `null` (`:232`). The list then keeps the entries of that category (`:204`) and the box is left
+alone (executed: `Options` active and `gamma` typed lists `Gamma` only, and pressing `All` leaves `gamma` in the box). A click on another
+pill replaces the active category without going through `All` (executed). For all eleven categories the rows shown equal the pill's number
+and every row carries that category's badge, and a second click on the pill returns all 131 rows (executed). `expanded` is not reset: an
+open row that a pill hides and shows again is still open (executed; HELP-07). The choice is component state: it is not written to the URL
+and a reload clears it (executed).
+
+**Needs:** Nothing: it makes no request.
+
+**States:** A pill never empties the list on its own, since each category holds at least two entries (HELP-04). Behind sign-in as HELP-01.
+
+**Acceptance criteria:**
+- Given a pill is clicked, then only its category's rows show and their number equals the pill's (`a category pill narrows the list, a
+  second click returns to all, and another pill switches`, `tests/help/help.spec.ts`, added on this branch, not on main, for `The Strat` and
+  `Options`; executed for all eleven).
+- Given the active pill is clicked again, then every row returns and `All` is filled (the added test; executed for all eleven).
+- Given another pill is clicked while one is active, then it replaces the first (the added test).
+- Given `All` is clicked with a category active, then every row returns, and a query in the box stays (the added test asserts the rows; the
+  query kept is executed).
+- Given the Gamma Levels pill is clicked, then `GEX (Gamma Exposure)`, `Gamma Flip`, `King Node (★)`, `Gate Node (◆)` and the two regime
+  entries are visible, and under The Strat `Failed 2U`, `Failed 2D`, `22 Continuation` and `212 Reversal` are (`clicking the Gamma Levels
+  pill filters the glossary` and `Failed 2U / Failed 2D entries exist under The Strat category`, `tests/shared/gamma-levels.spec.ts`, on
+  main).
+
+**Tests:** The two tests on main click a pill and assert that ten terms are visible; neither asserts that another entry is hidden, a count,
+a second click, a switch or `All`. With a pill that never filters (mutation: `matchesCat = true` at `src/routes/HelpPage.tsx:204`) all seven
+Help tests on main stay green. The added test fails under that mutation, under a second click that does not return to all
+(`setActiveCategory(cat)` at `:246`), under a click that does not replace the active pill, under an `All` that does nothing (`onClick={() =>
+{}}` at `:232`) and under a pill that announces one entry too many (`.length + 1` at `:242`). Te stays unticked: the assertions that matter
+are in the added test, which waits for a CI run that includes the branch's tests (matrix Gaps).
+
+**Code:** `src/routes/HelpPage.tsx:194,200,204,229-257`.
+
 ##### HELP-07 · Expand an entry
 
+**What happens:** A click, or Enter or Space with the row focused, toggles `expanded` (`src/routes/HelpPage.tsx:267`), which holds the term
+of the one open row or `null`: clicking the open row closes it, and clicking another row closes the first and opens that one (executed:
+never more than one detail on the page). The marker turns from `+` into a minus sign (U+2212) and the `detail` (`:284-288`) appears under
+the term inside the same button, with a top border; a click on the detail itself closes the row again (executed). All 131 entries have a
+detail, 91 to 679 characters long (executed). `expanded` survives a box or pill change that hides the row and shows it again (executed), and
+a late config answer: an open `StochRSI` row changed from `Below 20 ... Above 80` to `Below 30 ... Above 70` in place when a held read was
+answered, with nothing to say so (executed; matrix Gaps). The six rows that quote the config show its values (HELP-03 lists them). The open
+row is not written to the URL and a reload closes it (executed). A row is a native `<button>` with no `aria-expanded`, and its accessible
+name includes the short text and the marker (executed).
+
+**Needs:** `GET /api/config/indicators` for the six rows that quote it (HELP-03); every other row needs nothing.
+
+**States:** Closed is the default; open shows the detail. A hidden row stays open in memory (above). Behind sign-in as HELP-01. An answer
+lacking an object the page reads replaces the whole page before any row can be opened (HELP-03).
+
+**Acceptance criteria:**
+- Given a row is clicked, then its detail shows and the marker reads a minus sign (executed; no test).
+- Given the same row is clicked again, or another row is clicked, then its detail goes (executed; no test).
+- Given a row has focus, then Enter opens it and Space closes it (executed; no test).
+- Given the RSI row is opened with the real handler's answer, then it reads `Below 30 = oversold` and `RSI 14 (14-period)`, StochRSI `Below
+  30 = oversold. Above 70 = overbought` and Signal Score `A score of 3/5 is the minimum` (executed; no test).
+- Given the config read has failed, then those rows quote the fallbacks and nothing says so (executed; matrix Gaps).
+- Given a screen reader, then whether a row is open is not announced (executed; matrix Gaps).
+
+**Tests:** No test on main or on this branch opens a row: the specs and the Vitest files hold no assertion on an expanded detail or on the
+marker, and with an entry click that expands nothing (mutation: `onClick={() => {}}` at `src/routes/HelpPage.tsx:267`) all seven Help tests
+on main and the two added tests stay green. The config route is pinned as in HELP-03: `test_operation_answers` for `GET
+/api/config/indicators` (`tests/api/test_route_coverage.py`) pins the status, `src/mocks/contract.test.ts` and
+`tests/api/test_openapi_snapshot.py` pin the declaration and the shape, and none asserts a value. Te stays unticked: no test asserts the row
+at either layer.
+
+**Code:** `src/routes/HelpPage.tsx:195,264-290`, `src/hooks/useConfig.ts:55-66`.
+
 ##### HELP-04 · State: empty (no entry matches)
+
+**Shows or does:** When no entry passes the box and the active pill, the list is replaced by one centred paragraph, `No matching terms
+found.` (`src/routes/HelpPage.tsx:261-262`: `py-8 text-center text-sm`, muted colour). The box and the pills stay as they were: the numbers
+still count the whole glossary, `All (131)` stays filled when no category is active, and an active category pill stays active (executed).
+The message names neither the query nor the active category, offers no clear button or link back, and sits in no `aria-live` region
+(executed: no `role=alert`, no `aria-live`, no button in the list region), so a screen reader is not told that the list emptied. It can only
+follow text in the box, because every pill holds at least two entries (executed, all eleven); with a pill active it also follows a query
+that matches entries only in other categories (executed: `ORB` active and `king` typed shows it, though two entries in other categories
+match `king`), and it follows a word that is defined only in an expanded text, such as `oversold` or `Rob Smith`, since the box does not
+search the detail (HELP-05; executed). Emptying the box, or changing the pill, brings the rows back (executed: 131 rows after the box was
+emptied).
+
+**Needs:** Nothing: it makes no request. It is a branch of the render, `filtered.length === 0`.
+
+**States:** This is the state; its siblings on the page are the list of HELP-03 and, behind sign-in, the sign-in screen (as HELP-01). There
+is no loading, error or stale form of it.
+
+**Acceptance criteria:**
+- Given a query that matches no term or short text, such as `zzzz-no-such-term`, then `No matching terms found.` replaces every row (`search
+  narrows the list by term or short text, ignoring case, and says when nothing matches`, `tests/help/help.spec.ts`, added on this branch,
+  not on main; executed).
+- Given the box is emptied afterwards, then the 131 rows return and the message goes (the same test; executed).
+- Given a category is active and the query matches only other categories (`ORB` active, `king` typed), then the same message shows and the
+  pill stays active (executed; matrix Gaps).
+- Given a word that appears only in an expanded text (`oversold`, `Rob Smith`), then the message shows though entries define it (executed;
+  matrix Gaps).
+- Given a screen reader, then nothing announces the message (executed; matrix Gaps).
+
+**Tests:** No test on main asserts it: the text `No matching terms found.` appears in no spec on main and in no Vitest file. The test added
+on this branch asserts the message and zero rows for a query that matches nothing, and their reversal when the box is emptied; it passes on
+the unchanged page and fails with the message's text removed (mutation: `>No matching terms found.</p>` became `></p>` at
+`src/routes/HelpPage.tsx:262`). Te stays unticked: it waits for a CI run that includes the branch's tests (matrix Gaps).
+
+**Code:** `src/routes/HelpPage.tsx:202-206,261-262`.
 
 ### SCREEN-SETTINGS — `/settings`
 
