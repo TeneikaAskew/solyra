@@ -13,7 +13,9 @@
  */
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { mockAdminApi, type AdminMockOpts } from '../helpers/fixtures/admin';
+import type { RouteRow } from '@/hooks/useAdmin';
+import { MOCK_ADMIN_ROUTES, mockAdminApi, type AdminMockOpts } from '../helpers/fixtures/admin';
+import { M } from '../helpers/mocks';
 
 async function mockAndOpen(page: Page, opts: AdminMockOpts = {}) {
   await mockAdminApi(page, opts);
@@ -159,5 +161,110 @@ test.describe('Admin — Chart & report data tab', () => {
 
     await page.getByTestId('refresh-market_data_daily').click();
     await expect.poll(() => refreshedId, { timeout: 5_000 }).toBe('market_data_daily');
+  });
+});
+
+test.describe('Admin · Models & routing tab', () => {
+  // ADMIN-07. The route table's own spec (admin.spec.ts) changes a model
+  // within one provider and asserts the PUT body; this one drives the other
+  // half: a change of provider, the server's refusal of a provider with no
+  // adapter, and the row after a save the server accepts.
+  test('a provider change re-points the model select, a refused save shows the server reason and an accepted save updates the row', async ({
+    page,
+  }) => {
+    // The routes list is stateful so the refetch after a save reads what the
+    // PUT wrote, as the real handler's does.
+    let stored: RouteRow[] = MOCK_ADMIN_ROUTES.routes.map((r) => ({ ...r }));
+    const puts: unknown[] = [];
+    const REFUSAL = {
+      detail:
+        "Provider 'anthropic' has no registered adapter — the pipeline will crash if this route is activated. Install the SDK and set credentials first.",
+    };
+    await mockAdminApi(page);
+    // Registered after mockAdminApi, so these win (newest-first matching).
+    await page.route('**/api/admin/routes', (r) => r.fulfill(M.ok({ routes: stored })));
+    await page.route('**/api/admin/routes/*', (r) => {
+      if (r.request().method() !== 'PUT') return r.continue();
+      const role = new URL(r.request().url()).pathname.split('/').pop() ?? '';
+      const body = JSON.parse(r.request().postData() || '{}') as { provider: string; model: string };
+      puts.push(body);
+      if (body.provider === 'anthropic') {
+        return r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify(REFUSAL) });
+      }
+      stored = stored.map((x) =>
+        x.role === role ? { ...x, ...body, updated_at: '2026-10-01T20:50:00Z', updated_by: 'admin-ui' } : x,
+      );
+      return r.fulfill(M.ok(stored.find((x) => x.role === role)));
+    });
+
+    await page.goto('/admin');
+    await page.getByTestId('admin-tab-models').click();
+    await expect(page.getByTestId('admin-routes-table')).toBeVisible();
+    const judgeRow = page.locator('tr', { hasText: 'judge' });
+    await expect(page.getByTestId('save-judge')).toBeDisabled();
+
+    // A provider with no credentials: the model select is re-pointed at that
+    // provider's first model (a disabled "(no creds)" option) and the row is
+    // now a change, so Save is offered.
+    await page.getByTestId('provider-judge').selectOption('anthropic');
+    await expect(page.getByTestId('model-judge')).toHaveValue('claude-sonnet-4-6');
+    await expect(page.getByTestId('model-judge').locator('option')).toHaveText(/claude-sonnet-4-6 \(no creds\)/);
+    await expect(page.getByTestId('save-judge')).toBeEnabled();
+
+    // The server refuses it: its reason is shown and the row is not updated.
+    await page.getByTestId('save-judge').click();
+    await expect(page.getByText(/update route failed: 400/)).toContainText('has no registered adapter');
+    expect(puts).toEqual([{ provider: 'anthropic', model: 'claude-sonnet-4-6' }]);
+    await expect(judgeRow).not.toContainText('admin-ui');
+
+    // A credentialed pair is accepted: the refusal goes, the refetched row
+    // carries the writer and the new model, and there is nothing left to save.
+    await page.getByTestId('provider-judge').selectOption('vertex');
+    await page.getByTestId('model-judge').selectOption('gemini-2.5-pro');
+    await page.getByTestId('save-judge').click();
+    await expect(judgeRow).toContainText('admin-ui');
+    expect(puts[1]).toEqual({ provider: 'vertex', model: 'gemini-2.5-pro' });
+    await expect(page.getByTestId('model-judge')).toHaveValue('gemini-2.5-pro');
+    await expect(page.getByTestId('save-judge')).toBeDisabled();
+    await expect(page.getByText(/update route failed/)).toHaveCount(0);
+    await page.waitForLoadState('networkidle');
+  });
+});
+
+test.describe('Admin · permission', () => {
+  // ADMIN-13. admin-auth.spec.ts and admin.spec.ts cover the denied card for
+  // an identity /api/me does not call admin. This covers the other
+  // presentation of the same state: /api/me says admin (so the page mounts the
+  // tabs) while the admin routes disagree, as after a role is revoked. Each
+  // panel must say so, and none may fall back to an empty table.
+  test('an account that /api/me calls admin, whose admin routes answer 403, sees the rejection on every tab and never an empty table', async ({
+    page,
+  }) => {
+    await mockAdminApi(page);
+    const forbidden = (r: import('@playwright/test').Route) =>
+      r.fulfill({ status: 403, contentType: 'application/json', body: '{"detail":"admin access required"}' });
+    // Registered after mockAdminApi, so these win (newest-first matching).
+    await page.route('**/api/admin/users', forbidden);
+    await page.route('**/api/admin/data-sources', forbidden);
+    await page.route('**/api/admin/routes', forbidden);
+
+    await page.goto('/admin');
+    await expect(page.getByTestId('admin-users-error')).toContainText('Could not load users: unauthorized');
+    await expect(page.getByTestId('admin-users-table')).toHaveCount(0);
+    // The page trusted /api/me, so the denied card is not what shows.
+    await expect(page.getByTestId('admin-denied')).toHaveCount(0);
+
+    await page.getByTestId('admin-tab-data').click();
+    await expect(page.getByTestId('admin-sources-error')).toContainText(
+      'Could not load data sources: unauthorized',
+    );
+    await expect(page.getByTestId('admin-sources-table')).toHaveCount(0);
+
+    await page.getByTestId('admin-tab-models').click();
+    await expect(page.getByTestId('admin-error')).toContainText(
+      'The server rejected this account for admin routes',
+    );
+    await expect(page.getByTestId('admin-routes-table')).toHaveCount(0);
+    await page.waitForLoadState('networkidle');
   });
 });
