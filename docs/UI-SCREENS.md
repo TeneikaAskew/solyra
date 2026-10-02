@@ -11748,12 +11748,12 @@ on a synthetic `/api/secret` route and not on a catalysts route) and the sign-in
 
 ### SCREEN-ADMIN — `/admin`
 
-- **Purpose:** Operator surface: model routing, strat-engine state, structure brief, route config.
+- **Purpose:** The operator surface, open to admins only. Three tabs: Users and roles (every Firebase account with its one stored role, a chip to grant or revoke it, and Disable or Enable), Chart and report data (the freshness audit regrouped into one row per dataset, with a Refresh that dispatches the dataset's Cloud Run job) and Models and routing (the provider and model of each of the seven agent roles with Save, then the strat engine's structure brief, an on-demand predict for one bar and the state of the nine served models). The page is gated by `/api/me` and again by every route. Changing the role of an account that holds one takes two clicks, Disable cannot work on production, every Structure Brief cell is unavailable, a storage outage reads as an empty shelf, the freshness report's own stale flag and the models' ages are not shown, and most failures read as a raw status and body (matrix Gaps).
 - **Matrix:** [03 § 14](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#14--admin)
-- **Status:** Production but needs remediation · **Blocking issue:** [#838](https://github.com/TeneikaAskew/stocks/issues/838) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
-- **Component:** `src/routes/AdminPage.tsx` (369 lines)
-- **Child components:** `ModelStateSnapshot`, `PredictForm`, `StructureBrief`
-- **API calls (from source):** `/api/admin/routes`
+- **Status:** Production but needs remediation · **Blocking issue:** [solyra#77](https://github.com/TeneikaAskew/solyra/issues/77), [solyra#78](https://github.com/TeneikaAskew/solyra/issues/78) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Component:** `src/routes/AdminPage.tsx` (344 lines)
+- **Child components:** `DataSourcesPanel`, `ModelStateSnapshot`, `PredictForm`, `StructureBrief`, `UsersPanel`, and the inline `RoutingPanel` and `ModelSelect`
+- **API calls (from source):** `/api/me`, `/api/admin/users`, `/api/admin/users/{uid}/roles`, `/api/admin/users/{uid}/status`, `/api/admin/data-sources`, `/api/admin/data-sources/{source_id}/refresh`, `/api/admin/routes`, `/api/admin/routes/{role}`, `/api/admin/models`, `/api/admin/structure-brief`, `/api/admin/strat-engine/state`, `/api/admin/strat-engine/predict`
 - **E2E specs:** `tests/admin/admin-auth.spec.ts`, `tests/admin/admin-tabs.spec.ts`, `tests/admin/admin.spec.ts`
 - **PR lineage:** [#567](https://github.com/TeneikaAskew/stocks/pull/567)/[#568](https://github.com/TeneikaAskew/stocks/pull/568) strat_engine state dashboard · [#635](https://github.com/TeneikaAskew/stocks/pull/635) platform audit
 - **Target:** meet REQ-UX-001 — explicit stale/unavailable presentation, keyboard operability,
@@ -11762,18 +11762,20 @@ on a synthetic `/api/secret` route and not on a catalysts route) and the sign-in
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/admin/users | users[].uid/email/display_name/roles/disabled/created_at/last_sign_in_at, available_roles (types: `useAdmin.ts` AdminUserRow/AdminUsersResponse) |  | 30s staleTime | `useAdminUsers` (`useAdmin.ts`) → Users and roles tab |
-| GET /api/admin/data-sources | sources[].id/label/category/status/row_count/last_refreshed_at/coverage_start/coverage_end/message/refreshable (types: `useAdmin.ts` AdminDataSourceRow/AdminDataSourcesResponse) |  | 5-minute audit cache, shared with `/api/health/freshness`; 30s client staleTime | `useAdminDataSources` (`useAdmin.ts`) → Chart and report data tab |
-| GET /api/admin/routes | routes[].role/provider/model/updated_at/updated_by (types: `useAdmin.ts` RouteRow/RouteListResponse) |  | 30s staleTime | `useAdminRoutes` (`useAdmin.ts`) → Models and routing tab (Model Routing panel) |
-| GET /api/admin/models | models[].provider/model/has_credentials/input_usd_per_mtok/output_usd_per_mtok (types: `useAdmin.ts` AvailableModelRow/AvailableModelsResponse) |  | 5min staleTime | `useAdminModels` (`useAdmin.ts`) → Models and routing tab (provider/model selects) |
-| GET /api/admin/structure-brief | scope_statement, cells[].ticker/timeframe/available/top_class/top_prob/distribution/live_ece/ece_ceiling/muted/mute_reason/refreshed_at/note (types: `useAdmin.ts` StructureBriefResponse) |  | 60s staleTime | `useStructureBrief` (`useAdmin.ts`) → `StructureBrief` panel |
-| GET /api/admin/strat-engine/state | cells[].ticker/timeframe/available/model_version/last_train_date/live_ece, ece_ceiling (types: `useAdmin.ts` StratEngineStateResponse) |  | 60s staleTime | `useStratEngineState` (`useAdmin.ts`) → `ModelStateSnapshot` panel |
-| PUT /api/admin/users/{uid}/roles | uid, roles[] (types: `useAdmin.ts` AdminUserRow) |  |  | `useUpdateUserRoles` (`useAdmin.ts`) → Grant or revoke roles |
-| PUT /api/admin/users/{uid}/status | uid, disabled (types: `useAdmin.ts` AdminUserRow) |  |  | `useUpdateUserStatus` (`useAdmin.ts`) → Disable a user |
-| POST /api/admin/data-sources/{source_id}/refresh | id, queued, job_id (types: `useAdmin.ts` DataSourceRefreshResult) |  |  | `useRefreshDataSource` (`useAdmin.ts`) → Refresh a data source |
-| PUT /api/admin/routes/{role} | role, provider, model (types: `useAdmin.ts` RouteRow) |  |  | `useUpdateAdminRoute` (`useAdmin.ts`) → Change provider or model per role and save |
-| POST /api/admin/strat-engine/predict | ticker, timeframe, ts, available, top_class, top_prob, class_probs, model_version, last_train_date, live_ece, muted, mute_reason, scope_statement, note (types: `useAdmin.ts` StratPredictRequest/StratPredictResponse) | strat-engine 23:35 ET Mon-Fri → strat_features_5m/15m/30m |  | `usePredictMutation` (`useAdmin.ts`) → Run a predict |
-| GET /api/me | email, is_admin, is_dev (types: `useUser.ts` MeResponse) |  | 30s staleTime | `useUser` (`useUser.ts`) → the admin access gate |
+| GET /api/admin/users | users[].uid/email/display_name/roles/disabled/created_at/last_sign_in_at, available_roles (types: `useAdmin.ts` AdminUserRow/AdminUsersResponse) | the Firebase Auth directory, every account of the project through the Admin SDK, merged with `user_roles` (`email`, `role`), the `ADMIN_EMAIL` account read as admin with or without a row; production's `user_roles` holds 2 rows (V evidence, 2026-10-02) and what its directory lists was not read | 30s staleTime, the app's one retry; no age shown; the roles are read on every request, with no server cache | `useAdminUsers` (`useAdmin.ts`) → Users and roles tab |
+| GET /api/admin/data-sources | sources[].id/label/category/status/row_count/last_refreshed_at/coverage_start/coverage_end/message/refreshable (types: `useAdmin.ts` AdminDataSourceRow/AdminDataSourcesResponse); the answer's `stale` and `stale_age_seconds` are sent and not typed or read | the freshness audit (`scripts/audit_data_freshness.py`) regrouped by `_aggregate_source`: `row_count` is the audit's count of the expected day's rows, `coverage_start` is always null and `coverage_end` repeats the last refresh | 5-minute audit cache on the server, shared with `/api/health/freshness`, and a cold audit took 51 to 67 s on staging (V evidence); 30s client staleTime; the report's `stale` flag is dropped | `useAdminDataSources` (`useAdmin.ts`) → Chart and report data tab |
+| GET /api/admin/routes | routes[].role/provider/model/updated_at/updated_by (types: `useAdmin.ts` RouteRow/RouteListResponse) | `model_routing`, seven roles seeded on `vertex` `gemini-3.1-flash-lite`; production's seven rows carry `updated_by` `claude-code/ab-test-restore-2026-05-12` and none was written by the page (V evidence) | 30s staleTime, the app's one retry; `Updated` is the only age shown | `useAdminRoutes` (`useAdmin.ts`) → Models and routing tab (Model Routing panel) |
+| GET /api/admin/models | models[].provider/model/has_credentials/input_usd_per_mtok/output_usd_per_mtok (types: `useAdmin.ts` AvailableModelRow/AvailableModelsResponse) | the price table `lib/agents/pricing.py` (twelve priced models), `has_credentials` true for a provider with a registered adapter, which is Vertex alone on both services | 5min staleTime | `useAdminModels` (`useAdmin.ts`) → Models and routing tab (provider/model selects) |
+| GET /api/admin/structure-brief | scope_statement, ece_ceiling, cells[].ticker/timeframe/available/top_class/top_prob/distribution/live_ece/ece_ceiling/muted/mute_reason/refreshed_at/note (types: `useAdmin.ts` StructureBriefResponse) | the GCS object `research/strat_engine/structure_brief_latest.json`, which `strat_ece_snapshot.py` writes on demand and no schedule writes; it does not exist in production, so all nine cells are unavailable, and a storage error is answered the same way, in a 200 | 60s staleTime; a cell's `refreshed_at` reads as a relative time | `useStructureBrief` (`useAdmin.ts`) → `StructureBrief` panel |
+| GET /api/admin/strat-engine/state | cells[].ticker/timeframe/available/model_version/last_train_date/live_ece, ece_ceiling (types: `useAdmin.ts` StratEngineStateResponse) | the GCS objects of the nine cells (`model.pkl`, `metrics_<epoch>.json`), written by `strat_pred_train.py` through a manual dispatch of `strat-engine`: IWM's from 2026-05-26, SPY's and QQQ's from 2026-06-04 (V evidence); `live_ece` from the absent snapshot; a storage outage reads as no cells | 60s staleTime; `Last Trained` carries no age flag | `useStratEngineState` (`useAdmin.ts`) → `ModelStateSnapshot` panel |
+| PUT /api/admin/users/{uid}/roles | request: roles[]; the answer is not read (types: `useAdmin.ts` AdminUserRow) | the user (upserts or deletes the account's `user_roles` row, one role per account, so a second role is a 422) | none: a success refetches the users list | `useUpdateUserRoles` (`useAdmin.ts`) → Grant or revoke roles |
+| PUT /api/admin/users/{uid}/status | request: disabled; the answer is not read (types: `useAdmin.ts` AdminUserRow) | the user (the Firebase account's `disabled` flag and, for a Disable, its refresh tokens; refused with 409 wherever `AUTH_MODE` is `iap`, which is production) | none: a success refetches the users list | `useUpdateUserStatus` (`useAdmin.ts`) → Disable a user |
+| POST /api/admin/data-sources/{source_id}/refresh | request: `{}`; the answer (`id`, `queued`, `job_id`) is not read (types: `useAdmin.ts` DataSourceRefreshResult) | the user (takes a 60 s lease on the dataset's job in `admin_refresh_leases` and dispatches that Cloud Run job; seven jobs serve nine datasets) | none: a success refetches the list, which the audit's cache answers | `useRefreshDataSource` (`useAdmin.ts`) → Refresh a data source |
+| PUT /api/admin/routes/{role} | request: provider, model; the answer is not read (types: `useAdmin.ts` RouteRow) | the user (upserts the role's `model_routing` row, stamped `admin-ui`) | none: a success refetches the routes | `useUpdateAdminRoute` (`useAdmin.ts`) → Change provider or model per role and save |
+| POST /api/admin/strat-engine/predict | ticker, timeframe, ts, available, top_class, top_prob, class_probs, model_version, last_train_date, live_ece, muted, mute_reason, scope_statement, note (types: `useAdmin.ts` StratPredictRequest/StratPredictResponse) | `strat_features_5m/15m/30m` joined to their levels tables (strat-engine 23:35 ET Mon-Fri and 02:00 ET Tue-Sat) and the cell's GCS model | none: a mutation run on a click | `usePredictMutation` (`useAdmin.ts`) → Run a predict |
+| GET /api/me | email, is_admin, is_dev (types: `useUser.ts` MeResponse) | the verified identity and one `user_roles` lookup; an open path | 30s staleTime, the app's one retry | `useUser` (`useUser.ts`) → the admin access gate |
+
+Every admin route is gated: on staging each answers 401 without a token and on production IAP answers a 302 (V evidence), and each handler checks the admin role again (read); the page reads and writes `user_roles`, `model_routing` and `admin_refresh_leases`, reads the freshness audit's tables and the strat feature tables, and reads the GCS prefix `research/strat_engine/`.
 
 #### Displayed
 | ID | Element | Component |
@@ -11785,53 +11787,1012 @@ on a synthetic `/api/secret` route and not on a catalysts route) and the sign-in
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| ADMIN-04 | Grant or revoke roles | `toggleRole` (`UsersPanel.tsx`) sends the account's current roles plus or minus the clicked one through `useUpdateUserRoles`. A grant succeeds only for an account with no role; the server answers 422 for any other combination (see the matrix Admin Gaps). |
-| ADMIN-05 | Disable a user | Disable / Enable buttons call `useUpdateUserStatus`; refused (409) wherever `AUTH_MODE` is `iap`, for the caller's own account, and for the `ADMIN_EMAIL` account. |
-| ADMIN-06 | Refresh a data source | The Refresh button calls `useRefreshDataSource`, which dispatches the registered Cloud Run job for that dataset and refetches the list; disabled with a tooltip when `refreshable` is false. |
-| ADMIN-07 | Change provider or model per role and save | Provider and model selects (`(no creds)` models disabled); Save calls `useUpdateAdminRoute` for the one changed row only. |
-| ADMIN-08 | Run a predict | `PredictForm` posts ticker, timeframe and an optional as-of timestamp through `usePredictMutation`. |
+| ADMIN-04 | Grant or revoke roles | `toggleRole` (`UsersPanel.tsx`) sends the account's current roles plus or minus the clicked one through `useUpdateUserRoles`. The server keeps one role per account: a click on a chip of an account with no role (a grant) and a click on the pressed chip (a revoke) succeed, and a click on another chip of an account that holds a role sends two roles and answers 422, so a change of role is a revoke and then a grant (solyra#77). An admin other than the `ADMIN_EMAIL` account can revoke their own role, and the `ADMIN_EMAIL` account's admin role cannot be removed (409). |
+| ADMIN-05 | Disable a user | Disable / Enable buttons call `useUpdateUserStatus`; refused (409) wherever `AUTH_MODE` is `iap`, which is production (solyra#78), for the caller's own account, and for the `ADMIN_EMAIL` account. A Disable revokes the account's refresh tokens, and an ID token already issued works for up to an hour. |
+| ADMIN-06 | Refresh a data source | The Refresh button calls `useRefreshDataSource`, which takes a 60 s lease on the dataset's job, dispatches that Cloud Run job and refetches the list; nothing shows on success, the three `strat_features_*` datasets share one job and so one lease (a second press inside a minute is a raw 429), and it is disabled with a tooltip when `refreshable` is false. |
+| ADMIN-07 | Change provider or model per role and save | Provider and model selects (`(no creds)` models disabled; a change of provider re-points the model at that provider's first model, which can be a disabled one); Save calls `useUpdateAdminRoute` for the one changed row only, and a refusal shows raw under the table and raises an unhandled rejection. |
+| ADMIN-08 | Run a predict | `PredictForm` posts ticker, timeframe and an optional as-of time through `usePredictMutation`; the time is sent as typed, with no zone, and the server reads it as UTC, so a time typed as Eastern scores a bar four or five hours early. |
 
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| ADMIN-09 | loading | present | A spinner while `/api/me` loads; `UsersPanel`, `DataSourcesPanel`, the routing panel, `StructureBrief`'s `SkeletonGrid`, `ModelStateSnapshot` and `PredictForm`'s "Predicting…" each show their own. |
-| ADMIN-10 | empty | absent | No page-level empty state; per-panel copy exists ("No users match this search.", "No data sources reported for this category.", `ModelStateSnapshot`'s "0 / 0 models trained · 0 muted", `StructureBrief`'s nine "unavailable" cells). |
-| ADMIN-11 | error | present | "Could not load users:", "Could not load data sources:", "The server rejected this account for admin routes" (401/403) or "Failed to load routes:", plus each panel's own mutation error; a failed `GET /api/admin/models` renders nothing and the selects show empty. |
-| ADMIN-12 | stale | absent | The data-sources report's own `stale` and `stale_age_seconds` fields are dropped by the response type; `ModelStateSnapshot` shows `Last Trained` per cell with no age flag. |
-| ADMIN-13 | permission | not tracked (new category); present | `AdminPage.tsx` renders an "Admin access required" card from `useUser`'s `isAdmin` before mounting any tab. |
+| ADMIN-09 | loading | present | A bare spinner while `/api/me` loads, with no heading; `UsersPanel`, `DataSourcesPanel` and the routing panel each a spinner (the data tab for as long as a cold audit takes, 51 to 67 s on staging), `StructureBrief`'s nine placeholder cards, `ModelStateSnapshot`'s `Loading model state…`, `PredictForm`'s `Predicting…`, and disabled buttons while a write is in flight. |
+| ADMIN-10 | empty | present | `No users match this search.` (also for an empty directory), `No data sources reported for this category.`, an empty routing table, `0 / 9 cells available` over nine unavailable cells in the brief, and `0 / 0 models trained` in the state, which is also how a storage outage reads. |
+| ADMIN-11 | error | present | "Could not load users:", "Could not load data sources:", "The server rejected this account for admin routes" (401/403) or "Failed to load routes:", "Structure brief unavailable:", "Model state unavailable:", plus each write's raw status and body; a failed `GET /api/admin/models` renders nothing and the selects show empty. |
+| ADMIN-12 | stale | present (per dataset); absent (the report and the models) | A dataset behind its lag reads `stale` with the lag in its message; the data-sources report's own `stale` and `stale_age_seconds` are sent and dropped by the response type, and `ModelStateSnapshot` shows `Last Trained` per cell with no age flag (models 120 and 129 days old read `ready`). |
+| ADMIN-13 | permission | not tracked (new category); present | `AdminPage.tsx` renders an "Admin access required" card from `useUser`'s `isAdmin` before mounting any tab, and when `/api/me` says admin while the admin routes answer 401 or 403 each panel shows its own `unauthorized` line. |
 
 #### Journeys
-1. Onboard a teammate: Opens /admin, Users & roles (ADMIN-01) → Finds the account (ADMIN-01) → Toggles a role, which succeeds only for an account with no role and 422s for any other combination (see the matrix Admin Gaps) (ADMIN-04) → Disables an account later without deleting its history (ADMIN-05); on prod, where AUTH_MODE is iap, the request always 409s, so disable only works on staging today (see the matrix Admin Gaps)
-2. Chase stale data: Opens Chart & report data (ADMIN-02) → Spots a dataset behind on freshness (ADMIN-02) → Clicks Refresh to queue a pipeline job (ADMIN-06) → Re-checks coverage after the job runs (ADMIN-02)
-3. A/B one agent role: Opens Models & routing (ADMIN-03) → Changes the judge role to a stronger model (ADMIN-07) → Saves that row only (ADMIN-07) → Compares report quality over the week → Reverts or keeps the change (ADMIN-07)
+1. Onboard a teammate: Opens /admin, Users & roles (ADMIN-01) → Finds the account (ADMIN-01) → Toggles a role, which succeeds for an account with no role and, for an account that holds one, takes a revoke and then a grant, since a second role is a 422 (see the matrix Admin Gaps) (ADMIN-04) → Disables an account later without deleting its history (ADMIN-05); on prod, where AUTH_MODE is iap, the request always 409s, so disable only works on staging today (see the matrix Admin Gaps)
+2. Chase stale data: Opens Chart & report data (ADMIN-02) → Spots a dataset behind on freshness, by its stale badge and lag message (ADMIN-02) → Clicks Refresh to queue a pipeline job, which shows nothing (ADMIN-06) → Re-checks the dataset after the job has run and the audit's five-minute cache has expired (ADMIN-02); Coverage starts with an em-dash and a date-only time reads a day early west of UTC (see the matrix Admin Gaps)
+3. A/B one agent role: Opens Models & routing (ADMIN-03) → Changes the judge role to a stronger Vertex model, the other providers listing as no creds (ADMIN-07) → Saves that row only (ADMIN-07) → Compares report quality over the week → Reverts or keeps the change (ADMIN-07)
 4. Non-admin hits the page: Navigates to /admin without the admin role (ADMIN-13) → An "Admin access required" card renders (ADMIN-13) → Explains access is per account, not a shared token (ADMIN-13)
+5. Predict one bar: Opens Models & routing (ADMIN-03) → Picks a ticker and a timeframe and, if wanted, a bar time (ADMIN-08) → Clicks Predict and reads the class bars, the model version and the training date (ADMIN-08); a bar time typed as Eastern is read as UTC, hours early, and the model's age carries no flag (ADMIN-12; see the matrix Admin Gaps)
+6. A request that fails: Opens a tab while the API is failing (ADMIN-11) → Reads the panel's own line, a raw status and body (ADMIN-11) → An admin whose role was revoked meanwhile reads unauthorized on every panel until /api/me is read again (ADMIN-13)
 
 #### Elements
+
+In every body below, "executed" means one of three things, named where a body needs it. Page: the page of solyra `f2c6863` rendered in a
+hermetic browser (the e2e launcher's Vite server, an en-US locale and the New York time zone) with the admin routes answered by the
+`mockAdminApi` fixtures of `tests/helpers/fixtures/admin.ts` or, where a body says "over the real handler", by the JSON that the real stocks
+admin router of `cbb58e20` produced. Handler: that router (and `predict_one`, and `/api/me`) driven through FastAPI's `TestClient` with
+fakes substituted only at its own indirections, the Firebase Admin SDK module, the `user_roles` reads and writes, the lease statements and
+the Cloud Run client, so its own branches ran; its data-sources answer was computed over the staging service's own `GET
+/api/health/freshness` report (an open endpoint, read 2026-10-02 00:26 UTC) and its state answer over the real objects of the bucket's
+`research/strat_engine/` prefix, read with the session's service account. Mutation: one line of the product code changed in a scratch copy
+and the named spec run. "Read" marks what was only read in the code, and "V evidence" the comment on stocks issue 1234 that the matrix
+links.
+
 ##### ADMIN-01 · Users and roles tab
+
+**Shows or does:** The first of the page's three tabs and the one it opens on (`src/routes/AdminPage.tsx:16-22,38,76-85`): an `h2` `Users &
+roles`, the line `Toggle a role to grant or revoke it immediately. Disabling a user blocks sign-in without deleting their history.` and
+`UsersPanel` (`src/components/admin/UsersPanel.tsx:24-173`). The three tabs share one strip (`role="tablist"`, `aria-label` `Admin
+sections`, `aria-selected` on the open one, test ids `admin-tab-users`, `admin-tab-data` and `admin-tab-models`, `AdminPage.tsx:55-74`); a
+click opens a tab, and the arrow keys do not move between them, Tab then Enter does (executed). The panel has a search box (`Search email,
+name or UID`, test id `admin-users-search`, `UsersPanel.tsx:72-81`) that keeps the accounts whose email, display name or uid contains the
+text, ignoring case and surrounding spaces (`:33-43`), a counter `N of M`, the kept accounts over all of them (`:82-84`), and a table
+(`:98-170`) with the columns `User`, `Roles`, `Created`, `Last sign-in` and `Access`. `User` shows the email, else the display name, else an
+em-dash placeholder, with the uid under it (`:112-117`). `Roles` holds one chip for each role the server lists as assignable, in the
+server's order, pressed (`aria-pressed`) for a role the account holds, and an em-dash placeholder when the server lists none (`:118-146`,
+ADMIN-04). `Created` and `Last sign-in` show the date part of the stored time in the viewer's zone (`toLocaleDateString`, no time of day) or
+an em-dash placeholder when the server sent none or an unreadable value (`:18-22,147-148`). `Access` holds `Disable` or `Enable` (ADMIN-05);
+a disabled account has no other mark than that label and a red outline (`:149-164`).
+
+The rows are the Firebase accounts of the project, not the accounts that hold a role: an account with no role shows three unpressed chips,
+and the `ADMIN_EMAIL` account shows `admin` pressed with or without a `user_roles` row (`platform/api/routers/admin.py:992-1004`, executed
+over the handler), so the break-glass account reads as an admin that the chips cannot remove (ADMIN-04).
+
+Executed on the real page with the fixture directory of `src/mocks/admin.ts` (three accounts, en-US, New York zone): the counter read `3 of
+3`; each row carried the chips `admin`, `user` and `dev`, pressed only for the admin account's `admin`; an account created at
+`2026-01-05T15:00:00Z` read `1/5/2026`; the account with no sign-in and no creation time read an em-dash placeholder in both columns. Four
+switches between the three tabs made one `GET /api/admin/users` (executed): the answer is held 30 s, so a role granted in another session
+shows here only after that and a remount, which the Data tab's own line, `nothing here is cached client-side`, does not say (matrix Gaps).
+
+**Needs:** `GET /api/admin/users` through `useAdminUsers` (`src/hooks/useAdmin.ts:276-283`, 30 s stale time, no polling, the app's single
+retry). The handler (`platform/api/routers/admin.py:1021-1050`) checks the admin role (401 without an identity, 403 without the role,
+ADMIN-13), lists every Firebase account through the Admin SDK (`list_users().iterate_all()`, `:1031-1037`), reads `user_roles` in one SELECT
+(`_stored_roles`, `:986-989`) and sorts the rows by email and then uid (`:1046-1049`). An SDK that is missing, uninitialised or failing
+answers 503 `user directory temporarily unavailable` (`:921-958,1033-1037`) and a failing role read 503 `role store temporarily unavailable`
+(`:1038-1044`). A row's `roles` is the stored role plus `admin` for the `ADMIN_EMAIL` account (`:992-1004`); its times are the SDK's epoch
+milliseconds turned into ISO UTC, null for an account that never signed in (`:974-983`); `available_roles` is `admin`, `user` and `dev`
+(`:895`, executed).
+
+Both services run as `trading-platform-svc@`, which holds `roles/firebaseauth.admin`, and the production `user_roles` table holds two rows,
+one `admin` and one `dev` (V evidence, 2026-10-02). What either service's directory lists was not read: the listing needs a signed-in
+session, so this tab is not ticked at V (matrix Gaps).
+
+**States:** Loading: a spinner replaces the panel (ADMIN-09). Error: a red card `Could not load users: <message>` (test id
+`admin-users-error`) replaces the search and the table (`UsersPanel.tsx:58-67`, ADMIN-11); the message is `unauthorized` for a 401 or a 403
+and otherwise `GET /api/admin/users failed: <status> <body>`: with the handler answering 503 it read `Could not load users: GET
+/api/admin/users failed: 503 {"detail":"user directory temporarily unavailable"}`, after two requests, the first and the retry (executed).
+Empty: a search that matches nothing and a directory with no accounts both show `No users match this search.` in place of the table
+(`:93-96`, ADMIN-10); for an empty directory the counter reads `0 of 0` over that text, a search wording for a directory that is simply
+empty (executed, matrix Gaps). The line above the table that carries a failed write belongs to ADMIN-04 and ADMIN-05.
+
+**Acceptance criteria:**
+- Given an admin opens `/admin`, then the `Users & roles` tab is selected and its table shows, and the Data and Models panels do not (`lands
+  on Users & roles; tabs switch panels`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given an account with no display name and no sign-in time, then its row shows an em-dash placeholder and no `Invalid Date`, and an
+  account's email shows in the table (`renders users; null name/timestamps render as em-dash, never a fabricated value`).
+- Given a search text that matches one email, then only that account's row shows; given text that matches none, then `No users match this
+  search.` shows and the table does not (`search filters rows and shows the honest empty state`).
+- Given the users request fails, then `Could not load users` shows with the server's message and the table does not (`load failure surfaces
+  a visible error, not an empty table`, a 500).
+- Given Firebase accounts and stored roles, then the handler answers each account with its stored role, `admin` for the `ADMIN_EMAIL`
+  account with no row, null for a missing name, email or time, and `available_roles` (`test_users_merge_firebase_and_roles`,
+  `tests/api/test_admin_users_datasources.py`); given the Admin SDK fails, then 503 (`test_users_directory_failure_is_loud_503`;
+  `test_admin_answers_503_when_firebase_is_unavailable`, `tests/api/test_route_coverage.py`); given an anonymous or a non-admin caller, then
+  401 or 403 (`test_endpoints_require_admin`).
+- Given three accounts, then the counter reads `3 of 3` and every row has the chips `admin`, `user` and `dev`, pressed for the roles it
+  holds (executed; no test asserts the counter or the pressed state).
+- Given an account created at `2026-01-05T15:00:00Z`, then `Created` reads the date in the viewer's zone, `1/5/2026` in New York (executed;
+  no test asserts a date).
+- Given a directory with no accounts, then the panel reads `0 of 0` and `No users match this search.` (executed; no test).
+
+**Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the default tab and its panel (`lands on Users & roles; tabs switch
+panels`), the email in the table, the em-dash cells and the absence of `Invalid Date` for the account with no name and no sign-in (`renders
+users; null name/timestamps render as em-dash, never a fabricated value`), the search and its empty text (`search filters rows and shows the
+honest empty state`) and the error card for a 500 (`load failure surfaces a visible error, not an empty table`). The handler is asserted by
+stocks `tests/api/test_admin_users_datasources.py` (`test_users_merge_firebase_and_roles`: the merge of the directory with the role rows,
+the `ADMIN_EMAIL` account admin with no row, a missing name, email and times staying null, and `available_roles`;
+`test_users_directory_failure_is_loud_503`; `test_endpoints_require_admin`: 401 anonymous and 403 non-admin) and by
+`tests/api/test_route_coverage.py` (the route pinned at 503 against a dead backend, and
+`test_admin_answers_503_when_firebase_is_unavailable`: the 503 and its `user directory temporarily unavailable` text). Both files run in the
+lean CI job. No test on main asserts the chips' pressed state, the `N of M` counter, the dates a viewer in another time zone reads or an
+empty directory. Te is ticked: the rows, the em-dash cells, the search and the error of the page, and the merge of the handler, are
+asserted; the chips are ADMIN-04's.
+
+**Code:** `src/routes/AdminPage.tsx:16-22,36-48,55-85`, `src/components/admin/UsersPanel.tsx:18-173`, `src/hooks/useAdmin.ts:246-283`,
+`src/mocks/admin.ts`; `platform/api/routers/admin.py:52-67,895-1050`, `platform/api/auth.py:221-306`; test ids `admin-tab-users`,
+`admin-users-panel`, `admin-users-search`, `admin-users-table`, `admin-users-error`, `role-<uid>-<role>`, `status-<uid>`.
 
 ##### ADMIN-02 · Chart and report data tab
 
+**Shows or does:** The second tab (`src/routes/AdminPage.tsx:87-98`): an `h2` `Chart & report data`, the line `Freshness and coverage for
+every dataset the charts and reports read from. Refresh queues a job on the pipeline; nothing here is cached client-side.` and
+`DataSourcesPanel` (`src/components/admin/DataSourcesPanel.tsx:17-135`). The panel opens with a row of filter chips, `all` and then each
+category the answer holds in alphabetical order (test ids `source-filter-<category>`, `:53-69`), and a table (`:82-131`) with the columns
+`Dataset`, `Feeds`, `Status`, `Rows`, `Coverage`, `Last refresh` and the Refresh button of ADMIN-06. `Dataset` shows the label, the id in
+mono type and, when the server sent one, a message under both (`:98-104`); `Feeds` is the category; `Status` is a badge with the status
+word, outlined green for `ok`, amber for `stale`, red for `error` and neutral for anything else
+(`src/components/admin/dataSourceFormat.ts:17-22`); `Rows` is the count with thousands separators; `Coverage` is `<start> → <end>`; `Last
+refresh` is the stored time in the viewer's zone through `toLocaleString`; each of the three shows an em-dash placeholder for a missing
+value, and `Coverage` a single one when both bounds are missing (`dataSourceFormat.ts:6-27`).
+
+What the handler puts in those columns (read, then executed below): one row for each of the thirteen datasets of the registry
+`_DATA_SOURCES`, in its order (`platform/api/routers/admin.py:1261-1279`), then one row for every audited table outside it, labelled with
+its own id under the category `other` (`playbook_cards` today). `Status` is the worst of the dataset's audit rows, `ok`, `unknown` or
+`stale`: the audit's `warn` reads as `stale`, and `error` is in the page's vocabulary while nothing produces it (`:1305-1307`). `Rows` is
+the audit's count of the rows dated the expected trading day of its audit row, summed over the dataset's tickers (`row_count_recent`,
+`scripts/audit_data_freshness.py:458-476,552`), which is not the table's size, and it is null unless every member reported a count
+(`admin.py:1310-1388`); the page heads it `Rows`. `Coverage` has no start, because the audit computes none (`:1384`), so it reads an em-dash
+placeholder, an arrow and the end, which repeats `Last refresh` in the audit's own text: a bare date for a daily table, a full ISO time for
+an intraday one. A diagnostic row of the audit for a registered table (`<table> [gap]`, `<table> [sanity]`, `market_data_daily.atr_14
+enrichment coverage`, `strat_features_5m.<column>`) adds its status and message to its dataset and not its count or time
+(`:1281-1302,1323-1359`); one for a table outside the registry (`job_runs.<job> duration`, `strat_features_levels_5m.<column>`) is a row of
+its own under `other`. The gap, sanity, nullity and `job_runs` rows exist only while they fail, and the live report held none of them, only
+the one enrichment row folded into `market_data_daily` (executed).
+
+Executed over the real handler, fed the staging service's own freshness report (an open endpoint, read 2026-10-02 00:26 UTC: 34 audit rows,
+`ok` overall), on the real page in a New York zone: fourteen rows, all `ok` and none with a message: `market_data_daily` `Rows` 3 and `Last
+refresh` `2026-09-30`, `market_data_intraday` 2,803 and `2026-10-01T00:00:00+00:00`, `strat_features_5m`, `strat_features_15m` and
+`strat_features_30m` 234, 78 and 39, `etf_options_snapshots` 2,550,694, `economic_events` and `daily_rates` 0 (the expected day holds none),
+`earnings_calendar` 372, `premarket_analysis` 3, `insight_reports` 3, `signal_alerts` 15, `historical_signals` 1,299, and `playbook_cards`
+36 under `other` with its id as its label. The date-only values read a day early with an invented time: `market_data_daily` `Last refresh`
+read `9/29/2026, 8:00:00 PM` beside `— → 2026-09-30`, a bare date parsed as UTC midnight and shown in the viewer's zone (matrix Gaps), while
+the intraday row, a real instant, read `9/30/2026, 8:00:00 PM`, the 20:00 ET bar. Four switches between the tabs made one `GET
+/api/admin/data-sources` (executed), the page's own line notwithstanding.
+
+**Needs:** `GET /api/admin/data-sources` through `useAdminDataSources` (`src/hooks/useAdmin.ts:344-351`, 30 s stale time, no polling, the
+app's single retry). The handler (`platform/api/routers/admin.py:1391-1425`) checks the admin role, then reads the report that `GET
+/api/health/freshness` serves, through `freshness_report_dict` (`platform/api/routers/health.py:67-124`): `scripts/audit_data_freshness.py`
+`audit_all`, held five minutes (`_CACHE_TTL`, `:42`), one audit at a time; a request that arrives while another request audits is not made
+to wait, and gets the last report with `stale` true and `stale_age_seconds`, or 503 `Freshness audit in progress and no cached report is
+available yet. Retry shortly.` when nothing is cached; an audit that cannot reach Cloud SQL is a 503 (`:137-150`). The handler runs no query
+of its own. A request that starts the audit waits for it: two cold requests to the staging service's `GET /api/health/freshness` took 67.3 s
+and 51.5 s, the warm one 0.26 s (V evidence), and the page shows only its spinner for that long (read, ADMIN-09).
+
+Production (V evidence, 2026-10-02): every audited table read current, `market_data_daily` newest 2026-09-30, `market_data_intraday`
+2026-10-01 00:00 UTC, `etf_options_snapshots` 2026-10-01, `earnings_calendar` fetched 2026-10-01 23:00 UTC, `economic_events` 2026-09-30
+11:05 UTC, `daily_rates` 2026-09-29, `playbook_cards` and `signal_alerts` 2026-10-01, `historical_signals` 2026-09-30 23:38 UTC, and the
+three `strat_features` tables 2026-09-30 at 19:55, 19:45 and 19:30 UTC; the strat-engine and backfill schedulers were enabled and their
+newest executions succeeded.
+
+**States:** Loading: a spinner replaces the panel (ADMIN-09). Error: a red card `Could not load data sources: <message>` (test id
+`admin-sources-error`) replaces the chips and the table (`DataSourcesPanel.tsx:40-49`, ADMIN-11): `unauthorized` for a 401 or a 403,
+otherwise `GET /api/admin/data-sources failed: <status> <body>` (executed with a 503). Empty: a category with no rows, and an answer with no
+sources at all, show `No data sources reported for this category.` in place of the table, and an empty answer leaves only the `all` chip
+(`:77-80`, executed, ADMIN-10, matrix Gaps). Stale: each dataset's own `stale` status and message show; the report's own `stale` flag does
+not (ADMIN-12). A failed refresh shows above the table (ADMIN-06).
+
+**Acceptance criteria:**
+- Given a healthy source, a stale one with a message and one with a null count and time, then the labels, the status words and the message
+  `last fetch skipped: vendor quota` show, and the null count and time read an em-dash placeholder and never `NaN` (`renders sources with
+  statuses; null rows/refresh render as em-dash`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given the `reports` chip, then only the reports datasets show, and `all` brings the rest back (`category filter narrows the table`).
+- Given a missing count, a missing or invalid time, or one missing coverage bound, then the formatters give an em-dash placeholder, never
+  `0`, and keep the bound that exists (`renders a missing row count as an em-dash, never 0`, `renders a missing or invalid timestamp as an
+  em-dash`, `renders coverage honestly when one bound is missing`, `src/components/admin/dataSourceFormat.test.ts`).
+- Given audit rows for one dataset, among them a gap row, a nullity row and a skipped enrichment row, then the handler folds them into the
+  dataset's status, reads `warn` as `stale` with the lag in the message, gives a missing per-ticker count as null, an absent dataset as
+  `unknown`, an audited table outside the registry as an `other` row and a cost-gated dataset as not refreshable
+  (`test_data_sources_aggregation`, `tests/api/test_admin_users_datasources.py`); given an anonymous or a non-admin caller, then 401 or 403
+  (`test_endpoints_require_admin`).
+- Given the staging report of 2026-10-02, then fourteen rows show, all `ok`, with the expected day's counts in `Rows`, 3 for
+  `market_data_daily` and 0 for `daily_rates` (executed; no test).
+- Given a date-only `last_refreshed_at`, then the page shows that date a day early with an invented time in a zone west of UTC (executed;
+  matrix Gaps).
+- Given an empty answer, then only the `all` chip and `No data sources reported for this category.` show (executed; no test).
+
+**Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the rows of the fixture, one source's message, an em-dash row with no
+`NaN` (`renders sources with statuses; null rows/refresh render as em-dash`) and the chip filter (`category filter narrows the table`);
+`dataSourceFormat.test.ts` asserts `renders a missing row count as an em-dash, never 0`, `renders a missing or invalid timestamp as an
+em-dash` and `renders coverage honestly when one bound is missing`. The handler's regrouping is asserted by stocks
+`tests/api/test_admin_users_datasources.py` (`test_data_sources_aggregation`, `test_endpoints_require_admin`), the audit's own thresholds,
+row floors and gap scans by `tests/audits/test_audit_data_freshness.py`, and the report's cache and its stale copy by
+`tests/api/test_threadpool_races.py` (`test_freshness_decliner_serves_a_stale_report_rather_than_waiting`,
+`test_freshness_decliner_503s_when_nothing_is_cached` and `test_a_stale_freshness_report_stays_stale_through_the_admin_view`, which asserts
+only that the response models declare `stale` and `stale_age_seconds`); `tests/api/test_route_coverage.py` pins the route at 503 against a
+dead backend. No test on main asserts that the handler passes the report's `stale` on, the `Rows` figure, a date-only `Last refresh` or an
+empty category. Te is ticked: the rows, the em-dash cells and the filter of the page, and the fold of the handler, are asserted.
+
+**Code:** `src/routes/AdminPage.tsx:87-98`, `src/components/admin/DataSourcesPanel.tsx:17-135`,
+`src/components/admin/dataSourceFormat.ts:6-27`, `src/hooks/useAdmin.ts:316-351`; `platform/api/routers/admin.py:1220-1425`,
+`platform/api/routers/health.py:42-155`, `scripts/audit_data_freshness.py:84,458-476,520-650,879,1208`; test ids `admin-tab-data`,
+`admin-sources-panel`, `admin-sources-table`, `admin-sources-error`, `source-filter-<category>`.
+
 ##### ADMIN-03 · Models and routing tab
+
+**Shows or does:** The third tab (`src/routes/AdminPage.tsx:100-134`), four sections one under the other, each with its own request, so one
+that fails leaves the others standing (executed). `Model Routing` (`RoutingPanel`, `:170-315`): an `h2` and a table with one row for each
+role, `Role` in mono type, a `Provider` select, a `Model` select, `Updated` and a `Save` button (`:239-307`); the selects and `Save` are
+ADMIN-07's. `Updated` reads `<local date and time> · <updated_by>`, the date through `toLocaleString`, an em-dash placeholder when the
+server sent none (`:287-290`). `Structure Brief`, badged `dev only · deploy blocked`
+(`src/components/structure_brief/StructureBrief.tsx:134-389`): the server's scope statement, a strip `N / 9 cells available · M muted · ECE
+ceiling 0.050`, then three columns, IWM, SPY and QQQ, of the cells 5m, 15m and 30m. A cell the server calls unavailable shows `unavailable`
+and the server's note (`No live data.` when it sent none); a muted one shows the mute reason, the time of its refresh and `live ECE <x> /
+ceiling 0.050`; an available one shows `next bar <P>% likely to be type <C>`, four bars for the classes `1`, `2U`, `2D` and `3` with
+whole-percent labels, and that footer; a cell the server did not send is left out (`:175-186`). `On-Demand Predict`, badged `admin tool ·
+single bar`, is ADMIN-08's. `Model State Snapshot`, badged `operator view · on shelf`
+(`src/components/structure_brief/ModelStateSnapshot.tsx:17-151`): a strip `N / M models trained · K muted · ECE ceiling 0.050` and `live ECE
+snapshot present` or `no live ECE snapshot yet`, a table of `Ticker`, `TF`, `Status` (`ready`, `muted` or `no artifact`), `Model Version`,
+`Last Trained` (a relative time under a week old, a date beyond, `no refresh` when null) and `Live ECE`, and the line `On the shelf, no
+scheduler. Activation gated by stocks: docs/STRAT_ENGINE_OPERATIONS.md §8.`, the path a link. The brief takes its mute from the server's
+`muted`; the state decides `muted` in the browser, a live ECE above the ceiling (`:39-41,111`); the helpers `decideMute` and `applyMute` of
+`StructureBrief.tsx:66-96` are called by nothing but their test.
+
+Executed over what production holds. The routing table over the seven rows the production table holds (V evidence, 2026-10-02), in the order
+`analyst`, `bull`, `bear`, `judge`, `trader`, `risk`, `portfolio_manager`, each on `vertex`, the model select reading `gemini-3.1-flash-lite
+· $0.25/$1.5`, `Updated` `5/11/2026, 8:34:31 PM · claude-code/ab-test-restore-2026-05-12` and every `Save` disabled, over the model list the
+real handler produced: twelve priced models, `anthropic` 3, `openai` 2 and `vertex` 7, so the provider select offers `anthropic`, `openai`
+and `vertex` in that order. The brief over the real handler: `0 / 9 cells available · 0 muted · ECE ceiling 0.050` and nine `unavailable`
+cells, each reading `No live snapshot available. Production data source is blocked behind the Track B / Track C deploy gate.`. The state
+over the real handler reading the real objects of the bucket's `research/strat_engine/` prefix with the session's service account: `9 / 9
+models trained · 0 muted · ECE ceiling 0.050 · no live ECE snapshot yet`, nine `ready` rows, `Last Trained` `5/26/2026` for IWM and
+`6/4/2026` for SPY and QQQ (129 and 120 days before 2026-10-02, with no flag, ADMIN-12), `Live ECE` an em-dash placeholder, and `Model
+Version` `strat-engine-<five characters>` for eight cells and `epoch-1779781975` for IWM 15m.
+
+**Needs:** `GET /api/admin/routes` (`useAdminRoutes`, `src/hooks/useAdmin.ts:37-49`, 30 s) and `GET /api/admin/models` (`useAdminModels`,
+`:55-67`, five minutes) for the routing table, `GET /api/admin/structure-brief` (`useStructureBrief`, `:112-124`, 60 s) and `GET
+/api/admin/strat-engine/state` (`useStratEngineState`, `:173-185`, 60 s); each section requests its own data, and nothing polls. Routes
+(`platform/api/routers/admin.py:129-154`): the rows of `model_routing` in the fixed role order, 503 `model route store temporarily
+unavailable` for an infrastructure failure and a 500 for a defect. Models (`:208-213`): every priced model with `has_credentials`, true for
+a provider with a registered adapter, which on both services is Vertex alone (`platform/api/routers/insights.py:41` registers it; executed:
+`available_providers()` read `['vertex']`), so every `anthropic` and `openai` model reads `(no creds)`; neither service sets
+`ANTHROPIC_API_KEY` (V evidence). Brief (`:342-363`): one GCS object, `research/strat_engine/structure_brief_latest.json`, which
+`gcp/research/strat_engine/strat_ece_snapshot.py` writes on demand and no schedule writes; an absent or unreadable object gives nine
+unavailable cells, and a storage error is answered like an absent object, in a 200 (`:262-283`, executed with the client failing). State
+(`:468-591`): GCS metadata only, for each of the nine cells its `model.pkl`, the `metrics_<epoch>.json` nearest it in time and the
+snapshot's live ECE; no Cloud SQL, and no model is loaded. The bucket is read as `trading-platform-svc@`, which holds
+`roles/storage.objectViewer` on it (V evidence).
+
+Production (V evidence, 2026-10-02): `model_routing` holds seven rows, all `vertex` `gemini-3.1-flash-lite`, updated 2026-05-12 00:34:31 UTC
+by `claude-code/ab-test-restore-2026-05-12`, none by the page's own `admin-ui`; the prefix holds nine served `model.pkl` objects, IWM's from
+2026-05-26 and SPY's and QQQ's from 2026-06-04, and no `structure_brief_latest.json`, so no cell can be muted and every brief cell is
+unavailable. `strat_pred_train.py` writes the artifacts through a manual dispatch of the `strat-engine` job; the two schedulers that run
+that job (`strat-engine-daily`, 23:35 ET Mon-Fri, and `strat-enrich-daily`, 02:00 ET Tue-Sat) rebuild the feature and level tables and train
+nothing.
+
+**States:** Each section has its own states (ADMIN-09 to ADMIN-12). Loading: the routing spinner, the brief's nine placeholder cards and
+`Loading model state…`, eleven spinners in all (executed). Error: a failed routes list replaces the routing section with its own message,
+and a failed models list leaves the table with empty selects and no message (executed); the brief and the state each show their own line.
+Empty: a routing table with no rows is a header with nothing under it (executed); a brief answer with no cells reads `0 / 9 cells available`
+over three headings and no cell (executed); a state answer with no cells reads `0 / 0 models trained` over an empty table, which is how a
+storage outage reaches the page (ADMIN-10, matrix Gaps). Stale: the models' ages carry no flag (ADMIN-12). The draft of a row lives in the
+routing section and is lost when the tab is left (ADMIN-07).
+
+**Acceptance criteria:**
+- Given an admin opens the Models tab, then the routing table shows and the Users and Data tables do not (`lands on Users & roles; tabs
+  switch panels`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given the fixture's routes, then the table holds a row for `analyst` and one for `portfolio_manager` (`admin role renders the dashboard
+  directly — no token prompt exists`, `tests/admin/admin.spec.ts`).
+- Given the production rows, then the table shows seven roles on `vertex` `gemini-3.1-flash-lite` with `Updated` showing
+  `claude-code/ab-test-restore-2026-05-12` and every `Save` disabled (executed; no test).
+- Given the real brief answer, then the strip reads `0 / 9 cells available · 0 muted · ECE ceiling 0.050` and each of the nine cells reads
+  `unavailable` with its note (executed; no test).
+- Given the real state answer, then the strip reads `9 / 9 models trained · 0 muted · ECE ceiling 0.050 · no live ECE snapshot yet` and each
+  row reads `ready`, its version, its training date and an em-dash placeholder for the live ECE (executed; no test).
+- Given the brief and state routes with the storage client failing, then each answers 200 and the page shows an unavailable brief and an
+  empty state (`tests/api/test_route_coverage.py` pins the 200 and not what the page then reads; executed).
+- Given a live ECE above the ceiling in a state cell, then its row reads `muted` and the strip counts it (read:
+  `ModelStateSnapshot.tsx:39-41,111`; no production cell has a live ECE).
+
+**Tests:** On main, `lands on Users & roles; tabs switch panels` (`tests/admin/admin-tabs.spec.ts`) asserts that the Models tab shows
+`admin-routes-table` and that the other two tables are gone, and `admin role renders the dashboard directly — no token prompt exists`
+(`tests/admin/admin.spec.ts`) asserts the table and its `analyst` and `portfolio_manager` rows. The handlers: stocks
+`tests/api/test_route_coverage.py` pins `GET /api/admin/routes` at 503 against a dead database, `GET /api/admin/models` at 200, and the
+brief and state routes at 200 with the storage client failing, which is the swallowed read and not what the page then reads, and
+`test_an_internal_defect_is_not_reported_as_an_outage` asserts the 500 for a defect and the 503 for a driver failure of the route list;
+`tests/lib/test_routers_insights_admin.py` (`test_admin_list_routes`, `test_admin_list_models` and the 401 and 403 tests) and
+`tests/agents/test_agent_model_routing.py` (`list_routes` and `list_available_models`) skip in the Backtest Pipeline for want of a test
+Postgres (area 09 Gaps). `src/components/structure_brief/StructureBrief.test.tsx` asserts the scope string, `decideMute` and `applyMute`,
+which no component calls, and a scan of its source for banned words; it renders nothing. No test on main asserts what the Structure Brief
+and Model State Snapshot panels render, the brief's or the state's cells, or the provider and model options. Te stays unticked: the routing
+table's presence is asserted, and the brief, the state and the options, the rest of the tab, by nothing.
+
+**Code:** `src/routes/AdminPage.tsx:100-134,157-344`, `src/components/structure_brief/StructureBrief.tsx:134-389`,
+`src/components/structure_brief/ModelStateSnapshot.tsx:17-151`, `src/hooks/useAdmin.ts:25-67,84-124,159-185`;
+`platform/api/routers/admin.py:129-154,208-213,227-363,468-591`, `lib/agents/model_routing.py:115-154,238-256`, `gcp/schema.sql:1503-1546`;
+test ids `admin-tab-models`, `admin-routes-table`, `admin-error`, `provider-<role>`, `model-<role>`, `save-<role>`, `structure-brief-scope`,
+`cell-<ticker>-<tf>`, `state-<ticker>-<tf>`.
 
 ##### ADMIN-04 · Grant or revoke roles
 
+**Shows or does:** The role chips of the Users table (`src/components/admin/UsersPanel.tsx:118-146`): one chip for each role in the server's
+`available_roles`, `admin`, `user` and `dev`, test id `role-<uid>-<role>`, `aria-pressed` true for a role the account holds, a shield icon
+on a held one. A click runs `toggleRole` (`:45-48`): the account's current roles with the clicked one removed when held, or added when not,
+sent as `PUT /api/admin/users/<uid>/roles` with `{"roles": [...]}` (the uid URL-encoded, `src/hooks/useAdmin.ts:285-295`); a success
+refetches the users list, and the chips then follow the answer. While a role write is in flight every chip of the table is disabled and the
+`Access` buttons are not (`:129`, executed: nine of nine chips, none of the three `Access` buttons). A failure shows its message above the
+table (test id `admin-users-mutation-error`, `:87-91`) and leaves the chips as the last list had them.
+
+The server keeps one role for an account, so the bodies it accepts are `[]`, `["admin"]`, `["user"]` and `["dev"]`, and the chips can make
+two kinds of change: a click on a chip of an account that holds no role sends `[<role>]`, a grant, and a click on the pressed chip sends
+`[]`, a revoke. A click on another chip of an account that holds a role sends two roles, which the server refuses, so changing a role takes
+two clicks, a revoke and then a grant, and nothing on the page says so (executed on the real page: `PUT /api/admin/users/uid-admin/roles`
+carried `{"roles":["admin","user"]}` and the line read `PUT /api/admin/users/uid-admin/roles failed: 422 {...}` with the server's text;
+solyra#77). The `dev` role turns on the app's mock-data mode for the account and grants no API access
+(`platform/api/routers/admin.py:889-895`).
+
+What the handler does (`:1065-1134`, executed over the real router with the directory and the table faked): it lower-cases and sorts the
+roles, answers 422 `unknown role(s) ['superuser']; available: ['admin', 'user', 'dev']` for a role outside the three, 422 `an account holds
+one role — send [], ["user"], or ["admin"]` for two (a message that leaves out `dev`, nothing written), 404 `no such user` for an unknown
+uid, 422 `this account has no email; roles are keyed by email` for an account with no email, and 409 for the `ADMIN_EMAIL` account unless
+`admin` is in the new list (its admin comes from the service configuration, so it cannot be removed here). Otherwise it upserts `user_roles`
+on the lower-cased email, stamped with the caller as `created_by`, or deletes the row for `[]`, reads the table back and answers the
+account; an outage of the table is 503 `role store temporarily unavailable`. An admin other than the `ADMIN_EMAIL` account can remove their
+own role: the handler answered 200 and deleted the row, and the same caller's next admin request answered 403 (executed); on the page the
+refetch then reads `Could not load users: unauthorized` while the denied card waits for `/api/me`, which holds 30 s (executed for the panel;
+the card is read, ADMIN-13).
+
+**Needs:** `PUT /api/admin/users/{uid}/roles`, the Admin SDK for the account's email (`_get_fb_user_or_404`, `:1053-1062`) and the
+`user_roles` table (`email` the lower-case primary key, `role` one of `admin`, `user` and `dev` by its CHECK constraint, `created_by`,
+`gcp/schema.sql:4849-4860`), which `/api/me` and every `_require_admin` read on each call with no cache (`platform/api/auth.py:229-306`): a
+role takes effect on the server with the next request, and the page's own gate lags up to 30 s (`src/hooks/useUser.ts:70-75`), so the line
+`Toggle a role to grant or revoke it immediately` holds for the server. Production (V evidence, 2026-10-02): `user_roles` holds two rows,
+one `admin` and one `dev`, and its CHECK constraint allows the three roles the page offers.
+
+**States:** Idle, the chips show what the last list held. Pending: every chip is disabled (ADMIN-09). Error: the message above the table,
+raw: a refused grant read `PUT /api/admin/users/uid-admin/roles failed: 422 {...}`, `unauthorized` for a 401 or a 403 (ADMIN-11). That line
+carries `rolesMut.error ?? statusMut.error` (`:87-91`), so a failed role write hides a failed status write, and neither clears when the
+other kind of write succeeds: after a failed grant and a failed Disable the line still read the grant's error, and a later successful grant
+cleared it and brought the old Disable error back (executed). Success: the list is refetched and the chip follows the answer (read:
+`useAdmin.ts:293`; the fixture's `GET` does not change after a write, so the flip was not observed).
+
+**Acceptance criteria:**
+- Given an account with no role, when its `admin` chip is clicked, then `PUT /api/admin/users/uid-member/roles` carries
+  `{"roles":["admin"]}` (`toggling a role PUTs the new roles array`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given `["user"]` for a known account, then the handler upserts the lower-cased email with the caller as `created_by` and answers the
+  account with that role; given `[]`, then it deletes the row; given `["dev"]`, then `dev` is accepted (`test_roles_upsert_and_delete`,
+  `tests/api/test_admin_users_datasources.py`).
+- Given two roles, then 422 and no write (`test_roles_two_roles_is_422_never_partial_write`); given an unknown role, then 422
+  (`test_roles_unknown_role_is_422`); given the `ADMIN_EMAIL` account without `admin`, then 409 (`test_roles_env_admin_cannot_be_demoted`);
+  given an unknown uid, then 404 (`test_roles_unknown_uid_is_404`); given an account with no email, then 422
+  (`test_roles_no_email_account_is_422`); given an anonymous or a non-admin caller, then 401 or 403 (`test_endpoints_require_admin`).
+- Given an account that holds a role, when another chip is clicked, then the page sends both roles and shows the server's 422, and the chips
+  do not change (executed; solyra#77; no test on main).
+- Given a write in flight, then every chip is disabled (executed; no test).
+- Given a failed grant and then a failed Disable, then the line shows the grant's error (executed; matrix Gaps).
+- Given an admin who is not the `ADMIN_EMAIL` account clicks their own pressed `admin` chip, then the server removes the role and the panel
+  reads `Could not load users: unauthorized` (executed; matrix Gaps).
+
+**Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the body `{roles: ['admin']}` and the uid for a click on `admin` of an
+account with no role (`toggling a role PUTs the new roles array`); stocks `tests/api/test_admin_users_datasources.py` asserts the handler's
+answers (`test_roles_unknown_role_is_422`, `test_roles_two_roles_is_422_never_partial_write`, `test_roles_upsert_and_delete`: the upsert
+with the lower-cased email and the caller as `created_by`, `dev` as an assignable role and `[]` deleting the row,
+`test_roles_env_admin_cannot_be_demoted`, `test_roles_unknown_uid_is_404`, `test_roles_no_email_account_is_422`, and
+`test_endpoints_require_admin`) and `tests/api/test_route_coverage.py` pins the route at 503 against a dead backend. Both pytest files run
+in the lean CI job. No test on main asserts a grant to an account that holds a role, a revoke, the error line, the disabled chips or the
+refetch, and the page's spec toggles an account with no role only, while the handler's test pins the 422 that the page's other click meets.
+Te is ticked: the page's request and the handler's answers are asserted; the rest is in the matrix Gaps.
+
+**Code:** `src/components/admin/UsersPanel.tsx:45-48,87-91,118-146`, `src/hooks/useAdmin.ts:246-295`, `src/hooks/useUser.ts:50-82`;
+`platform/api/routers/admin.py:889-895,986-1004,1053-1134`, `platform/api/auth.py:229-306`, `gcp/schema.sql:4849-4880`; test ids
+`role-<uid>-<role>`, `admin-users-mutation-error`.
+
 ##### ADMIN-05 · Disable a user
+
+**Shows or does:** The `Access` cell of each user row (`src/components/admin/UsersPanel.tsx:149-164`): a button, test id `status-<uid>`,
+`Disable` with a user-x icon and a neutral outline for an account whose `disabled` is false, `Enable` with a user-check icon and a red
+outline for one whose `disabled` is true. A click sends `PUT /api/admin/users/<uid>/status` with `{"disabled": <the flipped value>}`
+(`src/hooks/useAdmin.ts:297-307`) at once, with no confirmation step (read), and on success refetches the list, which brings the new label.
+While a status write is in flight every `Access` button is disabled and the role chips are not (`:152`; executed: three of three `Access`
+buttons, none of the nine chips). A failure shows in the line above the table that ADMIN-04 describes, raw: `PUT
+/api/admin/users/<uid>/status failed: <status> <body>` (executed with a 409), `unauthorized` for a 401 or a 403.
+
+What the handler does (`platform/api/routers/admin.py:1137-1200`, executed over the real router with the Admin SDK faked). In `iap` mode it
+refuses every request with 409 `this deployment authenticates at the IAP edge — Firebase account status does not govern access here; manage
+access in IAP / Cloud IAM instead` (`:1158-1166`): there the identity is the IAP header, and neither the middleware nor `_require_admin`
+reads a Firebase account's status, so a flip would report `disabled: true` while the person kept full access. In `firebase` mode a Disable
+of the caller's own account answers 409 `you cannot disable your own account` and a Disable of the `ADMIN_EMAIL` account 409 `ADMIN_EMAIL is
+the break-glass account and cannot be disabled here` (`:1171-1181`), an unknown uid 404 `no such user`, and otherwise the account is updated
+through the Admin SDK and, for a Disable, its refresh tokens are revoked (`:1183-1191`; an Enable does not revoke); the answer is the
+account's row. A failing SDK is 503 `user directory temporarily unavailable`, and a failing role read after the update is 503 `role store
+temporarily unavailable` although the account has changed (`:1193-1200`, read).
+
+A Disable does not end a session at once: the middleware verifies an ID token without a revocation check (`platform/api/auth.py:136`, read),
+so a token already issued works for up to an hour, which the handler's own docstring says. The page's line `Disabling a user blocks sign-in
+without deleting their history` holds for the next sign-in and the next token refresh. Production runs `AUTH_MODE=iap` (V evidence,
+2026-10-02), so every Disable and Enable there answers 409 while the page offers both for every account (solyra#78); staging runs
+`AUTH_MODE=firebase` with `ADMIN_EMAIL` set, the one place the handler acts.
+
+**Needs:** `PUT /api/admin/users/{uid}/status`; the Firebase Admin SDK as `trading-platform-svc@`, which holds `roles/firebaseauth.admin` (V
+evidence, 2026-10-02), for `update_user` and `revoke_refresh_tokens`; `user_roles`, read back for the row (`_stored_roles`, `:986-989`);
+`AUTH_MODE` of the service (`platform/api/auth.py:55`), read when the request arrives.
+
+**States:** A disabled account reads `Enable` with a red outline, the only mark (ADMIN-01). Pending: every `Access` button is disabled
+(ADMIN-09). Error: the raw line above the table (ADMIN-11); on production it is always the IAP refusal, `PUT /api/admin/users/<uid>/status
+failed: 409 {"detail":"this deployment authenticates at the IAP edge ..."}` (the handler's text executed in `iap` mode; the page's raw
+rendering of a 409 executed with the self-disable text). The line carries `rolesMut.error ?? statusMut.error`, so a status error is hidden
+while a role error is on it (ADMIN-04).
+
+**Acceptance criteria:**
+- Given an active account and a disabled one, then the buttons read `Disable` and `Enable`, and a click on `Disable` of `uid-member` sends
+  `{disabled: true}` for that uid (`disable and enable buttons PUT the flipped status`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given `firebase` mode and a Disable of another account, then the Admin SDK updates it and revokes its refresh tokens
+  (`test_status_disable_updates_and_revokes`, `tests/api/test_admin_users_datasources.py`); given an Enable, then it updates and revokes
+  nothing (`test_status_enable_does_not_revoke`).
+- Given a Disable of the caller's own account or of the `ADMIN_EMAIL` account, then 409 and no update
+  (`test_status_cannot_disable_self_or_break_glass`); given an unknown uid, then 404 (`test_status_unknown_uid_is_404`); given `iap` mode,
+  then 409 (`test_status_refused_in_iap_mode`).
+- Given production's `iap` mode, then a click on `Disable` shows the 409 as raw text and nothing changes (executed over the handler and the
+  page; solyra#78; no page test).
+- Given a status write in flight, then every `Access` button is disabled and the chips are not (executed; no test).
+
+**Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the `Disable` and `Enable` labels and the body `{disabled: true}` with
+the uid of the clicked row (`disable and enable buttons PUT the flipped status`); stocks `tests/api/test_admin_users_datasources.py` asserts
+the handler (`test_status_disable_updates_and_revokes`, `test_status_enable_does_not_revoke`,
+`test_status_cannot_disable_self_or_break_glass`, `test_status_unknown_uid_is_404`, `test_status_refused_in_iap_mode`) and
+`tests/api/test_route_coverage.py` pins the route at 503 against a dead backend. Both pytest files run in the lean CI job. No test on main
+asserts the page's answer to a 409, the disabled buttons while a write is in flight or the refetch. Te is ticked: the page's labels and
+request and the handler's five branches are asserted.
+
+**Code:** `src/components/admin/UsersPanel.tsx:149-164`, `src/hooks/useAdmin.ts:297-307`; `platform/api/routers/admin.py:1137-1200`,
+`platform/api/auth.py:55,136`; test id `status-<uid>`.
 
 ##### ADMIN-06 · Refresh a data source
 
+**Shows or does:** The last cell of each row of the data table (`src/components/admin/DataSourcesPanel.tsx:114-126`): a `Refresh` button,
+test id `refresh-<id>`, enabled for a row the server calls `refreshable`, with the title `Queue a refresh job`, and disabled for any other,
+with the title `This dataset cannot be refreshed on demand` (`:117,120`). A click POSTs `/api/admin/data-sources/<id>/refresh` with `{}`
+and, on success, refetches the list (`src/hooks/useAdmin.ts:359-369`). A success shows nothing: the answer's `queued` and `job_id` are not
+read, and the refetch is served from the server's five-minute audit cache, so the table does not change until the job has written its table
+and the cache has expired (executed: the DOM was identical before and after a press, and the list was requested once more). While a refresh
+is in flight every `Refresh` button is disabled and every icon spins, not only the pressed row's (`:117,123`, executed). A failure shows
+above the table, raw (`:71-75`): `POST /api/admin/data-sources/strat_features_15m/refresh failed: 429 {"detail":"strat-engine was dispatched
+moments ago — wait 60s between refreshes"}` for a refused press and a line of the same shape for a 503 (both executed).
+
+What the handler does (`platform/api/routers/admin.py:1524-1580`, executed over the real router with the lease table and the Cloud Run
+client faked). It answers 404 `unknown data source '<id>'` for an id outside the registry (the `playbook_cards` row is outside it, and its
+button is disabled) and 409 `<id> has no on-demand refresh: <reason>` for the four registered datasets with no job: `market_data_intraday`,
+`premarket_analysis`, `insight_reports` and `signal_alerts`. For the other nine it takes a lease on the job: one row of
+`admin_refresh_leases` for each job, inserted or taken over in one statement only when its last dispatch is older than 60 s (`:1434-1464`).
+The three `strat_features_*` datasets share the `strat-engine` job and so one lease, and a press on `strat_features_15m` within 60 s of one
+on `strat_features_5m` is a 429 (executed), which the page shows as raw JSON. With the lease it runs `run_job` on
+`projects/<project>/locations/<region>/jobs/<job>` with no override, so `strat-engine` runs its default module
+`gcp.research.strat_engine.strat_data_builder`, and answers `{id, queued: true, job_id: <execution id>}` without waiting for the run
+(`:1489-1521`); the region is `GCP_REGION` else `us-east1`, and production, which has no `GCP_REGION`, takes the default. A failing lease
+store is 503 `refresh coordination unavailable — see server logs` and nothing is dispatched (`:1550-1560`); a failing dispatch is 503 `could
+not queue <job> — see server logs`, and the lease is aged so a retry is not locked out (`:1566-1577`).
+
+The nine refreshable datasets map to seven jobs: `market_data_daily` to `fetch-market-data`, `strat_features_5m`, `strat_features_15m` and
+`strat_features_30m` to `strat-engine`, `etf_options_snapshots` to `fetch-av-options-backfill`, `daily_rates` to `fetch-fred-rates`,
+`economic_events` to `fetch-economic-events`, `earnings_calendar` to `fetch-earnings-calendar` and `historical_signals` to
+`historical-signals-watchlist` (`:1261-1279`). The reason the registry gives for `market_data_intraday`, `only writer is the monthly bulk
+backfill`, is not true of the schedules (matrix Gaps), and the page never shows a reason: the button is disabled with the generic title.
+
+**Needs:** `POST /api/admin/data-sources/{source_id}/refresh`; `admin_refresh_leases` (`job_name`, `dispatched_at`), which held no row in
+production on 2026-10-02 (V evidence), so no press has been accepted since the table was created, unless a row was deleted by hand: a failed
+dispatch ages its row and no code deletes one; the seven jobs, each of which grants `roles/run.invoker` to `trading-platform-svc@` (V
+evidence), and the Cloud Run API. Each accepted press runs one execution of the workload the scheduler already runs, and the lease bounds
+that to one execution of a job a minute (the handler's docstring, `:1524-1537`). The newest scheduled executions of the seven jobs had all
+succeeded (V evidence).
+
+**States:** Idle: enabled or disabled by `refreshable`. Pending: every button disabled, every icon spinning (ADMIN-09). Error: the raw line
+above the table (ADMIN-11); a 429, a 503, a 409 or a 404 all read the same way, as `POST <url> failed: <status> <body>`, `unauthorized` for
+a 401 or a 403. Success: nothing shows (above).
+
+**Acceptance criteria:**
+- Given `market_data_daily`, whose `refreshable` is true, when its `Refresh` is pressed, then a POST goes to
+  `/api/admin/data-sources/market_data_daily/refresh`; given a dataset whose `refreshable` is false, then its button is disabled (`refresh
+  POSTs for a refreshable source; non-refreshable button is disabled`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given an id outside the registry, then 404 (`test_refresh_unknown_source_is_404`, `tests/api/test_admin_users_datasources.py`); given a
+  dataset with no job, then 409 with its reason (`test_refresh_non_refreshable_is_409_with_reason`).
+- Given a refreshable dataset, then the first press dispatches its job and answers the execution id, and a second press inside the cool down
+  answers 429 (`test_refresh_dispatches_job_and_cools_down`); given the dispatch fails, then 503 and the lease is released
+  (`test_refresh_dispatch_failure_is_loud_503_and_releases_lease`); given the lease store fails, then 503 and nothing is dispatched
+  (`test_refresh_lease_store_failure_is_loud_503_without_dispatch`).
+- Given the lease helpers, then the acquire statement maps its RETURNING row to a boolean and the release ages the row past the cool down
+  (`test_acquire_refresh_lease_maps_returning_row_to_bool`, `test_release_refresh_lease_ages_the_row_past_the_cooldown`: the statement text
+  and parameters, against no table).
+- Given an accepted press, then nothing on the page changes and the list is requested once more (executed; no test).
+- Given a press on a refused or failed dispatch, then the line above the table shows the status and the server's JSON (executed; no test).
+- Given a press on `strat_features_5m` and then on `strat_features_15m` within a minute, then the second is refused for the shared job
+  (executed over the handler; no test).
+
+**Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the POST for `market_data_daily` and the disabled button of a dataset
+that cannot be refreshed (`refresh POSTs for a refreshable source; non-refreshable button is disabled`); stocks
+`tests/api/test_admin_users_datasources.py` asserts the handler's branches (`test_refresh_unknown_source_is_404`,
+`test_refresh_non_refreshable_is_409_with_reason`, `test_refresh_dispatches_job_and_cools_down`: the execution id and the 429 of the second
+press, `test_refresh_dispatch_failure_is_loud_503_and_releases_lease`, `test_refresh_lease_store_failure_is_loud_503_without_dispatch`) and
+the statement text of the lease helpers (`test_acquire_refresh_lease_maps_returning_row_to_bool`,
+`test_release_refresh_lease_ages_the_row_past_the_cooldown`), and `tests/api/test_route_coverage.py` pins the route at 503 against a dead
+backend. Both pytest files run in the lean CI job. No test on main runs the lease against a table or the dispatch against Cloud Run, or
+asserts what the page shows after a press. Te is ticked: the page's request and its disabled state, and the handler's branches over fakes,
+are asserted; the lease against a table and the dispatch against Cloud Run are not.
+
+**Code:** `src/components/admin/DataSourcesPanel.tsx:71-75,114-126`, `src/hooks/useAdmin.ts:353-369`;
+`platform/api/routers/admin.py:1261-1279,1434-1580`; `gcp/deploy.sh` (the seven jobs); test id `refresh-<id>`,
+`admin-sources-refresh-error`.
+
 ##### ADMIN-07 · Change provider or model per role and save
+
+**Shows or does:** Three controls on each row of the routing table (`src/routes/AdminPage.tsx:239-307`, ADMIN-03): a `Provider` select (test
+id `provider-<role>`), a `Model` select (`model-<role>`, `ModelSelect`, `:317-344`) and a `Save` button (`save-<role>`). The provider select
+lists the providers of the model list in the server's order, `anthropic`, `openai`, `vertex` (`:254`). The model select lists the selected
+provider's models as `<model>`, then ` (no creds)` and a disabled option when that provider has no registered adapter, then ` ·
+$<in>/$<out>`, the USD per million input and output tokens (`:335-340`). Both start at the row's stored values and keep a draft for the row
+in component state (`:174-206`). A change of provider re-points the model at the first model that provider lists, whether or not that option
+can be chosen (`:262-268`): on the real list, `anthropic` lands on `claude-haiku-4-5-20251001`, a disabled `(no creds)` option, with `Save`
+enabled, and a return to `vertex` lands on `gemini-2.0-flash` (executed), the first Vertex model of the list, which the schema's seed
+comment says 404s against the adapter's default location (stocks#1221, not checked against Vertex). `Save` is enabled for a row whose draft
+differs from its stored provider or model while no save is in flight (`:208-214,294`).
+
+A click sends `PUT /api/admin/routes/<role>` with `{"provider", "model"}` for that row only (`src/hooks/useAdmin.ts:207-231`) and, on
+success, clears the draft and refetches the routes, so the row shows the saved pair and `Updated` reads `<local time> · admin-ui` with
+`Save` disabled again (executed). While a save is in flight every `Save` is disabled, other dirty rows' too (executed). On a refusal the
+draft stays, so the pair can be fixed, and the server's text shows under the table, raw: `update route failed: 400 {"detail":"Provider
+'anthropic' has no registered adapter — the pipeline will crash if this route is activated. Install the SDK and set credentials first."}`
+(`:308-312`, executed). The click handler awaits `mutateAsync` and has no catch (`:216-225`), so a refusal is also an unhandled promise
+rejection, a `pageerror` in the browser (executed). A draft is lost when the tab is left, because the panel unmounts (executed).
+
+What the handler does (`platform/api/routers/admin.py:157-205`, executed over the real router against a faked table): 400 `unknown role:
+wizard` for a role outside the seven; then `set_route` (`lib/agents/model_routing.py:164-206`) refuses a pair outside the price table, 400
+`vertex:gemini-imaginary is not in the known price table — add it to lib/agents/pricing.py first`, and a provider with no registered
+adapter, 400 with the text above for `anthropic`; otherwise it upserts `model_routing` stamped `admin-ui` with `updated_at` set to now,
+reads the routes back and answers the row (200 for `judge` on `vertex` `gemini-2.5-pro`); an outage at the write or the read-back is 503
+`model route store temporarily unavailable`. The check covers the price table and the provider's adapter and does not check the model
+against Vertex, so the page can save any priced Vertex model (matrix Gaps). The insight producers read all seven routes once at the start of
+a run and never again during it (`load_routes_snapshot`, `lib/agents/model_routing.py:209-226`, read), so a saved route applies from the
+next run.
+
+**Needs:** `GET /api/admin/models` for the options (twelve priced models, `has_credentials` true for Vertex's seven only, ADMIN-03) and `PUT
+/api/admin/routes/{role}`; `model_routing` (`role` varchar(32) primary key, `provider` varchar(32), `model` varchar(64), `updated_at`
+defaulted and refreshed by a trigger, `updated_by` varchar(64), `gcp/schema.sql:1503-1546`), which the insight producers read for each
+role's model (INSIGHTS-01). Production (V evidence, 2026-10-02): seven rows, all `vertex` `gemini-3.1-flash-lite`, updated 2026-05-12
+00:34:31 UTC by `claude-code/ab-test-restore-2026-05-12`, none by `admin-ui`, so the page has never written the production table.
+`AdminPage.tsx:157-168` says the roles seed on `vertex:gemini-2.0-flash`, and the schema seeds `gemini-3.1-flash-lite` (stocks#1221).
+
+**States:** Clean: `Save` disabled. Draft: the selects show the draft and `Save` is enabled while it differs from the stored row. Pending:
+every `Save` disabled (ADMIN-09). Error: the raw line under the table, the draft kept (ADMIN-11): a 400 for an unpriced pair or a provider
+with no adapter, `unauthorized` for a 401 or a 403, and the line is gone once a later save succeeds (the added test). Saved: the row shows
+the new pair and `admin-ui` (executed). A failed models list leaves the selects with nothing to choose and no message (executed, ADMIN-11).
+
+**Acceptance criteria:**
+- Given a change of the `trader` model within `vertex`, when `Save` is pressed, then `PUT /api/admin/routes/trader` carries `{provider:
+  'vertex', model: 'gemini-2.5-pro'}` (`editing a route saves via PUT and reflects the new value`, `tests/admin/admin.spec.ts`, and `admin
+  role can edit a route with no extra credential`, `tests/admin/admin-auth.spec.ts`, both on main; the body and the role, nothing about the
+  row afterwards).
+- Given a change of provider to one with no credentials, then the model select shows that provider's first model with `(no creds)` and
+  `Save` is enabled; given the server refuses it, then its reason shows and the row is not updated; given a credentialed pair is then saved,
+  then the refetched row shows `admin-ui` and `Save` is disabled (`a provider change re-points the model select, a refused save shows the
+  server reason and an accepted save updates the row`, `tests/admin/admin-tabs.spec.ts`, added on this branch, not on main).
+- Given an unknown role or an unpriced model, then 400 (`test_admin_update_route_unknown_role`, `test_admin_update_route_unpriced_model`,
+  `tests/lib/test_routers_insights_admin.py`, which skip in the Backtest Pipeline for want of a test Postgres); given a provider with no
+  registered adapter, then 400, which the handler answered (executed) while `test_admin_update_route` in the same file expects a 200 for it
+  (area 09 Gaps); given a priced pair of a credentialed provider, then 200 with the row stamped `admin-ui` (executed over the handler; no
+  test that runs in CI).
+- Given a write and then a failing read-back, then 503 (`test_a_successful_route_write_still_guards_its_reload`,
+  `tests/api/test_route_coverage.py`); given a dead database, then 503 for a real provider and model reaching the write (the same file).
+- Given a refused save, then the page raises an unhandled promise rejection and keeps the draft (executed; matrix Gaps).
+- Given a tab round trip, then the draft is gone (executed; matrix Gaps).
+
+**Tests:** On main, solyra `tests/admin/admin.spec.ts` (`editing a route saves via PUT and reflects the new value`) and
+`tests/admin/admin-auth.spec.ts` (`admin role can edit a route with no extra credential`) assert the PUT body and the role for a change of
+model within `vertex`, and nothing about the row afterwards. Stocks `tests/api/test_route_coverage.py` pins the route at 503 for a real
+provider and model reaching the write against a dead database, and `test_a_successful_route_write_still_guards_its_reload` asserts the 503
+when the read-back fails after a write; `tests/lib/test_routers_insights_admin.py` (`test_admin_update_route`,
+`test_admin_update_route_unknown_role`, `test_admin_update_route_unpriced_model`, `test_admin_list_models`) and
+`tests/agents/test_agent_model_routing.py` (`test_set_route_updates_single_role`) skip in the Backtest Pipeline for want of a test Postgres,
+and `test_admin_update_route` PUTs provider `anthropic` and asserts 200, for which the API registers no adapter (area 09 Gaps). This branch
+adds `a provider change re-points the model select, a refused save shows the server reason and an accepted save updates the row` to
+`tests/admin/admin-tabs.spec.ts` (solyra `f2c6863`): it asserts the first model of the chosen provider and its `(no creds)` label, `Save`
+enabled, the PUT body, the refusal text with the row unchanged, then after a credentialed save the refetched row with `admin-ui`, the select
+value and `Save` disabled. It passed on the existing behaviour, so it was shown to fail by mutation, five one-line changes to a scratch copy
+of the product code, each failing it for the stated reason: the model not re-pointed (`AdminPage.tsx:266-267`, the select read an empty
+value), the save error not rendered (`:308-312`, no refusal text), the routes not refetched (`useAdmin.ts:227-229`, no `admin-ui` in the
+row), `Save` held disabled (`:294`) and a different model sent (`:219`, a different body). No test asserts the unhandled rejection, the
+draft lost on a tab round trip or the error line's persistence. Te stays unticked: no test that runs in CI asserts the handler's answers,
+and this branch's test waits for a CI run that includes the branch's tests.
+
+**Code:** `src/routes/AdminPage.tsx:157-344`, `src/hooks/useAdmin.ts:25-67,207-231`; `platform/api/routers/admin.py:157-213`,
+`lib/agents/model_routing.py:164-226,238-256`, `lib/agents/pricing.py:160-163`, `lib/agents/llm_client.py:113-115`,
+`gcp/schema.sql:1503-1546`; test ids `provider-<role>`, `model-<role>`, `save-<role>`.
 
 ##### ADMIN-08 · Run a predict
 
+**Shows or does:** The `On-Demand Predict` section of the Models tab, `PredictForm`
+(`src/components/structure_brief/PredictForm.tsx:31-125`): a card titled `Run a structure prediction` with `Ticker` (`IWM`, `SPY`, `QQQ`,
+starting on `IWM`, test id `predict-ticker`), `Timeframe` (`5m`, `15m`, `30m`, starting on `15m`, `predict-timeframe`), `Bar timestamp
+(optional)` (a `datetime-local` input, `predict-as-of`) and a `Predict` button (`predict-submit`). A submit POSTs
+`/api/admin/strat-engine/predict` with `{"ticker", "timeframe"}` and, when the field is filled, `as_of_timestamp` set to the input's value
+as typed, `YYYY-MM-DDTHH:mm` with no zone (`:39-44`, `src/hooks/useAdmin.ts:188-204`; executed: `{"ticker":"IWM","timeframe":"15m"}` with
+the field empty and `{"ticker":"IWM","timeframe":"15m","as_of_timestamp":"2026-09-30T15:45"}` with it filled). While the request is in
+flight the button reads `Predicting…` and is disabled (`:96-113`, executed). A failure shows beside the button, raw: `predict failed:
+<status> <body>` (`:114-118`, executed with a 400 and a 503), `unauthorized` for a 401 or a 403. The answer shows as a card under the form
+(`PredictResultCard`, `:128-226`). An answer with `available` false is a dashed card with `<ticker> · <timeframe>`, `unavailable`, the
+server's note (`No model artifact available.` when it sent none) and the scope statement, and it has no test id (executed: `No features
+available in the lookback window for IWM 15m. The strat-features tables may be stale; re-run the data build pipeline.`). An available
+answer, test id `predict-result`, shows `<ticker> · <timeframe>`, `based on bar @ <ts>` with the server's ISO text as it came, then either
+the mute reason in an amber box (`model muted, ECE breach` when none came) or `next bar <P>% likely to be type <C>` with four bars, `1`,
+`2U`, `2D` and `3`, each with a whole-percent label, a class missing from `class_probs` drawn as `0%` by an unmarked `?? 0` (`:183`,
+executed, matrix Gaps), and the footer `live ECE <x or an em-dash placeholder>`, `model <version>`, `trained <relative time or date>` and
+the scope statement.
+
+What the server does (`platform/api/routers/admin.py:594-669`, executed over the real router and the real `predict_one` with a stub model
+and patched loaders): 400 for a ticker outside `IWM`, `SPY`, `QQQ` or a timeframe outside `5m`, `15m`, `30m`; 400 `as_of_timestamp must be
+an ISO-8601 timestamp; got '<raw>'` for a value pandas cannot read (`:380-418`, parsed before the outage guard, so it is not reported as an
+outage); then `predict_one` (`gcp/research/strat_engine/strat_pred_serve.py:270-460`) loads the cell's model, answers unavailable with a
+note when there is none, decides the mute from the live-ECE snapshot before it reads any bar (`:343-354`), reads the newest bar at or before
+`as_of` within the last 30 days (`:372-380`) from `strat_features_<tf>` left-joined to `strat_features_levels_<tf>`
+(`gcp/research/strat_engine/strat_dataset.py:30-104`), and scores it, with a class the model lacks set to 0.0 (`:442-443`). An
+infrastructure failure is 503 `strat engine temporarily unavailable`, a defect a 500.
+
+Four behaviours the page cannot see (matrix Gaps). A naive `as_of` is read as UTC (`:379-380`) while the strat tables hold true UTC instants
+(V evidence: the IWM 15m bars sit at UTC hours 13 to 19), so a time typed as Eastern wall clock, which is what an operator in New York
+types, scores a bar four or five hours early: `2026-09-30T15:45` scored the 15:45 UTC bar, 11:45 ET, where the 15:45 ET bar is the 19:45 UTC
+one, and `2026-09-30T15:45-04:00` scored the 19:45 UTC bar (executed). A feature column the bar lacks is filled with 0 before scoring
+(`:418`) and the answer is still `available` (executed: the model was handed `[1.0, 2.0, 0.0, 0.0]` for four columns of which two were
+missing). A failed levels join is read again as a plain features query with a warning in the log (`strat_dataset.py:89-94`, executed), and
+the answer is an ordinary one. The mute cannot fire in production, because the live-ECE snapshot it reads does not exist (ADMIN-03).
+
+**Needs:** `POST /api/admin/strat-engine/predict`; the cell's `model.pkl`, `features.txt`, `classes.txt` and the first metrics file that
+loads, in the GCS prefix `research/strat_engine/<ticker>_<tf>/`; `strat_features_5m`, `strat_features_15m`, `strat_features_30m` and their
+three levels tables, which the `strat-engine` job creates at run time (they are not in `gcp/schema.sql`); `lightgbm` and `scikit-learn` in
+the API image. Production (V evidence, 2026-10-02): the feature tables read current, newest bars 2026-09-30 at 19:55, 19:45 and 19:30 UTC,
+the levels tables fresh, nine served models trained 2026-05-26 and 2026-06-04 and no live-ECE snapshot, so `live ECE` reads an em-dash
+placeholder for every cell and none is ever muted; `strat-engine-daily` (23:35 ET Mon-Fri) and `strat-enrich-daily` (02:00 ET Tue-Sat) were
+enabled and their newest executions had succeeded.
+
+**States:** Idle: the form, and the card of the last answer. Pending: `Predicting…`, the button disabled (ADMIN-09). Error: `predict failed:
+<status> <body>` beside the button (ADMIN-11). Unavailable: the dashed card, for a missing model or no bar in the window (ADMIN-10). Muted:
+the amber reason and no bars. Available: the bars and the footer. The answer is a single bar's, with no age beyond `based on bar @ <ts>` and
+`trained <date>` (ADMIN-12).
+
+**Acceptance criteria:**
+- Given `IWM`, `15m` and no timestamp, then the request is `{"ticker":"IWM","timeframe":"15m"}` and the button reads `Predicting…` and is
+  disabled until the answer comes (executed; no test).
+- Given a typed time, then the request carries it as typed, with no zone (executed; no test).
+- Given an answer with `available` false, then a dashed `unavailable` card shows the note and the scope statement; given an available one,
+  then `predict-result` shows with four class bars and the footer; given a class missing from `class_probs`, then its bar reads `0%`
+  (executed; no test).
+- Given a 400 or a 503, then `predict failed: <status> <body>` shows beside the button (executed; no test).
+- Given an anonymous or a non-admin caller, then 401 or 403; given a ticker or a timeframe outside the lists, then 400; given a valid
+  request, then the answer carries every field, the verbatim scope statement and the upper-cased ticker; given a muted or an unavailable
+  payload, then it passes through with the scope statement (`test_predict_requires_sign_in`, `test_predict_rejects_non_admin_user`,
+  `test_predict_rejects_unknown_ticker`, `test_predict_rejects_unknown_timeframe`, `test_predict_returns_valid_shape`,
+  `test_predict_normalizes_ticker_casing`, `test_predict_returns_muted_payload`, `test_predict_returns_unavailable_when_no_model`,
+  `tests/api/test_strat_engine_predict.py`, with `predict_one` stubbed; the module does not run in CI).
+- Given a value that is not a timestamp, then 400 and not 503 (`test_a_malformed_as_of_timestamp_is_the_callers_error`,
+  `tests/api/test_route_coverage.py`).
+- Given frames of three bars, then `predict_one` scores the newest and answers its `ts`, its Strat type and the class probabilities, and a
+  missing current type gives no continuation figure (`test_predict_one_scores_newest_bar`,
+  `test_predict_one_sets_continuation_to_current_type_prob`, `test_predict_one_no_current_type_yields_none`,
+  `tests/api/test_structure_continuation.py`, over a stub model and patched loaders, none passing `as_of`; the module does not run in CI).
+- Given a naive `as_of` of `2026-09-30T15:45`, then the bar scored is the 15:45 UTC one, four hours before the 15:45 ET bar (executed over
+  the real `predict_one`; matrix Gaps).
+
+**Tests:** No test on main asserts the page's form, request, result card, error text or `Predicting…`. The handler is asserted by stocks
+`tests/api/test_strat_engine_predict.py` (401 and 403, the 400s for an unknown ticker and timeframe, a valid shape, the upper-cased ticker,
+the muted and unavailable payloads and the verbatim scope string, all with `predict_one` stubbed, and
+`test_gcs_load_bytes_propagates_a_storage_outage_but_returns_none_when_absent`), by `tests/api/test_structure_continuation.py`
+(`test_predict_one_sets_continuation_to_current_type_prob`, `test_predict_one_no_current_type_yields_none` and
+`test_predict_one_scores_newest_bar` run the real `predict_one` over a stub model and patched loaders and assert the newest bar scored, its
+`ts` and the class probabilities; none passes `as_of`) and by `tests/api/test_route_coverage.py` (the route pinned at 503 against a dead
+backend, and `test_a_malformed_as_of_timestamp_is_the_callers_error`: the 400 for `not-a-date`). Neither of the first two modules runs in
+CI: both skip in the lean job for want of `lightgbm`, and the research job's globs, `tests/*/test_strat*.py` and `tests/*/test_mag*.py`,
+select the first, which skips there because `platform/` is not on its path, and not the second. Te stays unticked: the page is asserted by
+nothing and the handler's answers by tests that do not run.
+
+**Code:** `src/components/structure_brief/PredictForm.tsx:31-226`, `src/hooks/useAdmin.ts:131-153,188-204`;
+`platform/api/routers/admin.py:380-451,594-669`, `gcp/research/strat_engine/strat_pred_serve.py:258-460`,
+`gcp/research/strat_engine/strat_dataset.py:30-104`; test ids `predict-ticker`, `predict-timeframe`, `predict-as-of`, `predict-submit`,
+`predict-result`.
+
 ##### ADMIN-09 · State: loading
+
+**Shows or does:** The loading presentations of the page, each a part of another row and none with a request of its own. The rows it is the
+state of are ADMIN-01 to ADMIN-08, the ones whose content the interval replaces or disables, and each bullet names its row:
+- The page and every tab (ADMIN-01 to ADMIN-08): until `/api/me` answers, `AdminPage` returns a bare spinner and nothing else, no `Admin`
+  heading, no tabs and no text (`src/routes/AdminPage.tsx:40-46`; executed with `/api/me` held for 1.5 s: one spinner, no `h1`, an empty
+  `main`). In `firebase` mode the same spinner shows until Firebase reports its sign-in state (`src/hooks/useUser.ts:82`, read). Before
+  either, the route's own chunk loads behind `PageLoader`, a larger spinner (`src/App.tsx:39-45,94`, read).
+- ADMIN-01: one spinner replaces the search and the table (`src/components/admin/UsersPanel.tsx:50-56`, executed).
+- ADMIN-02: one spinner replaces the chips and the table (`src/components/admin/DataSourcesPanel.tsx:32-38`, executed), for as long as the
+  audit takes: a cold audit took 51 and 67 s on staging (V evidence), and the spinner has no text and the request no timeout (read).
+- ADMIN-03: the routing section is one spinner until both the routes and the models have answered (`AdminPage.tsx:227-233`); the brief is
+  nine placeholder cards, each with a spinner and `loading 5m…`, `loading 15m…` or `loading 30m…`
+  (`src/components/structure_brief/StructureBrief.tsx:363-389`); the state is a card with a spinner and `Loading model state…`
+  (`src/components/structure_brief/ModelStateSnapshot.tsx:21-28`); eleven spinners in all (executed with the four requests held for 0.8 s).
+- ADMIN-04 and ADMIN-05: while a role write is in flight every role chip is disabled and the `Access` buttons are not, and while a status
+  write is in flight every `Access` button is disabled and the chips are not (`UsersPanel.tsx:129,152`; executed: nine of nine chips and
+  none of three `Access` buttons, then none of nine chips and three of three `Access` buttons); neither shows text or a spinner.
+- ADMIN-06: while a refresh is in flight every `Refresh` button is disabled and every icon spins, not only the pressed row's
+  (`DataSourcesPanel.tsx:117,123`, executed).
+- ADMIN-07: every `Save` is disabled while a save is in flight, with no text (`AdminPage.tsx:294`, executed with two dirty rows).
+- ADMIN-08: `Predicting…` with a spinner on a disabled button (`src/components/structure_brief/PredictForm.tsx:96-113`, executed).
+
+A failing read keeps its loading presentation through the app's one retry, so the error of ADMIN-11 shows after a second round trip
+(executed: the users request and `/api/me` were each made twice).
+
+**Needs:** Nothing of its own: the requests in flight are those of ADMIN-01 to ADMIN-08. TanStack Query's defaults here are five minutes of
+stale time and one retry for queries (`src/App.tsx:30-36`); `/api/me`, the users, the data sources and the routes hold 30 s, the models five
+minutes, and the brief and the state 60 s; a mutation is not retried (read).
+
+**States:** The ones above. No spinner carries text, the users and data tables have no skeleton, and the page does not show how long it has
+been loading.
+
+**Acceptance criteria:**
+- Given `/api/me` has not answered, then a spinner shows and no heading, tab or panel (executed; no test).
+- Given `/api/me` answered admin and the users request has not, then the users panel is a spinner (executed; no test).
+- Given the Models tab is opened and none of its four requests has answered, then eleven spinners show, one for the routing table, nine in
+  the brief and one for the state (executed; no test).
+- Given a role write is in flight, then every role chip is disabled and no `Access` button is; given a status write, then the reverse; given
+  a refresh, then every `Refresh` button is disabled and spinning; given a save, then every `Save` is disabled; given a predict, then the
+  button reads `Predicting…` and is disabled (executed; no test).
+
+**Tests:** No test asserts a loading state of this page: the admin specs wait for the tables, and none looks at a spinner, a skeleton, a
+disabled button during a write or `Predicting…`. Te stays unticked.
+
+**Code:** `src/routes/AdminPage.tsx:36-48,227-233,294`, `src/components/admin/UsersPanel.tsx:50-56,129,152`,
+`src/components/admin/DataSourcesPanel.tsx:32-38,117-123`, `src/components/structure_brief/StructureBrief.tsx:140-142,363-389`,
+`src/components/structure_brief/ModelStateSnapshot.tsx:21-28`, `src/components/structure_brief/PredictForm.tsx:96-113`,
+`src/hooks/useUser.ts:50-82`, `src/App.tsx:30-45,94`.
 
 ##### ADMIN-10 · State: empty
 
+**Shows or does:** The empty presentations of the page, each a part of another row and none with a request of its own. The rows it is the
+state of are ADMIN-01, ADMIN-02 and ADMIN-03, the ones whose content an empty answer replaces, and each bullet names its row:
+- ADMIN-01: `No users match this search.` in a bordered box in place of the table (`src/components/admin/UsersPanel.tsx:93-96`) when the
+  search matches nothing, and also when the directory has no accounts at all, where the counter reads `0 of 0` (executed): a search wording
+  for a directory that is simply empty (matrix Gaps). When the server lists no assignable role the `Roles` cell shows an em-dash placeholder
+  in place of the chips (`:120-121`, read).
+- ADMIN-02: `No data sources reported for this category.` in place of the table (`src/components/admin/DataSourcesPanel.tsx:77-80`) for a
+  category with no rows and for an answer with no sources at all, which leaves only the `all` chip (executed, matrix Gaps).
+- ADMIN-03, routing: a table with no routes is its header and nothing under it, and no models leave every select empty
+  (`src/routes/AdminPage.tsx:189-190,239-307`, executed).
+- ADMIN-03, brief: an answer with no cells reads `0 / 9 cells available · 0 muted · ECE ceiling 0.050` over the three headings IWM, SPY and
+  QQQ and no cell (`src/components/structure_brief/StructureBrief.tsx:154-189`, executed). The handler's answer for an absent snapshot,
+  which is production's today, is nine cells reading `unavailable` over the note `No live snapshot available. Production data source is
+  blocked behind the Track B / Track C deploy gate.`, and a snapshot that lacks a cell gives `Cell missing from snapshot.`
+  (`platform/api/routers/admin.py:286-307`; the first executed over the real handler, the second read).
+- ADMIN-03, state: an answer with no cells reads `0 / 0 models trained · 0 muted · ECE ceiling 0.050 · no live ECE snapshot yet` over an
+  empty table (`src/components/structure_brief/ModelStateSnapshot.tsx:37-68`, executed). That is how a storage outage reaches the page:
+  `_strat_engine_state_cells` returns no cells when the storage client cannot be built (`admin.py:486-495`, executed: 200 with `{"cells":
+  [], "ece_ceiling": 0.05}`), and marks a cell unavailable when its object cannot be read (`:516-522`, executed with every read denied: nine
+  cells with `available` false, which the table draws as `no artifact`, read), and the brief takes the same swallowed read for an absent
+  snapshot (`:262-283`, executed).
+
+**Needs:** Nothing of its own: the empty answers come from the requests of ADMIN-01 to ADMIN-03. In production today the directory and the
+registry are not empty (V evidence: fourteen data-source rows from the live report, seven routes) and the brief is, because its object does
+not exist.
+
+**States:** The ones above. No empty presentation carries an action or a reason beyond its sentence, and none tells an empty answer from a
+failed one: a storage outage reads as an empty shelf (matrix Gaps).
+
+**Acceptance criteria:**
+- Given a search that matches nothing, then `No users match this search.` shows and the table does not (`search filters rows and shows the
+  honest empty state`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given a directory with no accounts, then the counter reads `0 of 0` over `No users match this search.` (executed; no test).
+- Given an answer with no sources, then only the `all` chip and `No data sources reported for this category.` show (executed; no test).
+- Given the brief answer of nine unavailable cells, then the strip reads `0 / 9 cells available` and each cell shows its note (executed over
+  the real handler; no test).
+- Given the state answer with no cells, then the strip reads `0 / 0 models trained` over an empty table (executed; no test).
+- Given the storage client failing, then the brief and the state routes answer 200 (`tests/api/test_route_coverage.py` pins the 200,
+  executed), and the page reads as above.
+
+**Tests:** On main, `search filters rows and shows the honest empty state` (`tests/admin/admin-tabs.spec.ts`) asserts `No users match this
+search.` for a search that matches nothing and the table's absence, and stocks `tests/api/test_route_coverage.py` pins `GET
+/api/admin/structure-brief` and `GET /api/admin/strat-engine/state` at 200 with the storage client failing, which is the swallowed read and
+not the empty states' text. No test on main asserts the empty category's text, an empty directory, the Model State Snapshot's `0 / 0 models
+trained` or the brief's unavailable cells. Te stays unticked: one of the page's four empty presentations is asserted.
+
+**Code:** `src/components/admin/UsersPanel.tsx:93-96,120-121`, `src/components/admin/DataSourcesPanel.tsx:77-80`,
+`src/routes/AdminPage.tsx:189-190,239-307`, `src/components/structure_brief/StructureBrief.tsx:154-189,237-251`,
+`src/components/structure_brief/ModelStateSnapshot.tsx:37-68`; `platform/api/routers/admin.py:262-339,468-574`.
+
 ##### ADMIN-11 · State: error
+
+**Shows or does:** The error presentations of the page, each a part of another row and none with a request of its own. The rows it is the
+state of are ADMIN-01 to ADMIN-08, the ones whose content a failure replaces or annotates, and each bullet names its row. Every message is
+the server's status and body as it came, or `unauthorized` for a 401 or a 403 (`src/hooks/useAdmin.ts:12-15`), and nothing is worded for the
+operator:
+- ADMIN-01: a red card `Could not load users: <message>` (test id `admin-users-error`) in place of the search and the table
+  (`src/components/admin/UsersPanel.tsx:58-67`); with the handler answering 503 it read `Could not load users: GET /api/admin/users failed:
+  503 {"detail":"user directory temporarily unavailable"}` (executed).
+- ADMIN-02: a red card `Could not load data sources: <message>` (`admin-sources-error`) in place of the chips and the table
+  (`src/components/admin/DataSourcesPanel.tsx:40-49`), `Could not load data sources: GET /api/admin/data-sources failed: 503 {...}`
+  (executed).
+- ADMIN-03, routing: one red line (`admin-error`) in place of the section (`src/routes/AdminPage.tsx:179-187`): `The server rejected this
+  account for admin routes — sign in again, or check the admin role assignment.` for a 401 or a 403, otherwise `Failed to load routes: admin
+  routes <status>` (executed with a 503). A failed models list shows nothing and leaves every select empty (executed, matrix Gaps).
+- ADMIN-03, brief and state: `Structure brief unavailable: <message>` (`src/components/structure_brief/StructureBrief.tsx:143-148`) and
+  `Model state unavailable: <message>` (`src/components/structure_brief/ModelStateSnapshot.tsx:29-35`), each in a bordered box in the muted
+  colour, the messages `structure brief <status>`, `state <status>` or `unauthorized` (executed with a 503 and a 403).
+- ADMIN-04 and ADMIN-05: the line above the users table (`admin-users-mutation-error`, `UsersPanel.tsx:87-91`), `PUT
+  /api/admin/users/<uid>/roles failed: <status> <body>` or `.../status failed: ...` (executed with a 422 and a 409), showing the role
+  write's error in preference to the status write's.
+- ADMIN-06: the line above the data table (`admin-sources-refresh-error`, `DataSourcesPanel.tsx:71-75`), `POST
+  /api/admin/data-sources/<id>/refresh failed: <status> <body>` (executed with a 429 and a 503).
+- ADMIN-07: the line under the routing table (`AdminPage.tsx:308-312`), `update route failed: <status> <body>` (executed with a 400).
+- ADMIN-08: `predict failed: <status> <body>` beside the button (`PredictForm.tsx:114-118`, executed with a 400 and a 503).
+
+A failing read is retried once before its card shows (the app's default), so the error comes after two requests (executed: the users request
+was made twice). A 401 from an admin route also turns the shell's strip to `Session expired` and a 403 does not (executed in `open` auth
+mode, `src/lib/authedFetch.ts:158,249`, `src/components/shared/AuthStatusIndicator.tsx:43`, ADMIN-13). A failing `/api/me` reads as a
+denial, not as an error (ADMIN-13).
+
+What reaches those lines from the server (read, with the handler answers of ADMIN-01 to ADMIN-08 executed): 503 `user directory temporarily
+unavailable` and `role store temporarily unavailable` from the users routes (`platform/api/routers/admin.py:921-958,1021-1200`), 503
+`Freshness audit unavailable: <error>` or `Freshness audit in progress and no cached report is available yet. Retry shortly.` from the
+data-sources route and a 500 for an audit defect (`platform/api/routers/health.py:113-151`), 503 `model route store temporarily unavailable`
+from the route list and write (`admin.py:129-205`), 503 `strat engine temporarily unavailable` from the predict (`:660-668`), and 503
+`refresh coordination unavailable` or `could not queue <job>` from the refresh (`:1550-1577`). The brief and the state never answer a
+storage failure with an error: both swallow it into a 200 (`:262-283`, `:468-574`, ADMIN-10), so their lines fire only on a 401, a 403 or an
+unhandled 500.
+
+**Needs:** Nothing of its own: the failing requests are those of ADMIN-01 to ADMIN-08. A Disable on production always lands on the error
+line (ADMIN-05).
+
+**States:** The ones above. No error offers a retry control (a failed read is fetched again on a later mount or window focus once its stale
+time has passed, read), none names a cause in words, and a write's error line is cleared only by the next write of its kind (ADMIN-04).
+
+**Acceptance criteria:**
+- Given the users request fails with a 500, then `Could not load users` shows with the server's text and the table does not (`load failure
+  surfaces a visible error, not an empty table`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given the Firebase Admin SDK is unavailable, then the users routes answer 503 with `user directory temporarily unavailable`
+  (`test_users_directory_failure_is_loud_503`, `tests/api/test_admin_users_datasources.py`;
+  `test_admin_answers_503_when_firebase_is_unavailable`, `tests/api/test_route_coverage.py`, for the three user requests).
+- Given the dispatch or the lease store fails, then the refresh answers 503, releases the lease in the first case and dispatches nothing in
+  the second (`test_refresh_dispatch_failure_is_loud_503_and_releases_lease`,
+  `test_refresh_lease_store_failure_is_loud_503_without_dispatch`).
+- Given a dead backend, then the user, data-source, route, predict and refresh requests answer 503; given a defect and not an outage, then
+  500 for it and 503 for a driver failure of the route list (`tests/api/test_route_coverage.py`,
+  `test_an_internal_defect_is_not_reported_as_an_outage`).
+- Given the data sources, the routes, the brief, the state, a write or a predict fail, then each shows its own line as above (executed; no
+  test on main). Given the models list fails, then the selects are empty and no message shows (executed).
+- Given the users request answers 403, then the card reads `Could not load users: unauthorized` (the test added on this branch, ADMIN-13).
+
+**Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts `admin-users-error` with `Could not load users` for a 500 and the
+table's absence (`load failure surfaces a visible error, not an empty table`). Stocks `tests/api/test_admin_users_datasources.py` asserts
+`test_users_directory_failure_is_loud_503`, `test_refresh_dispatch_failure_is_loud_503_and_releases_lease` and
+`test_refresh_lease_store_failure_is_loud_503_without_dispatch`, and `tests/api/test_route_coverage.py` pins the 503 of the user,
+data-source, route, predict and refresh requests against a dead backend, asserts the 503 and its text for the three user requests
+(`test_admin_answers_503_when_firebase_is_unavailable`) and the 500 for a defect against the 503 for a driver failure of the route list
+(`test_an_internal_defect_is_not_reported_as_an_outage`). No test on main asserts the data-source, route, brief, state, predict or mutation
+errors or a failed models list. Te stays unticked: one of the page's error presentations is asserted, of eight.
+
+**Code:** `src/components/admin/UsersPanel.tsx:58-67,87-91`, `src/components/admin/DataSourcesPanel.tsx:40-49,71-75`,
+`src/routes/AdminPage.tsx:179-187,308-312`, `src/components/structure_brief/StructureBrief.tsx:143-148`,
+`src/components/structure_brief/ModelStateSnapshot.tsx:29-35`, `src/components/structure_brief/PredictForm.tsx:114-118`,
+`src/hooks/useAdmin.ts:12-15,37-67,112-124,173-231,261-307,344-369`, `src/lib/authedFetch.ts:158,249`; `platform/api/routers/admin.py`,
+`platform/api/routers/health.py:113-151`.
 
 ##### ADMIN-12 · State: stale
 
+**Shows or does:** The stale presentations of the page, each a part of another row and none with a request of its own. The rows it is the
+state of are ADMIN-02 and ADMIN-03, whose figures can be older than they read, and each bullet names its row and says whether the page shows
+the age:
+- ADMIN-02, shown, per dataset: a dataset the audit finds behind its allowed lag reads `stale` in its `Status` badge, outlined amber, and
+  its row carries the message `<ticker or table>: <audit status> (lag <h>h, allowed <n>h)` under its label, `Last refresh` holding the
+  newest row's time (`src/components/admin/DataSourcesPanel.tsx:98-113`; the handler's fold, `platform/api/routers/admin.py:1323-1370`). The
+  audit's `warn`, a lag of one to two times the allowed one, reads as `stale` too, so the page tells a late dataset from a failed one only
+  by the message. No dataset was stale on 2026-10-02 (executed over the live staging report), so the badge was drawn only from the fixture:
+  `STALE` with an amber outline and the message `last fetch skipped: vendor quota`, `ok` outlined green and `unknown` neutral (executed).
+- ADMIN-02, not shown, the report: when another request is auditing, the handler serves the last report with `stale: true` and
+  `stale_age_seconds` (`platform/api/routers/health.py:113-120`) and passes both on (`admin.py:1418-1425`; executed: `stale: true` and
+  `stale_age_seconds: 421` with every status still `ok`), but the page's response type holds only `sources`
+  (`src/hooks/useAdmin.ts:340-342`), so the table of a seven-minute-old report reads as current: with the flag set the page's text was
+  unchanged (executed). It is the unread-field shape that the stocks CLAUDE.md §3.7.1 describes (matrix Gaps).
+- ADMIN-02, not shown, the age of the table: the list is held 30 s by the browser and the audit five minutes by the server
+  (`useAdmin.ts:344-351`, `health.py:42`), so what the table shows can be up to five and a half minutes old with no age on it, under the
+  page's line `nothing here is cached client-side` (read; the browser's hold was executed: four tab switches made one request).
+- ADMIN-03, not shown, the models: `Last Trained` is the training date as a relative time under a week old and a date beyond, with no flag
+  and no threshold, so the nine served models, 129 days old for IWM and 120 for SPY and QQQ, read `ready` with `5/26/2026` and `6/4/2026`
+  (`src/components/structure_brief/ModelStateSnapshot.tsx:119-139`, `StructureBrief.tsx:116-131`, executed). The brief's cells would show
+  the age of their snapshot through `formatRefreshed`, and none is available. The routing table's `Updated` is the time of the last change
+  and says nothing about staleness.
+
+**Needs:** Nothing of its own: the report of ADMIN-02 and the GCS objects of ADMIN-03.
+
+**States:** The ones above: the per-dataset badge and message are the page's only stale presentation.
+
+**Acceptance criteria:**
+- Given an audit status of `warn` or `stale` for a dataset, then its row reads `stale` with the lag in the message (the handler,
+  `test_data_sources_aggregation`, `tests/api/test_admin_users_datasources.py`, on main; the page, `renders sources with statuses; null
+  rows/refresh render as em-dash`, `tests/admin/admin-tabs.spec.ts`, asserts the fixture's message and not the badge).
+- Given a report served as a stale copy, then the handler answers `stale` true with its age (executed;
+  `test_freshness_decliner_serves_a_stale_report_rather_than_waiting`, `tests/api/test_threadpool_races.py`, asserts it of the shared
+  report) and the page shows nothing different (executed; matrix Gaps).
+- Given models trained 120 and 129 days before, then the Model State Snapshot reads `ready` with the two dates and no flag (executed; matrix
+  Gaps).
+
+**Tests:** On main, `test_data_sources_aggregation` (`tests/api/test_admin_users_datasources.py`) asserts `warn` read as `stale` with the
+lag in the message; `tests/api/test_threadpool_races.py` asserts the shared report's stale copy
+(`test_freshness_decliner_serves_a_stale_report_rather_than_waiting`) and
+`test_a_stale_freshness_report_stays_stale_through_the_admin_view`, which asserts only that the response models declare `stale` and
+`stale_age_seconds`; solyra `dataSourceFormat.test.ts` asserts a missing or invalid time as an em-dash placeholder (`renders a missing or
+invalid timestamp as an em-dash`). No test on main asserts that the handler passes the report's `stale` on, the `stale` badge on the page or
+the Model State Snapshot's `Last Trained`. Te stays unticked: the handler's fold is asserted and no presentation of the page is.
+
+**Code:** `src/components/admin/DataSourcesPanel.tsx:98-113`, `src/components/admin/dataSourceFormat.ts:11-22`,
+`src/hooks/useAdmin.ts:316-351`, `src/components/structure_brief/ModelStateSnapshot.tsx:105-151`,
+`src/components/structure_brief/StructureBrief.tsx:116-131`; `platform/api/routers/admin.py:1305-1425`,
+`platform/api/routers/health.py:42-155`.
+
 ##### ADMIN-13 · State: permission
+
+**Shows or does:** The permission presentations of the page. The rows it is the state of are ADMIN-01 to ADMIN-08, all of which are gated
+twice, by the page and by every route, and each bullet names its gate:
+- The page's gate: `AdminPage` mounts its tabs only when `/api/me` reports `is_admin` true (`src/routes/AdminPage.tsx:36-53`). For anyone
+  else, a failed `/api/me` included, it keeps the `h1` `Admin` and shows a card, test id `admin-denied` (`:136-151`): `Admin access
+  required` over `Admin access is granted per account: the signed-in identity must hold the admin role (assigned server-side alongside the
+  Firebase sign-in). This account doesn't. Shared admin tokens are no longer accepted.` (executed). A denied page makes no admin request
+  (executed: none). While `/api/me` loads, a bare spinner shows (ADMIN-09). A `/api/me` that answers a non-OK status is retried once and
+  then reads as not admin (`src/hooks/useUser.ts:58-79`), so a server failure on it shows as the verdict above (executed with a 500: two
+  requests, then the card).
+- The routes' gate: every `/api/admin` route answers 401 `sign-in required` for a request with no identity and 403 `admin access required`
+  for one without the role (`platform/api/routers/admin.py:52-67`, executed). In `firebase` mode, which is staging's, the middleware answers
+  first: 401 `sign in to continue` for a missing token, and each of the eleven admin routes did so without one (V evidence, 2026-10-02). In
+  `iap` mode, production's, IAP in front of the service answers a 302 to Google sign-in (V evidence: the production GETs).
+- Role drift: when `/api/me` says admin and the routes disagree, as after a role is revoked, the page is mounted and each panel says so:
+  `Could not load users: unauthorized`, `Could not load data sources: unauthorized`, the routing line `The server rejected this account for
+  admin routes — sign in again, or check the admin role assignment.`, `Structure brief unavailable: unauthorized`, `Model state unavailable:
+  unauthorized`, and `unauthorized` beside `Predict` after a click (`src/hooks/useAdmin.ts:12-15`, executed with every admin route answering
+  403). A 401 also turns the shell's strip to `Session expired` and a 403 does not (executed in `open` auth mode). The page returns to the
+  card only when `/api/me` is read again, after its 30 s.
+- The link: the shell lists `Admin` only for an admin (`src/components/layout/navConfig.ts:89`, `TopTabs.tsx:98`, `Sidebar.tsx:54`, the
+  shell's elements), and a non-admin who types `/admin` meets the card.
+- Mock mode: an account with the `dev` role enters the app's mock-data mode (`src/components/layout/AppShell.tsx:35-42`,
+  `src/lib/mockMode.ts`), where every `/api` request is answered in the browser from fixtures (`src/lib/authedFetch.ts:145-147`) and
+  `/api/me` answers a fake dev admin (`src/mocks/common.ts:41-45,122`), so the page opens for that account on fixture data and no admin
+  request reaches the server (read); the `dev` role grants no API access (`platform/api/routers/admin.py:889-895`).
+
+**Needs:** `GET /api/me` (`platform/api/main.py:282-305`) through `useUser` (`src/hooks/useUser.ts:21-85`, 30 s, one retry, keyed by the
+Firebase uid): the verified email, `is_admin` true for the `ADMIN_EMAIL` account or a stored `admin` role, and `is_dev` for a stored `dev`
+role, from one `user_roles` lookup (`stored_role_for`, `platform/api/auth.py:229-264`). `/api/me` is an open path, so on staging it answers
+200 `{"email":null,"is_admin":false,"is_dev":false}` with no token (V evidence). The routes check `is_admin_email` (`:267-306`): the
+`ADMIN_EMAIL` account first, with no database read, then `user_roles`. Each check reads the table on its own call with no cache, so a role
+changes on the server with the next request and the page follows within 30 s (`useUser.ts:70-75`). A lookup that fails is logged and denies,
+so a role-store outage reads as a missing role: `/api/me` answered 200 with `is_admin` false for a stored admin while the lookup failed
+(executed; matrix Gaps), and the `ADMIN_EMAIL` account kept access. Production's service sets no `ADMIN_EMAIL`, so the default in
+`auth.py:221` applies (V evidence). The `dev` role is the mock mode described under Shows or does.
+
+**States:** The three above: the card, the role drift lines and the shell's strip. The card names no way to ask for access.
+
+**Acceptance criteria:**
+- Given `/api/me` says anonymous or a non-admin account, then the denied card shows and the routing table does not (`anonymous user sees the
+  access-denied card`, `non-admin email sees the access-denied card`, `tests/admin/admin-auth.spec.ts`; `non-admin account sees the
+  access-denied card, never the table`, `tests/admin/admin.spec.ts`; they assert the card's test id and the table's absence, not the card's
+  text).
+- Given `/api/me` fails with a 500, then the denied card shows and not the dashboard (`/api/me failure denies rather than granting`).
+- Given an admin account, then the dashboard renders and no card shows (executed on every page of this record; the tests that assert the
+  dashboard are credited under ADMIN-03 and ADMIN-07).
+- Given `/api/me` says admin and the admin routes answer 403, then the users, data and routing panels each say the server rejected the
+  account and no empty table shows (`an account that /api/me calls admin, whose admin routes answer 403, sees the rejection on every tab and
+  never an empty table`, `tests/admin/admin-tabs.spec.ts`, added on this branch, not on main).
+- Given an anonymous or a non-admin caller, then the five user and data-source requests answer 401 or 403 (`test_endpoints_require_admin`,
+  `tests/api/test_admin_users_datasources.py`); given the `ADMIN_EMAIL` account, a stored admin, a stored user and an anonymous request,
+  then `/api/me` flags them accordingly, and `is_admin_email` grants from the environment without the database, from the table, denies a
+  non-admin, denies when the lookup fails, normalizes the address and denies no identity (`tests/api/test_platform_auth.py`).
+- Given no token, then each of the eleven admin routes answers 401 on staging and the production GETs answer a 302 to Google sign-in (V
+  evidence).
+- Given the role lookup fails, then `/api/me` answers `is_admin` false for a stored admin (executed; matrix Gaps).
+
+**Tests:** On main, solyra `tests/admin/admin-auth.spec.ts` (`anonymous user sees the access-denied card`, `non-admin email sees the
+access-denied card`, `/api/me failure denies rather than granting`) and `tests/admin/admin.spec.ts` (`non-admin account sees the
+access-denied card, never the table`) assert the card's test id and the routing table's absence for an anonymous account, a non-admin one
+and a failing `/api/me`. Stocks `tests/api/test_platform_auth.py` asserts `/api/me`'s flags (`test_me_dev_role_sets_is_dev_not_is_admin`,
+`test_me_admin_role_sets_is_admin_not_is_dev`, `test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`) and
+`is_admin_email` over a stubbed lookup (`test_admin_env_fallback_matches_without_touching_db`, `test_admin_from_user_roles_table`,
+`test_non_admin_denied`, `test_admin_check_denies_when_lookup_fails`, `test_admin_email_is_normalized`, `test_no_identity_is_not_admin`;
+`test_is_admin_email_binds_against_a_real_engine` skips for want of a test Postgres), and `tests/api/test_admin_users_datasources.py`
+asserts 401 and 403 for the five user and data-source requests (`test_endpoints_require_admin`). This branch adds `an account that /api/me
+calls admin, whose admin routes answer 403, sees the rejection on every tab and never an empty table` to `tests/admin/admin-tabs.spec.ts`
+(solyra `f2c6863`): it asserts the rejection text of the users, data and routing panels, the absence of their tables and of the denied card.
+It passed on the existing behaviour, so it was shown to fail by mutation, five one-line changes to a scratch copy of the product code, each
+failing it for the stated reason: a 403 no longer read as `unauthorized` (`useAdmin.ts:14`, the users line read the raw 403 text), the users
+error branch dropped (`UsersPanel.tsx:58-67`), the routing panel's server-rejected wording dropped (`AdminPage.tsx:182-184`), the data
+sources error branch dropped (`DataSourcesPanel.tsx:40-49`) and the denied card shown to an admin whose routes answer 403
+(`AdminPage.tsx:48`). No test on main asserts the card's text, that a denied page makes no admin request, a 401 or a 403 from an admin route
+for an account `/api/me` calls admin, or the gate of the route, model, brief, state and predict routes in a test that runs in CI. Te stays
+unticked: the added test waits for a CI run that includes the branch's tests.
+
+**Code:** `src/routes/AdminPage.tsx:36-53,136-151`, `src/hooks/useUser.ts:21-85`, `src/hooks/useAdmin.ts:12-15`,
+`src/lib/authedFetch.ts:158,249`, `src/components/shared/AuthStatusIndicator.tsx:43`, `src/components/layout/navConfig.ts:89`,
+`src/components/layout/AppShell.tsx:35-42`, `src/mocks/common.ts:41-45,122`; `platform/api/main.py:282-305`,
+`platform/api/routers/admin.py:52-67`, `platform/api/auth.py:55,69-70,221-306`; test id `admin-denied`.
 
 ### SCREEN-HELP — `/help`
 
