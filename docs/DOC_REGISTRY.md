@@ -116,7 +116,7 @@ renames are ignored, so a file-move wave does not flag every document.
 | D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json | |
 | D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows | |
 | D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/App.tsx | |
-| D | docs/UI-SCREENS.md | src/routes, src/components, src/App.tsx | |
+| D | docs/UI-SCREENS.md | src/routes, src/components, src/hooks, src/lib/authedFetch.ts, src/App.tsx, tests | |
 | D | docs/DESIGN_SYSTEM.md | src/index.css, vite.config.ts, src/components/primitives, src/stores/themeStore.ts, src/lib/chartTheme.ts | |
 | D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs | |
 | D | docs/REDESIGN.md | src/components, src/index.css | |

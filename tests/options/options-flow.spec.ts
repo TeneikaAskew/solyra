@@ -265,3 +265,198 @@ test.describe('options dates: the limit contract', () => {
       .toEqual([]);
   });
 });
+
+/**
+ * The view switcher (OPTIONS-07), the Profiles date stepper (OPTIONS-08) and the
+ * Profiles error honesty that solyra#74 asks for (OPTIONS-11).
+ *
+ * The first two pin behaviour that already works and that nothing asserted: the
+ * specs above click into Flow, Profiles and Trinity to reach their content, but
+ * none asserts that a switch REPLACES the view, and nothing steps the date
+ * control. The last two go together: the plain test pins the state a failed
+ * Greeks request leaves the page in, and the `test.fail` after it states what the
+ * page does not do yet in that state; see their comments.
+ */
+test.describe('Options Flow — view switcher, date stepper and error honesty', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockOptionsApi(page);
+  });
+
+  test('the view switcher mounts one view at a time and each inner toggle swaps its own view', async ({
+    page,
+  }) => {
+    await page.goto('/options');
+    await page.waitForLoadState('networkidle');
+
+    // One marker per view. The Swing toolbar has GEX/VEX buttons too, so the
+    // markers are headings, plus the spot input only Profiles owns.
+    const swing = page.getByRole('heading', { name: /Strike × Expiration heatmap/ });
+    const trinity = page.getByRole('heading', { name: /Trinity · synced index gamma/ });
+    const feed = page.getByRole('heading', { name: /Live options feed/ });
+    const drilldown = page.getByRole('heading', { name: /Time-bucket detail/ });
+    const profiles = page.getByPlaceholder('price');
+    const only = async (shown: typeof swing) => {
+      for (const view of [swing, trinity, feed, drilldown, profiles]) {
+        if (view === shown) await expect(view).toBeVisible();
+        else await expect(view).toHaveCount(0);
+      }
+    };
+
+    // Gamma Map opens on Swing, and nothing else is mounted.
+    await only(swing);
+
+    // Its inner toggle swaps Swing for Trinity and back.
+    await page.getByRole('radio', { name: /Trinity Mode/i }).click();
+    await only(trinity);
+    await page.getByRole('radio', { name: /Swing Mode/i }).click();
+    await only(swing);
+
+    // Flow replaces Gamma Map and opens on the Live Feed.
+    await page.getByRole('button', { name: 'Flow', exact: true }).click();
+    await only(feed);
+
+    // Its inner toggle swaps the feed for the drilldown and back.
+    await page.getByRole('radio', { name: /Contract Drilldown/i }).click();
+    await only(drilldown);
+    await page.getByRole('radio', { name: /Live Feed/i }).click();
+    await only(feed);
+
+    // A feed row drills into the contract it names (the placeholder tape's
+    // first row; read from the row rather than hard-coded).
+    const row = page.locator('tbody tr').first();
+    const [, sym, strike, cp, , exp] = (await row.locator('td').allInnerTexts()).map((c) => c.trim());
+    await row.click();
+    await only(drilldown);
+    await expect(
+      page.getByText(`${sym} ${strike} ${cp === 'C' ? 'CALL' : 'PUT'} ${exp}`, { exact: true }),
+    ).toBeVisible();
+
+    // Profiles replaces Flow.
+    await openProfilesTab(page);
+    await only(profiles);
+
+    // Gamma Map comes back on Swing.
+    await page.getByRole('button', { name: 'Gamma Map', exact: true }).click();
+    await only(swing);
+  });
+
+  test('the Profiles date stepper walks the snapshot dates and loads the chain and levels of the date it lands on', async ({
+    page,
+  }) => {
+    const optionsPaths: string[] = [];
+    page.on('request', (req) => {
+      const { pathname } = new URL(req.url());
+      if (pathname.startsWith('/api/options/')) optionsPaths.push(pathname);
+    });
+    // Three snapshot dates, newest first, as GET /api/options/dates/{ticker} lists them.
+    await page.route('**/api/options/dates/IWM*', (r) =>
+      r.fulfill(M.ok({ ...MOCK_OPTIONS_DATES, dates: ['2026-04-24', '2026-04-23', '2026-04-22'] })),
+    );
+    await page.goto('/options');
+    await openProfilesTab(page);
+
+    // The control is two icon-only buttons around the date and has no accessible
+    // name, so they are found through the label they flank: the first steps back
+    // in time, the second forward.
+    const label = page.locator('span.font-mono').filter({ hasText: /^\d{4}-\d{2}-\d{2}$/ });
+    const buttons = label.locator('xpath=..').getByRole('button');
+    const older = buttons.nth(0);
+    const newer = buttons.nth(1);
+
+    // It opens on the newest date, and there is nothing newer to step to.
+    await expect(label).toHaveText('2026-04-24');
+    await expect(older).toBeEnabled();
+    await expect(newer).toBeDisabled();
+
+    // One step back: the previous date, and its chain and levels are requested.
+    await older.click();
+    await expect(label).toHaveText('2026-04-23');
+    await expect(older).toBeEnabled();
+    await expect(newer).toBeEnabled();
+    await expect.poll(() => optionsPaths).toContain('/api/options/IWM/2026-04-23');
+    await expect.poll(() => optionsPaths).toContain('/api/options/IWM/2026-04-23/levels');
+
+    // Two steps back: the oldest date, where there is nothing older.
+    await older.click();
+    await expect(label).toHaveText('2026-04-22');
+    await expect(older).toBeDisabled();
+    await expect.poll(() => optionsPaths).toContain('/api/options/IWM/2026-04-22');
+    await expect.poll(() => optionsPaths).toContain('/api/options/IWM/2026-04-22/levels');
+
+    // Forward again.
+    await newer.click();
+    await expect(label).toHaveText('2026-04-23');
+    await expect(older).toBeEnabled();
+  });
+
+  // The state the test after this one examines, asserted on its own. These checks
+  // used to open that test's body, where the failure of any of them (the page not
+  // rendering, the chain or the levels missing, the retry not happening) read as
+  // the expected failure of a `test.fail` and made the declared defect look
+  // reproduced when it was never reached. Here such a failure is a red test.
+  // The footer is the one a Cloud SQL chain gets (ProfilesTab.tsx:631-645) and no
+  // other test on main asserts it; the King chip proves /levels answered; two
+  // Greeks requests are the first attempt and the app's single retry, so the
+  // request has failed for good.
+  test('a failed Greeks request leaves the EOD footer and the King chip on screen and is attempted twice', async ({
+    page,
+  }) => {
+    let greeksPosts = 0;
+    await page.route('**/api/options/greeks', (r) => {
+      greeksPosts += 1;
+      return r.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'greeks exploded' }),
+      });
+    });
+    await page.goto('/options');
+    await openProfilesTab(page);
+
+    await expect(
+      page.getByText('Source: AlphaVantage EOD · Cloud SQL · 10 contracts · snapshot 2026-04-24', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(/★ King \$/)).toBeVisible();
+    await expect.poll(() => greeksPosts).toBe(2);
+  });
+
+  // solyra#74. ProfilesTab falls back to EMPTY_GREEKS whenever it has no Greeks
+  // answer (src/components/options/ProfilesTab.tsx:326, src/hooks/useOptionsGreeks.ts:145-158),
+  // so with a spot resolved from /levels a FAILED Greeks request reads "Total GEX
+  // +0 Positive" and "Put/Call OI 0.00 Bullish skew", with no error anywhere: a
+  // flat reading that is indistinguishable from a measured one (CLAUDE.md Rule 4).
+  // This test states what the issue asks for, so it fails today; `test.fail`
+  // records that. When #74 is fixed it will start passing, Playwright will then
+  // report "expected to fail, but passed", and this `test.fail` is the line to remove.
+  //
+  // It holds the defect assertion and nothing else. That the page gets as far as
+  // the failed state (footer, King chip, two attempts) is the plain test above, so
+  // that an unrelated failure here cannot pass for the expected one. The three
+  // checks are retried together until they hold at the same moment: taken one
+  // after another, the two negative checks would pass on a page that has not
+  // shown its zero cards yet.
+  test.fail('a failed Greeks request is reported as unavailable, not shown as a measured zero (solyra#74)', async ({
+    page,
+  }) => {
+    await page.route('**/api/options/greeks', (r) =>
+      r.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'greeks exploded' }),
+      }),
+    );
+    await page.goto('/options');
+    await openProfilesTab(page);
+
+    await expect(async () => {
+      // No zero that reads as a measurement: neither the "+0" Total GEX value nor
+      // the "0.00" Put/Call OI value of EMPTY_GREEKS is on the page. Counted on the
+      // values, not read off the two cards, so the check holds whether a fix hides
+      // the cards or replaces their values.
+      await expect(page.getByText('+0', { exact: true })).toHaveCount(0, { timeout: 1_000 });
+      await expect(page.getByText('0.00', { exact: true })).toHaveCount(0, { timeout: 1_000 });
+      // ... and the failure is said out loud, in words, somewhere on the page.
+      await expect(page.getByText(/unavailable/i).first()).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
+  });
+});
