@@ -1137,7 +1137,7 @@ state `run()` manages for every sign-in method on this screen.
 names the framed new-tab variant, and the only test that asserts it
 (`framed preview: the Google button opens a new tab instead of a popup`) is one this branch added;
 the cited main run (36361217691) is on commit eca7078, this branch's base, so it predates that
-test. Te waits for a CI run that includes it (see Gaps).
+test. Te is ticked on [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), which included this test and passed.
 `src/lib/authAction.test.ts`'s `friendlyError` suite covers the Google-specific error codes as
 pure-function mappings (Vitest, CI-run), but no test wires that mapping through this component,
 so it does not lift Te for this row either way.
@@ -1181,7 +1181,7 @@ pre-existing, toggles the UI mode only and asserts nothing about an inline error
 `email sign-in shows the inline error when the identity call fails`, the only test that actually
 asserts this row's own behavior, is one this branch added) runs hermetically in ci.yml's
 `e2e (chromium, mocked)` job, but the cited main run (36361217691, commit eca7078) predates that
-test, so Te waits for a CI run that includes it (see Gaps).
+test; Te is ticked on [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), which included this test and passed.
 `src/lib/authAction.test.ts`'s `friendlyError` describe block is real, CI-run (Vitest) coverage of
 the error-copy mapping this row's "with inline error" half depends on, but it tests the pure
 function in isolation, not the form submission itself, so it does not on its own satisfy Te for
@@ -1280,8 +1280,8 @@ test that actually asserts this row's own action, is one this branch added),
 `tests/shared/navigation.spec.ts` (`auth status lives at the menu bottom, not the bar`,
 pre-existing, the negative open-mode case, asserts absence of a different control, not this row's
 action). Both run hermetically in ci.yml's `e2e (chromium, mocked)` job, but the cited main run
-(36361217691, commit eca7078) predates the new test, so Te waits for a CI run that includes it
-(see Gaps).
+(36361217691, commit eca7078) predates the new test; Te is ticked on [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), which included this test and passed.
+
 
 **Code:** `src/components/auth/SignOutButton.tsx`, `src/components/shared/AuthStatusIndicator.tsx:96-103, 132`;
 test ids `sign-out`, `account-menu-sign-out`.
@@ -1767,7 +1767,7 @@ Escape or a backdrop click closes it.
 
 **Tests:** `tests/shared/navigation.spec.ts` (`command palette opens with the keyboard shortcut and navigates to a page`, the only test for this component, is one this branch added) runs
 hermetically in ci.yml's `e2e (chromium, mocked)` job, but the cited main run (36361217691,
-commit eca7078) predates it, so Te waits for a CI run that includes it (see Gaps). No prior test
+commit eca7078) predates it; Te is ticked on [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), which included this test and passed. No prior test
 of any kind existed for this component (confirmed the pre-existing Gaps
 note before adding this test).
 
