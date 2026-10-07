@@ -2846,8 +2846,8 @@ and the Movement Read card came back), the 1D or 5D choice (back to 1D) and any 
 - Given review mode, when Refresh is pressed, then the page returns to live mode (executed
   2026-09-30, scratch run; no committed test).
 
-**Tests:** the one test above, which exists only on this branch, so Te stays unticked until a CI run
-includes it.
+**Tests:** the one test above, which exists only on this branch; it ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/DashboardPage.tsx:548-555`; no test id (the button is found by its role and
 name `Refresh`).
@@ -2880,8 +2880,8 @@ Switching does not request bars again: both styles read the same `hourlyQ` respo
   passed).
 
 **Tests:** the two tests above. The main test asserts that both buttons show and that the Area
-surface appears after the click; the memory is asserted only by the branch test, so Te stays
-unticked until a CI run includes it.
+surface appears after the click; the memory is asserted only by the branch test, which ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/DashboardPage.tsx:282-288,731-764`; test id `intraday-chart-slot`.
 
@@ -3580,8 +3580,8 @@ executed 2026-09-30), LIVE-09 (`Fetching live quote…` shows only while `pollin
 **Tests:** The new Playwright test `the Live (15s) toggle pauses the quote and history polling and
 resumes it` (`tests/live-market/live-market.spec.ts`, solyra commit 0e9ab73) asserts the first three
 criteria; it was added on this branch, so the solyra CI run the matrix cites (commit eca7078)
-predates it, and no test on main touches the toggle. Te stays unticked: it waits for a CI run that
-includes the branch's tests.
+predates it, and no test on main touches the toggle. It ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/LiveMarketPage.tsx:153-154,159,162-163,272-284`,
 `src/hooks/useLiveQuote.ts:22-34`, `src/hooks/useLiveHistory.ts:13-25`; no test id (the test finds
@@ -3632,7 +3632,7 @@ calls `resume()` and the page says nothing (read directly, not executed).
 0e9ab73) asserts the tones and the `Last signal` line of the first three criteria and nothing about
 the audio context count, the two-minute rule, the both-fired rule, review-mode silence or the
 persistence of the `Last signal` line. It was added on this branch, so no test on main touches the
-control, and Te stays unticked: it waits for a CI run that includes the branch's tests.
+control, and it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/LiveMarketPage.tsx:153,155-157,221-241,286-294,392-400,406-417`; no test id
 (the test finds the button by role and name).
@@ -3757,8 +3757,8 @@ has them; a day with no bars, or a failed request, keeps the loading lines on sc
 body. The new Playwright test (`tests/live-market/live-market.spec.ts`, solyra commit 0e9ab73)
 drives the page end to end, and it was added on this branch. The Vitest file
 `src/hooks/useReviewQuote.test.ts` tests only `reviewCutoffTs`: this page imports that function and
-does not call the `useReviewQuote` hook. Te stays unticked: it waits for a CI run that includes the
-branch's tests.
+does not call the `useReviewQuote` hook. The new test ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/LiveMarketPage.tsx:35-47,139-151,164-205,209-217,262-268,283`,
 `src/lib/reviewQuote.ts:21-42`, `src/hooks/useReviewQuote.ts:38-44`,
@@ -4118,7 +4118,7 @@ shift and the `isodow` predicate and runs no query, so no test executes the fram
 `Sig overlay toggle is in the toolbar and is clickable` (`tests/charts/charts-cards.spec.ts`)
 asserts only that the `Sig` button is visible and presses it twice. The toolbar's own assertions are
 the new test named above (solyra commit cd2c08b), added on this branch; the solyra CI run the matrix
-cites (commit eca7078) predates it, so Te stays unticked.
+cites (commit eca7078) predates it; the test ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/ChartsPage.tsx:74-88,116-150,507-553`, `src/hooks/useMarketData.ts:52-63`,
 `src/stores/settingsStore.ts:85,103-104`, `platform/api/main.py:578-902`; no test id.
@@ -4286,11 +4286,11 @@ that can be missing for a reason (a failed or pending reference call).
 **Tests:** No test on main asserts the crosshair bar: the only Playwright test that reads the chart
 (`chart fills the viewport height without horizontal overflow`) measures the canvas. The bar's
 assertions are the new test above (solyra commit cd2c08b), added on this branch; the solyra CI run
-the matrix cites (commit eca7078) predates it. The pytest tests above assert the first two branches
+the matrix cites (commit eca7078) predates it, and the test ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07). The pytest tests above assert the first two branches
 of the reference route, the vendor and the query stubbed, and none asserts the GCS branch;
 [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins 404 for the route against a dead backend, and
-[`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py) covers the bar loader the third branch reuses. Te
-stays unticked.
+[`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py)
+covers the bar loader the third branch reuses. Te is ticked on the CI run above.
 
 **Code:** `src/routes/ChartsPage.tsx:109-113,193,688-709`,
 `src/components/charts/CandlestickChart.tsx:444-467`, `src/hooks/useMarketData.ts:65-93`,
@@ -4764,12 +4764,12 @@ request shows CHARTS-15; nothing else changes. Its states are CHARTS-13 to CHART
 - Given the list query run twice with no new bar, then it scans once, and a new bar invalidates the
   entry ([`tests/api/test_market_dates_cache_expiry.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_dates_cache_expiry.py)).
 
-**Tests:** The row's UI assertions are the new Playwright test above (solyra commit cd2c08b), added
-on this branch and not yet run in CI; none on main asserts a timeframe button, the date input or the
+**Tests:** The row's UI assertions are the new Playwright test above (solyra commit cd2c08b), added on this branch, which ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07); none on main asserts a timeframe button, the date input or the
 store. The pytest files assert the dates caching and the `timeframe=1` path of the handler with
 stubbed queries, and [`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py) the loader;
-[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the two routes against a dead backend. Te stays unticked: it
-waits for a CI run that includes the branch's tests.
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)
+pins the two routes against a dead backend. Te is ticked on the CI run named above.
 
 **Code:** `src/routes/ChartsPage.tsx:66-76,129-133,509-553`,
 `src/stores/settingsStore.ts:85,103-104`, `src/hooks/useMarketData.ts:34-63`,
@@ -4885,11 +4885,11 @@ to CHARTS-17.
 the Sig presence test exist on main at eca7078; they assert that `Gamma` is visible and that a press
 changes its class, and that `Sig` is clickable, which earns nothing for the toggles' behaviour. The
 toggle states, the request gating and the non-ETF case are asserted only by the new test (solyra
-commit cd2c08b), added on this branch and not yet run in CI. No test reads a drawn line or marker
+commit cd2c08b), added on this branch, which ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07). No test reads a drawn line or marker
 (the canvas), the reference or levels routes through the page, or the `/levels` handler beyond
 [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py), which pins 404 for it and 200 for market-hours against a dead
-backend; the reference route's branches are asserted by `TestReferenceAPI` as in CHARTS-03. Te stays
-unticked: it waits for a CI run that includes the branch's tests.
+backend; the reference route's branches are asserted by `TestReferenceAPI`
+as in CHARTS-03. Te is ticked on the CI run named above.
 
 **Code:** `src/routes/ChartsPage.tsx:54,81-85,203-207,415-494,555-611`,
 `src/hooks/useGammaLevels.ts:41-98`, `src/hooks/useLiveIndicators.ts:79-97`,
@@ -5728,8 +5728,8 @@ is its only state. A `FlowTab` rendered without `onSelectContract` makes the row
   asserts a row, a chip or the rail).
 - Given a row is clicked, then the Contract Drilldown opens for that row's contract (executed
   2026-10-01; asserted on this branch by `the view switcher mounts one view at a time and each inner
-  toggle swaps its own view`, `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, which
-  has not run in CI).
+  toggle swaps its own view`, `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, which passed in
+  [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)).
 - Given the page's ticker changes, then the view does not change (executed 2026-10-01).
 
 **Tests:** On main, `demo-banners.spec.ts` asserts the banner text is visible after the click on the
@@ -5788,7 +5788,7 @@ header names the clicked contract above another contract's numbers (matrix Gaps)
   contract id name that row's contract, while the figures stay the placeholder's (executed
   2026-10-01; the toggle move and the contract id are asserted on this branch by `the view switcher
   mounts one view at a time and each inner toggle swaps its own view`,
-  `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, not yet run in CI).
+  `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)).
 
 **Tests:** None on main: `demo-banners.spec.ts` opens the Flow tab on its Live Feed, and
 `options-mobile-fit.spec.ts` does not leave it, so no test on main mounts this view. The test added on
@@ -6000,8 +6000,8 @@ chain handler's response body (it is reached only through `/levels` and answers 
 backend, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)); the dates handler's query is asserted only through its
 cache and its 503 ([`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), `test_options_dates_is_not_a_500`). The plain
 test added on this branch, `a failed Greeks request leaves the EOD footer and the King chip on screen and
-is attempted twice` (`tests/options/options-flow.spec.ts`, solyra commit `9543894`, not yet run in CI),
-asserts the footer's text on the fixture chain, and earns nothing at Te until a CI run includes it.
+is attempted twice` (`tests/options/options-flow.spec.ts`, solyra commit `9543894`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)),
+asserts the footer's text on the fixture chain, and the tick of this row, made on main's tests, does not rest on it.
 
 **Code:** `src/components/options/ProfilesTab.tsx:1-648`, `src/hooks/useOptionsDates.ts:56-67`,
 `src/hooks/useGammaLevels.ts:74-145`, `src/hooks/useOptionsGreeks.ts:1-158`,
@@ -6164,7 +6164,7 @@ alone (executed 2026-10-01); Enter on a focused button changes the view, as on a
 - Given the page opens, then `Gamma Map` is the chosen view, Swing Mode shows, and Trinity, Flow and
   Profiles are not mounted (executed 2026-10-01; asserted on this branch by `the view switcher mounts
   one view at a time and each inner toggle swaps its own view`, `tests/options/options-flow.spec.ts`,
-  solyra commit `d82c20b`, not yet run in CI).
+  solyra commit `d82c20b`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)).
 - Given a button is pressed, then its view replaces the one shown and no other view is mounted; given
   an inner toggle is pressed, then that section swaps its own two views; given a Live Feed row is
   clicked, then the drilldown opens for that row's contract; given `Gamma Map` is pressed again, then
@@ -6185,8 +6185,8 @@ alone (executed 2026-10-01); Enter on a focused button changes the view, as on a
 **Tests:** On main, each button is pressed by some test, to reach the view's content, and the page's
 landmarks are asserted, but no test on main asserts that a switch replaces the view, which view is
 chosen, either inner toggle's second view other than Trinity's requests, or the drill-through; those
-assertions exist only in the test added on this branch, so Te stays unticked until a CI run includes
-it.
+assertions exist only in the test added on this branch, and it passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/OptionsFlowPage.tsx:22-70`, `src/components/options/GammaMapSection.tsx:15-50`,
 `src/components/options/FlowSection.tsx:15-55`; no test id (the buttons are found by role and name,
@@ -6255,7 +6255,7 @@ and the loading lines are OPTIONS-11 and OPTIONS-09.
   levels are requested; when the newer chevron is pressed, then the previous date shows again (executed
   2026-10-01; asserted on this branch by `the Profiles date stepper walks the snapshot dates and loads
   the chain and levels of the date it lands on`, `tests/options/options-flow.spec.ts`, solyra commit
-  `d82c20b`, not yet run in CI).
+  `d82c20b`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)).
 - Given the page opens, then Swing asks for one date (`limit=1`) and Profiles for the whole list (`the
   Swing view asks for one date; the Profiles picker asks for all`, `tests/options/options-flow.spec.ts`,
   on main at eca7078).
@@ -6266,8 +6266,8 @@ and the loading lines are OPTIONS-11 and OPTIONS-09.
   would need a request change as well as a handler (read; not executed).
 
 **Tests:** None on main asserts the stepper or the chips: the dates-limit test asserts the request
-URLs only. The test added on this branch asserts the stepper and not the chips, so Te stays unticked
-until a CI run includes it. The server side of the dates is asserted by `test_options_dates_is_not_a_500`
+URLs only. The test added on this branch asserts the stepper and not the chips; it passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)
+(head db678a4, 2026-10-07), so Te is ticked on that run. The server side of the dates is asserted by `test_options_dates_is_not_a_500`
 and `test_the_final_four_guards_keep_the_split` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) and the cache tests
 of [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), none of which runs the walk's SQL.
 
@@ -6463,13 +6463,13 @@ empty state, and several failures land in one of those two lines.
 - Given the Greeks request fails after a spot is known, then the view shows the Greeks as
   unavailable and not `Total GEX +0` and `Put/Call OI 0.00`: it does not today (executed 2026-10-01,
   solyra#74). `a failed Greeks request is reported as unavailable, not shown as a measured zero
-  (solyra#74)` (`tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, restructured in
-  `9543894`, not yet run in CI) asserts that neither `+0` nor `0.00` is on the page and the word
+  (solyra#74)` (`tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, restructured in `9543894`, run in [solyra CI run
+  37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) as an expected failure) asserts that neither `+0` nor `0.00` is on the page and the word
   `unavailable` is, retried until all three hold at once. It is declared `test.fail`, so it is
   expected to fail until #74 is fixed and flags the fix by passing; its RED is the real failure on
   `+0`. The state it examines, the EOD footer and the King chip on screen and two Greeks attempts,
   is asserted by a plain test, `a failed Greeks request leaves the EOD footer and the King chip on
-  screen and is attempted twice` (same file, solyra commit `9543894`, not yet run in CI), so that an
+  screen and is attempted twice` (same file, solyra commit `9543894`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)), so that an
   unrelated failure cannot pass for the expected one.
 - Given the grid request fails, then Swing reads the no-grid text and the server's reason is lost
   (executed 2026-10-01; no test).
@@ -6581,7 +6581,7 @@ is asserted by `test_grid_router.py` (`realtime`, `eod_fallback` and the envelop
 No test on main asserts the pill, a hint, the banner wording, the EOD footer, a `STALE` source on
 the grid handler or the `realtime` labelling of an old snapshot; the plain test added on this branch
 (`a failed Greeks request leaves the EOD footer and the King chip on screen and is attempted twice`,
-`tests/options/options-flow.spec.ts`, solyra commit `9543894`, not yet run in CI) asserts the EOD
+`tests/options/options-flow.spec.ts`, solyra commit `9543894`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)) asserts the EOD
 footer's text on the fixture chain.
 
 **Code:** `src/components/options/SwingMode.tsx:205-238,913-945`,
@@ -6945,7 +6945,7 @@ ask for another symbol: every test in `tests/playbook/playbook.spec.ts` runs on 
 on this branch (solyra `22b606f`), `the page follows the active ticker in the store and asks for that ticker only`, seeds the persisted store with `SPY` and
 asserts the heading, the card name, the age text and that the playbook request is `/api/playbook/SPY` alone, that none of the playbook, average-volume and reference requests names IWM
 and that the average-volume and reference reads are for SPY (it records those three paths only, and with the market mocked closed the page asks for no history, quote, indicators or evaluation, executed); it fails under four mutations (the playbook, average-volume and reference
-hooks fixed on `IWM` and the heading fixed on `IWM`) and waits for a CI run that includes the branch's tests. Te stays unticked.
+hooks fixed on `IWM` and the heading fixed on `IWM`) and it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/stores/tickerStore.ts:14-34`, `src/routes/PlaybookPage.tsx:55-82,265-274,320-322`,
 `src/components/layout/CommandPalette.tsx:44-52`, `src/components/layout/Header.tsx:7-13`; no test id.
@@ -7078,7 +7078,7 @@ open, the indicators), the counts, percents and details of two cards and the idl
 average volume or the prior close, no condition counted as met, no card ever fully lit, an unknown condition counted as judged, the page always
 reading no live data, a session gate that never opens, the `subjective` label renamed and the percent computed over the judged conditions
 instead of all of them, which the first version of the test let survive and `c06ff84` pins on the fully lit card) and left the other new test
-and the six existing tests passing; it waits for a CI run that includes the branch's tests. Te stays unticked.
+and the six existing tests passing; it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/PlaybookPage.tsx:164-178,264-314`, `src/lib/playbookEvaluator.ts:39-103`, `src/hooks/usePlaybookEvaluation.ts:50-115`,
 `src/hooks/useLiveStatus.ts`, `src/hooks/useLiveQuote.ts`, `src/hooks/useLiveHistory.ts`, `src/hooks/useLiveIndicators.ts:26-50`,
@@ -7509,8 +7509,8 @@ visible (showing the raw phase in the header failed it, mutation), and `selectin
 shows is asserted by `test_reports_list` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py); an own entry whose filename loses its `.md` failed it), the `phase` field the
 label is made from by no test (an own entry that keeps the ticker suffix and a combined entry whose `phase` keeps its extension both passed, handler
 mutations), and no Vitest test covers `phaseLabel`. No test on main asserts the header for a combined report, for a real phase name or the header staying
-under a failed body; the test added on this branch for REPORTS-08 asserts the last and waits for a CI run that includes the branch's tests. Te stays
-unticked.
+under a failed body; the test added on this branch for REPORTS-08 asserts the last and ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07). Te stays unticked.
 
 **Code:** `src/routes/ReportsPage.tsx:104-106,175-183`, `src/lib/reports.ts:18-25`; no test ids (the page's `h1` and the filename `p`
 are found by role and text).
@@ -7669,8 +7669,8 @@ Next left enabled at the last entry, Previous disabled at the last entry (the cl
 first entry. It passed on the unchanged page, which already does what it asserts, and each of ten one-line mutations of the scratch copy failed it:
 the body always the first report's, the select always showing the first entry and a suffix on the body request failed it and no test on main; Next
 disabled early, Previous disabled early, a step of two entries, a step that does not move, a counter one too high, the markdown shown as text and the
-body requested for another ticker failed the walk test or the picker test as well. It waits for a CI run that includes the branch's tests, and Te
-stays unticked: the body that follows a step is asserted by it alone.
+body requested for another ticker failed the walk test or the picker test as well. It ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), and Te is ticked on that run: the body that follows a step is asserted by it alone.
 
 **Code:** `src/routes/ReportsPage.tsx:71-94,104-111,149-159`; accessible names `Previous report` and `Next report`.
 
@@ -7785,8 +7785,8 @@ answering a download error as 500 or a missing object as 502, and answering a co
 branch, `a failed report body shows "Report not available." under the report header, not a blank page` (solyra `e422a8a`), answers the body 502 and asserts the
 message, the enabled select, `1 / 2`, the page header and the absence of the list banner and of the rendered report. It passed on the unchanged page, and
 each of four one-line mutations of the scratch copy failed it (a changed message, a failed body that draws nothing, a failed body that shows the list
-banner's text and a counter one too high), the first three and no test on main. It waits for a CI run that includes the branch's tests, and Te stays
-unticked: the body half of the row is asserted by that test alone.
+banner's text and a counter one too high), the first three and no test on main. It ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), and Te is ticked on that run: the body half of the row is asserted by that test alone.
 
 **Code:** `src/routes/ReportsPage.tsx:13-36,54-61,100,163-168,187-195`, `src/App.tsx:30-37`;
 `platform/api/routers/playbook.py:112-120,386-391,429-433,461-485`, `platform/api/gcs_reader.py:93-95`.
@@ -8018,7 +8018,7 @@ after it fails with no cached answer (SIGNALS-08, SIGNALS-10), the cached count 
 which is the title, and the `route /signals loads without fatal errors` case of `tests/shared/navigation.spec.ts`
 asserts the nav, `main` and a clean console, nothing about the label. No test on main asserts the label, the count
 or the `shown` figure; the filter and sort test added on this branch in solyra commit 8ffbb54 asserts `IWM · 3 signals`
-and, after a PUT, `IWM · 3 signals · 1 shown` (it has not run in CI). The picker is covered as above (the same component run on the Dashboard, never on this page). On
+and, after a PUT, `IWM · 3 signals · 1 shown` (it passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)). The picker is covered as above (the same component run on the Dashboard, never on this page). On
 the handler side `test_signals_live` asserts `count`, `source`, the stringified `time` and `ticker` of the
 envelope, `test_signals_empty_for_old_date` the empty envelope, `TestSignalsAPIFailsLoud` the 503 and the 500, and
 [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `GET /api/signals/IWM` at 503, the search at 200, coverage at 503 and the
@@ -8196,8 +8196,8 @@ replaced by `DataGate` for a signed-out user (SIGNALS-12).
 direction buttons contain, but its two locators are satisfied by the KPI tile's `168 call · 132 put` line, the first
 match in the page, so it asserts neither the buttons nor the table (executed with an empty signals response: both
 assertions passed with no row). On this branch, the three tests added in solyra commit 8ffbb54 (the filter and sort
-test, the Clear test and the review-mode test, `tests/signals/signals.spec.ts`) drive every control of the bar; they
-have not run in CI. Te stays unticked.
+test, the Clear test and the review-mode test, `tests/signals/signals.spec.ts`) drive every control of the bar; they ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/SignalsPage.tsx:139-148,222-292`, `src/stores/reviewDateStore.ts:13-19`,
 `lib/trading_analysis.py:784,822-970`; no test id on the bar's controls.
@@ -8289,7 +8289,7 @@ empty signals response) and with a failed request. `route /signals loads without
 (`tests/shared/navigation.spec.ts`) asserts the nav, `main` and a clean console. The handler tests are as above.
 On this branch the filter and sort test, with the rows served oldest first as the handler returns them, reads the
 three Time cells at load and the one after PUT, the Score cells after `6+`, `7+` and each Score sort, the Dir cells of
-the two CALL rows and the count label at load and after PUT (not yet run in CI). Te stays unticked: no test on main
+the two CALL rows and the count label at load and after PUT (passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)). Te stays unticked: no test on main
 asserts what the table draws.
 
 **Code:** `src/routes/SignalsPage.tsx:25-64,66-131,163-183,307-352`, `src/components/primitives/index.tsx:60-68`;
@@ -8372,8 +8372,8 @@ removed (`expected 0 rows, received 3`), the To filter made exclusive (`expected
 rows arrive in) and the default sort emptied (`useState<SortingState>([])`, the same Time cells). The first version
 served the fixture newest first, the order the default sort produces, so it passed with the default sort emptied and
 its `getSortedRowModel` mutation failed only at the Score sort (Score cells `7.0, 5.0, 6.0` for `7.0, 6.0, 5.0`); the
-later commit serves the rows oldest first, as the handler returns them, and all six fail it. It has not run in CI. Te
-stays unticked and the matrix Gaps say it waits for a CI run that includes the branch's tests.
+later commit serves the rows oldest first, as the handler returns them, and all six fail it. It ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/SignalsPage.tsx:67-131,139-183,226-257,311-323`; `platform/api/routers/signals.py:165-170,224-226`;
 test: `tests/signals/signals.spec.ts` (the filter and sort test of the second describe block); no test id on the
@@ -8418,8 +8418,8 @@ Three details (executed on the real window):
 written and was RED against six mutations made in a scratch copy: `Clear` leaving the minimum score, the From, the To
 or the direction (each failed at `expected Clear count 0, received 1`, since a filter left set keeps the button
 drawn), `Clear` also resetting the sort (Score cells `6.0, 5.0, 7.0` for `7.0, 6.0, 5.0`, the order the rows arrive in) and `Clear` always drawn
-(`expected 0, received 1` on the first render). It has not run in CI. Te stays unticked and the matrix Gaps say it
-waits for a CI run that includes the branch's tests. No test covers the held `To` value.
+(`expected 0, received 1` on the first render). It ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)
+(head db678a4, 2026-10-07), so Te is ticked on that run. No test covers the held `To` value.
 
 **Code:** `src/routes/SignalsPage.tsx:139-148,284-291`; test: `tests/signals/signals.spec.ts` (the Clear test of the
 second describe block); no test id on the button.
@@ -8493,8 +8493,8 @@ against a dead backend); no test drives the Replay control on this page. The new
 solyra commit 8ffbb54, passed as written and was RED against five mutations made in a scratch copy: `end_date` not
 sent (the query read `?limit=5000&end_time=16%3A00`), `end_time` not sent (`?limit=5000&end_date=2026-04-24`), `To`
 not locked (`expected disabled, received enabled`), the `global` tag removed (`element not found`) and `To` showing
-the local value instead of the review date (`expected 2026-04-24, received an empty value`). It has not run in CI. Te
-stays unticked and the matrix Gaps say it waits for a CI run that includes the branch's tests.
+the local value instead of the review date (`expected 2026-04-24, received an empty value`). It ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
 **Code:** `src/routes/SignalsPage.tsx:51-64,136-156,168,269-282`, `src/components/shared/ReplayControl.tsx:11,47-58,112-146,
 236-289`, `src/stores/reviewDateStore.ts:13-19`; `platform/api/routers/signals.py:171-174,221-251`; test:
@@ -9246,7 +9246,7 @@ form stays open with its values (executed; the banner is still there after `Canc
 - Given a price of `0`, then Save is enabled and the trade is sent (executed; matrix Gaps).
 
 **Tests:** On main, `src/routes/JournalPage.defaultFormDates.test.ts` asserts the default dates (three tests, with fake timers). No test on main opens the form, types in it, asserts the disabled
-rule or the buttons: a search of `tests/` and `src/` for `Save Trade`, `Add Trade` and `New Trade` finds only the page itself. The JOURNAL-14 test this branch adds (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`) opens the form, types the two prices and presses `Save Trade` against an injected 500, asserting the failure and not the disabled rule, the buttons or a successful save, and waits for a CI run that includes it. Te stays unticked: the one asserted piece is a date helper.
+rule or the buttons: a search of `tests/` and `src/` for `Save Trade`, `Add Trade` and `New Trade` finds only the page itself. The JOURNAL-14 test this branch adds (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`) opens the form, types the two prices and presses `Save Trade` against an injected 500, asserting the failure and not the disabled rule, the buttons or a successful save, and it passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07). Te stays unticked: the one asserted piece is a date helper.
 
 **Code:** `src/routes/JournalPage.tsx:122-140,190-193,285-298,435-440,712-809`, `src/lib/dates.ts:16-19`.
 
@@ -9389,7 +9389,7 @@ body with `PUT` was stored as a loss of -0.534 (`A2b`, executed).
 - Given a request with no token, then it answers 401 (V evidence).
 
 **Tests:** On main the handler is asserted: the round trip with the SQL parameters, the PUT sign, the zero entry, the status override and its validation, the owner stamp and the cap of three targets ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py),
-[`tests/api/test_journal_user_scoping.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_user_scoping.py), all against patched database calls). No pytest posts `replay` or a `session_id` to the route, and none asserts the `source` the insert is handed: the form's body carries no `source`, so the `manual` it is stored under is the model's default (`journal.py:221`), which the insert passes as `:source`, while `test_source_default_is_manual` ([`tests/gcp/test_schema_journal_migration.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_schema_journal_migration.py)) reads the column's default in `gcp/schema.sql` with a regular expression, a default this insert overrides. Nothing on the page is on main: no spec opens the form, saves it or sees the banner (matrix Gaps), and the hook `useAddTrade` is inline in the page, so no Vitest file reaches it. The test this branch adds for JOURNAL-14 (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`) opens the form, types the two prices, saves against an injected 500 and asserts the banner, exactly one `POST /api/journal/trades`, the form still open and both prices kept; it covers the failure branch only, so no test saves successfully on the page, and it waits for a CI run that includes the branch's tests. Te stays unticked.
+[`tests/api/test_journal_user_scoping.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_user_scoping.py), all against patched database calls). No pytest posts `replay` or a `session_id` to the route, and none asserts the `source` the insert is handed: the form's body carries no `source`, so the `manual` it is stored under is the model's default (`journal.py:221`), which the insert passes as `:source`, while `test_source_default_is_manual` ([`tests/gcp/test_schema_journal_migration.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_schema_journal_migration.py)) reads the column's default in `gcp/schema.sql` with a regular expression, a default this insert overrides. Nothing on the page is on main: no spec opens the form, saves it or sees the banner (matrix Gaps), and the hook `useAddTrade` is inline in the page, so no Vitest file reaches it. The test this branch adds for JOURNAL-14 (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`) opens the form, types the two prices, saves against an injected 500 and asserts the banner, exactly one `POST /api/journal/trades`, the form still open and both prices kept; it covers the failure branch only, so no test saves successfully on the page, and it passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07). Te stays unticked.
 
 **Code:** `src/routes/JournalPage.tsx:159-182,285-298,494-498,799-807`; `platform/api/routers/journal.py:152-161,193-231,341-355,400-410,648-720,1088-1143`.
 
@@ -9473,7 +9473,7 @@ and the line read `Exported 0 closed trades · 1 not closed, skipped → iwm_tra
 - Given the export request fails, then the page should not report it in the success colour (executed: it does, matrix Gaps).
 - Given no token, then the route answers 401 on staging (V evidence).
 
-**Tests:** On main the pure helpers are asserted (`tradesToCsv` for a closed row, an open row and a mix, `exportableTrades` for four cases; `src/routes/journalNullSafety.test.ts`), and the handler's 422 and the empty-list 200 are pinned; no test on main presses either button, reads the file or the line, or asserts what the handler writes (`mockJournalApi` in `tests/helpers/fixtures/journal.ts` carries an `onExport` hook and a `MOCK_JOURNAL_EXPORT` that no spec uses). This branch adds `CSV downloads the active view, and Export to Pipeline posts only the closed trades and reports the count` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): on an own journal of one closed and one open trade it presses `CSV` and reads the downloaded file (the name `iwm_journal.csv`, the six-column header, the two lines and the open trade's empty exit cell), then presses `Export to Pipeline` and asserts the request body field by field (the closed trade only) and the line `Exported 1 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv`. It passes on the unchanged page, and five one-line mutations of a scratch copy each failed it and no other test of the file (the header without `Runner_Time`, a file name that is not lowercased, an export that keeps the open trade, a changed line wording and a line without the skipped note). It does not assert the fallback download, the line clearing after 5 seconds, or the file the handler writes, and it waits for a CI run that includes the branch's tests, so Te stays unticked.
+**Tests:** On main the pure helpers are asserted (`tradesToCsv` for a closed row, an open row and a mix, `exportableTrades` for four cases; `src/routes/journalNullSafety.test.ts`), and the handler's 422 and the empty-list 200 are pinned; no test on main presses either button, reads the file or the line, or asserts what the handler writes (`mockJournalApi` in `tests/helpers/fixtures/journal.ts` carries an `onExport` hook and a `MOCK_JOURNAL_EXPORT` that no spec uses). This branch adds `CSV downloads the active view, and Export to Pipeline posts only the closed trades and reports the count` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): on an own journal of one closed and one open trade it presses `CSV` and reads the downloaded file (the name `iwm_journal.csv`, the six-column header, the two lines and the open trade's empty exit cell), then presses `Export to Pipeline` and asserts the request body field by field (the closed trade only) and the line `Exported 1 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv`. It passes on the unchanged page, and five one-line mutations of a scratch copy each failed it and no other test of the file (the header without `Runner_Time`, a file name that is not lowercased, an export that keeps the open trade, a changed line wording and a line without the skipped note). It does not assert the fallback download, the line clearing after 5 seconds, or the file the handler writes; it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), and Te is ticked on that run.
 
 **Code:** `src/routes/JournalPage.tsx:85-114,300-345,452-467,488-492`; `platform/api/routers/journal.py:40-48,240-256,1376-1428`; `src/hooks/useJournalChartTrades.ts` (`JournalExportResponse`).
 
@@ -9505,7 +9505,7 @@ Production (V evidence): the dates list holds 2,944 IWM dates, the Examples view
 - Given a date outside the dates list, then the page should say the date has no session (executed: it shows the empty text and requests the bars twice).
 - Given no token, then the four routes answer 401 on staging (V evidence).
 
-**Tests:** On main, three page tests assert the default view, the toggle to an empty My journal and the scope label; none asserts that the tiles, the table or the rail follow a picked date, that `Overview` restores them, that the toggle replaces a non-empty set of rows, the stickiness of the choice, or `resolveJournalView` (no unit test names it). This branch adds `a picked session narrows the tiles and the table, Overview restores them, and the toggle swaps the rows` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): on an own journal of a closed win of 2026-04-23 and an open trade of 2026-04-24 and an Examples union of two wins, it asserts the Overview (both rows, `1W / 0L`, the open-trade note), each picked date (only that date's row, `1W / 0L` and no note for the first, `0W / 0L` and the note for the second), `Overview` restoring both rows, and the toggle replacing the own rows with the union (`2W / 0L`) and bringing them back. It passes on the unchanged page, and four one-line mutations of a scratch copy each failed it (a table that ignores the session, tiles that ignore it, an `Overview` that does not clear it and a toggle that does nothing; the last also failed the JOURNAL-14 test and the existing `shows empty state when no trades`). It does not assert that the rail and the chart follow the pick, the stickiness of the choice across ticker picks, the default while the own read is in flight, or `resolveJournalView`, and it waits for a CI run that includes the branch's tests, so Te stays unticked.
+**Tests:** On main, three page tests assert the default view, the toggle to an empty My journal and the scope label; none asserts that the tiles, the table or the rail follow a picked date, that `Overview` restores them, that the toggle replaces a non-empty set of rows, the stickiness of the choice, or `resolveJournalView` (no unit test names it). This branch adds `a picked session narrows the tiles and the table, Overview restores them, and the toggle swaps the rows` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): on an own journal of a closed win of 2026-04-23 and an open trade of 2026-04-24 and an Examples union of two wins, it asserts the Overview (both rows, `1W / 0L`, the open-trade note), each picked date (only that date's row, `1W / 0L` and no note for the first, `0W / 0L` and the note for the second), `Overview` restoring both rows, and the toggle replacing the own rows with the union (`2W / 0L`) and bringing them back. It passes on the unchanged page, and four one-line mutations of a scratch copy each failed it (a table that ignores the session, tiles that ignore it, an `Overview` that does not clear it and a toggle that does nothing; the last also failed the JOURNAL-14 test and the existing `shows empty state when no trades`). It does not assert that the rail and the chart follow the pick, the stickiness of the choice across ticker picks, the default while the own read is in flight, or `resolveJournalView`; it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), and Te is ticked on that run.
 
 **Code:** `src/routes/JournalPage.tsx:195-283,366-384,469-484`, `src/hooks/useJournalChartTrades.ts:312-367`, `src/hooks/useMarketData.ts:34-63`, `src/lib/journalStats.ts:103-165`; test ids `view-toggle`, `clear-date`, `scope-label`.
 
@@ -9596,7 +9596,7 @@ The handlers fail honestly where they read: an outage during a journal read, cre
 - Given the own journal read fails, the export fails or the style call hides an outage, then the page should say so (executed: it does not; matrix Gaps).
 - Given the dates read fails, then the card should not read as a closed market (executed with a 503: it does; matrix Gaps, the loading and empty states misreport).
 
-**Tests:** On main the style panel's two failure shapes and the import preview's 422 are asserted on the page, and the handlers' failure answers in the tests named above: the 503s against a mocked database layer, the 404, 409 and 422 of the close, create and export handlers in the local-file branch or with patched calls, and the style handler's 503 for a missing Cloud SQL configuration, so none runs a real failure. This branch adds `a failed Examples read says so in a banner and in the table area, and a failed manual save keeps the form open with its error` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): with the Examples read answering 503 it asserts the amber box's text, the card's `Examples unavailable.`, the absence of the quiet `No example trades for IWM yet.` copy and the box's absence after a press of `My journal`, and with the create route answering 500 it saves the form and asserts the red box, exactly one request, the form still open and both prices kept. It passes on the unchanged page, and six one-line mutations of a scratch copy each failed it and no other test of the file (the banner never drawn, drawn on My journal, the card in the quiet copy, a form that closes on failure, a changed error text and an error never drawn). Still no test asserts the own read's failure, a failed mark, exit or delete, the chart card's error text, the commit's failure on the page or the export fallback, and the added test waits for a CI run that includes the branch's tests, so Te stays unticked.
+**Tests:** On main the style panel's two failure shapes and the import preview's 422 are asserted on the page, and the handlers' failure answers in the tests named above: the 503s against a mocked database layer, the 404, 409 and 422 of the close, create and export handlers in the local-file branch or with patched calls, and the style handler's 503 for a missing Cloud SQL configuration, so none runs a real failure. This branch adds `a failed Examples read says so in a banner and in the table area, and a failed manual save keeps the form open with its error` (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`): with the Examples read answering 503 it asserts the amber box's text, the card's `Examples unavailable.`, the absence of the quiet `No example trades for IWM yet.` copy and the box's absence after a press of `My journal`, and with the create route answering 500 it saves the form and asserts the red box, exactly one request, the form still open and both prices kept. It passes on the unchanged page, and six one-line mutations of a scratch copy each failed it and no other test of the file (the banner never drawn, drawn on My journal, the card in the quiet copy, a form that closes on failure, a changed error text and an error never drawn). Still no test asserts the own read's failure, a failed mark, exit or delete, the chart card's error text, the commit's failure on the page or the export fallback; the added test ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), and Te is ticked on that run.
 
 **Code:** `src/routes/JournalPage.tsx:200,223,300-345,494-504,560-572,585-591,599-605,628,819-823,942`, `src/components/journal/MyStylePanel.tsx:79-95`, `src/components/journal/ImportTradesModal.tsx:291-298,394-401`, `src/hooks/useJournalChartTrades.ts:312-351,390-464`; `platform/api/http_errors.py:35-58`, `platform/api/routers/journal.py:882-1307`; test ids `examples-unavailable`, `my-style-error`, `my-style-unavailable`.
 
@@ -10098,7 +10098,7 @@ route at 200 against a dead backend, which is the empty ranking of the Gaps. Not
 empty ranking for an owner with no rows through the handler, or the `ranker_runs` write. On this branch
 `a watchlist row's Generate report runs live even while a cutoff is set` (`tests/insights/insights.spec.ts`) asserts
 that the row's refresh carries no `as_of` while the cutoff input stays set; of the tab itself it only waits for the
-ranking's count line and clicks the row's button; it has not run in CI. Te stays unticked.
+ranking's count line and clicks the row's button; it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), but Te stays unticked: nothing asserts the tab's rendering, the ranked rows, the filters or the limit.
 
 **Code:** `src/components/insights/WatchlistPanel.tsx:25-203,483-607`, `src/routes/InsightsPage.tsx:98-105,239-244`,
 `src/hooks/useWatchlist.ts:17-34`, `src/types/watchlist.ts:1-40`; `platform/api/routers/insights.py:57-67,709-756`,
@@ -10156,8 +10156,8 @@ the request, not the page). Nothing on main asserts the tab's layout, the modes,
 state. On this branch `a failed report, ranking or chat request says so on the page with its status`
 (`tests/insights/insights.spec.ts`) clicks the Chat tab, sends one message to a route answering 503 and asserts that the
 message text and text beginning `Error: 503` are each visible on the page, in no asserted order; it asserts nothing
-about the layout, the modes, the empty text, the streaming state or a successful reply, and it has not run in CI. Te
-stays unticked.
+about the layout, the modes, the empty text, the streaming state or a successful reply, and it passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07). Te stays unticked.
 
 **Code:** `src/routes/InsightsPage.tsx:466-605` (the tab: `:468,473,536-603`; no hook, the call is inline in `send`);
 `platform/api/routers/insights.py:930-972,1005-1074`; no test ids.
@@ -10220,16 +10220,16 @@ how old a section is. Permission (INSIGHTS-15).
 list is empty and does not look for it. On this branch
 `a degraded report shows the partial-report banner and its section name, a complete one shows none` asserts, for
 `MOCK_INSIGHT_REPORT_DEGRADED` (the one section `judge`), the sentence, that name and the `IWM` heading on the page
-and, after a reload on the complete fixture, no `Partial report` text (`tests/insights/insights.spec.ts`; it has not
-run in CI); it does not assert the position of the strip, the join of several names or that the stored reasons are
+and, after a reload on the complete fixture, no `Partial report` text (`tests/insights/insights.spec.ts`; it ran and passed in
+the CI run named below); it does not assert the position of the strip, the join of several names or that the stored reasons are
 not drawn. The data side is asserted by
 [`tests/agents/test_agent_orchestrator.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_orchestrator.py) (`test_pipeline_marks_failed_analysts`, five parametrised
 `test_pipeline_isolates_individual_analyst_failures` cases, `test_pipeline_isolates_multiple_partial_failures`,
 `test_pipeline_marks_persona_plans_when_the_deterministic_plan_fails`,
 `test_pipeline_leaves_persona_plans_unflagged_on_the_happy_path`) and [`tests/agents/test_agent_summarizers.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_summarizers.py)
 (`test_build_context_bundle_marks_failures`, `test_build_context_bundle_catches_exceptions`, with the reasons). No
-test asserts the reasons reaching the page or the fallback plan's missing marker. Te stays unticked: the page side
-waits for a CI run that includes the branch's tests.
+test asserts the reasons reaching the page or the fallback plan's missing marker. Te is ticked: the page side ran and passed in [solyra
+CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07).
 
 **Code:** `src/components/insights/ReportCards.tsx:467-476`, `src/routes/InsightsPage.tsx:345-356`,
 `src/types/insights.ts:61-93`; `lib/agents/orchestrator.py:320-348,592-604`, `lib/agents/summarizers.py:1931-2003`; no
@@ -10432,8 +10432,8 @@ asserts that the job stamps `replay` or `live` on its canonical row, and [`tests
 checks by source text that the router's upsert carries `run_kind` through the conflict (presence only). Nothing
 asserts the API's replay write, its response or the three reads that ignore the cutoff. On this branch
 `a watchlist row's Generate report runs live even while a cutoff is set` (`tests/insights/insights.spec.ts`) asserts
-that exception, the row's refresh carrying no `as_of` while the cutoff input stays set; it has not run in CI. Te stays
-unticked.
+that exception, the row's refresh carrying no `as_of` while the cutoff input stays set; it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)
+(head db678a4, 2026-10-07), but Te stays unticked: no test that runs in CI asserts the router's `_parse_as_of_param`, the replay write or its response.
 
 **Code:** `src/routes/InsightsPage.tsx:47,78-105,159-194`, `src/hooks/useInsights.ts:124-156`;
 `platform/api/routers/insights.py:95-133,411-486,841-898`, `lib/agents/orchestrator.py:660-661`,
@@ -10591,7 +10591,7 @@ the stream, the model, the six-turn window, the error bubbles or the `Gemini err
 `a failed report, ranking or chat request says so on the page with its status` (`tests/insights/insights.spec.ts`)
 sends a message to a route answering 503 and asserts that the message text and text beginning `Error: 503` are each
 visible on the page; both are found by text over the whole page, so neither their order nor their place in the
-transcript is asserted; it has not run in CI. Te stays unticked.
+transcript is asserted; it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), but Te stays unticked: nothing asserts the send, the six-turn window or the stream.
 
 **Code:** `src/routes/InsightsPage.tsx:466-534`; `platform/api/routers/insights.py:930-1074`; no test ids.
 
@@ -10795,10 +10795,10 @@ the 503 of the report, history, by-id, runs, refresh and roster routes against a
 asserts `Failed to load report: insights 503` with the `AI Insights` heading and the cutoff input still on screen,
 `Failed to load watchlist: watchlist 503`, and, after a chat send answered 503, the message text and text beginning
 `Error: 503`, each found by text on the page with no order or place asserted; it clicks the Watchlist and Chat tab
-buttons to reach the last two and asserts nothing about the other tabs, the `Re-analyze` button or the filter bar; it
-has not run in CI. The forms of the Agents tab, History, the
-brief card, the refresh, the status poll and the add are asserted by no test. Te stays unticked: the page side waits
-for a CI run that includes the branch's tests.
+buttons to reach the last two and asserts nothing about the other tabs, the `Re-analyze` button or the filter bar; it ran
+and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)
+(head db678a4, 2026-10-07). The forms of the Agents tab, History, the brief card, the refresh, the status poll and the add
+are asserted by no test. Te is ticked: the page side ran and passed in that run.
 
 **Code:** `src/routes/InsightsPage.tsx:64-76,86-89,314-320,404-417,502-508,526-530`,
 `src/components/insights/ReportCards.tsx:519-528`, `src/components/insights/AgentsPanel.tsx:85-88,121-123`,
@@ -11391,13 +11391,13 @@ CATALYSTS-11. A type chip selected before the change stays selected whether or n
 **Tests:** On main `tests/shared/popover-fit.spec.ts` (`date-range picker stays on screen (Catalysts)`, at 390 px and
 411 px, on main at eca7078) opens the picker and asserts that the dialog is visible and inside the viewport; it picks
 nothing. In a scratch copy of the page (2026-10-01) making `onChange` do nothing, or `Today` do nothing, left every test of
-`tests/catalysts/catalysts.spec.ts` and that test passing. On this branch (solyra commit 7690974, not yet run in CI)
+`tests/catalysts/catalysts.spec.ts` and that test passing. On this branch (solyra commit 7690974, passed in the CI run named below)
 `OK requests the picked range, Cancel discards it and Today restores the default`
 (`tests/catalysts/catalysts.spec.ts`, browser pinned to America/New_York) asserts the default range's two dates in the
 first request and the trigger's label, that a picked range followed by `Cancel` leaves the label and the request count
 alone, that `OK` sends one request with the picked `date_from` and `date_to` and shows them, and that `Today` restores
-the default label; it does not assert `Refresh`, the loading blank or the label in another time zone. Te stays unticked:
-the row's only range-changing assertion is a test added on this branch, which waits for a CI run that includes it.
+the default label; it does not assert `Refresh`, the loading blank or the label in another time zone. Te is ticked: the row's only range-changing assertion is a test added on
+this branch, which ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07).
 
 **Code:** `src/routes/CatalystsPage.tsx:159-174,396-406,416-420,491-516`;
 `src/components/shared/DateRangePicker.tsx:10-15,29-151`; [`scripts/fetch_earnings_calendar.py:1534-1549`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/fetch_earnings_calendar.py#L1534-L1549); test ids `date-range-picker`, `date-range-apply`.
@@ -11478,9 +11478,9 @@ none to expand, and under permission (CATALYSTS-14) they are replaced.
 
 **Tests:** None on main: in a scratch copy of the page (2026-10-01) making the toggle do nothing left every test of
 `tests/catalysts/catalysts.spec.ts` passing, so nothing asserts the control, only the rendering of the rows that hold it. On
-this branch (solyra commit 7690974, not yet run in CI) `an event title toggles its own expanded state on click` asserts the above on the
-fixture's AVGO row, which shows twice; it asserts nothing about truncation, the chevron or the other rows. Te stays
-unticked: the only assertion is a test added on this branch, which waits for a CI run that includes it.
+this branch (solyra commit 7690974, passed in the CI run named below) `an event title toggles its own expanded state on click` asserts the above on the
+fixture's AVGO row, which shows twice; it asserts nothing about truncation, the chevron or the other rows. Te is ticked: the only assertion is a test added on this
+branch, which ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07).
 
 **Code:** `src/routes/CatalystsPage.tsx:255-311`; test ids none (`aria-expanded` and the `title` are the hooks).
 
@@ -11523,12 +11523,12 @@ permission (CATALYSTS-14).
 title claims the active ticker, which it does not assert (in a scratch copy of the page, 2026-10-01, removing the
 `setTicker` call passed it, and pointing `navigate` at `/dashboard` failed it). The store's half is asserted on main by
 `src/stores/tickerStore.test.ts` (`uppercases the active ticker`, `persists activeTicker + recentTickers and omits quickPicks`),
-which never calls `handleOpenTicker`. On this branch (solyra commit 7690974, not yet
-run in CI) `opening an insight report makes that ticker active on /insights, and a MACRO row has no link` asserts that
+which never calls `handleOpenTicker`. On this branch (solyra commit 7690974, passed in the CI run named below)
+`opening an insight report makes that ticker active on /insights, and a MACRO row has no link` asserts that
 tomorrow's `CPI release` row has no button named `MACRO` and that, after the AVGO ticker button is clicked, the URL becomes
 `/insights` and the header combobox contains `AVGO`; it asserts nothing about the `View` button, lower-case tickers or the
-page's own state. Te stays unticked: the row's assertion of the active ticker is a test added on this branch, which waits
-for a CI run that includes it.
+page's own state. Te is ticked: the row's assertion of the active ticker is a test added on this branch, which ran and passed in [solyra
+CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07).
 
 **Code:** `src/routes/CatalystsPage.tsx:255-311,394-414`; `src/stores/tickerStore.ts:14-33`; no test ids (the buttons'
 `title` attributes are the hooks).
@@ -12390,8 +12390,8 @@ value and `Save` disabled. It passed on the existing behaviour, so it was shown 
 product code, one statement or block each, each failing it for the stated reason: the model not re-pointed (`AdminPage.tsx:266-267`, the
 select read an empty value), the save error not rendered (`:308-312`, no refusal text), the routes not refetched (`useAdmin.ts:227-229`, no
 `admin-ui` in the row), `Save` held disabled (`:294`) and a different model sent (`:219`, a different body). No test asserts the unhandled
-rejection, the draft lost on a tab round trip or the error line's persistence. Te stays unticked: no test that runs in CI asserts the
-handler's answers, and this branch's test waits for a CI run that includes the branch's tests.
+rejection, the draft lost on a tab round trip or the error line's persistence. Te stays unticked: no test that runs in CI asserts the handler's answers, although this
+branch's test ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07).
 
 **Code:** `src/routes/AdminPage.tsx:157-344`, `src/hooks/useAdmin.ts:25-67,207-231`; `platform/api/routers/admin.py:157-213`,
 `lib/agents/model_routing.py:164-226,238-256`, `lib/agents/pricing.py:160-163`, `lib/agents/llm_client.py:113-115`,
@@ -12798,8 +12798,8 @@ to a scratch copy of the product code, one statement or block each, each failing
 routing panel's server-rejected wording dropped (`AdminPage.tsx:182-184`), the data sources error branch dropped
 (`DataSourcesPanel.tsx:40-49`) and the denied card shown to an admin whose routes answer 403 (`AdminPage.tsx:48`). Te is ticked: the page's
 gate, the denied card for an anonymous, a non-admin and a failing `/api/me` account, is asserted by four Playwright tests on main, and the
-routes' gate, `/api/me`'s flags, `is_admin_email` and the 401 and 403 of five routes by pytest in the lean CI job. The branch's test adds
-the role-drift presentation on top of that and waits for a CI run that includes the branch's tests; the tick does not rest on it.
+routes' gate, `/api/me`'s flags, `is_admin_email` and the 401 and 403 of five routes by pytest in the lean CI job. The branch's test adds the role-drift presentation on top of that and
+ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07); the tick does not rest on it.
 
 **Code:** `src/routes/AdminPage.tsx:36-53,136-151`, `src/hooks/useUser.ts:21-85`, `src/hooks/useAdmin.ts:12-15`,
 `src/lib/authedFetch.ts:158,249`, `src/components/shared/AuthStatusIndicator.tsx:43`, `src/components/layout/navConfig.ts:89`,
@@ -12892,8 +12892,8 @@ not this box (executed on the deployed host; V evidence). It has no loading, err
 visible, which any text input on the page would satisfy. `search "King Node" returns the gamma entry` (`tests/shared/gamma-levels.spec.ts`)
 types `King Node` into `getByPlaceholder(/Search/)` and asserts that the `King Node (★)` entry is visible; that holds when the box filters
 nothing (mutation: `matchesSearch = true` at `src/routes/HelpPage.tsx:203` leaves all seven Help tests on main green) and fails when the
-query is not lower-cased (mutation). Te stays unticked: the box's effect on the list is asserted on main by neither test, and the test that
-asserts it was added on this branch and waits for a CI run that includes the branch's tests (matrix Gaps).
+query is not lower-cased (mutation). Te is ticked: the box's effect on the list is asserted on main by neither test, and the test that asserts it was added on this branch
+and ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07) (matrix Gaps).
 
 **Code:** `src/routes/HelpPage.tsx:193,217-227`, `src/App.tsx:73-82`, `src/components/layout/AppGroup.tsx:13-18`.
 
@@ -12927,8 +12927,8 @@ HELP-01. It has no loading, error or stale presentation.
 **Tests:** `Gamma Levels category pill exists` (`tests/shared/gamma-levels.spec.ts`) asserts that a button named like `Gamma Levels (n)` is
 visible: the label and a number in parentheses, presence only. With every pill announcing one entry too many (mutation: `.length + 1` at
 `src/routes/HelpPage.tsx:242`) all seven Help tests on main stay green. The number against the rows is asserted only by the test added on
-this branch, and only for `The Strat` and `Options` (and for `All` against the whole list); it waits for a CI run that includes the branch's
-tests, and Te stays unticked (matrix Gaps).
+this branch, and only for `The Strat` and `Options` (and for `All` against the whole list); it ran and passed in [solyra CI run
+37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), and Te is ticked on that run (matrix Gaps).
 
 **Code:** `src/routes/HelpPage.tsx:194,200,229-257`.
 
@@ -13086,8 +13086,8 @@ High / Gap Low`, and with the pill cleared 5 entries match `gap`). The list chan
 when the query is not lower-cased (`includes(search)` for `includes(search.toLowerCase())` at `src/routes/HelpPage.tsx:203`) and stays green
 when the search filters nothing (`matchesSearch = true`) and when it ignores the short text, so it cannot tell a search from a list that
 shows everything. The test added on this branch asserts the narrowing, the case, the short text and the empty state, and fails under each of
-those four mutations (the one test; see the matrix Gaps for the runs). Te stays unticked: on main only the weak assertion exists, and the
-added test waits for a CI run that includes the branch's tests.
+those four mutations (the one test; see the matrix Gaps for the runs). Te is ticked: on main only the weak assertion exists, and the added test ran and
+passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07).
 
 **Code:** `src/routes/HelpPage.tsx:193,202-206`.
 
@@ -13122,8 +13122,8 @@ and a reload clears it (executed).
 a second click, a switch or `All`. With a pill that never filters (mutation: `matchesCat = true` at `src/routes/HelpPage.tsx:204`) all seven
 Help tests on main stay green. The added test fails under that mutation, under a second click that does not return to all
 (`setActiveCategory(cat)` at `:246`), under a click that does not replace the active pill, under an `All` that does nothing (`onClick={() =>
-{}}` at `:232`) and under a pill that announces one entry too many (`.length + 1` at `:242`). Te stays unticked: the assertions that matter
-are in the added test, which waits for a CI run that includes the branch's tests (matrix Gaps).
+{}}` at `:232`) and under a pill that announces one entry too many (`.length + 1` at `:242`). Te is ticked: the assertions that matter are in the added test, which ran
+and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07) (matrix Gaps).
 
 **Code:** `src/routes/HelpPage.tsx:194,200,204,229-257`.
 
@@ -13194,7 +13194,7 @@ is no loading, error or stale form of it.
 **Tests:** No test on main asserts it: the text `No matching terms found.` appears in no spec on main and in no Vitest file. The test added
 on this branch asserts the message and zero rows for a query that matches nothing, and their reversal when the box is emptied; it passes on
 the unchanged page and fails with the message's text removed (mutation: `>No matching terms found.</p>` became `></p>` at
-`src/routes/HelpPage.tsx:262`). Te stays unticked: it waits for a CI run that includes the branch's tests (matrix Gaps).
+`src/routes/HelpPage.tsx:262`). Te is ticked: it ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07) (matrix Gaps).
 
 **Code:** `src/routes/HelpPage.tsx:202-206,261-262`.
 
@@ -13768,7 +13768,7 @@ to `ProfileUpdate` is caught there. This branch adds `Discard returns the draft 
 `Save changes` disabled, then a Save of another field whose body is `{timezone: 'Europe/London'}` alone); it passed on the unchanged page,
 so it was shown to fail by mutation, four changes of one line each to a scratch copy of the product code, that removed the reset of the
 draft, reset it to the all-null shell instead of the stored profile, saved the half-typed draft, and never rendered the button (see the
-Gaps). Te stays unticked: `Discard` is asserted only by that test, which waits for a CI run that includes the branch's tests.
+Gaps). Te is ticked: `Discard` is asserted only by that test, which ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07).
 
 **Code:** `src/routes/SettingsPage.tsx:123-172,296,422,450`, `src/hooks/useProfile.ts:64-74,83-91,93-122`, `src/types/profile.ts:60-74`;
 `platform/api/routers/profile.py:75-105,162-206`.
@@ -13976,8 +13976,8 @@ sees it (see the Gaps). The routes' 200 answers, request samples and models are 
 `src/mocks/contract.test.ts` (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200
 response matches its response schema (no undeclared fields)`, `every request body the app sends matches its operation request schema`) and
 [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`); the document declares a 422 for the two `PUT` routes
-and no 503, and no check asserts a failure answer. Te stays unticked: the two presentations above wait for a CI run that includes the
-branch's tests, and the precedence and the retained save error are asserted by nothing.
+and no 503, and no check asserts a failure answer. Te is ticked: the two presentations above ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)
+(head db678a4, 2026-10-07); the precedence and the retained save error are asserted by nothing and stay recorded in the Gaps.
 
 **Code:** `src/routes/SettingsPage.tsx:152-172,174-195`, `src/hooks/useProfile.ts:76-91,93-122`,
 `src/hooks/usePreferences.ts:92-108,214-221`; `platform/api/routers/preferences.py:132-194`, `platform/api/routers/profile.py:145-206`,
