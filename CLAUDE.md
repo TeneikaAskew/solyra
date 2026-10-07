@@ -2,6 +2,19 @@
 
 **Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
 
+## Before any change (read this first)
+Any edit, fix, refactor, or feature, however small: invoke the `product-delivery` skill before touching code.
+It classifies the work (TRIVIAL / SPIKE / CHANGE), requires a FEAT-ID from docs/product/02-FEATURE-CATALOG.md,
+and runs the Superpowers brainstorming -> writing-plans -> subagent-driven-development chain.
+Commits and PRs that skip it are rejected by `scripts/gate/spec_gate.py` (pre-commit hook and CI).
+Review cap on every PR: two rounds, then split, re-cut, or discard. Never a third round, never a stacked follow-up.
+Gate files (`scripts/gate/`, `.githooks/pre-commit`, `.github/workflows/spec-gate.yml`, `registry-check.yml`, their suites)
+get a red-team pass before every push: one reviewer per attack surface (shell, YAML/Actions, exporter and policy docs),
+each bypass proven by running the gate against a concrete snippet, everything found fixed in one batch, repeated until a
+pass comes back empty, then one push. Never push a gate change one finding at a time.
+The two gate workflows and the hook are pinned byte for byte to copies under `scripts/gate/pinned/`, read from main:
+change the copy in one PR, then make the file equal to it in the next. One PR changing both is refused.
+
 ## Project Overview
 
 Solyra is the **frontend** for the trading platform: a React 19 + TypeScript
@@ -68,17 +81,20 @@ If you're on the connected branch, create a feature branch before touching any
 file:
 
 ```bash
-git checkout -b feature/short-description   # new features
-git checkout -b fix/short-description       # bug fixes
-git checkout -b docs/short-description      # doc-only changes
-git checkout -b chore/short-description     # refactors, deps, tooling
-git checkout -b test/short-description      # test-only changes
+git checkout -b feature/<feat-id>-<slug>   # a CHANGE: approved spec and ready plan
+git checkout -b fix/<feat-id>-<slug>       # a bug fix, filed under its FEAT-ID
+git checkout -b docs/short-description     # documentation only
+git checkout -b chore/short-description    # dependency fields of manifests, and lockfiles
 ```
+
+These are the shapes the spec gate (`scripts/gate/spec_gate.py`) accepts, with
+`spike/` for local investigation and `bot/superpowers-*` for the vendored
+skills. Tests and refactors are code: they go on a `feature/` or `fix/` branch.
 
 Push with upstream tracking on the first push:
 
 ```bash
-git push -u origin feature/short-description
+git push -u origin feature/<feat-id>-<slug>
 ```
 
 Use kebab-case, keep under ~40 chars, no emoji, no PR/issue numbers.

@@ -1,3 +1,16 @@
+**FEAT-ID:** FEAT-XXX-000
+**Spec:** docs/superpowers/specs/....md
+**Plan:** docs/superpowers/plans/....md
+
+## Done when (copied from the spec)
+- [ ]
+- [ ]
+
+## Capacity (stocks CLAUDE.md rule 0; solyra runs no workload, so `n/a: <why>` unless a workflow changes)
+Volume: · Velocity: · Wall-clock: · $/run × runs/day × 30:
+
+Canvas refresh pending: none
+
 <!-- Keep the sections; replace the comments. Delete a section only when it
      genuinely doesn't apply (say why in Summary if it's not obvious). -->
 

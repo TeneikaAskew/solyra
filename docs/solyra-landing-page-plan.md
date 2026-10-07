@@ -22,7 +22,7 @@
 
 ## Global Constraints
 
-- **Branch:** work on `feature/solyra-landing` (branched from `main` after the spec PR merges, or from `docs/solyra-landing-design` if not yet merged). Never commit to `main`.
+- **Branch:** work on `feature/feat-waitlist-001-landing` (branched from `main` after the spec PR merges, or from `docs/solyra-landing-design` if not yet merged). Never commit to `main`.
 - **Naming:** the words "Heatseeker", "Flowseeker", "Skylit" must NOT appear anywhere in landing copy, code, or fixtures. Public module names are exactly: `The Brief`, `Gamma Map`, `Flow`, `Council`, `Movement Read`, `Playbook` (spec §2).
 - **Rule 3.7 (no silent fallbacks):** waitlist failures are loud (400/429/503 + visible UI error). Sole sanctioned exception: a tripped honeypot returns fake success to bots (documented in code).
 - **No new npm or pip dependencies.** No `@testing-library/*`, no `email-validator` — validate email with a regex.
@@ -41,7 +41,7 @@
 - Create: `platform/api/routers/waitlist.py`
 - Modify: `platform/api/auth.py:34` (`_OPEN_API_PREFIXES`)
 - Modify: `platform/api/main.py:23` (import) and `:73` (include_router)
-- Test: `tests/test_waitlist_router.py`
+- Test (stocks repo): `tests/test_waitlist_router.py`
 
 **Interfaces:**
 - Consumes: `gcp.database.get_engine()` (existing), `api.auth._OPEN_API_PREFIXES` (existing tuple).
@@ -49,7 +49,7 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `tests/test_waitlist_router.py`:
+Create `tests/test_waitlist_router.py` in the stocks repo:
 
 ```python
 """Tests for POST /api/waitlist — the public landing-page signup endpoint.
@@ -317,7 +317,7 @@ CREATE TABLE IF NOT EXISTS waitlist_signups (
 - [ ] **Step 6: Run the full hermetic suite**
 
 Run: `make test`
-Expected: passes (existing auth tests in `tests/test_platform_auth.py` must still pass — the new prefix only ADDS an open path).
+Expected: passes (existing auth tests in the stocks repo's `tests/test_platform_auth.py` must still pass — the new prefix only ADDS an open path).
 
 - [ ] **Step 7: Commit**
 
@@ -1721,7 +1721,7 @@ Run (in `platform/`): `npm run lint` → clean. `npm run build` → passes. `npx
 ```bash
 git add tests/landing.spec.ts src/components/landing/fixtures.ts
 git commit -m "test: landing page e2e smoke + proof tile data"
-git push -u origin feature/solyra-landing
+git push -u origin feature/feat-waitlist-001-landing
 gh pr create --base main --title "feat: Solyra public landing page + waitlist API" --body "Implements docs/solyra-landing-page-design.md — landing page as the default / route (app moves to /dashboard), waitlist endpoint + table, 10 marketing sections with app-faithful gamma visuals. Deployment note: apply gcp/schema.sql (waitlist_signups) via the apply-schema-migrations Cloud Run job before flipping firebase-mode traffic."
 ```
 
