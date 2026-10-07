@@ -12834,7 +12834,7 @@ No schedule or job feeds this page and it reads no table. `GET /api/glossary/gam
 | HELP-01 | Search box | inline in `src/routes/HelpPage.tsx` |
 | HELP-02 | Category pills | inline in `src/routes/HelpPage.tsx` (`categories`) |
 | HELP-03 | Glossary entries | inline in `src/routes/HelpPage.tsx` (`buildGlossary`) |
-| HELP-08 | TermHover links from other pages | none: no `TermHover` exists; the Options Gamma Map's `Term` spans (`src/components/options/SwingMode.tsx`) show their own `title` tooltip from a mock glossary, and its `Glossary` button opens `/help` with no term or anchor |
+| HELP-08 | Term hovers and Glossary links from other pages | the Options Gamma Map's `Term` component and `Glossary` button (`src/components/options/SwingMode.tsx`) and the Support menu's `Help & Glossary` (`src/components/layout/navConfig.ts`): the hover shows a native `title` tooltip from a mock glossary, and neither link carries a term or an anchor; no `TermHover` exists |
 
 #### Actions
 | ID | Action | What happens |
@@ -12919,7 +12919,7 @@ HELP-01. It has no loading, error or stale presentation.
 - Given the page has loaded, then the row reads `All (131)` and the eleven pills above, with `All` filled (executed).
 - Given any pill is clicked, then the rows shown equal its number and every row carries its category's badge (executed for all eleven; `a
   category pill narrows the list, a second click returns to all, and another pill switches`, `tests/help/help.spec.ts`, added on this
-  branch, not on main, asserts the number for `The Strat` and `Options`).
+  branch, not on main, asserts the numbers of `The Strat` and `Options`, and that of `All` against the whole list).
 - Given a query that matches nothing, then the pills keep their numbers and an active pill stays active (executed; matrix Gaps).
 - Given only the keyboard, then Tab visits `All` and the pills in order and Enter or Space activates each (executed; no test).
 - Given a screen reader, then no pill announces whether it is the active one (executed; matrix Gaps).
@@ -12927,7 +12927,8 @@ HELP-01. It has no loading, error or stale presentation.
 **Tests:** `Gamma Levels category pill exists` (`tests/shared/gamma-levels.spec.ts`) asserts that a button named like `Gamma Levels (n)` is
 visible: the label and a number in parentheses, presence only. With every pill announcing one entry too many (mutation: `.length + 1` at
 `src/routes/HelpPage.tsx:242`) all seven Help tests on main stay green. The number against the rows is asserted only by the test added on
-this branch, which waits for a CI run that includes the branch's tests; Te stays unticked (matrix Gaps).
+this branch, and only for `The Strat` and `Options` (and for `All` against the whole list); it waits for a CI run that includes the branch's
+tests, and Te stays unticked (matrix Gaps).
 
 **Code:** `src/routes/HelpPage.tsx:194,200,229-257`.
 
@@ -13004,20 +13005,23 @@ is a status and a shape.
 **Code:** `src/routes/HelpPage.tsx:16-190,192-200,259-292`, `src/hooks/useConfig.ts:13-42,55-66`, `src/App.tsx:30-37,95`;
 `platform/api/routers/config.py:75-128`, `lib/config.py:21-38,423-436,704-718`.
 
-##### HELP-08 · TermHover links from other pages
+##### HELP-08 · Term hovers and Glossary links from other pages
 
-**Shows or does:** Nothing under this name exists. A `TermHover` component and a `useGammaGlossary` hook were built for the glossary
-endpoint in stocks PR #546 (merged 2026-05-31, commit `e1ce147` in solyra's history), whose own description says it is "not yet wired into
-any page"; no page ever imported them, and both were deleted in `4f2c87b` (`docs/TEST_COVERAGE_AUDIT.md` section 3 gives the forensics; the
-tree holds neither file, executed by `ls`). What exists instead is two links into the glossary, neither carrying a term, and a stand-in for
-a hover glossary. The header's Support menu has `Help & Glossary` (`src/components/layout/navConfig.ts:91`; SHELL-01). The Options Gamma
-Map's toolbar has a `Glossary` button (`src/components/options/SwingMode.tsx:307-315`) that calls `navigate('/help')`: executed, it lands on
-`/help` with 131 rows, an empty box, `All` active and no row open, and a link with a term in it (`/help?term=King%20Node`,
-`/help#king-node`, `/help?q=king`, `/help?category=Gamma%20Levels`) is ignored in the same way. The stand-in is the Gamma Map's `Term`
-component (`src/components/options/SwingMode.tsx:129-138`), which wraps a term in `<span class="hs-term" title="<name>: <short>">`, with the
-text taken from a mock `glossary` of 13 keys (`src/data/gammaMapMock.ts:255-319`); with the mock grid it showed 13 such spans, none inside
-an anchor and none focusable (executed), so the text can only show as the browser's native tooltip, which neither the keyboard nor touch
-reaches (read), and nothing links to the Help entry. A key missing from the mock renders its children plain.
+**Shows or does:** Other pages reach the glossary through a hover and two links, and none of them carries a term into the Help page. The
+hover is the Options Gamma Map's `Term` component (`src/components/options/SwingMode.tsx:129-138`, which its own comment at `:129` calls a
+"Term hover"): it wraps a term in `<span class="hs-term" title="<name>: <short>">`, with the text taken from a mock `glossary` of 13 keys
+(`src/data/gammaMapMock.ts:255-319`); with the mock grid it showed 13 such spans, none inside an anchor and none focusable (executed), so
+the text can only show as the browser's native tooltip, which neither the keyboard nor touch reaches (read), and nothing links to the Help
+entry. A key missing from the mock renders its children plain. The links are the header's Support menu entry `Help & Glossary`
+(`src/components/layout/navConfig.ts:91`; SHELL-01) and the Gamma Map toolbar's `Glossary` button
+(`src/components/options/SwingMode.tsx:307-315`), which calls `navigate('/help')`: executed, it lands on `/help` with 131 rows, an empty
+box, `All` active and no row open, and a link with a term in it (`/help?term=King%20Node`, `/help#king-node`, `/help?q=king`,
+`/help?category=Gamma%20Levels`) is ignored in the same way. No `TermHover` component exists, so nothing hovers or links from this page's
+entries or from `GET /api/glossary/gamma`: a `TermHover` and a `useGammaGlossary` hook were built for that endpoint in stocks PR #546
+(merged 2026-05-31; solyra commit `e1ce147`, held only by `origin/platform-history`, which main does not contain), whose own description
+says it is "not yet wired into any page"; no page ever imported them, and both were deleted for solyra#16 in `4f2c87b`, a commit on solyra
+branches such as `origin/chore/ci-workflow` that main's history does not contain (this branch's tree and `origin/main` hold neither file,
+executed by `ls` and `git ls-tree`; `docs/TEST_COVERAGE_AUDIT.md` section 3 gives the forensics).
 
 The two glossaries do not agree. The Gamma Map's tooltip defines the King as `Strike where |Net GEX| ≥ 50% of max in window, primary dealer
 magnet / pin.` (`src/data/gammaMapMock.ts:256-261`), which allows several Kings; this page's `King Node (★)` entry gives the strike with the
@@ -13041,7 +13045,8 @@ of the matrix (section 07). `GET /api/glossary/gamma` has no caller in solyra: i
 
 **Tests:** `Refresh refetches the grid and Glossary navigates to /help` (`tests/shared/navigation.spec.ts`) clicks the Glossary button and
 waits for the URL `**/help`; it asserts neither the Help page, nor a `Term` span, nor a tooltip, and no other test touches a `Term`. Te
-stays unticked: the row's element does not exist, and the only assertion nearby is the toolbar button's navigation.
+stays unticked: no test asserts a `Term` span or its tooltip, and the one assertion on the row's links is the toolbar button's navigation,
+which stops at the URL.
 
 **Code:** `src/components/options/SwingMode.tsx:20,129-138,307-315`, `src/data/gammaMapMock.ts:255-319`,
 `src/components/layout/navConfig.ts:91`; `lib/gamma_glossary.py:99-122,454-466`, `platform/api/routers/glossary.py:30-54`.
