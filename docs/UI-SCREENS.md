@@ -150,7 +150,7 @@ once at boot and blocks every gated route behind it: `loading` while the fetch i
 - Given an `AUTH_MODE` value outside `("open", "firebase", "iap")`, when the API process starts, then `_validated_auth_mode` raises `RuntimeError` and the service refuses to boot rather than silently serving every route ungated (`platform/api/auth.py:44-53`).
 - Given `GET /api/config/firebase` fails, returns a non 2xx status, or returns a body whose `authMode` is not one of the three literals, when `ConfigGate` awaits `fetchRuntimeConfig`, then it renders `ConfigErrorScreen` (`data-testid="config-error"`) instead of any gated route (`ConfigGate.tsx`, `describeBootFailure`, `fetchRuntimeConfig`).
 
-**Tests:** `tests/api/test_platform_auth.py::test_open_mode_is_noop`, `::test_iap_mode_reads_header_and_does_not_enforce`, `::test_firebase_requires_valid_token`; `tests/api/test_route_coverage.py`; solyra `tests/shared/auth-gate.spec.ts` runs hermetically in ci.yml's `e2e (chromium, mocked)` job, but this citation names no specific assertion of this row's own behavior (see AUTH-01 for the narrower, named tests that do), so it stays presence-only here.
+**Tests:** `tests/api/test_platform_auth.py::test_open_mode_is_noop`, `::test_iap_mode_reads_header_and_does_not_enforce`, `::test_firebase_requires_valid_token`; [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py); solyra `tests/shared/auth-gate.spec.ts` runs hermetically in ci.yml's `e2e (chromium, mocked)` job, but this citation names no specific assertion of this row's own behavior (see AUTH-01 for the narrower, named tests that do), so it stays presence-only here.
 
 **Code:** `platform/api/auth.py:41-55` (`_VALID_AUTH_MODES`, `_validated_auth_mode`, `AUTH_MODE`), `:180-213` (`_path_requires_auth`, `auth_middleware`); `platform/api/main.py:97` (middleware registration); `platform/api/routers/config.py:45-68` (`get_firebase_config`); solyra `src/components/auth/ConfigGate.tsx` (`bootOnce`, `fetchRuntimeConfig`, `ConfigErrorScreen`); `src/lib/runtimeConfig.ts`.
 
@@ -343,15 +343,15 @@ America/New_York) posts to the service's `/reconcile` endpoint, which closes any
 - recovered job: the hourly reconcile closes the open issue with a comment
 
 **Acceptance criteria:**
-- Given a Cloud Run Job execution logs a severity `ERROR` entry that is not a benign pool cleanup traceback and not the notifier's own job, when the sink's filter matches it, then the entry is published to the `gcp-job-failures` topic (`gcp/deploy.sh:4003-4015`, the sink filter and creation) and delivered to `failure-notifier` by the `gcp-job-failures-push` subscription (`gcp/deploy.sh:3950-3963`, its OIDC push endpoint and five-attempt dead letter to `gcp-job-failures-dlq`).
+- Given a Cloud Run Job execution logs a severity `ERROR` entry that is not a benign pool cleanup traceback and not the notifier's own job, when the sink's filter matches it, then the entry is published to the `gcp-job-failures` topic (`gcp/deploy.sh:4030-4042`, the sink filter and creation) and delivered to `failure-notifier` by the `gcp-job-failures-push` subscription (`gcp/deploy.sh:3977-3990`, its OIDC push endpoint and five-attempt dead letter to `gcp-job-failures-dlq`).
 - Given no open issue exists yet for a failing job, when `handle_notification` runs, then it posts to Discord and creates a new issue labelled `gcp-job-failure,<job_name>` (`test_create_or_update_creates_new_issue_when_none_exists`).
 - Given an open issue already exists for that job, when `handle_notification` runs again, then it posts to Discord and comments on the existing issue rather than opening a new one (`test_create_or_update_comments_on_existing_issue`).
 - Given the log entry's innermost frame matches a benign pool cleanup marker, when `handle_notification` runs, then neither Discord nor GitHub is called (`test_handle_notification_suppresses_benign_pool_cleanup`).
 - Given `reconcile-failure-notifier-hourly` fires `POST /reconcile`, when a previously failing job's latest execution has since succeeded, then `reconcile_closures` closes its open issue with a comment (`test_reconcile_closures_closes_recovered_jobs`).
 
-**Tests:** `tests/gcp/test_failure_notifier.py` (`test_create_or_update_creates_new_issue_when_none_exists`, `test_create_or_update_comments_on_existing_issue`, `test_handle_notification_suppresses_benign_pool_cleanup`, `test_handle_notification_skips_self_loop`, `test_reconcile_closures_closes_recovered_jobs`, and the rest of the file).
+**Tests:** [`tests/gcp/test_failure_notifier.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_failure_notifier.py) (`test_create_or_update_creates_new_issue_when_none_exists`, `test_create_or_update_comments_on_existing_issue`, `test_handle_notification_suppresses_benign_pool_cleanup`, `test_handle_notification_skips_self_loop`, `test_reconcile_closures_closes_recovered_jobs`, and the rest of the file).
 
-**Code:** `gcp/failure_notifier.py:61` (`is_benign_pool_cleanup`), `:85` (`extract_failure_details`), `:206` (`send_discord`), `:256` (`close_issue`), `:451` (`reconcile_closures`), `:522` (`handle_notification`), `:580` (`handle_reconcile`); `gcp/deploy.sh:3805-3808` (service, topic, sub and sink names), `:3879` (`deploy_notifier`), `:3950-3963` (push subscription and dead letter), `:4003-4015` (sink filter and creation), `:4062` (scheduler trigger).
+**Code:** `gcp/failure_notifier.py:61` (`is_benign_pool_cleanup`), `:85` (`extract_failure_details`), `:206` (`send_discord`), `:256` (`close_issue`), `:451` (`reconcile_closures`), `:522` (`handle_notification`), `:580` (`handle_reconcile`); `gcp/deploy.sh:3832-3835` (service, topic, sub and sink names), `:3879` (`deploy_notifier`), `:3950-3963` (push subscription and dead letter), `:4003-4015` (sink filter and creation), `:4062` (scheduler trigger).
 
 ##### SHARED-07 · Freshness watchdog and /api/health/freshness
 
@@ -378,7 +378,7 @@ area 14) consume.
 
 **Needs:**
 - `GET /api/health/freshness` returning `FreshnessResponse { checked_at, expected_market_close, overall_status, tables: FreshnessRow[], stale?, stale_age_seconds? }` (`platform/api/schemas.py:1411-1434`)
-- every tracked Cloud SQL table `scripts/audit_data_freshness.py` checks (see 05-c)
+- every tracked Cloud SQL table [`scripts/audit_data_freshness.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py) checks (see 05-c)
 - Cloud Run job `freshness-watchdog`, triggers `freshness-watchdog-hourly`, `freshness-watchdog-nightly`
 - secret `DB_PASS` (`db-trading-pass:latest`)
 
@@ -393,10 +393,10 @@ area 14) consume.
 - Given the cache is empty and no request currently holds the claim, when `GET /api/health/freshness` is requested, then the caller runs the audit synchronously and receives the fresh `FreshnessResponse` (`_run_audit_and_cache`, `platform/api/routers/health.py:127-155`; confirmed live 2026-09-28, see V evidence).
 - Given the cache is empty and another request already holds the claim, when a second `GET /api/health/freshness` arrives concurrently, then it answers 503 with `{"detail":"Freshness audit in progress and no cached report is available yet. Retry shortly."}` rather than blocking or fabricating a report (confirmed live 2026-09-28, see V evidence).
 - Given a cached report exists but is expired and this request does not hold the claim, when `GET /api/health/freshness` is requested, then it answers the previous report with `stale: true` and a computed `stale_age_seconds` (`health.py:113-119`).
-- Given `scripts/audit_data_freshness.py` cannot reach Cloud SQL, when the audit fails, then `get_freshness` answers 503, not 500, distinguishing an external outage from an internal defect (`health.py:139-151`, `is_infrastructure_error`).
+- Given [`scripts/audit_data_freshness.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py) cannot reach Cloud SQL, when the audit fails, then `get_freshness` answers 503, not 500, distinguishing an external outage from an internal defect (`health.py:139-151`, `is_infrastructure_error`).
 - Given the Admin page's Data Sources panel mounts, when `useAdminDataSources` fetches `GET /api/admin/data-sources`, then it receives the same cached freshness report this element produces, because both endpoints share `freshness_report_dict()` (`platform/api/routers/admin.py:1391-1402`).
 
-**Tests:** `tests/api/test_platform_api.py`, `tests/api/test_route_coverage.py` (both exercise `GET /api/health/freshness` reachability; no dedicated freshness-cache unit test covering the claim, stale and 503 branches was found in `tests/api/` under this task's search). solyra `tests/dashboard/data-pipeline-widget.spec.ts` runs hermetically in ci.yml's `e2e (chromium, mocked)` job, but it pins the retired `DataPipelineStatus` widget's absence, not this row's own freshness-cache behavior, so it does not lift Te here.
+**Tests:** [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (both exercise `GET /api/health/freshness` reachability; no dedicated freshness-cache unit test covering the claim, stale and 503 branches was found in `tests/api/` under this task's search). solyra `tests/dashboard/data-pipeline-widget.spec.ts` runs hermetically in ci.yml's `e2e (chromium, mocked)` job, but it pins the retired `DataPipelineStatus` widget's absence, not this row's own freshness-cache behavior, so it does not lift Te here.
 
 **Code:** `platform/api/routers/health.py:40-64` (`_CACHE_TTL`, `_cache`, `_AUDIT_FLIGHT`), `:67-125` (`freshness_report_dict`), `:127-155` (`_run_audit_and_cache`), `:158-184` (`get_freshness`); `platform/api/routers/admin.py:1391-1402` (`GET /api/admin/data-sources`); `gcp/deploy.sh:2525-2554` (`deploy_freshness_watchdog`), `:4447-4448` (scheduler triggers); solyra `src/hooks/useAdmin.ts:312-364`, `src/components/admin/DataSourcesPanel.tsx`.
 
@@ -431,7 +431,7 @@ up, at the infrastructure boundary: the Cloud Run service answers (200) or does 
 - Given the handler runs, when it builds its response, then it makes no database call, filesystem call or network call, only reading the two module-level booleans computed at import (`main.py:271-279`).
 - Given Cloud SQL is configured for the running service, when `GET /api/health` returns, then `cloud_sql` is `true` (`TestHealth::test_health_returns_ok` asserts the key is present; live probe 2026-09-28 returned `cloud_sql: true`).
 
-**Tests:** `tests/api/test_platform_api.py::TestHealth::test_health_returns_ok`, `tests/api/test_platform_auth.py::test_firebase_requires_valid_token`, `tests/api/test_route_coverage.py`.
+**Tests:** `tests/api/test_platform_api.py::TestHealth::test_health_returns_ok`, `tests/api/test_platform_auth.py::test_firebase_requires_valid_token`, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py).
 
 **Code:** `platform/api/main.py:61-64` (`_CLOUD_SQL`), `:248` (`_LIB_DIR_EXISTS`), `:249-271` (why this handler alone stays on the event loop as `async def`), `:271-279` (`health_check`); `platform/api/schemas.py:280-285` (`HealthResponse`).
 
@@ -698,7 +698,7 @@ store, no other endpoint.
 
 **Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`, heading
 only); `src/components/landing/waitlist.test.ts` (data layer only, see above). stocks
-`tests/api/test_waitlist_router.py`.
+[`tests/api/test_waitlist_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_waitlist_router.py).
 
 **Code:** `src/components/landing/WaitlistSection.tsx`.
 
@@ -828,7 +828,7 @@ ON CONFLICT (email) DO UPDATE` (`waitlist.py:108-121`, no separate `lib/` module
   mocked fake "you're on the list" (`src/mocks/landing.ts:27-35`, citing CLAUDE.md Rule 4
   by name).
 
-**Tests:** stocks `tests/api/test_waitlist_router.py` (`test_valid_email_upserts_and_
+**Tests:** stocks [`tests/api/test_waitlist_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_waitlist_router.py) (`test_valid_email_upserts_and_
 returns_ok`, `test_honeypot_returns_fake_success_without_db_call`, `test_honeypot_
 checked_before_email_validation`). solyra `src/components/landing/waitlist.test.ts`
 (`submitWaitlist > POSTs email + source + empty honeypot and resolves on 200`, `>
@@ -945,7 +945,7 @@ network failure.
 **Tests:** solyra `src/components/landing/waitlist.test.ts` (`throws the server detail on
 a non-2xx response (loud failure)`, `falls back to the status-code message when detail is
 not a string`, `throws a readable message on network failure`). stocks
-`tests/api/test_waitlist_router.py` (`test_invalid_email_is_400_and_no_db_call`,
+[`tests/api/test_waitlist_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_waitlist_router.py) (`test_invalid_email_is_400_and_no_db_call`,
 `test_rate_limit_429_after_five_requests`, `test_db_failure_is_loud_503`). solyra
 `tests/landing/landing.spec.ts` (`waitlist form rejects an invalid email with a visible
 error`, the client-validation branch only).
@@ -1042,7 +1042,7 @@ Covered as separate rows.
 - Given `AUTH_MODE` at the API is anything other than `open`, `firebase`, or `iap`, when the process
   starts, then `_validated_auth_mode` raises `RuntimeError` and the deploy fails rather than
   silently no-opping the middleware (`TestValidatedAuthMode::test_refuses_unknown_mode`,
-  `tests/api/test_platform_auth.py`), which guarantees the value `/api/config/firebase` ever
+  [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)), which guarantees the value `/api/config/firebase` ever
   reports is one of the three literals `RuntimeConfigResponse` declares.
 - Given a cold app-route visit, when `ConfigGate` mounts, then the routed page's lazy chunk (its
   `preload` prop) downloads in parallel with the config fetch rather than after it (`gated chunk
@@ -1055,7 +1055,7 @@ Covered as separate rows.
 chunk downloads in parallel with the config fetch`; `firebase mode, signed out → login screen
 blocks the app`) runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry
 for this row cites that job on main run 36361217691.
-`tests/api/test_route_coverage.py`'s `GET /api/config/firebase` case issues a real request and
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)'s `GET /api/config/firebase` case issues a real request and
 asserts a 200 JSON envelope, and `tests/api/test_platform_auth.py::TestValidatedAuthMode` tests
 the `AUTH_MODE` validation the endpoint's value depends on, both pytest and CI-run, backing the
 `AUTH_MODE` half of this row independently of the Playwright evidence above.
@@ -1088,7 +1088,7 @@ account" / "Create account") with `mode`.
 - Given `AUTH_OPEN_SIGNUP=0` and an email outside `AUTH_ALLOWED_EMAILS`, when that email later
   makes a gated `/api/*` call, then the backend answers 403 `"this account is not allowed"`, never
   a silent pass-through (`auth.py:169, 209-210`; `test_firebase_allowlist_switch`,
-  `tests/api/test_platform_auth.py`, asserting 200 for allow-listed emails and 403 for one that
+  [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py), asserting 200 for allow-listed emails and 403 for one that
   is not).
 - Given a successful sign-up, when the verification-email send is still in flight or fails, then
   the outcome is recorded per-uid in the `authGate` store rather than shown on a screen that has
@@ -1138,13 +1138,13 @@ answer; the query function throws on a non-OK response so React Query keeps it r
   `test_me_plain_user_and_anonymous`'s anonymous case field for field (verified 2026-09-28, see
   the V-gate evidence comment).
 
-**Tests:** `tests/api/test_platform_auth.py`'s `_me`-keyed tests
+**Tests:** [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)'s `_me`-keyed tests
 (`test_me_dev_role_sets_is_dev_not_is_admin`, `test_me_admin_role_sets_is_admin_not_is_dev`,
 `test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`) exercise
 `get_current_user` through a real FastAPI `TestClient`, covering every role/anonymous combination
 this row claims: pytest, CI-run (`python -m pytest tests/ -x -q --ignore=tests/integration`, the
 Backtest Pipeline workflow on `main`), so this row ticks Te on that evidence.
-`tests/api/test_route_coverage.py` also requests `GET /api/me` as part of its full-surface sweep
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) also requests `GET /api/me` as part of its full-surface sweep
 (200, JSON envelope). The client side (`useUser.ts`'s consumption of the response) has no Vitest
 of its own; `tests/admin/admin-auth.spec.ts` exercises the admin-gating consequence of `is_admin`
 end to end and runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry
@@ -1274,7 +1274,7 @@ machine: loading, invalid-link, unavailable (open mode), reset-form, confirm-app
   failure is shown, not swallowed`).
 - Given `gcp/auth_email_templates.py`'s PATCH body, when it is built, then `callbackUri` is
   `https://solyra-stocks.lovable.app/auth/action` (`test_build_patch_covers_all_templates_and_callback_uri`,
-  `tests/test_auth_email_templates.py`), so the emailed button lands on this app's own route, not
+  [`tests/test_auth_email_templates.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/test_auth_email_templates.py)), so the emailed button lands on this app's own route, not
   Google's generic one.
 - Given a `resetPassword` link with a valid code, when `/auth/action` loads it, then it shows
   `auth-action-reset-form` with the email the code carries, rejects a password/confirmation
@@ -1295,7 +1295,7 @@ matrix's Te entry for this row appends that job on main run 36361217691. Two CI-
 cover this row's own logic closely enough to tick Te independently: `src/lib/authAction.test.ts` (Vitest, 15 tests
 passed) unit-tests `parseAuthAction`, `operationMatchesMode`, `validateNewPassword`,
 `friendlyActionError`, `successCopy`, and `resetLooksSent`, effectively the entire client-side
-decision logic this row exercises, independent of DOM rendering; `tests/test_auth_email_templates.py`
+decision logic this row exercises, independent of DOM rendering; [`tests/test_auth_email_templates.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/test_auth_email_templates.py)
 (pytest, 26 tests passed) asserts the rendered templates and, specifically, `callbackUri`, the one
 backend fact this row depends on. Both confirmed passing in this task.
 
@@ -1394,7 +1394,7 @@ further sub-states.
 **Acceptance criteria:**
 - Given firebase mode and no token, when a gated path like `/api/secret` is requested, then the
   backend answers 401, while `/api/health`, `/api/me`, and `/api/waitlist` (the open paths) still
-  answer normally (`test_firebase_requires_valid_token`, `tests/api/test_platform_auth.py`).
+  answer normally (`test_firebase_requires_valid_token`, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)).
 - Given the fetch wrapper is installed in firebase mode, when a gated path answers 401, then
   `onUnauthorized` (the callback `authedFetch.ts` exposes via `setOnUnauthorized`) fires exactly
   once, and does not fire for a 401 from an open path. This is a distinct, adjacent signal from
@@ -1677,7 +1677,7 @@ unverified for the second); the specific "blocked or signed-out" combination is 
 **Tests:** `platform/api/main.py`'s `get_current_user` (the identity half) is pytest-covered by
 `test_me_dev_role_sets_is_dev_not_is_admin`, `test_me_admin_role_sets_is_admin_not_is_dev`,
 `test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`
-(`tests/api/test_platform_auth.py`, CI-run, reused from AUTH-07's own citation, same endpoint).
+([`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py), CI-run, reused from AUTH-07's own citation, same endpoint).
 No Vitest or Playwright test anywhere in solyra targets `AuthStatusBanner` or
 `EmailVerificationBanner` by name or test id (grepped both repos for the component names and for
 `auth-status-banner`/`email-verification-banner`; zero matches); the Gaps note this precisely
@@ -1725,7 +1725,7 @@ branch (a second, independent instance of that copy, distinct from SHELL-16's `A
 - Given a real backend response, when the handler groups rows in memory, then a ticker with ≥2
   snapshots on the latest date carries an ordered `spark` array and a ticker with exactly one
   point omits the key entirely (`test_spark_present_and_ordered_for_multi_snapshot_ticker`,
-  `test_spark_omitted_when_fewer_than_two_points`, `tests/api/test_most_active_endpoint.py`).
+  `test_spark_omitted_when_fewer_than_two_points`, [`tests/api/test_most_active_endpoint.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_most_active_endpoint.py)).
 - Given the underlying table, when queried in production, then it holds fresh, growing rows:
   verified 2026-09-28, `max(snapshot_ts) = 2026-09-28 19:30:16+00:00`, `count(*) = 8920` (see the
   V-gate evidence comment).
@@ -1736,7 +1736,7 @@ CI-run): both are pure-helper tests of `formatCompactVolume`/`formatChangePct`/
 marquee renders with; neither renders `<MostActiveBar/>` or exercises `useMostActive()`, so the
 component's own fetch/branch-selection logic (loading vs. empty vs. error vs. auth-blocked, and
 the reduced-motion item-duplication) is Playwright-only (`tests/shared/most-active-bar.spec.ts`).
-`tests/api/test_most_active_endpoint.py` (pytest, CI-run) covers the backend shape, sparkline
+[`tests/api/test_most_active_endpoint.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_most_active_endpoint.py) (pytest, CI-run) covers the backend shape, sparkline
 grouping, empty-table 200, and DB-failure 503 in full.
 
 **Code:** `src/components/shared/MostActiveBar.tsx`; test ids `most-active-bar`,
@@ -1927,11 +1927,11 @@ value falls back to dark rather than throwing.
 - Given a `PUT /api/me/preferences` body with only `theme` set, when the handler runs, then the
   SQL `SET` list contains only the provided columns and the full stored row (including
   `theme: "dark"` from `FULL_ROW`) returns (`test_put_partial_sets_only_provided_fields`,
-  `tests/api/test_preferences_router.py`).
+  [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py)).
 
 **Tests:** `src/stores/themeStore.test.ts` (Vitest, CI-run, the toggle's own client logic),
 `src/hooks/usePreferences.test.ts` (Vitest, CI-run, the write-through payload shaping),
-`tests/api/test_preferences_router.py` (pytest, CI-run, the server contract, including `theme`
+[`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) (pytest, CI-run, the server contract, including `theme`
 explicitly in its fixture rows), `tests/shared/navigation.spec.ts` (`theme toggle flips the
 document theme attribute`, new in this task, Playwright). `tests/settings/settings.spec.ts:97`
 (`theme toggle applies data-theme and writes through`) is adjacent, not this row's own control:
@@ -2018,7 +2018,7 @@ returns `{"items": []}` rather than merely not having answered yet.
   `tests/shared/most-active-bar.spec.ts`).
 - Given the source table has no rows for the latest `snapshot_date`, when the handler runs, then
   it returns the honest empty envelope rather than an error
-  (`test_empty_table_returns_honest_empty_200`, `tests/api/test_most_active_endpoint.py`).
+  (`test_empty_table_returns_honest_empty_200`, [`tests/api/test_most_active_endpoint.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_most_active_endpoint.py)).
 
 **Tests:** `tests/shared/most-active-bar.spec.ts` (`renders nothing when the API returns an
 empty item list`, Playwright),
@@ -2045,7 +2045,7 @@ not there, while the rest of the shell (nav, banners, routed page) renders norma
   when the API returns 500`, `tests/shared/most-active-bar.spec.ts`).
 - Given a real query exception in the handler, when it is raised, then the endpoint answers 503
   with no `items` key at all, never a fabricated empty success
-  (`test_query_exception_surfaces_as_503`, `tests/api/test_most_active_endpoint.py`).
+  (`test_query_exception_surfaces_as_503`, [`tests/api/test_most_active_endpoint.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_most_active_endpoint.py)).
 
 **Tests:** `tests/shared/most-active-bar.spec.ts` (`bar is absent...when the API returns 500`,
 Playwright), `tests/api/test_most_active_endpoint.py::TestDbUnavailable::test_query_exception_surfaces_as_503`
@@ -2108,7 +2108,7 @@ citation).
   `blocked`, reproduced directly.
 - Given `AUTH_MODE=firebase` and no token at all, when any gated path (e.g. `/api/secret`) is
   requested, then it answers 401, while `/api/health`, `/api/me`, `/api/waitlist` stay open
-  (`test_firebase_requires_valid_token`, `tests/api/test_platform_auth.py`), the backend half of
+  (`test_firebase_requires_valid_token`, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)), the backend half of
   the same mechanism.
 
 **Tests:** `tests/api/test_platform_auth.py::test_firebase_requires_valid_token` (pytest,
@@ -2227,7 +2227,7 @@ line). The hero price and the pill have no state of their own: a failed or unans
 
 **Acceptance criteria:**
 - Given Cloud SQL is not configured, when the handler is called, then it answers `source:
-  'unavailable'` with a `reason` (`test_brief_unavailable_source`, `tests/api/test_platform_api.py`);
+  'unavailable'` with a `reason` (`test_brief_unavailable_source`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py));
   the strip then shows that reason instead of bullets (`DashboardPage.tsx:588-603`, read directly; no
   test asserts the strip's text). This is the only path to the `Unavailable` line: a configured
   database with no row or a failing read is a 200 (see below).
@@ -2238,13 +2238,13 @@ line). The hero price and the pill have no state of their own: a failed or unans
   test).
 - Given `premarket_analysis` carries `ftfc_direction` `bullish`, when the handler builds the
   response, then `bias` is `bullish` and `has_premarket` is true (`test_brief_live`,
-  `tests/api/test_platform_api.py`); without it `bias` derives from RSI and the price against EMA20
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)); without it `bias` derives from RSI and the price against EMA20
   (`dashboard.py:226-244`, read directly, no test).
 - Given `?date=`, when the handler reads, then both reads are bounded by that date
   (`analysis_date <= :date` and `date <= :date`, `dashboard.py:111,157`, read directly, not asserted):
   `test_brief_with_historical_date` and `test_review_brief_returns_correct_date` feed a fixed frame
   through a fake `_query_fn` that ignores the SQL and its parameters and assert that the answer is
-  `source: 'cloud_sql'` (`tests/api/test_platform_api.py:857,2086`) and that it carries a daily date at
+  `source: 'cloud_sql'` ([`tests/api/test_platform_api.py:857,2086`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py#L857)) and that it carries a daily date at
   or before the requested date, which holds for that fixture whatever the SQL says.
 - Given the market is in its regular session and `date` is absent, when the brief is requested,
   then the overlay replaces `close`, `rsi_14`, the EMAs and `stale_days` with live-derived values
@@ -2253,7 +2253,7 @@ line). The hero price and the pill have no state of their own: a failed or unans
   `source: 'cloud_sql'`, `bias: 'neutral'` and `daily_indicators: {}`, and the strip reads
   `Daily bias NEUTRAL` alone (executed 2026-09-30 against the real handler with faked query
   results, and against the page with that body). The sweep row
-  `Req("GET", f"/api/dashboard/brief/{T}", 200)` (`tests/api/test_route_coverage.py:321`) pins the
+  `Req("GET", f"/api/dashboard/brief/{T}", 200)` ([`tests/api/test_route_coverage.py:321`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py#L321)) pins the
   status only: `_query_fn` is bound at import, so that row answers `source: 'unavailable'` when no
   Cloud SQL variables are set at import (executed 2026-09-30 in this sandbox) and the neutral body
   when they are (executed with `DB_*` set), and no committed test asserts the neutral body (see Gaps).
@@ -2263,9 +2263,9 @@ line). The hero price and the pill have no state of their own: a failed or unans
   reads `Daily bias <BIAS> · 2026-09-30 close` (executed 2026-09-30; see Gaps).
 
 **Tests:** `tests/dashboard/dashboard.spec.ts` (the two presence tests above; the file's `beforeEach`
-serves the brief, quote and status). `tests/api/test_platform_api.py` (`TestDashboardBriefAPI`,
+serves the brief, quote and status). [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) (`TestDashboardBriefAPI`,
 `TestReviewModeIntegration`, `TestLiveMarketAPI`, `test_live_status`, which asserts only that the
-keys are present); `tests/api/test_route_coverage.py` pins each route's exact status with no backend
+keys are present); [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins each route's exact status with no backend
 and a JSON content type (`Req.expect`, `:191-194`: the brief at 200, `:321`, the live status at 200
 and the quote at 503, `:225-226`) and asserts no body (the brief's answer depends on whether Cloud
 SQL variables are set at import, see the criteria above). `briefBullets`, the pill, the hero price
@@ -2322,7 +2322,7 @@ failure wording inside the card and no loading state (read directly: while it lo
   `test_playbook_cached_set_is_rechecked_on_every_hit`,
   `test_playbook_as_of_is_judged_against_the_requested_date`,
   `test_playbook_no_rows_is_404_never_markdown`, `test_playbook_cloud_sql_not_configured_is_503`,
-  `tests/api/test_playbook_evaluate.py`).
+  [`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py)).
 - Given bullish or bearish bias and several cards, when `topCard` runs, then the highest win rate of
   the matching direction is shown (`DashboardPage.tsx:471-482`, read directly; the default fixture
   serves twelve cards but no test asserts which is chosen).
@@ -2330,8 +2330,8 @@ failure wording inside the card and no loading state (read directly: while it lo
   for `analysis_date` 2026-09-30, `generated_at` 08:38 to 08:46 UTC (see the V-gate evidence comment).
 
 **Tests:** `tests/dashboard/dashboard.spec.ts` (the two tests above);
-`src/routes/DashboardPage.avgReturn.test.ts`; `tests/api/test_playbook_evaluate.py`;
-`tests/api/test_platform_api.py` (`TestPlaybookAPI.test_playbook`). The card choice, the star and
+`src/routes/DashboardPage.avgReturn.test.ts`; [`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py);
+[`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) (`TestPlaybookAPI.test_playbook`). The card choice, the star and
 percent rendering and `SetupCardDetails` (including its `direction ?? 'CALL'` default and its
 `live price` label on a price that may be the last close) have no test.
 
@@ -2371,7 +2371,7 @@ close is the absent row, not the empty state.
 - Given a date within 30 days and an AlphaVantage answer, when the handler runs, then the previous
   session's OHLC comes from AlphaVantage; given an older date it comes from Cloud SQL
   (`test_reference_recent_uses_alphavantage`, `test_reference_historical_uses_cloud_sql`,
-  `test_reference_returns_prev_day`, `tests/api/test_platform_api.py`).
+  `test_reference_returns_prev_day`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)).
 - Given the brief's newest daily row has no close, when the page renders, then no tile shows
   (executed 2026-09-30: `Prev close`, `Latest close` and `RSI (14)` all absent). This is the
   state of the page from the 08:20 ET premarket insert until the session opens (production read
@@ -2382,9 +2382,9 @@ close is the absent row, not the empty state.
 - Given `market_data_daily` on 2026-09-30, then IWM, SPY and QQQ each hold 2,619 rows with the last
   real close on 2026-09-29 (see the V-gate evidence comment).
 
-**Tests:** `tests/dashboard/dashboard.spec.ts` (labels only); `tests/api/test_platform_api.py`
+**Tests:** `tests/dashboard/dashboard.spec.ts` (labels only); [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)
 (`TestReferenceAPI`, three tests, plus `test_reference_for_review_date`);
-`tests/api/test_route_coverage.py` (a 404 for an unknown date). The tile values, `2-day change` and
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (a 404 for an unknown date). The tile values, `2-day change` and
 the RSI tone are not asserted by any test, so Te stays unticked.
 
 **Code:** `src/routes/DashboardPage.tsx:95-102,393-417,693-713`,
@@ -2432,7 +2432,7 @@ with the brief and the market data refused with 401).
   (`test_market_data_404_when_no_rows`).
 - Given rows stored in either time convention, when a session or a month is read, then the bars
   come back as the same Eastern session and a month excludes its neighbour's spill
-  (`tests/api/test_intraday_loader_conventions.py`).
+  ([`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py)).
 - Given `timeframe=60`, then `_aggregate_timeframe` groups the 1-minute rows into hourly bars
   (`main.py`, read directly); no test requests `timeframe=60` through the endpoint or calls
   `_aggregate_timeframe`.
@@ -2468,7 +2468,7 @@ holds the Catalysts card; DASHBOARD-17 for no rows.
 **Acceptance criteria:**
 - Given the ticker has signals, when the handler answers, then the response carries the ticker's
   `count`, `source: 'cloud_sql'` and the rows with `time` stringified and `ticker` set
-  (`test_signals_live`, `tests/api/test_platform_api.py`); given a count of zero, then it answers
+  (`test_signals_live`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)); given a count of zero, then it answers
   `signals: []` and never runs the rows query (`test_signals_empty_for_old_date`, `calls["n"] == 1`);
   a Cloud SQL failure is a 503, not the parquet (`TestSignalsAPIFailsLoud`). The newest-N read
   (`signals.py:206-207`), the ascending order (`ORDER BY time ASC`, `signals.py:209`) and the
@@ -2486,7 +2486,7 @@ holds the Catalysts card; DASHBOARD-17 for no rows.
 - Given rows before and after the writer's convention change, when the Time column prints, then it
   mixes Eastern wall clock and UTC (production hour histogram, IWM, last 10 days; see Gaps).
 
-**Tests:** `tests/api/test_platform_api.py` as above. No Dashboard test renders a row: every
+**Tests:** [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) as above. No Dashboard test renders a row: every
 Dashboard spec serves `signals: []`, so the table, its score column and its return column are
 untested at the page layer, and Te stays unticked.
 
@@ -2526,7 +2526,7 @@ loads and after it fails the card reads `0 upcoming` and `No catalysts in the ne
 - Given the news query, when written, then it is backward-looking (48 hours from now), matches
   topics case-insensitively and does not depend on the requested window (`test_news_sql_is_backward_
   looking_and_case_insensitive`, `test_news_topics_constant_covers_fetcher_topics`,
-  `tests/api/test_catalysts_news_filter.py`).
+  [`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py)).
 - Given production data on 2026-09-30, when the five reads run for the page's window, then the news
   filter returns 203, 382 and 79 rows for the UTC dates 09-28, 09-29 and 09-30, 22 high or medium
   economic events and 173 earnings rows fall in the next 7 days, and 59 8-Ks were filed in the last
@@ -2537,8 +2537,8 @@ loads and after it fails the card reads `0 upcoming` and `No catalysts in the ne
   and the 8-K read matches only the filings dated inside it, the newest `filing_date` being
   2026-09-30 (see the V-gate evidence comment).
 
-**Tests:** `tests/api/test_catalysts_news_filter.py` (two tests on the SQL text and the topic list);
-`tests/api/test_route_coverage.py` (`Req("GET", "/api/catalysts/events", 200)`, `:325`, pins the
+**Tests:** [`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py) (two tests on the SQL text and the topic list);
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`Req("GET", "/api/catalysts/events", 200)`, `:325`, pins the
 route's exact status against a dead backend and asserts no body). `tests/dashboard/dashboard.spec.ts`
 serves this payload but asserts nothing on this card, so the row's ordering, labels and impact pills
 are untested and Te stays unticked.
@@ -2579,7 +2579,7 @@ holds the AI take and News cards.
 - Given closes for a symbol, when the handler computes, then the changes come only from real prior
   closes, a partial window omits the 5-day value, a null close degrades the symbol to `unavailable`,
   a database failure is a 503 and a crash does not poison the cache
-  (`tests/api/test_market_sectors.py`, nine tests).
+  ([`tests/api/test_market_sectors.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_sectors.py), nine tests).
 - Given the table on 2026-09-30, then each of the eleven ETFs has 7 non-null closes in the 10-day
   window with the latest on 2026-09-29 (see the V-gate evidence comment).
 
@@ -2611,9 +2611,9 @@ reads the same `No insight report for IWM` line (executed 2026-09-30; see Gaps).
 **Acceptance criteria:**
 - Given the report route with no row, when requested, then it is a 404, and with a row `insights.py`
   returns the envelope (`test_get_insight_report_404_when_missing` and
-  `test_get_insight_report_returns_latest`, `tests/lib/test_routers_insights_admin.py`, whose module
+  `test_get_insight_report_returns_latest`, [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py), whose module
   skips without a test Postgres). Given no reachable database, then it is a 503 with a JSON body:
-  `Req("GET", f"/api/insights/report/{T}", 503)` (`tests/api/test_route_coverage.py:293`) pins that
+  `Req("GET", f"/api/insights/report/{T}", 503)` ([`tests/api/test_route_coverage.py:293`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py#L293)) pins that
   exact status against a dead backend (`Req.expect`, `:191-194`), and
   `test_insight_report_lookups_are_503_not_a_bare_500` injects a driver error and asserts the 503, a
   JSON content type and the error type in the detail. A defect in the lookup stays a 500
@@ -2621,7 +2621,7 @@ reads the same `No insight report for IWM` line (executed 2026-09-30; see Gaps).
 - Given `as_of`, when the handler reads, then it never returns a report after the cutoff
   (`_fetch_latest_report`, `insights.py:204-250`; asserted by
   `test_get_insight_report_as_of_includes_same_day_morning_report` in
-  `tests/lib/test_routers_insights_admin.py`, which finds the same-day report and none for an earlier
+  [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py), which finds the same-day report and none for an earlier
   cutoff, but that module skips without a test Postgres).
 - Given production on 2026-09-30, then IWM, SPY and QQQ each have a live report from 12:55 UTC
   (08:55 ET), 123, 113 and 117 live rows (see the V-gate evidence comment).
@@ -2674,7 +2674,7 @@ catalysts request reads `0 fresh` and `No tagged news right now.` (executed 2026
   `relativeDayLabel` in a scratch Vitest run; the row's `date` is `published_ts::date`, which is the
   UTC calendar date on this database's UTC session; see Gaps).
 
-**Tests:** the Playwright test and the Vitest file above; `tests/api/test_catalysts_news_filter.py`
+**Tests:** the Playwright test and the Vitest file above; [`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py)
 covers only `_news_sql` and the topic list, and no test runs the handler's news mapping (the source
 tag, the dedupe, the impact). Te stays unticked.
 
@@ -2728,16 +2728,16 @@ three requests, no badge; see Gaps). Field-level `UNAVAILABLE` shows the em dash
   (`MovementRead.test.tsx`, `expectedMove.test.ts`).
 - Given the endpoint, then a flag off is a 404, a bad ticker or `30m` a 400, the assembler output is
   passed through unchanged and a NaN close degrades levels to `UNAVAILABLE`
-  (`tests/api/test_movement_statement_router.py`, 22 tests: 144 passed together with
-  `tests/api/test_route_coverage.py`, and the module skips when it runs alone; its NaN-close test
+  ([`tests/api/test_movement_statement_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_movement_statement_router.py), 22 tests: 144 passed together with
+  [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py), and the module skips when it runs alone; its NaN-close test
   fails when selected with `-k`, stocks#1225). That file asserts no 503:
   `test_level_map_propagates_a_backend_outage` (`:602`) checks that the level-map builder re-raises a
   driver error and that a data gap gives `None` (`:617-621`). With the flag on and `get_engine`
-  failing, a backend outage is a 503 and an internal defect a 500 (`tests/api/test_route_coverage.py`:
+  failing, a backend outage is a 503 and an internal defect a 500 ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py):
   `test_the_feature_gated_handlers_survive_a_backend_outage`, `:1234`, and
   `test_an_internal_defect_is_not_reported_as_an_outage`). The
-  assembler's own tests (`tests/lib/test_movement_statement.py`) fail alone in this sandbox (41 of 65,
-  no lightgbm) and pass after `tests/api/test_route_coverage.py` has run (187 passed together); all of
+  assembler's own tests ([`tests/lib/test_movement_statement.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_movement_statement.py)) fail alone in this sandbox (41 of 65,
+  no lightgbm) and pass after [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) has run (187 passed together); all of
   these executed 2026-09-30.
 - Given production on 2026-09-30, then the flag is on for both services, IWM has 15m magnitude
   predictions to 19:45 UTC on 09-29, `strat_features_15m` and its levels table to the same bar (see
@@ -2908,7 +2908,7 @@ symbol; the 5-day change is null when the symbol has fewer than six closes in th
 - Given a symbol with a 1-day change and no 5-day change, when 5D is active, then its row reads `—`
   and sinks (executed 2026-09-30 in the page: 1D showed Real Estate +2.00% and Technology +1.00%, 5D
   showed Technology +3.00% and Real Estate `—`); the handler returns a null 5-day change under six
-  closes (`test_sector_rotation_partial_window_no_5d`, `tests/api/test_market_sectors.py`).
+  closes (`test_sector_rotation_partial_window_no_5d`, [`tests/api/test_market_sectors.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_sectors.py)).
 - Given a period's largest magnitude, then bar widths scale to it and never reach `NaN`
   (`src/routes/DashboardPage.sectorBarWidthPct.test.ts`).
 
@@ -3000,7 +3000,7 @@ sector and news cards are live.
   asserted (`test_playbook_as_of_is_judged_against_the_requested_date`: a set 2 days old is served
   for 2026-06-15 and one 80 days old is refused as of 2026-09-01), and so is the report bound
   (`insights.py:204-250`; `test_get_insight_report_as_of_includes_same_day_morning_report` in
-  `tests/lib/test_routers_insights_admin.py`, whose module skips without a test Postgres). The brief
+  [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py), whose module skips without a test Postgres). The brief
   bound and the signals filter are read directly, not asserted: `test_brief_with_historical_date` and
   `test_review_brief_returns_correct_date` feed a fixed frame through a fake `_query_fn` that ignores
   the SQL and assert that the answer is `source: 'cloud_sql'` (`test_platform_api.py:857,2086`) and
@@ -3165,7 +3165,7 @@ not shown, and the strip's `· <date> close` is the only age cue for the daily r
   judged again on every hit; a set is judged against the requested date in review mode
   (`test_playbook_age_boundary`, `test_playbook_stale_set_is_refused_not_rendered`,
   `test_playbook_cached_set_is_rechecked_on_every_hit`,
-  `test_playbook_as_of_is_judged_against_the_requested_date`, `tests/api/test_playbook_evaluate.py`).
+  `test_playbook_as_of_is_judged_against_the_requested_date`, [`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py)).
 - Given production on 2026-09-30, then the newest set for IWM, SPY and QQQ is dated 2026-09-30,
   generated 08:38 to 08:46 UTC (see the V-gate evidence comment).
 
@@ -3323,8 +3323,8 @@ also what a closed market reads (executed 2026-09-30 in the page with the reques
 
 **Tests:** `tests/api/test_platform_api.py::TestHealth::test_live_status` asserts status 200 and the
 three keys `is_open`, `session` and `current_time_et`, no classification.
-`tests/api/test_route_coverage.py` pins the route at 200 against a dead backend and asserts no body.
-`tests/api/test_most_active_endpoint.py` (`TestLabel`) reaches `_is_market_open` through the
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 200 against a dead backend and asserts no body.
+[`tests/api/test_most_active_endpoint.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_most_active_endpoint.py) (`TestLabel`) reaches `_is_market_open` through the
 most-active label in five cases (a Monday at 11:00 ET, the same Monday at 12:30 ET, after the close,
 a Saturday and the 2026-07-03 holiday) and asserts that helper's `live` or date label, never a
 pre-market or after-hours string. Vitest `src/lib/marketSession.test.ts` covers `sessionLabel` (six
@@ -3372,7 +3372,7 @@ quote), LIVE-11 (the amber box replaces the card on any failure), LIVE-12 (`Upda
 **Acceptance criteria:**
 - Given a GLOBAL_QUOTE payload with price 205.80, change 1.60, change percent `0.7835%` and volume
   31,000,000, when the route answers, then the body carries those four values with `change_pct`
-  0.7835 (`test_live_quote`, `tests/api/test_platform_api.py`).
+  0.7835 (`test_live_quote`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)).
 - Given a payload with no price, open, high, low or volume, then the route answers 502 and not a 200
   (`test_live_quote_missing_required_field_is_502_not_zero`, five parametrized fields); given a
   price of `N/A`, `NaN`, `Infinity` or `-inf`, then 502 too
@@ -3393,14 +3393,14 @@ quote), LIVE-11 (the amber box replaces the card on any failure), LIVE-12 (`Upda
   `MOCK_LIVE_QUOTE_NO_PREV_CLOSE` exists and no spec uses it).
 - Given a schema check, then `change`, `change_pct` and `prev_close` stay required and nullable in
   the OpenAPI snapshot and `price` a plain number
-  (`test_the_live_quote_nullable_fields_stay_required`, `tests/lib/test_silent_fallback_fixes.py`).
+  (`test_the_live_quote_nullable_fields_stay_required`, [`tests/lib/test_silent_fallback_fixes.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_silent_fallback_fixes.py)).
 - Given a request with no token, when it is issued against staging, then it answers 401 (V-gate
   evidence, 2026-09-30).
 
 **Tests:** `tests/api/test_platform_api.py::TestLiveMarketAPI` covers the mapping and the null and
 502 rules above and the 503 without a key, with the AlphaVantage client faked.
-`tests/api/test_route_coverage.py` pins the route at 503 (no key) against a dead backend and asserts
-no body. `tests/lib/test_silent_fallback_fixes.py` covers the schema. Playwright `renders live price
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 503 (no key) against a dead backend and asserts
+no body. [`tests/lib/test_silent_fallback_fixes.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_silent_fallback_fixes.py) covers the schema. Playwright `renders live price
 quote` asserts `getByText(/220\.45/)` is visible and nothing else of the card: on main the change,
 the OHLC, the volume and the em-dash are asserted by no test (the review-mode test added on this
 branch asserts the price, change, `Prev`, `Open` and `Vol` of the synthetic quote, LIVE-08), so Te
@@ -3458,10 +3458,10 @@ so it is asked again whenever a new bar or price arrives and is never polled
   ascending time order and the second close is 205.80 (`test_live_history`).
 
 **Tests:** `tests/api/test_platform_api.py::TestLiveMarketAPI::test_live_history`,
-`tests/api/test_live_chart_voter.py` (two tests) and two tests of
-`tests/api/test_live_signal_series.py` cover the route and its bar-time handling as above;
-`tests/api/test_route_coverage.py` pins history at 503 without a key and indicators at 200 for a
-request with no bars, which the page never sends. `tests/lib/test_indicators.py` asserts properties
+[`tests/api/test_live_chart_voter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_chart_voter.py) (two tests) and two tests of
+[`tests/api/test_live_signal_series.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_signal_series.py) cover the route and its bar-time handling as above;
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins history at 503 without a key and indicators at 200 for a
+request with no bars, which the page never sends. [`tests/lib/test_indicators.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_indicators.py) asserts properties
 of the functions the route calls (RSI within 0 to 100, above 70 on a 50-bar uptrend and below 30 on
 a downtrend; ATR non-negative and 0 on flat input; the EMA of 1 to 5 with period 3 between 1 and 5;
 VWAP between the day's low and high; StochRSI within 0 to 100), not the route's values. No solyra
@@ -3522,11 +3522,11 @@ executed 2026-09-30, the rows not).
 
 **Tests:** No test asserts `_build_signals`: a search of `tests/` finds no reference to it or to the
 condition ids (`c_p_ema9` to `p_atr`), and the label `Price > EMA9` appears only in the chart
-voter's own tests (`tests/lib/test_chart_voter.py`). `tests/api/test_live_chart_voter.py` asserts
+voter's own tests ([`tests/lib/test_chart_voter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_chart_voter.py)). [`tests/api/test_live_chart_voter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_chart_voter.py) asserts
 that the `signals` key is present and nothing in it; the two `/api/live/indicators` tests of
-`tests/api/test_live_signal_series.py` assert VWAP sessions and the 422;
-`tests/api/test_platform_api.py` covers quote and history; avg-volume has no test beyond its row in
-`tests/api/test_route_coverage.py` (503 with no key and no database). No solyra test on main asserts
+[`tests/api/test_live_signal_series.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_signal_series.py) assert VWAP sessions and the 422;
+[`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) covers quote and history; avg-volume has no test beyond its row in
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (503 with no key and no database). No solyra test on main asserts
 a setup card: the four tests of `live-market.spec.ts` on main and the route loop of
 `navigation.spec.ts` (through `mockAllPages`, `tests/helpers/fixtures/all.ts:50`) mount the page
 with `MOCK_LIVE_INDICATORS` (the CALL setup fired, `src/mocks/live.ts:199-246`, served by
@@ -3753,7 +3753,7 @@ has them; a day with no bars, or a failed request, keeps the loading lines on sc
   date (`test_reference_returns_prev_day`, which asserts `!=` only).
 
 **Tests:** Vitest covers the two pure helpers and pytest the routes, as above;
-`tests/api/test_route_coverage.py` pins both routes at 404 against a dead backend and asserts no
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins both routes at 404 against a dead backend and asserts no
 body. The new Playwright test (`tests/live-market/live-market.spec.ts`, solyra commit 0e9ab73)
 drives the page end to end, and it was added on this branch. The Vitest file
 `src/hooks/useReviewQuote.test.ts` tests only `reviewCutoffTs`: this page imports that function and
@@ -3864,7 +3864,7 @@ true only in `regular`).
 
 **Acceptance criteria:**
 - Given no `AV_API_KEY`, then the route answers 503 (`test_live_quote_503_without_api_key`,
-  `tests/api/test_platform_api.py`; `tests/api/test_route_coverage.py` pins the same 503 in its
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py); [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the same 503 in its
   sweep).
 - Given a payload with no price, open, high, low or volume, or an unparseable or non-finite price,
   then the route answers 502 and not a quote with zeros (the tests listed under LIVE-02).
@@ -3877,7 +3877,7 @@ true only in `regular`).
   2026-09-30).
 
 **Tests:** `tests/api/test_platform_api.py::TestLiveMarketAPI` covers the 503 without a key and the
-502 and null rules for malformed payloads, and `tests/api/test_route_coverage.py` the sweep row; the
+502 and null rules for malformed payloads, and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) the sweep row; the
 429, 400, timeout, request-failure and empty-quote branches have no test, and no test renders the
 box. Te stays unticked.
 
@@ -4100,21 +4100,21 @@ CHARTS-17).
 - Given the dates query, when the list is asked for twice with no new bar, then the scan runs once;
   a newer bar invalidates the entry at once; a backfill of an older date is seen only after the
   hour; an empty result never reaches GCS and is not cached
-  (`tests/api/test_market_dates_cache_expiry.py`, seven tests, the query stubbed).
+  ([`tests/api/test_market_dates_cache_expiry.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_dates_cache_expiry.py), seven tests, the query stubbed).
 - Given a failing database, then the answer is 503 with no driver text, and given an unconfigured
   Cloud SQL and a failing GCS listing, then 503 too
   (`test_market_dates_db_failure_is_503_not_a_gcs_downgrade`,
-  `test_market_dates_gcs_failure_is_503_not_an_empty_200`, `tests/api/test_platform_api.py`).
+  `test_market_dates_gcs_failure_is_503_not_an_empty_200`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)).
 - Given a request with no token, then staging answers 401 `{"detail":"sign in to continue"}` (V-gate
   evidence, 2026-09-30).
 
-**Tests:** `tests/api/test_market_dates_cache_expiry.py` and `TestMarketDataAPI` in
-`tests/api/test_platform_api.py` (`test_market_dates`: the list, its source and its months;
+**Tests:** [`tests/api/test_market_dates_cache_expiry.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_dates_cache_expiry.py) and `TestMarketDataAPI` in
+[`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) (`test_market_dates`: the list, its source and its months;
 `test_market_dates_gcs_answer_is_never_cached`) pin the handler's caching and failure answers with
 the query stubbed. `test_date_list_counts_sessions_not_the_winter_spill`
-(`tests/api/test_intraday_loader_conventions.py`) reads the handler's source text for the four hour
+([`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py)) reads the handler's source text for the four hour
 shift and the `isodow` predicate and runs no query, so no test executes the framing against rows.
-`tests/api/test_route_coverage.py` pins 503 for the route against a dead backend. Playwright
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins 503 for the route against a dead backend. Playwright
 `Sig overlay toggle is in the toolbar and is clickable` (`tests/charts/charts-cards.spec.ts`)
 asserts only that the `Sig` button is visible and presses it twice. The toolbar's own assertions are
 the new test named above (solyra commit cd2c08b), added on this branch; the solyra CI run the matrix
@@ -4197,26 +4197,26 @@ carrying `sign in to continue`).
   and queries `[D 00:00Z, D+1 02:00Z)`, and a date read excludes the prior session's spill
   (`test_chart_endpoint_opens_at_0930_for_both_conventions`,
   `test_a_single_date_load_excludes_the_prior_sessions_spill`,
-  `tests/api/test_intraday_loader_conventions.py`, with the rest of that file).
+  [`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py), with the rest of that file).
 - Given 120 one minute bars, then `timeframe=1` returns them whole and `end_time=10:30` returns 61,
   an invalid `end_time` is 400 and no rows is 404 (`test_market_data_full_day`,
   `test_market_data_end_time_filter`, `test_market_data_end_time_invalid_format`,
-  `test_market_data_404_when_no_rows`, `tests/api/test_platform_api.py`).
+  `test_market_data_404_when_no_rows`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)).
 - Given a request with no token, then staging answers 401 for both routes (V-gate evidence).
 
 **Tests:** as above. The Playwright test asserts the canvas geometry only: no test on main asserts
 the bars the canvas receives, a marker or a price line on this page, the RTH filter or the
 timeframe. The pytest files assert the loader, the conventions and the handler's cutting with
-stubbed queries; `tests/api/test_route_coverage.py` pins 404 for the market-data route against a
+stubbed queries; [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins 404 for the market-data route against a
 dead backend. The frontend helpers have Vitest cases: `isAppendExtension` in
 `src/components/charts/candlestickIncremental.test.ts` (eight), `exitMarkerSpec` in
 `src/components/journal/TradeMarkingChart.test.ts` (the `Exit —` label for an unavailable return, a
 signed label otherwise) and the row mapping in `src/hooks/journalChartTrades.test.ts`. The journal
 read is asserted for its nulls (`test_get_list_emits_real_null_not_nat_for_active_trade`,
-`test_get_list_cloud_sql_emits_real_null_not_nat`, `tests/api/test_journal_phase2.py`) for an
+`test_get_list_cloud_sql_emits_real_null_not_nat`, [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py)) for an
 imported active trade (`test_commit_active_trade_has_null_exit_and_get_shows_active`,
-`tests/api/test_journal_import_endpoints.py`) and for its gate
-(`test_examples_requires_auth_like_trades_get`, `tests/api/test_journal_examples.py`). Te stays
+[`tests/api/test_journal_import_endpoints.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_import_endpoints.py)) and for its gate
+(`test_examples_requires_auth_like_trades_get`, [`tests/api/test_journal_examples.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_examples.py)). Te stays
 unticked: nothing asserts the drawn candles, markers or lines.
 
 **Code:** `src/routes/ChartsPage.tsx:157-163,222,300-309,712-777`,
@@ -4280,7 +4280,7 @@ that can be missing for a reason (a failed or pending reference call).
   `source: cloud_sql` and a date before the request; and the day returned is never the requested one
   (`test_reference_recent_uses_alphavantage`, `test_reference_historical_uses_cloud_sql`,
   `test_reference_returns_prev_day`, `test_reference_for_review_date`,
-  `tests/api/test_platform_api.py`, with the query and the vendor call stubbed).
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), with the query and the vendor call stubbed).
 - Given a request with no token, then staging answers 401 (V-gate evidence).
 
 **Tests:** No test on main asserts the crosshair bar: the only Playwright test that reads the chart
@@ -4288,8 +4288,8 @@ that can be missing for a reason (a failed or pending reference call).
 assertions are the new test above (solyra commit cd2c08b), added on this branch; the solyra CI run
 the matrix cites (commit eca7078) predates it. The pytest tests above assert the first two branches
 of the reference route, the vendor and the query stubbed, and none asserts the GCS branch;
-`tests/api/test_route_coverage.py` pins 404 for the route against a dead backend, and
-`tests/api/test_intraday_loader_conventions.py` covers the bar loader the third branch reuses. Te
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins 404 for the route against a dead backend, and
+[`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py) covers the bar loader the third branch reuses. Te
 stays unticked.
 
 **Code:** `src/routes/ChartsPage.tsx:109-113,193,688-709`,
@@ -4358,8 +4358,8 @@ Playwright tests exist on main at eca7078. They assert Start, the warm start, St
 count, the disabled Sig and Stop, and the reducers behind Play, Pause and the end of the day. No
 test asserts the speed buttons, the playback timer, the Play and Pause buttons themselves, the
 disabled Start or what a timeframe or date change does to a session. The bars the session reveals
-come from the loader that `tests/api/test_intraday_loader_conventions.py` and `TestMarketDataAPI` in
-`tests/api/test_platform_api.py` assert (CHARTS-02), and `tests/api/test_route_coverage.py` pins 404
+come from the loader that [`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py) and `TestMarketDataAPI` in
+[`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) assert (CHARTS-02), and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins 404
 for the route against a dead backend. Te is ticked on that coverage: the two Playwright tests exist
 on main at eca7078, where the e2e job of the cited solyra run passed 242 tests, the 22 cases of
 `replaySession.test.ts` passed in that run's Vitest job, and the loader tests exist at the head of
@@ -4425,20 +4425,20 @@ its own.
 - Given 30 rising closes, then the route answers a `chart_voter` with `total_count` 5 whose first
   CALL condition is `3 consecutive up moves` and met, and given no bars it answers `firing: null`
   with nothing met (`test_indicators_response_includes_chart_voter`,
-  `test_empty_bars_returns_empty_voter`, `tests/api/test_live_chart_voter.py`).
+  `test_empty_bars_returns_empty_voter`, [`tests/api/test_live_chart_voter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_chart_voter.py)).
 - Given three conditions met against fewer on the other side, then the side fires; given two, or a
   tie, then neither does; a missing RSI counts as unmet; a short series counts the moves it has
-  (`tests/lib/test_chart_voter.py`, seven cases).
+  ([`tests/lib/test_chart_voter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_chart_voter.py), seven cases).
 - Given 13 bars, then the card is absent, and given 14 it shows (executed 2026-09-30); given the
   request held or failing, then `No setup` with `0/5` twice (executed 2026-09-30).
 - Given bar times as epoch seconds, then the VWAP is computed per session and a millisecond epoch is
   rejected (`test_indicators_endpoint_vwap_sessionizes_epoch_times`,
-  `test_indicators_endpoint_rejects_ms_epoch_bar_times`, `tests/api/test_live_signal_series.py`).
+  `test_indicators_endpoint_rejects_ms_epoch_bar_times`, [`tests/api/test_live_signal_series.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_signal_series.py)).
 - Given a request with no token, then staging answers 401 (V-gate evidence).
 
 **Tests:** The Playwright test above exists on main at eca7078 and asserts the card's labels, the
 `CALL` badge and the firing suffix from a mocked answer; the pytest files above assert the route's
-slice and the voter's rules, and `tests/api/test_route_coverage.py` pins 200 for an empty series
+slice and the voter's rules, and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins 200 for an empty series
 against a dead backend. No test asserts the PUT badge, `No setup`, the empty voter of a pending or
 failed request, or the 14 bar threshold (executed only). Te is ticked on that coverage.
 
@@ -4512,9 +4512,9 @@ raised the page banner, CHARTS-17). With fewer than 14 bars the card is absent.
   Cloud SQL, then 503; given an empty bucket, then `stats: {count: 0}` and no matches; given stats
   and two matches, then the direction is upper-cased and `time` is a string
   (`TestSimilarSignalsAPI` and `test_similar_is_503_when_the_cloud_sql_query_fails`,
-  `tests/api/test_platform_api.py`). The newest-first order comes from the handler's
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)). The newest-first order comes from the handler's
   `ORDER BY entry_time DESC` (`platform/api/routers/signals.py:425`), and the test only reads the
-  order of the two rows its stub returns (`tests/api/test_platform_api.py:344-346`), so with the
+  order of the two rows its stub returns ([`tests/api/test_platform_api.py:344-346`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py#L344-L346)), so with the
   query stubbed no test asserts the ordering or the `WHERE` clause.
 - Given the request held, failing or empty, then the loading line, the red error text or the
   empty-bucket text shows (executed 2026-09-30).
@@ -4523,8 +4523,8 @@ raised the page banner, CHARTS-17). With fewer than 14 bars the card is absent.
 **Tests:** The Playwright test above is the only test of the card and is either-or: it passes on the
 stats grid and on the placeholder, and asserts neither the tiles nor the table, so it earns nothing.
 The pytest class asserts the route's validation, shaping and failure answers with the query stubbed;
-`tests/api/test_route_coverage.py` pins the route's status against a dead backend.
-`tests/api/test_live_signal_series.py` asserts the `POST /api/live/signal-series` contract, the 14
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route's status against a dead backend.
+[`tests/api/test_live_signal_series.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_signal_series.py) asserts the `POST /api/live/signal-series` contract, the 14
 bar minimum and the epoch-second times that decide the fire. No test asserts the `WHERE` clause, the
 `When` column or the stale rows. Te stays unticked.
 
@@ -4587,18 +4587,18 @@ CHARTS-17.
 - Given a fractional `return_pct` of 0.003, -0.002, 0.004 and -0.001, then the average is 0.1, the
   average win 0.35 and the average loss -0.15, in percent, and the win rate 0.5; the run pattern
   takes a timestamp, a malformed `run` is 422 and the `latest` and run cache entries do not collide
-  (`tests/api/test_backtest_router_units.py`, five tests).
+  ([`tests/api/test_backtest_router_units.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_backtest_router_units.py), five tests).
 - Given a CSV of four trades, then the summary counts four with a win rate of 0.75; given an equity
   CSV, then the values come back whole and the maximum drawdown is -4.0; given one run, then `/all`
   counts one run of three trades; given no blobs, then 404 (`TestBacktestAPI`,
-  `tests/api/test_platform_api.py`, GCS stubbed).
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), GCS stubbed).
 - Given an account-scale range, then the equity tick has no decimals, and a normalised range keeps
   decimals; given `2023-04-21`, then the axis label is `04/21/23` (`fmtEquityTick` and `fmtRunDate`,
   `src/components/backtest/BacktesterSection.format.test.ts`).
 - Given a request with no token, then staging answers 401 for the three routes (V-gate evidence).
 
 **Tests:** The pytest files above assert the router's units, cache keys, validation and shaping, and
-`tests/api/test_route_coverage.py` pins 404 for the three routes against a dead backend (no GCS).
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins 404 for the three routes against a dead backend (no GCS).
 Vitest asserts two axis formatters; no test on main mounts the section, asserts a metric card, the
 run select, the equity card, the table or any of its states, so its solyra coverage is
 formatter-only. The replay-trainer specs mount the section with mocked answers and assert nothing
@@ -4634,7 +4634,7 @@ system had none, the rates `—` when they are null. Changing the ticker closes 
 its answer (`:266-277`). The modal cannot be reached from this page as it stands: Mark Entry posts
 no exit, so a session's trade is `active`
 (`test_create_active_trade_without_exit_returns_null_return_pct`,
-`tests/api/test_journal_phase2.py`), and the only caller of `startExitMode` is
+[`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py)), and the only caller of `startExitMode` is
 [JournalPage.tsx:627](https://github.com/TeneikaAskew/solyra/blob/main/src/routes/JournalPage.tsx#L627),
 on a page that unmounts this one and its session (Gaps). Production holds no trainer row to score:
 `journal_entries` has two rows, one `chart` and active and one `manual` and closed, and none with
@@ -4680,7 +4680,7 @@ pending line. The session note is CHARTS-14.
   mocked answers; no test asserts the rows or the footer).
 - Given closed and active trades, then the closed ones are scored and the active one is
   `unavailable`; given no ids, then 422; given no rows, then 404
-  (`tests/lib/test_replay_labeled_trades.py`, the endpoint tests); given a clean win, an entry
+  ([`tests/lib/test_replay_labeled_trades.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_replay_labeled_trades.py), the endpoint tests); given a clean win, an entry
   outside its bar, a date with no bars, a NaN entry price and all trades unavailable, then the card
   or the aggregate is scored, flagged, `unavailable` or null, never zero (the nine
   `TestReplayLabeledTradesLib` tests, same file).
@@ -4692,10 +4692,10 @@ pending line. The session note is CHARTS-14.
 session trade posting `{ticker, session_id}` with no `trade_ids`, and the modal's opening with an
 element carrying the trade's row test id, which the unavailable card and the scored card share; the
 second asserts that with no closed trade the note shows, nothing is posted and no modal opens. The
-scorer and the endpoint are asserted by `tests/lib/test_replay_labeled_trades.py` (twelve tests, the
+scorer and the endpoint are asserted by [`tests/lib/test_replay_labeled_trades.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_replay_labeled_trades.py) (twelve tests, the
 bars and the journal stubbed; the endpoint ones send `trade_ids` and no pytest test passes
 `session_id`, so the `WHERE` on the owner and the session,
-`platform/api/routers/backtest.py:526-550`, is asserted by none); `tests/api/test_route_coverage.py`
+`platform/api/routers/backtest.py:526-550`, is asserted by none); [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)
 pins 422 for the route. No test asserts what a row or the footer shows, the pending or error texts,
 or the route's failure mode. Te stays unticked: the tests on main prove the trigger and the scoring
 math, not the scorecard the trader reads, and a row test id shared by both card kinds is presence
@@ -4759,16 +4759,16 @@ request shows CHARTS-15; nothing else changes. Its states are CHARTS-13 to CHART
   the default `5m`: `timeframe=5&end_time=09:45`).
 - Given 120 one minute bars, then `timeframe=1` returns them whole and `end_time=10:30` returns 61;
   an invalid `end_time` is 400 (`test_market_data_full_day`, `test_market_data_end_time_filter`,
-  `test_market_data_end_time_invalid_format`, `tests/api/test_platform_api.py`). No test requests a
+  `test_market_data_end_time_invalid_format`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)). No test requests a
   `timeframe` above 1 or calls `_aggregate_timeframe`.
 - Given the list query run twice with no new bar, then it scans once, and a new bar invalidates the
-  entry (`tests/api/test_market_dates_cache_expiry.py`).
+  entry ([`tests/api/test_market_dates_cache_expiry.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_dates_cache_expiry.py)).
 
 **Tests:** The row's UI assertions are the new Playwright test above (solyra commit cd2c08b), added
 on this branch and not yet run in CI; none on main asserts a timeframe button, the date input or the
 store. The pytest files assert the dates caching and the `timeframe=1` path of the handler with
-stubbed queries, and `tests/api/test_intraday_loader_conventions.py` the loader;
-`tests/api/test_route_coverage.py` pins the two routes against a dead backend. Te stays unticked: it
+stubbed queries, and [`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py) the loader;
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the two routes against a dead backend. Te stays unticked: it
 waits for a CI run that includes the branch's tests.
 
 **Code:** `src/routes/ChartsPage.tsx:66-76,129-133,509-553`,
@@ -4868,14 +4868,14 @@ to CHARTS-17.
   card reads `Select a date to load chart data`, and pressing `Gamma` changes its class and sends no
   request (executed 2026-09-30 on a hermetic page; no test asserts it).
 - Given the signal series, then the route's contract holds, under 14 bars is 422, epoch-second times
-  are accepted and millisecond ones rejected (`tests/api/test_live_signal_series.py`); no test
+  are accepted and millisecond ones rejected ([`tests/api/test_live_signal_series.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_signal_series.py)); no test
   asserts that the overlay matches production's configuration.
-- Given a chain, then the library summarises its levels, regime and flip (`tests/lib/test_gamma.py`,
+- Given a chain, then the library summarises its levels, regime and flip ([`tests/lib/test_gamma.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_gamma.py),
   with `get_rate_and_yield` stubbed to a fixed rate and yield, `:19-23`); given a chain whose gamma
   is missing on every contract, then the summary is the unavailable one, regime `unknown` with a
   warning (`test_build_summary_all_gamma_missing_is_unavailable_not_zero`, same file); given a
   `daily_rates` lookup with no table, no row, a NULL column or a row more than seven days old, then
-  the lookup raises `RateLookupError` (`tests/lib/test_options_greeks.py:352-396`). That
+  the lookup raises `RateLookupError` ([`tests/lib/test_options_greeks.py:352-396`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_options_greeks.py#L352-L396)). That
   `build_summary` then leaves the flip `null`, through the catch at `lib/gamma.py:1087-1095`, is
   asserted by no test (executed 2026-09-30 with the lookup raising: the flip `null`, the regime and
   the balance still resolved).
@@ -4887,7 +4887,7 @@ changes its class, and that `Sig` is clickable, which earns nothing for the togg
 toggle states, the request gating and the non-ETF case are asserted only by the new test (solyra
 commit cd2c08b), added on this branch and not yet run in CI. No test reads a drawn line or marker
 (the canvas), the reference or levels routes through the page, or the `/levels` handler beyond
-`tests/api/test_route_coverage.py`, which pins 404 for it and 200 for market-hours against a dead
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py), which pins 404 for it and 200 for market-hours against a dead
 backend; the reference route's branches are asserted by `TestReferenceAPI` as in CHARTS-03. Te stays
 unticked: it waits for a CI run that includes the branch's tests.
 
@@ -4953,14 +4953,14 @@ statement 14).
   2026-09-30).
 - Given a posted trade without an exit, then the route answers `status: active` and a null return
   (`test_create_active_trade_without_exit_returns_null_return_pct`,
-  `tests/api/test_journal_phase2.py`); given a fourth take profit, then the route refuses the
+  [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py)); given a fourth take profit, then the route refuses the
   request with 422, because the validator raises and does not truncate
   (`platform/api/routers/journal.py:225-230`; `test_take_profits_capped_at_three` posts four levels
-  and asserts the 422, `tests/api/test_journal_phase2.py`), and the page sends at most three, its
+  and asserts the 422, [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py)), and the page sends at most three, its
   steps being `tp1` to `tp3` (`src/hooks/useTradeMarking.ts:126-132`); given an application defect,
   then the local file is not written
   (`test_post_does_not_fall_back_to_local_on_an_application_defect`,
-  `tests/api/test_platform_api.py`); no test posts `source: 'replay'` or a `session_id` to the
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)); no test posts `source: 'replay'` or a `session_id` to the
   route.
 - Given an epoch, then the journal date and time are the Eastern wall clock without a zone
   conversion, and the create body round-trips to the same minute
@@ -4970,8 +4970,8 @@ statement 14).
 **Tests:** The first Playwright test exists on main at eca7078 and asserts the flow above with the
 request mocked; the reducers of `src/hooks/replaySession.test.ts` back the reveal. The server's
 persistence of the replay source and session id is asserted by no test (the schema test only checks
-that the `session_id` column is nullable, `tests/gcp/test_schema_journal_migration.py`), and no test
-asserts a failed post; `tests/api/test_route_coverage.py` pins 200 for the post against a dead
+that the `session_id` column is nullable, [`tests/gcp/test_schema_journal_migration.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_schema_journal_migration.py)), and no test
+asserts a failed post; [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins 200 for the post against a dead
 backend, which is the open-dev local file redirected to a tmp directory. Te stays unticked.
 
 **Code:** `src/routes/ChartsPage.tsx:105-106,223,639-685,750`,
@@ -5014,7 +5014,7 @@ without a token (V-gate evidence).
 - Given a closed trade tagged with the session's id, which no action of this page can produce, then
   the scorecard opens (CHARTS-08; the test seeds the trade and stubs the session id).
 - Given `trade_ids` or `session_id`, then the route scores the trades, and given neither, 422
-  (`tests/lib/test_replay_labeled_trades.py`).
+  ([`tests/lib/test_replay_labeled_trades.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_replay_labeled_trades.py)).
 
 **Tests:** The first test of `tests/charts/charts-cards.spec.ts` named above exists on main at
 eca7078 and asserts that the button, `Mark Entry`, the panel and the tab are absent; it does not
@@ -5295,7 +5295,7 @@ fourteen requests of the page: `GET /api/market/dates/IWM`,
   last (executed 2026-09-30: up for the market data, the dates, the indicators, the signal series
   and the similar request; down for the reference and the backtest list).
 - Given the journal route and no token in firebase mode, then it answers 401, and with a valid one
-  200 (`test_examples_requires_auth_like_trades_get`, `tests/api/test_journal_examples.py`).
+  200 (`test_examples_requires_auth_like_trades_get`, [`tests/api/test_journal_examples.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_examples.py)).
 - Given an error message, then `isAuthError` is true for a 401 status text and for `unauthorized`
   and false for other failures (`src/components/shared/WidgetState.test.ts`, three cases); the
   test's cases include no `sign in to continue`.
@@ -5539,7 +5539,7 @@ pending dates or levels request has no presentation of its own: neither query's 
 - Given `data_source` `realtime` and `eod_fallback`, then the live grid is served with
   `Cache-Control: public, max-age=60`, the historical one with `max-age=43200`, and an empty
   database answers an `unavailable` envelope with HTTP 200 (`TestGridLive`, `TestGridHistorical`,
-  `tests/api/test_grid_router.py`).
+  [`tests/api/test_grid_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_grid_router.py)).
 - Given a levels answer with `gamma_balance` 219.5 and `gamma_flip` 219.75, then the Flip chip
   reads `219.50` (executed 2026-10-01; matrix Gaps).
 - Given a levels answer with levels, then the Hedge chip and the Midpoint and Hedge rows read the
@@ -5567,11 +5567,11 @@ is visible, the document does not scroll sideways, no card box passes the viewpo
 heatmap card is an `overflow-x: auto` scroller wider than its box; `navigation.spec.ts` and the
 dates-limit test of `options-flow.spec.ts` assert the toolbar buttons and the request URL as in the
 criteria. The pure helpers are asserted by `swingGridUtils.test.ts`, and the grid and levels
-handlers and the library by `tests/api/test_grid_router.py` (live and historical tiers, the
+handlers and the library by [`tests/api/test_grid_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_grid_router.py) (live and historical tiers, the
 unavailable envelope, the on-demand dispatch and its rate limit, route order),
-`tests/api/test_route_coverage.py` (the live and historical grid answer 503 with no database
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (the live and historical grid answer 503 with no database
 configured, which stops at `_require_cloud_sql`, and the dates route 503 against an unreachable one),
-and `tests/lib/test_gamma.py`
+and [`tests/lib/test_gamma.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_gamma.py)
 (`TestBuildGridSummary`, `TestBuildSummary`, `TestComputeGammaBalance`, `TestComputeGammaFlipBS`,
 `test_differs_from_gamma_balance`, the coverage gate of `build_summary`). No test asserts a rendered
 cell, a legend chip, the pill, the node list, the pivot rail, the Historical, GEX and VEX buttons,
@@ -5662,17 +5662,17 @@ rendered in the page, read `Chain too thin to build a ladder for SPX.`; matrix G
   contracts — GEX unavailable for this snapshot (feed outage?), not zero.` (executed 2026-10-01
   through the real handler on the production SPX chain of 2026-09-30; the library half is asserted
   by `test_build_summary_all_gamma_missing_is_unavailable_not_zero`,
-  `tests/lib/test_gamma.py:1090-1099`, which checks `regime`, `total_gex` and a warning naming ALL
+  [`tests/lib/test_gamma.py:1090-1099`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_gamma.py#L1090-L1099), which checks `regime`, `total_gex` and a warning naming ALL
   and `unavailable`, and neither the empty `levels` and `kings` nor the route's 200), and the SPX
   panel then reads `Chain too thin to build a ladder for SPX.` (executed 2026-10-01, rendered).
 - Given the picker is changed, then the three panels do not change (executed 2026-10-01).
 
 **Tests:** `src/components/options/TrinityTab.test.ts` (`nearestStrike` only) and the Trinity test of
 `options-flow.spec.ts` above, whose assertion is about the requests. On the server: the dates and
-levels handlers and the library as OPTIONS-01 credits them (`tests/api/test_route_coverage.py` pins
+levels handlers and the library as OPTIONS-01 credits them ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins
 the dates route to 503 and the levels route to 404 against an unreachable database, and
 `test_levels_actually_awaits_the_chain` that a stubbed chain answers 200 with its `chain_size`;
-`tests/lib/test_gamma.py` the classification and the coverage gate). No test renders a panel or reads
+[`tests/lib/test_gamma.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_gamma.py) the classification and the coverage gate). No test renders a panel or reads
 the King chip, a ladder row or any of the three texts.
 
 **Code:** `src/components/options/TrinityTab.tsx:1-202`, `src/components/options/GammaMapSection.tsx:20-50`,
@@ -5893,7 +5893,7 @@ Server side (`platform/api/routers/options.py`): the chain handler (`:524-630`) 
 `snapshot_ts` of the date for `data_source = 'alphavantage'`, maps `calls` and `puts` to `call` and
 `put` and NaN to null, caches the answer twelve hours per ticker and date and, through the swallowing
 `query_to_dataframe`, answers 404 for an empty frame whether the table has no rows or the database is
-unreachable (`tests/api/test_route_coverage.py` pins that 404 with no backend); it selects `gamma` and
+unreachable ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins that 404 with no backend); it selects `gamma` and
 no `*_computed` column (`options.py:562-579`). The live proxy (`:633-712`) calls AlphaVantage
 `HISTORICAL_OPTIONS` for the date, answers 503 without a key or on a timeout, 502 on a failed request,
 429 on the vendor's limit notice, 400 on its error message and 404 for no contracts, caches five
@@ -5975,10 +5975,10 @@ this one is not shifted; matrix Gaps).
 - Given a request for the Greeks, then the response keeps the keys `aggregated`, `gex_by_strike`,
   `metrics`, `nodes` and `config`, the total equals the per-strike sum, a call-heavy strike is positive
   and a put-heavy one negative, the King sits at the largest |gamma| and the put/call ratio is put OI
-  over call OI (`TestGreeksContractShape`, `TestGreeksMath`, `tests/api/test_options_router.py`,
+  over call OI (`TestGreeksContractShape`, `TestGreeksMath`, [`tests/api/test_options_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_options_router.py),
   which call the handler function directly).
 - Given the live proxy, then it maps AlphaVantage's rows to the Cloud SQL shape, answers the second
-  call from the cache and answers 503, 400, 429 or 404 as listed above (`tests/api/test_options_live.py`,
+  call from the cache and answers 503, 400, 429 or 404 as listed above ([`tests/api/test_options_live.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_options_live.py),
   eleven handler tests and five on `_av_to_contracts`).
 - Given a failed Greeks request with a spot known, then the cards read `Total GEX +0` and `Put/Call
   OI 0.00` (executed 2026-10-01; solyra#74; encoded as an expected failure on this branch, OPTIONS-11).
@@ -5991,14 +5991,14 @@ this one is not shifted; matrix Gaps).
 **Tests:** On main, the Playwright tests above (page) and the pytest files above (handlers):
 `options-flow.spec.ts` and `gamma-levels.spec.ts` assert the badges, the chips, the labels and the
 live badge from mocked answers, `swingGridUtils.test.ts` the spot helper, `test_options_router.py`
-the Greeks handler, `test_options_live.py` the proxy, and `tests/lib/test_gamma.py` the aggregation
+the Greeks handler, `test_options_live.py` the proxy, and [`tests/lib/test_gamma.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_gamma.py) the aggregation
 behind both. The renders-strike-values and chart-axes tests of `options-flow.spec.ts` assert that
 a `/220/` text and the words `calls` and `puts` are visible, which is presence only and earns nothing
 on its own. No test on main asserts a metric value, the Greeks and levels requests' parameters, the spot
 input, the metric and side toggles, the EOD footer, the `Couldn't estimate spot` notice or the Cloud SQL
 chain handler's response body (it is reached only through `/levels` and answers 404 against a dead
-backend, `tests/api/test_route_coverage.py`); the dates handler's query is asserted only through its
-cache and its 503 (`tests/api/test_threadpool_races.py`, `test_options_dates_is_not_a_500`). The plain
+backend, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)); the dates handler's query is asserted only through its
+cache and its 503 ([`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), `test_options_dates_is_not_a_500`). The plain
 test added on this branch, `a failed Greeks request leaves the EOD footer and the King chip on screen and
 is attempted twice` (`tests/options/options-flow.spec.ts`, solyra commit `9543894`, not yet run in CI),
 asserts the footer's text on the fixture chain, and earns nothing at Te until a CI run includes it.
@@ -6096,30 +6096,30 @@ HTTP 401: sign in to continue`). The page's views show OPTIONS-09 to OPTIONS-13 
 - Given a request for `symbols=SPY,AAPL,IWM,QQQ,XLK`, then coverage runs two statements and answers
   `{intraday, daily}` per symbol, and given a failing database it answers 503 with no coverage
   (`test_coverage_endpoint_batches_queries`, `test_coverage_endpoint_503s_loud_on_db_failure`,
-  `test_coverage_from_frames_shapes`, `tests/api/test_market_coverage.py`).
+  `test_coverage_from_frames_shapes`, [`tests/api/test_market_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_coverage.py)).
 - Given keywords, the search answers the vendor's matches, and given empty keywords it answers 400
   (`test_search_endpoint`, `test_search_endpoint_rejects_empty_keywords`, `TestSearchTickers`,
-  `tests/api/test_ticker_info.py`); given no key it returns an empty list
+  [`tests/api/test_ticker_info.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_ticker_info.py)); given no key it returns an empty list
   (`test_returns_empty_without_key`, the same file).
 - Given a watchlist add, then the router passes the owner, the signed-in user or `default`, to the
   write, two users reach it with two owners, and the response carries the enrichment, all with the
-  write itself patched out (`TestWatchlistMutationAPI`, `tests/api/test_platform_api.py`;
-  `test_watchlist_add_endpoint`, `tests/api/test_ticker_info.py`); no test asserts the write.
+  write itself patched out (`TestWatchlistMutationAPI`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py);
+  `test_watchlist_add_endpoint`, [`tests/api/test_ticker_info.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_ticker_info.py)); no test asserts the write.
 - Given no token, then each of the three routes answers 401 on staging (V-gate evidence,
   2026-10-01).
 
 **Tests:** On main, the component is asserted by twenty tests of
 `tests/dashboard/ticker-combobox.spec.ts` and the two Vitest files named above, and the three
 handlers by the pytest files named above: the add by tests that patch its write out, and, in
-`tests/api/test_route_coverage.py`, the search at 200, the coverage at 503 and the watchlist add at
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py), the search at 200, the coverage at 503 and the watchlist add at
 503 against a dead backend, where the real write is entered and raises (executed 2026-10-01 with a
 spy that calls through: the real function was entered and raised the harness's `_BackendDown`);
 `tests/shared/popover-fit.spec.ts` asserts the popover stays inside two phone viewports (on the
 Dashboard). The write itself, `add_to_watchlist` (`gcp/fetchers/_watchlist.py:492-557`), is asserted
-by no test: `tests/gcp/test_watchlist_helper.py` covers the loader, its helpers, the fallback alert
-and the membership lookup and never calls it, `tests/api/test_platform_api.py` and
-`tests/api/test_ticker_info.py` patch it out, `tests/api/test_route_coverage.py` enters it against a
-dead backend and asserts only the router's 503, and `tests/gcp/test_backfill_ticker.py` tests the
+by no test: [`tests/gcp/test_watchlist_helper.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_watchlist_helper.py) covers the loader, its helpers, the fallback alert
+and the membership lookup and never calls it, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) and
+[`tests/api/test_ticker_info.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_ticker_info.py) patch it out, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) enters it against a
+dead backend and asserts only the router's 503, and [`tests/gcp/test_backfill_ticker.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_backfill_ticker.py) tests the
 CLI's own function of that name (`gcp/backfill_ticker.py:308`). No test mounts the picker on
 `/options` or asserts that Swing and Profiles follow a pick, that the other two views do not, or
 what a symbol outside the four reads; no test asserts the coverage statements' cost.
@@ -6268,8 +6268,8 @@ and the loading lines are OPTIONS-11 and OPTIONS-09.
 **Tests:** None on main asserts the stepper or the chips: the dates-limit test asserts the request
 URLs only. The test added on this branch asserts the stepper and not the chips, so Te stays unticked
 until a CI run includes it. The server side of the dates is asserted by `test_options_dates_is_not_a_500`
-and `test_the_final_four_guards_keep_the_split` (`tests/api/test_route_coverage.py`) and the cache tests
-of `tests/api/test_threadpool_races.py`, none of which runs the walk's SQL.
+and `test_the_final_four_guards_keep_the_split` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) and the cache tests
+of [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), none of which runs the walk's SQL.
 
 **Code:** `src/components/options/ProfilesTab.tsx:255-293,385-404`,
 `src/components/options/SwingMode.tsx:47,241-319,791-808`, `src/hooks/useOptionsDates.ts:56-67`,
@@ -6390,7 +6390,7 @@ or a chain with no gamma.
 - Given the chain answers 200 with no contracts, then Profiles reads `No options data returned for
   <ticker> on <date>` and the advice (executed 2026-10-01; no test).
 - Given an `unavailable` grid envelope, then the card reads `Data unavailable: <reason>` (executed
-  2026-10-01; the server side: `TestGridLive`, `tests/api/test_grid_router.py`, asserts the envelope
+  2026-10-01; the server side: `TestGridLive`, [`tests/api/test_grid_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_grid_router.py), asserts the envelope
   and its HTTP 200).
 - Given a Trinity panel whose request failed or whose ladder is empty, then it reads `No gamma levels
   available for <SYM>.` or `Chain too thin to build a ladder for <SYM>.` (executed 2026-10-01; no
@@ -6398,7 +6398,7 @@ or a chain with no gamma.
 
 **Tests:** None on the page: no test asserts any of the six lines (a search of `tests/` and `src/`
 finds the texts only in the components). The grid handler's `unavailable` envelope is asserted by
-`tests/api/test_grid_router.py` and `tests/api/test_route_coverage.py` pins the dates route at 503
+[`tests/api/test_grid_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_grid_router.py) and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the dates route at 503
 against an unreachable database, which is the status the Profiles box then reads. Every Playwright
 test that opens `/options` answers its requests with data, so none mounts these branches.
 
@@ -6486,7 +6486,7 @@ only in the components, and `EMPTY_GREEKS` only in the comments of the tests add
 Two of those tests concern the Greeks failure above: a plain test asserts the state the failure
 leaves the page in, and the other asserts what the page should say and is an expected failure, so Te
 stays unticked, and it can pass only after a product change this task does not make. On the server
-side `tests/api/test_route_coverage.py` pins the dates route at 503 and the chain route at 404
+side [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the dates route at 503 and the chain route at 404
 against a dead backend.
 
 **Code:** `src/components/options/ProfilesTab.tsx:40-61,326,428-466`,
@@ -6558,9 +6558,9 @@ beside it (OPTIONS-01).
   without one falls back to its date (`isoToEtDisplay`, `src/lib/time.test.ts`, on main).
 - Given REALTIME rows, then the live grid answers `realtime`, and given EOD rows one day old, `eod_fallback`
   (`test_realtime_path_returns_data_source_realtime`, `test_eod_fallback_when_no_realtime`,
-  `tests/api/test_grid_router.py`); given a chain three trading days behind, then the classifier answers
+  [`tests/api/test_grid_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_grid_router.py)); given a chain three trading days behind, then the classifier answers
   `stale_fallback`, and `unavailable` beyond five (`test_gamma_levels_stale_eod_returns_stale_fallback`,
-  `test_gamma_levels_hard_stale_returns_unavailable`, `tests/agents/test_agent_summarizers.py`, which
+  `test_gamma_levels_hard_stale_returns_unavailable`, [`tests/agents/test_agent_summarizers.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_summarizers.py), which
   run the classifier through its other consumer, `summarize_gamma_levels`); no test runs `stale_fallback`
   through the grid handler.
 - Given the live proxy, then it answers 400 for a ticker or a date it does not accept and for the
@@ -6571,7 +6571,7 @@ beside it (OPTIONS-01).
   `test_timeout_returns_503`, `test_av_rate_limit_note_returns_429`,
   `test_av_information_envelope_returns_429`, `test_empty_av_data_returns_404`,
   `test_second_call_is_cache_hit` and `test_happy_path_returns_normalized_chain`,
-  `tests/api/test_options_live.py`); its 502 for a failed vendor request
+  [`tests/api/test_options_live.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_options_live.py)); its 502 for a failed vendor request
   (`platform/api/routers/options.py:678`) is asserted by no test.
 
 **Tests:** On main: `time.test.ts` asserts `isoToEtDisplay` only. `options-flow.spec.ts` asserts the
@@ -6640,7 +6640,7 @@ test account exists, so the signed-in 401 (an expired session) is the case reach
   `markAuthBlocked` on the next line, which that test does not read.
 
 **Tests:** On main, `src/lib/authedFetch.test.ts` asserts the wrapper's callback on a gated and on an
-open 401; `tests/api/test_platform_auth.py` (`test_firebase_requires_valid_token`) asserts that the
+open 401; [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) (`test_firebase_requires_valid_token`) asserts that the
 auth middleware answers 401 to a gated path without a token in firebase mode and 200 to the open paths,
 on a synthetic `/api/secret` route and not on an options route; and `tests/shared/auth-gate.spec.ts`
 (`firebase mode, signed out → login screen blocks the app`) asserts the sign-in screen for a signed-out
@@ -6696,7 +6696,7 @@ assertion of `Sign in to load`. Te stays unticked.
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
 | PLAYBOOK-06 | loading | present | "Loading playbook…" in a plain box, no skeleton or spinner, for the whole first fetch including its one retry; the header keeps its title and its line and drops the count and the age. |
-| PLAYBOOK-07 | empty | present | "No playbook cards found for {ticker}", reached only by a 200 with no cards, which the handler never sends; a ticker without rows gets a 404, shown as the error state instead. The text names `scripts/run_pipeline.py`, the backtest pipeline, and not the job that writes the cards. |
+| PLAYBOOK-07 | empty | present | "No playbook cards found for {ticker}", reached only by a 200 with no cards, which the handler never sends; a ticker without rows gets a 404, shown as the error state instead. The text names [`scripts/run_pipeline.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_pipeline.py), the backtest pipeline, and not the job that writes the cards. |
 | PLAYBOOK-08 | error | present | "Playbook unavailable for {ticker}: {server reason} (HTTP {status})" after the one retry, with the cards, the count and the age gone; an evaluation, history, quote, indicators or status failure is not read, so every condition falls back to "no data" or the header to "No live data, evaluation paused" rather than showing the failure. |
 | PLAYBOOK-09 | stale | present | The card set's `analysis_date` and age (`snapshotAgeLabel`) render next to the setup count; a refused (503) set is dropped rather than shown as current. The live evaluation has no age marker: a page left open past the close keeps its last snapshot. |
 | PLAYBOOK-10 | permission | not tracked (new category); present | `DataGate` wraps the page body below the header; it cannot trigger in practice: a signed-out visitor meets the sign-in screen first, and a signed-in user's 401 shows the shell's expired-session strip and the error box. |
@@ -6777,9 +6777,9 @@ visible, so any heading containing `Playbook` satisfies it (dropping the ticker 
 `shows the card set date and age next to the setup count` asserts the exact text of `playbook-age` (removing the count, removing
 the age and changing `1d old` to `1 day old` each failed it, mutation). `src/lib/dates.test.ts` (`snapshotAgeLabel`) asserts the three
 age forms, the missing age and the missing date. On the handler side `test_playbook_fresh_set_is_served_with_its_date`
-(`tests/api/test_playbook_evaluate.py`) asserts the dated answer with `age_days` 1 and `max_age_days`, and
-`test_playbook_age_days_helper` the day count; `TestPlaybookAPI.test_playbook` (`tests/api/test_platform_api.py`) asserts that a set dated
-today is answered with that `analysis_date` and `age_days` 0, and `tests/api/test_route_coverage.py` pins the playbook route's 503 and the
+([`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py)) asserts the dated answer with `age_days` 1 and `max_age_days`, and
+`test_playbook_age_days_helper` the day count; `TestPlaybookAPI.test_playbook` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)) asserts that a set dated
+today is answered with that `analysis_date` and `age_days` 0, and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the playbook route's 503 and the
 status, history and indicators routes' statuses (200, 503 and 200) against a dead backend, with no body assertion. No test asserts the
 ticker in the title or either evaluation line (changing both texts and
 forcing `hasLiveData` true passed all six tests, mutation). Te stays unticked.
@@ -6828,16 +6828,16 @@ shows PLAYBOOK-07's text instead; inside `DataGate` (PLAYBOOK-10).
   set has none null).
 - Given an `avg_return` of -0.0, 0.0, -0.01 or 0.01, as on all 36 production cards, then `+0.0%` in green or `-0.0%` in red (executed).
 - Given a `direction` other than CALL or PUT, then a blue badge and no arrow (read; the table holds none and the producer writes only CALL
-  and PUT, `scripts/analysis/phase6_playbook.py:391-728`).
+  and PUT, [`scripts/analysis/phase6_playbook.py:391-728`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/analysis/phase6_playbook.py#L391-L728)).
 - Given the handler's NULL handling, then a NULL `win_rate` or `avg_return_bps` reaches the page as null and not as 0
   (`test_cards_from_db_converts_and_preserves_nulls`).
 
 **Tests:** On main one page test, `shows setup with conditions`, asserts that text matching `long breakout` is visible, which is the card's
 name (removing the name failed it, removing every condition row passed it and removing the direction badge passed it, mutation); no test
 asserts a condition row, the badge, the stats line or the progress block. On the handler side `test_cards_from_db_converts_and_preserves_nulls`
-(`tests/api/test_playbook_evaluate.py`) asserts the fraction-to-percent `win_rate` (48.0), the basis-point-to-percent `avg_return` (-0.10),
+([`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py)) asserts the fraction-to-percent `win_rate` (48.0), the basis-point-to-percent `avg_return` (-0.10),
 the JSON-string forms of `conditions` and `horizons`, and that NaN becomes null; `TestPlaybookAPI.test_playbook`
-(`tests/api/test_platform_api.py`) asserts the wire name, direction, `win_rate` 62.5 and conditions of one card; `test_route_coverage.py`
+([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)) asserts the wire name, direction, `win_rate` 62.5 and conditions of one card; `test_route_coverage.py`
 pins the route's 503 against a dead backend with no body. Te stays unticked: the page layer asserts the name only.
 
 **Code:** `src/routes/PlaybookPage.tsx:86-260,358-368`, `platform/api/routers/playbook.py:136-274`; no test ids.
@@ -6866,7 +6866,7 @@ cards of each ticker: for IWM card 1 the cells read `5m ★ 46% -0.22`, `15m 43%
 
 Three things the block says or does that the code behind it does not support. The caption says the win rate is how often the target hits
 before the stop, but the producer counts a trade as a win when its realised return is above zero, and a trade that touches neither level
-is marked to its close at the time stop (`scripts/analysis/phase6_playbook.py:213-221`): the real `_score_trades` scored one trade that
+is marked to its close at the time stop ([`scripts/analysis/phase6_playbook.py:213-221`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/analysis/phase6_playbook.py#L213-L221)): the real `_score_trades` scored one trade that
 drifted up 1 basis point in 30 minutes, with a 30 bp target and a 15 bp stop never touched, as `win_rate` 1.0 (executed). A card whose
 `direction` is not PUT is drawn as a CALL, `NEUTRAL` and a missing direction included (`:52`): the schema allows NEUTRAL, the producer
 writes only CALL and PUT, and a card edited to NEUTRAL drew the CALL levels, with a blue badge (executed). And `best_horizon_win_rate`
@@ -6896,12 +6896,12 @@ is absent (PLAYBOOK-06 to PLAYBOOK-08); no stale marker on the price; inside `Da
 
 **Tests:** No test on main renders this block with a price: the e2e fixture has no `target_pct` and no `horizons` and the market is
 mocked closed, so the component returns null, and no Vitest file imports it. On the handler side `test_cards_from_db_converts_and_preserves_nulls`
-(`tests/api/test_playbook_evaluate.py`) asserts `target_pct` 0.30 and `stop_pct` 0.15 parsed from `"+0.30%"` and `"-0.15%"`, the horizon
+([`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py)) asserts `target_pct` 0.30 and `stop_pct` 0.15 parsed from `"+0.30%"` and `"-0.15%"`, the horizon
 win rates as percents and averages in raw basis points, `best_horizon_min` 60, `best_horizon_win_rate` 36.0 and `best_horizon_avg_bps` -0.18,
 and null for a NULL; `test_route_coverage.py` pins the route's 503 against a dead backend. Te stays unticked.
 
 **Code:** `src/components/playbook/SetupCardDetails.tsx:13-124`, `src/routes/PlaybookPage.tsx:256-257,268-272,365`,
-`scripts/analysis/phase6_playbook.py:114-268`, `platform/api/routers/playbook.py:179-265`; no test ids.
+[`scripts/analysis/phase6_playbook.py:114-268`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/analysis/phase6_playbook.py#L114-L268), `platform/api/routers/playbook.py:179-265`; no test ids.
 
 ##### PLAYBOOK-04 · Switch ticker
 
@@ -7049,29 +7049,29 @@ observed (matrix Gaps). A condition the evaluator cannot judge is `unknown` with
   copy with the quote answering the same price and volume on every call and the 100-bar window sliding by one bar at the refetch of 61.1 s, the
   answers mocked at 600 ms; matrix Gaps).
 - Given a condition the server cannot judge, then it stays unknown and counts as subjective, whatever the reason (executed; matrix Gaps).
-- Given the handler's thresholds, then each branch judges as `tests/api/test_playbook_evaluate.py` asserts: RSI ranges and limits, price
+- Given the handler's thresholds, then each branch judges as [`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py) asserts: RSI ranges and limits, price
   against VWAP and EMAs, the EMA cross, RVOL, the StochRSI turn, the opening-range breaks and trend, minutes since the open, the close in
   the bar's half, proximity to the previous low or high, and the unknown fall-throughs.
 - Given a request with neither `conditions` nor `batches`, then 400, and a snapshot without `indicators`, then 422
   (`test_evaluate_400_when_neither_conditions_nor_batches`, `test_evaluate_validates_snapshot_shape`; executed on the real app).
 
-**Tests:** On the handler side `tests/api/test_playbook_evaluate.py` has a test per branch of `_eval_condition` and four HTTP tests of the
-endpoint (flat conditions in order, batches by key, 400, 422); `tests/api/test_platform_api.py` asserts the quote handler
+**Tests:** On the handler side [`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py) has a test per branch of `_eval_condition` and four HTTP tests of the
+endpoint (flat conditions in order, batches by key, 400, 422); [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) asserts the quote handler
 (`TestLiveMarketAPI.test_live_quote` and seven tests of its missing, unparseable and non-finite fields and the 503 without a key), the history
 handler (`test_live_history`) and the reference handler (`TestReferenceAPI`: AlphaVantage for a recent date, Cloud SQL for a historical one,
-the previous day's row), and neither the average volume's answer nor the indicators values; and `tests/api/test_route_coverage.py` pins the status of
+the previous day's row), and neither the average volume's answer nor the indicators values; and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the status of
 each of the area's eight routes against a dead backend (status 200; the playbook route, quote, history and average volume 503; indicators 200
 for an empty body; reference 404; evaluation 422), with no body assertion. Two cautions: its inputs are not always the production texts (the opening-range
 break tests use `Price has broken above the opening range high`, which no production condition reads), and `test_stochrsi_phrase_does_not_match_rsi_rule`
 asserts only that `status` is one of the three values and, when there is a `detail`, that it does not read `RSI 55`: for its input the
-evaluator answers unknown with no detail, so it asserts nothing about the separation (executed). `tests/api/test_api_handler_dispatch.py` is an AST guard over every route handler of `platform/api/routers` and `platform/api/main.py` and asserts no answer: no `async def` route without an `await` (only `health_check` is exempt), no `await` of a plain `def`, and no call of a named blocking function such as `query_to_dataframe` on the event loop outside `await run_in_threadpool(...)`; for the average-volume handler, `async def` for its AlphaVantage fallback, the last of these pins the Cloud SQL read (`platform/api/routers/live.py:404-413`) to the threadpool, and a mutation of a scratch copy of `platform/api` that called that read directly made `test_no_async_route_performs_blocking_io` fail naming `get_avg_volume` and `query_to_dataframe` while the other three AST tests passed (executed; the five tests pass on the unchanged tree). On the client side `src/hooks/usePlaybookEvaluation.test.ts`
+evaluator answers unknown with no detail, so it asserts nothing about the separation (executed). [`tests/api/test_api_handler_dispatch.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_api_handler_dispatch.py) is an AST guard over every route handler of `platform/api/routers` and `platform/api/main.py` and asserts no answer: no `async def` route without an `await` (only `health_check` is exempt), no `await` of a plain `def`, and no call of a named blocking function such as `query_to_dataframe` on the event loop outside `await run_in_threadpool(...)`; for the average-volume handler, `async def` for its AlphaVantage fallback, the last of these pins the Cloud SQL read (`platform/api/routers/live.py:404-413`) to the threadpool, and a mutation of a scratch copy of `platform/api` that called that read directly made `test_no_async_route_performs_blocking_io` fail naming `get_avg_volume` and `query_to_dataframe` while the other three AST tests passed (executed; the five tests pass on the unchanged tree). On the client side `src/hooks/usePlaybookEvaluation.test.ts`
 asserts the batch key changes with the condition text and with the snapshot and is stable otherwise (`playbookBatchKey`, three tests) and
 `src/lib/playbookEvaluator.test.ts` the opening-range window and the minutes since the open (`computeORB`, three tests; `minutesSinceOpen`,
 four), and `src/mocks/contract.test.ts` (`every request body the app sends matches its operation request schema`) validates the flat and the
 batched sample bodies of `POST /api/playbook/evaluate` against the vendored snapshot (`:682-685`), the request shape and not the answers.
 On main no page test asserts the gate, the posted snapshot, the progress, the detail or the tint (every spec test runs with the market
 mocked closed), no test asserts `buildSnapshot`, and no test asserts the `indicators` values the page reads
-(`tests/api/test_live_chart_voter.py` asserts the `chart_voter` and `signals` keys, which this page does not read). The test added on this
+([`tests/api/test_live_chart_voter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_live_chart_voter.py) asserts the `chart_voter` and `signals` keys, which this page does not read). The test added on this
 branch (solyra `22b606f` and `c06ff84`), `during the session the cards fill from the posted snapshot, and a card is fully lit once every judgeable condition is met`, asserts
 the posted `batches` and the snapshot fields (price, volume, average volume, prior close, high and low, the last bar, the minutes since the
 open, the indicators), the counts, percents and details of two cards and the idle and strong borders; it failed under eleven one-line mutations of the page (the batched body without its batches, the snapshot without the quote's price, the
@@ -7125,10 +7125,10 @@ The only way in is a 200 whose `cards` list is empty, and the handler never send
 real handler with `AAPL` in the store: the answer was the 404 and the page drew the amber box of PLAYBOOK-08, not this box; the box
 appeared only for a 200 with `cards: []` that the browser supplied.
 
-The box also names the wrong script. `scripts/run_pipeline.py` is the backtest pipeline: it runs `run_backtest.py`, `run_timeframe_sweep.py`,
-`run_walk_forward.py` and `generate_backtest_report.py` (`scripts/run_pipeline.py:176-235`) and no step writes `playbook_cards` (read). The
+The box also names the wrong script. [`scripts/run_pipeline.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_pipeline.py) is the backtest pipeline: it runs `run_backtest.py`, `run_timeframe_sweep.py`,
+`run_walk_forward.py` and `generate_backtest_report.py` ([`scripts/run_pipeline.py:176-235`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_pipeline.py#L176-L235)) and no step writes `playbook_cards` (read). The
 writer is `scripts/analysis/phase6_playbook.py --write-db`, run as the `phase6-playbook` Cloud Run job at 04:30 ET on weekdays
-(`gcp/deploy.sh:1584-1607,4504`), and the 404's own text names that job (PLAYBOOK-08).
+(`gcp/deploy.sh:1584-1607,4531`), and the 404's own text names that job (PLAYBOOK-08).
 
 **Needs:** A 200 with no cards, which no handler path produces. `playbook_cards` holds IWM, QQQ and SPY only (V evidence), so an empty
 answer for another symbol never arises either: it is the 404.
@@ -7141,16 +7141,16 @@ PLAYBOOK-01; it replaces the grid only.
   asserts the copy).
 - Given a ticker with no rows, then the handler answers 404 and the page shows the error box instead of this one (executed;
   `test_playbook_no_rows_is_404_never_markdown`).
-- Given the box, then it names `scripts/run_pipeline.py`, which runs backtests and writes no cards (read; matrix Gaps).
+- Given the box, then it names [`scripts/run_pipeline.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_pipeline.py), which runs backtests and writes no cards (read; matrix Gaps).
 
 **Tests:** One page test, `shows empty-state when no cards`, asserts that text matching `/no playbook|no.*card|run.*pipeline|empty/i` is
 visible for `{ ticker: 'IWM', cards: [] }`, a body the handler never sends (removing the box failed it, mutation; the loose pattern would
 also accept other wording that contains `pipeline`). On the handler side `test_playbook_no_rows_is_404_never_markdown` asserts the 404 for no
 rows, with the writer job named and no markdown fallback, and `test_cards_from_db_selects_one_date_and_bounds_as_of` that no rows give None
-(`tests/api/test_playbook_evaluate.py`). No handler test can reach an empty 200 because the handler has none. Te stays unticked: the page test
+([`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py)). No handler test can reach an empty 200 because the handler has none. Te stays unticked: the page test
 asserts the copy for a body that production never sends.
 
-**Code:** `src/routes/PlaybookPage.tsx:351-356`, `platform/api/routers/playbook.py:230-265,341-348`, `scripts/run_pipeline.py:176-235`,
+**Code:** `src/routes/PlaybookPage.tsx:351-356`, `platform/api/routers/playbook.py:230-265,341-348`, [`scripts/run_pipeline.py:176-235`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_pipeline.py#L176-L235),
 `gcp/deploy.sh:1584-1607`; no test id.
 
 ##### PLAYBOOK-08 · State: error
@@ -7210,7 +7210,7 @@ cannot reach the refused-refetch path, since its first request fails (bypassing 
 `src/lib/format.test.ts` (`responseErrorMessage`, three tests) asserts the detail with its status, a 401 staying recognisable and the bare
 status fallbacks. On the handler side the five tests named above, `test_cards_from_db_db_failure_propagates` (the helper raises, which
 is not the HTTP 500), `test_evaluate_400_when_neither_conditions_nor_batches` and `test_evaluate_validates_snapshot_shape`; and
-`tests/api/test_route_coverage.py` pins the route's 503 and the evaluation's 422 (`{"snapshot": {}}`) against a dead backend. No test asserts
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route's 503 and the evaluation's 422 (`{"snapshot": {}}`) against a dead backend. No test asserts
 what the page does when the evaluation, the history, the quote, the indicators or the status call fails. Te is ticked on the page test
 of the refused set and the handler and formatter tests above, which leave unasserted what the matrix Gaps list.
 
@@ -7261,7 +7261,7 @@ live fill (PLAYBOOK-05) has none.
 **Tests:** On main the page layer asserts the label (`shows the card set date and age next to the setup count`, exact text; changing
 `1d old` to `1 day old` failed it, mutation) and the refusal of a first request (`a stale card set (503) is reported with the server reason,
 not rendered`); `src/lib/dates.test.ts` (`snapshotAgeLabel`, three tests) and `src/lib/queryData.test.ts` (`dataUnlessError`, three tests)
-assert the label forms and the drop of retained data; on the handler side `tests/api/test_playbook_evaluate.py` asserts the freshness
+assert the label forms and the drop of retained data; on the handler side [`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py) asserts the freshness
 contract: `test_playbook_fresh_set_is_served_with_its_date`, `test_playbook_stale_set_is_refused_not_rendered`, `test_playbook_age_boundary`,
 `test_playbook_cached_set_is_rechecked_on_every_hit`, `test_playbook_age_days_helper` and the as-of pair
 (`test_playbook_as_of_is_judged_against_the_requested_date`, `test_playbook_as_of_bad_date_is_422`), which this page never calls. No page test
@@ -7314,7 +7314,7 @@ PLAYBOOK-05 fails silently under the same 401s (PLAYBOOK-08). The title and the 
   a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on main); no
   code outside the tests registers one, so no behaviour hangs on it, and the flag behind the strip, set on the next line, is not read by that test.
 
-**Tests:** On main: `src/lib/authedFetch.test.ts` as above, `tests/api/test_platform_auth.py` (`test_firebase_requires_valid_token`: a gated
+**Tests:** On main: `src/lib/authedFetch.test.ts` as above, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) (`test_firebase_requires_valid_token`: a gated
 path answers 401 without a token in `firebase` mode and the open paths 200, on a synthetic `/api/secret` route and not on a playbook route)
 and the sign-in screen test above. No test asserts `DataGate`, the strip on this page, the page's 401 form or a 401 on a playbook route. Te
 stays unticked.
@@ -7340,7 +7340,7 @@ stays unticked.
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/reports/list/{ticker} | reports[].phase and reports[].filename are read; the answer's ticker and reports[].path (a `gs://` URI) are typed and never read (types: `src/lib/reports.ts` ReportEntry/ReportListResponse) | no job: the `phase*.md` objects under `raw/reports/` of the bucket, written by `scripts/analysis/phase1_strat_mining.py` to `scripts/analysis/phase7_feedback_loop.py` (`save_report`, into the process's own `reports/` directory) and uploaded outside the repository's code on 2026-04-12 (every object created at 22:41:43 UTC); the daily `phase6-playbook` job saves its three tickers' `phase6_playbook_*.md` in its container only | 24-hour server cache per ticker over a 10-minute listing cache; 60s client staleTime; no age is read or shown (the objects are 172 days old, their text 221) | `useReportList` (inline in `ReportsPage.tsx`) → Picker bar, Report header |
+| GET /api/reports/list/{ticker} | reports[].phase and reports[].filename are read; the answer's ticker and reports[].path (a `gs://` URI) are typed and never read (types: `src/lib/reports.ts` ReportEntry/ReportListResponse) | no job: the `phase*.md` objects under `raw/reports/` of the bucket, written by [`scripts/analysis/phase1_strat_mining.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/analysis/phase1_strat_mining.py) to [`scripts/analysis/phase7_feedback_loop.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/analysis/phase7_feedback_loop.py) (`save_report`, into the process's own `reports/` directory) and uploaded outside the repository's code on 2026-04-12 (every object created at 22:41:43 UTC); the daily `phase6-playbook` job saves its three tickers' `phase6_playbook_*.md` in its container only | 24-hour server cache per ticker over a 10-minute listing cache; 60s client staleTime; no age is read or shown (the objects are 172 days old, their text 221) | `useReportList` (inline in `ReportsPage.tsx`) → Picker bar, Report header |
 | GET /api/reports/{ticker}/{phase} | plain-text markdown body (`text/plain`), rendered through `renderReportHtml` (`src/lib/reports.ts`; marked with GFM and no soft breaks, then DOMPurify with its defaults); each text opens with its own `Generated:` line, which the page does not read | the same objects and the same absence of a job | 24-hour server cache per ticker and phase; 5min client staleTime | `useReportContent` (`ReportViewer`, inline in `ReportsPage.tsx`) → Report body |
 | store: ticker | activeTicker (recentTickers is stored with it) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette): this page and the header have no picker of their own | | the label, the list request and the body request |
 
@@ -7386,8 +7386,8 @@ cache, `download_text`, `_download_markdown`, the handlers, their 24-hour caches
 A body that names a failure says how it was made: "injected" means the stand-in raised (a storage listing or download error), and a
 status or a payload "answered by the browser" was fabricated by the browser for that request. "Mutation" means one line of the product
 code changed in that scratch copy and the committed spec run, "handler mutation" one line of `platform/api/routers/playbook.py` changed
-in a scratch copy of stocks and the report tests of `tests/api/test_platform_api.py`, `tests/api/test_route_coverage.py`,
-`tests/lib/test_production_readiness.py` and `tests/api/test_threadpool_races.py` run; "read" marks what was only read in the code and
+in a scratch copy of stocks and the report tests of [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py),
+[`tests/lib/test_production_readiness.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_production_readiness.py) and [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py) run; "read" marks what was only read in the code and
 "V evidence" the comment on stocks issue 1234 that the matrix links.
 
 ##### REPORTS-01 · Picker bar
@@ -7451,24 +7451,24 @@ tests). `src/mocks/contract.test.ts` finds the page's list call (`src/routes/Rep
 (`every /api request the app makes (verb + path) is a declared operation`: the literal renamed to `/api/reports/lst/` failed it) and validates the
 shared mock `MOCK_REPORT_LIST` against the response schema of that operation (`every mock payload for a typed 200 response matches its response schema
 (no undeclared fields)`: a filename that is a number, an undeclared field, a renamed filename, a missing path, a ticker that is a number and a removed
-mock route each failed it). `tests/api/test_openapi_snapshot.py` (`test_committed_openapi_snapshot_matches_app`) fails when the route or the
+mock route each failed it). [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`) fails when the route or the
 `ReportListResponse` model changes without a regenerated `platform/api/openapi.json` (the route renamed, a field's type changed, a field added and the
 response model dropped each failed it, and a change of behaviour alone, the body handler no longer lower-casing the phase, passed). Neither file
-validates an entry that the handler builds. The list handler is asserted weakly: `TestPlaybookAPI.test_reports_list` (`tests/api/test_platform_api.py`) asserts a 200 whose `ticker` is `IWM`
+validates an entry that the handler builds. The list handler is asserted weakly: `TestPlaybookAPI.test_reports_list` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)) asserts a 200 whose `ticker` is `IWM`
 and whose `reports` hold the filename of a blob the stubbed listing returns; an answer that names the ticker in lower case, or an own entry whose
 filename loses its `.md`, failed it, while deleting the ticker-specific loop passed (the stub returns the same blob for both patterns, so the combined
 loop lists it), deleting the combined loop passed, and so did reversing the order, keeping the ticker suffix in `phase`, giving a combined entry's
 `phase` its extension, changing `path`, listing an own file twice and listing another ticker's files (handler mutations). `test_reports_list_404_when_empty`
-and the list row of `test_operation_answers` (`tests/api/test_route_coverage.py`) assert the 404 for an empty listing and against a dead backend (a 200
-with an empty list failed both). `test_report_listing_endpoint_serves_phases` (`tests/lib/test_production_readiness.py`) accepts 200, 404, 500, 502 or
+and the list row of `test_operation_answers` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) assert the 404 for an empty listing and against a dead backend (a 200
+with an empty list failed both). `test_report_listing_endpoint_serves_phases` ([`tests/lib/test_production_readiness.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_production_readiness.py)) accepts 200, 404, 500, 502 or
 503 and checks the shape only for a 200, so without storage credentials it passes on the 404 it gets (executed). `test_a_concurrent_report_list_hit_is_served_not_503ed`
-(`tests/api/test_threadpool_races.py`) asserts that a cached list is served, without listing the bucket, while a peer holds the claim. No test asserts
+([`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py)) asserts that a cached list is served, without listing the bucket, while a peer holds the claim. No test asserts
 the real list's order, the values of `phase` and `path` that the handler builds for an entry, the merge of the ticker's own and the combined reports, the options of an eleven-entry list,
 the 24-hour cache or the 503 of a concurrent cold request. `route /reports loads without fatal errors` (`tests/shared/navigation.spec.ts`) mounts the
 page and earns nothing. Te stays unticked.
 
 **Code:** `src/routes/ReportsPage.tsx:13-23,71-94,96-160`, `src/lib/reports.ts:7-59`, `src/lib/reports.test.ts`, `src/mocks/contract.test.ts`, `src/mocks/reports.ts`;
-`platform/api/routers/playbook.py:367-437`, `platform/api/gcs_reader.py:72-103`, `platform/api/schemas.py:713-721`, `tests/api/test_openapi_snapshot.py`; accessible names `Select report`, `Previous report` and
+`platform/api/routers/playbook.py:367-437`, `platform/api/gcs_reader.py:72-103`, `platform/api/schemas.py:713-721`, [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py); accessible names `Select report`, `Previous report` and
 `Next report`; no test ids.
 
 ##### REPORTS-02 · Report header
@@ -7506,7 +7506,7 @@ loads, fails or is empty (REPORTS-06, REPORTS-07, REPORTS-08); replaced with the
 **Tests:** On main two page tests assert the header: `picker lists every phase report and lands on the first` asserts that a heading named exactly `Phase 1:` is
 visible (showing the raw phase in the header failed it, mutation), and `selecting a phase from the picker switches the report` asserts the heading
 `Phase 6: Playbook` and the text `phase6_playbook_iwm.md` (showing the phase in place of the filename failed it, mutation). The `filename` field the line
-shows is asserted by `test_reports_list` (`tests/api/test_platform_api.py`; an own entry whose filename loses its `.md` failed it), the `phase` field the
+shows is asserted by `test_reports_list` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py); an own entry whose filename loses its `.md` failed it), the `phase` field the
 label is made from by no test (an own entry that keeps the ticker suffix and a combined entry whose `phase` keeps its extension both passed, handler
 mutations), and no Vitest test covers `phaseLabel`. No test on main asserts the header for a combined report, for a real phase name or the header staying
 under a failed body; the test added on this branch for REPORTS-08 asserts the last and waits for a CI run that includes the branch's tests. Te stays
@@ -7570,22 +7570,22 @@ not available.`); nothing marks the text old (REPORTS-09); REPORTS-10 replaces t
 markdown unrendered failed it, mutation); the four tests of `src/routes/reportsFixtureRender.test.ts` assert, on the fixture, the headings, the GFM
 table (the reason `marked` is configured with `gfm: true`), the list items and the absence of `<script` and `javascript:`; `src/routes/reportsSanitize.test.ts`
 asserts that a script tag and an `onerror` handler are removed and the heading kept, and nothing about `<style>`, `<form>` or images. The body handler:
-`TestReportMarkdownAPI.test_returns_plaintext_markdown_when_blob_exists` (`tests/api/test_platform_api.py`) asserts a 200, `text/plain` and the stubbed
+`TestReportMarkdownAPI.test_returns_plaintext_markdown_when_blob_exists` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)) asserts a 200, `text/plain` and the stubbed
 text (serving JSON failed it) without asserting which object was asked for; `test_returns_404_when_no_matching_phase` and the body row of
-`test_operation_answers` (`tests/api/test_route_coverage.py`) assert the 404 for no match and against a dead backend (a 200 with an empty body failed
+`test_operation_answers` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) assert the 404 for no match and against a dead backend (a 200 with an empty body failed
 both). Skipping the ticker-specific lookup, taking the shortest name instead of the longest, keeping the `raw/` prefix in the path, answering a download
 error as 500 or a missing object as 502 and never filling the 24-hour cache each passed every report test (handler mutations). At the page, requesting
 the body for another ticker failed the page test, and a body that is always the first report's, a suffix on the body request and a select that always
 shows the first entry passed all seven tests of the spec on main (mutations; the test added on this branch for REPORTS-05 fails all three).
 `src/mocks/contract.test.ts` finds the page's body call (`src/routes/ReportsPage.tsx:29`) among the declared operations (the literal renamed to
 `/api/report/` failed it), but the operation answers a bare `text/plain` string, so its payload test validates no body: a mock-mode body route
-removed, or answering a JSON object, passed all fourteen tests. `tests/api/test_openapi_snapshot.py` fails when the route or its docstring changes
+removed, or answering a JSON object, passed all fourteen tests. [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) fails when the route or its docstring changes
 without a regenerated snapshot (the route gaining a path segment and a changed docstring each failed it) and asserts no behaviour. No test on
 main asserts that the body follows a choice (the spec's mock answers every phase with the same markdown), which object the handler serves for a phase, the
 24-hour cache, or what the sanitizer does with a style or form element. Te stays unticked.
 
 **Code:** `src/routes/ReportsPage.tsx:25-36,38-69,185-196`, `src/lib/reports.ts:62-68`, `src/index.css:167-286,537-538`, `src/mocks/contract.test.ts`;
-`platform/api/routers/playbook.py:112-120,440-498`, `platform/api/gcs_reader.py:75-103,181-188`, `tests/api/test_openapi_snapshot.py`; no test ids (the body is the
+`platform/api/routers/playbook.py:112-120,440-498`, `platform/api/gcs_reader.py:75-103,181-188`, [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py); no test ids (the body is the
 `.prose-report` element).
 
 ##### REPORTS-04 · Select a report
@@ -7727,7 +7727,7 @@ requested, and the box says `Select a report above`).
 
 **Tests:** On main: `an empty list shows the honest empty state` asserts the message `No reports yet. Run the analysis pipeline to generate them.` and the disabled
 select for a 200 payload, `{ticker: 'IWM', reports: []}`, that the handler never sends (changing the message and making the select never disabled each
-failed it, mutations), and `test_reports_list_404_when_empty` (`tests/api/test_platform_api.py`) asserts the 404 that the handler does send (a 200 with an
+failed it, mutations), and `test_reports_list_404_when_empty` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)) asserts the 404 that the handler does send (a 200 with an
 empty list failed it and the list row of `test_operation_answers`, which pins the 404 against a dead backend). No test shows the page for the real 404;
 the error test of REPORTS-08 uses a 500, and the same branch handles both. Te stays unticked: the one state the page can show for an empty listing is
 the error state, and the empty copy is reachable only by a response the handler never sends.
@@ -7778,8 +7778,8 @@ the body only. The page has no retry button for either.
 
 **Tests:** On main: `a failed list load shows the error banner, not an empty picker (Rule 4)` asserts the banner text `Could not load the report list for IWM.` for a
 list answering 500 (never drawing the banner failed it, mutation) and nothing about the disabled select, the missing header or the prompt below. The
-handler's statuses: the two report rows of `test_operation_answers` (`tests/api/test_route_coverage.py`) pin 404 for both routes against a dead backend (a
-200 for an empty list or an empty body failed them), and the two 404 tests of `tests/api/test_platform_api.py` assert the list's and the body's 404;
+handler's statuses: the two report rows of `test_operation_answers` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) pin 404 for both routes against a dead backend (a
+200 for an empty list or an empty body failed them), and the two 404 tests of [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) assert the list's and the body's 404;
 answering a download error as 500 or a missing object as 502, and answering a concurrent cold request as an empty 200, each passed every report test
 (handler mutations). No test on main asserts the body's `Report not available.`, an empty body, a 502 or 503 answer or the retry. The test added on this
 branch, `a failed report body shows "Report not available." under the report header, not a blank page` (solyra `e422a8a`), answers the body 502 and asserts the
@@ -7861,7 +7861,7 @@ the list banner, the empty message and the body message that share the gate (REP
   main); no code outside the tests registers one, so no behaviour hangs on it, and the flag behind the strip, set on the next line, is not
   read by that test.
 
-**Tests:** On main: `src/lib/authedFetch.test.ts` as above, `tests/api/test_platform_auth.py` (`test_firebase_requires_valid_token`: a
+**Tests:** On main: `src/lib/authedFetch.test.ts` as above, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) (`test_firebase_requires_valid_token`: a
 gated path answers 401 without a token in `firebase` mode and the open paths 200, on a synthetic `/api/secret` route and not on a report
 route) and the sign-in screen test above. No test asserts `DataGate`, the strip on this page, the page's 401 form or a 401 on a report
 route. Te stays unticked.
@@ -7966,7 +7966,7 @@ review state live in `SignalsPage` and the review store, so they survive the pic
 Score sort still applied to SPY's rows. A pick of a search row badged `new`, with a healthy coverage lookup, also
 posts the symbol to the watchlist (`src/components/shared/TickerCombobox.tsx:259-291`). That write is owned by the signed-in user's
 email, or by `default` when the request carries no identity (`platform/api/routers/insights.py:57-67,621,629`),
-and `historical-signals-watchlist` reads only the `default` owner (`scripts/run_historical_signals.py:129-140`
+and `historical-signals-watchlist` reads only the `default` owner ([`scripts/run_historical_signals.py:129-140`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_historical_signals.py#L129-L140)
 calls `load_watchlist()` with no argument, whose owner defaults to `default`, `gcp/fetchers/_watchlist.py:411-412,457-458`).
 Executed 2026-10-01: the job's ticker resolution called `load_watchlist()` with no arguments, and the owner an add
 by a signed-in request resolves to was that user's email, `default` without one. So a signed-in user's pick gets
@@ -8005,10 +8005,10 @@ after it fails with no cached answer (SIGNALS-08, SIGNALS-10), the cached count 
   requested and the filters and the sort stay (executed; no test mounts the picker on `/signals`).
 - Given the shared component, then the picker is asserted by the twenty tests of
   `tests/dashboard/ticker-combobox.spec.ts` (on `/dashboard`, on main at eca7078), `src/components/shared/tickerCombobox.test.ts`
-  and `src/stores/tickerStore.test.ts`, and its three handlers by `tests/api/test_market_coverage.py`,
-  `tests/api/test_ticker_info.py` and `TestWatchlistMutationAPI`.
+  and `src/stores/tickerStore.test.ts`, and its three handlers by [`tests/api/test_market_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_coverage.py),
+  [`tests/api/test_ticker_info.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_ticker_info.py) and `TestWatchlistMutationAPI`.
 - Given a signed-in user's add, then the router passes that user's email to the write
-  (`test_add_scopes_to_signed_in_user`, `tests/api/test_platform_api.py`, with the write patched out), and the
+  (`test_add_scopes_to_signed_in_user`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), with the write patched out), and the
   nightly job does not read that owner (executed 2026-10-01); no test asserts that a signed-in user's pick reaches
   signals.
 - Given no token, then `GET /api/signals/IWM?limit=5000` and the three picker routes answer 401 on staging (V
@@ -8021,14 +8021,14 @@ or the `shown` figure; the filter and sort test added on this branch in solyra c
 and, after a PUT, `IWM · 3 signals · 1 shown` (it has not run in CI). The picker is covered as above (the same component run on the Dashboard, never on this page). On
 the handler side `test_signals_live` asserts `count`, `source`, the stringified `time` and `ticker` of the
 envelope, `test_signals_empty_for_old_date` the empty envelope, `TestSignalsAPIFailsLoud` the 503 and the 500, and
-`tests/api/test_route_coverage.py` pins `GET /api/signals/IWM` at 503, the search at 200, coverage at 503 and the
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `GET /api/signals/IWM` at 503, the search at 200, coverage at 503 and the
 watchlist add at 503 against a dead backend. Te stays unticked: the label, the count and the picker's wiring on
 this page are asserted by no test on main.
 
 **Code:** `src/routes/SignalsPage.tsx:51-64,134-198`, `src/components/shared/TickerCombobox.tsx:147-513`,
 `src/hooks/useTickerSearch.ts:55-125`, `src/stores/tickerStore.ts:14-34`;
 `platform/api/routers/signals.py:221-251`, `platform/api/routers/insights.py:57-67,544-560,599-674`,
-`platform/api/main.py:1218-1266`, `scripts/run_historical_signals.py:87,129-140,495-509`,
+`platform/api/main.py:1218-1266`, [`scripts/run_historical_signals.py:87,129-140,495-509`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_historical_signals.py#L87),
 `gcp/fetchers/_watchlist.py:344-387,411-474`; test ids `ticker-combobox`, `ticker-combobox-panel`,
 `ticker-combobox-input`, `ticker-option-<SYM>`; the title and the label carry none.
 
@@ -8066,7 +8066,7 @@ container (`gcp/trade_logger.py:119-129`), so `log_trade` returns, the monitor l
 `SignalMonitor._persist_signal_alert` and `TradeLogger` with only `gcp.database.upsert_dataframe` replaced (no
 database, a temporary working directory): a `ConnectionError` on the `trades` upsert left
 `persist_trade_failure_count` at 0, wrote the Parquet file and logged `Trade logged`; a `KeyError` set it to 1, wrote
-no file and logged the failure. No job path reads the counter (only `tests/gcp/test_signal_monitor_persist.py:295`
+no file and logged the failure. No job path reads the counter (only [`tests/gcp/test_signal_monitor_persist.py:295`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_signal_monitor_persist.py#L295)
 does), so whether any fire in the window was lost either way is not checked (matrix Gaps).
 
 Four properties of the block that the label does not say (executed 2026-10-01):
@@ -8120,15 +8120,15 @@ failed refetch leaves the cached tiles, unmarked) and SIGNALS-12.
 - Given review mode, then the block is unchanged (executed).
 - Given the handler, then it reads only live trades and answers a defect with 500 and an outage with 503
   (`test_summary_restricts_to_live_trades`, `test_summary_is_not_a_flat_zero_when_the_query_fails`,
-  `test_summary_is_503_when_cloud_sql_is_unreachable`, `tests/api/test_analytics_summary.py`, on main); no test
+  `test_summary_is_503_when_cloud_sql_is_unreachable`, [`tests/api/test_analytics_summary.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_analytics_summary.py), on main); no test
   asserts `_compute_stats` through the route, the win and loss classification, the profit factor or the call and
   put counts.
 - Given no token, then `GET /api/analytics/summary/IWM?days=90` answers 401 on staging (V evidence).
 
 **Tests:** On main, the page test above asserts three labels and one value, not the other tiles, the sub-lines, the
-tones or the units. `tests/api/test_analytics_summary.py` asserts the query's `from trades` and `run_kind = 'live'` and its
+tones or the units. [`tests/api/test_analytics_summary.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_analytics_summary.py) asserts the query's `from trades` and `run_kind = 'live'` and its
 parameters on an empty frame (status 200 only), the 500 and the 503 and, by source inspection, the strict reader;
-`tests/api/test_route_coverage.py` pins the route at 503 against a dead backend and `POST /api/analytics/trade-stats`
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 503 against a dead backend and `POST /api/analytics/trade-stats`
 at 200 for an empty list. No test asserts a computed figure of the summary. Te stays unticked.
 
 **Code:** `src/routes/SignalsPage.tsx:159-160,209-220`, `src/hooks/useTradeAnalytics.ts:16-47`,
@@ -8255,7 +8255,7 @@ all live. `strategy` is neither selected nor filtered, and every one of the 1,72
 query is a 503 for an outage and a 500 for a defect (`:59-83`), and only with Cloud SQL unconfigured does it read the
 legacy GCS parquets (`:90-137,253-308`), never as a fallback. Producer: `historical-signals-watchlist`
 (01:00 ET Tue to Sat) resumes each active `default`-owner watchlist ticker from its latest `entry_time` (a 30-day
-bootstrap when it has none, `scripts/run_historical_signals.py:167-245`) and inserts with `ON CONFLICT (ticker, entry_time,
+bootstrap when it has none, [`scripts/run_historical_signals.py:167-245`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_historical_signals.py#L167-L245)) and inserts with `ON CONFLICT (ticker, entry_time,
 strategy) DO NOTHING` (`gcp/historical_signals.py:233-236`). Production on 2026-10-01 (00:28 ET): IWM's newest `entry_time` 2026-09-29 23:21
 UTC, written 2026-09-30 05:03 UTC, 190,159 rows (QQQ 1,327,360 rows to 23:38, SPY 30,065 to 23:39); the scheduler
 `ENABLED` with its last attempt 2026-09-30 05:00 UTC and its newest execution `historical-signals-watchlist-tqxh5`
@@ -8271,7 +8271,7 @@ card replaces the table), SIGNALS-11 and SIGNALS-12.
 - Given a 200 with rows, then the table draws the first 500 rows newest first with the cell formats above and the
   footnote `Showing first 500 of <N> signals` when more are left (executed 2026-10-01).
 - Given the handler, then it answers `count`, `source` `cloud_sql`, the rows with `time` as a string and `ticker`
-  set (`test_signals_live`, `tests/api/test_platform_api.py`, on main), an empty envelope with one query for a zero
+  set (`test_signals_live`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), on main), an empty envelope with one query for a zero
   count (`test_signals_empty_for_old_date`) and a 503 or 500 for a failed query (`TestSignalsAPIFailsLoud`). The
   newest-N read, the ascending order and the direction filter (`platform/api/routers/signals.py:165-170,188-212`) are in the SQL and are
   read here, not asserted: the test class returns pre-filtered mock rows, so `test_signals_with_direction_filter`
@@ -8294,7 +8294,7 @@ asserts what the table draws.
 
 **Code:** `src/routes/SignalsPage.tsx:25-64,66-131,163-183,307-352`, `src/components/primitives/index.tsx:60-68`;
 `platform/api/routers/signals.py:59-83,140-251`, `platform/api/schemas.py:607-632`,
-`scripts/run_historical_signals.py:167-245`, `gcp/historical_signals.py:121-124,233-236`, `gcp/schema.sql:2137-2180`; no
+[`scripts/run_historical_signals.py:167-245`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_historical_signals.py#L167-L245), `gcp/historical_signals.py:121-124,233-236`, `gcp/schema.sql:2137-2180`; no
 test id on the table.
 
 ##### SIGNALS-05 · Filter and sort
@@ -8488,7 +8488,7 @@ SIGNALS-09's message (executed with a zero-row answer).
 - Given no token, then `GET /api/signals/IWM?limit=5000&end_date=2026-09-30&end_time=16:00` answers 401 on staging
   (V evidence, 2026-10-01).
 
-**Tests:** On main, only the three handler tests above and `tests/api/test_route_coverage.py` (no date parameters, 503
+**Tests:** On main, only the three handler tests above and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (no date parameters, 503
 against a dead backend); no test drives the Replay control on this page. The new test, added on this branch in
 solyra commit 8ffbb54, passed as written and was RED against five mutations made in a scratch copy: `end_date` not
 sent (the query read `?limit=5000&end_time=16%3A00`), `end_time` not sent (`?limit=5000&end_date=2026-04-24`), `To`
@@ -8569,7 +8569,7 @@ header row stays and so does the sort chevron on `Time` (executed).
   message is asserted on this branch by the filter and sort test at `8+`).
 - Given no closed trades, then the Performance block is not drawn (executed with the zero-trade summary).
 - Given a count of zero, then the handler answers `signals: []` and runs one query (`test_signals_empty_for_old_date`,
-  `tests/api/test_platform_api.py`, on main).
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), on main).
 
 **Tests:** On main, `shows empty state when no alerts` answers `**/api/signals/IWM*` with `MOCK_SIGNALS_EMPTY` and
 asserts that text matching `/no.*signal|empty/i` is visible: exactly one element matches today (executed), the
@@ -8640,9 +8640,9 @@ is the error state of a table the page still holds data for (SIGNALS-11).
 - Given an infrastructure failure of the read, then the handler answers 503, given a defect then 500, and given no
   database it answers 503 and never serves the parquets (`test_signals_is_503_when_the_cloud_sql_query_fails`,
   `test_signals_query_defect_is_500_not_a_fabricated_503`, `test_router_reads_through_the_strict_query_only`,
-  `tests/api/test_platform_api.py`; `test_summary_is_not_a_flat_zero_when_the_query_fails` and
-  `test_summary_is_503_when_cloud_sql_is_unreachable`, `tests/api/test_analytics_summary.py`; all on main), and
-  `tests/api/test_route_coverage.py` pins both routes at 503 against a dead backend.
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py); `test_summary_is_not_a_flat_zero_when_the_query_fails` and
+  `test_summary_is_503_when_cloud_sql_is_unreachable`, [`tests/api/test_analytics_summary.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_analytics_summary.py); all on main), and
+  [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins both routes at 503 against a dead backend.
 - Given a failed request, then the card carries neither the status nor the server's reason (executed; matrix Gaps).
 
 **Tests:** On main, the handler tests above and the route-coverage rows. No test asserts the card, the label's
@@ -8706,7 +8706,7 @@ turns it into SIGNALS-10's card over cached data.
 not have. Te stays unticked.
 
 **Code:** `src/routes/SignalsPage.tsx:62,152-156,193,279-281,294-299,307`, `src/hooks/useTradeAnalytics.ts:45`;
-`gcp/deploy.sh:5060` (the schedule), `scripts/run_historical_signals.py:167-245`; no test id on the tag.
+`gcp/deploy.sh:5087` (the schedule), [`scripts/run_historical_signals.py:167-245`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_historical_signals.py#L167-L245); no test id on the tag.
 
 ##### SIGNALS-12 · State: permission
 
@@ -8753,7 +8753,7 @@ SIGNALS-04), of the label's count (SIGNALS-01) and of review mode's request (SIG
   `src/lib/authedFetch.test.ts`, on main); no code outside the tests registers one, so no behaviour hangs on it, and the
   flag behind the strip, set on the next line, is not read by that test.
 
-**Tests:** On main: `src/lib/authedFetch.test.ts` as above, `tests/api/test_platform_auth.py`
+**Tests:** On main: `src/lib/authedFetch.test.ts` as above, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)
 (`test_firebase_requires_valid_token`: a gated path answers 401 without a token in `firebase` mode and the open paths 200,
 on a synthetic `/api/secret` route and not on a signals route) and the sign-in screen test above. No test asserts
 `DataGate`, the strip on this page, the page's 401 presentation or a 401 on a signals route. Te stays unticked.
@@ -8916,11 +8916,11 @@ label flips between Overview and Session when the date is selected/cleared` fill
 label `Session: 04/24/2026`, presses `clear-date` and asserts `Overview: all dates`; it asserts the label and the button, not that the tiles
 or the table follow (JOURNAL-11). The picker is asserted by `tests/dashboard/ticker-combobox.spec.ts` (on `/dashboard`),
 `src/components/shared/tickerCombobox.test.ts` and `src/stores/tickerStore.test.ts`, never on this page, and its three handlers by
-`tests/api/test_market_coverage.py`, `tests/api/test_ticker_info.py` and `TestWatchlistMutationAPI` (`tests/api/test_platform_api.py`). The own-journal handler is asserted for
+[`tests/api/test_market_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_market_coverage.py), [`tests/api/test_ticker_info.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_ticker_info.py) and `TestWatchlistMutationAPI` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)). The own-journal handler is asserted for
 its scoping (`test_get_is_scoped_to_user`, `test_two_users_are_isolated`, `test_open_mode_defaults_to_local` and
-`test_auth_mode_db_failure_fails_closed`, `tests/api/test_journal_user_scoping.py`: the SQL text and the `user_email` parameter handed to a
+`test_auth_mode_db_failure_fails_closed`, [`tests/api/test_journal_user_scoping.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_user_scoping.py): the SQL text and the `user_email` parameter handed to a
 mocked database layer, and the 503) and for its envelope (`TestJournalAPI.test_journal_list` asserts the keys `trades` and `source`,
-`tests/api/test_platform_api.py`); no test asserts the label, the date input's `min` and `max`, a typed date outside the list or the page's
+[`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)); no test asserts the label, the date input's `min` and `max`, a typed date outside the list or the page's
 state across a ticker pick. Te stays unticked: the title and the scope label are asserted and the storage label, the row's other element,
 is not.
 
@@ -9017,12 +9017,12 @@ draws a TP line from take_profits` asserts the two `rail-sl` texts, a visible ca
 canvas and not a drawn line. `exitMarkerSpec` is asserted by `src/components/journal/TradeMarkingChart.test.ts` (an unavailable return reads
 `Exit` and an em dash in neutral gray, a real one a signed dollar label, the Examples layer gray and prefixed), `journalRowToTradeEntry` by
 `src/hooks/journalChartTrades.test.ts` and `src/hooks/journalFixtureMapping.test.ts`, and the length of `equityPoints` (never its values) by
-`src/routes/journalStats.test.ts`. On the handler side `tests/api/test_journal_examples.py` asserts the union and its order, the field mapping
+`src/routes/journalStats.test.ts`. On the handler side [`tests/api/test_journal_examples.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_examples.py) asserts the union and its order, the field mapping
 of a pipeline row (and with it the ×100 conversion: a stored 0.01 is expected as 1.0, the premise that production's rows contradict), the
 admin-only scope, the 503s and, for the alert join, the text of its SQL (`LEFT JOIN LATERAL`, the live filter, the `sa2.id` tie-break key)
 with a Python stand-in that replays the tie-break, over in-memory frames and never a real query;
-`tests/api/test_intraday_loader_conventions.py` and `TestMarketDataAPI` in `tests/api/test_platform_api.py` assert the bars (CHARTS-02), and
-`tests/api/test_route_coverage.py` pins the examples route at 503, the trades route at 200, the dates route at 503, the data route at 404 and
+[`tests/api/test_intraday_loader_conventions.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_intraday_loader_conventions.py) and `TestMarketDataAPI` in [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py) assert the bars (CHARTS-02), and
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the examples route at 503, the trades route at 200, the dates route at 503, the data route at 404 and
 `GET /api/config/market-hours` at 200 against a dead backend. No test on main asserts a drawn candle, marker or line, the RTH filter, the
 timeframe, the equity curve's values or the rail's empty copy. Te stays unticked.
 
@@ -9100,7 +9100,7 @@ reads zeros and dashes for a session with none (above). It shows no age (JOURNAL
 **Tests:** On main: the two Playwright tests above and the Examples-default test assert the figures named, on mocked rows; the 17 cases of
 `src/routes/journalStats.test.ts` assert the aggregation (the length of `equityPoints`, not its values) and `src/lib/risk.test.ts` the ratio;
 `MOCK_MIXED_TRADES carries the exact aggregate the Task 5.3 spec asserts` (`src/hooks/journalFixtureMapping.test.ts`) ties the fixture to the
-figures. The feed is asserted by `tests/api/test_journal_examples.py` and `tests/api/test_journal_phase2.py` as JOURNAL-02 names them, with
+figures. The feed is asserted by [`tests/api/test_journal_examples.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_examples.py) and [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py) as JOURNAL-02 names them, with
 the same ×100 premise in `test_examples_pipeline_row_field_mapping` (a stored 0.01 is expected as 1.0), so the Examples figures the tiles
 show are asserted at the handler only under the unit that production's rows contradict. No test asserts the tone of a null tile, the
 session-with-no-rows strip or the figures on the production-shaped rows. Te stays unticked.
@@ -9181,7 +9181,7 @@ matrix Gaps). The panel is outside the Examples view, so a user on Examples neve
   failure surfaces as a loud inline error with the server detail`, the same file).
 - Given fewer than ten closed `manual` or `chart` trades, then the handler answers 200 `unavailable` with `need >= 10 closed trades, have <n>` and calls
   neither the miner nor the writes, and given ten closed rows and three open ones, then the miner receives exactly the ten (`test_endpoint_fewer_than_ten_closed_trades_returns_unavailable`,
-  `test_endpoint_excludes_open_trades_before_mine_style`, `tests/lib/test_style_walk_forward.py`, run against stub loaders and a stub validator).
+  `test_endpoint_excludes_open_trades_before_mine_style`, [`tests/lib/test_style_walk_forward.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_style_walk_forward.py), run against stub loaders and a stub validator).
 - Given no profile, then 200 `unavailable` with `mining threshold` in the reason and no write; given a profile that fires no trade in any fold, then 200
   `unavailable` with `zero trades` in the reason and no write; given a success, then the response carries the top profile with the expectancy as a
   percent (0.0025 stored as 0.25), the win rate untouched, and exactly two writes, `user_style_results` with the 10 trades and the 42 test trades and
@@ -9193,9 +9193,9 @@ matrix Gaps). The panel is outside the Examples view, so a user on Examples neve
 
 **Tests:** On main the four Playwright tests above, on `MOCK_MINE_STYLE_SUCCESS` and `MOCK_MINE_STYLE_UNAVAILABLE` and a hand-made 503, assert the
 panel's primary behaviour: when it shows, the three answers and what each draws, the chips, the sample sizes, the validation line, the `staged` badge and
-the request body. Six handler tests in `tests/lib/test_style_walk_forward.py` assert the endpoint with `_replay_journal_query`, the bar loaders, `mine_style`
-and the validator replaced by stubs (the percent conversion, the open-trade exclusion, the floor of ten, the two inserts, the 503), and `tests/lib/test_style_miner.py`
-the miner (ten tests) and the rest of the file the profile-to-signal conversion and the fold mechanics. `tests/api/test_route_coverage.py` pins the route at
+the request body. Six handler tests in [`tests/lib/test_style_walk_forward.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_style_walk_forward.py) assert the endpoint with `_replay_journal_query`, the bar loaders, `mine_style`
+and the validator replaced by stubs (the percent conversion, the open-trade exclusion, the floor of ten, the two inserts, the 503), and [`tests/lib/test_style_miner.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_style_miner.py)
+the miner (ten tests) and the rest of the file the profile-to-signal conversion and the fold mechanics. [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at
 200 against a dead backend, which is the swallowed read. `styleConditionLabel` is asserted by `src/hooks/journalChartTrades.test.ts` (`styleConditionLabel`).
 No test asserts the pending state, the idle text, the ticker remount, the red box on a non-JSON body, the `Stability <x>%` form, the six-month loader or
 a run on real tables, the real answer for a Cloud SQL failure (the outage reading above passes through unasserted, and the route-coverage pin
@@ -9297,8 +9297,8 @@ dates list is in the table and absent from the rail and the chart (JOURNAL-02).
 
 **Tests:** On main the five Playwright tests above assert, on mocked rows, the note, the active and practice badges, the plan columns' values, the stop text and the wall-clock time; `src/routes/journalNullSafety.test.ts` asserts `tsToDisplay` (null,
 space and `T` forms, offsets ignored) and the CSV helpers, `src/lib/risk.test.ts` the ratio. The Examples rows and every number the Return column shows for them are asserted at the handler only under the premise that the stored return is a fraction
-(`tests/api/test_journal_examples.py`, JOURNAL-02 and JOURNAL-03), and no test asserts the table on production-shaped rows, the Return column's text, the delete button (pressing it, disabling it, its failure), the `Loading journal…` text or the 813-row weight. The owner scoping of the own read and of the
-delete is asserted against a mocked database layer (`test_get_is_scoped_to_user`, `test_delete_is_scoped_to_owner`, `tests/api/test_journal_user_scoping.py`). Te stays unticked: the default view's rows and the delete are not asserted at the page and the handler together.
+([`tests/api/test_journal_examples.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_examples.py), JOURNAL-02 and JOURNAL-03), and no test asserts the table on production-shaped rows, the Return column's text, the delete button (pressing it, disabling it, its failure), the `Loading journal…` text or the 813-row weight. The owner scoping of the own read and of the
+delete is asserted against a mocked database layer (`test_get_is_scoped_to_user`, `test_delete_is_scoped_to_owner`, [`tests/api/test_journal_user_scoping.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_user_scoping.py)). Te stays unticked: the default view's rows and the delete are not asserted at the page and the handler together.
 
 **Code:** `src/routes/JournalPage.tsx:65-83,262-283,811-957`, `src/lib/risk.ts`, `src/hooks/useJournalChartTrades.ts:450-464`; `platform/api/routers/journal.py:426-452,882-922,1253-1307`; test ids `table-entry-time`, `table-stop-cell`.
 
@@ -9341,14 +9341,14 @@ one active IWM chart mark of 2026-07-08 among them; nothing was written for this
 - Given the real handlers, then the same flow stores one active `chart` row with the clicked price and the first target, the page shows it in the rail, the tiles and the table, and an exit click closes it with a computed return and status (executed; the exit has no page test on main).
 - Given a post without an exit, then the handler returns a null `return_pct` and status `active`; given four targets, then 422; given an exit on an active trade, then the return follows the direction's sign, and given a trade already closed, then 409, and given an unknown id, then 404
   (`test_create_active_trade_without_exit_returns_null_return_pct`, `test_take_profits_capped_at_three`, `test_patch_close_computes_percent_return_and_status`, `test_patch_close_conflicts_on_already_closed`, `test_patch_close_404_for_unknown_trade`, `test_patch_close_on_put_inverts_return_sign`,
-  `tests/api/test_journal_phase2.py`, run in the local-file branch; `test_patch_close_race_guard_returns_409_when_concurrent_close_wins` and `test_patch_close_succeeds_when_update_matches_one_row`, the same file, with patched database calls).
+  [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py), run in the local-file branch; `test_patch_close_race_guard_returns_409_when_concurrent_close_wins` and `test_patch_close_succeeds_when_update_matches_one_row`, the same file, with patched database calls).
 - Given a mark or an exit whose request fails, then the page should say so (executed: it does not, matrix Gaps, solyra#76).
 - Given the chart has no bars, then `Mark Entry` should say why it cannot start (executed: it does nothing).
 - Given no token, then both routes answer 401 on staging (V evidence).
 
 **Tests:** On main one Playwright test drives the entry flow on the page against mocked routes and asserts the prompts, the post's `ticker`, `direction` and `source` and the flip to My journal; the exit step, the stop click, the request's prices and times, the rail and table after the answer and every failure are not asserted
 at the page. `src/hooks/journalChartTrades.test.ts` asserts the date and time the post is built from (`epochToJournalDateTime`) and the mapping back (`journalRowToTradeEntry`, including its round trip). The handler tests above run the create and close handlers in the local-file branch, which production does not use, or against patched calls
-(`TestJournalCRUD`, `tests/api/test_platform_api.py`, the Cloud SQL branch): no test runs the insert or the update against a table. The one pytest that posts a `source` posts `chart`, in the local-file branch (`test_create_active_trade_without_exit_returns_null_return_pct` asserts the 200, the null return and the `active` status, not the stored source), no pytest posts `replay` or a `session_id` to `POST /api/journal/trades`, and none asserts the `source` the Cloud SQL insert is handed. The same state machine is exercised on the Charts page by `tests/charts/charts-cards.spec.ts` (CHARTS-02). Te stays unticked.
+(`TestJournalCRUD`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), the Cloud SQL branch): no test runs the insert or the update against a table. The one pytest that posts a `source` posts `chart`, in the local-file branch (`test_create_active_trade_without_exit_returns_null_return_pct` asserts the 200, the null return and the `active` status, not the stored source), no pytest posts `replay` or a `session_id` to `POST /api/journal/trades`, and none asserts the `source` the Cloud SQL insert is handed. The same state machine is exercised on the Charts page by `tests/charts/charts-cards.spec.ts` (CHARTS-02). Te stays unticked.
 
 **Code:** `src/routes/JournalPage.tsx:243-246,386-433,573-598`, `src/hooks/useTradeMarking.ts:17-213`, `src/components/journal/TradeMarkingChart.tsx`, `src/components/journal/TradeRailCard.tsx:115-123`, `src/hooks/useJournalChartTrades.ts:372-441`; `platform/api/routers/journal.py:193-231,648-720,1088-1250`.
 
@@ -9382,14 +9382,14 @@ body with `PUT` was stored as a loss of -0.534 (`A2b`, executed).
 - Given both prices typed, when `Save Trade` is pressed, then `POST /api/journal/trades` carries the form's fields as above, and given 200, then the form closes and resets, the view is My journal and the trade shows in the tiles and the
   table (executed; no test on the page).
 - Given a CALL of 200 to 202 for `iwm`, then the handler uppercases the ticker, stores the timestamps `2026-04-25T10:00:00` and `2026-04-25T10:30:00`, returns a `return_pct` of 1.0 and inserts one row; given a PUT of 400 to 396, then the return is 1.0;
-  given an entry of 0, then it is `None` with status `closed` (`TestJournalCRUD.test_post_call_trade_round_trip_cloud_sql`, `test_post_put_trade_inverts_return_sign`, `test_post_zero_entry_price_returns_null_pct`, `tests/api/test_platform_api.py`;
-  `test_zero_entry_closed_create_keeps_return_null_and_status_closed`, `tests/api/test_journal_phase2.py`).
-- Given a signed-in caller, then the insert carries that caller's email and reads nothing back that could belong to another user (`test_post_stamps_owner`, `test_post_has_no_readback_to_leak_another_users_row`, `tests/api/test_journal_user_scoping.py`).
+  given an entry of 0, then it is `None` with status `closed` (`TestJournalCRUD.test_post_call_trade_round_trip_cloud_sql`, `test_post_put_trade_inverts_return_sign`, `test_post_zero_entry_price_returns_null_pct`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py);
+  `test_zero_entry_closed_create_keeps_return_null_and_status_closed`, [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py)).
+- Given a signed-in caller, then the insert carries that caller's email and reads nothing back that could belong to another user (`test_post_stamps_owner`, `test_post_has_no_readback_to_leak_another_users_row`, [`tests/api/test_journal_user_scoping.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_user_scoping.py)).
 - Given the request fails, then the red banner shows, the form stays open with its values and no trade is added (executed with the real 500 of an empty date; the JOURNAL-14 test this branch adds, solyra `6fd6ba4`, asserts the banner, one request and the kept values against an injected 500, and is not on main).
 - Given a request with no token, then it answers 401 (V evidence).
 
-**Tests:** On main the handler is asserted: the round trip with the SQL parameters, the PUT sign, the zero entry, the status override and its validation, the owner stamp and the cap of three targets (`tests/api/test_platform_api.py`, `tests/api/test_journal_phase2.py`,
-`tests/api/test_journal_user_scoping.py`, all against patched database calls). No pytest posts `replay` or a `session_id` to the route, and none asserts the `source` the insert is handed: the form's body carries no `source`, so the `manual` it is stored under is the model's default (`journal.py:221`), which the insert passes as `:source`, while `test_source_default_is_manual` (`tests/gcp/test_schema_journal_migration.py`) reads the column's default in `gcp/schema.sql` with a regular expression, a default this insert overrides. Nothing on the page is on main: no spec opens the form, saves it or sees the banner (matrix Gaps), and the hook `useAddTrade` is inline in the page, so no Vitest file reaches it. The test this branch adds for JOURNAL-14 (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`) opens the form, types the two prices, saves against an injected 500 and asserts the banner, exactly one `POST /api/journal/trades`, the form still open and both prices kept; it covers the failure branch only, so no test saves successfully on the page, and it waits for a CI run that includes the branch's tests. Te stays unticked.
+**Tests:** On main the handler is asserted: the round trip with the SQL parameters, the PUT sign, the zero entry, the status override and its validation, the owner stamp and the cap of three targets ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py),
+[`tests/api/test_journal_user_scoping.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_user_scoping.py), all against patched database calls). No pytest posts `replay` or a `session_id` to the route, and none asserts the `source` the insert is handed: the form's body carries no `source`, so the `manual` it is stored under is the model's default (`journal.py:221`), which the insert passes as `:source`, while `test_source_default_is_manual` ([`tests/gcp/test_schema_journal_migration.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_schema_journal_migration.py)) reads the column's default in `gcp/schema.sql` with a regular expression, a default this insert overrides. Nothing on the page is on main: no spec opens the form, saves it or sees the banner (matrix Gaps), and the hook `useAddTrade` is inline in the page, so no Vitest file reaches it. The test this branch adds for JOURNAL-14 (solyra `6fd6ba4`, `tests/journal/journal.spec.ts`) opens the form, types the two prices, saves against an injected 500 and asserts the banner, exactly one `POST /api/journal/trades`, the form still open and both prices kept; it covers the failure branch only, so no test saves successfully on the page, and it waits for a CI run that includes the branch's tests. Te stays unticked.
 
 **Code:** `src/routes/JournalPage.tsx:159-182,285-298,494-498,799-807`; `platform/api/routers/journal.py:152-161,193-231,341-355,400-410,648-720,1088-1143`.
 
@@ -9412,7 +9412,7 @@ The preview handler (`platform/api/routers/journal.py:1430-1518`, an `async def`
 (the percent change of the option premium with no CALL/PUT sign flip, `_import_return_pct`, `:358-372`), checks duplicates again and inserts one row for each trade for the caller with `source = "import:<broker>"` through the same `_insert_cloud_sql_trade` as the manual form, `ON CONFLICT DO NOTHING` against the partial unique index
 `uq_journal_entries_import_dedupe`, counting a conflict as a skipped duplicate. It makes one insert round trip for each trade, up to the cap (read; no timing was taken).
 
-**It cannot commit on the production table.** `journal_entries.source` is `character varying(10)` (V evidence from production's `information_schema`, and `gcp/schema.sql:1251` and the schema test `tests/gcp/test_schema_journal_migration.py`), and the smallest value the commit writes, `import:webull`, is 13 characters, `import:robinhood` 16 and `import:generic` 14. The insert fails with
+**It cannot commit on the production table.** `journal_entries.source` is `character varying(10)` (V evidence from production's `information_schema`, and `gcp/schema.sql:1251` and the schema test [`tests/gcp/test_schema_journal_migration.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_schema_journal_migration.py)), and the smallest value the commit writes, `import:webull`, is 13 characters, `import:robinhood` 16 and `import:generic` 14. The insert fails with
 `value too long for type character varying(10)`, `raise_unless_infrastructure` re-raises it as the defect it is, and the route answers a bare 500. Executed on 2026-10-01: the preview of the repository's Robinhood sample (`tests/fixtures/robinhood_sample.csv` of solyra) through the page and the real handlers over a scratch table with production's column definitions
 showed the three round trips (`IWM CALL 2026-06-01 00:00 $1.42 → 2026-06-03 00:00 $1.71 +20.42% 2`, `SPY PUT 2026-06-02 00:00 $3.10 → 2026-06-05 00:00 $2.95 -4.84% 1`, `QQQ CALL 2026-06-04 00:00 $5.20` with an em dash for the exit and `imports as active`) and four skipped rows (a shares row with the reason `shares`, an em dash and `options only in v1`, then `short options not supported`, `unsupported activity type: CDIV` and `unsupported activity type: ACH`);
 `Import 3 trades` then showed `import commit failed: 500` in the alert, left the preview on screen, showed no result text and wrote no row. The same commit against the same table with `source` widened to `character varying(20)` as the only change answered 200 `{"imported": 3, "skipped_duplicates": 0}` and stored the rows as `import:robinhood`
@@ -9433,12 +9433,12 @@ Production (V evidence, 2026-10-01): `journal_entries` has the unique index `uq_
 - Given the preview answers 422, then its `detail` shows and no preview table does (`preview failure (422) surfaces loudly, never silently swallowed`, the same file).
 - Given the real handlers and a production-shaped table, then the same commit should store the rows and answer the count (executed: 500 and no rows, matrix Gaps; with the column widened it stores three).
 - Given the handler: the Robinhood fixture previews as three trades and four skips, a preview writes nothing, a duplicate is flagged against an existing row, a second identical commit imports zero, a commit stores `import:robinhood`, an active trade stays active with a null exit, a client's `return_pct` is ignored and recomputed, a zero entry keeps a null return and status `closed`, an unlisted broker is 422, every listed one is 200, over 5,000 rows or 5 MiB is 413, a duplicate that differs only in seconds is still a duplicate and
-  one that differs in price is not, and a failed duplicate lookup is 503 for every owner (the endpoint tests of `tests/api/test_journal_import_endpoints.py`, in the local-file branch, with patched calls for the Cloud SQL lookup).
+  one that differs in price is not, and a failed duplicate lookup is 503 for every owner (the endpoint tests of [`tests/api/test_journal_import_endpoints.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_import_endpoints.py), in the local-file branch, with patched calls for the Cloud SQL lookup).
 - Given a trade whose `entry_ts` or `exit_ts` carries a UTC offset or zone, then the commit model refuses it and with it the whole batch (422), the four naive forms (`YYYY-MM-DD HH:MM` with an optional `T` and optional seconds) are accepted and share one dedupe key, a zoned row of the generic mapper is skipped at preview with its `raw_index` and a reason, and the two native parsers emit the naive form
-  (`test_a_timezone_bearing_import_timestamp_is_rejected`, `test_the_naive_import_timestamp_forms_still_parse`, `test_a_zoned_generic_import_row_is_skipped_at_preview`, `test_the_broker_parsers_still_emit_the_canonical_timestamp`, `tests/api/test_threadpool_races.py`, on the request model and the parsers and not through the route; the 422 of the route executed: a batch of a good trade and one stamped `2026-06-02 10:00+00` answered 422 with the location `body.trades.1.entry_ts`).
+  (`test_a_timezone_bearing_import_timestamp_is_rejected`, `test_the_naive_import_timestamp_forms_still_parse`, `test_a_zoned_generic_import_row_is_skipped_at_preview`, `test_the_broker_parsers_still_emit_the_canonical_timestamp`, [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), on the request model and the parsers and not through the route; the 422 of the route executed: a batch of a good trade and one stamped `2026-06-02 10:00+00` answered 422 with the location `body.trades.1.entry_ts`).
 - Given no token, then both routes answer 401 on staging (V evidence).
 
-**Tests:** On main two Playwright tests drive the modal against mocked routes (the full flow with the labels, the commit body, the refetch and the flip, and a preview failure) and 21 handler tests run in `tests/api/test_journal_import_endpoints.py`; the parser underneath is asserted by `tests/lib/test_broker_import.py` and the timestamp validators by four tests in `tests/api/test_threadpool_races.py`, on the request model and the parsers and not through the route. Nothing runs the commit's insert against a table: the one test that names `Cloud SQL` patches the duplicate lookup. No test
+**Tests:** On main two Playwright tests drive the modal against mocked routes (the full flow with the labels, the commit body, the refetch and the flip, and a preview failure) and 21 handler tests run in [`tests/api/test_journal_import_endpoints.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_import_endpoints.py); the parser underneath is asserted by [`tests/lib/test_broker_import.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_broker_import.py) and the timestamp validators by four tests in [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), on the request model and the parsers and not through the route. Nothing runs the commit's insert against a table: the one test that names `Cloud SQL` patches the duplicate lookup. No test
 asserts a commit failure on the page, the generic mapper, the stored presets or the Schwab, Fidelity and IBKR chips. Te stays unticked: the commit, the row's one write, is asserted only where the production width cannot occur.
 
 **Code:** `src/routes/JournalPage.tsx:442-450,962-966`, `src/components/journal/ImportTradesModal.tsx:1-439`, `src/hooks/useJournalChartTrades.ts:775-907`; `platform/api/routers/journal.py:54-73,257-340,358-372,648-720,815-880,1430-1663`, `lib/broker_import.py`, `gcp/schema.sql:1239-1320`; test ids `import-trades-btn`, `import-dropzone`, `import-file-input`,
@@ -9469,7 +9469,7 @@ and the line read `Exported 0 closed trades · 1 not closed, skipped → iwm_tra
 - Given the own journal holds a closed and an open trade, when `CSV` is pressed, then `iwm_journal.csv` downloads with the header and one line for each trade, the open trade's exit cell empty (`CSV downloads the active view, and Export to Pipeline posts only the closed trades and reports the count`, `tests/journal/journal.spec.ts`, solyra `6fd6ba4`, added on this branch and not on main).
 - Given the same journal, when `Export to Pipeline` is pressed, then `POST /api/journal/export/IWM` carries only the closed trade and the line reads `Exported 1 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv` (the same test; executed against the real handler).
 - Given a closed and an open trade, then the CSV has the open trade's exit cell empty and no `null` or em dash, and the exportable set is the closed one (`serializes a closed trade with populated exit cell`, `serializes an active (null-exit) trade with an empty exit cell, not "null" or a throw`, `keeps closed trades and filters out active (null-exit) trades` and the three other cases of `exportableTrades`, `src/routes/journalNullSafety.test.ts`, on main).
-- Given an item with no exit price, then the handler answers 422 (`test_export_endpoint_422s_for_active_shaped_item`, `tests/api/test_journal_phase2.py`), and given an empty list, then 200 (`tests/api/test_route_coverage.py`, the export row).
+- Given an item with no exit price, then the handler answers 422 (`test_export_endpoint_422s_for_active_shaped_item`, [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py)), and given an empty list, then 200 ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py), the export row).
 - Given the export request fails, then the page should not report it in the success colour (executed: it does, matrix Gaps).
 - Given no token, then the route answers 401 on staging (V evidence).
 
@@ -9557,7 +9557,7 @@ the scoped line; with the form open on an empty My journal, `No trades on this s
 **Acceptance criteria:**
 - Given the own journal is empty, then the page opens on Examples, and given `My journal` is pressed, then `No trades logged for IWM yet.` shows and the chart card keeps its canvas (`shows empty state when no trades`, `tests/journal/journal.spec.ts`, and `toggling to My journal shows the own empty state WITHOUT hiding the chart`, `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
 - Given fewer than two closed trades, then the equity card reads `Close 2+ trades to see your equity curve.` (`equity curve card shows a placeholder when under 2 closed trades`, `tests/journal/journal.spec.ts`).
-- Given an own journal for a ticker with no rows, then the handler answers 200 with an empty list, and given an unknown ticker on Examples, then 200 with an empty list (`TestJournalAPI.test_journal_list`, `tests/api/test_platform_api.py`, for the envelope; `test_examples_unknown_ticker_returns_empty`, `tests/api/test_journal_examples.py`).
+- Given an own journal for a ticker with no rows, then the handler answers 200 with an empty list, and given an unknown ticker on Examples, then 200 with an empty list (`TestJournalAPI.test_journal_list`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), for the envelope; `test_examples_unknown_ticker_returns_empty`, [`tests/api/test_journal_examples.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_examples.py)).
 - Given a session with no row, then the tiles read zero and dashes and the table area `No trades on this session, clear the date for the Overview.` (executed; no test), and given the form is open with no rows and no date, then the page should not tell the user to clear a date (executed: it does).
 - Given a ticker with no Examples rows, then `No example trades for SPY yet.` shows (executed; the first test above matches it with a loose pattern, `/no.*trade|empty|add.*trade/i`, and no test asserts the text).
 - Given no bars, then the chart card shows its empty text and `No session data` shows in the toolbar (executed; no test asserts the text).
@@ -9589,9 +9589,9 @@ The handlers fail honestly where they read: an outage during a journal read, cre
 - Given the manual save fails, then `Failed to save trade, check API connection.` shows and the form stays open with its values (the same test; executed).
 - Given the style call answers 503 with a detail, then the detail shows in the red box, and given it answers `unavailable`, then the reason shows in the amber box, not as an error (`a genuine backend failure surfaces as a loud inline error with the server detail`, `not-enough-signal envelope renders as a muted note with the server reason, not an error`, `tests/journal/journal-onestop.spec.ts`, on main at eca7078).
 - Given the import preview answers 422, then its detail shows and no preview table does (`preview failure (422) surfaces loudly, never silently swallowed`, `tests/journal/journal-import.spec.ts`, on main).
-- Given a database outage, then a signed-in caller's own read answers 503 and never the shared local file (`test_auth_mode_db_failure_fails_closed`, `tests/api/test_journal_user_scoping.py`), both Examples reads answer 503 (`test_examples_503_on_db_query_failure`, `test_examples_503_when_pipeline_query_fails`, `tests/api/test_journal_examples.py`) and an import commit whose duplicate lookup fails answers 503 for every owner (`test_commit_is_503_when_the_dedupe_lookup_fails_even_for_the_local_owner`, `tests/api/test_journal_import_endpoints.py`); create, close and delete answer 503 in the same case (executed, no test).
-- Given a close finds no row or no open row, then the handler answers 404 or 409, and given a fourth take profit or an export item with no exit, then 422 (`test_patch_close_404_for_unknown_trade`, `test_patch_close_conflicts_on_already_closed`, `test_patch_close_race_guard_returns_409_when_concurrent_close_wins`, `test_take_profits_capped_at_three`, `test_export_endpoint_422s_for_active_shaped_item`, `tests/api/test_journal_phase2.py`, in the local-file branch or with patched calls); the page renders nothing for a failed mark or exit: it reads the error of no mutation but the form's and of no query but Examples (`isError`, `:231,494`, read), and injected 500s showed nothing (executed; matrix Gaps, solyra#76).
-- Given Cloud SQL is not configured, then the style handler answers 503, and given too few trades, no profile or no trade in any fold, then it answers 200 `unavailable` (`test_endpoint_503_when_cloud_sql_not_configured`, `test_endpoint_fewer_than_ten_closed_trades_returns_unavailable`, `test_endpoint_no_profile_mined_returns_unavailable`, `test_endpoint_zero_trades_across_folds_returns_unavailable`, `tests/lib/test_style_walk_forward.py`, over stub loaders that never fail the trade read, so a Cloud SQL outage read as `unavailable` is asserted by no test and `tests/api/test_route_coverage.py` expects it by pinning the route at 200 against a dead backend).
+- Given a database outage, then a signed-in caller's own read answers 503 and never the shared local file (`test_auth_mode_db_failure_fails_closed`, [`tests/api/test_journal_user_scoping.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_user_scoping.py)), both Examples reads answer 503 (`test_examples_503_on_db_query_failure`, `test_examples_503_when_pipeline_query_fails`, [`tests/api/test_journal_examples.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_examples.py)) and an import commit whose duplicate lookup fails answers 503 for every owner (`test_commit_is_503_when_the_dedupe_lookup_fails_even_for_the_local_owner`, [`tests/api/test_journal_import_endpoints.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_import_endpoints.py)); create, close and delete answer 503 in the same case (executed, no test).
+- Given a close finds no row or no open row, then the handler answers 404 or 409, and given a fourth take profit or an export item with no exit, then 422 (`test_patch_close_404_for_unknown_trade`, `test_patch_close_conflicts_on_already_closed`, `test_patch_close_race_guard_returns_409_when_concurrent_close_wins`, `test_take_profits_capped_at_three`, `test_export_endpoint_422s_for_active_shaped_item`, [`tests/api/test_journal_phase2.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_phase2.py), in the local-file branch or with patched calls); the page renders nothing for a failed mark or exit: it reads the error of no mutation but the form's and of no query but Examples (`isError`, `:231,494`, read), and injected 500s showed nothing (executed; matrix Gaps, solyra#76).
+- Given Cloud SQL is not configured, then the style handler answers 503, and given too few trades, no profile or no trade in any fold, then it answers 200 `unavailable` (`test_endpoint_503_when_cloud_sql_not_configured`, `test_endpoint_fewer_than_ten_closed_trades_returns_unavailable`, `test_endpoint_no_profile_mined_returns_unavailable`, `test_endpoint_zero_trades_across_folds_returns_unavailable`, [`tests/lib/test_style_walk_forward.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_style_walk_forward.py), over stub loaders that never fail the trade read, so a Cloud SQL outage read as `unavailable` is asserted by no test and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) expects it by pinning the route at 200 against a dead backend).
 - Given a mark, an exit or a delete fails, then the page should say so (executed: it does not; matrix Gaps, solyra#76).
 - Given the own journal read fails, the export fails or the style call hides an outage, then the page should say so (executed: it does not; matrix Gaps).
 - Given the dates read fails, then the card should not read as a closed market (executed with a 503: it does; matrix Gaps, the loading and empty states misreport).
@@ -9643,10 +9643,10 @@ What the schedules did on 2026-10-01 (V evidence, read at 21:25 to 21:26 UTC): t
 - Given `firebase` mode and no session, then the sign-in screen shows and the app does not (`firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main, which opens `/dashboard`; executed for `/journal`, where the only API request was `GET /api/config/firebase`).
 - Given a signed-in user whose calls answer 401, then the shell's strip shows and the page should say each failure as a permission failure (executed: the page says `Examples unavailable, the journal database didn't respond.`, which names the wrong cause, and nothing for the own read).
 - Given a gated path answers 401, then the fetch layer reports the session blocked, and given an open path answers 401, then it does not (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on main).
-- Given two signed-in users, then each reads only their own journal rows (`test_get_is_scoped_to_user`, `test_two_users_are_isolated`, `test_open_mode_defaults_to_local`, `test_auth_mode_db_failure_fails_closed`, `tests/api/test_journal_user_scoping.py`, against a mocked database layer), and Examples never carry another user's rows and the admin constant is the bound owner (`test_examples_never_leaks_other_users_rows`, `tests/api/test_journal_examples.py`).
+- Given two signed-in users, then each reads only their own journal rows (`test_get_is_scoped_to_user`, `test_two_users_are_isolated`, `test_open_mode_defaults_to_local`, `test_auth_mode_db_failure_fails_closed`, [`tests/api/test_journal_user_scoping.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_user_scoping.py), against a mocked database layer), and Examples never carry another user's rows and the admin constant is the bound owner (`test_examples_never_leaks_other_users_rows`, [`tests/api/test_journal_examples.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_journal_examples.py)).
 - Given `firebase` mode and no bearer token, then the own and Examples reads both answer 401, and with a token both answer 200 (`test_examples_requires_auth_like_trades_get`, the same file, through the real middleware with the token check replaced).
 
-**Tests:** On main the fetch layer's 401 handling is asserted (`src/lib/authedFetch.test.ts`), the sign-in screen for a signed-out visitor on one route (`tests/shared/auth-gate.spec.ts`), the owner scoping of the journal handlers against a mocked database layer, the 401 of the two journal reads through the real middleware (`test_examples_requires_auth_like_trades_get`) and the middleware's firebase check on a synthetic route (`test_firebase_requires_valid_token`, `tests/api/test_platform_auth.py`). No test asserts `DataGate`, the shell's strip or the most-active bar on a 401, or what this page shows when its calls answer 401 (the amber Examples box, the label, the chart card).
+**Tests:** On main the fetch layer's 401 handling is asserted (`src/lib/authedFetch.test.ts`), the sign-in screen for a signed-out visitor on one route (`tests/shared/auth-gate.spec.ts`), the owner scoping of the journal handlers against a mocked database layer, the 401 of the two journal reads through the real middleware (`test_examples_requires_auth_like_trades_get`) and the middleware's firebase check on a synthetic route (`test_firebase_requires_valid_token`, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)). No test asserts `DataGate`, the shell's strip or the most-active bar on a 401, or what this page shows when its calls answer 401 (the amber Examples box, the label, the chart card).
 The wrapper's block has no test and no way to appear (above). Te stays unticked: the page's handling of a 401 is asserted nowhere.
 
 **Code:** `src/components/shared/SignInEmptyState.tsx:93-98`, `src/lib/authGate.ts:1-60`, `src/hooks/useUser.ts:81`, `src/components/shared/AuthStatusIndicator.tsx:160-180`, `src/lib/authedFetch.ts:45-92`, `src/routes/JournalPage.tsx:506-967`; `platform/api/routers/journal.py:152-161`, `platform/api/auth.py`.
@@ -9830,16 +9830,16 @@ case's text, the combo `212_bull_reversal`, one risk flag, `Persona Plans` with 
 plan's `$220.00` to `$222.50`, `1.50× normal` and its rationale, and the footer `trader: vertex:gemini-2.0-flash`, all
 on `MOCK_INSIGHT_REPORT`; it does not look at the House Views card, Key Levels, Catalysts, Supporting Signals, Similar
 Past Trades, the Trade Plan's stop, targets or invalidation, or the header's time, cost and latency. On the handler
-side `tests/api/test_route_coverage.py` holds the report route at 503 against a dead backend,
+side [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) holds the report route at 503 against a dead backend,
 `test_insight_report_lookups_are_503_not_a_bare_500` and `test_an_internal_defect_is_not_reported_as_an_outage` check
 the 503 and a defect's 500, and the by-id route is held at 503 only; the 200 envelope, the 404 and the date cutoff are
-asserted only by `tests/lib/test_routers_insights_admin.py`, which skips in CI (no `DB_HOST`: 16 skipped when run
+asserted only by [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py), which skips in CI (no `DB_HOST`: 16 skipped when run
 without one, executed) and whose four report and history tests, run against a real Postgres 16 with the module's own
 table definition, failed with `column "run_kind" does not exist` (executed; matrix Gaps). The brief handler:
-`TestDashboardBriefAPI` (`tests/api/test_platform_api.py`) asserts a bullish `bias` from `ftfc_direction`,
+`TestDashboardBriefAPI` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)) asserts a bullish `bias` from `ftfc_direction`,
 `has_premarket`, the as-of lookup, `stale_days` and the unavailable source; the sweep pins the brief at 200 against a
 dead backend, the status the neutral answer above carries; no test asserts the `neutral`, RSI or overlay branches.
-`tests/agents/test_agent_orchestrator.py` asserts how the pipeline assembles the report. Te stays unticked: the
+[`tests/agents/test_agent_orchestrator.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_orchestrator.py) asserts how the pipeline assembles the report. Te stays unticked: the
 handler's primary behaviour is asserted only by a module that skips in CI, and the page layer leaves most cards
 unasserted.
 
@@ -9920,11 +9920,11 @@ tile and the `Recent runs` times are UTC, unlike the localized times of the Brie
 
 **Tests:** On main nothing asserts the tab: no Playwright test opens it (`mockInsightsApi` serves `MOCK_AGENT_ROUTES`
 for it and nothing reads the answer), and no unit test imports `AgentsPanel`. On the handler side
-`tests/lib/test_routers_insights_admin.py` asserts `test_admin_requires_sign_in` (401),
+[`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py) asserts `test_admin_requires_sign_in` (401),
 `test_admin_non_admin_user_403`, `test_admin_list_routes` (200, seven roles, the set of `ALL_ROLES`) and
-`test_admin_closed_in_open_mode`, and `tests/agents/test_agent_model_routing.py` asserts the store
+`test_admin_closed_in_open_mode`, and [`tests/agents/test_agent_model_routing.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_model_routing.py) asserts the store
 (`test_list_routes_has_all_seven_roles`, `test_list_routes_ordered_by_canonical_sequence`); both modules skip in CI,
-which has no test Postgres (the first run without one: 16 skipped, executed). `tests/api/test_route_coverage.py` holds
+which has no test Postgres (the first run without one: 16 skipped, executed). [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) holds
 `GET /api/admin/routes` at 503 against a dead backend, with the admin gate opened. Nothing asserts the tiles, the cost
 rows, the roster's states or `Recent runs`. Te stays unticked.
 
@@ -9985,11 +9985,11 @@ marks a replay or a backfill row. Permission (INSIGHTS-15).
 - Given no token, then the route answers 401 on staging (V evidence, 2026-10-01).
 
 **Tests:** On main nothing asserts the tab: no Playwright test opens it (the history mock is the empty list) and no
-unit test imports `HistoryView`. On the handler side `tests/lib/test_routers_insights_admin.py` asserts
+unit test imports `HistoryView`. On the handler side [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py) asserts
 `test_get_insight_history_returns_list` (the count and the first row's direction) and
 `test_get_insight_history_rejects_bad_limit`; it skips in CI, and its history test failed against a real Postgres 16
 with `column "run_kind" does not exist` because the module's table definition has no `run_kind` (executed; matrix
-Gaps). `tests/api/test_route_coverage.py` holds the route at 503 against a dead backend
+Gaps). [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) holds the route at 503 against a dead backend
 (`test_insight_report_lookups_are_503_not_a_bare_500` injects the driver error). Te stays unticked.
 
 **Code:** `src/routes/InsightsPage.tsx:50,58-62,225-233,395-460`, `src/hooks/useInsights.ts:106-117`,
@@ -10075,7 +10075,7 @@ drawn, only the run id and the duration. Permission (INSIGHTS-15): a 401 reads a
 - Given the user owns no `watchlists` row, then the handler answers 200 with `candidate_count` 0 and the tab shows the
   empty copy (executed with the real handler); given one row, then that row is ranked (executed).
 - Given `limit` above 50, then the handler ranks at most 50 (`test_watchlist_clamps_limit_to_50`,
-  `tests/api/test_platform_api.py`); given a signed-in request, then the ranker receives that user's email as
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)); given a signed-in request, then the ranker receives that user's email as
   `user_id`, and `default` without identity (`test_watchlist_threads_signed_in_user`,
   `test_watchlist_threads_default_owner_when_no_auth`).
 - Given a click on `Generate report` with a cutoff set, then the page switches to that ticker's Briefing tab and posts
@@ -10088,12 +10088,12 @@ drawn, only the run id and the duration. Permission (INSIGHTS-15): a 401 reads a
 - Given no token, then the route answers 401 on staging (V evidence, 2026-10-01).
 
 **Tests:** On main no Playwright test opens the tab. On the handler side `TestInsightsWatchlistAPI`
-(`tests/api/test_platform_api.py`, hermetic, `rank_tickers` patched) asserts the ranked rows are returned, the limit
+([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), hermetic, `rank_tickers` patched) asserts the ranked rows are returned, the limit
 clamp, the catalyst CSV, the uppercased extras, `expand_universe` defaulting to false and the owner threaded as
-`default` or as the signed-in email; `tests/agents/test_ranker.py` asserts the scoring, each signal on patched
+`default` or as the signed-in email; [`tests/agents/test_ranker.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_ranker.py) asserts the scoring, each signal on patched
 queries, `rank_tickers` sorting and excluding, the candidate gate, and `load_watchlist` threading `user_id`;
-`tests/gcp/test_watchlist_helper.py` asserts the layers of `load_watchlist` including
-`test_load_watchlist_user_scoped_empty_does_not_use_global_fallback`; `tests/api/test_route_coverage.py` pins the
+[`tests/gcp/test_watchlist_helper.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_watchlist_helper.py) asserts the layers of `load_watchlist` including
+`test_load_watchlist_user_scoped_empty_does_not_use_global_fallback`; [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the
 route at 200 against a dead backend, which is the empty ranking of the Gaps. Nothing asserts the tab's rendering, the
 empty ranking for an owner with no rows through the handler, or the `ranker_runs` write. On this branch
 `a watchlist row's Generate report runs live even while a cutoff is set` (`tests/insights/insights.spec.ts`) asserts
@@ -10150,7 +10150,7 @@ no time. Permission (INSIGHTS-15): a 401 reads as an `Error: 401 Unauthorized` b
 - Given no token, then the route answers 401 on staging (V evidence, 2026-10-01).
 
 **Tests:** On main no test opens the tab: `mockInsightsApi` serves the stream route with `MOCK_CHAT_REPLY` and no spec
-reads it. `tests/api/test_route_coverage.py` pins `POST /api/insights/chat` with an empty message at 400 only, and
+reads it. [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `POST /api/insights/chat` with an empty message at 400 only, and
 solyra `src/mocks/contract.test.ts` validates a sample chat request body against the vendored snapshot (the shape of
 the request, not the page). Nothing on main asserts the tab's layout, the modes, the transcript or the streaming
 state. On this branch `a failed report, ranking or chat request says so on the page with its status`
@@ -10223,10 +10223,10 @@ list is empty and does not look for it. On this branch
 and, after a reload on the complete fixture, no `Partial report` text (`tests/insights/insights.spec.ts`; it has not
 run in CI); it does not assert the position of the strip, the join of several names or that the stored reasons are
 not drawn. The data side is asserted by
-`tests/agents/test_agent_orchestrator.py` (`test_pipeline_marks_failed_analysts`, five parametrised
+[`tests/agents/test_agent_orchestrator.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_orchestrator.py) (`test_pipeline_marks_failed_analysts`, five parametrised
 `test_pipeline_isolates_individual_analyst_failures` cases, `test_pipeline_isolates_multiple_partial_failures`,
 `test_pipeline_marks_persona_plans_when_the_deterministic_plan_fails`,
-`test_pipeline_leaves_persona_plans_unflagged_on_the_happy_path`) and `tests/agents/test_agent_summarizers.py`
+`test_pipeline_leaves_persona_plans_unflagged_on_the_happy_path`) and [`tests/agents/test_agent_summarizers.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_summarizers.py)
 (`test_build_context_bundle_marks_failures`, `test_build_context_bundle_catches_exceptions`, with the reasons). No
 test asserts the reasons reaching the page or the fallback plan's missing marker. Te stays unticked: the page side
 waits for a CI run that includes the branch's tests.
@@ -10336,11 +10336,11 @@ neither asserts the label, the disabled button or a `failed` run. On the handler
 it skips in CI, and run against a real Postgres 16 it failed with
 `TypeError: test_refresh_inserts_run.<locals>.fake_sync_run() takes 2 positional arguments but 3 were given`, because
 the handler passes the cutoff as a third argument (executed; matrix Gaps); `test_run_status_rejects_invalid_uuid` and
-`test_run_status_404` in the same module skip too. `tests/api/test_route_coverage.py` holds the refresh route and the
+`test_run_status_404` in the same module skip too. [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) holds the refresh route and the
 status route at 503 against a dead backend (the refresh row is noted as covered before only by the skipped module);
-`tests/gcp/test_insight_tasks.py` asserts the enqueue helper (the child environment, the deterministic task name, a
+[`tests/gcp/test_insight_tasks.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_insight_tasks.py) asserts the enqueue helper (the child environment, the deterministic task name, a
 transport failure being unknown and never retried, a refusal permitting the fallback);
-`tests/agents/test_agent_orchestrator.py` and `tests/agents/test_agent_summarizers.py` assert the pipeline the run
+[`tests/agents/test_agent_orchestrator.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_orchestrator.py) and [`tests/agents/test_agent_summarizers.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_summarizers.py) assert the pipeline the run
 executes. Nothing asserts the handler's choice between the background task and the queue, the `insight_runs`
 transitions, or the page's label. Te stays unticked.
 
@@ -10423,12 +10423,12 @@ screen unless opened from History. Permission (INSIGHTS-15).
 **Tests:** On main, `tests/insights/insights.spec.ts` holds five tests for the control: the cap on the input, the
 label flip, the encoded `as_of`, the query-string-free live refresh and the clear-then-live refresh, all against a
 stubbed refresh route; they assert the control and the URL it builds, not the run or its result. On the handler and
-pipeline side: `tests/gcp/test_insight_pipeline_job.py` asserts the Cloud Run job's parser
+pipeline side: [`tests/gcp/test_insight_pipeline_job.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_insight_pipeline_job.py) asserts the Cloud Run job's parser
 (`test_parse_as_of_iso_datetime_naive_treated_as_utc`, the future date and datetime, the malformed value), which the
 router's `_parse_as_of_param` mirrors but does not share, so no test that runs in CI asserts the router's parser;
-`tests/agents/test_agent_summarizers.py` asserts the cutoff-bounded reads (the options chain's freshness at `as_of`,
-the gamma levels, the news window, the backtest's excluded as-of bar); `tests/gcp/test_canonical_provenance.py`
-asserts that the job stamps `replay` or `live` on its canonical row, and `tests/meta/test_production_writers.py`
+[`tests/agents/test_agent_summarizers.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_summarizers.py) asserts the cutoff-bounded reads (the options chain's freshness at `as_of`,
+the gamma levels, the news window, the backtest's excluded as-of bar); [`tests/gcp/test_canonical_provenance.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_canonical_provenance.py)
+asserts that the job stamps `replay` or `live` on its canonical row, and [`tests/meta/test_production_writers.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/meta/test_production_writers.py)
 checks by source text that the router's upsert carries `run_kind` through the conflict (presence only). Nothing
 asserts the API's replay write, its response or the three reads that ignore the cutoff. On this branch
 `a watchlist row's Generate report runs live even while a cutoff is set` (`tests/insights/insights.spec.ts`) asserts
@@ -10506,16 +10506,16 @@ search shows nothing (executed).
   with an empty list for a vendor failure (executed; matrix Gaps).
 - Given a signed-in user, then the write and the read-back use that user's email, and two users do not see each
   other's list (`test_add_scopes_to_signed_in_user`, `test_two_users_do_not_share_watchlist`,
-  `tests/api/test_platform_api.py`, with the writes patched).
+  [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py), with the writes patched).
 - Given no remove control on the page, then no remove request can be sent from it (executed).
 - Given no token, then both routes answer 401 on staging (V evidence, 2026-10-01).
 
 **Tests:** On main no Playwright or unit test opens the panel. On the handler side
 `tests/api/test_ticker_info.py::TestTickerInfoAPI` asserts the search route (`test_search_endpoint`,
 `test_search_endpoint_rejects_empty_keywords`) and the add route's response with the write, the vendor lookups and the
-peers patched (`test_watchlist_add_endpoint`), `TestWatchlistMutationAPI` (`tests/api/test_platform_api.py`) asserts
+peers patched (`test_watchlist_add_endpoint`), `TestWatchlistMutationAPI` ([`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py)) asserts
 the default owner, the signed-in owner, the remove's scoping and the separation of two users with the writes patched,
-and `tests/api/test_route_coverage.py` pins the search at 200, the add and the remove at 503 against a dead backend.
+and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the search at 200, the add and the remove at 503 against a dead backend.
 Nothing asserts the panel, the debounce, the card, the error text, the empty search, or that an add reaches the
 ranking. Te stays unticked.
 
@@ -10580,11 +10580,11 @@ answer with status 200, which is what the page then shows as the reply. Permissi
   `Error: Failed to fetch` (executed).
 - Given Vertex fails, then the route answers 200 with `Gemini error: <error>` and the page draws it as the assistant's
   reply (executed; matrix Gaps).
-- Given a blank message or an unknown mode, then the route answers 400 (executed; `tests/api/test_route_coverage.py`
+- Given a blank message or an unknown mode, then the route answers 400 (executed; [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)
   asserts the blank message at 400).
 - Given no token, then the route answers 401 on staging (V evidence, 2026-10-01).
 
-**Tests:** On main no Playwright or unit test sends a message. `tests/api/test_route_coverage.py` asserts only that
+**Tests:** On main no Playwright or unit test sends a message. [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) asserts only that
 `POST /api/insights/chat` with `{"message": ""}` answers 400 before touching Gemini, and solyra
 `src/mocks/contract.test.ts` validates a sample request body against the vendored snapshot. Nothing on main asserts
 the stream, the model, the six-turn window, the error bubbles or the `Gemini error:` body. On this branch
@@ -10717,8 +10717,8 @@ and the Chat tab (INSIGHTS-01 to INSIGHTS-05), and of the add's search (INSIGHTS
 **Tests:** On main `shows empty-state CTA when no report exists` (`tests/insights/insights.spec.ts`) serves a 404 for
 the report and asserts that text matching `/no report yet/i` and a button matching `/generate report/i` are visible;
 it does not look at the other copies. On the handler side the 404 is asserted only by
-`test_get_insight_report_404_when_missing` in `tests/lib/test_routers_insights_admin.py`, which skips in CI, and
-`tests/api/test_route_coverage.py` holds the report route at 503, not 404. No test asserts the card copies,
+`test_get_insight_report_404_when_missing` in [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py), which skips in CI, and
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) holds the report route at 503, not 404. No test asserts the card copies,
 `No history yet.`, the Agents, Watchlist, Chat or search text. Te stays unticked: the handler's 404 is asserted only by
 a module that skips in CI.
 
@@ -10755,7 +10755,7 @@ and the roster 503 both drew `Admin access required to view per-agent routing.`;
 `Failed to load watchlist: watchlist 503`; the brief 503 drew the red brief card and an available brief answer without
 `bias` drew the same; the chat route 503 drew `Error: 503 Service Unavailable`, an aborted request
 `Error: Failed to fetch` and a 200 `Gemini error: 429 RESOURCE_EXHAUSTED. Quota exceeded` that same text as the
-answer. What the handlers do when Cloud SQL is down (`tests/api/test_route_coverage.py`, a dead connection layer): the
+answer. What the handlers do when Cloud SQL is down ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py), a dead connection layer): the
 report, by-id, history, runs and refresh routes and the roster answer 503 through `_db_call`
 (`platform/api/routers/insights.py:159-201`) or the roster's own guard (`platform/api/routers/admin.py:129-154`); the
 ranking and the brief answer 200 with nothing (the swallowing reads of INSIGHTS-04 and INSIGHTS-01, both pinned at 200
@@ -10785,9 +10785,9 @@ controls (INSIGHTS-01 to INSIGHTS-05, INSIGHTS-07, INSIGHTS-09). The permission 
   `Admin access required to view per-agent routing.` shows (executed; matrix Gaps).
 - Given a refresh fails or a run ends `failed`, then nothing is drawn (executed; INSIGHTS-07).
 - Given Cloud SQL is unreachable, then the report, by-id, history, runs, refresh and roster routes answer 503, not a
-  bare 500 (`tests/api/test_route_coverage.py`).
+  bare 500 ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)).
 
-**Tests:** On main no Playwright or unit test drives a failure on this page. `tests/api/test_route_coverage.py` pins
+**Tests:** On main no Playwright or unit test drives a failure on this page. [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins
 the 503 of the report, history, by-id, runs, refresh and roster routes against a dead connection layer, with
 `test_insight_report_lookups_are_503_not_a_bare_500` injecting the driver error and
 `test_an_internal_defect_is_not_reported_as_an_outage` checking that a defect stays a 500. On this branch
@@ -10918,10 +10918,10 @@ of the add, whose error line it fills (INSIGHTS-09).
 - Given a request with no identity, then `GET /api/admin/routes` answers 401, and 403 for a signed-in non-admin
   (executed on the handler; `test_admin_requires_sign_in` and `test_admin_non_admin_user_403`, which skip in CI).
 
-**Tests:** On main: `src/lib/authedFetch.test.ts` as above, `tests/api/test_platform_auth.py`
+**Tests:** On main: `src/lib/authedFetch.test.ts` as above, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)
 (`test_firebase_requires_valid_token`: a gated path answers 401 without a token in `firebase` mode and the open paths
 200, on a synthetic `/api/secret` route and not on an insights route) and the sign-in screen test above. The admin
-gate's 401 and 403 are asserted only in `tests/lib/test_routers_insights_admin.py`, which skips in CI. No test asserts
+gate's 401 and 403 are asserted only in [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py), which skips in CI. No test asserts
 `DataGate`, the strip on this page, the page's 401 forms or a 401 on an insights route. Te stays unticked.
 
 **Code:** `src/routes/InsightsPage.tsx:86-89,112-195,199,248`, `src/components/shared/SignInEmptyState.tsx:12-98`,
@@ -11052,8 +11052,8 @@ visible. The headline also sits in the timeline's today card, so `.first()` is s
 in a scratch copy of the page (2026-10-01) removing the panel failed it, keeping the header and removing the rows passed,
 ignoring the today-and-tomorrow window passed it (`lists upcoming events` failed instead, because AAPL's headline then
 appeared twice) and admitting Medium events passed. No test asserts the ten-row cap, the order, the exclusion of Medium events, that the
-filters leave it alone or any handler-side tiering (`tests/api/test_catalysts_news_filter.py` covers `_news_sql` and the
-topic list, `tests/api/test_route_coverage.py` the route's 200 against a dead backend). Te stays unticked.
+filters leave it alone or any handler-side tiering ([`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py) covers `_news_sql` and the
+topic list, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) the route's 200 against a dead backend). Te stays unticked.
 
 **Code:** `src/routes/CatalystsPage.tsx:446-458,520-541`; `platform/api/routers/catalysts.py:353-570`; no test ids.
 
@@ -11106,8 +11106,8 @@ asserts that text matching `\d+\s*events` and `\d+H\s*/\s*\d+M\s*/\s*\d+L` is vi
 restricts the timeline` asserts that after `High` is clicked the Medium `Investor Day` row is gone from the timeline
 and `Q2 2026 Earnings` is visible (ignoring the `High` setting in a scratch copy failed it, ignoring the `Medium`
 setting passed). Nothing asserts the counters' values or the `Medium` setting. The
-tiering is asserted on the handler side by no test (the handler's mapping is not run by `tests/api/test_catalysts_news_filter.py`,
-and `tests/api/test_route_coverage.py` pins only the route's 200 against a dead backend). Te stays unticked.
+tiering is asserted on the handler side by no test (the handler's mapping is not run by [`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py),
+and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins only the route's 200 against a dead backend). Te stays unticked.
 
 **Code:** `src/routes/CatalystsPage.tsx:60-77,403-404,431-436,461-471,483-488,543-561`;
 `platform/api/routers/catalysts.py:394-398,434,475,519,559-565`; no test ids.
@@ -11226,12 +11226,12 @@ fetchers, and each trigger and the latest execution of each job read from GCP on
 `news_sentiment` by `fetch-news-sentiment` (`news-sentiment-hourly`, `0 8-17 * * 1-5`), `fetch-news-sentiment-topics`
 (`news-topics-hourly`, `5 8-17 * * 1-5`) and `fetch-news-sentiment-earnings` (`news-sentiment-earnings-0600`,
 `0 6 * * 1-5`), all `gcp.fetchers.fetch_news_sentiment` against AlphaVantage NEWS_SENTIMENT, plus the unscheduled
-`backfill-ticker`, `gcp/fetchers/fetch_rss_news.py` (no job and no trigger) and `scripts/backfill_news_sentiment.py`;
+`backfill-ticker`, `gcp/fetchers/fetch_rss_news.py` (no job and no trigger) and [`scripts/backfill_news_sentiment.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/backfill_news_sentiment.py);
 `economic_events` by `fetch-economic-events` (`economic-events-daily`, `0 7 * * 1-5`; ForexFactory's weekly feeds and
 the FRED release dates); `earnings_calendar` by `fetch-earnings-calendar` (`daily-earnings-refresh-calendar`
 `0 19 * * 1-5` and `weekly-earnings-refresh-calendar` `0 19 * * 0`; AlphaVantage EARNINGS_CALENDAR, Unusual Whales,
 Earnings Whispers and Yahoo, and it keeps only `today minus 1` to `today plus 7`,
-`scripts/fetch_earnings_calendar.py:1534-1549`), with `evaluate-ew-strikes` writing only its `ew_*` columns;
+[`scripts/fetch_earnings_calendar.py:1534-1549`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/fetch_earnings_calendar.py#L1534-L1549)), with `evaluate-ew-strikes` writing only its `ew_*` columns;
 `insider_transactions` by `fetch-insider-transactions` (`insider-transactions-daily`, `0 7 * * 1-5`; AlphaVantage
 INSIDER_TRANSACTIONS); `sec_filings` by `fetch-sec-filings` (`sec-filings-intraday`, `0 7,10,13,17 * * 1-5`; SEC EDGAR
 submissions). Every trigger runs in America/New_York and was ENABLED.
@@ -11278,15 +11278,15 @@ matching `AAPL` (first match) and `Q2 2026 Earnings` are visible, the fixture's 
 rows show a sentiment indicator` that a `▲` is visible (first match). Mutations of a scratch copy of the page
 (2026-10-01) show what that buys: removing the timeline fails the first (and `Min-impact filter restricts the timeline`), reversing the
 arrows fails the second, and drawing the cards newest first passed. The mapping of the five
-reads (tiers, titles, the dedupe, the order) is asserted by no test: `tests/api/test_catalysts_news_filter.py` covers
+reads (tiers, titles, the dedupe, the order) is asserted by no test: [`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py) covers
 `_news_sql` and the topic list (`test_news_sql_is_backward_looking_and_case_insensitive`,
-`test_news_topics_constant_covers_fetcher_topics`), `tests/api/test_route_coverage.py` pins the route's 200 against a dead
+`test_news_topics_constant_covers_fetcher_topics`), [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route's 200 against a dead
 backend (`:325`, no body) and the threadpool tests replace `_db_catalyst_events` altogether. The producers have their
-own tests (`tests/gcp/test_fetch_economic_events.py`, `tests/gcp/test_fetch_earnings_calendar_persist.py`,
-`tests/gcp/test_fetch_earnings_calendar_yahoo.py`, `tests/gcp/test_fetch_news_sentiment_args.py`,
-`tests/gcp/test_fetch_news_sentiment_explode.py`, `tests/gcp/test_fetch_news_sentiment_incremental.py`,
-`tests/gcp/test_sec_filings_retry.py`, `tests/gcp/test_phase2_fetchers.py`), none of which reads this route.
-`tests/api/test_earnings_router.py` tests `/api/earnings/*`, which no solyra source calls and this page does not read.
+own tests ([`tests/gcp/test_fetch_economic_events.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_fetch_economic_events.py), [`tests/gcp/test_fetch_earnings_calendar_persist.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_fetch_earnings_calendar_persist.py),
+[`tests/gcp/test_fetch_earnings_calendar_yahoo.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_fetch_earnings_calendar_yahoo.py), [`tests/gcp/test_fetch_news_sentiment_args.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_fetch_news_sentiment_args.py),
+[`tests/gcp/test_fetch_news_sentiment_explode.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_fetch_news_sentiment_explode.py), [`tests/gcp/test_fetch_news_sentiment_incremental.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_fetch_news_sentiment_incremental.py),
+[`tests/gcp/test_sec_filings_retry.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_sec_filings_retry.py), [`tests/gcp/test_phase2_fetchers.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/gcp/test_phase2_fetchers.py)), none of which reads this route.
+[`tests/api/test_earnings_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_earnings_router.py) tests `/api/earnings/*`, which no solyra source calls and this page does not read.
 Te stays unticked: the page tests assert one row and one arrow and nothing asserts the handler's mapping.
 
 **Code:** `src/routes/CatalystsPage.tsx:21-58,67-81,159-174,190-205,226-253,255-352,396-397,425-441,618-628`;
@@ -11331,7 +11331,7 @@ without a token (V evidence, 2026-10-01); the route is gated, so the static answ
 - Given `upgrade_note`, then the page does not draw it (executed: the note is absent from the card; matrix Gaps).
 
 **Tests:** None asserts the card. On main `GET /api/catalysts/types` is pinned at 200 against a dead backend by
-`tests/api/test_route_coverage.py` (`Req("GET", "/api/catalysts/types", 200)`, `:329`, no body asserted), and removing the
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`Req("GET", "/api/catalysts/types", 200)`, `:329`, no body asserted), and removing the
 card from a scratch copy of the page (2026-10-01) left every test of `tests/catalysts/catalysts.spec.ts` passing. Te stays
 unticked.
 
@@ -11367,7 +11367,7 @@ length.
 
 **Needs:** The events request of CATALYSTS-04 for the picked dates. A range after the calendar's reach returns the news
 and economic events and no earnings: `earnings_calendar` holds rows only to the fetch date plus 7 days
-(`scripts/fetch_earnings_calendar.py:1534-1549`; the newest is 2026-10-07), so the default range's second week held 11
+([`scripts/fetch_earnings_calendar.py:1534-1549`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/fetch_earnings_calendar.py#L1534-L1549); the newest is 2026-10-07), so the default range's second week held 11
 events, all economic (executed 2026-10-01, V evidence). The insider read returned three clusters for 2026-09-18 to
 2026-09-25 and none for the default range (executed).
 
@@ -11400,7 +11400,7 @@ the default label; it does not assert `Refresh`, the loading blank or the label 
 the row's only range-changing assertion is a test added on this branch, which waits for a CI run that includes it.
 
 **Code:** `src/routes/CatalystsPage.tsx:159-174,396-406,416-420,491-516`;
-`src/components/shared/DateRangePicker.tsx:10-15,29-151`; `scripts/fetch_earnings_calendar.py:1534-1549`; test ids `date-range-picker`, `date-range-apply`.
+`src/components/shared/DateRangePicker.tsx:10-15,29-151`; [`scripts/fetch_earnings_calendar.py:1534-1549`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/fetch_earnings_calendar.py#L1534-L1549); test ids `date-range-picker`, `date-range-apply`.
 
 ##### CATALYSTS-07 · Filter by impact or type
 
@@ -11640,7 +11640,7 @@ CATALYSTS-14.
 - Given a database outage, then no box: the handler answers 200 and the page draws the empty page (executed; matrix Gaps).
 - Given any failure, then the message should say what failed; it does not (matrix Gaps).
 
-**Tests:** On main `tests/api/test_route_coverage.py` pins `GET /api/catalysts/events` at 200 against a dead backend
+**Tests:** On main [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `GET /api/catalysts/events` at 200 against a dead backend
 (`Req("GET", "/api/catalysts/events", 200)`, `:325`, no body asserted), which is the quiet-range defect and not an error
 state; no page test renders the box, and removing it from a scratch copy of the page (2026-10-01) left every
 test of `tests/catalysts/catalysts.spec.ts` passing. Te stays unticked.
@@ -11682,7 +11682,7 @@ and error states draw the same default.
   mark it with (matrix Gaps).
 
 **Tests:** None asserts it. `renders impact tier counters in header` matches the counts and not the source, and replacing
-the string with a constant in a scratch copy of the page (2026-10-01) left every test passing. `tests/api/test_threadpool_races.py`
+the string with a constant in a scratch copy of the page (2026-10-01) left every test passing. [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py)
 (`test_a_pending_catalyst_fetch_is_not_reported_as_a_source`) asserts that the handler's source `Benzinga (fetch in flight)`
 is written, by reading the source text of the router, for a branch the deployed services cannot reach with no key. Te stays
 unticked.
@@ -11736,7 +11736,7 @@ CATALYSTS-09 live inside it; the header and the range controls (CATALYSTS-06) st
   `src/lib/authedFetch.test.ts`, on main); no code outside the tests registers one, so no behaviour hangs on it, and the flag
   behind the strip, set on the next line, is not read by that test.
 
-**Tests:** On main: `src/lib/authedFetch.test.ts` as above, `tests/api/test_platform_auth.py`
+**Tests:** On main: `src/lib/authedFetch.test.ts` as above, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)
 (`test_firebase_requires_valid_token`: a gated path answers 401 without a token in `firebase` mode and the open paths 200,
 on a synthetic `/api/secret` route and not on a catalysts route) and the sign-in screen test above. No test asserts
 `DataGate`, the strip on this page, the page's 401 form or a 401 on a catalysts route. Te stays unticked.
@@ -11763,7 +11763,7 @@ on a synthetic `/api/secret` route and not on a catalysts route) and the sign-in
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
 | GET /api/admin/users | users[].uid/email/display_name/roles/disabled/created_at/last_sign_in_at, available_roles (types: `useAdmin.ts` AdminUserRow/AdminUsersResponse) | the Firebase Auth directory, every account of the project through the Admin SDK, merged with `user_roles` (`email`, `role`), the `ADMIN_EMAIL` account read as admin with or without a row; production's `user_roles` holds 2 rows (V evidence, 2026-10-02) and what its directory lists was not read | 30s staleTime, the app's one retry; no age shown; the roles are read on every request, with no server cache | `useAdminUsers` (`useAdmin.ts`) → Users and roles tab |
-| GET /api/admin/data-sources | sources[].id/label/category/status/row_count/last_refreshed_at/coverage_start/coverage_end/message/refreshable (types: `useAdmin.ts` AdminDataSourceRow/AdminDataSourcesResponse); the answer's `stale` and `stale_age_seconds` are sent and not typed or read | the freshness audit (`scripts/audit_data_freshness.py`) regrouped by `_aggregate_source`: `row_count` is the audit's count of the expected day's rows, `coverage_start` is always null and `coverage_end` repeats the last refresh | 5-minute audit cache on the server, shared with `/api/health/freshness`, and a cold audit took 51 to 67 s on staging (V evidence); 30s client staleTime; the report's `stale` flag is dropped | `useAdminDataSources` (`useAdmin.ts`) → Chart and report data tab |
+| GET /api/admin/data-sources | sources[].id/label/category/status/row_count/last_refreshed_at/coverage_start/coverage_end/message/refreshable (types: `useAdmin.ts` AdminDataSourceRow/AdminDataSourcesResponse); the answer's `stale` and `stale_age_seconds` are sent and not typed or read | the freshness audit ([`scripts/audit_data_freshness.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py)) regrouped by `_aggregate_source`: `row_count` is the audit's count of the expected day's rows, `coverage_start` is always null and `coverage_end` repeats the last refresh | 5-minute audit cache on the server, shared with `/api/health/freshness`, and a cold audit took 51 to 67 s on staging (V evidence); 30s client staleTime; the report's `stale` flag is dropped | `useAdminDataSources` (`useAdmin.ts`) → Chart and report data tab |
 | GET /api/admin/routes | routes[].role/provider/model/updated_at/updated_by (types: `useAdmin.ts` RouteRow/RouteListResponse) | `model_routing`, seven roles seeded on `vertex` `gemini-3.1-flash-lite`; production's seven rows carry `updated_by` `claude-code/ab-test-restore-2026-05-12` and none was written by the page (V evidence) | 30s staleTime, the app's one retry; `Updated` is the only age shown | `useAdminRoutes` (`useAdmin.ts`) → Models and routing tab (Model Routing panel) |
 | GET /api/admin/models | models[].provider/model/has_credentials/input_usd_per_mtok/output_usd_per_mtok (types: `useAdmin.ts` AvailableModelRow/AvailableModelsResponse) | the price table `lib/agents/pricing.py` (twelve priced models), `has_credentials` true for a provider with a registered adapter, which is Vertex alone on both services | 5min staleTime | `useAdminModels` (`useAdmin.ts`) → Models and routing tab (provider/model selects) |
 | GET /api/admin/structure-brief | scope_statement, ece_ceiling, cells[].ticker/timeframe/available/top_class/top_prob/distribution/live_ece/ece_ceiling/muted/mute_reason/refreshed_at/note (types: `useAdmin.ts` StructureBriefResponse) | the GCS object `research/strat_engine/structure_brief_latest.json`, which `strat_ece_snapshot.py` writes on demand and no schedule writes; it does not exist in production, so all nine cells are unavailable, and a storage error is answered the same way, in a 200 | 60s staleTime; a cell's `refreshed_at` reads as a relative time | `useStructureBrief` (`useAdmin.ts`) → `StructureBrief` panel |
@@ -11881,8 +11881,8 @@ empty (executed, matrix Gaps). The line above the table that carries a failed wr
   a visible error, not an empty table`, a 500).
 - Given Firebase accounts and stored roles, then the handler answers each account with its stored role, `admin` for the `ADMIN_EMAIL`
   account with no row, null for a missing name, email or time, and `available_roles` (`test_users_merge_firebase_and_roles`,
-  `tests/api/test_admin_users_datasources.py`); given the Admin SDK fails, then 503 (`test_users_directory_failure_is_loud_503`;
-  `test_admin_answers_503_when_firebase_is_unavailable`, `tests/api/test_route_coverage.py`); given an anonymous or a non-admin caller, then
+  [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given the Admin SDK fails, then 503 (`test_users_directory_failure_is_loud_503`;
+  `test_admin_answers_503_when_firebase_is_unavailable`, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)); given an anonymous or a non-admin caller, then
   401 or 403 (`test_endpoints_require_admin`).
 - Given three accounts, then the counter reads `3 of 3` and every row has the chips `admin`, `user` and `dev`, pressed for the roles it
   holds (executed; no test asserts the counter or the pressed state).
@@ -11894,10 +11894,10 @@ empty (executed, matrix Gaps). The line above the table that carries a failed wr
 panels`), the email in the table, the em-dash cells and the absence of `Invalid Date` for the account with no name and no sign-in (`renders
 users; null name/timestamps render as em-dash, never a fabricated value`), the search and its empty text (`search filters rows and shows the
 honest empty state`) and the error card for a 500 (`load failure surfaces a visible error, not an empty table`). The handler is asserted by
-stocks `tests/api/test_admin_users_datasources.py` (`test_users_merge_firebase_and_roles`: the merge of the directory with the role rows,
+stocks [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py) (`test_users_merge_firebase_and_roles`: the merge of the directory with the role rows,
 the `ADMIN_EMAIL` account admin with no row, a missing name, email and times staying null, and `available_roles`;
 `test_users_directory_failure_is_loud_503`; `test_endpoints_require_admin`: 401 anonymous and 403 non-admin) and by
-`tests/api/test_route_coverage.py` (the route pinned at 503 against a dead backend, and
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (the route pinned at 503 against a dead backend, and
 `test_admin_answers_503_when_firebase_is_unavailable`: the 503 and its `user directory temporarily unavailable` text). Both files run in the
 lean CI job. No test on main asserts the chips' pressed state, the `N of M` counter, the dates a viewer in another time zone reads or an
 empty directory. Te is ticked: the rows, the em-dash cells, the search and the error of the page, and the merge of the handler, are
@@ -11925,7 +11925,7 @@ What the handler puts in those columns (read, then executed below): one row for 
 its own id under the category `other` (`playbook_cards` today). `Status` is the worst of the dataset's audit rows, `ok`, `unknown` or
 `stale`: the audit's `warn` reads as `stale`, and `error` is in the page's vocabulary while nothing produces it (`:1305-1307`). `Rows` is
 the audit's count of the rows dated the expected trading day of its audit row, summed over the dataset's tickers (`row_count_recent`,
-`scripts/audit_data_freshness.py:458-476,552`), which is not the table's size, and it is null unless every member reported a count
+[`scripts/audit_data_freshness.py:458-476,552`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py#L458-L476)), which is not the table's size, and it is null unless every member reported a count
 (`admin.py:1310-1388`); the page heads it `Rows`. `Coverage` has no start, because the audit computes none (`:1384`), so it reads an em-dash
 placeholder, an arrow and the end, which repeats `Last refresh` in the audit's own text: a bare date for a daily table, a full ISO time for
 an intraday one. A diagnostic row of the audit for a registered table (`<table> [gap]`, `<table> [sanity]`, `market_data_daily.atr_14
@@ -11946,7 +11946,7 @@ the intraday row, a real instant, read `9/30/2026, 8:00:00 PM`, the 20:00 ET bar
 
 **Needs:** `GET /api/admin/data-sources` through `useAdminDataSources` (`src/hooks/useAdmin.ts:344-351`, 30 s stale time, no polling, the
 app's single retry). The handler (`platform/api/routers/admin.py:1391-1425`) checks the admin role, then reads the report that `GET
-/api/health/freshness` serves, through `freshness_report_dict` (`platform/api/routers/health.py:67-124`): `scripts/audit_data_freshness.py`
+/api/health/freshness` serves, through `freshness_report_dict` (`platform/api/routers/health.py:67-124`): [`scripts/audit_data_freshness.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py)
 `audit_all`, held five minutes (`_CACHE_TTL`, `:42`), one audit at a time; a request that arrives while another request audits is not made
 to wait, and gets the last report with `stale` true and `stale_age_seconds`, or 503 `Freshness audit in progress and no cached report is
 available yet. Retry shortly.` when nothing is cached; an audit that cannot reach Cloud SQL is a 503 (`:137-150`). The handler runs no query
@@ -11977,7 +11977,7 @@ not (ADMIN-12). A failed refresh shows above the table (ADMIN-06).
 - Given audit rows for one dataset, among them a gap row, a nullity row and a skipped enrichment row, then the handler folds them into the
   dataset's status, reads `warn` as `stale` with the lag in the message, gives a missing per-ticker count as null, an absent dataset as
   `unknown`, an audited table outside the registry as an `other` row and a cost-gated dataset as not refreshable
-  (`test_data_sources_aggregation`, `tests/api/test_admin_users_datasources.py`); given an anonymous or a non-admin caller, then 401 or 403
+  (`test_data_sources_aggregation`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given an anonymous or a non-admin caller, then 401 or 403
   (`test_endpoints_require_admin`).
 - Given the staging report of 2026-10-02, then fourteen rows show, all `ok`, with the expected day's counts in `Rows`, 3 for
   `market_data_daily` and 0 for `daily_rates` (executed; no test).
@@ -11989,17 +11989,17 @@ not (ADMIN-12). A failed refresh shows above the table (ADMIN-06).
 `NaN` (`renders sources with statuses; null rows/refresh render as em-dash`) and the chip filter (`category filter narrows the table`);
 `dataSourceFormat.test.ts` asserts `renders a missing row count as an em-dash, never 0`, `renders a missing or invalid timestamp as an
 em-dash` and `renders coverage honestly when one bound is missing`. The handler's regrouping is asserted by stocks
-`tests/api/test_admin_users_datasources.py` (`test_data_sources_aggregation`, `test_endpoints_require_admin`), the audit's own thresholds,
-row floors and gap scans by `tests/audits/test_audit_data_freshness.py`, and the report's cache and its stale copy by
-`tests/api/test_threadpool_races.py` (`test_freshness_decliner_serves_a_stale_report_rather_than_waiting`,
+[`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py) (`test_data_sources_aggregation`, `test_endpoints_require_admin`), the audit's own thresholds,
+row floors and gap scans by [`tests/audits/test_audit_data_freshness.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/audits/test_audit_data_freshness.py), and the report's cache and its stale copy by
+[`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py) (`test_freshness_decliner_serves_a_stale_report_rather_than_waiting`,
 `test_freshness_decliner_503s_when_nothing_is_cached` and `test_a_stale_freshness_report_stays_stale_through_the_admin_view`, which asserts
-only that the response models declare `stale` and `stale_age_seconds`); `tests/api/test_route_coverage.py` pins the route at 503 against a
+only that the response models declare `stale` and `stale_age_seconds`); [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 503 against a
 dead backend. No test on main asserts that the handler passes the report's `stale` on, the `Rows` figure, a date-only `Last refresh` or an
 empty category. Te is ticked: the rows, the em-dash cells and the filter of the page, and the fold of the handler, are asserted.
 
 **Code:** `src/routes/AdminPage.tsx:87-98`, `src/components/admin/DataSourcesPanel.tsx:17-135`,
 `src/components/admin/dataSourceFormat.ts:6-27`, `src/hooks/useAdmin.ts:316-351`; `platform/api/routers/admin.py:1220-1425`,
-`platform/api/routers/health.py:42-155`, `scripts/audit_data_freshness.py:84,458-476,520-650,879,1208`; test ids `admin-tab-data`,
+`platform/api/routers/health.py:42-155`, [`scripts/audit_data_freshness.py:84,458-476,520-650,879,1208`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py#L84); test ids `admin-tab-data`,
 `admin-sources-panel`, `admin-sources-table`, `admin-sources-error`, `source-filter-<category>`.
 
 ##### ADMIN-03 · Models and routing tab
@@ -12074,18 +12074,18 @@ routing section and is lost when the tab is left (ADMIN-07).
 - Given the real state answer, then the strip reads `9 / 9 models trained · 0 muted · ECE ceiling 0.050 · no live ECE snapshot yet` and each
   row reads `ready`, its version, its training date and an em-dash placeholder for the live ECE (executed; no test).
 - Given the brief and state routes with the storage client failing, then each answers 200 and the page shows an unavailable brief and an
-  empty state (`tests/api/test_route_coverage.py` pins the 200 and not what the page then reads; executed).
+  empty state ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the 200 and not what the page then reads; executed).
 - Given a live ECE above the ceiling in a state cell, then its row reads `muted` and the strip counts it (read:
   `ModelStateSnapshot.tsx:39-41,111`; no production cell has a live ECE).
 
 **Tests:** On main, `lands on Users & roles; tabs switch panels` (`tests/admin/admin-tabs.spec.ts`) asserts that the Models tab shows
 `admin-routes-table` and that the other two tables are gone, and `admin role renders the dashboard directly — no token prompt exists`
 (`tests/admin/admin.spec.ts`) asserts the table and its `analyst` and `portfolio_manager` rows. The handlers: stocks
-`tests/api/test_route_coverage.py` pins `GET /api/admin/routes` at 503 against a dead database, `GET /api/admin/models` at 200, and the
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `GET /api/admin/routes` at 503 against a dead database, `GET /api/admin/models` at 200, and the
 brief and state routes at 200 with the storage client failing, which is the swallowed read and not what the page then reads, and
 `test_an_internal_defect_is_not_reported_as_an_outage` asserts the 500 for a defect and the 503 for a driver failure of the route list;
-`tests/lib/test_routers_insights_admin.py` (`test_admin_list_routes`, `test_admin_list_models` and the 401 and 403 tests) and
-`tests/agents/test_agent_model_routing.py` (`list_routes` and `list_available_models`) skip in the Backtest Pipeline for want of a test
+[`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py) (`test_admin_list_routes`, `test_admin_list_models` and the 401 and 403 tests) and
+[`tests/agents/test_agent_model_routing.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_model_routing.py) (`list_routes` and `list_available_models`) skip in the Backtest Pipeline for want of a test
 Postgres (area 09 Gaps). `src/components/structure_brief/StructureBrief.test.tsx` asserts the scope string, `decideMute` and `applyMute`,
 which no component calls, and a scan of its source for banned words; it renders nothing. No test on main asserts what the Structure Brief
 and Model State Snapshot panels render, the brief's or the state's cells, or the provider and model options. Te stays unticked: the routing
@@ -12145,7 +12145,7 @@ cleared it and brought the old Disable error back (executed). Success: the list 
   `{"roles":["admin"]}` (`toggling a role PUTs the new roles array`, `tests/admin/admin-tabs.spec.ts`, on main).
 - Given `["user"]` for a known account, then the handler upserts the lower-cased email with the caller as `created_by` and answers the
   account with that role; given `[]`, then it deletes the row; given `["dev"]`, then `dev` is accepted (`test_roles_upsert_and_delete`,
-  `tests/api/test_admin_users_datasources.py`).
+  [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)).
 - Given two roles, then 422 and no write (`test_roles_two_roles_is_422_never_partial_write`); given an unknown role, then 422
   (`test_roles_unknown_role_is_422`); given the `ADMIN_EMAIL` account without `admin`, then 409 (`test_roles_env_admin_cannot_be_demoted`);
   given an unknown uid, then 404 (`test_roles_unknown_uid_is_404`); given an account with no email, then 422
@@ -12158,11 +12158,11 @@ cleared it and brought the old Disable error back (executed). Success: the list 
   reads `Could not load users: unauthorized` (executed; matrix Gaps).
 
 **Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the body `{roles: ['admin']}` and the uid for a click on `admin` of an
-account with no role (`toggling a role PUTs the new roles array`); stocks `tests/api/test_admin_users_datasources.py` asserts the handler's
+account with no role (`toggling a role PUTs the new roles array`); stocks [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py) asserts the handler's
 answers (`test_roles_unknown_role_is_422`, `test_roles_two_roles_is_422_never_partial_write`, `test_roles_upsert_and_delete`: the upsert
 with the lower-cased email and the caller as `created_by`, `dev` as an assignable role and `[]` deleting the row,
 `test_roles_env_admin_cannot_be_demoted`, `test_roles_unknown_uid_is_404`, `test_roles_no_email_account_is_422`, and
-`test_endpoints_require_admin`) and `tests/api/test_route_coverage.py` pins the route at 503 against a dead backend. Both pytest files run
+`test_endpoints_require_admin`) and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 503 against a dead backend. Both pytest files run
 in the lean CI job. No test on main asserts a grant to an account that holds a role, a revoke, the error line, the disabled chips or the
 refetch, and the page's spec toggles an account with no role only, while the handler's test pins the 422 that the page's other click meets.
 Te is ticked: the page's request and the handler's answers are asserted; the rest is in the matrix Gaps.
@@ -12211,7 +12211,7 @@ while a role error is on it (ADMIN-04).
 - Given an active account and a disabled one, then the buttons read `Disable` and `Enable`, and a click on `Disable` of `uid-member` sends
   `{disabled: true}` for that uid (`disable and enable buttons PUT the flipped status`, `tests/admin/admin-tabs.spec.ts`, on main).
 - Given `firebase` mode and a Disable of another account, then the Admin SDK updates it and revokes its refresh tokens
-  (`test_status_disable_updates_and_revokes`, `tests/api/test_admin_users_datasources.py`); given an Enable, then it updates and revokes
+  (`test_status_disable_updates_and_revokes`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given an Enable, then it updates and revokes
   nothing (`test_status_enable_does_not_revoke`).
 - Given a Disable of the account that is both the caller and the `ADMIN_EMAIL` account, then 409 and no update, the self refusal answering
   first (`test_status_cannot_disable_self_or_break_glass`, which asserts only this case); given a Disable of the caller's own account when
@@ -12223,12 +12223,12 @@ while a role error is on it (ADMIN-04).
 - Given a status write in flight, then every `Access` button is disabled and the chips are not (executed; no test).
 
 **Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the `Disable` and `Enable` labels and the body `{disabled: true}` with
-the uid of the clicked row (`disable and enable buttons PUT the flipped status`); stocks `tests/api/test_admin_users_datasources.py` asserts
+the uid of the clicked row (`disable and enable buttons PUT the flipped status`); stocks [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py) asserts
 the handler (`test_status_disable_updates_and_revokes`, `test_status_enable_does_not_revoke`,
 `test_status_cannot_disable_self_or_break_glass`, `test_status_unknown_uid_is_404`, `test_status_refused_in_iap_mode`) and
-`tests/api/test_route_coverage.py` pins the route at 503 against a dead backend. Both pytest files run in the lean CI job. The one case of
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 503 against a dead backend. Both pytest files run in the lean CI job. The one case of
 `test_status_cannot_disable_self_or_break_glass` is the account that is both the caller and the `ADMIN_EMAIL` account
-(`tests/api/test_admin_users_datasources.py:332-341`), so the self refusal (`platform/api/routers/admin.py:1171-1176`) answers first and the
+([`tests/api/test_admin_users_datasources.py:332-341`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py#L332-L341)), so the self refusal (`platform/api/routers/admin.py:1171-1176`) answers first and the
 break-glass refusal (`:1177-1181`) is never reached: with either refusal removed alone, in a scratch copy, all six status tests stay green,
 and with both removed only this test fails (executed). No test on main asserts the break-glass refusal for another admin, the self refusal
 for an admin who is not the `ADMIN_EMAIL` account, the page's answer to a 409, the disabled buttons while a write is in flight or the
@@ -12284,7 +12284,7 @@ a 401 or a 403. Success: nothing shows (above).
 - Given `market_data_daily`, whose `refreshable` is true, when its `Refresh` is pressed, then a POST goes to
   `/api/admin/data-sources/market_data_daily/refresh`; given a dataset whose `refreshable` is false, then its button is disabled (`refresh
   POSTs for a refreshable source; non-refreshable button is disabled`, `tests/admin/admin-tabs.spec.ts`, on main).
-- Given an id outside the registry, then 404 (`test_refresh_unknown_source_is_404`, `tests/api/test_admin_users_datasources.py`); given a
+- Given an id outside the registry, then 404 (`test_refresh_unknown_source_is_404`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given a
   dataset with no job, then 409 with its reason (`test_refresh_non_refreshable_is_409_with_reason`).
 - Given a refreshable dataset, then the first press dispatches its job and answers the execution id, and a second press inside the cool down
   answers 429 (`test_refresh_dispatches_job_and_cools_down`); given the dispatch fails, then 503 and the lease is released
@@ -12300,11 +12300,11 @@ a 401 or a 403. Success: nothing shows (above).
 
 **Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the POST for `market_data_daily` and the disabled button of a dataset
 that cannot be refreshed (`refresh POSTs for a refreshable source; non-refreshable button is disabled`); stocks
-`tests/api/test_admin_users_datasources.py` asserts the handler's branches (`test_refresh_unknown_source_is_404`,
+[`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py) asserts the handler's branches (`test_refresh_unknown_source_is_404`,
 `test_refresh_non_refreshable_is_409_with_reason`, `test_refresh_dispatches_job_and_cools_down`: the execution id and the 429 of the second
 press, `test_refresh_dispatch_failure_is_loud_503_and_releases_lease`, `test_refresh_lease_store_failure_is_loud_503_without_dispatch`) and
 the statement text of the lease helpers (`test_acquire_refresh_lease_maps_returning_row_to_bool`,
-`test_release_refresh_lease_ages_the_row_past_the_cooldown`), and `tests/api/test_route_coverage.py` pins the route at 503 against a dead
+`test_release_refresh_lease_ages_the_row_past_the_cooldown`), and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 503 against a dead
 backend. Both pytest files run in the lean CI job. No test on main runs the lease against a table or the dispatch against Cloud Run, or
 asserts what the page shows after a press. Te is ticked: the page's request and its disabled state, and the handler's branches over fakes,
 are asserted; the lease against a table and the dispatch against Cloud Run are not.
@@ -12366,22 +12366,22 @@ the new pair and `admin-ui` (executed). A failed models list leaves the selects 
   then the refetched row shows `admin-ui` and `Save` is disabled (`a provider change re-points the model select, a refused save shows the
   server reason and an accepted save updates the row`, `tests/admin/admin-tabs.spec.ts`, added on this branch, not on main).
 - Given an unknown role or an unpriced model, then 400 (`test_admin_update_route_unknown_role`, `test_admin_update_route_unpriced_model`,
-  `tests/lib/test_routers_insights_admin.py`, which skip in the Backtest Pipeline for want of a test Postgres); given a provider with no
+  [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py), which skip in the Backtest Pipeline for want of a test Postgres); given a provider with no
   registered adapter, then 400, which the handler answered (executed) while `test_admin_update_route` in the same file expects a 200 for it
   (area 09 Gaps); given a priced pair of a credentialed provider, then 200 with the row stamped `admin-ui` (executed over the handler; no
   test that runs in CI).
 - Given a write and then a failing read-back, then 503 (`test_a_successful_route_write_still_guards_its_reload`,
-  `tests/api/test_route_coverage.py`); given a dead database, then 503 for a real provider and model reaching the write (the same file).
+  [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)); given a dead database, then 503 for a real provider and model reaching the write (the same file).
 - Given a refused save, then the page raises an unhandled promise rejection and keeps the draft (executed; matrix Gaps).
 - Given a tab round trip, then the draft is gone (executed; matrix Gaps).
 
 **Tests:** On main, solyra `tests/admin/admin.spec.ts` (`editing a route saves via PUT and reflects the new value`) and
 `tests/admin/admin-auth.spec.ts` (`admin role can edit a route with no extra credential`) assert the PUT body and the role for a change of
-model within `vertex`, and nothing about the row afterwards. Stocks `tests/api/test_route_coverage.py` pins the route at 503 for a real
+model within `vertex`, and nothing about the row afterwards. Stocks [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 503 for a real
 provider and model reaching the write against a dead database, and `test_a_successful_route_write_still_guards_its_reload` asserts the 503
-when the read-back fails after a write; `tests/lib/test_routers_insights_admin.py` (`test_admin_update_route`,
+when the read-back fails after a write; [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py) (`test_admin_update_route`,
 `test_admin_update_route_unknown_role`, `test_admin_update_route_unpriced_model`, `test_admin_list_models`) and
-`tests/agents/test_agent_model_routing.py` (`test_set_route_updates_single_role`) skip in the Backtest Pipeline for want of a test Postgres,
+[`tests/agents/test_agent_model_routing.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/agents/test_agent_model_routing.py) (`test_set_route_updates_single_role`) skip in the Backtest Pipeline for want of a test Postgres,
 and `test_admin_update_route` PUTs provider `anthropic` and asserts 200, for which the API registers no adapter (area 09 Gaps). This branch
 adds `a provider change re-points the model select, a refused save shows the server reason and an accepted save updates the row` to
 `tests/admin/admin-tabs.spec.ts` (solyra `f2c6863`): it asserts the first model of the chosen provider and its `(no creds)` label, `Save`
@@ -12460,23 +12460,23 @@ the amber reason and no bars. Available: the bars and the footer. The answer is 
   payload, then it passes through with the scope statement (`test_predict_requires_sign_in`, `test_predict_rejects_non_admin_user`,
   `test_predict_rejects_unknown_ticker`, `test_predict_rejects_unknown_timeframe`, `test_predict_returns_valid_shape`,
   `test_predict_normalizes_ticker_casing`, `test_predict_returns_muted_payload`, `test_predict_returns_unavailable_when_no_model`,
-  `tests/api/test_strat_engine_predict.py`, with `predict_one` stubbed; the module does not run in CI).
+  [`tests/api/test_strat_engine_predict.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_strat_engine_predict.py), with `predict_one` stubbed; the module does not run in CI).
 - Given a value that is not a timestamp, then 400 and not 503 (`test_a_malformed_as_of_timestamp_is_the_callers_error`,
-  `tests/api/test_route_coverage.py`).
+  [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)).
 - Given frames of three bars, then `predict_one` scores the newest and answers its `ts`, its Strat type and the class probabilities, and a
   missing current type gives no continuation figure (`test_predict_one_scores_newest_bar`,
   `test_predict_one_sets_continuation_to_current_type_prob`, `test_predict_one_no_current_type_yields_none`,
-  `tests/api/test_structure_continuation.py`, over a stub model and patched loaders, none passing `as_of`; the module does not run in CI).
+  [`tests/api/test_structure_continuation.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_structure_continuation.py), over a stub model and patched loaders, none passing `as_of`; the module does not run in CI).
 - Given a naive `as_of` of `2026-09-30T15:45`, then the bar scored is the 15:45 UTC one, four hours before the 15:45 ET bar (executed over
   the real `predict_one`; matrix Gaps).
 
 **Tests:** No test on main asserts the page's form, request, result card, error text or `Predicting…`. The handler is asserted by stocks
-`tests/api/test_strat_engine_predict.py` (401 and 403, the 400s for an unknown ticker and timeframe, a valid shape, the upper-cased ticker,
+[`tests/api/test_strat_engine_predict.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_strat_engine_predict.py) (401 and 403, the 400s for an unknown ticker and timeframe, a valid shape, the upper-cased ticker,
 the muted and unavailable payloads and the verbatim scope string, all with `predict_one` stubbed, and
-`test_gcs_load_bytes_propagates_a_storage_outage_but_returns_none_when_absent`), by `tests/api/test_structure_continuation.py`
+`test_gcs_load_bytes_propagates_a_storage_outage_but_returns_none_when_absent`), by [`tests/api/test_structure_continuation.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_structure_continuation.py)
 (`test_predict_one_sets_continuation_to_current_type_prob`, `test_predict_one_no_current_type_yields_none` and
 `test_predict_one_scores_newest_bar` run the real `predict_one` over a stub model and patched loaders and assert the newest bar scored, its
-`ts` and the class probabilities; none passes `as_of`) and by `tests/api/test_route_coverage.py` (the route pinned at 503 against a dead
+`ts` and the class probabilities; none passes `as_of`) and by [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (the route pinned at 503 against a dead
 backend, and `test_a_malformed_as_of_timestamp_is_the_callers_error`: the 400 for `not-a-date`). Neither of the first two modules runs in
 CI: both skip in the lean job for want of `lightgbm`, and the research job's globs, `tests/*/test_strat*.py` and `tests/*/test_mag*.py`,
 select the first, which skips there because `platform/` is not on its path, and not the second. Te stays unticked: the page is asserted by
@@ -12578,11 +12578,11 @@ failed one: a storage outage reads as an empty shelf (matrix Gaps).
 - Given the brief answer of nine unavailable cells, then the strip reads `0 / 9 cells available` and each cell shows its note (executed over
   the real handler; no test).
 - Given the state answer with no cells, then the strip reads `0 / 0 models trained` over an empty table (executed; no test).
-- Given the storage client failing, then the brief and the state routes answer 200 (`tests/api/test_route_coverage.py` pins the 200,
+- Given the storage client failing, then the brief and the state routes answer 200 ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the 200,
   executed), and the page reads as above.
 
 **Tests:** On main, `search filters rows and shows the honest empty state` (`tests/admin/admin-tabs.spec.ts`) asserts `No users match this
-search.` for a search that matches nothing and the table's absence, and stocks `tests/api/test_route_coverage.py` pins `GET
+search.` for a search that matches nothing and the table's absence, and stocks [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `GET
 /api/admin/structure-brief` and `GET /api/admin/strat-engine/state` at 200 with the storage client failing, which is the swallowed read and
 not the empty states' text. No test on main asserts the empty category's text, an empty directory, the Model State Snapshot's `0 / 0 models
 trained` or the brief's unavailable cells. Te stays unticked: one of the page's four empty presentations is asserted.
@@ -12641,22 +12641,22 @@ time has passed, read), none names a cause in words, and a write's error line is
 - Given the users request fails with a 500, then `Could not load users` shows with the server's text and the table does not (`load failure
   surfaces a visible error, not an empty table`, `tests/admin/admin-tabs.spec.ts`, on main).
 - Given the Firebase Admin SDK is unavailable, then the users routes answer 503 with `user directory temporarily unavailable`
-  (`test_users_directory_failure_is_loud_503`, `tests/api/test_admin_users_datasources.py`;
-  `test_admin_answers_503_when_firebase_is_unavailable`, `tests/api/test_route_coverage.py`, for the three user requests).
+  (`test_users_directory_failure_is_loud_503`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py);
+  `test_admin_answers_503_when_firebase_is_unavailable`, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py), for the three user requests).
 - Given the dispatch or the lease store fails, then the refresh answers 503, releases the lease in the first case and dispatches nothing in
   the second (`test_refresh_dispatch_failure_is_loud_503_and_releases_lease`,
   `test_refresh_lease_store_failure_is_loud_503_without_dispatch`).
 - Given a dead backend, then the user, data-source, route, predict and refresh requests answer 503; given a defect and not an outage, then
-  500 for it and 503 for a driver failure of the route list (`tests/api/test_route_coverage.py`,
+  500 for it and 503 for a driver failure of the route list ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py),
   `test_an_internal_defect_is_not_reported_as_an_outage`).
 - Given the data sources, the routes, the brief, the state, a write or a predict fail, then each shows its own line as above (executed; no
   test on main). Given the models list fails, then the selects are empty and no message shows (executed).
 - Given the users request answers 403, then the card reads `Could not load users: unauthorized` (the test added on this branch, ADMIN-13).
 
 **Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts `admin-users-error` with `Could not load users` for a 500 and the
-table's absence (`load failure surfaces a visible error, not an empty table`). Stocks `tests/api/test_admin_users_datasources.py` asserts
+table's absence (`load failure surfaces a visible error, not an empty table`). Stocks [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py) asserts
 `test_users_directory_failure_is_loud_503`, `test_refresh_dispatch_failure_is_loud_503_and_releases_lease` and
-`test_refresh_lease_store_failure_is_loud_503_without_dispatch`, and `tests/api/test_route_coverage.py` pins the 503 of the user,
+`test_refresh_lease_store_failure_is_loud_503_without_dispatch`, and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the 503 of the user,
 data-source, route, predict and refresh requests against a dead backend, asserts the 503 and its text for the three user requests
 (`test_admin_answers_503_when_firebase_is_unavailable`) and the 500 for a defect against the 503 for a driver failure of the route list
 (`test_an_internal_defect_is_not_reported_as_an_outage`). No test on main asserts the data-source, route, brief, state, predict or mutation
@@ -12699,16 +12699,16 @@ the age:
 
 **Acceptance criteria:**
 - Given an audit status of `warn` or `stale` for a dataset, then its row reads `stale` with the lag in the message (the handler,
-  `test_data_sources_aggregation`, `tests/api/test_admin_users_datasources.py`, on main; the page, `renders sources with statuses; null
+  `test_data_sources_aggregation`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py), on main; the page, `renders sources with statuses; null
   rows/refresh render as em-dash`, `tests/admin/admin-tabs.spec.ts`, asserts the fixture's message and not the badge).
 - Given a report served as a stale copy, then the handler answers `stale` true with its age (executed;
-  `test_freshness_decliner_serves_a_stale_report_rather_than_waiting`, `tests/api/test_threadpool_races.py`, asserts it of the shared
+  `test_freshness_decliner_serves_a_stale_report_rather_than_waiting`, [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), asserts it of the shared
   report) and the page shows nothing different (executed; matrix Gaps).
 - Given models trained 120 and 129 days before, then the Model State Snapshot reads `ready` with the two dates and no flag (executed; matrix
   Gaps).
 
-**Tests:** On main, `test_data_sources_aggregation` (`tests/api/test_admin_users_datasources.py`) asserts `warn` read as `stale` with the
-lag in the message; `tests/api/test_threadpool_races.py` asserts the shared report's stale copy
+**Tests:** On main, `test_data_sources_aggregation` ([`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)) asserts `warn` read as `stale` with the
+lag in the message; [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py) asserts the shared report's stale copy
 (`test_freshness_decliner_serves_a_stale_report_rather_than_waiting`) and
 `test_a_stale_freshness_report_stays_stale_through_the_admin_view`, which asserts only that the response models declare `stale` and
 `stale_age_seconds`; solyra `dataSourceFormat.test.ts` asserts a missing or invalid time as an em-dash placeholder (`renders a missing or
@@ -12772,9 +12772,9 @@ so a role-store outage reads as a missing role: `/api/me` answered 200 with `is_
   account and no empty table shows (`an account that /api/me calls admin, whose admin routes answer 403, sees the rejection on every tab and
   never an empty table`, `tests/admin/admin-tabs.spec.ts`, added on this branch, not on main).
 - Given an anonymous or a non-admin caller, then the five user and data-source requests answer 401 or 403 (`test_endpoints_require_admin`,
-  `tests/api/test_admin_users_datasources.py`); given the `ADMIN_EMAIL` account, a stored admin, a stored user and an anonymous request,
+  [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given the `ADMIN_EMAIL` account, a stored admin, a stored user and an anonymous request,
   then `/api/me` flags them accordingly, and `is_admin_email` grants from the environment without the database, from the table, denies a
-  non-admin, denies when the lookup fails, normalizes the address and denies no identity (`tests/api/test_platform_auth.py`).
+  non-admin, denies when the lookup fails, normalizes the address and denies no identity ([`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)).
 - Given no token, then each of the eleven admin routes answers 401 on staging and the production GETs answer a 302 to Google sign-in (V
   evidence).
 - Given the role lookup fails, then `/api/me` answers `is_admin` false for a stored admin (executed; matrix Gaps).
@@ -12782,11 +12782,11 @@ so a role-store outage reads as a missing role: `/api/me` answered 200 with `is_
 **Tests:** On main, solyra `tests/admin/admin-auth.spec.ts` (`anonymous user sees the access-denied card`, `non-admin email sees the
 access-denied card`, `/api/me failure denies rather than granting`) and `tests/admin/admin.spec.ts` (`non-admin account sees the
 access-denied card, never the table`) assert the card's test id and the routing table's absence for an anonymous account, a non-admin one
-and a failing `/api/me`. Stocks `tests/api/test_platform_auth.py` asserts `/api/me`'s flags (`test_me_dev_role_sets_is_dev_not_is_admin`,
+and a failing `/api/me`. Stocks [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) asserts `/api/me`'s flags (`test_me_dev_role_sets_is_dev_not_is_admin`,
 `test_me_admin_role_sets_is_admin_not_is_dev`, `test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`) and
 `is_admin_email` over a stubbed lookup (`test_admin_env_fallback_matches_without_touching_db`, `test_admin_from_user_roles_table`,
 `test_non_admin_denied`, `test_admin_check_denies_when_lookup_fails`, `test_admin_email_is_normalized`, `test_no_identity_is_not_admin`;
-`test_is_admin_email_binds_against_a_real_engine` skips for want of a test Postgres), and `tests/api/test_admin_users_datasources.py`
+`test_is_admin_email_binds_against_a_real_engine` skips for want of a test Postgres), and [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)
 asserts 401 and 403 for the five user and data-source requests (`test_endpoints_require_admin`). No test on main asserts the card's text,
 that a denied page makes no admin request, a 401 or a 403 from an admin route for an account `/api/me` calls admin, or the gate of the
 route, model, brief, state and predict routes in a test that runs in CI. This branch adds `an account that /api/me calls admin, whose admin
@@ -12993,11 +12993,11 @@ Stale: none, the answer is held 24 hours with no marker. Permission: the sign-in
 within perf budget (strict 3s, static page)` the load time, and `route /help loads without fatal errors` (`tests/shared/navigation.spec.ts`)
 a `nav`, a `main` and a quiet console. The two Help tests of `tests/shared/gamma-levels.spec.ts` that open the pills assert the ten terms
 above and nothing of their short text, badge or detail; no test opens a row (HELP-07). The config route is pinned as a contract and not as
-thresholds: `test_operation_answers` for `GET /api/config/indicators` (`tests/api/test_route_coverage.py`) pins the status 200 with a JSON
+thresholds: `test_operation_answers` for `GET /api/config/indicators` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) pins the status 200 with a JSON
 envelope against a dead backend (the handler reads no database), `src/mocks/contract.test.ts` checks that the request of
 `src/hooks/useConfig.ts` is a declared operation and that the shared mock's answer matches `IndicatorConfigResponse` (`every /api request
 the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no
-undeclared fields)`), and `tests/api/test_openapi_snapshot.py` (`test_committed_openapi_snapshot_matches_app`) fails when the committed
+undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`) fails when the committed
 `platform/api/openapi.json`, the document solyra vendors, stops matching the route or the model; none asserts a value, and the mock differs
 from the real answer in six of 22 fields (matrix Gaps). Te stays unticked: the page layer is the presence of ten terms and the handler layer
 is a status and a shape.
@@ -13156,8 +13156,8 @@ lacking an object the page reads replaces the whole page before any row can be o
 **Tests:** No test on main or on this branch opens a row: the specs and the Vitest files hold no assertion on an expanded detail or on the
 marker, and with an entry click that expands nothing (mutation: `onClick={() => {}}` at `src/routes/HelpPage.tsx:267`) all seven Help tests
 on main and the two added tests stay green. The config route is pinned as in HELP-03: `test_operation_answers` for `GET
-/api/config/indicators` (`tests/api/test_route_coverage.py`) pins the status, `src/mocks/contract.test.ts` and
-`tests/api/test_openapi_snapshot.py` pin the declaration and the shape, and none asserts a value. Te stays unticked: no test asserts the row
+/api/config/indicators` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) pins the status, `src/mocks/contract.test.ts` and
+[`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) pin the declaration and the shape, and none asserts a value. Te stays unticked: no test asserts the row
 at either layer.
 
 **Code:** `src/routes/HelpPage.tsx:195,264-290`, `src/hooks/useConfig.ts:55-66`.
@@ -13322,20 +13322,20 @@ Permission: a signed-out visitor never reaches the tab (SETTINGS-13).
 - Given the focus is on a tab and the right arrow is pressed, then the selection stays and the focus stays, and Tab then Enter selects the
   next tab (executed; no test).
 - Given a stored row, then `GET /api/me/profile` answers the twelve fields with their nulls intact
-  (`test_get_returns_stored_object_with_nulls_intact`, `tests/api/test_profile_router.py`); given none, then 404
+  (`test_get_returns_stored_object_with_nulls_intact`, [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py)); given none, then 404
   (`test_get_with_nothing_stored_is_404`); given a failing database, then 503 (`test_get_db_failure_is_loud_503`).
 
 **Tests:** On main, `tests/settings/settings.spec.ts` `renders the five tabs, lands on Profile, and reports synced once hydrated` asserts
 the heading, the five tab names, `aria-selected` on `Profile`, the `Your account` section and the `Synced to your account.` line; it answers
 every read with nothing stored and asserts no field, no value and no identity block. `editing the draft marks it dirty; Save PUTs only the
 diff and confirms` and `a failed save is rendered, never reported as saved (Rule 4)` type into Display name only. The handler is asserted by
-`tests/api/test_profile_router.py` (the three GET tests above) and pinned by `tests/api/test_route_coverage.py` (`GET /api/me/profile`
-answers 503 against a dead backend, `GET /api/me` 200), and `/api/me`'s flags by `tests/api/test_platform_auth.py`
+[`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) (the three GET tests above) and pinned by [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`GET /api/me/profile`
+answers 503 against a dead backend, `GET /api/me` 200), and `/api/me`'s flags by [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)
 (`test_me_dev_role_sets_is_dev_not_is_admin`, `test_me_admin_role_sets_is_admin_not_is_dev`, `test_me_env_fallback_admin_without_table_row`,
 `test_me_plain_user_and_anonymous`); the three pytest files run in the lean CI job. `src/mocks/contract.test.ts` checks that the app's `GET
 /api/me/profile` and `GET /api/me` are declared operations (`every /api request the app makes (verb + path) is a declared operation`) and
 that their mock answers, `MOCK_PROFILE` and `MOCK_ME_DEV`, carry no field the schema does not declare (`every mock payload for a typed 200
-response matches its response schema (no undeclared fields)`; Vitest; the contract, not the page). `tests/api/test_openapi_snapshot.py` (in
+response matches its response schema (no undeclared fields)`; Vitest; the contract, not the page). [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in
 the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `ProfileResponse` or to `MeResponse` is caught there; it
 asserts nothing about a handler or the page. Te stays unticked: no test on main asserts a stored profile, the identity block or any field
@@ -13412,14 +13412,14 @@ they assert no selected state, no swatch name beyond `violet` and no stored valu
 (`src/stores/settingsStore.test.ts`, six tests: the defaults, a partial stored object, corrupt JSON, `setDensity` swapping the classes with
 no residue and persisting the triple, `setAccent`, `setNavPattern`; `src/stores/themeStore.test.ts`, five tests) and the hook's pure helpers
 (`src/hooks/usePreferences.test.ts`: `sanitizePreferences` three tests, `toPayload` one). The handler is asserted by
-`tests/api/test_preferences_router.py` (404, a stored row with its nulls intact, 503, the partial upsert, the explicit null, the empty body,
+[`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) (404, a stored row with its nulls intact, 503, the partial upsert, the explicit null, the empty body,
 five 422 cases, the unknown field, 503 on write, the 401 fail-closed and the normalized owner) and pinned by
-`tests/api/test_route_coverage.py` (`GET /api/me/preferences` 503 against a dead backend; `PUT` 422 with `body_ran=False`, so its body never
+[`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`GET /api/me/preferences` 503 against a dead backend; `PUT` 422 with `body_ran=False`, so its body never
 reaches the handler's own code). `src/mocks/contract.test.ts` checks that both verbs are declared operations (`every /api request the app
 makes (verb + path) is a declared operation`), that the mock answers, `MOCK_PREFERENCES_EMPTY` for the `GET` (a 200 with all-null fields,
 not the 404) and the echo for the `PUT`, match the response schema (`every mock payload for a typed 200 response matches its response schema
 (no undeclared fields)`) and that the four-field `PUT` sample matches the request schema (`every request body the app sends matches its
-operation request schema`): the contract, not the page. `tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed
+operation request schema`): the contract, not the page. [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed
 `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `PreferencesResponse` or to `PreferencesUpdate` is caught
 there; it asserts nothing about a handler or the page. Te is ticked: the controls, their effect and their write are asserted on the page,
@@ -13478,7 +13478,7 @@ The tab is not ticked at V: its data is a signed-in user's row behind a gated ro
 - Given a partial body, then one upsert sets only the provided columns and returns the stored row, an explicit null clears a field and an
   empty body writes no column (a new user gets an all-NULL row and an existing row has its `updated_at` moved by the update trigger,
   `gcp/schema.sql:4950-4952`; executed against a real Postgres) (`test_put_partial_sets_only_provided_fields`,
-  `test_put_explicit_null_clears_the_field`, `test_put_empty_body_is_valid_and_returns_stored_row`, `tests/api/test_profile_router.py`, the
+  `test_put_explicit_null_clears_the_field`, `test_put_empty_body_is_valid_and_returns_stored_row`, [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py), the
   last asserting only a 200, the returned row, that `EXCLUDED.display_name` is absent from the statement and that `user_email` is the only
   bound parameter, not the row's effects).
 - Given a timeframe outside the list, a non-numeric or non-finite size or risk, or a number too large for JSON, then 422 and no database
@@ -13491,8 +13491,8 @@ both profile verbs are declared operations (`every /api request the app makes (v
 answers, `MOCK_PROFILE` for the `GET` and the echo for the `PUT`, match the response schema (`every mock payload for a typed 200 response
 matches its response schema (no undeclared fields)`), that the `PUT /api/me/profile` request samples, dense and sparse, validate against the
 request schema and that the dense one carries every profile field (`every request body the app sends matches its operation request schema`,
-`the profile sample covers every field a partial update can send`). The handler is asserted by `tests/api/test_profile_router.py` (the tests
-above, run in the lean CI job). `tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed
+`the profile sample covers every field a partial update can send`). The handler is asserted by [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) (the tests
+above, run in the lean CI job). [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed
 `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either profile route, to `ProfileResponse` or to `ProfileUpdate` is caught
 there; it asserts nothing about a handler or the page. Te stays unticked: the page layer is asserted by nothing.
@@ -13534,13 +13534,13 @@ SETTINGS-12. Permission: SETTINGS-13.
 - Given a switch is clicked, then its `aria-checked` flips, `Unsaved changes.` shows and Save sends that field only (executed; no test).
 - Given a switch is turned on and off again, then it reads as before, the form is dirty and Save sends `false` (executed; matrix Gaps).
 - Given `notify_daily_digest` is `"sometimes"`, then the handler answers 422 and makes no database call
-  (`test_put_unknown_enum_value_is_422`, `tests/api/test_profile_router.py`).
+  (`test_put_unknown_enum_value_is_422`, [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py)).
 
-**Tests:** No Playwright test opens this tab. The handler is asserted by `tests/api/test_profile_router.py` (the 422 above and the partial
+**Tests:** No Playwright test opens this tab. The handler is asserted by [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) (the 422 above and the partial
 upsert, in the lean CI job), and `src/mocks/contract.test.ts` checks that both profile verbs are declared operations and that their mock
 answers match the response schema (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed
 200 response matches its response schema (no undeclared fields)`) and that the sparse request sample `{notify_daily_digest: false}` matches
-the request schema (`every request body the app sends matches its operation request schema`); `tests/api/test_openapi_snapshot.py` (in the
+the request schema (`every request body the app sends matches its operation request schema`); [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the
 lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either profile route, to `ProfileResponse` or to `ProfileUpdate` is caught
 there. Te stays unticked: the page layer is asserted by nothing.
@@ -13597,19 +13597,19 @@ IAP's; the display defects above are in the matrix Gaps.
 - Given a stored role and a verified email, then `/api/me` answers the flags: `dev` sets `is_dev` and not `is_admin`, `admin` sets
   `is_admin` and not `is_dev`, the `ADMIN_EMAIL` account is an admin with no row, a plain or anonymous caller gets neither
   (`test_me_dev_role_sets_is_dev_not_is_admin`, `test_me_admin_role_sets_is_admin_not_is_dev`,
-  `test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`, `tests/api/test_platform_auth.py`).
+  `test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)).
 - Given `firebase` mode, then the middleware leaves `/api/me` open and `current_user_email` gives `null` without a token and the lower-cased
   email with a bearer token (`test_firebase_requires_valid_token`, same file, on a stub app whose `/api/me` route returns that helper's
-  answer); and the real route answers 200 against a dead backend (`Req("GET", "/api/me", 200)`, `tests/api/test_route_coverage.py`).
+  answer); and the real route answers 200 against a dead backend (`Req("GET", "/api/me", 200)`, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)).
 
 **Tests:** No Playwright or Vitest test asserts this tab: no spec opens it, and `src/hooks/useUser.ts` has no test. The handler's flags are
-asserted by the four `test_me_*` tests of `tests/api/test_platform_auth.py` (in the lean CI job), the middleware's open path by
-`test_firebase_requires_valid_token` on a stub app, and the route's status is pinned by `tests/api/test_route_coverage.py`. The shapes are
+asserted by the four `test_me_*` tests of [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) (in the lean CI job), the middleware's open path by
+`test_firebase_requires_valid_token` on a stub app, and the route's status is pinned by [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py). The shapes are
 pinned by `src/mocks/contract.test.ts`, which checks that `GET /api/me` (requested by `src/hooks/useUser.ts`) and `GET /api/config/firebase`
 (requested by `src/components/auth/ConfigGate.tsx`) are declared operations and that their mock answers, `MOCK_ME_DEV` and
 `MOCK_FIREBASE_CONFIG_OPEN`, match the response schemas (`every /api request the app makes (verb + path) is a declared operation`, `every
 mock payload for a typed 200 response matches its response schema (no undeclared fields)`; Vitest), and by
-`tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors,
+[`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors,
 stops matching the one the app generates (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `MeResponse` or to
 `RuntimeConfigResponse` is caught there; neither asserts what the tab shows. Te stays unticked: the page layer is asserted by nothing.
 
@@ -13669,7 +13669,7 @@ Permission: SETTINGS-13.
   `gcp/schema.sql:4914-4916`; executed against a real Postgres), a value outside the lists or an unknown field is 422 with no database call,
   and a failure is 503 (`test_put_partial_sets_only_provided_fields`, `test_put_explicit_null_clears_the_field`,
   `test_put_empty_body_is_valid_and_returns_stored_row`, `test_put_unknown_enum_value_is_422`,
-  `test_put_unknown_field_is_422_not_silently_dropped`, `test_put_db_failure_is_loud_503`, `tests/api/test_preferences_router.py`, the
+  `test_put_unknown_field_is_422_not_silently_dropped`, `test_put_db_failure_is_loud_503`, [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py), the
   empty-body test asserting only a 200, the returned row, that `EXCLUDED.theme` is absent from the statement and that `user_email` is the
   only bound parameter); the owner is the verified identity, lower-cased (`test_owner_is_the_server_verified_identity`) and a `firebase`
   request with none is 401 (`test_firebase_mode_without_identity_fails_closed_401`).
@@ -13681,12 +13681,12 @@ Permission: SETTINGS-13.
 
 **Tests:** The tests above, on main: the three page tests assert each control's effect and the last payload (they do not assert that nothing
 was written before the click, the three skips, a refused write or a pick during loading), the Vitest files assert the stores and the payload
-mapping, `tests/api/test_preferences_router.py` the handler (in the lean CI job), and `tests/api/test_route_coverage.py` pins `PUT
+mapping, [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) the handler (in the lean CI job), and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `PUT
 /api/me/preferences` at 422 with `body_ran=False`, so its body never reaches the handler's code. `src/mocks/contract.test.ts` checks that
 `PUT /api/me/preferences` is a declared operation (`every /api request the app makes (verb + path) is a declared operation`), that its mock
 answer, the echo, matches the response schema (`every mock payload for a typed 200 response matches its response schema (no undeclared
 fields)`) and that the four-field sample matches the request schema (`every request body the app sends matches its operation request
-schema`): the contract, not the page. `tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed
+schema`): the contract, not the page. [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed
 `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to the route, to `PreferencesResponse` or to `PreferencesUpdate` is caught
 there; it asserts nothing about a handler or the page. Te is ticked: the write-through is asserted on the page, in the stores and in the
@@ -13747,7 +13747,7 @@ Permission: a 401 shows as the same error (SETTINGS-13).
 - Given a partial body, then one upsert sets only the provided columns and returns the stored row, an explicit null clears a field and an
   empty body writes no column (a new user gets an all-NULL row and an existing row has its `updated_at` moved by the update trigger,
   `gcp/schema.sql:4950-4952`; executed against a real Postgres) (`test_put_partial_sets_only_provided_fields`,
-  `test_put_explicit_null_clears_the_field`, `test_put_empty_body_is_valid_and_returns_stored_row`, `tests/api/test_profile_router.py`, the
+  `test_put_explicit_null_clears_the_field`, `test_put_empty_body_is_valid_and_returns_stored_row`, [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py), the
   last asserting only a 200, the returned row, that `EXCLUDED.display_name` is absent from the statement and that `user_email` is the only
   bound parameter); an unknown field, a value outside the lists, a non-finite or overflowing number is 422 with no database call
   (`test_put_unknown_field_is_422_not_silently_dropped`, `test_put_unknown_enum_value_is_422`,
@@ -13756,12 +13756,12 @@ Permission: a 401 shows as the same error (SETTINGS-13).
 
 **Tests:** On main, the first two page tests above assert the save and its failure: the dirty line, the enabled button, the exact diff body
 `{display_name: 'Teneika A.'}` and `Saved.`, and the error text with no `Saved.`. They never use `Discard`. The handler is asserted by the
-pytest tests above (in the lean CI job) and pinned by `tests/api/test_route_coverage.py` (`PUT /api/me/profile` answers 503 against a dead
+pytest tests above (in the lean CI job) and pinned by [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`PUT /api/me/profile` answers 503 against a dead
 backend), and `src/mocks/contract.test.ts` checks that `PUT /api/me/profile` is a declared operation (`every /api request the app makes
 (verb + path) is a declared operation`), that its mock answer, the echo, matches the response schema (`every mock payload for a typed 200
 response matches its response schema (no undeclared fields)`) and that the dense and sparse request samples, the sparse ones including the
 empty body, match the request schema (`every request body the app sends matches its operation request schema`);
-`tests/api/test_openapi_snapshot.py` (in the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors,
+[`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors,
 stops matching the one the app generates (`test_committed_openapi_snapshot_matches_app`), so a change to the route, to `ProfileResponse` or
 to `ProfileUpdate` is caught there. This branch adds `Discard returns the draft to the stored values and persists nothing` (solyra
 `tests/settings/settings.spec.ts`: a stored profile, an edit, Discard, the box back to the stored value, the dirty line and `Discard` gone,
@@ -13900,7 +13900,7 @@ answer 401 without a token on staging; this state is not ticked at V.
 
 **Acceptance criteria:**
 - Given no row for the caller, then `GET /api/me/profile` answers 404 `no profile stored` and `GET /api/me/preferences` 404 `no preferences
-  stored` (`test_get_with_nothing_stored_is_404` in `tests/api/test_profile_router.py` and in `tests/api/test_preferences_router.py`).
+  stored` (`test_get_with_nothing_stored_is_404` in [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) and in [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py)).
 - Given a 404 on both reads, then the boxes are empty with `Not set`, the switches are off, `Save changes` is disabled and the status line
   reads `Synced to your account.` (executed; no test).
 - Given a 404 on the preferences read, then the local appearance stands and nothing is written (executed; no test).
@@ -13913,7 +13913,7 @@ stored answers 200 with all-null preferences and an empty profile, which exercis
 an empty switch, a disabled Save or the 404 branch. `src/mocks/contract.test.ts` checks that both `GET` routes are declared operations and
 that their mock answers, `MOCK_PROFILE` and `MOCK_PREFERENCES_EMPTY` (a 200 with all-null fields, which is the all-null branch above and not
 the 404), match the response schemas (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a
-typed 200 response matches its response schema (no undeclared fields)`), and `tests/api/test_openapi_snapshot.py` (in the lean CI job) fails
+typed 200 response matches its response schema (no undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails
 when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `ProfileResponse` or to `PreferencesResponse` is caught
 there; the document declares no 404, so neither pins the empty answer. Te stays unticked: the page layer is asserted by nothing.
@@ -13963,19 +13963,19 @@ again, and so does a window focus (read).
   write are each announced, never swallowed (Rule 4)`, same file, added on this branch, not on main).
 - Given both reads fail, then only the appearance line shows (executed; matrix Gaps).
 - Given a database failure, then 503 on both verbs of both routes (`test_get_db_failure_is_loud_503` and `test_put_db_failure_is_loud_503`
-  in `tests/api/test_preferences_router.py` and `tests/api/test_profile_router.py`); given a defect in the row read, then 503 as well
+  in [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) and [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py)); given a defect in the row read, then 503 as well
   (executed; no test).
 
 **Tests:** On main, the two page tests above assert one read failure and one save failure of the four presentations, by their texts and by
 the absence of the synced and saved lines; the handlers' 503 and 422 answers are asserted by the pytest files above (in the lean CI job) and
-pinned by `tests/api/test_route_coverage.py` (`GET` 503 against a dead backend for both routes, `PUT /api/me/profile` 503). This branch adds
+pinned by [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`GET` 503 against a dead backend for both routes, `PUT /api/me/profile` 503). This branch adds
 the profile read and the appearance write (the third criterion, solyra `tests/settings/settings.spec.ts`); it passed on the unchanged page,
 so it was shown to fail by mutation, two changes of one line each to a scratch copy of the product code, that dropped the profile read line
 from the header and dropped a failed write from the sync status; with the second, the seven tests on main stay green, so only the new test
 sees it (see the Gaps). The routes' 200 answers, request samples and models are pinned as in SETTINGS-02 and SETTINGS-03 by
 `src/mocks/contract.test.ts` (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200
 response matches its response schema (no undeclared fields)`, `every request body the app sends matches its operation request schema`) and
-`tests/api/test_openapi_snapshot.py` (`test_committed_openapi_snapshot_matches_app`); the document declares a 422 for the two `PUT` routes
+[`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`); the document declares a 422 for the two `PUT` routes
 and no 503, and no check asserts a failure answer. Te stays unticked: the two presentations above wait for a CI run that includes the
 branch's tests, and the precedence and the retained save error are asserted by nothing.
 
@@ -14020,7 +14020,7 @@ under StrictMode (its own comment). No test applies a stored value, moves the cl
 `src/hooks/usePreferences.test.ts` covers only `sanitizePreferences` and `toPayload`, and there is no `useProfile` test.
 `src/mocks/contract.test.ts` checks that the two `GET` routes are declared operations and that their mock answers match the response schemas
 (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response
-schema (no undeclared fields)`), and `tests/api/test_openapi_snapshot.py` (`test_committed_openapi_snapshot_matches_app`) pins both routes
+schema (no undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`) pins both routes
 and their models; neither response model carries a time, so neither can assert one. Te stays unticked.
 
 **Code:** `src/routes/SettingsPage.tsx:132-142,182-194`, `src/hooks/usePreferences.ts:119-226`, `src/hooks/useProfile.ts:93-122`,
@@ -14069,13 +14069,13 @@ route.
   unreachable (`firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main; it opens `/dashboard`,
   the gate wraps every app route, `src/App.tsx:70-98`, and the Settings page itself is not visited).
 - Given `firebase` mode and a request to either route with no identity, then 401 and no database call
-  (`test_firebase_mode_without_identity_fails_closed_401` in `tests/api/test_preferences_router.py` and in
-  `tests/api/test_profile_router.py`), and the middleware gates `/api/me/preferences` while `/api/me` stays open
-  (`test_firebase_open_me_is_exact_match_and_subpaths_are_gated`, `tests/api/test_platform_auth.py`, on a stub app).
+  (`test_firebase_mode_without_identity_fails_closed_401` in [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) and in
+  [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py)), and the middleware gates `/api/me/preferences` while `/api/me` stays open
+  (`test_firebase_open_me_is_exact_match_and_subpaths_are_gated`, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py), on a stub app).
 - Given `iap` mode, then the owner is the IAP header's email, lower-cased (`test_owner_is_the_server_verified_identity` in both router
   files).
 - Given `firebase` mode with the real app, then both routes answer 401 with no token (executed; the two router files test the routers alone
-  and `tests/api/test_platform_auth.py` a stub app; matrix Gaps).
+  and [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) a stub app; matrix Gaps).
 - Given a signed-in account whose token the routes refuse, then the page shows the load errors above and no sign-in state (executed; matrix
   Gaps).
 - Given `open` or `iap` mode with no identity, then the routers serve the `local` row (executed; matrix Gaps).
@@ -14084,11 +14084,11 @@ route.
 (`tests/shared/auth-gate.spec.ts`: the sign-in screen, the Google button, the email and password boxes and the absence of the shell's
 navigation, with `/dashboard` as the route), and the routes' gate by the two router files'
 `test_firebase_mode_without_identity_fails_closed_401` (GET and PUT, 401, no database call), `test_owner_is_the_server_verified_identity`
-and `tests/api/test_platform_auth.py` (`test_firebase_requires_valid_token`, `test_firebase_open_me_is_exact_match_and_subpaths_are_gated`),
+and [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) (`test_firebase_requires_valid_token`, `test_firebase_open_me_is_exact_match_and_subpaths_are_gated`),
 all in the lean CI job. The routes' shapes are pinned by `src/mocks/contract.test.ts` (the four route and verb pairs are declared
 operations, their 200 mock answers match the response schemas and the `PUT` samples the request schemas: `every /api request the app makes
 (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`,
-`every request body the app sends matches its operation request schema`) and by `tests/api/test_openapi_snapshot.py`
+`every request body the app sends matches its operation request schema`) and by [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py)
 (`test_committed_openapi_snapshot_matches_app`: the four operations and their models, until the committed `platform/api/openapi.json` is
 regenerated); the document declares no 401, so neither asserts a refusal. Not asserted on main: the middleware on the real app for these two
 routes, `iap` mode with no header, and what the page shows for a 401 or a 403 from a route. Te is ticked: the sign-in screen and the 401
