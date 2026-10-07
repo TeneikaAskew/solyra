@@ -1255,7 +1255,7 @@ data tied to the previous identity survives into the next session; `onAuthStateC
 flips `useUser().isSignedIn` to false and `AuthGate` renders `SignInScreen` again. A second,
 independently implemented sign-out control exists for the mobile account menu,
 `AuthStatusIndicator.tsx`'s `account-menu-sign-out` button (`AuthStatusIndicator.tsx:96-103`),
-with the same `firebaseSignOut` + `qc.clear()` body duplicated rather than shared.
+with the same `firebaseSignOut` + `qc.clear()` body duplicated rather than shared. The Settings page's `Sign out` (SETTINGS-08, `src/routes/SettingsPage.tsx:473-487`) is a third control that calls `firebaseSignOut()` without `qc.clear()`, so on that path the previous identity's cached answers survive until their stale time (matrix area 15 Gaps, line 1221; filed as [solyra#117](https://github.com/TeneikaAskew/solyra/issues/117)).
 
 **Needs:** nothing from our backend; `firebaseSignOut` is `signOut(auth)` against the Firebase SDK
 only.
@@ -1638,7 +1638,7 @@ branch (a second, independent instance of that copy, distinct from SHELL-16's `A
 
 **States:** SHELL-12 (loading), SHELL-13 (empty), SHELL-14 (error) are this component's three
 `null`-returning branches, indistinguishable from each other in source; the auth-blocked branch
-(`MostActiveBar.tsx:182-191`) is a fourth, distinct, non-null branch.
+(`MostActiveBar.tsx:182-191`) is a fourth, distinct, non-null branch. The auth-blocked branch is driven by the global `markAuthBlocked` flag (`src/lib/authGate.ts:22`), which `authedFetch` sets on any page's 401 (`src/lib/authedFetch.ts:158`), so the strip reads `Sign in to load data` after another page's gated request fails even when `/api/market/most-active` itself answered (matrix area 03 Gaps, line 295).
 
 **Acceptance criteria:**
 - Given a signed-out/blocked session, when `useAuthBlocked()` is true, then the strip renders its
@@ -1870,7 +1870,7 @@ is about, the way SHELL-02 and SHELL-11 handle a similarly-named near miss.
 Calls `firebaseSignOut()`, then clears the whole React Query cache (`qc.clear()`) so no
 identity-tied data survives the switch. `AccountMenuSection`'s `account-menu-sign-out` is a
 second, independently-implemented control for the mobile hamburger menu, duplicating the same
-`firebaseSignOut()` + `qc.clear()` body rather than sharing it (`AuthStatusIndicator.tsx:96-103`).
+`firebaseSignOut()` + `qc.clear()` body rather than sharing it (`AuthStatusIndicator.tsx:96-103`). The Settings page's `Sign out` (SETTINGS-08, `src/routes/SettingsPage.tsx:473-487`) is a third control that calls `firebaseSignOut()` without `qc.clear()`, so on that path the previous identity's cached answers survive until their stale time (matrix area 15 Gaps, line 1221; filed as [solyra#117](https://github.com/TeneikaAskew/solyra/issues/117)).
 
 **Needs:** no read API; `firebaseSignOut()` is a Firebase client-SDK call, no backend round trip.
 
@@ -2042,7 +2042,7 @@ matches), matching Task 13's AUTH-08 finding for the identical mechanism. No tes
 
 - **Purpose:** Daily starting point: the pre-market brief with the top playbook setup, daily KPIs, the intraday chart, live signals, upcoming catalysts, sector rotation, the AI take, news and the feature-flagged Movement Read. The most-active marquee is not mounted on this route.
 - **Matrix:** [03 § 04](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#04--dashboard)
-- **Status:** Production but needs remediation · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [solyra#84](https://github.com/TeneikaAskew/solyra/issues/84) (replaces [#861](https://github.com/TeneikaAskew/stocks/issues/861), closed on 2026-09-07) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-10-07
 - **Component:** `src/routes/DashboardPage.tsx` (948 lines)
 - **Child components:** `CandlestickChart`, `Card`, `CardHeader`, `Delta`, `DirTag`, `KpiTile`, `Metric`, `MicroLabel`, `MovementRead`, `Pill`, `PriceAreaChart`, `ScoreStars`, `SetupCardDetails`, `TickerCombobox`, `WidgetState`
 - **API calls (from source):** `/api/catalysts/events`, `/api/dashboard/brief/`, `/api/market/data/`, `/api/market/reference/`, `/api/market/sectors`, `/api/playbook/`, `/api/signals/`
@@ -6410,7 +6410,7 @@ assertion of `Sign in to load`. Te stays unticked.
 
 - **Purpose:** The day’s structured setups for the active ticker (conditions, win rate, average return, target and stop off the live price, win rate by hold window) and, during the session, how many of each setup's conditions the live market meets. There is no as-of review mode on this page: it never sends `date`, and the Replay control is not shown on `/playbook`.
 - **Matrix:** [03 § 11](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#11--playbook)
-- **Status:** Broken · **Blocking issue:** [#861](https://github.com/TeneikaAskew/stocks/issues/861) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [solyra#112](https://github.com/TeneikaAskew/solyra/issues/112) (replaces [#861](https://github.com/TeneikaAskew/stocks/issues/861), closed on 2026-09-07) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-10-07
 - **Component:** `src/routes/PlaybookPage.tsx` (372 lines)
 - **Child components:** `SetupCardDetails`, `type SetupHorizon`, `DataGate`
 - **API calls (from source):** `/api/playbook/`, `/api/market/reference/`, and through hooks `/api/live/status`, `/api/live/history/`, `/api/live/quote/`, `/api/live/avg-volume/`, `/api/live/indicators`, `/api/playbook/evaluate`
@@ -12745,7 +12745,7 @@ the unchanged page and fails with the message's text removed (mutation: `>No mat
 
 - **Purpose:** Profile, appearance, trading defaults, notifications and account, on five tabs. Appearance (theme, navigation, density and accent) applies at once on the device and is written through to the account; Profile, Trading and Notifications are one draft saved with Save changes, which sends only the changed fields; Account shows the sign-in email, the auth mode and the role, and the Sign out button. Nothing else in the app reads the saved profile and nothing sends the notification emails, a decimal point typed into the two number boxes is dropped, the Settings Sign out leaves the previous account's cached profile on screen for the next sign-in, a pick made while the stored appearance loads is lost or never stored, and the header can show one failure at a time (matrix Gaps).
 - **Matrix:** [03 § 15](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#15--settings)
-- **Status:** Incomplete · **Blocking issue:** none · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-08-30
+- **Status:** Production but needs remediation · **Blocking issue:** [solyra#117](https://github.com/TeneikaAskew/solyra/issues/117), [solyra#119](https://github.com/TeneikaAskew/solyra/issues/119), [solyra#121](https://github.com/TeneikaAskew/solyra/issues/121) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-10-07
 - **Component:** `src/routes/SettingsPage.tsx` (492 lines)
 - **Child components:** none (`Section`, `Field` and `ToggleRow` are defined inside `src/routes/SettingsPage.tsx`)
 - **API calls (from source):** `/api/me/preferences` (GET and PUT, through `usePreferencesSync`, which `src/components/layout/AppShell.tsx` mounts, and `usePreferencesStatus`), `/api/me/profile` (GET and PUT, through `useProfile`), `/api/me` (through `useUser`)
