@@ -365,12 +365,10 @@ issue. Second, `GET /api/health/freshness` (`platform/api/routers/health.py:158`
 in-process cache with a single-flight claim: the request that claims a stale or empty cache
 runs the audit and returns the fresh report; every other concurrent request answers
 immediately, either the previous report labelled `stale: true` with its age, or a 503
-(`{"detail":"Freshness audit in progress and no cached report is available yet. Retry
-shortly."}`) when nothing is cached yet. `GET /api/health/freshness` itself has no direct
+(`{"detail":"Freshness audit in progress and no cached report is available yet. Retry shortly."}`) when nothing is cached yet. `GET /api/health/freshness` itself has no direct
 solyra consumer today: the old Dashboard "data pipeline" widget that used to poll it was
 retired in the stocks/solyra split, and a regression test pins its absence
-(`tests/dashboard/data-pipeline-widget.spec.ts`, `dashboard renders without the
-data-pipeline widget`). The same cached audit does reach the UI through a sibling endpoint:
+(`tests/dashboard/data-pipeline-widget.spec.ts`, `dashboard renders without the data-pipeline widget`). The same cached audit does reach the UI through a sibling endpoint:
 `platform/api/routers/admin.py:1391-1402` imports `freshness_report_dict` from the health
 router and serves it as `GET /api/admin/data-sources`, which solyra's `useAdminDataSources`
 hook (`src/hooks/useAdmin.ts:347`) and `DataSourcesPanel.tsx` (mounted on the Admin page,
@@ -508,11 +506,9 @@ of LANDING-10 in their own right, as Actions). Plain `<a>` tags, not a client-si
   directly asserted, by the mobile regression specs (see LANDING-09).
 - Given a phone-width viewport (360, 390 or 411px), when the nav renders, then neither
   `.sl-nav-signin` nor `.sl-nav-cta` overflows the viewport and the page has no horizontal
-  scroll (`tests/landing/landing.spec.ts:83-100`, the `Sign in stays reachable and
-  in-bounds at Npx` regression specs).
+  scroll (`tests/landing/landing.spec.ts:83-100`, the `Sign in stays reachable and in-bounds at Npx` regression specs).
 
-**Tests:** solyra `tests/landing/landing.spec.ts` (the three `Sign in stays reachable and
-in-bounds at Npx` specs cover the nav's layout directly; every other spec in the file
+**Tests:** solyra `tests/landing/landing.spec.ts` (the three `Sign in stays reachable and in-bounds at Npx` specs cover the nav's layout directly; every other spec in the file
 mounts it too, so a runtime error here would fail them, but none asserts its content).
 
 **Code:** `src/components/landing/LandingNav.tsx`.
@@ -527,8 +523,7 @@ revealing a "3 signals armed" badge once every line is visible (`Hero.tsx:58-79`
 `useTypingLines` honors `prefers-reduced-motion` by revealing every line immediately
 instead of animating (`useTypingLines.ts:12-15`).
 
-**Needs:** `AGENT_LINES`, a bundled, static 7-entry array (`src/components/landing/
-fixtures.ts:10-18`); no endpoint, no store.
+**Needs:** `AGENT_LINES`, a bundled, static 7-entry array (`src/components/landing/fixtures.ts:10-18`); no endpoint, no store.
 
 **States:**
 - typing in progress: fewer than 7 lines visible, no "signals armed" badge
@@ -545,8 +540,7 @@ fixtures.ts:10-18`); no endpoint, no store.
   then it returns 7 immediately and starts no interval (`useTypingLines.ts:12-15`; verified
   by reading the hook directly, no test exercises this branch).
 - Given normal motion preference, when the component mounts, then one additional
-  `AGENT_LINES` entry becomes visible every 650ms until all 7 show (`useTypingLines.ts:
-  16-23`; no test exercises the timing itself).
+  `AGENT_LINES` entry becomes visible every 650ms until all 7 show (`useTypingLines.ts:16-23`; no test exercises the timing itself).
 
 **Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /` asserts
 the rendered heading; neither the typing animation nor the reduced-motion branch is
@@ -573,8 +567,7 @@ any test (`fixtures.ts:51-54`).
 
 **Acceptance criteria:**
 - Given `/` is rendered, when `BentoGrid` mounts, then "Everything that moves the market.
-  One surface." is visible (`renders all key sections at /`, exact text, `BentoGrid.
-  tsx:70`).
+  One surface." is visible (`renders all key sections at /`, exact text, `BentoGrid.tsx:70`).
 - Given `BENTO.proof.hitRatePct` is a number, when the Proof tile renders, then it shows
   `{hitRatePct}% hit rate` and the caption, not the "Results published at launch"
   placeholder (`BentoGrid.tsx:117-124`); the fixture's own header comment records the
@@ -583,17 +576,14 @@ any test (`fixtures.ts:51-54`).
 
 **Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`).
 
-**Code:** `src/components/landing/BentoGrid.tsx`; `src/components/landing/fixtures.
-ts:10-55`.
+**Code:** `src/components/landing/BentoGrid.tsx`; `src/components/landing/fixtures.ts:10-55`.
 
 ##### LANDING-04 · ChartShowcase
 
 **Shows or does:** A static inline SVG sample chart (`ChartShowcase.tsx:26-73`) under
-"Charts that show the *why*." (`:14-16`): 24 fixed candles (`CANDLES`, `fixtures.
-ts:58-85`), a VWAP path, and three gamma level lines styled to match the real Charts
+"Charts that show the *why*." (`:14-16`): 24 fixed candles (`CANDLES`, `fixtures.ts:58-85`), a VWAP path, and three gamma level lines styled to match the real Charts
 page's own line styles exactly, per the component's own comment: King solid gold
-`#f59e0b` width 2, Gate dotted blue `#3b82f6`, Flip dashed violet `#a78bfa` (`:6-9,
-31-44`), plus one signal marker and one rejection annotation.
+`#f59e0b` width 2, Gate dotted blue `#3b82f6`, Flip dashed violet `#a78bfa` (`:6-9, 31-44`), plus one signal marker and one rejection annotation.
 
 **Needs:** `CANDLES` (`fixtures.ts:58-85`); no endpoint.
 
@@ -609,8 +599,7 @@ page's own line styles exactly, per the component's own comment: King solid gold
 
 **Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`).
 
-**Code:** `src/components/landing/ChartShowcase.tsx`; `src/components/landing/fixtures.
-ts:58-85` (`CANDLES`).
+**Code:** `src/components/landing/ChartShowcase.tsx`; `src/components/landing/fixtures.ts:58-85` (`CANDLES`).
 
 ##### LANDING-05 · ModuleDives
 
@@ -635,8 +624,7 @@ endpoint.
 
 **Tests:** solyra `tests/landing/landing.spec.ts` (presence-only, see above).
 
-**Code:** `src/components/landing/ModuleDives.tsx`; `src/components/landing/fixtures.
-ts:87-116`.
+**Code:** `src/components/landing/ModuleDives.tsx`; `src/components/landing/fixtures.ts:87-116`.
 
 ##### LANDING-06 · DailyRhythm
 
@@ -657,13 +645,11 @@ day with Solyra.": three phase cards, LEARN 07:00, DO 09:30, ACT 16:00, from `RH
 
 **Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`).
 
-**Code:** `src/components/landing/DailyRhythm.tsx`; `src/components/landing/fixtures.
-ts:118-131` (`RHYTHM`).
+**Code:** `src/components/landing/DailyRhythm.tsx`; `src/components/landing/fixtures.ts:118-131` (`RHYTHM`).
 
 ##### LANDING-07 · WaitlistSection
 
-**Shows or does:** The waitlist capture section, `id="waitlist"` (`WaitlistSection.
-tsx:30-89`), headed "Be there at first light." (`:43`): an email input
+**Shows or does:** The waitlist capture section, `id="waitlist"` (`WaitlistSection.tsx:30-89`), headed "Be there at first light." (`:43`): an email input
 (`data-testid="waitlist-email"`, `:64-76`), a hidden honeypot text input (`tabIndex={-1}`,
 positioned off-screen, `aria-hidden`, `:54-63`), and a submit button
 (`data-testid="waitlist-submit"`, `:77-79`), all replaced by a success message once
@@ -692,9 +678,7 @@ store, no other endpoint.
   by "You're on the list. One email when your cohort opens." (`:48-51`); no test observes
   this branch end to end: `waitlist.test.ts` tests `submitWaitlist` in isolation and
   `landing.spec.ts` only exercises the client-validation rejection path, so the success UI
-  itself is untested, only the data layer beneath it is (`test_valid_email_upserts_and_
-  returns_ok`, `waitlist.test.ts`'s `POSTs email + source + empty honeypot and resolves on
-  200`).
+  itself is untested, only the data layer beneath it is (`test_valid_email_upserts_and_returns_ok`, `waitlist.test.ts`'s `POSTs email + source + empty honeypot and resolves on 200`).
 
 **Tests:** solyra `tests/landing/landing.spec.ts` (`renders all key sections at /`, heading
 only); `src/components/landing/waitlist.test.ts` (data layer only, see above). stocks
@@ -729,14 +713,11 @@ three separate links: `LandingNav`'s own `#faq` (`LandingNav.tsx:14`), the foote
 **Tests:** solyra `tests/landing/landing.spec.ts` (presence-only; no assertion targets
 this section's content or the hash-scroll behaviour).
 
-**Code:** `src/components/landing/LandingFAQ.tsx`; `src/components/landing/fixtures.
-ts:133-146` (`FAQ`); `src/routes/LandingPage.tsx:22-25` (hash scroll); `src/components/
-layout/navConfig.ts:92` (Support menu entry).
+**Code:** `src/components/landing/LandingFAQ.tsx`; `src/components/landing/fixtures.ts:133-146` (`FAQ`); `src/routes/LandingPage.tsx:22-25` (hash scroll); `src/components/layout/navConfig.ts:92` (Support menu entry).
 
 ##### LANDING-09 · Sign in (to /dashboard)
 
-**Shows or does:** `LandingNav`'s "Sign in" anchor, `<a href="/dashboard"
-className="sl-mut sl-nav-signin">Sign in</a>` (`LandingNav.tsx:17`). A plain link, not a
+**Shows or does:** `LandingNav`'s "Sign in" anchor, `<a href="/dashboard" className="sl-mut sl-nav-signin">Sign in</a>` (`LandingNav.tsx:17`). A plain link, not a
 client-side router element: clicking it performs a normal browser navigation to
 `/dashboard`.
 
@@ -759,8 +740,7 @@ to AuthGate (AUTH-01), not to this element.
   there, the sign-in screen in firebase mode or the app directly in open/iap mode; out of
   this element's own scope, traced under AUTH-01, not observed by any test in this area.
 
-**Tests:** solyra `tests/landing/landing.spec.ts` (the three `Sign in stays reachable and
-in-bounds at Npx` specs).
+**Tests:** solyra `tests/landing/landing.spec.ts` (the three `Sign in stays reachable and in-bounds at Npx` specs).
 
 **Code:** `src/components/landing/LandingNav.tsx:17`.
 
@@ -770,16 +750,13 @@ in-bounds at Npx` specs).
 `<a href="#waitlist" className="sl-cta sl-nav-cta">Request access</a>`
 (`LandingNav.tsx:18`), a same-page scroll to `WaitlistSection`'s `id="waitlist"`
 (`WaitlistSection.tsx:33`); and the form submit itself, `WaitlistSection`'s `onSubmit`
-handler (`:13-28`): client-side `validateEmail` first, then `submitWaitlist(email,
-'landing', website)` (`waitlist.ts:10-31`) POSTs to `/api/waitlist`, handled by
+handler (`:13-28`): client-side `validateEmail` first, then `submitWaitlist(email, 'landing', website)` (`waitlist.ts:10-31`) POSTs to `/api/waitlist`, handled by
 `join_waitlist` (`platform/api/routers/waitlist.py:84-130`).
 
 **Needs:** `POST /api/waitlist` (`WaitlistBody { email, source, website }`,
 `platform/api/routers/waitlist.py:45-48`) returning `WaitlistResponse { status: "ok" }`
 (`platform/api/schemas.py:1382-1383`) on success, or an `HTTPException` with a `detail`
-string on failure; table `waitlist_signups` (`email UNIQUE, source, user_agent,
-created_at, updated_at`, `gcp/schema.sql:4755-4762`), written by a single `INSERT ...
-ON CONFLICT (email) DO UPDATE` (`waitlist.py:108-121`, no separate `lib/` module).
+string on failure; table `waitlist_signups` (`email UNIQUE, source, user_agent, created_at, updated_at`, `gcp/schema.sql:4755-4762`), written by a single `INSERT ...ON CONFLICT (email) DO UPDATE` (`waitlist.py:108-121`, no separate `lib/` module).
 
 **States:**
 - idle: form visible, submit enabled, reads "Join the waitlist"
@@ -797,14 +774,10 @@ ON CONFLICT (email) DO UPDATE` (`waitlist.py:108-121`, no separate `lib/` module
   `WaitlistSection.tsx:33`); no test asserts the scroll itself, only that the anchor and
   its target exist in source.
 - Given a syntactically valid, previously-unseen email and an empty honeypot, when the
-  form is submitted, then the browser POSTs `{email (trimmed, lowercased), source:
-  "landing", website: ""}` to `/api/waitlist`, the backend inserts a new
-  `waitlist_signups` row and returns `{"status":"ok"}` (`test_valid_email_upserts_and_
-  returns_ok`; `waitlist.test.ts`'s `POSTs email + source + empty honeypot and resolves on
-  200`).
+  form is submitted, then the browser POSTs `{email (trimmed, lowercased), source:"landing", website: ""}` to `/api/waitlist`, the backend inserts a new
+  `waitlist_signups` row and returns `{"status":"ok"}` (`test_valid_email_upserts_and_returns_ok`; `waitlist.test.ts`'s `POSTs email + source + empty honeypot and resolves on 200`).
 - Given the app is served from a `*.lovable.app` host (Lovable, the production SPA host
-  for this area), when `submitWaitlist` calls the bare global `fetch('/api/waitlist',
-  ...)`, then `installAuthFetch`'s wrapper, installed unconditionally at boot before
+  for this area), when `submitWaitlist` calls the bare global `fetch('/api/waitlist',...)`, then `installAuthFetch`'s wrapper, installed unconditionally at boot before
   ConfigGate specifically because "the landing page's own waitlist POST needs that
   rewrite too" (`src/main.tsx:14-25`), rewrites it onto `STAGING_API`
   (`src/lib/apiTargets.ts:29,37`, `authedFetch.ts:56-63,109-129`), because a static host
@@ -823,29 +796,22 @@ ON CONFLICT (email) DO UPDATE` (`waitlist.py:108-121`, no separate `lib/` module
   then `authedFetch` intercepts it before the network, checked before the base rewrite
   (`authedFetch.ts:145-148`), and the fixture engine has NO route for `/api/waitlist` on
   this page, on purpose (`landingRoutes: MockRoute[] = []`, `src/mocks/landing.ts:36`), so
-  the loud 501 "no fixture" miss (`src/mocks/index.ts:132-140`) flows into
+  the loud 501 "no fixture" miss (`src/mocks/index.ts:126-133`) flows into
   `submitWaitlist`'s own error branch and the form shows an honest failure rather than a
   mocked fake "you're on the list" (`src/mocks/landing.ts:27-35`, citing CLAUDE.md Rule 4
   by name).
 
-**Tests:** stocks [`tests/api/test_waitlist_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_waitlist_router.py) (`test_valid_email_upserts_and_
-returns_ok`, `test_honeypot_returns_fake_success_without_db_call`, `test_honeypot_
-checked_before_email_validation`). solyra `src/components/landing/waitlist.test.ts`
-(`submitWaitlist > POSTs email + source + empty honeypot and resolves on 200`, `>
-sends a filled honeypot value through to the server`). solyra `tests/landing/
-landing.spec.ts` (`waitlist form rejects an invalid email with a visible error` exercises
+**Tests:** stocks [`tests/api/test_waitlist_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_waitlist_router.py) (`test_valid_email_upserts_and_returns_ok`, `test_honeypot_returns_fake_success_without_db_call`, `test_honeypot_checked_before_email_validation`). solyra `src/components/landing/waitlist.test.ts`
+(`submitWaitlist > POSTs email + source + empty honeypot and resolves on 200`, `> sends a filled honeypot value through to the server`). solyra `tests/landing/landing.spec.ts` (`waitlist form rejects an invalid email with a visible error` exercises
 the same submit handler's client-validation branch, not the network branch).
 
-**Code:** `src/components/landing/LandingNav.tsx:18`; `src/components/landing/
-WaitlistSection.tsx:13-28`; `src/components/landing/waitlist.ts`; `platform/api/routers/
-waitlist.py:84-130`; `platform/api/schemas.py:1382-1383`; `gcp/schema.sql:4755-4762`;
+**Code:** `src/components/landing/LandingNav.tsx:18`; `src/components/landing/WaitlistSection.tsx:13-28`; `src/components/landing/waitlist.ts`; `platform/api/routers/waitlist.py:84-130`; `platform/api/schemas.py:1382-1383`; `gcp/schema.sql:4755-4762`;
 `src/main.tsx:14-25`; `src/lib/authedFetch.ts:45,56-63,109-129,145-166`;
 `src/lib/runtimeConfig.ts:22`; `src/mocks/landing.ts`.
 
 ##### LANDING-11 · See a live day (scroll to #learn)
 
-**Shows or does:** `Hero`'s "See a live day ↓" anchor, `<a href="#learn"
-className="sl-cta2">See a live day ↓</a>` (`Hero.tsx:41`), a same-page scroll to
+**Shows or does:** `Hero`'s "See a live day ↓" anchor, `<a href="#learn" className="sl-cta2">See a live day ↓</a>` (`Hero.tsx:41`), a same-page scroll to
 `DailyRhythm`'s `id="learn"` section (`DailyRhythm.tsx:6`).
 
 **Needs:** nothing; no props, no store, no endpoint.
@@ -864,8 +830,7 @@ className="sl-cta2">See a live day ↓</a>` (`Hero.tsx:41`), a same-page scroll 
 **Tests:** none. No Vitest, pytest or Playwright test references this link or the
 `#learn` anchor.
 
-**Code:** `src/components/landing/Hero.tsx:41`; `src/components/landing/
-DailyRhythm.tsx:6`.
+**Code:** `src/components/landing/Hero.tsx:41`; `src/components/landing/DailyRhythm.tsx:6`.
 
 ##### LANDING-12 · State: loading (waitlist submit in flight)
 
@@ -875,8 +840,7 @@ validation passes and before `submitWaitlist` is awaited): the submit button is 
 and its text changes from "Join the waitlist" to "Joining…"
 (`:77-79`, `disabled={status === 'submitting'}`, `data-testid="waitlist-submit"`). This
 presentation genuinely exists in the current source; UI-SCREENS.md's States table
-previously marked it "absent", which this task corrects after reading `WaitlistSection.
-tsx` directly rather than trusting the earlier marking.
+previously marked it "absent", which this task corrects after reading `WaitlistSection.tsx` directly rather than trusting the earlier marking.
 
 **Needs:** nothing beyond the component's own `status` state; no endpoint of its own, it
 is a presentation of the LANDING-10 request's lifecycle.
@@ -922,33 +886,26 @@ network failure.
 **Acceptance criteria:**
 - Given an invalid email is submitted, when `validateEmail` rejects it, then the handler
   sets `error` to "Enter a valid email address." without calling `submitWaitlist` at all
-  (`WaitlistSection.tsx:16-19`; `tests/landing/landing.spec.ts`'s `waitlist form rejects
-  an invalid email with a visible error`: fills `not-an-email`, clicks submit, asserts
+  (`WaitlistSection.tsx:16-19`; `tests/landing/landing.spec.ts`'s `waitlist form rejects an invalid email with a visible error`: fills `not-an-email`, clicks submit, asserts
   `waitlist-error` contains `/valid email/i`).
 - Given the backend responds 400/429/503 with a JSON `{"detail": "..."}` body, when
   `submitWaitlist` parses it, then it throws an `Error` whose message IS that `detail`
   string, which `WaitlistSection` then renders verbatim (`waitlist.ts:21-29`;
   `waitlist.test.ts`'s `throws the server detail on a non-2xx response (loud failure)`,
-  backed on the server side by `test_invalid_email_is_400_and_no_db_call`, `test_rate_
-  limit_429_after_five_requests`, `test_db_failure_is_loud_503`, each of which returns a
+  backed on the server side by `test_invalid_email_is_400_and_no_db_call`, `test_rate_limit_429_after_five_requests`, `test_db_failure_is_loud_503`, each of which returns a
   `detail` string `join_waitlist` puts in the response, `waitlist.py:96,100,127`).
 - Given the backend responds non-2xx with a body that is not JSON, or whose `detail` is
   not a string (e.g. a FastAPI validation error shaping `detail` as a list), when
   `submitWaitlist` parses it, then it falls back to `signup failed (<status>)` rather than
-  surfacing the raw structure (`waitlist.ts:21-29`; `waitlist.test.ts`'s `falls back to
-  the status-code message when detail is not a string`).
+  surfacing the raw structure (`waitlist.ts:21-29`; `waitlist.test.ts`'s `falls back to the status-code message when detail is not a string`).
 - Given `fetch` itself rejects (offline, DNS failure), when `submitWaitlist` catches it,
   then it throws "Could not reach the server, check your connection and retry."
-  (`waitlist.ts:12-19`; `waitlist.test.ts`'s `throws a readable message on network
-  failure`).
+  (`waitlist.ts:12-19`; `waitlist.test.ts`'s `throws a readable message on network failure`).
 
-**Tests:** solyra `src/components/landing/waitlist.test.ts` (`throws the server detail on
-a non-2xx response (loud failure)`, `falls back to the status-code message when detail is
-not a string`, `throws a readable message on network failure`). stocks
+**Tests:** solyra `src/components/landing/waitlist.test.ts` (`throws the server detail on a non-2xx response (loud failure)`, `falls back to the status-code message when detail is not a string`, `throws a readable message on network failure`). stocks
 [`tests/api/test_waitlist_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_waitlist_router.py) (`test_invalid_email_is_400_and_no_db_call`,
 `test_rate_limit_429_after_five_requests`, `test_db_failure_is_loud_503`). solyra
-`tests/landing/landing.spec.ts` (`waitlist form rejects an invalid email with a visible
-error`, the client-validation branch only).
+`tests/landing/landing.spec.ts` (`waitlist form rejects an invalid email with a visible error`, the client-validation branch only).
 
 **Code:** `src/components/landing/WaitlistSection.tsx:6` (Rule 3.7 citation), `:13-28`
 (`onSubmit`), `:82-86` (rendering); `src/components/landing/waitlist.ts:10-31`;
@@ -1023,9 +980,7 @@ imports the Firebase facade and awaits `initFirebase` before rendering children,
 never reads auth state before the SDK exists. `AuthGate` itself renders children unchanged in
 `iap`/`open` mode (`authMode !== 'firebase'` short-circuits to `<>{children}</>`, `AuthGate.tsx:17`).
 
-**Needs:** `GET /api/config/firebase`, served by `platform/api/routers/config.py:46
-get_firebase_config`, which reads `api.auth.AUTH_MODE` (validated at import, `auth.py:52
-_validated_auth_mode`, refusing to start on an unrecognized value) and, only in firebase mode
+**Needs:** `GET /api/config/firebase`, served by `platform/api/routers/config.py:46 get_firebase_config`, which reads `api.auth.AUTH_MODE` (validated at import, `auth.py:52_validated_auth_mode`, refusing to start on an unrecognized value) and, only in firebase mode
 with `FIREBASE_API_KEY` set, the four Firebase web-config env vars.
 
 **States:** loading (AUTH-02), signed-out login screen (AUTH-03 through AUTH-06), error (AUTH-10).
@@ -1045,15 +1000,12 @@ Covered as separate rows.
   [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)), which guarantees the value `/api/config/firebase` ever
   reports is one of the three literals `RuntimeConfigResponse` declares.
 - Given a cold app-route visit, when `ConfigGate` mounts, then the routed page's lazy chunk (its
-  `preload` prop) downloads in parallel with the config fetch rather than after it (`gated chunk
-  downloads in parallel with the config fetch`, the regression fence for #64).
+  `preload` prop) downloads in parallel with the config fetch rather than after it (`gated chunk downloads in parallel with the config fetch`, the regression fence for #64).
 - Given a real, unauthenticated request against `GET /api/config/firebase` on staging, when issued
   from this session, then it answers 200 with `authMode: "firebase"` (verified 2026-09-28, see the
   V-gate evidence comment).
 
-**Tests:** `tests/shared/auth-gate.spec.ts` (`open mode → app renders, no login screen`; `gated
-chunk downloads in parallel with the config fetch`; `firebase mode, signed out → login screen
-blocks the app`) runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry
+**Tests:** `tests/shared/auth-gate.spec.ts` (`open mode → app renders, no login screen`; `gated chunk downloads in parallel with the config fetch`; `firebase mode, signed out → login screen blocks the app`) runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry
 for this row cites that job on main run 36361217691.
 [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)'s `GET /api/config/firebase` case issues a real request and
 asserts a 200 JSON envelope, and `tests/api/test_platform_auth.py::TestValidatedAuthMode` tests
@@ -1083,8 +1035,7 @@ account" / "Create account") with `mode`.
 
 **Acceptance criteria:**
 - Given the sign-in screen, when `login-toggle` is clicked, then `mode` becomes `signup` and
-  `login-submit`'s text becomes "Create account" (`SignInScreen.tsx:275-284`; `login screen
-  toggles between sign-in and sign-up`, asserting `login-submit` text before and after the click).
+  `login-submit`'s text becomes "Create account" (`SignInScreen.tsx:275-284`; `login screen toggles between sign-in and sign-up`, asserting `login-submit` text before and after the click).
 - Given `AUTH_OPEN_SIGNUP=0` and an email outside `AUTH_ALLOWED_EMAILS`, when that email later
   makes a gated `/api/*` call, then the backend answers 403 `"this account is not allowed"`, never
   a silent pass-through (`auth.py:169, 209-210`; `test_firebase_allowlist_switch`,
@@ -1150,13 +1101,11 @@ of its own; `tests/admin/admin-auth.spec.ts` exercises the admin-gating conseque
 end to end and runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry
 for this row appends that job on main run 36361217691 to the pytest evidence above.
 
-**Code:** `platform/api/main.py:282-304 get_current_user`, `platform/api/auth.py:229-264
-stored_role_for`, `platform/api/auth.py:224-226 configured_admin_email`, `src/hooks/useUser.ts`.
+**Code:** `platform/api/main.py:282-304 get_current_user`, `platform/api/auth.py:229-264 stored_role_for`, `platform/api/auth.py:224-226 configured_admin_email`, `src/hooks/useUser.ts`.
 
 ##### AUTH-03 · Google sign-in, with the new-tab variant when framed
 
-**Shows or does:** `SignInScreen` computes `isFramed()` once at mount (`window.self !==
-window.top`, catching a cross-origin throw as "framed too") and branches: framed renders an
+**Shows or does:** `SignInScreen` computes `isFramed()` once at mount (`window.self !== window.top`, catching a cross-origin throw as "framed too") and branches: framed renders an
 `<a target="_blank" data-testid="google-signin-newtab">` that reopens the current URL in a new
 top-level tab (Google's popup handshake cannot complete inside a cross-origin iframe, since storage
 partitioning blocks the `postMessage` back); not framed renders a
@@ -1172,12 +1121,10 @@ state `run()` manages for every sign-in method on this screen.
 **Acceptance criteria:**
 - Given the sign-in screen is embedded in an iframe, when it mounts, then it renders
   `google-signin-newtab` (visible, `target="_blank"`) and `google-signin` is absent
-  (`SignInScreen.tsx:182-198`; `framed preview: the Google button opens a new tab instead of a
-  popup`, new test, driven by loading `/dashboard` inside a real `<iframe>` via `page.setContent`
+  (`SignInScreen.tsx:182-198`; `framed preview: the Google button opens a new tab instead of a popup`, new test, driven by loading `/dashboard` inside a real `<iframe>` via `page.setContent`
   so the real top-level page is genuinely a different browsing context from the iframe).
 - Given the sign-in screen is not framed, when it mounts, then it renders `google-signin`, and
-  clicking it calls `run(signInWithGoogle)` (`firebase mode, signed out → login screen blocks the
-  app` asserts `google-signin` visible in the ordinary, unframed test harness).
+  clicking it calls `run(signInWithGoogle)` (`firebase mode, signed out → login screen blocks the app` asserts `google-signin` visible in the ordinary, unframed test harness).
 - Given `signInWithGoogle()` rejects (popup closed, blocked, network failure), when the promise
   settles, then `friendlyError` maps the SDK code to sign-in-screen copy and `run()` sets it as
   `login-error`, never leaving the screen in a stuck `busy` state (`SignInScreen.tsx:45-56`); the
@@ -1185,8 +1132,7 @@ state `run()` manages for every sign-in method on this screen.
   `auth/cancelled-popup-request`) are unit-tested as pure mappings in `src/lib/authAction.test.ts`,
   though no test drives this specific rejection through `SignInScreen` itself.
 
-**Tests:** `tests/shared/auth-gate.spec.ts` (`firebase mode, signed out → login screen blocks the
-app`, asserting the unframed `google-signin` button, pre-existing) runs hermetically in ci.yml's
+**Tests:** `tests/shared/auth-gate.spec.ts` (`firebase mode, signed out → login screen blocks the app`, asserting the unframed `google-signin` button, pre-existing) runs hermetically in ci.yml's
 `e2e (chromium, mocked)` job and genuinely covers the not-framed branch, but this row's own title
 names the framed new-tab variant, and the only test that asserts it
 (`framed preview: the Google button opens a new tab instead of a popup`) is one this branch added;
@@ -1270,8 +1216,7 @@ machine: loading, invalid-link, unavailable (open mode), reset-form, confirm-app
   address and "if an account exists" copy, and the actual `sendOobCode` call carries
   `requestType: PASSWORD_RESET` (`requests a reset link and shows the neutral confirmation`).
 - Given Identity Toolkit answers `TOO_MANY_ATTEMPTS_TRY_LATER`, when the request is submitted,
-  then `login-error` shows the rate-limit message and `reset-sent` never renders (`a rate-limit
-  failure is shown, not swallowed`).
+  then `login-error` shows the rate-limit message and `reset-sent` never renders (`a rate-limit failure is shown, not swallowed`).
 - Given `gcp/auth_email_templates.py`'s PATCH body, when it is built, then `callbackUri` is
   `https://solyra-stocks.lovable.app/auth/action` (`test_build_patch_covers_all_templates_and_callback_uri`,
   [`tests/test_auth_email_templates.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/test_auth_email_templates.py)), so the emailed button lands on this app's own route, not
@@ -1283,11 +1228,9 @@ machine: loading, invalid-link, unavailable (open mode), reset-form, confirm-app
   `validateNewPassword`, unit-tested by `src/lib/authAction.test.ts`).
 - Given a link whose `mode` query param disagrees with the operation the code actually carries,
   when the page checks it, then it refuses to apply the code and shows the mismatch error
-  (`operationMatchesMode`; `a code whose operation disagrees with mode is refused before it is
-  applied`; the matching function itself unit-tested in `src/lib/authAction.test.ts`).
+  (`operationMatchesMode`; `a code whose operation disagrees with mode is refused before it is applied`; the matching function itself unit-tested in `src/lib/authAction.test.ts`).
 - Given `authMode` is not `firebase`, when `/auth/action` loads, then it shows
-  `auth-action-unavailable` rather than attempting an SDK call that cannot succeed (`open mode →
-  email sign-in unavailable card`).
+  `auth-action-unavailable` rather than attempting an SDK call that cannot succeed (`open mode → email sign-in unavailable card`).
 
 **Tests:** `tests/shared/auth-gate.spec.ts` (`Forgot password` describe block, `/auth/action`
 describe block, 10 tests total) runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the
@@ -1378,8 +1321,7 @@ the spinner, if it paints at all, is gone before any assertion runs. See Gaps.
 **Shows or does:** Two mechanisms working together. Server: `auth_middleware` answers any gated
 `/api/*` request with 401 when no/invalid token is presented, in firebase mode only
 (`auth.py:188-213`). Client: `authedFetch.ts`'s `track()` calls `markAuthBlocked()` on any
-gated-path 401 and `clearAuthBlocked()` on the next gated-path success (`authedFetch.ts:157-165,
-249-250`); `markAuthBlocked` flips a module-level flag and notifies subscribers
+gated-path 401 and `clearAuthBlocked()` on the next gated-path success (`authedFetch.ts:157-165, 249-250`); `markAuthBlocked` flips a module-level flag and notifies subscribers
 (`authGate.ts:14-47`). `useAuthBlocked()` (a `useSyncExternalStore` hook) is read by
 `SignInEmptyState`, `AuthStatusIndicator`, and `MostActiveBar` (`MostActiveBar.tsx:179`), which
 render "Sign in to load data" (or the equivalent banner/marquee-suppression) instead of a blank or
@@ -1399,13 +1341,11 @@ further sub-states.
   `onUnauthorized` (the callback `authedFetch.ts` exposes via `setOnUnauthorized`) fires exactly
   once, and does not fire for a 401 from an open path. This is a distinct, adjacent signal from
   `markAuthBlocked`/`isAuthBlocked`; the same 401 handling code path runs `markAuthBlocked()` for
-  real as a side effect in this suite, but no assertion in it reads the resulting flag (`a 401 from
-  a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`,
+  real as a side effect in this suite, but no assertion in it reads the resulting flag (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`,
   `src/lib/authedFetch.test.ts`).
 - Given a stale token, when a gated call first 401s, then the wrapper retries once with a
   force-refreshed token before giving up, so a merely-expired token does not trip this state
-  unnecessarily (`retries a gated 401 once with a force-refreshed token and does not report
-  signed-out on success`, `src/lib/authedFetch.test.ts`).
+  unnecessarily (`retries a gated 401 once with a force-refreshed token and does not report signed-out on success`, `src/lib/authedFetch.test.ts`).
 - Given `isAuthBlocked()` is true, when `MostActiveBar` renders, then it shows the signed-out
   presentation rather than an empty or stale marquee (`MostActiveBar.tsx:179`, read directly); no
   test in `tests/shared/most-active-bar.spec.ts` exercises this branch (its six tests cover
@@ -1428,8 +1368,7 @@ file directly shows its six tests (data rendering, non-mount, reduced motion, th
 500 response, horizontal overflow) never mock a 401 or mention auth at all. Corrected 2026-09-28.
 The `isAuthBlocked` branch itself remains untested by any suite, Vitest or Playwright.
 
-**Code:** `platform/api/auth.py:188-213 auth_middleware`, `src/lib/authedFetch.ts:157-165,
-249-250`, `src/lib/authGate.ts:14-47 markAuthBlocked/clearAuthBlocked/useAuthBlocked`,
+**Code:** `platform/api/auth.py:188-213 auth_middleware`, `src/lib/authedFetch.ts:157-165, 249-250`, `src/lib/authGate.ts:14-47 markAuthBlocked/clearAuthBlocked/useAuthBlocked`,
 `src/components/shared/SignInEmptyState.tsx`, `src/components/shared/AuthStatusIndicator.tsx`,
 `src/components/shared/MostActiveBar.tsx:179`.
 
@@ -1449,18 +1388,15 @@ its own beyond that.
 
 **Acceptance criteria:**
 - Given `/api/config/firebase` answers 500, when `ConfigGate` boots, then `config-error` is
-  visible and neither the app shell nor `signin-screen` ever renders (`config fetch failure →
-  config-error screen, app never renders`).
+  visible and neither the app shell nor `signin-screen` ever renders (`config fetch failure → config-error screen, app never renders`).
 - Given `/api/config/firebase` answers 200 with `text/html` (a static host's SPA fallback), when
   `ConfigGate` boots, then the JSON-shape guard still rejects it and shows `config-error`, rather
-  than reading the fallback HTML as `authMode` (`config endpoint answering HTML (static-host
-  fallback) → config-error screen`).
+  than reading the fallback HTML as `authMode` (`config endpoint answering HTML (static-host fallback) → config-error screen`).
 - Given a `Failed to fetch` message on a known static-frontend host, when `describeBootFailure`
   builds the shown message, then it appends a CORS-allow-list hint rather than the bare browser
   error (`ConfigGate.tsx:58-65`); no test exercises `describeBootFailure` directly (see Gaps).
 
-**Tests:** `tests/shared/auth-gate.spec.ts` (`config fetch failure → config-error screen, app
-never renders`, `config endpoint answering HTML (static-host fallback) → config-error screen`)
+**Tests:** `tests/shared/auth-gate.spec.ts` (`config fetch failure → config-error screen, app never renders`, `config endpoint answering HTML (static-host fallback) → config-error screen`)
 runs hermetically in ci.yml's `e2e (chromium, mocked)` job; the matrix's Te entry for this row
 cites that job on main run 36361217691. No pytest or Vitest covers a failure response from this
 endpoint, or
@@ -1558,10 +1494,8 @@ SHELL-16); the nav itself has no distinct loading state (renders immediately fro
   trigger gains the `active` class (`can navigate between routes via top-nav clicks`,
   `tests/shared/navigation.spec.ts`).
 
-**Tests:** `tests/shared/navigation.spec.ts` (`top nav renders inline tabs...`, `can navigate
-between routes via top-nav clicks`), `tests/admin/admin-auth.spec.ts` (sidebar rendering and the
-Admin-link filter), `tests/settings/settings.spec.ts` (`navigation toggle persists the shell
-choice and writes through` exercises the SAME `navPattern` store from the Settings side). All
+**Tests:** `tests/shared/navigation.spec.ts` (`top nav renders inline tabs...`, `can navigate between routes via top-nav clicks`), `tests/admin/admin-auth.spec.ts` (sidebar rendering and the
+Admin-link filter), `tests/settings/settings.spec.ts` (`navigation toggle persists the shell choice and writes through` exercises the SAME `navPattern` store from the Settings side). All
 Playwright; no colocated Vitest test of `Sidebar.tsx`/`TopTabs.tsx`/`navConfig.ts` was found.
 
 **Code:** `src/components/layout/AppShell.tsx:57,61`, `src/components/layout/Sidebar.tsx`,
@@ -1593,8 +1527,7 @@ SHELL-10's toggle, each with its own state handling.
   control).
 
 **Tests:** `tests/shared/navigation.spec.ts` (`theme toggle flips the document theme attribute`,
-new in this task). The pre-existing Chain citation here (`auth status lives at the menu bottom,
-not the bar`) was wrong: that test drives `TopTabs`'s mobile hamburger menu at the default
+new in this task). The pre-existing Chain citation here (`auth status lives at the menu bottom, not the bar`) was wrong: that test drives `TopTabs`'s mobile hamburger menu at the default
 `top-tabs` nav pattern and never mounts `Header` at all, corrected in the T-gate commit (see
 Gaps).
 
@@ -1618,11 +1551,9 @@ breaks the shell.
   `/api/*` requests are intercepted by the mock engine (verified indirectly: every other spec's
   clean run assumes the OFF default).
 - Given the preference is `'on'`, when AppShell renders, then `mock-mode-banner` is visible and
-  the mocked identity is used (`banner shows, app boots, and ZERO /api requests reach the
-  network`, `tests/shared/mock-mode.spec.ts`).
+  the mocked identity is used (`banner shows, app boots, and ZERO /api requests reach the network`, `tests/shared/mock-mode.spec.ts`).
 - Given the Exit button is clicked, when `setMockMode(false)` persists, then the page reloads and
-  the banner disappears, even with no Support-menu access (`the banner Exit button leaves the
-  mode even without the menu`, same file).
+  the banner disappears, even with no Support-menu access (`the banner Exit button leaves the mode even without the menu`, same file).
 
 **Tests:** `tests/shared/mock-mode.spec.ts` (all six tests exercise `mock-mode-banner` directly).
 `src/lib/mockMode.test.ts` (Vitest, CI-run) tests the underlying `isMockModeActive`/`setMockMode`/
@@ -1699,8 +1630,7 @@ that group instead of unmounting per route. Each chip shows ticker, price (or `�
 `prefers-reduced-motion` is set, in which case a single static, horizontally-scrollable strip
 renders instead.
 
-**Needs:** `GET /api/market/most-active`, served by `platform/api/main.py:1510
-market_most_active`, which reads only `top_movers_intraday` (one SQL,
+**Needs:** `GET /api/market/most-active`, served by `platform/api/main.py:1510 market_most_active`, which reads only `top_movers_intraday` (one SQL,
 `WHERE snapshot_date = (SELECT MAX(snapshot_date)...)`, ordered `snapshot_ts, rank`);
 `market_data_intraday` is not touched by this handler (verified by reading the full function;
 corrected in the T-gate commit, see Gaps). `useAuthBlocked()` for the "Sign in to load data"
@@ -1717,8 +1647,7 @@ branch (a second, independent instance of that copy, distinct from SHELL-16's `A
 - Given the API returns a non-empty `items` array, when the strip renders, then volume renders
   via `formatCompactVolume` (e.g. `312_000_000` → `"312M"`) and change via `formatChangePct`
   (e.g. `2.31` → `"+2.31%"`), both returning `—` for `null`/`undefined`, never a fabricated `0`
-  (Rule 3.7; `formats hundreds of millions with an M suffix`, `renders an em dash for missing
-  volume`, `src/components/shared/MostActiveBar.test.ts`).
+  (Rule 3.7; `formats hundreds of millions with an M suffix`, `renders an em dash for missing volume`, `src/components/shared/MostActiveBar.test.ts`).
 - Given a ticker's price series has fewer than two finite points, when the item renders, then
   `hasUsableSpark` returns `false` and no sparkline draws, never a synthesized flat line
   (`rejects missing, short, and constant series`, `MostActiveBar.test.tsx`).
@@ -1781,17 +1710,14 @@ page-render throw; no colocated Vitest test and no Playwright spec exercise this
 (its own doc comment cites Rule 3.7 by number). Otherwise one of LIVE (green, `regular`), PRE, AH,
 or CLOSED.
 
-**Needs:** `GET /api/live/status`, served by `platform/api/routers/live.py:174
-get_market_status`, itself computed purely from `datetime.now(ET_TZ)` against `_is_market_open`
+**Needs:** `GET /api/live/status`, served by `platform/api/routers/live.py:174 get_market_status`, itself computed purely from `datetime.now(ET_TZ)` against `_is_market_open`
 (weekday/holiday/09:30-16:00/04:00-09:30/16:00-20:00 windows), no database read, no external
 vendor call.
 
 **States:** SHELL-15 is this same badge's "truthful when closed" state, specifically.
 
 **Acceptance criteria:**
-- Given the market is closed, when `useLiveStatus()` resolves `{session: 'closed', is_open:
-  false, ...}`, then the badge reads "CLOSED" and never carries the `live` class (`market session
-  badge is truthful — CLOSED when the market is closed`, `tests/shared/navigation.spec.ts`).
+- Given the market is closed, when `useLiveStatus()` resolves `{session: 'closed', is_open:false, ...}`, then the badge reads "CLOSED" and never carries the `live` class (`market session badge is truthful — CLOSED when the market is closed`, `tests/shared/navigation.spec.ts`).
 - Given `useLiveStatus()` has not yet resolved, when `MarketSessionBadge` renders, then it
   returns `null` rather than a placeholder (`MarketSessionBadge.tsx:19-20`, read directly).
 - Given a real backend request, when issued without a token, then it answers 401 on staging,
@@ -1830,8 +1756,7 @@ Escape or a backdrop click closes it.
 
 **Acceptance criteria:**
 - Given the shell has mounted, when Ctrl-K (or Cmd-K) is pressed anywhere, then the palette
-  opens with its search input focused and visible (`command palette opens with the keyboard
-  shortcut and navigates to a page`, `tests/shared/navigation.spec.ts`, new in this task).
+  opens with its search input focused and visible (`command palette opens with the keyboard shortcut and navigates to a page`, `tests/shared/navigation.spec.ts`, new in this task).
 - Given "Journal" is typed, when the filtered list narrows, then both the "Jump to → Journal"
   row and the "Actions → New journal entry" row match (both routes to `/journal`,
   `CommandPalette.tsx:38-66`, read directly), and pressing Enter selects the first (`sel` defaults
@@ -1840,8 +1765,7 @@ Escape or a backdrop click closes it.
   fires and the palette unmounts (`CommandPalette.tsx:73,82-83,99`, read directly; not asserted
   by any test, see Gaps).
 
-**Tests:** `tests/shared/navigation.spec.ts` (`command palette opens with the keyboard shortcut
-and navigates to a page`, the only test for this component, is one this branch added) runs
+**Tests:** `tests/shared/navigation.spec.ts` (`command palette opens with the keyboard shortcut and navigates to a page`, the only test for this component, is one this branch added) runs
 hermetically in ci.yml's `e2e (chromium, mocked)` job, but the cited main run (36361217691,
 commit eca7078) predates it, so Te waits for a CI run that includes it (see Gaps). No prior test
 of any kind existed for this component (confirmed the pre-existing Gaps
@@ -1912,14 +1836,12 @@ value falls back to dark rather than throwing.
 
 **Acceptance criteria:**
 - Given no stored theme, when `themeStore` loads, then `theme` is `'dark'` and
-  `document.documentElement` carries `data-theme="dark"` (`defaults to dark regardless of OS
-  preference`, `src/stores/themeStore.test.ts`).
+  `document.documentElement` carries `data-theme="dark"` (`defaults to dark regardless of OS preference`, `src/stores/themeStore.test.ts`).
 - Given the toggle is clicked twice, when each click resolves, then the theme flips light then
   back to dark, the `data-theme` attribute follows each flip, and `localStorage` persists each
   value (`toggleTheme flips, applies, and persists on every flip`, same file).
 - Given `navPattern: 'sidebar'` is seeded, when the page loads and the Header's toggle is
-  clicked, then `html[data-theme]` changes from `dark` to `light` (`theme toggle flips the
-  document theme attribute`, `tests/shared/navigation.spec.ts`, new in this task).
+  clicked, then `html[data-theme]` changes from `dark` to `light` (`theme toggle flips the document theme attribute`, `tests/shared/navigation.spec.ts`, new in this task).
 - Given the server holds a stored `theme` value, when `usePreferencesSync` hydrates, then it maps
   the raw payload through `sanitizePreferences`, nulling any value outside the known enum rather
   than coercing it to a default (`nulls unknown values instead of coercing them to a default`,
@@ -1932,8 +1854,7 @@ value falls back to dark rather than throwing.
 **Tests:** `src/stores/themeStore.test.ts` (Vitest, CI-run, the toggle's own client logic),
 `src/hooks/usePreferences.test.ts` (Vitest, CI-run, the write-through payload shaping),
 [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) (pytest, CI-run, the server contract, including `theme`
-explicitly in its fixture rows), `tests/shared/navigation.spec.ts` (`theme toggle flips the
-document theme attribute`, new in this task, Playwright). `tests/settings/settings.spec.ts:97`
+explicitly in its fixture rows), `tests/shared/navigation.spec.ts` (`theme toggle flips the document theme attribute`, new in this task, Playwright). `tests/settings/settings.spec.ts:97`
 (`theme toggle applies data-theme and writes through`) is adjacent, not this row's own control:
 it drives the SAME `useThemeStore()` through a Settings-page radio button calling `setTheme(k)`
 directly (`SettingsPage.tsx:310`), not the Header/TopTabs icon button's `toggleTheme()` this row
@@ -1959,16 +1880,14 @@ second, independently-implemented control for the mobile hamburger menu, duplica
 - Given `authMode !== 'firebase'` or the session is signed out, when `SignOutButton` renders,
   then it returns `null` (`SignOutButton.tsx:15`, read directly).
 - Given a signed-in firebase session, when `sign-out` is clicked, then `firebaseSignOut()`
-  resolves, the query cache clears, and the app returns to `SignInScreen` (`sign out returns to
-  the sign-in screen`, `tests/shared/auth-gate.spec.ts`, added in Task 13, the only real test of
+  resolves, the query cache clears, and the app returns to `SignInScreen` (`sign out returns to the sign-in screen`, `tests/shared/auth-gate.spec.ts`, added in Task 13, the only real test of
   this control anywhere).
 
 **Tests:** `tests/shared/auth-gate.spec.ts` (`sign out returns to the sign-in screen`),
 Playwright. The pre-existing Chain citation here ("solyra navigation.spec.ts") was wrong: every
 `navigation.spec.ts` test runs in open mode (`MOCK_FIREBASE_CONFIG_OPEN`), in which
 `SignOutButton` always returns `null`, so no test in that file can render it at all. That file's
-one sign-out-adjacent assertion (`account-menu-sign-out` has zero count, `auth status lives at
-the menu bottom, not the bar`) tests the second control's absence under open mode, not this one's
+one sign-out-adjacent assertion (`account-menu-sign-out` has zero count, `auth status lives at the menu bottom, not the bar`) tests the second control's absence under open mode, not this one's
 action, corrected in the T-gate commit (see Gaps).
 
 **Code:** `src/components/auth/SignOutButton.tsx`,
@@ -2020,8 +1939,7 @@ returns `{"items": []}` rather than merely not having answered yet.
   it returns the honest empty envelope rather than an error
   (`test_empty_table_returns_honest_empty_200`, [`tests/api/test_most_active_endpoint.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_most_active_endpoint.py)).
 
-**Tests:** `tests/shared/most-active-bar.spec.ts` (`renders nothing when the API returns an
-empty item list`, Playwright),
+**Tests:** `tests/shared/most-active-bar.spec.ts` (`renders nothing when the API returns an empty item list`, Playwright),
 `tests/api/test_most_active_endpoint.py::TestEmptyTable::test_empty_table_returns_honest_empty_200`
 (pytest, CI-run, backend shape only; the client's own `null`-return branch stays
 Playwright-only).
@@ -2041,8 +1959,7 @@ not there, while the rest of the shell (nav, banners, routed page) renders norma
 
 **Acceptance criteria:**
 - Given `GET /api/market/most-active` answers 500, when the query rejects, then the marquee is
-  absent and the page otherwise renders fine (`bar is absent and the page otherwise renders fine
-  when the API returns 500`, `tests/shared/most-active-bar.spec.ts`).
+  absent and the page otherwise renders fine (`bar is absent and the page otherwise renders fine when the API returns 500`, `tests/shared/most-active-bar.spec.ts`).
 - Given a real query exception in the handler, when it is raised, then the endpoint answers 503
   with no `items` key at all, never a fabricated empty success
   (`test_query_exception_surfaces_as_503`, [`tests/api/test_most_active_endpoint.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_most_active_endpoint.py)).
@@ -2055,8 +1972,7 @@ Playwright), `tests/api/test_most_active_endpoint.py::TestDbUnavailable::test_qu
 
 ##### SHELL-15 · State: stale (session badge truthful when closed)
 
-**Shows or does:** `MarketSessionBadge` never shows LIVE unless `useLiveStatus().session ===
-'regular'`; the badge's data goes stale after 30s (`staleTime`) and refetches every 60s, so a
+**Shows or does:** `MarketSessionBadge` never shows LIVE unless `useLiveStatus().session === 'regular'`; the badge's data goes stale after 30s (`staleTime`) and refetches every 60s, so a
 session change (e.g. the close) converges within that window rather than staying pinned to a
 load-time snapshot.
 
@@ -2066,8 +1982,7 @@ load-time snapshot.
 
 **Acceptance criteria:**
 - Given a mocked closed session, when the badge renders, then it reads "CLOSED" and never
-  carries the `live` class (`market session badge is truthful — CLOSED when the market is
-  closed`, `tests/shared/navigation.spec.ts`).
+  carries the `live` class (`market session badge is truthful — CLOSED when the market is closed`, `tests/shared/navigation.spec.ts`).
 - Given the query is older than its 30s `staleTime`, when the component is focused or refetches
   on its 60s interval, then a session change is reflected without a manual reload
   (`useLiveStatus.ts:20-21`, read directly; not independently asserted by any test, the
@@ -2226,14 +2141,12 @@ line). The hero price and the pill have no state of their own: a failed or unans
 `—`, a failed or unanswered status reads `CLOSED` (executed 2026-09-30, see Gaps).
 
 **Acceptance criteria:**
-- Given Cloud SQL is not configured, when the handler is called, then it answers `source:
-  'unavailable'` with a `reason` (`test_brief_unavailable_source`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py));
+- Given Cloud SQL is not configured, when the handler is called, then it answers `source:'unavailable'` with a `reason` (`test_brief_unavailable_source`, [`tests/api/test_platform_api.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_api.py));
   the strip then shows that reason instead of bullets (`DashboardPage.tsx:588-603`, read directly; no
   test asserts the strip's text). This is the only path to the `Unavailable` line: a configured
   database with no row or a failing read is a 200 (see below).
 - Given a live-mode response with `bias`, `ftfc_direction`, `strat_candle` and `rsi`, when the page
-  renders, then the first bullet reads `Daily bias <BIAS>` (`shows daily bias card`, `renders
-  Overview heading + pre-market brief for the active ticker`, `tests/dashboard/dashboard.spec.ts`:
+  renders, then the first bullet reads `Daily bias <BIAS>` (`shows daily bias card`, `renders Overview heading + pre-market brief for the active ticker`, `tests/dashboard/dashboard.spec.ts`:
   presence of the text only; the other bullets, the pill and the hero price are asserted by no
   test).
 - Given `premarket_analysis` carries `ftfc_direction` `bullish`, when the handler builds the
@@ -2286,11 +2199,9 @@ line `Cards <as of Sep 5, 2026 (1d old)>` (test id `playbook-age`, `:618-625`), 
 win rate as stars (`round(win_rate / 20)`) and `<n>%`, the average return through
 `topSetupAvgReturn` (percent units, no re-multiplying, `:225-228`), up to five string conditions and
 `SetupCardDetails` (`src/components/playbook/SetupCardDetails.tsx:48-124`): trade levels (target and
-stop from `target_pct` and `stop_pct` off the price `heroQuote?.price ?? brief.live.price ??
-brief.daily_indicators.close`, direction-aware, needing a positive price) and the win rate and
+stop from `target_pct` and `stop_pct` off the price `heroQuote?.price ?? brief.live.price ?? brief.daily_indicators.close`, direction-aware, needing a positive price) and the win rate and
 average bps by hold window with the best window starred. With no card it shows `Unavailable`:
-`Playbook unavailable: <server reason>` after a failed request, else `No playbook setups yet, run
-the pipeline to populate.` (`:674-687`). `dataUnlessError` (`:341`) drops the old payload when a
+`Playbook unavailable: <server reason>` after a failed request, else `No playbook setups yet, run the pipeline to populate.` (`:674-687`). `dataUnlessError` (`:341`) drops the old payload when a
 refetch is refused, so a set the server has since called stale is not shown.
 
 **Needs:** `GET /api/playbook/{ticker}` (`platform/api/routers/playbook.py:306`; `?date=` in review
@@ -2308,11 +2219,9 @@ failure wording inside the card and no loading state (read directly: while it lo
 
 **Acceptance criteria:**
 - Given a fresh card set (`analysis_date` 2026-09-05, `age_days` 1), when the page renders, then the
-  card name shows and `playbook-age` reads `as of Sep 5, 2026 (1d old)` (`top setup shows the card
-  set date and age`, `tests/dashboard/dashboard.spec.ts`).
+  card name shows and `playbook-age` reads `as of Sep 5, 2026 (1d old)` (`top setup shows the card set date and age`, `tests/dashboard/dashboard.spec.ts`).
 - Given the server answers 503 with the stale-set detail, when the page renders, then the card
-  reads `Playbook unavailable` with the detail and never the empty-state copy (`top setup surfaces
-  the stale-cards refusal instead of a generic empty state`).
+  reads `Playbook unavailable` with the detail and never the empty-state copy (`top setup surfaces the stale-cards refusal instead of a generic empty state`).
 - Given `avg_return` 0.29 (percent units), when formatted, then `+0.29%`; a null or undefined value
   renders `—` (`topSetupAvgReturn`, `src/routes/DashboardPage.avgReturn.test.ts`).
 - Given a set exactly 7 days old, then it is served; one day older it is refused with a 503; a
@@ -2365,8 +2274,7 @@ read.
 close is the absent row, not the empty state.
 
 **Acceptance criteria:**
-- Given the brief and the reference both answer, when the page renders, then the four labels `Prev
-  close`, `Latest close`, `2-day change` and `RSI (14)` are visible (`shows the daily KPI tiles`,
+- Given the brief and the reference both answer, when the page renders, then the four labels `Prev close`, `Latest close`, `2-day change` and `RSI (14)` are visible (`shows the daily KPI tiles`,
   `tests/dashboard/dashboard.spec.ts`: labels only; no value or tone is asserted).
 - Given a date within 30 days and an AlphaVantage answer, when the handler runs, then the previous
   session's OHLC comes from AlphaVantage; given an older date it comes from Cloud SQL
@@ -2393,8 +2301,7 @@ the RSI tone are not asserted by any test, so Te stays unticked.
 
 ##### DASHBOARD-04 · Intraday chart
 
-**Shows or does:** A card headed `<ticker> · intraday` with the caption `60-min bars · last 2
-sessions` and a Candles or Area switch (DASHBOARD-12), mounted only when hourly bars exist or the
+**Shows or does:** A card headed `<ticker> · intraday` with the caption `60-min bars · last 2 sessions` and a Candles or Area switch (DASHBOARD-12), mounted only when hourly bars exist or the
 request is loading, failed or the session is auth-blocked (`DashboardPage.tsx:731-764`, the
 condition at `:732`). Bars come from `hourlyQ`, `GET /api/market/data/{ticker}/{YYYYMM}?timeframe=60`
 (the month of the anchor date), enabled only once the brief has answered (`:402-407`). Candles
@@ -2497,8 +2404,7 @@ untested at the page layer, and Te stays unticked.
 **Shows or does:** The right card of the signals and catalysts row (`DashboardPage.tsx:805-827`),
 headed `Catalysts` with `<n> upcoming` (n is at most 5). `allEvents` (`:494-499`) flattens the
 response's `events_by_date` in ascending date order, and `catalystFeed` (`:502`) is its first five,
-whatever their source. Each row shows `MM-DD`, a title (`title`, else `event`, else `<ticker>
-<type>`, clamped to two lines), `<ticker> · <type>` and an impact pill (`high` for `very high` or
+whatever their source. Each row shows `MM-DD`, a title (`title`, else `event`, else `<ticker> <type>`, clamped to two lines), `<ticker> · <type>` and an impact pill (`high` for `very high` or
 `high`, `med` for `medium`, `med` or an unknown or missing impact, `low`, `:153-164`). With none it
 shows `No catalysts in the next 7 days.` The request is `date_from` today (ET) and `date_to` seven
 days on (the review date and seven days after it in review mode, `:351-356`). The whole card is
@@ -2524,8 +2430,7 @@ loads and after it fails the card reads `0 upcoming` and `No catalysts in the ne
   `AV news` rows of yesterday, ahead of the AAPL earnings row (executed 2026-09-30; no committed
   test asserts this card).
 - Given the news query, when written, then it is backward-looking (48 hours from now), matches
-  topics case-insensitively and does not depend on the requested window (`test_news_sql_is_backward_
-  looking_and_case_insensitive`, `test_news_topics_constant_covers_fetcher_topics`,
+  topics case-insensitively and does not depend on the requested window (`test_news_sql_is_backward_looking_and_case_insensitive`, `test_news_topics_constant_covers_fetcher_topics`,
   [`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py)).
 - Given production data on 2026-09-30, when the five reads run for the page's window, then the news
   filter returns 203, 382 and 79 rows for the UTC dates 09-28, 09-29 and 09-30, 22 high or medium
@@ -2571,8 +2476,7 @@ holds the AI take and News cards.
 **Acceptance criteria:**
 - Given four sectors (three ok, one unavailable), when the card renders at 1D, then the rows rank
   Financials, Technology, Energy and the unavailable Consumer Discretionary last with `—`, and the
-  header reads `as of <as_of>` (`sector rotation card ranks sectors, shows an em-dash row, and 1D/5D
-  toggle switches values`, `tests/dashboard/dashboard.spec.ts`).
+  header reads `as of <as_of>` (`sector rotation card ranks sectors, shows an em-dash row, and 1D/5D toggle switches values`, `tests/dashboard/dashboard.spec.ts`).
 - Given a magnitude of 2 over a maximum of 4, when the bar width is computed, then 50; a negative
   value is scaled by magnitude; a zero maximum gives 0, never `NaN`
   (`src/routes/DashboardPage.sectorBarWidthPct.test.ts`).
@@ -2659,8 +2563,7 @@ catalysts request reads `0 fresh` and `No tagged news right now.` (executed 2026
 
 **Acceptance criteria:**
 - Given two `AV news` rows dated yesterday among other sources, when the page renders, then the meta
-  reads `2 fresh` and both headlines show (`News card counts AV-news rows dated in the past and
-  shows both headlines`, `tests/dashboard/dashboard.spec.ts`, which pins the `source === 'AV news'`
+  reads `2 fresh` and both headlines show (`News card counts AV-news rows dated in the past and shows both headlines`, `tests/dashboard/dashboard.spec.ts`, which pins the `source === 'AV news'`
   match over the whole events array).
 - Given today, yesterday and an older date, when a row is labelled, then `today`, `yesterday` and
   `Mon D`, in ET across the UTC day roll and never an hour (`relativeDayLabel`,
@@ -2688,8 +2591,7 @@ review mode (`DashboardPage.tsx:729`; `MovementRead.test.tsx` asserts the mount 
 renders nothing while disabled, loading, absent (a 404 means the flag is off), errored or without a
 statement (`MovementRead.tsx:123-144`). With a statement it shows a card `Movement Read` with
 `<ticker> · <timeframe>`: the headline (test id `movement-headline`) when its status is `OK`, else
-an em dash with an `unavailable` badge and the reason; the levels ladder, `Call levels` and `Put
-levels`, each rung with its price and `<rate>% (n=<sample>)` and a `low confidence` badge for a small
+an em dash with an `unavailable` badge and the reason; the levels ladder, `Call levels` and `Put levels`, each rung with its price and `<rate>% (n=<sample>)` and a `low confidence` badge for a small
 sample, or the badge when the rung has no rate; a `Context` block (`context-modifiers`) with the
 expected-move size class and the regime mood; and, when the expected move is `OK`, the size light
 (`size-light-chip`: green at `p_expanded + p_explosive` 0.20 or more, amber from 0.10, else red), the
@@ -2712,8 +2614,7 @@ three requests, no badge; see Gaps). Field-level `UNAVAILABLE` shows the em dash
 **Acceptance criteria:**
 - Given a statement with a headline, both levels and an expected move, when the page renders, then
   the headline, the `TIGHT` size class, `Call levels` and `Put levels` with `70% (n=115)` and
-  `45% (n=94)`, and no low-sample badge show (`movement-read card renders TYPE + validated SIZE +
-  regime (flag ON)`, `tests/dashboard/movement-read.spec.ts`); a young slot carries the badge on
+  `45% (n=94)`, and no low-sample badge show (`movement-read card renders TYPE + validated SIZE + regime (flag ON)`, `tests/dashboard/movement-read.spec.ts`); a young slot carries the badge on
   that rung only; an untracked rung and a withheld expected move degrade only their own fields to
   two `unavailable` badges; the big-move, tight and no-ATR affordance states and the calculator
   work (the five other tests in the file).
@@ -2721,8 +2622,7 @@ three requests, no badge; see Gaps). Field-level `UNAVAILABLE` shows the em dash
   (`Review-mode mount guard`, `src/components/dashboard/MovementRead.test.tsx`, a source-level
   check; the executed page run 2026-09-30 also showed the card absent in review mode).
 - Given a picked ticker, when the statement is requested, then the fixture answers 501 for a
-  non-IWM ticker and the card does not show IWM's headline (`picking AAPL does not render the IWM
-  movement statement`, `tests/dashboard/ticker-combobox.spec.ts`).
+  non-IWM ticker and the card does not show IWM's headline (`picking AAPL does not render the IWM movement statement`, `tests/dashboard/ticker-combobox.spec.ts`).
 - Given the helpers, when formatting, then a null probability or rate is an em dash and never `0%`,
   the size light, ATR label, risk hint, options idea and size calculator follow their thresholds
   (`MovementRead.test.tsx`, `expectedMove.test.ts`).
@@ -2766,8 +2666,7 @@ search hit, or the highlighted row after an arrow key; a click picks a row; Esca
 closes it (`:259-291`, `choose`). A pick upper-cases the symbol, writes `activeTicker` and the recents in `useTickerStore`
 (persisted as `ticker-store`, `src/stores/tickerStore.ts`), and closes the popover. A pick of a search
 row badged `new`, with a healthy coverage lookup, also posts the symbol to the watchlist and shows
-`Tracking <SYM>: daily data lands after tonight's fetch` for eight seconds, or `couldn't add <SYM> to
-tracking, <error>` when the write fails; the ticker is set in both cases. Every ticker-scoped query on
+`Tracking <SYM>: daily data lands after tonight's fetch` for eight seconds, or `couldn't add <SYM> to tracking, <error>` when the write fails; the ticker is set in both cases. Every ticker-scoped query on
 the page is keyed by `activeTicker`, so the brief, playbook, signals, AI take, quote, reference,
 hourly bars and Movement Read are asked again for the new symbol (executed 2026-09-30 by a scratch
 page run picking AAPL: those eight requests, and no new request for the sector or catalyst cards,
@@ -2786,25 +2685,17 @@ ticker gets a 400 there (see DASHBOARD-21).
 - Given the page has loaded, when the trigger is pressed, then the popover opens with the input
   focused and IWM, SPY and QQQ offered (`trigger shows the active ticker and opens the popover`,
   `quick picks (IWM/SPY/QQQ) render in the popover`, `tests/dashboard/ticker-combobox.spec.ts`).
-- Given `aa` is typed, then AAPL shows with its name and a `daily` badge (`typing "aa" surfaces AAPL
-  with a "daily" coverage badge`).
+- Given `aa` is typed, then AAPL shows with its name and a `daily` badge (`typing "aa" surfaces AAPL with a "daily" coverage badge`).
 - Given a pick by Enter after arrow keys, by Enter straight after typing, or by click, then the
-  panel closes and the trigger reads AAPL (`Enter picks the highlighted result and sets the header
-  ticker`, `Enter with no arrow-navigation picks the top search hit, not the first quick pick`,
+  panel closes and the trigger reads AAPL (`Enter picks the highlighted result and sets the header ticker`, `Enter with no arrow-navigation picks the top search hit, not the first quick pick`,
   `clicking the AAPL result directly sets the header ticker`); Escape closes without a change
   (`Escape closes the popover without changing the ticker`).
-- Given the pick, then the Movement Read card does not show IWM's statement under AAPL (`picking AAPL
-  does not render the IWM movement statement`).
+- Given the pick, then the Movement Read card does not show IWM's statement under AAPL (`picking AAPL does not render the IWM movement statement`).
 - Given the search request fails, then an inline error shows, never a `No matches` line; given the
-  coverage request fails, then suggestions still show with the `new` badge and a hint (`search
-  failure renders an inline error, never an empty "no matches" lie`, `coverage failure still renders
-  suggestions plus an inline hint that badges may be inaccurate`).
+  coverage request fails, then suggestions still show with the `new` badge and a hint (`search failure renders an inline error, never an empty "no matches" lie`, `coverage failure still renders suggestions plus an inline hint that badges may be inaccurate`).
 - Given a `new` pick, then the watchlist is posted with `{ticker: 'AAPL'}` and the tracking notice
   shows; given a `full` pick, then nothing is posted; given a failed post, then the notice carries the
-  status and detail and the ticker is still set (`picking a "new"-badged suggestion auto-adds it to
-  the watchlist with an honest ingest notice`, `picking a "full"-badged suggestion does NOT auto-add
-  to the watchlist`, `watchlist-add failure shows a loud inline error but still sets the active
-  ticker`, and the coverage-error and bare-Enter variants in the same file).
+  status and detail and the ticker is still set (`picking a "new"-badged suggestion auto-adds it to the watchlist with an honest ingest notice`, `picking a "full"-badged suggestion does NOT auto-add to the watchlist`, `watchlist-add failure shows a loud inline error but still sets the active ticker`, and the coverage-error and bare-Enter variants in the same file).
 - Given the store, then the symbol is upper-cased, recents are newest first without duplicates and
   capped at eight, and only `activeTicker` and `recentTickers` are persisted
   (`src/stores/tickerStore.test.ts`); the row helpers (badge, merge, dedupe, default highlight,
@@ -2872,8 +2763,7 @@ Switching does not request bars again: both styles read the same `hourlyQ` respo
   present and nothing is stored (`the Candles or Area choice is stored and survives a reload`,
   `tests/dashboard/dashboard.spec.ts`, branch only).
 - Given Area is pressed, then the candle slot is removed, a Recharts surface shows and `overview-chart`
-  is `area` (same test; the surface alone is asserted on main by `intraday chart exposes the Candles /
-  Area toggle and switches`).
+  is `area` (same test; the surface alone is asserted on main by `intraday chart exposes the Candles /Area toggle and switches`).
 - Given a reload, then Area is still active and the candle slot is still absent (same test).
 - Given Candles is pressed again, then the slot returns and `candle` is stored (same test; with the
   storage write removed the test failed `Expected: "area" Received: null`, and with the real code it
@@ -3064,11 +2954,9 @@ cover the error helpers only. Te stays unticked.
 fallback text `Pre-market brief unavailable, Cloud SQL not connected or no brief for today.`); the KPI
 row is absent, with no message, when either close is missing (`kpiCards`, `:410-417`), and only the
 RSI tile can read `—`; the Top setup reads `No playbook setups yet, run the pipeline to populate.`
-(`:674-687`); Live signals reads `No signals yet for this ticker.` (`:776`); Catalysts reads `No
-catalysts in the next 7 days.` (`:812`); Sector rotation reads `Unavailable` with the reason for a
+(`:674-687`); Live signals reads `No signals yet for this ticker.` (`:776`); Catalysts reads `No catalysts in the next 7 days.` (`:812`); Sector rotation reads `Unavailable` with the reason for a
 whole-payload `unavailable`, and a row `—` with the reason as a tooltip (`:852-865`); AI take reads
-`No insight report for <ticker>, generate one on the AI Insights page.` (`:910`); News reads `No tagged
-news right now.` (`:920`); the Area chart reads `No price data available`
+`No insight report for <ticker>, generate one on the AI Insights page.` (`:910`); News reads `No tagged news right now.` (`:920`); the Area chart reads `No price data available`
 (`src/components/charts/PriceAreaChart.tsx:113-122`). The intraday card is not mounted at all when the
 request succeeded with no bars. Nothing renders a fabricated zero for a missing daily value; the
 brief handler, however, answers a 200 `neutral` brief when it has no data (see DASHBOARD-01), and the
@@ -3080,8 +2968,7 @@ AI take, Catalysts and News cards use their empty line for a failed request too 
 
 **Acceptance criteria:**
 - Given a sector row with `status: 'unavailable'`, then it renders its name with `—` and no bar and
-  sinks to the bottom (`sector rotation card ranks sectors, shows an em-dash row, and 1D/5D toggle
-  switches values`, `tests/dashboard/dashboard.spec.ts`).
+  sinks to the bottom (`sector rotation card ranks sectors, shows an em-dash row, and 1D/5D toggle switches values`, `tests/dashboard/dashboard.spec.ts`).
 - Given a playbook set the server refuses, then the refusal is worded in the card, not the empty
   line (`top setup surfaces the stale-cards refusal instead of a generic empty state`, which asserts
   the empty line is absent when the refusal shows).
@@ -3102,8 +2989,7 @@ Te stays unticked.
 **Shows or does:** When a wrapped query fails with anything other than a 401, `WidgetError`
 (`src/components/shared/WidgetState.tsx:29-62`) replaces the card body: a `role="alert"` box with the
 text `Couldn't load this data`, the message (the server's `detail` with `(HTTP <status>)` appended
-by `responseErrorMessage`, `src/lib/format.ts:98-109`; a bare status code reads `Request failed
-(HTTP <status>)`) and a `Retry` button that refetches that query. The wrapper granularity decides
+by `responseErrorMessage`, `src/lib/format.ts:98-109`; a bare status code reads `Request failed (HTTP <status>)`) and a `Retry` button that refetches that query. The wrapper granularity decides
 what disappears: a failed brief takes the strip and the Top setup with it, a failed sectors request
 takes Sector rotation, AI take and News, a failed signals request takes Live signals and Catalysts
 (executed 2026-09-30: 503 on the brief and on the sectors gave two alerts, with the Top setup, AI
@@ -3117,9 +3003,7 @@ retries.
 **States:** this row is the state.
 
 **Acceptance criteria:**
-- Given a 503 on a wrapped request, when the retry has failed, then the card shows `Couldn't load
-  this data` with the server's detail and status, and `Retry` (executed 2026-09-30, scratch run: `database
-  query failed: RuntimeError (HTTP 503)`).
+- Given a 503 on a wrapped request, when the retry has failed, then the card shows `Couldn't load this data` with the server's detail and status, and `Retry` (executed 2026-09-30, scratch run: `database query failed: RuntimeError (HTTP 503)`).
 - Given a FastAPI `{detail}` body, then the message carries the detail and the status; given a body
   without a string detail, then the bare status (`responseErrorMessage`, `src/lib/format.test.ts`,
   three tests); a bare three-digit message expands to `Request failed (HTTP <n>)`, a real message
@@ -3136,8 +3020,7 @@ refusal. The error box itself is asserted by no test, so Te stays unticked.
 
 ##### DASHBOARD-19 · State: stale
 
-**Shows or does:** Under the Top setup title the card set's age reads `Cards as of <Mon D, YYYY>
-(<n>d old)`, `(same day)` for 0, only the date when the age is missing, and nothing when the date is
+**Shows or does:** Under the Top setup title the card set's age reads `Cards as of <Mon D, YYYY> (<n>d old)`, `(same day)` for 0, only the date when the age is missing, and nothing when the date is
 missing or malformed (`snapshotAgeLabel`, `src/lib/dates.ts`; test id `playbook-age`,
 `DashboardPage.tsx:344,618-625`). The server refuses a set older than seven days with a 503 naming the
 date and the job, and the page reads the payload through `dataUnlessError` so a refused refetch
@@ -3178,17 +3061,14 @@ not shown, and the strip's `· <date> close` is the only age cue for the daily r
 
 **Shows or does:** When a wrapped query fails with a message containing `401` or `unauthor`
 (`isAuthError`, `src/components/shared/WidgetState.tsx:75-78`), the card body is replaced by
-`SignInEmptyState` (`src/components/shared/SignInEmptyState.tsx:12-51`): a lock icon, `Sign in to load
-data`, a sentence saying the session has expired or the user is signed out (omitted in the compact
+`SignInEmptyState` (`src/components/shared/SignInEmptyState.tsx:12-51`): a lock icon, `Sign in to load data`, a sentence saying the session has expired or the user is signed out (omitted in the compact
 cards), a `Sign in` button that reloads the document so the auth gate can show the sign-in screen, and a
-`Retry` link that refetches. `responseErrorMessage` keeps the status in the message (`Not authenticated
-(HTTP 401)`), which is what `isAuthError` matches. The trigger is each query's own error, not the
+`Retry` link that refetches. `responseErrorMessage` keeps the status in the message (`Not authenticated (HTTP 401)`), which is what `isAuthError` matches. The trigger is each query's own error, not the
 global auth flag: `useAuthBlocked` (`src/lib/authGate.ts:45`) only keeps the intraday card mounted while
 gated calls answer 401 (`DashboardPage.tsx:732`). Executed 2026-09-30: with 401 on the brief, sectors,
 signals, reference and market-data requests, four `Sign in to load data` cards showed after the one
 retry (the strip block, the KPI row, the signals row and the sectors row) and the intraday card was
-mounted with no bars. The unwrapped requests give no sign-in state: the AI take reads `No insight report for
-IWM` on a 401 (executed the same day), and the catalysts, live quote and status read as their empty
+mounted with no bars. The unwrapped requests give no sign-in state: the AI take reads `No insight report for IWM` on a 401 (executed the same day), and the catalysts, live quote and status read as their empty
 or closed forms.
 
 **Needs:** gated endpoints answering 401 without a token.
@@ -3200,8 +3080,7 @@ or closed forms.
   `{"detail":"sign in to continue"}` (11 endpoints on the staging service, 2026-09-30; see the V-gate
   evidence comment).
 - Given a 401 body `{detail: 'Not authenticated'}`, then the message is `Not authenticated (HTTP 401)`
-  and `isAuthError` is true for it (`keeps a 401 recognisable as an auth failure after detail
-  extraction`, `src/lib/format.test.ts`); a 401 status message and an `unauthorized` message are
+  and `isAuthError` is true for it (`keeps a 401 recognisable as an auth failure after detail extraction`, `src/lib/format.test.ts`); a 401 status message and an `unauthorized` message are
   detected and other failures are not (`src/components/shared/WidgetState.test.ts`).
 - Given a wrapped card answers 401, then `Sign in to load data` shows in that card after the retry
   (executed 2026-09-30, scratch run; no committed test renders it).
@@ -3312,8 +3191,7 @@ also what a closed market reads (executed 2026-09-30 in the page with the reques
   `10:15:30 AM ET` and a green dot; given the status request still pending, it reads `Market Closed`
   with a red dot and no clock (executed 2026-09-30 in the page, the request held and then answered).
 - Given a session string the page does not know, when `sessionLabel` runs, then the string is shown,
-  and given no status it returns `Market Closed` (`unknown string passes through` and `undefined →
-  Market Closed`, `src/lib/marketSession.test.ts`).
+  and given no status it returns `Market Closed` (`unknown string passes through` and `undefined → Market Closed`, `src/lib/marketSession.test.ts`).
 - Given 2026-06-19 (Juneteenth, absent from `MARKET_HOLIDAYS_2026`) at 10:00 ET, when
   `_is_market_open` runs, then it returns `(True, 'regular')` for a day on which production holds no
   daily row and one intraday bar in the handler's window against 1,147 on 2026-06-18 and 1,121 on
@@ -3385,8 +3263,7 @@ quote), LIVE-11 (the amber box replaces the card on any failure), LIVE-12 (`Upda
   a change of `NaN` and a previous close of `Infinity`, then both are null and the answer is 200
   (`test_live_quote_non_finite_optional_field_is_null_not_a_500`).
 - Given the fixture quote (price 220.45, change 0.65, change percent 0.296, previous close 219.80,
-  volume 12,345,678), when the card renders, then it reads `$220.45`, `+0.65 (+0.30%) vs prior
-  close`, `Open: $219.80`, `High: $221.20`, `Prev: $219.80`, `Low: $219.50` and `Vol: 12.35M`
+  volume 12,345,678), when the card renders, then it reads `$220.45`, `+0.65 (+0.30%) vs prior close`, `Open: $219.80`, `High: $221.20`, `Prev: $219.80`, `Low: $219.50` and `Vol: 12.35M`
   (executed 2026-09-30 in the page). Only the text `220.45` is asserted by a test.
 - Given no prior close, when the card renders, then the change and `Prev` read as an em-dash
   (executed 2026-09-30 through review mode with the reference request failing, the same branch;
@@ -3400,8 +3277,7 @@ quote), LIVE-11 (the amber box replaces the card on any failure), LIVE-12 (`Upda
 **Tests:** `tests/api/test_platform_api.py::TestLiveMarketAPI` covers the mapping and the null and
 502 rules above and the 503 without a key, with the AlphaVantage client faked.
 [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the route at 503 (no key) against a dead backend and asserts
-no body. [`tests/lib/test_silent_fallback_fixes.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_silent_fallback_fixes.py) covers the schema. Playwright `renders live price
-quote` asserts `getByText(/220\.45/)` is visible and nothing else of the card: on main the change,
+no body. [`tests/lib/test_silent_fallback_fixes.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_silent_fallback_fixes.py) covers the schema. Playwright `renders live price quote` asserts `getByText(/220\.45/)` is visible and nothing else of the card: on main the change,
 the OHLC, the volume and the em-dash are asserted by no test (the review-mode test added on this
 branch asserts the price, change, `Prev`, `Open` and `Vol` of the synthetic quote, LIVE-08), so Te
 stays unticked.
@@ -3443,8 +3319,7 @@ so it is asked again whenever a new bar or price arrives and is never polled
   `72.0` and `$1.20` (executed 2026-09-30 in the page).
 - Given the indicators request failing or not yet answered, then all six tiles read `--` (executed
   2026-09-30; a failure is not distinguishable from waiting, see Gaps).
-- Given the history request failing, then the tiles stay `--` beside `Loading historical bars for
-  indicators…` (executed 2026-09-30 with a 503), and the indicators query, enabled only with at
+- Given the history request failing, then the tiles stay `--` beside `Loading historical bars for indicators…` (executed 2026-09-30 with a 503), and the indicators query, enabled only with at
   least one bar, is not asked (`:216`, read directly).
 - Given 30 rising closes, when the route answers, then the body has the `signals` key and a
   `chart_voter` block with `call.total_count` 5 and a first condition `3 consecutive up moves` met
@@ -3483,8 +3358,7 @@ the label and `<current> <operator> <threshold>` with two decimals, `--` for a n
 (`platform/api/routers/live.py:680-722`), evaluated on the server at the price the page sent: CALL
 is Price above EMA 9, EMA 20, EMA 50 and VWAP, RSI above 50 and above 60, StochRSI above 70, RVOL
 above 1.0, EMA 9 above EMA 20 and ATR above 2.0; PUT is the mirror (Price below the four averages,
-RSI below 50 and below 40, StochRSI below 30, EMA 9 below EMA 20) with the same two conditions `RVOL
-> 1.0` and `ATR > 2.0`. Strength is the met share of ten, rounded, and `fired` is strength 70 or
+RSI below 50 and below 40, StochRSI below 30, EMA 9 below EMA 20) with the same two conditions `RVOL > 1.0` and `ATR > 2.0`. Strength is the met share of ten, rounded, and `fired` is strength 70 or
 more, seven of ten (`:707-721`). A condition whose value or threshold is null is not met
 (`:507-524`). RVOL is the quote's volume over the 20-session average volume, null when either is
 missing or the average is not above zero (`:592-596`). Until the indicators answer the cards read
@@ -3509,8 +3383,7 @@ executed 2026-09-30, the rows not).
 - Given 8 of 10 CALL conditions met and 1 of 10 PUT conditions, when the cards render, then the CALL
   card reads `8/10 met` and `80%` with the `SIGNAL` badge and a tinted border, and the PUT card
   `1/10 met` and `20%` without them (executed 2026-09-30, the fixture).
-- Given a condition with current 1.40, operator `>` and threshold 1.00, then its row reads `1.40 >
-  1.00`; given a null current or threshold, then `--` for that side (`ConditionRow`, `:68`, read
+- Given a condition with current 1.40, operator `>` and threshold 1.00, then its row reads `1.40 > 1.00`; given a null current or threshold, then `--` for that side (`ConditionRow`, `:68`, read
   directly).
 - Given strength 70 or more, then the handler marks the side `fired` (`live.py:714,720`, read
   directly; no test asserts it).
@@ -3541,10 +3414,8 @@ stays unticked.
 
 **Shows or does:** The second control of the toolbar row (`src/routes/LiveMarketPage.tsx:272-284`).
 It reads `Live (15s)` with a spinning refresh icon in the brand colour while polling, `Paused` with
-a still icon in a neutral colour when paused, and `Historical`, disabled with the tooltip `Disabled
-in historical view`, in review mode. `polling` is component state that starts true and is not stored
-(`:154`), so a reload, or a visit to another page, returns it to Live. `livePolling = polling &&
-!isReview` (`:159`) is the `enabled` flag of the quote and history queries and of nothing else
+a still icon in a neutral colour when paused, and `Historical`, disabled with the tooltip `Disabled in historical view`, in review mode. `polling` is component state that starts true and is not stored
+(`:154`), so a reload, or a visit to another page, returns it to Live. `livePolling = polling && !isReview` (`:159`) is the `enabled` flag of the quote and history queries and of nothing else
 (`:162-163`): Paused stops the 15 s quote poll and the 60 s history poll, while the session status
 (60 s), the average volume, the review-day bars and the reference are unaffected, and a request
 already in flight still completes. The last quote, the tiles and the cards stay on screen while
@@ -3561,8 +3432,7 @@ executed 2026-09-30), LIVE-09 (`Fetching live quote…` shows only while `pollin
 
 **Acceptance criteria:**
 - Given Live, when 60 s of clock pass, then at least one more quote request and one more history
-  request have gone out (`the Live (15s) toggle pauses the quote and history polling and resumes
-  it`, new test, which asserts the second request of each within the 60 s and not the 15 s and 60 s
+  request have gone out (`the Live (15s) toggle pauses the quote and history polling and resumes it`, new test, which asserts the second request of each within the 60 s and not the 15 s and 60 s
   intervals themselves).
 - Given Live, when the button is pressed, then it reads `Paused`, the icon stops spinning and, over
   a further 120 s, neither the quote nor the history is requested again while the session status
@@ -3570,15 +3440,13 @@ executed 2026-09-30), LIVE-09 (`Fetching live quote…` shows only while `pollin
 - Given Paused, when the button is pressed, then it reads `Live (15s)` and the quote and history are
   requested again without the fake clock advancing (same test).
 - Given review mode, then the button reads `Historical`, is disabled and no live request is made
-  (LIVE-08, `review mode rebuilds the quote from that day's bars up to the chosen time and stops the
-  live polling`, new test).
+  (LIVE-08, `review mode rebuilds the quote from that day's bars up to the chosen time and stops the live polling`, new test).
 - Given Paused before the first quote has answered, then nothing shows in the quote slot, not even
   `Fetching live quote…` (executed 2026-09-30 with the quote request held).
 - Given the button, then neither it nor the Sound button carries `aria-pressed` or `aria-label`
   (executed 2026-09-30; the state is in the label, the icon and the colour only, see Gaps).
 
-**Tests:** The new Playwright test `the Live (15s) toggle pauses the quote and history polling and
-resumes it` (`tests/live-market/live-market.spec.ts`, solyra commit 0e9ab73) asserts the first three
+**Tests:** The new Playwright test `the Live (15s) toggle pauses the quote and history polling and resumes it` (`tests/live-market/live-market.spec.ts`, solyra commit 0e9ab73) asserts the first three
 criteria; it was added on this branch, so the solyra CI run the matrix cites (commit eca7078)
 predates it, and no test on main touches the toggle. It ran and passed in [solyra CI run
 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
@@ -3614,11 +3482,9 @@ calls `resume()` and the page says nothing (read directly, not executed).
 
 **Acceptance criteria:**
 - Given Sound is off and the CALL setup is firing, when the page loads, then no tone plays and there
-  is no `Last signal` line (`Sound is silent until enabled, then a firing CALL sounds 880 Hz and a
-  firing PUT 440 Hz`, new test), and no audio context is created (executed 2026-09-30 with a
+  is no `Last signal` line (`Sound is silent until enabled, then a firing CALL sounds 880 Hz and a firing PUT 440 Hz`, new test), and no audio context is created (executed 2026-09-30 with a
   counting stub: the test's own recording stub counts tones, not contexts).
-- Given the CALL setup is firing, when Sound is pressed, then one 880 Hz tone plays and `Last
-  signal: CALL at <time>` shows (same test).
+- Given the CALL setup is firing, when Sound is pressed, then one 880 Hz tone plays and `Last signal: CALL at <time>` shows (same test).
 - Given the next quote carries another price and only the PUT setup fires, then one 440 Hz tone
   plays and the line reads `Last signal: PUT at <time>` (same test).
 - Given both setups fire, then only CALL sounds (executed 2026-09-30).
@@ -3666,8 +3532,7 @@ holds: with `SPY` persisted it asked for `/api/live/quote/SPY`, `/api/live/histo
 - Given another ticker in the store, when `/live` opens, then every request names that symbol
   (executed 2026-09-30; no test).
 
-**Tests:** `src/stores/tickerStore.test.ts` covers the store and not this page. `navigates to /live
-and renders ticker context` asserts the text `IWM` is present and nothing about switching. No test
+**Tests:** `src/stores/tickerStore.test.ts` covers the store and not this page. `navigates to /live and renders ticker context` asserts the text `IWM` is present and nothing about switching. No test
 changes the ticker and watches this page ask for another symbol, so Te stays unticked.
 
 **Code:** `src/stores/tickerStore.ts:14-34`, `src/routes/LiveMarketPage.tsx:148,162-172,310`,
@@ -3684,8 +3549,7 @@ store is shared: the date stayed set when the user left `/live` by client-side n
 back, and a reload cleared it (executed 2026-09-30). Review mode is `reviewDate !== null`
 (`LiveMarketPage.tsx:149-151`). Then the session bar reads `Historical: <date> @ <time> ET`
 (LIVE-01), the toggle reads `Historical` and is disabled (LIVE-05), `livePolling` is false so the
-live quote and history stop, and the page asks once for the day: `useHistoricalDay` requests `GET
-/api/market/data/<T>/<YYYYMMDD>?timeframe=1`, the whole day with no `end_time`, stale after an hour
+live quote and history stop, and the page asks once for the day: `useHistoricalDay` requests `GET/api/market/data/<T>/<YYYYMMDD>?timeframe=1`, the whole day with no `end_time`, stale after an hour
 (`:35-47`), and `useReferenceLevels` requests `GET /api/market/reference/<T>/<YYYYMMDD>`, whose
 `close` is the prior session's close, never stale (`src/hooks/useMarketData.ts:82-93`). The bars are
 cut in the browser to those with `time <= reviewCutoffTs(date, time)`, the 16:00 close when no time
@@ -3703,8 +3567,7 @@ request, since the query key holds the date and not the time (read directly, not
 **Needs:** `GET /api/market/data/{ticker}/{date}` (`platform/api/main.py:905-1016`), which reads
 `market_data_intraday` for the day's window `[D 00:00Z, D+1 02:00Z)` through `_load_date_data`
 (`:1595-1696`), converts both stored conventions to Eastern wall clock with
-`stored_intraday_to_eastern` and keeps only the rows whose Eastern date is `D` (`:1653-1666`); `GET
-/api/market/reference/{ticker}/{date}` (`:1061-1204`), which asks AlphaVantage `TIME_SERIES_DAILY`
+`stored_intraday_to_eastern` and keeps only the rows whose Eastern date is `D` (`:1653-1666`); `GET/api/market/reference/{ticker}/{date}` (`:1061-1204`), which asks AlphaVantage `TIME_SERIES_DAILY`
 first for dates under 30 days old and then reads the newest `market_data_daily` row before the date,
 and the GCS parquet files when that fails; and the avg-volume and indicators requests of LIVE-04.
 Production 2026-09-30 (V-gate evidence, statements 5 to 7): the window for 2026-09-29 holds 883 IWM
@@ -3726,8 +3589,7 @@ has them; a day with no bars, or a failed request, keeps the loading lines on sc
   bars are kept, the card reads `$220.75`, `+0.75 (+0.34%)`, `Prev: $220.00`, `Open: $219.95` and
   `Vol: 1.60M`, the last indicators request carried 16 bars, no live quote or history request goes
   out over a further 120 s, and Back to live restores `Live (15s)`, `Market Closed` and `$220.45`
-  (`review mode rebuilds the quote from that day's bars up to the chosen time and stops the live
-  polling`, new test).
+  (`review mode rebuilds the quote from that day's bars up to the chosen time and stops the live polling`, new test).
 - Given bars and a prior close of 100.5, then change is last close minus 100.5 and `change_pct` is
   against it; given no prior close, then both are null and never rebased to the open; given no bars,
   then the quote is undefined (`src/routes/reviewQuote.test.ts`, three tests).
@@ -3785,8 +3647,7 @@ own.
 **States:** This row is a state.
 
 **Acceptance criteria:**
-- Given the quote and history requests pending, when the page renders, then it shows `Fetching live
-  quote…` and `Loading historical bars for indicators…` with the tiles `--` and the cards `0/0 met`,
+- Given the quote and history requests pending, when the page renders, then it shows `Fetching live quote…` and `Loading historical bars for indicators…` with the tiles `--` and the cards `0/0 met`,
   and when they answer both lines go (executed 2026-09-30 with the two requests held and then
   released).
 - Given review mode and the day's bars missing, then the lines read `Fetching live quote…` and
@@ -3795,8 +3656,7 @@ own.
 - Given Paused and no quote, then `Fetching live quote…` is absent (LIVE-10).
 
 **Tests:** None. No test asserts either line: none holds a request to observe them, and the first
-test of `tests/shared/most-active-bar.spec.ts` (`renders on /journal and on a Market page with a
-spark ticker and a no-spark ticker`) mounts this page with a history of no bars, which leaves
+test of `tests/shared/most-active-bar.spec.ts` (`renders on /journal and on a Market page with a spark ticker and a no-spark ticker`) mounts this page with a history of no bars, which leaves
 `Loading historical bars for indicators…` on screen (executed 2026-09-30 with that test's mocks)
 while it asserts only the marquee. Te stays unticked.
 
@@ -3843,15 +3703,13 @@ id.
 ##### LIVE-11 · State: error
 
 **Shows or does:** `quoteError`, the quote query's `isError` (`src/routes/LiveMarketPage.tsx:162`),
-replaces the quote card with an amber box reading `Live data unavailable, API key not configured or
-rate limited. Indicators will populate once history loads.` (`:302-305`); the tiles and cards below
+replaces the quote card with an amber box reading `Live data unavailable, API key not configured or rate limited. Indicators will populate once history loads.` (`:302-305`); the tiles and cards below
 it stay. The query fails on any non-OK answer (`src/hooks/useLiveQuote.ts:27`) or network error once
 the app's single retry has failed (`src/App.tsx:30-37`), so the same words cover a 401, 404, 429,
 500, 502 and 503, and on a failed poll the box replaces the last good quote until a later poll
 succeeds while `Updated:` keeps the last good time (executed 2026-09-30 with a 401 and with a 429
 after a good quote). Only the quote has this branch: a failed history request reads as loading
-(LIVE-09), a failed indicators request as empty (LIVE-10), a failed status request as `Market
-Closed` (LIVE-01) and a failed avg-volume request as nothing.
+(LIVE-09), a failed indicators request as empty (LIVE-10), a failed status request as `Market Closed` (LIVE-01) and a failed avg-volume request as nothing.
 
 **Needs:** `GET /api/live/quote/{ticker}` (`platform/api/routers/live.py:189-312`). Its failures
 are: 503 without `AV_API_KEY` (`:194-195`) or on a vendor timeout (`:211-212`); 502 on another
@@ -3910,8 +3768,7 @@ its own.
   success, then the new time (executed 2026-09-30).
 - Given a quote whose `last_updated` is `2026-04-24`, then that date appears nowhere on the page
   (executed 2026-09-30).
-- Given review mode entered after a live fetch at 8:30:01 PM, then the toolbar reads `Historical:
-  2026-04-24 @ 16:00 ET` and `Updated: 8:30:01 PM` (executed 2026-09-30).
+- Given review mode entered after a live fetch at 8:30:01 PM, then the toolbar reads `Historical:2026-04-24 @ 16:00 ET` and `Updated: 8:30:01 PM` (executed 2026-09-30).
 
 **Tests:** None on main: no test asserts `Updated:` or the `Historical:` label. The review-mode test
 added on this branch asserts the `Historical: 2026-04-24 @ 09:45 ET` label in the session bar
@@ -3951,9 +3808,7 @@ evidence).
 
 **Acceptance criteria:**
 - Given no token, when each request of this page is issued against staging (`GET /api/live/status`,
-  `/api/live/quote/IWM`, `/api/live/history/IWM`, `/api/live/avg-volume/IWM`, `POST
-  /api/live/indicators`, `GET /api/market/data/IWM/20260929?timeframe=1`, `GET
-  /api/market/reference/IWM/20260929`), then each answers 401 `{"detail":"sign in to continue"}`,
+  `/api/live/quote/IWM`, `/api/live/history/IWM`, `/api/live/avg-volume/IWM`, `POST/api/live/indicators`, `GET /api/market/data/IWM/20260929?timeframe=1`, `GET/api/market/reference/IWM/20260929`), then each answers 401 `{"detail":"sign in to continue"}`,
   while `GET /api/config/firebase` answers 200 with `authMode: firebase` (V-gate evidence,
   2026-09-30).
 - Given `blocked` and a signed-in user, then `DataGate` renders its body; given `blocked`, signed
@@ -5380,13 +5235,11 @@ which mounts `SwingMode` (`src/components/options/SwingMode.tsx:791-968`) for th
 ticker (`focusSymbol`, a leading `^` stripped, `SwingMode.tsx:799`). From top to bottom:
 
 - A banner (`.hs-demo-banner`, `SwingMode.tsx:913-934`). With a grid whose source is not
-  `unavailable` it reads `Heatmap grid & pivot rail show live <SYM> dealer exposure. Tactical read
-  is illustrative.` for `realtime`, `... <SYM> dealer exposure (end-of-day close) ...` for
+  `unavailable` it reads `Heatmap grid & pivot rail show live <SYM> dealer exposure. Tactical read is illustrative.` for `realtime`, `... <SYM> dealer exposure (end-of-day close) ...` for
   `eod_fallback` and `... <SYM> dealer exposure (delayed snapshot) ...` for every other source,
   `stale_fallback` and an unrecognized one alike. With no grid, or an `unavailable` one, it reads
   `Live <SYM> grid unavailable, tactical read is illustrative.`
-- A toolbar (`SwingMode.tsx:241-319`): `Live` and `Historical` (live asks for `GET
-  /api/options/{sym}/grid`, historical for `GET /api/options/{sym}/{latestDate}/grid`), `GEX` and
+- A toolbar (`SwingMode.tsx:241-319`): `Live` and `Historical` (live asks for `GET/api/options/{sym}/grid`, historical for `GET /api/options/{sym}/{latestDate}/grid`), `GEX` and
   `VEX` (which per-cell value the heatmap prints), the five expiry chips `All`, `0DTE`, `Weekly`,
   `Monthly` and `Quarterly` (`SwingMode.tsx:47,285-293`; they change only their own highlight,
   matrix Gaps), the source pill (`SourcePill`, `SwingMode.tsx:213-238`, OPTIONS-12), `Refresh`
@@ -5397,8 +5250,7 @@ ticker (`focusSymbol`, a leading `^` stripped, `SwingMode.tsx:799`). From top to
   above and Gate below (each only when the server classified one), Flip, Hedge (only with the
   levels taxonomy), Regime (`POSITIVE`, `NEGATIVE` or `UNCLEAR`), Total GEX and Total VEX
   (`fmtBigGex`, `—` for a null).
-- A three-column stage (`SwingMode.tsx:948-965`): the Tactical read card on the left, the `Strike ×
-  Expiration heatmap` in the centre and, on the right, `Nodes & pivots` (drawn only when the overlay
+- A three-column stage (`SwingMode.tsx:948-965`): the Tactical read card on the left, the `Strike × Expiration heatmap` in the centre and, on the right, `Nodes & pivots` (drawn only when the overlay
   is real, `SwingMode.tsx:510-570,962`) above `Pivot build · ranked` (`SwingMode.tsx:753-784`: the
   ten strikes with the largest |net GEX|, each summed over the expirations).
 
@@ -5408,8 +5260,7 @@ expirations left to right (`buildGrid(summary, metric, 'net', 12)`, `SwingMode.t
 non-zero magnitudes, so one outlier does not flatten the rest (`SwingMode.tsx:634-640`), and prints
 its value only at intensity 0.04 or more (`SwingMode.tsx:721`). The King row is the levels' King, or
 else the grid's largest |net GEX| strike, and the Spot and Flip rows are tagged
-(`SwingMode.tsx:644-699`). The header of a `realtime` grid adds `badge = intraday Δ vs prior
-snapshot` (`SwingMode.tsx:642,669`), but no badge can appear: the grid cell the API emits has no
+(`SwingMode.tsx:644-699`). The header of a `realtime` grid adds `badge = intraday Δ vs prior snapshot` (`SwingMode.tsx:642,669`), but no badge can appear: the grid cell the API emits has no
 `pct_change` (`lib/gamma.py:138-175`, and the vendored OpenAPI `GammaGridCell`; the hook says so,
 `src/hooks/useGammaGrid.ts:10-16`).
 
@@ -5429,11 +5280,9 @@ tactical read is illustrative; nothing marks the Hedge chip or the two node rows
 time, no retry), whose first date becomes `latestDate`; `GET /api/options/{sym}/{latestDate}/levels`
 (`src/hooks/useGammaLevels.ts:74-98`, enabled only once a date exists, one hour stale time); and the
 grid (`src/hooks/useGammaGrid.ts:88-122`): live, `GET /api/options/{sym}/grid?strike_window_pct=6`,
-refetched every 60 seconds and stale after 50, or historical, `GET
-/api/options/{sym}/{latestDate}/grid?strike_window_pct=6`, stale after an hour and enabled only once a
+refetched every 60 seconds and stale after 50, or historical, `GET/api/options/{sym}/{latestDate}/grid?strike_window_pct=6`, stale after an hour and enabled only once a
 date exists. The grid's query key includes the date, so the live grid is asked for a second time
-when the dates answer lands (executed 2026-10-01: the opening load issued `GET
-/api/options/IWM/grid?strike_window_pct=6` twice). Historical mode asks for the newest listed date
+when the dates answer lands (executed 2026-10-01: the opening load issued `GET/api/options/IWM/grid?strike_window_pct=6` twice). Historical mode asks for the newest listed date
 and offers no way to pick another (OPTIONS-08).
 
 Server side. The dates handler (`platform/api/routers/options.py:318-521`) answers 400 outside SPY,
@@ -5465,8 +5314,7 @@ pivot rail (the strike with the largest |net GEX| summed over the expirations) a
 and Total VEX is the grid's, `null` when there is no grid.
 Without levels but with a grid that has cells, the grid supplies the spot, the Flip, the regime and
 the totals, and the King is the strike with the largest |net GEX|; gates are omitted. With neither,
-the placeholder is mock and the legend and node list are hidden. The Flip chip, the node row `Flip
-zero-gamma` and the dashed flip row are therefore the gamma balance, "the OI-weighted gamma-median
+the placeholder is mock and the legend and node list are hidden. The Flip chip, the node row `Flip zero-gamma` and the dashed flip row are therefore the gamma balance, "the OI-weighted gamma-median
 balance price ... NOT a true dealer-gamma regime flip" that the API renamed on 2026-06-09
 (`lib/gamma.py:108-115,567-620`), and not `gamma_flip`, the Black-Scholes zero-gamma level
 (`lib/gamma.py:623-850`); `/help` defines the two apart (`src/routes/HelpPage.tsx:119-126`) and the
@@ -5481,9 +5329,7 @@ run on the chains read from Cloud SQL that day, and their answers rendered in th
 comment in the matrix has the reads).
 
 - IWM, 2800 calls and 2800 puts: the banner `... IWM dealer exposure (end-of-day close) ...`, the
-  pill `EOD 07:00 PM ET` (the `23:00:00Z` stamp of the EOD rows) and the legend `SPOT 277.99 SPOT
-  METHOD parity KING 275 GATE ↑ 279 GATE ↓ 277 FLIP 275.74 HEDGE 580 REGIME NEGATIVE TOTAL GEX
-  −$54.8M TOTAL VEX −$420.2M`. Total GEX is the levels answer's (`total_gex` −54.79M, the whole
+  pill `EOD 07:00 PM ET` (the `23:00:00Z` stamp of the EOD rows) and the legend `SPOT 277.99 SPOT METHOD parity KING 275 GATE ↑ 279 GATE ↓ 277 FLIP 275.74 HEDGE 580 REGIME NEGATIVE TOTAL GEX −$54.8M TOTAL VEX −$420.2M`. Total GEX is the levels answer's (`total_gex` −54.79M, the whole
   chain) and Total VEX the grid's (−420.2M, the strikes within six percent of the spot); the
   Profiles view reads −970.0M for the same chain's Total VEX, computed at the spot it posts to the
   Greeks handler (the handler answers −929.9M at the parity spot the levels use; OPTIONS-05), two
@@ -5493,24 +5339,19 @@ comment in the matrix has the reads).
 - SPY, whose EOD chain holds calls only (matrix Gaps): the live grid answered from the REALTIME snapshot
   of 19:55:25Z (`realtime`, the pill `LIVE 03:55 PM ET`, its own `total_gex` −38.2M and regime
   `negative_gamma`), while `/levels` answered from the day's newest snapshot, the calls-only EOD
-  chain, so the legend read `SPOT 775.00 SPOT METHOD delta KING 760 ... REGIME POSITIVE TOTAL GEX
-  +$221.1M` beside a heatmap of the other snapshot.
+  chain, so the legend read `SPOT 775.00 SPOT METHOD delta KING 760 ... REGIME POSITIVE TOTAL GEX +$221.1M` beside a heatmap of the other snapshot.
 - SPX, whose chain carries no gamma at all (calls only, open interest 0 on every contract): the grid
-  is 1091 cells that are all zero, the spot is the median strike (`SPOT 7240.00 SPOT METHOD
-  median_strike`), and the legend read `KING 6810 FLIP — REGIME UNCLEAR TOTAL GEX +$0K TOTAL VEX +$0K`
+  is 1091 cells that are all zero, the spot is the median strike (`SPOT 7240.00 SPOT METHOD median_strike`), and the legend read `KING 6810 FLIP — REGIME UNCLEAR TOTAL GEX +$0K TOTAL VEX +$0K`
   with `6810 KING +$0K` in the node list: a King and two zero totals drawn from no gamma (matrix
   Gaps).
 
 **States:** OPTIONS-09 to OPTIONS-13 describe each state on the page; what Swing shows is as follows
 (all executed 2026-10-01 in hermetic renders). Pending: the card reads `Loading live grid…`, and,
 because the pill and the banner read the grid's source with a default of `unavailable` (the pill at
-`SwingMode.tsx:943`, the banner at `:916`), the pill reads `UNAVAILABLE` (hint `No snapshot
-available`) and the banner `Live IWM grid unavailable, tactical read is illustrative.` while the
+`SwingMode.tsx:943`, the banner at `:916`), the pill reads `UNAVAILABLE` (hint `No snapshot available`) and the banner `Live IWM grid unavailable, tactical read is illustrative.` while the
 request is still in flight (matrix Gaps).
 In Historical mode, with the dates request pending or failed, the grid query is disabled
-(`SwingMode.tsx:807`), so the card reads `Data unavailable: No options grid available for this
-symbol.` and not a loading line. An `unavailable` envelope, or a grid with no cells, reads `Data
-unavailable: <reason>` (the envelope's `reason`, else its first warning, else the default text,
+(`SwingMode.tsx:807`), so the card reads `Data unavailable: No options grid available for this symbol.` and not a loading line. An `unavailable` envelope, or a grid with no cells, reads `Data unavailable: <reason>` (the envelope's `reason`, else its first warning, else the default text,
 `SwingMode.tsx:616-625`). A failed grid request (a 503, a 429) reads the same default text and the
 server's `detail` is dropped. The legend and node list still draw from `/levels` when that answers,
 so beside an unavailable grid they show a King, gates and totals, and Total VEX reads `+$0K`, the
@@ -5520,17 +5361,14 @@ pending dates or levels request has no presentation of its own: neither query's 
 
 **Acceptance criteria:**
 - Given IWM, the populated levels and a grid with `data_source` `eod_fallback`, when `/options`
-  loads, then the banner reads `Heatmap grid & pivot rail show IWM dealer exposure (end-of-day
-  close). Tactical read is illustrative.`, the pill `EOD` with a time in ET, the legend `SPOT 220.00`,
+  loads, then the banner reads `Heatmap grid & pivot rail show IWM dealer exposure (end-of-day close). Tactical read is illustrative.`, the pill `EOD` with a time in ET, the legend `SPOT 220.00`,
   `SPOT METHOD parity`, `KING 220`, `GATE ↑ 221`, `GATE ↓ 218`, `FLIP 219.50`, `REGIME POSITIVE`,
-  `TOTAL GEX +$1.3M` and `TOTAL VEX −$350K`, and the heatmap header `Strike × Expiration heatmap ·
-  IWM` (executed 2026-10-01; no committed test asserts these values).
+  `TOTAL GEX +$1.3M` and `TOTAL VEX −$350K`, and the heatmap header `Strike × Expiration heatmap · IWM` (executed 2026-10-01; no committed test asserts these values).
 - Given the page opens, then the dates request carries `limit=1` and the Profiles request none
   (`the Swing view asks for one date; the Profiles picker asks for all`,
   `tests/options/options-flow.spec.ts`, on main at eca7078).
 - Given the toolbar, when `Refresh` is pressed, then the live grid is requested again, and when
-  `Glossary` is pressed the URL becomes `/help` (`Refresh refetches the grid and Glossary navigates
-  to /help`, `tests/shared/navigation.spec.ts`, on main).
+  `Glossary` is pressed the URL becomes `/help` (`Refresh refetches the grid and Glossary navigates to /help`, `tests/shared/navigation.spec.ts`, on main).
 - Given a grid, then strikes run high to low, columns are the expirations capped at twelve, the King
   cell is the largest |net GEX|, the spot row is the strike nearest a real spot and no row is tagged
   without one (`buildGrid`, `buildGrid — spot row honesty`, `selectValue`,
@@ -5557,8 +5395,7 @@ pending dates or levels request has no presentation of its own: neither query's 
   chain above; matrix Gaps).
 - Given an unrecognized source string, then the pill reads `UNAVAILABLE` with the hint
   `Unrecognized data source`, and the banner `(delayed snapshot)` (executed 2026-10-01).
-- Given the grid request is held, then the pill reads `UNAVAILABLE` and the card `Loading live
-  grid…` (executed 2026-10-01; matrix Gaps).
+- Given the grid request is held, then the pill reads `UNAVAILABLE` and the card `Loading live grid…` (executed 2026-10-01; matrix Gaps).
 
 **Tests:** Main asserts three things about this view and a few helpers. `demo-banners.spec.ts`
 (`Gamma Map Swing Mode shows the demo banner`) asserts that the first `.hs-demo-banner` element is
@@ -5600,13 +5437,11 @@ the response's `levels`, strikes high to low in a 520 pixel scroller
 (`TrinityTab.tsx:64-66,115-168`): a column header `Strike · Put GEX · Call GEX`, and per strike a
 red bar growing left for a negative `net_gamma` and a green bar growing right for a positive one,
 both scaled to the largest |net gamma| of the panel, the King row gold with a `♔` and the row
-nearest the spot tinted (`nearestStrike`, `TrinityTab.tsx:36-44`), and a hover title `Net GEX
-<value> · OI <calls>c / <puts>p`. Nothing on a panel is a mock. The levels array holds the strikes
+nearest the spot tinted (`nearestStrike`, `TrinityTab.tsx:36-44`), and a hover title `Net GEX <value> · OI <calls>c / <puts>p`. Nothing on a panel is a mock. The levels array holds the strikes
 within eight percent of the spot (`classify_levels`, `lib/gamma.py:943-1011`), so an index with five
 point strikes draws a long ladder.
 
-Executed 2026-10-01 (hermetic render, the populated fixtures): the panels read `SPY 220 King 220
-STRIKE PUT GEX CALL GEX 222 221 220 ♔ 219 218` and the same for QQQ; choosing SPY in the picker
+Executed 2026-10-01 (hermetic render, the populated fixtures): the panels read `SPY 220 King 220 STRIKE PUT GEX CALL GEX 222 221 220 ♔ 219 218` and the same for QQQ; choosing SPY in the picker
 issued no new Trinity request for SPY (its dates and levels were already cached from Swing) and left
 the three headers as they were, while the Swing heading changed to SPY (OPTIONS-06).
 
@@ -5622,17 +5457,14 @@ EOD fetch (matrix Backend notes), so its newest date is the last close. Producti
 carries no vendor gamma and, but for 2026-09-21, no puts, and open interest on three of the twelve
 dates; the newest, 2026-09-30, is 4871 calls with open interest 0 on all of them. The real handler's
 answer to that chain is a 200 with `regime` `unknown`, empty `levels` and `kings`, a `spot` of 7240.0
-with `method` `median_strike`, and two warnings: `Spot estimated from median strike ...` and `Vendor
-gamma missing on ALL 4871 contracts ...`. Rendered, the SPX panel read `SPX 7,240` over `Chain too
-thin to build a ladder for SPX.`: the header's 7,240 is that median strike, shown as a spot with no
+with `method` `median_strike`, and two warnings: `Spot estimated from median strike ...` and `Vendor gamma missing on ALL 4871 contracts ...`. Rendered, the SPX panel read `SPX 7,240` over `Chain too thin to build a ladder for SPX.`: the header's 7,240 is that median strike, shown as a spot with no
 mark. The SPY panel draws from the day's newest snapshot, the EOD chain of 2026-09-30, which holds
 calls only: `regime` `positive_gamma`, a ladder of 125 levels none of them negative, King 760, the first
 of ten kings (760 to 800) where 764 has the largest GEX (matrix Gaps).
 
 **States:** OPTIONS-09 to OPTIONS-13 describe each state on the page; the panel's own (executed
 2026-10-01): pending reads `Loading <SYM> levels…` (`TrinityTab.tsx:97-101`); a failed dates request,
-a dates answer with no date, or a failed levels request (`datesQuery.isError || levelsQuery.isError ||
-(!loading && !latestDate)`, `TrinityTab.tsx:57`) reads `No gamma levels available for <SYM>.`
+a dates answer with no date, or a failed levels request (`datesQuery.isError || levelsQuery.isError || (!loading && !latestDate)`, `TrinityTab.tsx:57`) reads `No gamma levels available for <SYM>.`
 (`TrinityTab.tsx:103-107`), whatever the status or the server's text (executed with a 503 on the SPX
 dates request and a 404 on the SPY levels one; QQQ still drew its ladder); an answer whose `levels`
 is empty reads `Chain too thin to build a ladder for <SYM>.` (`TrinityTab.tsx:109-113`). The last
@@ -5655,11 +5487,9 @@ rendered in the page, read `Chain too thin to build a ladder for SPX.`; matrix G
   higher strike, and a missing, zero or negative spot or an empty ladder tags nothing
   (`nearestStrike`, five cases, `src/components/options/TrinityTab.test.ts`, on main).
 - Given a failed dates request, a missing date or a failed levels request, then the panel reads
-  `No gamma levels available for <SYM>.`; given an empty `levels`, `Chain too thin to build a ladder
-  for <SYM>.`; given a pending request, `Loading <SYM> levels…` (executed 2026-10-01).
+  `No gamma levels available for <SYM>.`; given an empty `levels`, `Chain too thin to build a ladder for <SYM>.`; given a pending request, `Loading <SYM> levels…` (executed 2026-10-01).
 - Given a chain on which no contract carries gamma, then `/levels` answers 200 with empty `levels`
-  and `kings`, `regime` `unknown`, `total_gex` 0.0 and the warning `Vendor gamma missing on ALL <n>
-  contracts — GEX unavailable for this snapshot (feed outage?), not zero.` (executed 2026-10-01
+  and `kings`, `regime` `unknown`, `total_gex` 0.0 and the warning `Vendor gamma missing on ALL <n> contracts — GEX unavailable for this snapshot (feed outage?), not zero.` (executed 2026-10-01
   through the real handler on the production SPX chain of 2026-09-30; the library half is asserted
   by `test_build_summary_all_gamma_missing_is_unavailable_not_zero`,
   [`tests/lib/test_gamma.py:1090-1099`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_gamma.py#L1090-L1099), which checks `regime`, `total_gex` and a warning naming ALL
@@ -5688,8 +5518,7 @@ the King chip, a ladder row or any of the three texts.
 flow-tape endpoint exists); no endpoint of that name is in the API snapshot, and the three Flow files
 make no request and read no mock-mode switch (`grep` for `fetch` and `import.meta.env` finds nothing
 in them). Production therefore renders this view from the mock always, and the only disclosure is the
-`DemoDataBanner` (`role="status"`) at the top: `Demo data, not live.` and `No live flow feed
-connected, placeholder tape until an options flow-tape endpoint exists.`
+`DemoDataBanner` (`role="status"`) at the top: `Demo data, not live.` and `No live flow feed connected, placeholder tape until an options flow-tape endpoint exists.`
 (`FlowTab.tsx:114`, `src/components/shared/DemoDataBanner.tsx:16-27`). Below it:
 
 - A scanner strip of five buckets (`FlowTab.tsx:120-132`): Sweeps 142 at $18.4M, Blocks 38 at $42.1M,
@@ -5698,8 +5527,7 @@ connected, placeholder tape until an options flow-tape endpoint exists.`
   Strike, C/P, OTM, Exp, DTE, Spread (a bid, mark and ask mini bar), Side, Sentiment, Size, Chain
   (a fill ratio bar) and Premium, and eight filter chips, `All`, `Sweeps`, `Calls`, `Puts`,
   `Bullish`, `Bearish`, `> $100K` and `0–2 DTE` (`FlowTab.tsx:20,85-96`). The chips filter the
-  sixteen rows in the browser and no chip empties the table (executed 2026-10-01: `Sweeps` 7 rows, `>
-  $100K` 5 of 16).
+  sixteen rows in the browser and no chip empties the table (executed 2026-10-01: `Sweeps` 7 rows, `> $100K` 5 of 16).
 - A row click drills into the contract (`FlowTab.tsx:182-195`): `FlowSection` stores the row's
   `{sym, strike, cp, expiry, dte}` and flips the inner toggle to `Contract Drilldown`
   (`FlowSection.tsx:23-26`), OPTIONS-04.
@@ -5707,8 +5535,7 @@ connected, placeholder tape until an options flow-tape endpoint exists.`
   $48.2M, C/P ratio 2.34, Net delta +$1.2B) and `Top tickers · premium` (SPY, NVDA, TSLA, QQQ, PLTR,
   AAPL).
 
-Executed 2026-10-01 (hermetic render): the first row read `12:49:25 DVN 38 C +5.0% 01/23 4 0.10 0.13
-0.13 ASK BULLISH 328 Ask 90% $4K`. The times are a fixed morning, the expirations fall in January and
+Executed 2026-10-01 (hermetic render): the first row read `12:49:25 DVN 38 C +5.0% 01/23 4 0.10 0.13 0.13 ASK BULLISH 328 Ask 90% $4K`. The times are a fixed morning, the expirations fall in January and
 the rail says `today`; none of it moves with the clock or with the page's ticker (picking SPY left the
 first row as DVN). Nothing on the view but the banner says it is a placeholder.
 
@@ -5727,8 +5554,7 @@ is its only state. A `FlowTab` rendered without `onSelectContract` makes the row
   show, and `Sweeps` leaves seven rows and `> $100K` five (executed 2026-10-01; no committed test
   asserts a row, a chip or the rail).
 - Given a row is clicked, then the Contract Drilldown opens for that row's contract (executed
-  2026-10-01; asserted on this branch by `the view switcher mounts one view at a time and each inner
-  toggle swaps its own view`, `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, which passed in
+  2026-10-01; asserted on this branch by `the view switcher mounts one view at a time and each inner toggle swaps its own view`, `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, which passed in
   [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)).
 - Given the page's ticker changes, then the view does not change (executed 2026-10-01).
 
@@ -5747,8 +5573,7 @@ found by its text, the table by its role).
 **Shows or does:** The second toggle of the Flow view, `Contract Drilldown`
 (`src/components/options/FlowSection.tsx:43-45`), mounts `ContractDrilldown`
 (`src/components/options/ContractDrilldown.tsx:77-246`). It is a placeholder like the Live Feed
-(OPTIONS-03): the banner at the top reads `Demo data, not live.` and `No contract-tape endpoint
-connected, placeholder drilldown until a per-contract tape exists.` (`ContractDrilldown.tsx:111`), and
+(OPTIONS-03): the banner at the top reads `Demo data, not live.` and `No contract-tape endpoint connected, placeholder drilldown until a per-contract tape exists.` (`ContractDrilldown.tsx:111`), and
 every figure comes from `src/data/contractDrilldownMock.ts`, a single SPY 605 call that expires
 2026-01-17. The view, top to bottom:
 
@@ -5765,13 +5590,10 @@ every figure comes from `src/data/contractDrilldownMock.ts`, a single SPY 605 ca
   16:00 with Bid, Mid, Ask, Avg Fill, IV, RVOL, Volume and the three premiums.
 
 Which contract. With no selection the header is the mock's SPY 605 call, with the ISO expiry
-`2026-01-17`. Reached from a Live Feed row, `FlowSection` hands over that row's `{sym, strike, cp,
-expiry, dte}` (`FlowTab.tsx:187-193`) and only the header row and the contract id use it
+`2026-01-17`. Reached from a Live Feed row, `FlowSection` hands over that row's `{sym, strike, cp, expiry, dte}` (`FlowTab.tsx:187-193`) and only the header row and the contract id use it
 (`ContractDrilldown.tsx:82-84`); the stats, the ratio, the chart and the table stay the SPY 605 call's,
 as the file's own comment says (`ContractDrilldown.tsx:79-81`). Executed 2026-10-01 (hermetic render):
-after the first Live Feed row, `DVN 38 C 01/23` with 328 contracts at $0.13, the header read `DVN $38
-CALL 01/23 4 DTE` and the strip `VOLUME 48,213 OPEN INT 31,905 AVG FILL $1.42 TOTAL PREMIUM $6.85M OTM
-% +0.3% MULTI % 34%`, the SPY call's figures. The banner calls the drilldown a placeholder, but the
+after the first Live Feed row, `DVN 38 C 01/23` with 328 contracts at $0.13, the header read `DVN $38 CALL 01/23 4 DTE` and the strip `VOLUME 48,213 OPEN INT 31,905 AVG FILL $1.42 TOTAL PREMIUM $6.85M OTM % +0.3% MULTI % 34%`, the SPY call's figures. The banner calls the drilldown a placeholder, but the
 header names the clicked contract above another contract's numbers (matrix Gaps).
 
 **Needs:** Nothing: no request, no store. The Chain's `none (mock fixture ...)` cells are right
@@ -5786,8 +5608,7 @@ header names the clicked contract above another contract's numbers (matrix Gaps)
   executed render of 2026-10-01 read `SPY $605 CALL 2026-01-17 1 DTE`).
 - Given a Live Feed row is clicked, then the toggle moves to `Contract Drilldown` and the header and
   contract id name that row's contract, while the figures stay the placeholder's (executed
-  2026-10-01; the toggle move and the contract id are asserted on this branch by `the view switcher
-  mounts one view at a time and each inner toggle swaps its own view`,
+  2026-10-01; the toggle move and the contract id are asserted on this branch by `the view switcher mounts one view at a time and each inner toggle swaps its own view`,
   `tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)).
 
 **Tests:** None on main: `demo-banners.spec.ts` opens the Flow tab on its Live Feed, and
@@ -5820,8 +5641,7 @@ this branch asserts the toggle and the contract id and no figure, so Te stays un
   regime's description under it), `Max Pain` (`$<strike>` or `--`) and `Put/Call OI` (two decimals,
   `Bearish skew` above 1, else `Bullish skew`).
 - A levels row (`ProfilesTab.tsx:530-578`), drawn once `/levels` answered and a spot is known: the
-  regime chip (`Positive gamma`, `Negative gamma`, hidden when `unknown`), one `★ King $<strike>
-  (<distance>%)` per entry of `kings` (three on the real IWM answer below), one `◆ Gate $<strike>` per
+  regime chip (`Positive gamma`, `Negative gamma`, hidden when `unknown`), one `★ King $<strike> (<distance>%)` per entry of `kings` (three on the real IWM answer below), one `◆ Gate $<strike>` per
   gate and one `⇅ Flip $<strike>` per strike bracketing the gamma balance. Before `/levels` has answered, a fallback row shows the Greeks answer's King,
   gatekeepers and midpoints (`ProfilesTab.tsx:580-597`).
 - The heatmap (`GEXHeatmap`, `ProfilesTab.tsx:72-235,599-620`): a D3 SVG of one horizontal bar per
@@ -5829,22 +5649,15 @@ this branch asserts the toggle and the contract id and no figure, so Te stays un
   green and negative purple, strike labels amber near the spot, a value label where a bar passes five
   percent of the largest, a dashed zero line, a red spot line labelled `$<spot>`, and per strike a
   `★` (the King), a `◆` (a gatekeeper) or a `●` (inside a midpoint band) from the Greeks `nodes`
-  (`ProfilesTab.tsx:126-131,173-184`). Its header reads `<GEX|VEX> by Strike, <Net|Calls Only|Puts
-  Only>: ±15% range (<n> strikes)`.
-- A footer (`ProfilesTab.tsx:631-645`): `Source: AlphaVantage EOD · Cloud SQL · <n> contracts ·
-  snapshot <date>` for a Cloud SQL chain and `Source: AlphaVantage Live · <n> contracts · snapshot
-  <date> <time> ET` for the live proxy, or `time unavailable` with no timestamp (OPTIONS-12).
+  (`ProfilesTab.tsx:126-131,173-184`). Its header reads `<GEX|VEX> by Strike, <Net|Calls Only|Puts Only>: ±15% range (<n> strikes)`.
+- A footer (`ProfilesTab.tsx:631-645`): `Source: AlphaVantage EOD · Cloud SQL · <n> contracts · snapshot <date>` for a Cloud SQL chain and `Source: AlphaVantage Live · <n> contracts · snapshot <date> <time> ET` for the live proxy, or `time unavailable` with no timestamp (OPTIONS-12).
 
 Executed 2026-10-01 (hermetic render, the populated fixtures): the date `2026-04-24`, `Spot: parity`
-with `220.00`, the cards `TOTAL GEX -23K Negative`, `GAMMA FLIP $219.50 Above gamma flip, pinning /
-range-bound`, `MAX PAIN $220` and `PUT/CALL OI 1.06 Bearish skew`, the chips `Positive gamma ★ King
-$220.00 (+0.0%) ◆ Gate $218.00 ◆ Gate $221.00 ⇅ Flip $219.00`, the header `GEX by Strike, Net: ±15%
-range (5 strikes)` and the EOD footer. `Gamma Flip` and the `⇅ Flip` chips are the gamma balance and
+with `220.00`, the cards `TOTAL GEX -23K Negative`, `GAMMA FLIP $219.50 Above gamma flip, pinning /range-bound`, `MAX PAIN $220` and `PUT/CALL OI 1.06 Bearish skew`, the chips `Positive gamma ★ King $220.00 (+0.0%) ◆ Gate $218.00 ◆ Gate $221.00 ⇅ Flip $219.00`, the header `GEX by Strike, Net: ±15% range (5 strikes)` and the EOD footer. `Gamma Flip` and the `⇅ Flip` chips are the gamma balance and
 its bracketing strikes (matrix Gaps, and the Flip paragraph of OPTIONS-01); the fixture's
 `gamma_flip` of 219.75 appears nowhere on the view.
 
-The `VEX` button changes the first card (`TOTAL VEX -506K Negative`) and the header (`VEX by Strike,
-...`) and not the bars: `GEXHeatmap` is given no metric (`ProfilesTab.tsx:612-618`), and the Greeks
+The `VEX` button changes the first card (`TOTAL VEX -506K Negative`) and the header (`VEX by Strike,...`) and not the bars: `GEXHeatmap` is given no metric (`ProfilesTab.tsx:612-618`), and the Greeks
 answer's `gex_by_strike` rows hold `gex`, `call_gex` and `put_gex` only (executed 2026-10-01: the bars
 and their labels were identical in the two modes, on the fixtures and on the real answer below;
 matrix Gaps).
@@ -5855,8 +5668,7 @@ matrix Gaps).
   (`useAllOptionsDates`, `src/hooks/useOptionsDates.ts:56-67`: five minute stale time, no retry). The
   chosen date is `dates[dateIdx]`, newest first, and `dateIdx` returns to 0 when the ticker changes
   (`ProfilesTab.tsx:261-269`).
-- `GET /api/options/{ticker}/{date}`, the Cloud SQL chain, and on a 404 only `GET
-  /api/options/live/{ticker}/{date}`, the AlphaVantage proxy; any other status is an error
+- `GET /api/options/{ticker}/{date}`, the Cloud SQL chain, and on a 404 only `GET/api/options/live/{ticker}/{date}`, the AlphaVantage proxy; any other status is an error
   (`useOptionsData`, `ProfilesTab.tsx:40-61`: one hour stale time, no retry).
 - `GET /api/options/{ticker}/{date}/levels`, with `?spot=<override>` when an override is typed
   (`ProfilesTab.tsx:302-305`, `src/hooks/useGammaLevels.ts:74-98`; the query key holds the override).
@@ -5903,8 +5715,7 @@ for the date 2026-09-29, `metadata.source` `alphavantage_live`). `/levels` is OP
 handler (`:753-806`) answers from `lib/gamma.py` and, for a non-positive `spot_price` or no options, a
 200 of zeros (`:767-781`) that the page never asks for. The vendored OpenAPI declares a typed 200 for
 all five routes. Run on the real IWM chain of 2026-09-30 (5600 contracts, 2800 calls and 2800
-puts, read from Cloud SQL on 2026-10-01): the chain handler answered 200 with `metadata` `{source:
-cloud_sql, data_source: alphavantage, row_count: 5600}`; `/levels` with spot 277.995 (`parity`,
+puts, read from Cloud SQL on 2026-10-01): the chain handler answered 200 with `metadata` `{source:cloud_sql, data_source: alphavantage, row_count: 5600}`; `/levels` with spot 277.995 (`parity`,
 `K=278.0 C=0.09 P=0.10 exp=2026-09-30`), `negative_gamma`, `total_gex` −54.79M, `gamma_flip` 290.44,
 `gamma_balance` 275.74, three kings, five gates and 54 levels; and the Greeks handler, given that
 chain and the parity spot 277.995, `total_gex` −54.79M, `total_vex` −929.87M, `zero_gamma` 216.82,
@@ -5916,30 +5727,24 @@ unchanged (executed 2026-10-01; matrix Gaps).
 **States:** OPTIONS-09 to OPTIONS-13 describe each state on the page. Executed 2026-10-01: while the
 dates are pending the stepper reads `No dates` and the page `Loading available dates…`; while the chain
 is pending, `Loading options chain…` with a skeleton, and, because the levels already gave a spot, the
-metrics bar and levels row show at once, the cards as `TOTAL GEX +0 Positive` and `PUT/CALL OI 0.00
-Bullish skew` (the zeroed Greeks; OPTIONS-11); a chain with no rows reads `No options data returned for
-<ticker> on <date>` and `Try navigating to a different date using the chevrons above.`, which the real
+metrics bar and levels row show at once, the cards as `TOTAL GEX +0 Positive` and `PUT/CALL OI 0.00 Bullish skew` (the zeroed Greeks; OPTIONS-11); a chain with no rows reads `No options data returned for <ticker> on <date>` and `Try navigating to a different date using the chevrons above.`, which the real
 chain handler cannot produce (it answers 404 for an empty frame), and a dates answer with an empty list
 renders `No dates` and nothing else, which the real dates handler cannot produce either (it answers
-404); a chain with no deltas and levels with no spot (`method` `none`) reads `Couldn't estimate spot
-from this chain` with the advice to enter one, the server's warning in the blue box, no metrics bar,
+404); a chain with no deltas and levels with no spot (`method` `none`) reads `Couldn't estimate spot from this chain` with the advice to enter one, the server's warning in the blue box, no metrics bar,
 no heatmap and no Greeks request.
 
 Executed 2026-10-01 with the real handlers' answers on the production chains of 2026-09-30, rendered
 in the page, the Greeks answers being the handler's at the spot the page posted. IWM, complete:
-`TOTAL GEX -59.6M Negative` (`TOTAL VEX -970.0M` under `VEX`), `GAMMA FLIP $275.74 Below gamma flip,
-trending / vol-amplifying`, `MAX PAIN $285`, `PUT/CALL OI 2.28 Bearish skew`, three `★ King` chips,
+`TOTAL GEX -59.6M Negative` (`TOTAL VEX -970.0M` under `VEX`), `GAMMA FLIP $275.74 Below gamma flip, trending / vol-amplifying`, `MAX PAIN $285`, `PUT/CALL OI 2.28 Bearish skew`, three `★ King` chips,
 five `◆ Gate`, two `⇅ Flip`, the header `GEX by Strike, Net: ±15% range (95 strikes)` and the footer
 `Source: AlphaVantage EOD · Cloud SQL · 5600 contracts · snapshot 2026-09-30`. The Greeks request
 carried `spot_price` 290.0, the delta proxy's strike, while the toolbar read `Spot: parity` over
 `277.99`; at the parity spot the card would read `-54.8M`, Swing's figure for the same chain (matrix
 Gaps). SPX (4871 calls, no gamma, open interest 0): `Spot: median_strike`, the blue box listing both
-warnings (`Spot estimated from median strike ...`, `Vendor gamma missing on ALL 4871 contracts
-...`), and under it the cards `TOTAL GEX +0 Positive`, `GAMMA FLIP --`, `MAX PAIN $200` and
+warnings (`Spot estimated from median strike ...`, `Vendor gamma missing on ALL 4871 contracts...`), and under it the cards `TOTAL GEX +0 Positive`, `GAMMA FLIP --`, `MAX PAIN $200` and
 `PUT/CALL OI 0.00 Bullish skew`, over 365 strikes with no bar value: a zero, the lowest strike and a
 skew read from no data, beneath a warning that says there is none. SPY (the EOD chain holds calls
-only): `TOTAL GEX +221.1M Positive`, `GAMMA FLIP $770.42`, `MAX PAIN $50`, `PUT/CALL OI 0.00 Bullish
-skew`, ten `★ King` chips and no warning (the proxy and the server's `delta` spot agree on 775.0, so
+only): `TOTAL GEX +221.1M Positive`, `GAMMA FLIP $770.42`, `MAX PAIN $50`, `PUT/CALL OI 0.00 Bullish skew`, ten `★ King` chips and no warning (the proxy and the server's `delta` spot agree on 775.0, so
 this one is not shifted; matrix Gaps).
 
 **Acceptance criteria:**
@@ -5952,15 +5757,11 @@ this one is not shifted; matrix Gaps).
   `tests/options/options-flow.spec.ts`, on main at eca7078).
 - Given the levels fixture, then the spot-method chip, the `★ King $` and `◆ Gate $` chips, the
   `Total GEX` and `Gamma Flip` labels and the regime label `Positive gamma` show
-  (`options page shows spot method chip when /levels resolves`, `options page shows King/Gate taxonomy
-  chips`, `options page renders the metrics bar`, `regime chip uses Positive/Negative/Unclear
-  wording`, `tests/shared/gamma-levels.spec.ts`, on main; the metrics test asserts the two labels and
+  (`options page shows spot method chip when /levels resolves`, `options page shows King/Gate taxonomy chips`, `options page renders the metrics bar`, `regime chip uses Positive/Negative/Unclear wording`, `tests/shared/gamma-levels.spec.ts`, on main; the metrics test asserts the two labels and
   no value).
 - Given the Cloud SQL chain answers 404 and the proxy answers with `metadata.source`
-  `alphavantage_live`, then the footer reads `AlphaVantage Live` (`falls back to live endpoint and
-  shows AlphaVantage Live badge`, `options-flow.spec.ts`, on main); executed 2026-10-01 with a
-  proxy timestamp of 20:00:05Z: `Source: AlphaVantage Live · 10 contracts · snapshot 2026-09-30 16:00
-  ET`.
+  `alphavantage_live`, then the footer reads `AlphaVantage Live` (`falls back to live endpoint and shows AlphaVantage Live badge`, `options-flow.spec.ts`, on main); executed 2026-10-01 with a
+  proxy timestamp of 20:00:05Z: `Source: AlphaVantage Live · 10 contracts · snapshot 2026-09-30 16:00 ET`.
 - Given a spot is typed, then `/levels` is asked with `?spot=<value>`, the Greeks are posted with that
   `spot_price` and the chain is not asked again, the chip is hidden and the heatmap's spot line reads
   the typed value (executed 2026-10-01 with 225).
@@ -5980,8 +5781,7 @@ this one is not shifted; matrix Gaps).
 - Given the live proxy, then it maps AlphaVantage's rows to the Cloud SQL shape, answers the second
   call from the cache and answers 503, 400, 429 or 404 as listed above ([`tests/api/test_options_live.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_options_live.py),
   eleven handler tests and five on `_av_to_contracts`).
-- Given a failed Greeks request with a spot known, then the cards read `Total GEX +0` and `Put/Call
-  OI 0.00` (executed 2026-10-01; solyra#74; encoded as an expected failure on this branch, OPTIONS-11).
+- Given a failed Greeks request with a spot known, then the cards read `Total GEX +0` and `Put/Call OI 0.00` (executed 2026-10-01; solyra#74; encoded as an expected failure on this branch, OPTIONS-11).
 - Given `VEX` is pressed, then the first card reads `Total VEX` and the header `VEX by Strike`, and
   the bars keep their GEX values (executed 2026-10-01; matrix Gaps).
 - Given a chain with no gamma and no open interest, then the page lists the API's warnings and the
@@ -5999,8 +5799,7 @@ input, the metric and side toggles, the EOD footer, the `Couldn't estimate spot`
 chain handler's response body (it is reached only through `/levels` and answers 404 against a dead
 backend, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)); the dates handler's query is asserted only through its
 cache and its 503 ([`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), `test_options_dates_is_not_a_500`). The plain
-test added on this branch, `a failed Greeks request leaves the EOD footer and the King chip on screen and
-is attempted twice` (`tests/options/options-flow.spec.ts`, solyra commit `9543894`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)),
+test added on this branch, `a failed Greeks request leaves the EOD footer and the King chip on screen and is attempted twice` (`tests/options/options-flow.spec.ts`, solyra commit `9543894`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)),
 asserts the footer's text on the fixture chain, and the tick of this row, made on main's tests, does not rest on it.
 
 **Code:** `src/components/options/ProfilesTab.tsx:1-648`, `src/hooks/useOptionsDates.ts:56-67`,
@@ -6035,15 +5834,13 @@ What a pick does on this page (executed 2026-10-01, hermetic render, SPY then AA
   (OPTIONS-03).
 - Any symbol the search offers can be chosen, and the options routes accept only SPY, IWM, QQQ and SPX
   (`VALID_TICKERS`, `platform/api/routers/options.py:86,150-157`). After the pick of AAPL from the
-  search, Profiles asked for `GET /api/options/dates/AAPL`, the route answered 400 `Ticker must be one
-  of ['IWM', 'QQQ', 'SPX', 'SPY'], got 'AAPL'`, and the view read `No options dates available for AAPL`
+  search, Profiles asked for `GET /api/options/dates/AAPL`, the route answered 400 `Ticker must be one of ['IWM', 'QQQ', 'SPX', 'SPY'], got 'AAPL'`, and the view read `No options dates available for AAPL`
   with that text and a `Retry` button. Swing asked for `GET /api/options/dates/AAPL?limit=1` (the same
   400, unread) and `GET /api/options/AAPL/grid?strike_window_pct=6`: the grid router accepts any
   alphanumeric symbol of ten characters or fewer (`platform/api/routers/grid.py:120-124`) and, with
   nothing in Cloud SQL, fetches the chain from AlphaVantage on demand, at most ten distinct symbols per
   client IP per minute, and writes it back (`grid.py:408-613,678-711`). With the on-demand fetch
-  refused (503, as in the render) the card read `Data unavailable: No options grid available for this
-  symbol.`; with it answering, Swing draws a grid but no gates (no levels request without a date) and
+  refused (503, as in the render) the card read `Data unavailable: No options grid available for this symbol.`; with it answering, Swing draws a grid but no gates (no levels request without a date) and
   the legend's Hedge chip and the node list's mock Midpoint and Hedge rows do not appear, because
   they need the levels taxonomy (`SwingMode.tsx:526-533`; executed with a populated grid and a 400 on
   the dates). The vendor answer itself was not requested.
@@ -6081,8 +5878,7 @@ all, the cache `lib/ticker_info.py:61-98` fills (matrix Gaps).
 
 **States:** The popover's inline states are DASHBOARD-10's (`ticker-search-error`,
 `ticker-coverage-error`, `ticker-ingest-notice`); on this page a 401 on any of the three calls reads
-there too (`search unavailable (search 401)`, the coverage hint, `couldn't add <SYM> to tracking,
-HTTP 401: sign in to continue`). The page's views show OPTIONS-09 to OPTIONS-13 for the new symbol.
+there too (`search unavailable (search 401)`, the coverage hint, `couldn't add <SYM> to tracking, HTTP 401: sign in to continue`). The page's views show OPTIONS-09 to OPTIONS-13 for the new symbol.
 
 **Acceptance criteria:**
 - Given the page has loaded, when the trigger is pressed, then the popover offers IWM, SPY and QQQ,
@@ -6091,8 +5887,7 @@ HTTP 401: sign in to continue`). The page's views show OPTIONS-09 to OPTIONS-13 
   DASHBOARD-10; `src/stores/tickerStore.test.ts` and `src/components/shared/tickerCombobox.test.ts`).
 - Given SPY is picked on this page, then Swing and Profiles ask for SPY, Trinity and Flow do not
   change (executed 2026-10-01; no committed test mounts the picker on `/options`).
-- Given a symbol outside SPY, IWM, QQQ and SPX is picked, then Profiles reads `No options dates
-  available for <SYM>` with the route's 400 text (executed 2026-10-01).
+- Given a symbol outside SPY, IWM, QQQ and SPX is picked, then Profiles reads `No options dates available for <SYM>` with the route's 400 text (executed 2026-10-01).
 - Given a request for `symbols=SPY,AAPL,IWM,QQQ,XLK`, then coverage runs two statements and answers
   `{intraday, daily}` per symbol, and given a failing database it answers 503 with no coverage
   (`test_coverage_endpoint_batches_queries`, `test_coverage_endpoint_503s_loud_on_db_failure`,
@@ -6162,17 +5957,14 @@ alone (executed 2026-10-01); Enter on a focused button changes the view, as on a
 
 **Acceptance criteria:**
 - Given the page opens, then `Gamma Map` is the chosen view, Swing Mode shows, and Trinity, Flow and
-  Profiles are not mounted (executed 2026-10-01; asserted on this branch by `the view switcher mounts
-  one view at a time and each inner toggle swaps its own view`, `tests/options/options-flow.spec.ts`,
+  Profiles are not mounted (executed 2026-10-01; asserted on this branch by `the view switcher mounts one view at a time and each inner toggle swaps its own view`, `tests/options/options-flow.spec.ts`,
   solyra commit `d82c20b`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)).
 - Given a button is pressed, then its view replaces the one shown and no other view is mounted; given
   an inner toggle is pressed, then that section swaps its own two views; given a Live Feed row is
   clicked, then the drilldown opens for that row's contract; given `Gamma Map` is pressed again, then
   Swing shows (the same branch test; for each step the other four views are asserted absent).
-- Given the page opens, then the `Symbol` label and the three buttons are visible (`navigates to
-  /options`, `tests/options/options-flow.spec.ts`, on main at eca7078).
-- Given `Flow` is pressed, then `Demo data, not live.` is visible (`Flow tab shows the demo banner
-  text`, `tests/options/demo-banners.spec.ts`, on main); given `Profiles` is pressed, then its heatmap
+- Given the page opens, then the `Symbol` label and the three buttons are visible (`navigates to/options`, `tests/options/options-flow.spec.ts`, on main at eca7078).
+- Given `Flow` is pressed, then `Demo data, not live.` is visible (`Flow tab shows the demo banner text`, `tests/options/demo-banners.spec.ts`, on main); given `Profiles` is pressed, then its heatmap
   content shows (the Profiles tests of `options-flow.spec.ts` and `gamma-levels.spec.ts`, on main);
   given `Trinity Mode` is pressed, then the three Trinity requests are issued (the Trinity test of
   `options-flow.spec.ts`, on main).
@@ -6219,8 +6011,7 @@ Swing's `Historical` button asks for that same date (`GET /api/options/IWM/2026-
 2026-10-01, `SwingMode.tsx:799-808`), so it is the EOD grid of the newest date and not a way to look back.
 
 **Needs:** The stepper uses OPTIONS-05's calls: `GET /api/options/dates/{ticker}` without `limit`,
-then, for the chosen date, `GET /api/options/{ticker}/{date}` (and `GET
-/api/options/live/{ticker}/{date}` on a 404) and `GET /api/options/{ticker}/{date}/levels`, and the
+then, for the chosen date, `GET /api/options/{ticker}/{date}` (and `GET/api/options/live/{ticker}/{date}` on a 404) and `GET /api/options/{ticker}/{date}/levels`, and the
 Greeks POST when the step gives the hook a key it holds no answer for (a contract count and spot not
 asked for before; `src/hooks/useOptionsGreeks.ts:111`: the key holds neither date nor ticker) and,
 once the answer it holds is more than 60 seconds old (`:141`), when the step goes to a chain not yet
@@ -6253,11 +6044,9 @@ and the loading lines are OPTIONS-11 and OPTIONS-09.
   reads the previous date, both chevrons are enabled, and that date's chain and levels are requested;
   when it is pressed again, then the oldest date shows, the older chevron is disabled and its chain and
   levels are requested; when the newer chevron is pressed, then the previous date shows again (executed
-  2026-10-01; asserted on this branch by `the Profiles date stepper walks the snapshot dates and loads
-  the chain and levels of the date it lands on`, `tests/options/options-flow.spec.ts`, solyra commit
+  2026-10-01; asserted on this branch by `the Profiles date stepper walks the snapshot dates and loads the chain and levels of the date it lands on`, `tests/options/options-flow.spec.ts`, solyra commit
   `d82c20b`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)).
-- Given the page opens, then Swing asks for one date (`limit=1`) and Profiles for the whole list (`the
-  Swing view asks for one date; the Profiles picker asks for all`, `tests/options/options-flow.spec.ts`,
+- Given the page opens, then Swing asks for one date (`limit=1`) and Profiles for the whole list (`the Swing view asks for one date; the Profiles picker asks for all`, `tests/options/options-flow.spec.ts`,
   on main at eca7078).
 - Given an expiry chip is pressed, then only the chip's highlight changes: no request, no change to the
   grid (executed 2026-10-01; no test).
@@ -6282,15 +6071,12 @@ chevrons are found through the date label they flank).
 are in flight. The page itself has no loading state (`src/routes/OptionsFlowPage.tsx:22-70`) and the
 Flow view makes no request, so it has none either. The state is three separate pieces of copy:
 
-- Swing (`src/components/options/SwingMode.tsx:606-613`): the heatmap card keeps its header `Strike
-  × Expiration heatmap · <SYM>` and reads `Loading live grid…`. The banner and the source pill read
+- Swing (`src/components/options/SwingMode.tsx:606-613`): the heatmap card keeps its header `Strike × Expiration heatmap · <SYM>` and reads `Loading live grid…`. The banner and the source pill read
   the grid's source with a default of `unavailable` (the pill at `SwingMode.tsx:943`, the banner at
-  `:916`), so while the request is in flight the banner says `Live <SYM> grid unavailable, tactical
-  read is illustrative.` and the pill reads `UNAVAILABLE` (hint `No snapshot available`; matrix
+  `:916`), so while the request is in flight the banner says `Live <SYM> grid unavailable, tactical read is illustrative.` and the pill reads `UNAVAILABLE` (hint `No snapshot available`; matrix
   Gaps). With `/levels` also pending, the legend and the node list are not drawn
   (`SwingMode.tsx:946`) and the pivot rail is absent.
-- Trinity (`src/components/options/TrinityTab.tsx:97-101`): each of the three panels reads `Loading
-  <SYM> levels…` under its header, until its own dates and levels requests both settle.
+- Trinity (`src/components/options/TrinityTab.tsx:97-101`): each of the three panels reads `Loading <SYM> levels…` under its header, until its own dates and levels requests both settle.
 - Profiles (`src/components/options/ProfilesTab.tsx:468-475`): with the dates pending, the stepper reads
   `No dates` and a box reads `Loading available dates…` over a five-row skeleton (`WidgetSkeleton`);
   with the chain pending, `Loading options chain…` over the same skeleton.
@@ -6304,8 +6090,7 @@ request held open in each case):
   `src/hooks/useOptionsGreeks.ts:145-158`), shown because a spot is known (`ProfilesTab.tsx:503`);
   with the Greeks pending and no heatmap yet, the same zero cards stay (OPTIONS-11, matrix Gaps).
 - Swing in Historical mode with the dates pending: the grid query is disabled until a date exists
-  (`SwingMode.tsx:807`), so the card reads `Data unavailable: No options grid available for this
-  symbol.` and not a loading line (OPTIONS-10).
+  (`SwingMode.tsx:807`), so the card reads `Data unavailable: No options grid available for this symbol.` and not a loading line (OPTIONS-10).
 
 **Needs:** Nothing of its own: the requests in flight are OPTIONS-01's, OPTIONS-02's and OPTIONS-05's.
 The app's query defaults hold an answer for five minutes and retry a failed request once
@@ -6323,8 +6108,7 @@ technology: the lines are plain text with no `role` or `aria-busy` (read, `Swing
   (executed 2026-10-01; no test; matrix Gaps).
 - Given the Trinity requests are held, then each panel reads `Loading <SYM> levels…` (executed
   2026-10-01; no test).
-- Given the dates request is held, then the Profiles stepper reads `No dates` and the view `Loading
-  available dates…`; given the chain request is held, then it reads `Loading options chain…` (executed
+- Given the dates request is held, then the Profiles stepper reads `No dates` and the view `Loading available dates…`; given the chain request is held, then it reads `Loading options chain…` (executed
   2026-10-01; no test).
 - Given the chain is pending and `/levels` has answered, then the cards read `+0`, `--` and `0.00`
   beside a real Gamma Flip (executed 2026-10-01; matrix Gaps).
@@ -6345,20 +6129,16 @@ page has none of its own, and Flow cannot be empty. Six lines of copy, in three 
 
 - Swing (`src/components/options/SwingMode.tsx:616-625`): `Data unavailable: <reason>` in the heatmap
   card when the grid request failed, the envelope's `data_source` is `unavailable`, or the grid has no
-  columns. The reason is the envelope's `reason`, else its first warning, else `No options grid
-  available for this symbol.`. Executed 2026-10-01: an `unavailable` envelope with its reason read
+  columns. The reason is the envelope's `reason`, else its first warning, else `No options grid available for this symbol.`. Executed 2026-10-01: an `unavailable` envelope with its reason read
   `Data unavailable: no realtime or EOD chain found within the lookup window`; a 200 grid with no
-  cells and the warning `Could not estimate spot from this chain.` read `Data unavailable: Could not
-  estimate spot from this chain.`. The banner and pill follow the source (OPTIONS-09, OPTIONS-12), and
+  cells and the warning `Could not estimate spot from this chain.` read `Data unavailable: Could not estimate spot from this chain.`. The banner and pill follow the source (OPTIONS-09, OPTIONS-12), and
   the legend and node list still draw when `/levels` answered, so beside the unavailable card they
   show a King, gates and totals (matrix Gaps).
 - Trinity (`src/components/options/TrinityTab.tsx:103-113`): `No gamma levels available for <SYM>.`
-  when a dates or levels request failed or no date came back, and `Chain too thin to build a ladder for
-  <SYM>.` when `levels` is empty. The second states a cause the panel does not know: an empty `levels`
+  when a dates or levels request failed or no date came back, and `Chain too thin to build a ladder for <SYM>.` when `levels` is empty. The second states a cause the panel does not know: an empty `levels`
   is also what a chain with no vendor gamma produces (OPTIONS-02; executed 2026-10-01 on the
   production SPX chain of 2026-09-30, which read `SPX 7,240` over that text).
-- Profiles, no dates (`src/components/options/ProfilesTab.tsx:428-446`): `No options dates available
-  for <ticker>`, the server's `detail` beneath it and a `Retry` button. The box serves every failure
+- Profiles, no dates (`src/components/options/ProfilesTab.tsx:428-446`): `No options dates available for <ticker>`, the server's `detail` beneath it and a `Retry` button. The box serves every failure
   of the dates request, so a 404 for a ticker with no snapshots, the 400 for a symbol outside SPY, IWM,
   QQQ and SPX and a 503 all read alike (OPTIONS-11). A 200 with an empty list reads only `No dates` in
   the stepper and nothing else, which the real dates handler cannot answer (it answers 404 when no
@@ -6370,30 +6150,24 @@ page has none of its own, and Flow cannot be empty. Six lines of copy, in three 
 - Profiles, no spot (`ProfilesTab.tsx:479-491`): `Couldn't estimate spot from this chain` with the
   advice to enter a spot, when the chain has rows and no spot resolves (OPTIONS-05).
 
-Executed 2026-10-01 (hermetic renders): AAPL picked from the search read `No options dates available
-for AAPL` with the route's 400 text on Profiles, `Data unavailable: No options grid available for this
-symbol.` on Swing (grid 503) and `Live AAPL grid unavailable, ...` in the banner (OPTIONS-06).
+Executed 2026-10-01 (hermetic renders): AAPL picked from the search read `No options dates available for AAPL` with the route's 400 text on Profiles, `Data unavailable: No options grid available for this symbol.` on Swing (grid 503) and `Live AAPL grid unavailable, ...` in the banner (OPTIONS-06).
 
 **Needs:** Nothing of its own: the answers are OPTIONS-01's, OPTIONS-02's and OPTIONS-05's.
 
-**States:** This is the empty state of the page's data views. Of the six lines, `No options data
-returned for ...` is not reachable through the real handlers, and neither is a dates answer with an empty
+**States:** This is the empty state of the page's data views. Of the six lines, `No options data returned for ...` is not reachable through the real handlers, and neither is a dates answer with an empty
 list, which reads only `No dates`; the other five are reached by 404, 400, 503, an `unavailable` envelope
 or a chain with no gamma.
 
 **Acceptance criteria:**
-- Given the dates request answers an error, then Profiles reads `No options dates available for
-  <ticker>` with the server's `detail` and a `Retry` button (executed 2026-10-01 with the 404, 400 and
+- Given the dates request answers an error, then Profiles reads `No options dates available for <ticker>` with the server's `detail` and a `Retry` button (executed 2026-10-01 with the 404, 400 and
   503 texts the real handler sends; no test).
 - Given the dates answer is 200 with no date, then the stepper reads `No dates` and nothing else
   explains it (executed 2026-10-01; no test).
-- Given the chain answers 200 with no contracts, then Profiles reads `No options data returned for
-  <ticker> on <date>` and the advice (executed 2026-10-01; no test).
+- Given the chain answers 200 with no contracts, then Profiles reads `No options data returned for <ticker> on <date>` and the advice (executed 2026-10-01; no test).
 - Given an `unavailable` grid envelope, then the card reads `Data unavailable: <reason>` (executed
   2026-10-01; the server side: `TestGridLive`, [`tests/api/test_grid_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_grid_router.py), asserts the envelope
   and its HTTP 200).
-- Given a Trinity panel whose request failed or whose ladder is empty, then it reads `No gamma levels
-  available for <SYM>.` or `Chain too thin to build a ladder for <SYM>.` (executed 2026-10-01; no
+- Given a Trinity panel whose request failed or whose ladder is empty, then it reads `No gamma levels available for <SYM>.` or `Chain too thin to build a ladder for <SYM>.` (executed 2026-10-01; no
   test).
 
 **Tests:** None on the page: no test asserts any of the six lines (a search of `tests/` and `src/`
@@ -6413,15 +6187,11 @@ test that opens `/options` answers its requests with data, so none mounts these 
 none of its own. What each view reads, with the request that fails (executed 2026-10-01, hermetic
 renders; the response texts are the ones the real handlers send):
 
-- Profiles, the chain (`src/components/options/ProfilesTab.tsx:448-466`): a box `Options chain
-  unavailable`, the server's `detail` and a `Retry` button. The chain hook asks the live proxy only
+- Profiles, the chain (`src/components/options/ProfilesTab.tsx:448-466`): a box `Options chain unavailable`, the server's `detail` and a `Retry` button. The chain hook asks the live proxy only
   after a 404 and throws the server's text for any other failure (`ProfilesTab.tsx:40-61`), so a 500
-  read `chain exploded` and a 404 whose live fallback answered 503 read `AlphaVantage API key not
-  configured. Set AV_API_KEY (or ALPHA_VANTAGE_API_KEY) in the environment / Secret Manager.`, the
-  operational text shown to the user verbatim. `Retry` asks again: a 503 `The options chain is being
-  computed now; retry shortly.` followed by a 200 drew the full view on the second request.
-- Profiles, the dates (`ProfilesTab.tsx:428-446`): the box of OPTIONS-10, `No options dates available
-  for <ticker>`, with `Could not read option snapshot dates for IWM: the database is unavailable.`
+  read `chain exploded` and a 404 whose live fallback answered 503 read `AlphaVantage API key not configured. Set AV_API_KEY (or ALPHA_VANTAGE_API_KEY) in the environment / Secret Manager.`, the
+  operational text shown to the user verbatim. `Retry` asks again: a 503 `The options chain is being computed now; retry shortly.` followed by a 200 drew the full view on the second request.
+- Profiles, the dates (`ProfilesTab.tsx:428-446`): the box of OPTIONS-10, `No options dates available for <ticker>`, with `Could not read option snapshot dates for IWM: the database is unavailable.`
   for a 503, and a `Retry` that recovered the same way.
 - Profiles, the Greeks (`ProfilesTab.tsx:326`): nothing. With a spot known from `/levels` a failed
   request, asked twice, leaves the metrics bar on `EMPTY_GREEKS` (`src/hooks/useOptionsGreeks.ts:145-158`):
@@ -6431,8 +6201,7 @@ renders; the response texts are the ones the real handlers send):
 - Profiles, the levels: nothing. With `/levels` answering 503 the levels row and the regime chip are
   absent, `GAMMA FLIP` falls back to the Greeks' `zero_gamma` (`--` in the fixture) and the rest of
   the view draws as usual, with no notice.
-- Swing, the grid (`SwingMode.tsx:616-625`): `Data unavailable: No options grid available for this
-  symbol.`, the text of a symbol with no grid; the server's `detail` is dropped. The banner and pill
+- Swing, the grid (`SwingMode.tsx:616-625`): `Data unavailable: No options grid available for this symbol.`, the text of a symbol with no grid; the server's `detail` is dropped. The banner and pill
   read `unavailable`, and the legend and node list still draw when `/levels` answered, with Total VEX
   as `—` (a failed grid has no value to show; an `unavailable` envelope shows `+$0K`, OPTIONS-10).
 - Swing, the levels or the dates: nothing. With `/levels` 503 the legend and nodes draw from the grid
@@ -6446,30 +6215,25 @@ renders; the response texts are the ones the real handlers send):
 
 **Needs:** Nothing of its own: the failing requests are OPTIONS-01's, OPTIONS-02's and OPTIONS-05's.
 Server side, a database failure is not always a failure: the chain handler and the live grid read
-through the swallowing `query_to_dataframe`, so an unreachable database answers 404 `No earlier data
-ingested for this ticker` (and Profiles then asks the live proxy) and 200 `unavailable` with the
-no-chain reason; only the dates and coverage handlers answer 503 (matrix Gaps; `tests/api/
-test_route_coverage.py` pins the 404 and the 503 against a dead backend).
+through the swallowing `query_to_dataframe`, so an unreachable database answers 404 `No earlier data ingested for this ticker` (and Profiles then asks the live proxy) and 200 `unavailable` with the
+no-chain reason; only the dates and coverage handlers answer 503 (matrix Gaps; [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the 404 and the 503 against a dead backend).
 
 **States:** This is the error state of the page's data views; OPTIONS-13 is the 401 and OPTIONS-10 the
 empty state, and several failures land in one of those two lines.
 
 **Acceptance criteria:**
-- Given the chain request fails with a status other than 404, then Profiles reads `Options chain
-  unavailable`, the server's `detail` and `Retry`, and `Retry` asks again (executed 2026-10-01; no
+- Given the chain request fails with a status other than 404, then Profiles reads `Options chain unavailable`, the server's `detail` and `Retry`, and `Retry` asks again (executed 2026-10-01; no
   test).
 - Given the chain answers 404 and the live proxy fails, then the same box reads the proxy's `detail`
   (executed 2026-10-01; no test; `test_options_live.py` asserts the proxy's statuses).
 - Given the Greeks request fails after a spot is known, then the view shows the Greeks as
   unavailable and not `Total GEX +0` and `Put/Call OI 0.00`: it does not today (executed 2026-10-01,
-  solyra#74). `a failed Greeks request is reported as unavailable, not shown as a measured zero
-  (solyra#74)` (`tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, restructured in `9543894`, run in [solyra CI run
+  solyra#74). `a failed Greeks request is reported as unavailable, not shown as a measured zero (solyra#74)` (`tests/options/options-flow.spec.ts`, solyra commit `d82c20b`, restructured in `9543894`, run in [solyra CI run
   37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) as an expected failure) asserts that neither `+0` nor `0.00` is on the page and the word
   `unavailable` is, retried until all three hold at once. It is declared `test.fail`, so it is
   expected to fail until #74 is fixed and flags the fix by passing; its RED is the real failure on
   `+0`. The state it examines, the EOD footer and the King chip on screen and two Greeks attempts,
-  is asserted by a plain test, `a failed Greeks request leaves the EOD footer and the King chip on
-  screen and is attempted twice` (same file, solyra commit `9543894`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)), so that an
+  is asserted by a plain test, `a failed Greeks request leaves the EOD footer and the King chip on screen and is attempted twice` (same file, solyra commit `9543894`, passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)), so that an
   unrelated failure cannot pass for the expected one.
 - Given the grid request fails, then Swing reads the no-grid text and the server's reason is lost
   (executed 2026-10-01; no test).
@@ -6501,17 +6265,14 @@ how old it is. Two surfaces, one per data path.
 
 - Swing's source pill and banner (`src/components/options/SwingMode.tsx:213-238,913-934`). The pill
   reads the grid's `data_source` through `SOURCE_PILL_META` (`SwingMode.tsx:213-218`) and, when the grid
-  has a `snapshot_ts`, the time in ET (`fmtTime`): `realtime` is `LIVE` (hint `Realtime · 5-min
-  snapshot`, with a pulsing dot, the only source that pulses), `eod_fallback` is `EOD` (`Realtime
-  missed · using yesterday close`), `stale_fallback` is `STALE` (`EOD > 2 sessions behind`),
+  has a `snapshot_ts`, the time in ET (`fmtTime`): `realtime` is `LIVE` (hint `Realtime · 5-min snapshot`, with a pulsing dot, the only source that pulses), `eod_fallback` is `EOD` (`Realtime missed · using yesterday close`), `stale_fallback` is `STALE` (`EOD > 2 sessions behind`),
   `unavailable` is `UNAVAILABLE` (`No snapshot available`) and any other string is `UNAVAILABLE` with
   the hint `Unrecognized data source`, so a renamed server value cannot read as a green `LIVE`. The
   banner repeats the source in words (OPTIONS-01): `live <SYM> dealer exposure`, `(end-of-day close)`,
   `(delayed snapshot)` for `stale_fallback` and every other string, or `grid unavailable`. Executed
   2026-10-01 with each source in turn: `LIVE 03:55 PM ET`, `EOD 07:00 PM ET`, `STALE 07:00 PM ET`,
   `UNAVAILABLE` and `UNAVAILABLE 03:55 PM ET` (hint `Unrecognized data source`).
-- Profiles' source footer (`src/components/options/ProfilesTab.tsx:631-645`): `Source: AlphaVantage
-  EOD · Cloud SQL · <n> contracts · snapshot <date>` for any chain the Cloud SQL handler answered, with
+- Profiles' source footer (`src/components/options/ProfilesTab.tsx:631-645`): `Source: AlphaVantage EOD · Cloud SQL · <n> contracts · snapshot <date>` for any chain the Cloud SQL handler answered, with
   the snapshot's date only, and `Source: AlphaVantage Live · <n> contracts · snapshot <date> <time> ET`
   for the live proxy (`metadata.source` `alphavantage_live`, converted by `isoToEtDisplay`,
   `src/lib/time.ts:20-35`), or `time unavailable` with no timestamp. Executed 2026-10-01: the proxy
@@ -6532,8 +6293,7 @@ rendered in the page; the V evidence comment in the matrix has the reads):
   pill read `LIVE 03:55 PM ET`; with only the EOD rows on file it answered `eod_fallback` and the pill
   read `EOD 07:00 PM ET`. A `LIVE` pill that is a day old is the matrix Gaps' stocks#1211.
 - A REALTIME snapshot served by the Cloud SQL chain handler (the 15:55 ET SPY snapshot, 13,274
-  contracts, `metadata.source` `cloud_sql`) read `Source: AlphaVantage EOD · Cloud SQL · 13274 contracts
-  · snapshot 2026-09-30` in Profiles: labelled end-of-day, with the date and no time (matrix Gaps).
+  contracts, `metadata.source` `cloud_sql`) read `Source: AlphaVantage EOD · Cloud SQL · 13274 contracts · snapshot 2026-09-30` in Profiles: labelled end-of-day, with the date and no time (matrix Gaps).
 
 **Needs:** The grid's `data_source` and `snapshot_ts` (OPTIONS-01) and the chain's `metadata.source` and
 `snapshot_timestamp` (OPTIONS-05); nothing of its own. The live proxy's `snapshot_timestamp` is the
@@ -6548,11 +6308,9 @@ beside it (OPTIONS-01).
 - Given a grid whose `data_source` is each of `realtime`, `eod_fallback`, `stale_fallback` and
   `unavailable`, then the pill reads `LIVE`, `EOD`, `STALE` and `UNAVAILABLE` with their hints and the
   banner its wording (executed 2026-10-01; no test).
-- Given an unrecognized `data_source`, then the pill reads `UNAVAILABLE` with the hint `Unrecognized
-  data source` (executed 2026-10-01; no test).
+- Given an unrecognized `data_source`, then the pill reads `UNAVAILABLE` with the hint `Unrecognized data source` (executed 2026-10-01; no test).
 - Given the live proxy answers with `metadata.source` `alphavantage_live`, then the footer reads
-  `AlphaVantage Live` and the snapshot's ET time (`falls back to live endpoint and shows AlphaVantage
-  Live badge`, `tests/options/options-flow.spec.ts`, on main at eca7078; it asserts the words, and the
+  `AlphaVantage Live` and the snapshot's ET time (`falls back to live endpoint and shows AlphaVantage Live badge`, `tests/options/options-flow.spec.ts`, on main at eca7078; it asserts the words, and the
   time was read in the 2026-10-01 render).
 - Given an ISO string with a zone, then `isoToEtDisplay` renders `YYYY-MM-DD HH:MM ET` and a string
   without one falls back to its date (`isoToEtDisplay`, `src/lib/time.test.ts`, on main).
@@ -6600,8 +6358,7 @@ both above the views in `src/routes/OptionsFlowPage.tsx:63-68`, both driven by o
   `OPEN_PREFIXES` (`authedFetch.ts:45`) are open and never set it. Every options route and the three
   picker routes are gated (V evidence: 401 on each without a token).
 - `SignInBanner` (`src/components/shared/SignInEmptyState.tsx:58-84`), a `role="alert"` strip while the
-  flag is set: `Sign in to load options data`, `Your session has expired or you are signed out.
-  Authenticate to stream live data here.` and a `Sign in` button that reloads the page, which routes
+  flag is set: `Sign in to load options data`, `Your session has expired or you are signed out.Authenticate to stream live data here.` and a `Sign in` button that reloads the page, which routes
   through the app's sign-in gate. It renders nothing while the flag is clear.
 - `DataGate` (`SignInEmptyState.tsx:93-98`) replaces the views with `SignInEmptyState` (`role="status"`,
   `Sign in to load data`) only when the flag is set and the user is not signed in. In the open mode the
@@ -6611,9 +6368,7 @@ both above the views in `src/routes/OptionsFlowPage.tsx:63-68`, both driven by o
 
 What the views show under a 401 (executed 2026-10-01, hermetic render with the options routes answering
 401 `sign in to continue`, the user signed in): the banner, and in each view its own failure copy, with
-no word about signing in except the server's `detail` where a view prints it. Swing reads `Data
-unavailable: No options grid available for this symbol.`, the three Trinity panels `No gamma levels
-available for <SYM>.`, and Profiles `No options dates available for IWM` with `sign in to continue` and
+no word about signing in except the server's `detail` where a view prints it. Swing reads `Data unavailable: No options grid available for this symbol.`, the three Trinity panels `No gamma levels available for <SYM>.`, and Profiles `No options dates available for IWM` with `sign in to continue` and
 `Retry` (OPTIONS-10, OPTIONS-11). Only the banner says why.
 
 **Needs:** The 401 itself: the Chain names no call of its own. Staging answers 401 to each gated route
@@ -6633,8 +6388,7 @@ test account exists, so the signed-in 401 (an expired session) is the case reach
 - Given no token, then each gated route the page calls answers 401 on staging (V evidence,
   2026-10-01).
 - Given a 401 from a gated path, then the wrapper calls the callback registered with
-  `setOnUnauthorized`, and a 401 from an open path does not (`a 401 from a gated path fires
-  onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`,
+  `setOnUnauthorized`, and a 401 from an open path does not (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`,
   on main). The callback is the wrapper's second hook, called in Firebase mode only
   (`authedFetch.ts:249`): no code outside the tests registers one, and the banner's flag is set by
   `markAuthBlocked` on the next line, which that test does not read.
@@ -6847,8 +6601,7 @@ pins the route's 503 against a dead backend with no body. Te stays unticked: the
 **Shows or does:** `SetupCardDetails` (`src/components/playbook/SetupCardDetails.tsx:48-124`), the last block of each card, with up to two
 parts and nothing at all when the card has neither (`:63-64`). (1) `Trade levels · at $<price>` (`:68-92`), drawn only when the page holds
 a positive quote price and the card has both `target_pct` and `stop_pct` (`:55`; the price is `quote?.price`, `PlaybookPage.tsx:365`): a
-`▲ Target` row, a `● Entry` row marked `live price` and a `▼ Stop` row, each with the price, and the caption `Price-only, no fees. Win rate =
-how often target hits before stop, not the move size.` A card that is not PUT puts the target above the entry and the stop below, a PUT
+`▲ Target` row, a `● Entry` row marked `live price` and a `▼ Stop` row, each with the price, and the caption `Price-only, no fees. Win rate = how often target hits before stop, not the move size.` A card that is not PUT puts the target above the entry and the stop below, a PUT
 card the reverse (`:52,57-59`); the sub-labels are always `+<t>% · <t x 100> bps · +$<price x t / 100>` for the target and
 `-<s>% · <s x 100> bps · -$<price x s / 100>` for the stop (`:76,83`). (2) `Win rate / avg bps by hold window` (`:94-121`): one cell per
 `horizons` entry holding `<minutes>m` with a star on the card's `best_horizon_min` (`:101,109`), the window's win rate (`toFixed(0)`, an em dash
@@ -6972,10 +6725,8 @@ page assembles, and the page draws the answers into PLAYBOOK-02's progress line,
    (`platform/api/routers/playbook.py:747-771`) judges each text with `_eval_condition` (`:582-744`): met, unmet, or unknown with a reason
    (`missing data`, `RSI n/a`, `EMA<n> n/a`, `StochRSI n/a`, `ORB n/a`, `market closed`, `no bar`, `no reference level`, `subjective`,
    `strat pattern` or `unrecognized`).
-5. The fill. For each card the page counts the met and the unknown results (`PlaybookPage.tsx:164-169`) and draws `<met>/<total> conditions
-   met`, ` · <unknown> subjective` and the percent of all conditions; the border is idle until something is met, stronger when every condition
-   that was not unknown is met ("fully lit": `allAutoMet = autoEvaluable > 0 && metCount === autoEvaluable` with `autoEvaluable = total -
-   unknownCount`, `:171-178`), and each row shows the evaluator's `detail` or `reason`.
+5. The fill. For each card the page counts the met and the unknown results (`PlaybookPage.tsx:164-169`) and draws `<met>/<total> conditions met`, ` · <unknown> subjective` and the percent of all conditions; the border is idle until something is met, stronger when every condition
+   that was not unknown is met ("fully lit": `allAutoMet = autoEvaluable > 0 && metCount === autoEvaluable` with `autoEvaluable = total -unknownCount`, `:171-178`), and each row shows the evaluator's `detail` or `reason`.
 
 Which side computes what: the server computes every indicator (`lib/indicators.py` through `/api/live/indicators`) and every condition and
 threshold (`PRICE_PROXIMITY_PCT` 0.5%, the StochRSI defaults 20 and 80 and the regexes, `playbook.py:510-513,582-744`); the page shapes the
@@ -6989,8 +6740,7 @@ a ticker's 12 cards 40 were judged, 19 met and 21 unmet at the numbers used, and
 (for example `StochRSI crossed above 20 (turning up)`, `Order block nearby (institutional interest)`, `Volume increasing on bounce`,
 `VWAP is nearby (target)`, `Bearish divergence (price higher, RSI lower)`), 3 `strat pattern` and 1 `subjective`. Cards 8, 9, 10 and 11 can
 judge one condition of four, cards 5 and 12 all but one. A card is fully lit on its judged conditions alone: in the executed run of the open
-market (synthetic bars and a quote ending at 10:40 ET, the real indicators and evaluator) card 11 was fully lit with `1/4 conditions met · 3
-subjective` and card 1 with `2/5 conditions met` was not.
+market (synthetic bars and a quote ending at 10:40 ET, the real indicators and evaluator) card 11 was fully lit with `1/4 conditions met · 3 subjective` and card 1 with `2/5 conditions met` was not.
 
 Other things the evaluation does that the text does not say (executed unless marked read). After about 11:38 ET the last 100 one-minute
 bars hold no bar from 09:30 to 09:59 (the history handler asks for the compact series and its docstring says the last 100 bars,
@@ -6999,11 +6749,9 @@ bars ending at 12:00 ET `orbHigh` and `orbLow` were null and `ORB 30m trend is b
 `minutesSinceOpen` was null and `At least 30 min after market open` read `market closed`; after-hours it was 450 and met. `RVOL > 1.0` divides
 the quote's volume so far by the 20-session average daily volume (`playbook.py:636-645`): with 9,000,000 shares, an assumed figure, against the
 production IWM average of 23,080,481.55 (V evidence) the evaluator printed `RVOL 0.39 > 1.0`, so the condition can pass only once the day's
-volume exceeds an average whole day (Live Market Gaps have the same line for its strength panel). `Price at or near support level (prev day
-low, VWAP, order block)` and its resistance twin are judged against the previous day's low or high alone (`:727-736`, `0.81% from prev low`),
+volume exceeds an average whole day (Live Market Gaps have the same line for its strength panel). `Price at or near support level (prev day low, VWAP, order block)` and its resistance twin are judged against the previous day's low or high alone (`:727-736`, `0.81% from prev low`),
 and `RSI was elevated (> 60) at breakout` is judged as the latest RSI above 60. A failed reference read left `prevClose`, `prevHigh` and
-`prevLow` null and the support condition at `no reference level`. When the evaluation answered 500 the header still read `Cards light up as live
-market conditions are met` and every card `0/N conditions met · N subjective` with `no data` rows (PLAYBOOK-08), and a page left open past the
+`prevLow` null and the support condition at `no reference level`. When the evaluation answered 500 the header still read `Cards light up as live market conditions are met` and every card `0/N conditions met · N subjective` with `no data` rows (PLAYBOOK-08), and a page left open past the
 close kept its last snapshot (PLAYBOOK-09).
 
 **Needs:** The six reads above, `GET /api/live/status`, `GET /api/live/history/{ticker}` (AlphaVantage TIME_SERIES_INTRADAY), `GET /api/live/quote/{ticker}`
@@ -7018,8 +6766,7 @@ volume, written at 12:21 UTC, 08:21 ET) which the average-volume query skips, so
 33,011,828.45 for QQQ; the stored prior session of IWM is 2026-09-30, open 280.17, high 280.475, low 277.86, close 277.89. The history, quote and
 reference reads are vendor-live and were not observed.
 
-**States:** The fill has six: no snapshot (the market closed, a failed status, history or indicators call: the cards read `N conditions (no
-live data)`, an em dash and `no data`), a snapshot with answers, a snapshot with a failed evaluation (every row `no data`, counted subjective),
+**States:** The fill has six: no snapshot (the market closed, a failed status, history or indicators call: the cards read `N conditions (no live data)`, an em dash and `no data`), a snapshot with answers, a snapshot with a failed evaluation (every row `no data`, counted subjective),
 a snapshot gone stale (PLAYBOOK-09), and two transitions that repeat on every change of the quote's price or volume and on every new minute bar. The quote refetches
 every 15 seconds and the history every 60 (`src/hooks/useLiveQuote.ts:31`, `src/hooks/useLiveHistory.ts:22`); the indicators query is keyed on the bar count, the last bar's time, the quote's price and volume and the average volume and keeps no earlier answer (`src/hooks/useLiveIndicators.ts:28-35`,
 no `placeholderData` anywhere, `src/App.tsx:30-37`), and the batch query is keyed on the snapshot's signature
@@ -7028,8 +6775,7 @@ and the cards fall back to the no-live-data text (`src/routes/PlaybookPage.tsx:2
 answers the batch has no data, so the cards read `0/N conditions met · N subjective`, `0%` and `no data` under the live line
 (`src/routes/PlaybookPage.tsx:314,363`). Executed on the unmodified
 page with a quote that returns a new price and volume on every call, and the indicators and the evaluation answered after 600 ms (mocked),
-one card of three conditions: at 1.0 s `No live data, evaluation paused` and `3 conditions (no live data)`, at 1.4 s `Cards light up as live
-market conditions are met` and `0/3 conditions met · 3 subjective` and `0%`, at 2.0 s `2/3 conditions met` and `67%`, and the same three
+one card of three conditions: at 1.0 s `No live data, evaluation paused` and `3 conditions (no live data)`, at 1.4 s `Cards light up as live market conditions are met` and `0/3 conditions met · 3 subjective` and `0%`, at 2.0 s `2/3 conditions met` and `67%`, and the same three
 states again at 15.8, 16.4 and 17.0 s and at 30.8, 31.4 and 32.0 s, when the quote refetched. With the quote constant (the same price and volume on each of its five calls, at 1.1, 16.1, 31.1, 46.1 and 61.1 s) and the history's 100-bar window sliding by one bar on its refetch at 61.1 s, the three states ran at 1.3, 1.8 and 2.4 s, the header line and the first card's progress did not change between 2.4 and 61.2 s, and the three states came again at 61.2, 61.8 and 62.4 s (executed, same mocks; the bar count stayed 100 and the last bar's time was the part of the key that changed). The real latencies of the two calls were not
 observed (matrix Gaps). A condition the evaluator cannot judge is `unknown` with its reason.
 
@@ -7039,8 +6785,7 @@ observed (matrix Gaps). A condition the evaluator cannot judge is `unknown` with
   (executed; the test added on this branch asserts it).
 - Given the answers, then each card reads `<met>/<total> conditions met` with the subjective count and each row the detail or reason, and
   a card whose every judged condition is met has the stronger border (executed; asserted by the branch test).
-- Given the market closed or no snapshot, then no history, quote, indicators or evaluation is requested and the line reads `No live data,
-  evaluation paused` (executed).
+- Given the market closed or no snapshot, then no history, quote, indicators or evaluation is requested and the line reads `No live data, evaluation paused` (executed).
 - Given a refresh of the quote that changes its price or volume, then the header and the cards read the no-live-data text until the
   indicators answer and `0/N conditions met · N subjective` until the evaluation answers, and the filled state returns (executed with
   mocked 600 ms answers; matrix Gaps).
@@ -7162,10 +6907,8 @@ string `detail` (`responseErrorMessage`, `src/lib/format.ts:98-109`), `Request f
 kept: `dataUnlessError` returns nothing while the query is in error (`PlaybookPage.tsx:298-300`, `src/lib/queryData.ts:9-11`), so the cards,
 the count and the age go, and the header keeps its title and its paused or live line. Executed against the real handler and edited
 answers (IWM unless named):
-- a ticker with no rows (`AAPL`, the real 404): `Playbook unavailable for AAPL: No playbook_cards rows for 'AAPL'. Run the phase6-playbook Cloud
-  Run job (--write-db). (HTTP 404)`;
-- a refused stale set (503, the handler's wording): `Playbook unavailable for IWM: playbook_cards for IWM is stale: latest analysis_date
-  2026-06-13 is 85 days old (today; max 7).` followed by the handler's closing sentence and `(HTTP 503)`;
+- a ticker with no rows (`AAPL`, the real 404): `Playbook unavailable for AAPL: No playbook_cards rows for 'AAPL'. Run the phase6-playbook Cloud Run job (--write-db). (HTTP 404)`;
+- a refused stale set (503, the handler's wording): `Playbook unavailable for IWM: playbook_cards for IWM is stale: latest analysis_date 2026-06-13 is 85 days old (today; max 7).` followed by the handler's closing sentence and `(HTTP 503)`;
 - a 500 with a plain-text body, which is what the real app answers when the database read raises (`Internal Server Error`, executed with
   the strict query replaced by one that raises): `Playbook unavailable for IWM: Request failed (HTTP 500)`;
 - a 401: `Playbook unavailable for IWM: sign in to continue (HTTP 401)` (PLAYBOOK-10).
@@ -7178,8 +6921,7 @@ and the job), 503 when Cloud SQL is not configured (`:334-339`), 422 for a bad `
 fails (`_cards_from_db` uses the strict query, `:149`).
 
 What the box does not cover. The evaluation, the history, the quote and the indicators fail silently: with the evaluation answering 500 and
-a snapshot held, the header still read `Cards light up as live market conditions are met`, no box showed and every card read `0/N conditions
-met · N subjective` with `no data` under each condition (`:313-314,363`); with the indicators answering 500 the history was fetched and
+a snapshot held, the header still read `Cards light up as live market conditions are met`, no box showed and every card read `0/N conditions met · N subjective` with `no data` under each condition (`:313-314,363`); with the indicators answering 500 the history was fetched and
 the line stayed `No live data, evaluation paused`; with the status answering 500 the history and the quote were never requested; a failed
 reference read became null and the support condition read `no reference level` (all executed). Failing live data and a missing
 snapshot read the same.
@@ -7229,8 +6971,7 @@ judging a cached set again on every hit (`:326-332`), and the page drops the cac
 showed, and the following good refetch restored them; with the answer's age at 0, 1 and 5 days the label read `(same day)`, `(1d old)` and
 `(5d old)`. The page never sends `date`, so the handler's as-of mode, the Dashboard's review mode, is not part of this page.
 
-(3) The live evaluation has no age marker. After the status turned closed at 20:05 ET the header still read `Cards light up as live market
-conditions are met` and card 1 still read `2/5 conditions met` with its details, because a disabled query keeps its data; the history and
+(3) The live evaluation has no age marker. After the status turned closed at 20:05 ET the header still read `Cards light up as live market conditions are met` and card 1 still read `2/5 conditions met` with its details, because a disabled query keeps its data; the history and
 the quote were each requested once more in the minute of the flip and not again, and only the status was requested in the next two minutes
 (executed with the clock moved by 61 and then 120 seconds). A snapshot taken at the close therefore stays on screen as live until the page is
 reloaded or the market reopens.
@@ -7248,8 +6989,7 @@ live fill (PLAYBOOK-05) has none.
 **Acceptance criteria:**
 - Given an answer dated 2026-09-05 with `age_days` 1, when the page renders, then `as of Sep 5, 2026 (1d old)` beside `1 setups`
   (`shows the card set date and age next to the setup count`).
-- Given a set 85 days old, then the handler answers 503 naming the date, the age and the job, and the page shows the box and no card (`a
-  stale card set (503) is reported with the server reason, not rendered`, `test_playbook_stale_set_is_refused_not_rendered`).
+- Given a set 85 days old, then the handler answers 503 naming the date, the age and the job, and the page shows the box and no card (`a stale card set (503) is reported with the server reason, not rendered`, `test_playbook_stale_set_is_refused_not_rendered`).
 - Given a set exactly 7 days old, then it is served, and 8 days is refused; a set cached while fresh is refused once it crosses the limit
   (`test_playbook_age_boundary`, `test_playbook_cached_set_is_rechecked_on_every_hit`).
 - Given an errored refetch of a query that holds data, then the data is dropped (`dataUnlessError`, `src/lib/queryData.test.ts`; executed in
@@ -7259,8 +6999,7 @@ live fill (PLAYBOOK-05) has none.
   (`src/lib/dates.test.ts`).
 
 **Tests:** On main the page layer asserts the label (`shows the card set date and age next to the setup count`, exact text; changing
-`1d old` to `1 day old` failed it, mutation) and the refusal of a first request (`a stale card set (503) is reported with the server reason,
-not rendered`); `src/lib/dates.test.ts` (`snapshotAgeLabel`, three tests) and `src/lib/queryData.test.ts` (`dataUnlessError`, three tests)
+`1d old` to `1 day old` failed it, mutation) and the refusal of a first request (`a stale card set (503) is reported with the server reason, not rendered`); `src/lib/dates.test.ts` (`snapshotAgeLabel`, three tests) and `src/lib/queryData.test.ts` (`dataUnlessError`, three tests)
 assert the label forms and the drop of retained data; on the handler side [`tests/api/test_playbook_evaluate.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_playbook_evaluate.py) asserts the freshness
 contract: `test_playbook_fresh_set_is_served_with_its_date`, `test_playbook_stale_set_is_refused_not_rendered`, `test_playbook_age_boundary`,
 `test_playbook_cached_set_is_rechecked_on_every_hit`, `test_playbook_age_days_helper` and the as-of pair
@@ -7285,9 +7024,7 @@ in its place (`src/components/auth/AuthGate.tsx:14-30`; executed with `/playbook
 `Playbook` heading and the only API request was `GET /api/config/firebase`). In `open` and `iap` modes `useUser` reports signed in always
 (`src/hooks/useUser.ts:22-27,81`), so the condition cannot hold (matrix Gaps).
 
-What a signed-in user sees on a 401 (executed, `open` mode as the hermetic suite runs, the playbook request answering 401 `sign in to
-continue`): the header `IWM Playbook` with the paused line and no count, the amber box `Playbook unavailable for IWM: sign in to continue
-(HTTP 401)` (PLAYBOOK-08) and, from the shell, the strip `Your session expired, so live data is not loading.` with a `Sign in` button,
+What a signed-in user sees on a 401 (executed, `open` mode as the hermetic suite runs, the playbook request answering 401 `sign in to continue`): the header `IWM Playbook` with the paused line and no count, the amber box `Playbook unavailable for IWM: sign in to continue (HTTP 401)` (PLAYBOOK-08) and, from the shell, the strip `Your session expired, so live data is not loading.` with a `Sign in` button,
 `role="status"` (`src/components/shared/AuthStatusIndicator.tsx:156-182`, SHELL-16); `Sign in to load data` appears nowhere. The flag behind
 the strip is set by the fetch wrapper on any gated 401 and cleared by any later gated success (`src/lib/authedFetch.ts:155-166,247-250`,
 `src/lib/authGate.ts:14-47`), so it follows the last answer (read).
@@ -7310,8 +7047,7 @@ PLAYBOOK-05 fails silently under the same 401s (PLAYBOOK-08). The title and the 
 - Given a signed-out user in `firebase` mode, then the sign-in screen replaces the page and no playbook request is sent (executed; the screen
   is asserted on `/dashboard` by `firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main at
   eca7078).
-- Given a gated 401, then the wrapper calls the callback registered with `setOnUnauthorized`, and a 401 from an open path does not (`a 401 from
-  a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on main); no
+- Given a gated 401, then the wrapper calls the callback registered with `setOnUnauthorized`, and a 401 from an open path does not (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on main); no
   code outside the tests registers one, so no behaviour hangs on it, and the flag behind the strip, set on the next line, is not read by that test.
 
 **Tests:** On main: `src/lib/authedFetch.test.ts` as above, [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) (`test_firebase_requires_valid_token`: a gated
@@ -7408,9 +7144,7 @@ select is disabled while the list loads and when the list holds no entry (`:130`
 (`:133`).
 
 What it drew on the production list (executed, IWM): `Reports: IWM`; seven groups, Phase 1 to Phase 7, holding eleven options: Phase 1
-`Phase 1: Strat Mining` and `Phase 1: Strat Mining Combined`, Phase 2 `Phase 2: Indicator Confirmation`, Phase 3 `Phase 3: Orb
-Strategies`, Phase 4 `Phase 4: Setup Discovery` and `Phase 4: Setup Comparison`, Phase 5 `Phase 5: Dimensions` and `Phase 5:D Cross
-Ticker`, Phase 6 `Phase 6: Playbook` and `Phase 6: Playbook Combined`, Phase 7 `Phase 7: Feedback Loop`; `Phase 6: Playbook` selected,
+`Phase 1: Strat Mining` and `Phase 1: Strat Mining Combined`, Phase 2 `Phase 2: Indicator Confirmation`, Phase 3 `Phase 3: Orb Strategies`, Phase 4 `Phase 4: Setup Discovery` and `Phase 4: Setup Comparison`, Phase 5 `Phase 5: Dimensions` and `Phase 5:D Cross Ticker`, Phase 6 `Phase 6: Playbook` and `Phase 6: Playbook Combined`, Phase 7 `Phase 7: Feedback Loop`; `Phase 6: Playbook` selected,
 `1 / 11`, Previous disabled and Next enabled. The dropdown lists phases ascending and the page lands on the highest, because the handler
 sends a ticker's own reports newest name first (matrix Gaps). For a ticker with no reports of its own (executed, AAPL) the list is the
 five combined reports, the label reads `Reports: AAPL` and the page lands on `Phase 7: Feedback Loop` at `1 / 5`.
@@ -7449,8 +7183,7 @@ Next enabled, for a list that is already ascending: sorting the groups descendin
 disabled one position early and a body requested for another ticker each failed it (mutations). `src/lib/reports.test.ts` asserts the grouping (three
 tests). `src/mocks/contract.test.ts` finds the page's list call (`src/routes/ReportsPage.tsx:17`) among the operations of the vendored OpenAPI snapshot
 (`every /api request the app makes (verb + path) is a declared operation`: the literal renamed to `/api/reports/lst/` failed it) and validates the
-shared mock `MOCK_REPORT_LIST` against the response schema of that operation (`every mock payload for a typed 200 response matches its response schema
-(no undeclared fields)`: a filename that is a number, an undeclared field, a renamed filename, a missing path, a ticker that is a number and a removed
+shared mock `MOCK_REPORT_LIST` against the response schema of that operation (`every mock payload for a typed 200 response matches its response schema (no undeclared fields)`: a filename that is a number, an undeclared field, a renamed filename, a missing path, a ticker that is a number and a removed
 mock route each failed it). [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`) fails when the route or the
 `ReportListResponse` model changes without a regenerated `platform/api/openapi.json` (the route renamed, a field's type changed, a field added and the
 response model dropped each failed it, and a change of behaviour alone, the body handler no longer lower-casing the phase, passed). Neither file
@@ -7480,11 +7213,8 @@ filename (`:181`, one line, cut with an ellipsis when it is long). It is drawn o
 age. The page therefore has two `h1` elements, because the report's own markdown title follows (executed: the header `Phase 6: Playbook`
 over the body's `Phase 6: IWM Playbook`).
 
-What it drew (executed, IWM): `Phase 6: Playbook` over `phase6_playbook_iwm.md` on landing; stepping through the list gave `Phase 5:
-Dimensions` over `phase5_dimensions_iwm.md`, `Phase 4: Setup Discovery`, `Phase 3: Orb Strategies`, `Phase 2: Indicator Confirmation`,
-`Phase 1: Strat Mining` over `phase1_strat_mining_iwm.md`, then `Phase 7: Feedback Loop` over `phase7_feedback_loop.md`, `Phase 6:
-Playbook Combined`, `Phase 5:D Cross Ticker` over `phase5d_cross_ticker.md` (whose body is titled `Phase 5D: Cross-Ticker Correlation &
-Confirmation`), `Phase 4: Setup Comparison` and `Phase 1: Strat Mining Combined`. A combined report's filename names no ticker, so under
+What it drew (executed, IWM): `Phase 6: Playbook` over `phase6_playbook_iwm.md` on landing; stepping through the list gave `Phase 5:Dimensions` over `phase5_dimensions_iwm.md`, `Phase 4: Setup Discovery`, `Phase 3: Orb Strategies`, `Phase 2: Indicator Confirmation`,
+`Phase 1: Strat Mining` over `phase1_strat_mining_iwm.md`, then `Phase 7: Feedback Loop` over `phase7_feedback_loop.md`, `Phase 6:Playbook Combined`, `Phase 5:D Cross Ticker` over `phase5d_cross_ticker.md` (whose body is titled `Phase 5D: Cross-Ticker Correlation & Confirmation`), `Phase 4: Setup Comparison` and `Phase 1: Strat Mining Combined`. A combined report's filename names no ticker, so under
 `Reports: IWM` the header can read `phase7_feedback_loop.md`, a report that is not about IWM alone.
 
 **Needs:** The list answer of REPORTS-01, with no call of its own: `phase` for the label and `filename` for the line. Production (V
@@ -7495,10 +7225,8 @@ evidence, 2026-10-01): the filenames above are objects of the prefix, and each o
 loads, fails or is empty (REPORTS-06, REPORTS-07, REPORTS-08); replaced with the rest of the gated block by REPORTS-10.
 
 **Acceptance criteria:**
-- Given the active report `phase6_playbook`, then `Phase 6: Playbook` over `phase6_playbook_iwm.md` (executed; `selecting a phase from the
-  picker switches the report` asserts both texts for the spec's list, on main).
-- Given the first entry of the spec's list, then the header reads exactly `Phase 1:` (`picker lists every phase report and lands on the
-  first`, on main).
+- Given the active report `phase6_playbook`, then `Phase 6: Playbook` over `phase6_playbook_iwm.md` (executed; `selecting a phase from the picker switches the report` asserts both texts for the spec's list, on main).
+- Given the first entry of the spec's list, then the header reads exactly `Phase 1:` (`picker lists every phase report and lands on the first`, on main).
 - Given a combined report, then its filename carries no ticker (executed).
 - Given a failed body, then the header stays (executed; asserted by the test added on this branch for REPORTS-08).
 - Given a failed or empty list, then no header (executed).
@@ -7521,15 +7249,13 @@ are found by role and text).
 `useReportContent` requests `/api/reports/{ticker}/{phase}` for the active phase (`:25-36`) and reads the answer as text; the viewer
 renders it through `renderReportHtml` (`src/lib/reports.ts:62-68`): `marked` with GFM and no soft line breaks, then `DOMPurify.sanitize`
 with its defaults, set with `dangerouslySetInnerHTML` into a `div.prose-report` 75 characters wide (`max-w-[75ch]`, centred) inside the
-scrolling box of `:186`; tables scroll inside themselves (`src/index.css:176-181`). While the request is in flight the box reads `Loading
-report…` and when it failed or the text is empty `Report not available.` (REPORTS-06, REPORTS-08). No body is requested until the list has
+scrolling box of `:186`; tables scroll inside themselves (`src/index.css:176-181`). While the request is in flight the box reads `Loading report…` and when it failed or the text is empty `Report not available.` (REPORTS-06, REPORTS-08). No body is requested until the list has
 answered, and none when the list holds no entry (`:187-195`).
 
 What it drew (executed, all eleven IWM reports, the real handler's bytes): each rendered. `Phase 6: IWM Playbook` held 1 `h1`, 12 `h3`,
 246 list items, 54 disabled checkboxes (its `- [ ]` task lists), 12 rules and 10,987 characters; the combined Phase 1 report held 4 `h1`,
 17 `h2`, 66 `h3` and 109 tables; the Phase 5 report's section `5G. Walk-Forward Validation` is rolling-window tables with a `Stable?`
-column. In the report the page lands on, the lines `Generated: 2026-02-22 23:45:24` and `Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00 (1,089,011
-bars)` merge into one paragraph, because soft line breaks are off. For each of the 43 entries that the real list handler returned for
+column. In the report the page lands on, the lines `Generated: 2026-02-22 23:45:24` and `Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00 (1,089,011 bars)` merge into one paragraph, because soft line breaks are off. For each of the 43 entries that the real list handler returned for
 IWM, SPY, QQQ, AAPL and SPX, the real body handler answered the bytes of exactly that entry's object, as `text/plain; charset=utf-8`
 (executed).
 
@@ -7546,19 +7272,15 @@ ticker and phase, `platform/api/routers/playbook.py:102-103`). The handler (`:44
 ending in another known ticker, takes the longest filename, strips `raw/` and downloads it (`_download_markdown`, `:112-120`): 404 when
 nothing matches or the object is missing, 502 for any other download error. It answers `text/plain` with no response model (the vendored
 snapshot types it as a bare string). Production (V evidence, 2026-10-01): the 23 `phase*.md` objects are 1,142 to 61,119 bytes, 372,233 in
-all; the one the page lands on, `phase6_playbook_iwm.md` (12,443 bytes), opens `# Phase 6: IWM Playbook`, `Generated: 2026-02-22
-23:45:24`, `Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00 (1,089,011 bars)`.
+all; the one the page lands on, `phase6_playbook_iwm.md` (12,443 bytes), opens `# Phase 6: IWM Playbook`, `Generated: 2026-02-22 23:45:24`, `Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00 (1,089,011 bars)`.
 
-**States:** Loading and error are REPORTS-06 and REPORTS-08; an empty text reads as an error (executed: a 200 with no bytes gave `Report
-not available.`); nothing marks the text old (REPORTS-09); REPORTS-10 replaces the box with the rest of the gated block.
+**States:** Loading and error are REPORTS-06 and REPORTS-08; an empty text reads as an error (executed: a 200 with no bytes gave `Report not available.`); nothing marks the text old (REPORTS-09); REPORTS-10 replaces the box with the rest of the gated block.
 
 **Acceptance criteria:**
-- Given the active report, then its text rendered as headings, lists, tables and rules in the 75-character column (executed; `picker lists
-  every phase report and lands on the first` asserts the heading `Phase 1: IWM Backtest` of the spec's markdown, and the four tests of
+- Given the active report, then its text rendered as headings, lists, tables and rules in the 75-character column (executed; `picker lists every phase report and lands on the first` asserts the heading `Phase 1: IWM Backtest` of the spec's markdown, and the four tests of
   `src/routes/reportsFixtureRender.test.ts` assert headings, the GFM table, the list items and no script in the rendered fixture, all on
   main).
-- Given markdown with a script tag or an inline handler, then both are removed (`strips script tags and inline handlers from report
-  markdown`, `src/routes/reportsSanitize.test.ts`, on main).
+- Given markdown with a script tag or an inline handler, then both are removed (`strips script tags and inline handlers from report markdown`, `src/routes/reportsSanitize.test.ts`, on main).
 - Given another active report, then that report's own text (executed through the real handlers; no test on main asserts it, because the
   spec's mock answers every phase with the same markdown; the test added on this branch for REPORTS-05 asserts the body's own
   heading at each of its four positions).
@@ -7597,10 +7319,7 @@ change together, and the body of that phase is requested unless the page already
 and coming back, returns to the first entry of the list (executed: after choosing `phase3_orb_strategies`, a reload, and a visit to the
 rendered `/playbook` page and back through the nav or with history back, each showed the first entry, `Phase 6: Playbook`, again).
 
-Executed, IWM: each of the eleven options chosen in turn gave its report: `Phase 1: Strat Mining` at `6 / 11`, `Phase 1: Strat Mining
-Combined` at `11 / 11`, `Phase 2` at `5 / 11`, `Phase 3` at `4 / 11`, `Phase 4: Setup Discovery` at `3 / 11`, `Phase 4: Setup
-Comparison` at `10 / 11`, `Phase 5: Dimensions` at `2 / 11`, `Phase 5:D Cross Ticker` at `9 / 11`, `Phase 6: Playbook` at `1 / 11`, `Phase
-6: Playbook Combined` at `8 / 11` and `Phase 7: Feedback Loop` at `7 / 11`, each with its own filename in the header and its own body.
+Executed, IWM: each of the eleven options chosen in turn gave its report: `Phase 1: Strat Mining` at `6 / 11`, `Phase 1: Strat Mining Combined` at `11 / 11`, `Phase 2` at `5 / 11`, `Phase 3` at `4 / 11`, `Phase 4: Setup Discovery` at `3 / 11`, `Phase 4: Setup Comparison` at `10 / 11`, `Phase 5: Dimensions` at `2 / 11`, `Phase 5:D Cross Ticker` at `9 / 11`, `Phase 6: Playbook` at `1 / 11`, `Phase 6: Playbook Combined` at `8 / 11` and `Phase 7: Feedback Loop` at `7 / 11`, each with its own filename in the header and its own body.
 
 **Needs:** The list answer (the options) and the body route (the chosen report): REPORTS-01 and REPORTS-03.
 
@@ -7632,9 +7351,7 @@ own and the combined reports, or that the choice is lost on a reload. Te stays u
 phase; at an end nothing happens. Previous is disabled when `activeIndex <= 0`, which includes no active report, and Next when there is no
 active report or the active one is the last (`:150,156`). Because the list is the server's order and not the dropdown's ascending groups,
 Next from the landing report goes toward lower phases. Executed (IWM, eleven entries): Next from `1 / 11` (`Phase 6: Playbook`) visited
-`Phase 5: Dimensions`, `Phase 4: Setup Discovery`, `Phase 3: Orb Strategies`, `Phase 2: Indicator Confirmation` and `Phase 1: Strat
-Mining`, crossed from the ticker's own reports to the combined ones at `Phase 7: Feedback Loop` (`7 / 11`), and went on through `Phase 6:
-Playbook Combined`, `Phase 5:D Cross Ticker` and `Phase 4: Setup Comparison` to `Phase 1: Strat Mining Combined` (`11 / 11`, Next
+`Phase 5: Dimensions`, `Phase 4: Setup Discovery`, `Phase 3: Orb Strategies`, `Phase 2: Indicator Confirmation` and `Phase 1: Strat Mining`, crossed from the ticker's own reports to the combined ones at `Phase 7: Feedback Loop` (`7 / 11`), and went on through `Phase 6:Playbook Combined`, `Phase 5:D Cross Ticker` and `Phase 4: Setup Comparison` to `Phase 1: Strat Mining Combined` (`11 / 11`, Next
 disabled); Previous retraced the same path to `1 / 11` with Previous disabled. Every step showed that report's header and body; the eleven
 body requests were one per entry.
 
@@ -7648,8 +7365,7 @@ body requests were one per entry.
 - Given the production list, when Next is clicked repeatedly, then the order above ends at `11 / 11` with Next disabled (executed).
 - Given three entries, when Next is clicked twice and then Previous once, then the counter and the report's own body show at each of the four
   positions, the select's value and the page header at the middle entry, and the buttons read Previous disabled and Next enabled at the first entry,
-  both enabled at the middle one and Next disabled at the last (`Next and Previous show the report they step to, with both buttons enabled in
-  between`, added on this branch; the fixture lists the entries highest phase first, as the handler sends a ticker's own reports, and nothing asserts
+  both enabled at the middle one and Next disabled at the last (`Next and Previous show the report they step to, with both buttons enabled in between`, added on this branch; the fixture lists the entries highest phase first, as the handler sends a ticker's own reports, and nothing asserts
   the handler's order).
 - Given no entry, then both buttons are disabled (executed).
 
@@ -7697,8 +7413,7 @@ the body while it loads).
   `Loading report…` (executed).
 - Given a request that fails, then the state lasts through one retry before REPORTS-08 (executed: two calls).
 
-**Tests:** No test asserts either loading state. The specs answer every request at once: skipping the viewer's loading branch (the box then reads `Report not
-available.` while the body loads), making the select enabled while the list loads and changing the prompt under the list each passed all nine tests of
+**Tests:** No test asserts either loading state. The specs answer every request at once: skipping the viewer's loading branch (the box then reads `Report not available.` while the body loads), making the select enabled while the list loads and changing the prompt under the list each passed all nine tests of
 the spec (mutations). `route /reports loads without fatal errors` (`tests/shared/navigation.spec.ts`) mounts the page with every route answered and
 asserts only the `nav` and `main` elements and no console error, which earns nothing. Te stays unticked.
 
@@ -7708,8 +7423,7 @@ asserts only the `nav` and `main` elements and no console error, which earns not
 
 **Shows or does:** `No reports yet. Run the analysis pipeline to generate them.` in muted text (`src/routes/ReportsPage.tsx:169-173`) when
 the list has loaded without error and holds no entry. It is unreachable with the real handler: an empty listing is a 404
-(`platform/api/routers/playbook.py:429-433`), which the page shows as the error state of REPORTS-08. With a 200 `{"ticker": "IWM",
-"reports": []}` answered by the browser (executed) the page showed the message, the select disabled and reading `No reports`, the counter
+(`platform/api/routers/playbook.py:429-433`), which the page shows as the error state of REPORTS-08. With a 200 `{"ticker": "IWM", "reports": []}` answered by the browser (executed) the page showed the message, the select disabled and reading `No reports`, the counter
 an em dash and no header, and the box below read `Select a report above`, which contradicts the disabled select (`:187-195`). The
 instruction names no job and none writes the prefix (matrix Gaps): the objects in it were uploaded outside the repository's code.
 
@@ -7719,8 +7433,7 @@ instruction names no job and none writes the prefix (matrix Gaps): the objects i
 requested, and the box says `Select a report above`).
 
 **Acceptance criteria:**
-- Given a 200 with no reports, then the message, a disabled select reading `No reports`, no header and no body request (executed; `an
-  empty list shows the honest empty state` asserts the message and the disabled select, on main).
+- Given a 200 with no reports, then the message, a disabled select reading `No reports`, no header and no body request (executed; `an empty list shows the honest empty state` asserts the message and the disabled select, on main).
 - Given a listing that finds nothing, then the handler answers 404, `No reports found for ticker 'IWM' in GCS` (executed with an empty
   prefix; `test_reports_list_404_when_empty` asserts it, on main), and the page shows the error state of REPORTS-08, not this one
   (executed with the list answering 404).
@@ -7738,20 +7451,17 @@ the error state, and the empty copy is reachable only by a response the handler 
 
 **Shows or does:** Two failure presentations. (1) The list: after one retry, `Could not load the report list for {ticker}.` in an amber
 bordered box with a warning icon (`src/routes/ReportsPage.tsx:163-168`), for any failure of the list request (a non-OK answer or a network
-error). The select is disabled and reads `No reports`, the counter is an em dash, there is no header, and the box below reads `Select a
-report above` although the select is disabled (executed with the list answering 500; `:187-195`). (2) The body: `Report not available.`
+error). The select is disabled and reads `No reports`, the counter is an em dash, there is no header, and the box below reads `Select a report above` although the select is disabled (executed with the list answering 500; `:187-195`). (2) The body: `Report not available.`
 with a warning icon (`:54-61`) for any non-OK answer or an empty text; the select, the counter and the header stay (executed with the body
 answering 502 and with a 200 of no bytes). The page shows no reason: the server's `detail` is dropped, and a missing object and a storage
 failure read the same.
 
 What the real handlers answered (executed; failures injected where it says so): the real list gave 200 with 11 entries, so no failure is
 reachable without an injection. With the storage listing raising (injected), `list_matching_blobs` swallowed it (`platform/api/gcs_reader.py:93-95`)
-and both routes answered 404, `No reports found for ticker 'IWM' in GCS` for the list and `No report found for ticker 'IWM' phase
-'phase6_playbook' in GCS` for the body, not the 502 that `reports/README.md` promises for an unreachable bucket. With the listing working
+and both routes answered 404, `No reports found for ticker 'IWM' in GCS` for the list and `No report found for ticker 'IWM' phase 'phase6_playbook' in GCS` for the body, not the 502 that `reports/README.md` promises for an unreachable bucket. With the listing working
 and the download raising (injected), the body route answered 502 `Failed to download report from GCS: <the exception's text>`
 (`_download_markdown`, `playbook.py:112-120`); with the object missing, 404 `Report not found in GCS: reports/<name>`; for a phase that
-matches no object (`phase99`), 404. A concurrent cold request for a list or a text that another request is filling answered 503 `The
-report list is being read now; retry shortly.` or `The report text is being read now; retry shortly.` with `Retry-After: 5` (two threads;
+matches no object (`phase99`), 404. A concurrent cold request for a list or a text that another request is filling answered 503 `The report list is being read now; retry shortly.` or `The report text is being read now; retry shortly.` with `Retry-After: 5` (two threads;
 `playbook.py:386-391,461-466`); the client does not read the header: it retries once, so a 503 followed by a 200 recovered the list and two 503 in a row showed the banner
 (executed with the browser answering 503, two calls each).
 
@@ -7764,8 +7474,7 @@ executed); a 401 on a body would read `Report not available.` like any non-OK an
 the body only. The page has no retry button for either.
 
 **Acceptance criteria:**
-- Given the list answering 500, then the banner `Could not load the report list for IWM.` (`a failed list load shows the error banner,
-  not an empty picker (Rule 4)`, on main).
+- Given the list answering 500, then the banner `Could not load the report list for IWM.` (`a failed list load shows the error banner, not an empty picker (Rule 4)`, on main).
 - Given the list failing, then a disabled select reading `No reports`, no header and the prompt `Select a report above` (executed; no test
   asserts any of it).
 - Given the body answering 502, then `Report not available.` with the select, the counter and the header unchanged and no list banner
@@ -7797,8 +7506,7 @@ banner's text and a counter one too high), the first three and no test on main. 
 `path`, `platform/api/routers/playbook.py:404-427`), the header shows a label and a filename (REPORTS-02), and the client's 60 second and 5
 minute staleTime and the server's 24-hour caches are cache lifetimes, not a bound on the age of the text. The only age a reader can see is
 inside the text: each of the 23 `phase*.md` objects opens with its own `Generated: 2026-02-22 <time>` line, which renders as text under the
-report's title (executed: `Generated: 2026-02-22 23:45:24 Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00
-(1,089,011 bars)` for the report the page lands on), and the page neither reads nor labels it.
+report's title (executed: `Generated: 2026-02-22 23:45:24 Data: 2015-01-02 09:30:00 to 2026-02-20 16:00:00 (1,089,011 bars)` for the report the page lands on), and the page neither reads nor labels it.
 
 Production (V evidence, 2026-10-01): the objects were created at 22:41:43 UTC on 2026-04-12, 172 days before the read, and their text is
 221 days old; the `phase6-playbook` job that writes `playbook_cards`, dated 2026-10-01, saves its own markdown in its container (matrix
@@ -7840,8 +7548,7 @@ set by the fetch wrapper on any gated 401 and cleared by any later gated success
 `src/lib/authGate.ts:14-47`), so it follows the last answer (read).
 
 **Needs:** The 401 itself. Both gated routes answered 401 `{"detail":"sign in to continue"}` without a token on staging,
-`GET /api/reports/list/IWM` and `GET /api/reports/IWM/phase6_playbook`, as did `GET /api/reports/list/AAPL` and `GET
-/api/reports/IWM/phase99`, and `GET /api/health` and `GET /api/config/firebase` answered 200 in the same run (`authMode: firebase`) (V
+`GET /api/reports/list/IWM` and `GET /api/reports/IWM/phase6_playbook`, as did `GET /api/reports/list/AAPL` and `GET/api/reports/IWM/phase99`, and `GET /api/health` and `GET /api/config/firebase` answered 200 in the same run (`authMode: firebase`) (V
 evidence, 2026-10-01). `solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to both routes and
 to `/api/health`, so the 401 proof is staging's. The wrapper's `OPEN_PREFIXES` must match the backend's `_OPEN_API_PREFIXES` (CLAUDE.md,
 Auth).
@@ -7851,13 +7558,11 @@ the list banner, the empty message and the body message that share the gate (REP
 
 **Acceptance criteria:**
 - Given no token, then each gated route answers 401 on staging and `GET /api/health` 200 (V evidence).
-- Given a signed-in user and a 401 on the list, then the shell shows its expired-session strip and the page its list banner, with no `Sign
-  in to load data` and no sign-in prompt of its own (executed).
+- Given a signed-in user and a 401 on the list, then the shell shows its expired-session strip and the page its list banner, with no `Sign in to load data` and no sign-in prompt of its own (executed).
 - Given a signed-out user in `firebase` mode, then the sign-in screen replaces the page and no report request is sent (executed; the screen
   is asserted on `/dashboard` by `firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main at
   eca7078).
-- Given a gated 401, then the wrapper calls the callback registered with `setOnUnauthorized`, and a 401 from an open path does not (`a 401
-  from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on
+- Given a gated 401, then the wrapper calls the callback registered with `setOnUnauthorized`, and a 401 from an open path does not (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on
   main); no code outside the tests registers one, so no behaviour hangs on it, and the flag behind the strip, set on the next line, is not
   read by that test.
 
@@ -8108,8 +7813,7 @@ failed refetch leaves the cached tiles, unmarked) and SIGNALS-12.
 **Acceptance criteria:**
 - Given a summary of 189 closed trades with 100 wins, then the tiles read `52.9%` over `100W / 89L`, `+3.70%`,
   `+0.02%`, `1.26` and `189` over `189 call · 0 put` (executed 2026-10-01); the page test asserts the label,
-  `win rate`, `profit factor` and the one value `1.74` on the shared fixture (`shows the 90-day Performance P&L
-  card`, on main at eca7078).
+  `win rate`, `profit factor` and the one value `1.74` on the shared fixture (`shows the 90-day Performance P&L card`, on main at eca7078).
 - Given a win rate below 50, then `Win rate` takes the bear tone, and given a null profit factor it reads `—` in
   the neutral tone (executed: `33.3%` bear, `PROFIT FACTOR —` for two winning trades and no loss).
 - Given a closed trade at 0.00%, then it counts as a loss (`lossCount`), and given open trades, then they count in
@@ -8143,8 +7847,7 @@ at 200 for an empty list. No test asserts a computed figure of the summary. Te s
 a filter icon followed by: the direction buttons `ALL`, `CALL` and `PUT` (`:226-241`, the active one in the blue fill
 `bg-[var(--color-accent-blue)]`), `Min score:` with a select of `Any`, `5+`, `6+`, `7+` and `8+` (`:243-257`, values
 0, 5, 6, 7 and 8), `From:` and `To:` date inputs (`:259-282`) and, while a filter is set, `Clear` (`:284-291`,
-SIGNALS-06). In review mode the `To` input shows the review date, is disabled, carries the title `Set by global
-historical mode, clear review mode to edit` and is followed by an amber `global` tag (`:269-282`, SIGNALS-07). The
+SIGNALS-06). In review mode the `To` input shows the review date, is disabled, carries the title `Set by global historical mode, clear review mode to edit` and is followed by an amber `global` tag (`:269-282`, SIGNALS-07). The
 bar's state is local to the page (`useState`, `:139-144`): not persisted, kept across a ticker pick and across
 review mode (executed 2026-10-01). What each control does to the rows is SIGNALS-05; this row is the bar itself.
 
@@ -8181,8 +7884,7 @@ replaced by `DataGate` for a signed-out user (SIGNALS-12).
 
 **Acceptance criteria:**
 - Given the page, then the bar offers `ALL`, `CALL` and `PUT`, `Min score` with `Any`, `5+`, `6+`, `7+` and `8+`,
-  and `From` and `To` (executed 2026-10-01; the new test `the direction buttons, Min score, the date range and the
-  column headers act on the fetched rows`, added on this branch, drives each control).
+  and `From` and `To` (executed 2026-10-01; the new test `the direction buttons, Min score, the date range and the column headers act on the fetched rows`, added on this branch, drives each control).
 - Given the signals request is held or has failed, then the bar is on screen and usable (executed).
 - Given review mode, then `To` shows the review date, is disabled, carries the title and the `global` tag, and
   `From` stays editable (executed; the new review-mode test on this branch asserts the lock, the value, the title
@@ -8207,8 +7909,7 @@ test, the Clear test and the review-mode test, `tests/signals/signals.spec.ts`) 
 **Shows or does:** The table of signals (`src/routes/SignalsPage.tsx:307-352`), drawn once the request is neither
 loading nor failed. A bordered table with the headers `Time`, `Dir`, `Score`, `Price`, `RSI`, `EMA9` and `Volume`
 (`:310-328`, columns `:69-131`), each clickable to sort (SIGNALS-05) with a chevron on the sorted one, and a body of
-the first 500 rows after the filters and the sort (`displayRows`, `:183`). Under the table: `No signals match your
-filters` when no row is left (`:341-345`, SIGNALS-09) and `Showing first 500 of <N> signals` when more than 500 are
+the first 500 rows after the filters and the sort (`displayRows`, `:183`). Under the table: `No signals match your filters` when no row is left (`:341-345`, SIGNALS-09) and `Showing first 500 of <N> signals` when more than 500 are
 left (`:346-350`), `<N>` being the filtered rows of the fetched window, not of the table in the database.
 
 Cell formats (read): `Time` is `String(time).slice(0, 16)`, the stored string's date and minute with no zone
@@ -8221,8 +7922,7 @@ also carries `ema20`, `conditions_met`, `return_pct`, `run_kind` and `ticker`, w
 
 What it holds (executed 2026-10-01, the real handler on the newest 5,000 production IWM rows, rendered in the
 page): after the load the first rows read `2026-09-29 23:21 | PUT | 5.0 | $279.56 | 50.6 | $279.56 | 0K`,
-`2026-09-29 23:14 | CALL | 5.0 | $279.58 | 56.1 | $279.53 | 0K` and `2026-09-29 22:20 | CALL | 5.0 | $279.86 | 74.3 |
-$279.68 | 2K`, 500 rows are drawn, newest first, and the footnote reads `Showing first 500 of 5,000 signals`. The window
+`2026-09-29 23:14 | CALL | 5.0 | $279.58 | 56.1 | $279.53 | 0K` and `2026-09-29 22:20 | CALL | 5.0 | $279.86 | 74.3 | $279.68 | 2K`, 500 rows are drawn, newest first, and the footnote reads `Showing first 500 of 5,000 signals`. The window
 is 5,000 live rows over 50 dates, 2026-07-21 to 2026-09-29, 2,543 calls and 2,457 puts.
 
 Four things the table does that the page does not say (executed on the same window):
@@ -8246,8 +7946,7 @@ Four things the table does that the page does not say (executed on the same wind
 **Needs:** `GET /api/signals/{ticker}?limit=5000`, plus `end_date` and `end_time` in review mode, answered by
 `get_signals` (`platform/api/routers/signals.py:221-251`) through `_query_signals_sql` (`:140-218`) on Cloud SQL: it
 counts the ticker's `historical_signals` rows matching the filters (`:178-186`, answering `(0, [])` with no second
-query on a zero count) and reads the newest `limit` by `entry_time` and returns them oldest first (`ORDER BY
-entry_time DESC LIMIT` inside, `ORDER BY time ASC` outside, `:188-212`), with `time` as a string, `ticker` added and
+query on a zero count) and reads the newest `limit` by `entry_time` and returns them oldest first (`ORDER BY entry_time DESC LIMIT` inside, `ORDER BY time ASC` outside, `:188-212`), with `time` as a string, `ticker` added and
 NaN as null (`:214-218`). `run_kind` is selected and not filtered, deliberately (`:151-161`): IWM holds 175,370
 backfill rows (2015-01-02 to 2026-06-01) and 14,789 live rows (2026-04-24 to 2026-09-29), and the page's window is
 all live. `strategy` is neither selected nor filtered, and every one of the 1,725,574 rows in the table is
@@ -8255,8 +7954,7 @@ all live. `strategy` is neither selected nor filtered, and every one of the 1,72
 query is a 503 for an outage and a 500 for a defect (`:59-83`), and only with Cloud SQL unconfigured does it read the
 legacy GCS parquets (`:90-137,253-308`), never as a fallback. Producer: `historical-signals-watchlist`
 (01:00 ET Tue to Sat) resumes each active `default`-owner watchlist ticker from its latest `entry_time` (a 30-day
-bootstrap when it has none, [`scripts/run_historical_signals.py:167-245`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_historical_signals.py#L167-L245)) and inserts with `ON CONFLICT (ticker, entry_time,
-strategy) DO NOTHING` (`gcp/historical_signals.py:233-236`). Production on 2026-10-01 (00:28 ET): IWM's newest `entry_time` 2026-09-29 23:21
+bootstrap when it has none, [`scripts/run_historical_signals.py:167-245`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/run_historical_signals.py#L167-L245)) and inserts with `ON CONFLICT (ticker, entry_time, strategy) DO NOTHING` (`gcp/historical_signals.py:233-236`). Production on 2026-10-01 (00:28 ET): IWM's newest `entry_time` 2026-09-29 23:21
 UTC, written 2026-09-30 05:03 UTC, 190,159 rows (QQQ 1,327,360 rows to 23:38, SPY 30,065 to 23:39); the scheduler
 `ENABLED` with its last attempt 2026-09-30 05:00 UTC and its newest execution `historical-signals-watchlist-tqxh5`
 completed 05:04 UTC on 2026-09-30. At that hour the 2026-09-30 session was not yet ingested, which is the one-session
@@ -8354,8 +8052,7 @@ the cap shows the footnote of SIGNALS-04.
   descending and the response order; given no row in view, then the first click on `Time` gives ascending and the
   first on `Dir` descending (executed, the chevron following each step).
 - Given a filter and a sort together, then both apply and the first 500 rows of the result show (executed).
-- Given the new test `the direction buttons, Min score, the date range and the column headers act on the fetched
-  rows`, added on this branch, then on the three-row fixture, served oldest first as the handler returns it, it asserts
+- Given the new test `the direction buttons, Min score, the date range and the column headers act on the fetched rows`, added on this branch, then on the three-row fixture, served oldest first as the handler returns it, it asserts
   the Time cells and the count label at load and after `PUT`, the Score cells after `6+` and `7+` and after each Score
   sort, the row count after `PUT`, `8+` and each `From` and `To` step on either side of the rows' date, the message at
   `8+`, and the Dir and Score cells of the two CALL rows when CALL is combined with the sort; its mutations of the
@@ -8429,8 +8126,7 @@ second describe block); no test id on the button.
 **Shows or does:** Review mode is entered from the shell's Replay control, not from this page: a button in the top
 bar (`src/components/shared/ReplayControl.tsx`, test id `replay-toggle`, mounted by `src/components/layout/TopTabs.tsx:203` and the
 sidebar-mode `src/components/layout/Header.tsx:21`) that renders only on `/dashboard`, `/live`, `/charts` and `/signals` (`:11,112`). Its
-popover has a calendar with weekends, listed market holidays and future dates disabled (`:112-118,208-214`), `Latest
-session close` (`:143-146`, the latest weekday on or before today in Eastern time at 16:00), a `Time (ET)` field and
+popover has a calendar with weekends, listed market holidays and future dates disabled (`:112-118,208-214`), `Latest session close` (`:143-146`, the latest weekday on or before today in Eastern time at 16:00), a `Time (ET)` field and
 `OK` (`replay-apply`, enabled when the draft differs from the committed moment); `OK` writes `reviewDate`
 (`YYYY-MM-DD`) and `reviewTime` (`HH:MM`) to `useReviewDateStore` (`:123-128`; `src/stores/reviewDateStore.ts:13-19`,
 memory only), the chip turns amber `Replay · <date time>` and the ✕ (`replay-clear`) or `Back to live` clears both
@@ -8439,8 +8135,7 @@ memory only), the chip turns amber `Replay · <date time>` and the ✕ (`replay-
 With `reviewDate` set (`isReview`, `src/routes/SignalsPage.tsx:137`) the page changes in four ways. (1) The signals request
 carries the moment: `GET /api/signals/{ticker}?limit=5000&end_date=<date>&end_time=<HH:MM>` (`:51-64,152-156`);
 the query key holds the date and time, so each moment is cached for five minutes and leaving review mode returns the
-cached live answer with no request. (2) The `To` input shows the review date, disabled, with the title `Set by
-global historical mode, clear review mode to edit` and an amber `global` tag after it (`:147,269-282`); the date is
+cached live answer with no request. (2) The `To` input shows the review date, disabled, with the title `Set by global historical mode, clear review mode to edit` and an amber `global` tag after it (`:147,269-282`); the date is
 also applied as the client `To` bound (`:168`), which the server cutoff makes redundant. (3) `From` stays editable
 and `Clear` does not count the `To` date (SIGNALS-06). (4) Nothing else changes: the Performance block asks for the
 same last 90 days from now and reads the same (SIGNALS-02).
@@ -8453,8 +8148,7 @@ tiles were unchanged with no summary request. `Back to live` made no request, en
 the tag.
 
 The cutoff's zone is wrong for recent rows. The handler casts `<end_date> <end_time>:00` with `CAST(... AS timestamptz)`
-in the database session (`platform/api/routers/signals.py:171-174`), whose zone is UTC (executed: `CAST('2026-09-25
-10:30:00' AS timestamptz)` returned `2026-09-25 10:30:00+00:00` with `TimeZone` `UTC`), while its docstring and the
+in the database session (`platform/api/routers/signals.py:171-174`), whose zone is UTC (executed: `CAST('2026-09-25 10:30:00' AS timestamptz)` returned `2026-09-25 10:30:00+00:00` with `TimeZone` `UTC`), while its docstring and the
 Replay control both say Eastern (`platform/api/routers/signals.py:228`, `src/components/shared/ReplayControl.tsx:246`). For rows stored as true UTC, as those of
 2026-09-29 are (the day's first row is 08:00 UTC, 04:00 ET), a review time of 10:30 ET cuts at 06:30 ET: the live
 answer holds 87 rows stamped 2026-09-29, 44 of them stored at or before 10:30 ET (14:30 UTC), and the review showed
@@ -8476,8 +8170,7 @@ SIGNALS-09's message (executed with a zero-row answer).
 - Given `OK` at 2026-09-29 10:30, then the page requests `end_date=2026-09-29&end_time=10%3A30` and the label counts the
   rows up to the cutoff (executed: 190,084).
 - Given review mode, then `To` shows the review date, is disabled with the title, and the amber `global` tag shows;
-  given `Back to live`, then `To` is enabled and empty and the tag is gone (executed; the new test `review mode asks
-  the API for the cutoff, locks the To date under a global tag and gives it back`, added on this branch, asserts the
+  given `Back to live`, then `To` is enabled and empty and the tag is gone (executed; the new test `review mode asks the API for the cutoff, locks the To date under a global tag and gives it back`, added on this branch, asserts the
   request's query string for 2026-04-24 at 16:00, the lock, the value, the title, the tag and the give-back).
 - Given review mode, then the five tiles and their request are unchanged (executed).
 - Given a time stored as true UTC, then the cutoff reads it as UTC (executed: 12 of the day's 44 rows by 10:30 ET).
@@ -8496,8 +8189,7 @@ not locked (`expected disabled, received enabled`), the `global` tag removed (`e
 the local value instead of the review date (`expected 2026-04-24, received an empty value`). It ran and passed in [solyra CI run
 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07), so Te is ticked on that run.
 
-**Code:** `src/routes/SignalsPage.tsx:51-64,136-156,168,269-282`, `src/components/shared/ReplayControl.tsx:11,47-58,112-146,
-236-289`, `src/stores/reviewDateStore.ts:13-19`; `platform/api/routers/signals.py:171-174,221-251`; test:
+**Code:** `src/routes/SignalsPage.tsx:51-64,136-156,168,269-282`, `src/components/shared/ReplayControl.tsx:11,47-58,112-146, 236-289`, `src/stores/reviewDateStore.ts:13-19`; `platform/api/routers/signals.py:171-174,221-251`; test:
 `tests/signals/signals.spec.ts` (the review-mode test of the second describe block); test ids `replay-toggle`,
 `replay-apply`, `replay-clear`; the `To` input and the tag carry none.
 
@@ -8505,8 +8197,7 @@ the local value instead of the review date (`expected 2026-04-24, received an em
 
 **Shows or does:** A state, not a control: while the signals request has no data (`isLoading`,
 `src/routes/SignalsPage.tsx:152`), a box reading `Loading signals…` takes the table's place (`:301-305`, centred muted text
-in a `--surface-2` card); it has no spinner and no `role` or `aria-live`. Around it: the label reads `<ticker> ·
-signal explorer` in place of the count (`:193`, SIGNALS-01); the Performance block is absent until its own request
+in a `--surface-2` card); it has no spinner and no `role` or `aria-live`. Around it: the label reads `<ticker> · signal explorer` in place of the count (`:193`, SIGNALS-01); the Performance block is absent until its own request
 answers, with no skeleton and no text (`:209`, SIGNALS-02); and the filter bar is drawn and usable (SIGNALS-03).
 `isLoading` is TanStack Query's first-load flag, true only for a key with no data: the first visit, a ticker not
 fetched yet (a pick of SPY) or a review moment not fetched yet; a refetch of a stale key keeps the table on screen
@@ -8562,9 +8253,7 @@ SIGNALS-02 with `closedTrades` 0 (`_compute_stats([])` for no `trades` rows, `pl
 header row stays and so does the sort chevron on `Time` (executed).
 
 **Acceptance criteria:**
-- Given a 200 with no rows, then the label reads `IWM · 0 signals`, the table shows its header row and `No signals
-  match your filters`, and no error card shows (executed 2026-10-01; the message is asserted by `shows empty state
-  when no alerts`, `tests/signals/signals.spec.ts`, on main at eca7078).
+- Given a 200 with no rows, then the label reads `IWM · 0 signals`, the table shows its header row and `No signals match your filters`, and no error card shows (executed 2026-10-01; the message is asserted by `shows empty state when no alerts`, `tests/signals/signals.spec.ts`, on main at eca7078).
 - Given filters that exclude every row, then the same message shows with ` · 0 shown` in the label (executed; the
   message is asserted on this branch by the filter and sort test at `8+`).
 - Given no closed trades, then the Performance block is not drawn (executed with the zero-trade summary).
@@ -8617,9 +8306,7 @@ cached `data` and `:209` draws from it.
 **Needs:** The failing routes. `get_signals` answers 503 `signals temporarily unavailable` for an infrastructure error
 (`_query_or_503`, `platform/api/routers/signals.py:59-83`, through `lib.infra_errors.is_infrastructure_error`), lets
 any other exception propagate as a 500, and only with Cloud SQL unconfigured reads the legacy parquets and answers
-404, 502, 503 or 400 from there (`:90-137,257-264`). `get_trade_summary` answers 503 `Cloud SQL not configured; cannot
-query trades table.` without Cloud SQL (`platform/api/routers/analytics.py:140-144`), 503 `trade summary temporarily
-unavailable` for an outage and a 500 for a defect (`:153-160`, `platform/api/http_errors.py`). Both read through the
+404, 502, 503 or 400 from there (`:90-137,257-264`). `get_trade_summary` answers 503 `Cloud SQL not configured; cannot query trades table.` without Cloud SQL (`platform/api/routers/analytics.py:140-144`), 503 `trade summary temporarily unavailable` for an outage and a 500 for a defect (`:153-160`, `platform/api/http_errors.py`). Both read through the
 strict reader, so no empty frame is served for a failed query.
 
 **States:** This is the error state of the table and the label (SIGNALS-04, SIGNALS-01) and, silently, of the
@@ -8646,8 +8333,7 @@ is the error state of a table the page still holds data for (SIGNALS-11).
 - Given a failed request, then the card carries neither the status nor the server's reason (executed; matrix Gaps).
 
 **Tests:** On main, the handler tests above and the route-coverage rows. No test asserts the card, the label's
-fallback, the failed refetch, the silent summary or the retry: no spec fails a request on this page, and the regex of `shows empty
-state when no alerts` would match the card's text only if the response failed. Te stays unticked: the page layer of
+fallback, the failed refetch, the silent summary or the retry: no spec fails a request on this page, and the regex of `shows empty state when no alerts` would match the card's text only if the response failed. Te stays unticked: the page layer of
 this state is asserted by nothing.
 
 **Code:** `src/routes/SignalsPage.tsx:51-64,152,191-195,294-299,307`, `src/hooks/useTradeAnalytics.ts:36-47`,
@@ -8724,8 +8410,7 @@ request was `GET /api/config/firebase`). In `open` and `iap` modes `useUser` rep
 (`src/hooks/useUser.ts:25-27,81`), so `DataGate`'s condition cannot hold.
 
 What a signed-in user sees on a 401 (executed 2026-10-01, `open` mode as the hermetic suite runs, the signals and
-summary routes answering 401 `sign in to continue` from the first request): the shell's strip `Your session expired, so live data is not
-loading.` with a `Sign in` button, `role="status"`, and the nav pill `Session expired`
+summary routes answering 401 `sign in to continue` from the first request): the shell's strip `Your session expired, so live data is not loading.` with a `Sign in` button, `role="status"`, and the nav pill `Session expired`
 (`src/components/shared/AuthStatusIndicator.tsx:23-33,156-182`, SHELL-16); on the page itself the SIGNALS-10 card
 `Signal data not found for IWM. Run the signals generation pipeline first.`, the label `IWM · signal explorer` and no
 Performance block. The page says nothing about signing in, and its text points at the pipeline. The flag behind the strip is
@@ -8733,8 +8418,7 @@ set by the fetch wrapper on any gated 401 and cleared by any later gated success
 `src/lib/authGate.ts:14-47`), so it follows the last answer (read): when the page's two requests answer
 differently, the order in which they settle decides whether the strip is up.
 
-**Needs:** The 401 itself. Every route the page calls is gated: staging answered 401 without a token to `GET
-/api/signals/IWM?limit=5000`, the same with `end_date` and `end_time`, `GET /api/analytics/summary/IWM?days=90` and the
+**Needs:** The 401 itself. Every route the page calls is gated: staging answered 401 without a token to `GET/api/signals/IWM?limit=5000`, the same with `end_date` and `end_time`, `GET /api/analytics/summary/IWM?days=90` and the
 three picker routes (V evidence, 2026-10-01), and `GET /api/health` answered 200 in the same run. The wrapper's
 `OPEN_PREFIXES` must match the backend's `_OPEN_API_PREFIXES` (CLAUDE.md, Auth).
 
@@ -8856,8 +8540,7 @@ matrix links.
 **Shows or does:** The first block of the page (`src/routes/JournalPage.tsx:349-486`), drawn in every state because it sits above
 `DataGate` (`:506`). On the left the title `<ticker> Trade Journal` (`h1`, `:352-354`, the store's `activeTicker`, `IWM Trade Journal`) and under
 it a storage label (`:355-360`): `Persisted in Cloud SQL` with a green database icon when the own-journal answer's `source` is `cloud_sql`, and
-otherwise `Local storage (set CLOUD_SQL_CONNECTION_NAME for persistence)` with an amber disk icon. The label reads `ownQuery.data?.source ??
-'local'` (`:223`), so it is the local text whenever the own-journal request has no answer, which holds while it loads and after it fails
+otherwise `Local storage (set CLOUD_SQL_CONNECTION_NAME for persistence)` with an amber disk icon. The label reads `ownQuery.data?.source ?? 'local'` (`:223`), so it is the local text whenever the own-journal request has no answer, which holds while it loads and after it fails
 (executed: with that request held for 4 s the label read the local text until the answer came and then `Persisted in Cloud SQL`; after a 503,
 with the request made twice, the first and the app's single retry, and after a 401, it stayed on the local text with no error anywhere on the
 page for that query, matrix Gaps). On the right: the shared ticker picker (`TickerCombobox`, `:363`, the component DASHBOARD-10, OPTIONS-06
@@ -8911,8 +8594,7 @@ heading without a date, and no error text for the dates call (executed with a 50
 - Given no token, then `GET /api/journal/trades/IWM`, `GET /api/market/dates/IWM` and the three picker routes answer 401 on staging (V
   evidence).
 
-**Tests:** On main, `renders journal heading` asserts that an `h1` or `h2` containing `journal` is visible, which is the title, and `scope
-label flips between Overview and Session when the date is selected/cleared` fills the first date input with `2026-04-24`, asserts the scope
+**Tests:** On main, `renders journal heading` asserts that an `h1` or `h2` containing `journal` is visible, which is the title, and `scope label flips between Overview and Session when the date is selected/cleared` fills the first date input with `2026-04-24`, asserts the scope
 label `Session: 04/24/2026`, presses `clear-date` and asserts `Overview: all dates`; it asserts the label and the button, not that the tiles
 or the table follow (JOURNAL-11). The picker is asserted by `tests/dashboard/ticker-combobox.spec.ts` (on `/dashboard`),
 `src/components/shared/tickerCombobox.test.ts` and `src/stores/tickerStore.test.ts`, never on this page, and its three handlers by
@@ -8936,11 +8618,9 @@ breakpoint. On the left a toolbar (`:514-552`): the timeframe buttons `1m 5m 15m
 and the text `Session <date>` for the charted date or `No session data` (`:549-551`); then the chart card (`:555-606`, test id
 `journal-chart-card`, height `clamp(400px, calc(100vh - 340px), 900px)`) with a spinner while the market-data request loads (`:560-563`), the
 error text (`:564-572`), `TradeMarkingChart` over `CandlestickChart` when the answer has bars (`:573-598`; CHARTS-02 describes the canvas,
-the RTH filter and the shared markers), and otherwise `No market data available for this date` over `Markets may be closed (weekend or
-holiday)` (`:599-605`). On the right the rail (`:609-652`, 340 px wide from `lg`): the heading `Example trades, <date>` or `My trades, <date>`
+the RTH filter and the shared markers), and otherwise `No market data available for this date` over `Markets may be closed (weekend or holiday)` (`:599-605`). On the right the rail (`:609-652`, 340 px wide from `lg`): the heading `Example trades, <date>` or `My trades, <date>`
 (`:611-614`), one `TradeRailCard` (`src/components/journal/TradeRailCard.tsx`) for each trade of the active view whose entry date is the
-charted date (`railTrades`, `:234-239`) or the line `No example trades on this session.` / `No trades on this session yet. Click "Mark Entry"
-to start.` (`:615-620`), and the equity-curve card (`:635-651`): `<ticker> equity curve`, `cumulative P&L %`, the curve when two or more rows
+charted date (`railTrades`, `:234-239`) or the line `No example trades on this session.` / `No trades on this session yet. Click "Mark Entry" to start.` (`:615-620`), and the equity-curve card (`:635-651`): `<ticker> equity curve`, `cumulative P&L %`, the curve when two or more rows
 carry a return and otherwise `Close 2+ trades to see your equity curve.`.
 
 The charted date is `selectedDate || dates[0]` (`:202`): the session picked in JOURNAL-11, else the newest date of the dates list. The rail
@@ -8951,15 +8631,13 @@ chart (executed: a trade saved through the form for 2026-10-01, today in Eastern
 `My trades, 2026-09-30` with no card, because the nightly jobs write a session's bars after its close). A rail card
 (`TradeRailCard.tsx:54-160`) shows the direction badge, an `EX` badge on an Examples card and a `pipeline` badge on a pipeline row, the return
 centered and largest (`+1.14%`, an em dash when there is none), the entry time as `HH:MM`, the icon buttons Exit (an own card whose status is
-`active`) and Delete (every own card; hidden on an example card, `:115-133`), `$entry → $exit`, and `TP <levels> · SL <price or <N>m time-stop>
-· R:R <ratio>` with an em dash for any missing leg (`:136-160`). The chart's entry arrows, exit circles and TP and SL lines come from the same
+`active`) and Delete (every own card; hidden on an example card, `:115-133`), `$entry → $exit`, and `TP <levels> · SL <price or <N>m time-stop> · R:R <ratio>` with an em dash for any missing leg (`:136-160`). The chart's entry arrows, exit circles and TP and SL lines come from the same
 trades, gray and dashed in the Examples style (`src/components/journal/TradeMarkingChart.tsx:215-301`); the exit marker's dollar figure is
 `entry_price × return_pct / 100` (`src/hooks/useJournalChartTrades.ts:243`, read), so the Examples' return unit reaches it too. Hovering a card
 raises that trade's markers and lines (`hoveredTradeId`, `:252`).
 
 What it drew on the production rows (executed, IWM, Examples view): the toolbar with `5m` active and `Session 2026-09-30`, the heading
-`Example trades, 2026-09-30` over five cards, each `CALL`, `EX`, `pipeline`, one `-16.45% 09:34 $279.71 → $279.25 TP 280.50 · SL 20m
-time-stop · R:R` and an em dash (the first), the others with returns of -18.27%, -17.87%, -1.61% and -12.50%, five price lines on the chart
+`Example trades, 2026-09-30` over five cards, each `CALL`, `EX`, `pipeline`, one `-16.45% 09:34 $279.71 → $279.25 TP 280.50 · SL 20m time-stop · R:R` and an em dash (the first), the others with returns of -18.27%, -17.87%, -1.61% and -12.50%, five price lines on the chart
 (`data-price-lines` `5`: one take profit per trade and no stop, because a pipeline row has none), and an equity curve over 2026-05-01 to
 2026-10-01 whose axis ran from -2234.3% to +789.1%. The cards read -16.45% for a move of 0.16% because the Examples handler multiplies the
 stored percent by 100 (matrix Gaps, stocks#1219); the same figure draws the curve.
@@ -8986,11 +8664,9 @@ without a token on staging).
 **States:** The chart card has four: the spinner (JOURNAL-12), an error, the empty text (JOURNAL-13) and the chart. The error text is
 `chartError.message` unless it contains `No data`, when it reads `No market data available for this date`: executed, a 500 with the detail
 `boom: the bars query failed` showed that text, a 404 `No data for IWM on 20260930` the friendly text, a 401 `sign in to continue`. A dates
-failure (503) leaves `chartDate` empty, so the query is disabled and the card shows the empty text and `Markets may be closed (weekend or
-holiday)` with `No session data` in the toolbar and no error (executed; the same text shows while the dates request is still pending). The
+failure (503) leaves `chartDate` empty, so the query is disabled and the card shows the empty text and `Markets may be closed (weekend or holiday)` with `No session data` in the toolbar and no error (executed; the same text shows while the dates request is still pending). The
 rail and the curve have no loading state of their own: while the rows load they read `No example trades on this session.` (or the own-journal
-line) and `Close 2+ trades to see your equity curve.` (executed, JOURNAL-12). A failed Examples read leaves the rail on `No example trades on
-this session.` (JOURNAL-14).
+line) and `Close 2+ trades to see your equity curve.` (executed, JOURNAL-12). A failed Examples read leaves the rail on `No example trades on this session.` (JOURNAL-14).
 
 **Acceptance criteria:**
 - Given the Examples view of the production IWM rows, then the page lands on the newest listed date, shows `Example trades, 2026-09-30` with
@@ -9003,17 +8679,14 @@ this session.` (JOURNAL-14).
   pointer leaves (`hovering a rail card highlights its markers on the chart, and mouseleave clears it`, the same file).
 - Given a 390 px viewport, then the page has no horizontal scroll, the rail sits below the chart card and the card is at least 300 px wide
   (`no page-level horizontal scroll, and the rail stacks below the chart (not beside it)`, the same file).
-- Given a stored row `2026-04-24 10:05:00`, then the rail card and the table both read `10:05` in a browser set to America/New_York (`the
-  table Entry time and the rail card time render the SAME naive-ET wall clock`, the same file).
-- Given fewer than two closed trades, then the card reads `Close 2+ trades to see your equity curve.` (`equity curve card shows a placeholder
-  when under 2 closed trades`, `tests/journal/journal.spec.ts`, on main).
+- Given a stored row `2026-04-24 10:05:00`, then the rail card and the table both read `10:05` in a browser set to America/New_York (`the table Entry time and the rail card time render the SAME naive-ET wall clock`, the same file).
+- Given fewer than two closed trades, then the card reads `Close 2+ trades to see your equity curve.` (`equity curve card shows a placeholder when under 2 closed trades`, `tests/journal/journal.spec.ts`, on main).
 - Given the dates request fails, then the chart card reads `No market data available for this date` and no error shows (executed with a 503; matrix Gaps, the loading and empty states misreport).
 - Given no token, then the five routes above answer 401 on staging (V evidence).
 
 **Tests:** On main the six Playwright tests above each assert one visible fact (a count attribute, a text, a position and a font size, two
 attributes, a layout, a time) and `defaults to Examples when own journal is empty` asserts the equity-curve text `equity curve` and the
-table, tiles and badges that JOURNAL-03 and JOURNAL-06 name; `rail card SL segment renders the time-stop text (no stop price), and the chart
-draws a TP line from take_profits` asserts the two `rail-sl` texts, a visible canvas and a `TP` text on a card, which is the presence of the
+table, tiles and badges that JOURNAL-03 and JOURNAL-06 name; `rail card SL segment renders the time-stop text (no stop price), and the chart draws a TP line from take_profits` asserts the two `rail-sl` texts, a visible canvas and a `TP` text on a card, which is the presence of the
 canvas and not a drawn line. `exitMarkerSpec` is asserted by `src/components/journal/TradeMarkingChart.test.ts` (an unavailable return reads
 `Exit` and an em dash in neutral gray, a real one a signed dollar label, the Examples layer gray and prefixed), `journalRowToTradeEntry` by
 `src/hooks/journalChartTrades.test.ts` and `src/hooks/journalFixtureMapping.test.ts`, and the length of `equityPoints` (never its values) by
@@ -9047,12 +8720,10 @@ rows whose `entry_ts` date is the scope date, or all rows, minus the rows whose 
 - `Σ return`: the sum of the rows' `return_pct`, `+x.xx%`; `Avg / trade`: its mean; `Avg win`: the mean of the positive returns; each an em
   dash when no row has a return, in the neutral tone except `Avg win`, which is always green (`:684`, executed: the dash of a null `Avg win`
   was drawn in `rgb(34, 197, 94)`, the `--bull` colour, where the other null tiles are `rgb(226, 226, 232)`).
-- `Avg R:R`: the mean of `riskReward(entry, TP1, stop)` over the rows that have all three legs (`src/lib/risk.ts:9-13`: `|entry - TP1| /
-  |entry - stop|`, null on a missing leg or equal entry and stop), `toFixed(2)`.
+- `Avg R:R`: the mean of `riskReward(entry, TP1, stop)` over the rows that have all three legs (`src/lib/risk.ts:9-13`: `|entry - TP1| /|entry - stop|`, null on a missing leg or equal entry and stop), `toFixed(2)`.
 - `TP1 hit`: of the rows that have an exit price, a TP1 and a direction, the share whose exit reached TP1 (CALL at or above, PUT at or below),
   `toFixed(0)` and a `%`, green from 50.
-`<n> open/unreturned trade(s) excluded from stats` shows while some row in scope has no return (`:688-692`), and `<n> practice trade(s)
-excluded from stats, toggle "Include practice sessions" to include them.` while the replay rows are filtered out (`:693-698`, test id
+`<n> open/unreturned trade(s) excluded from stats` shows while some row in scope has no return (`:688-692`), and `<n> practice trade(s) excluded from stats, toggle "Include practice sessions" to include them.` while the replay rows are filtered out (`:693-698`, test id
 `replay-exclusion-note`). The equity curve of JOURNAL-02 ignores the scope date and keeps the checkbox (`curveStats`, `:270`).
 
 The unit is the stored one: every figure is a sum or a mean of `return_pct` as the row carries it, a percent of the underlying for own
@@ -9065,8 +8736,7 @@ pipeline rows and the admin's active mark). `Avg R:R` is the ratio of one row, t
 |291.857 - 292.765| = 2.14), because no pipeline row has a stop price; the other 812 do not count. The stored returns sum to -14.4138, so the
 tile reads a hundred times that: the real handler's answer holds 810 closed rows with `return_pct` summing to -1441.3849. With the session
 `2026-09-30` picked (JOURNAL-11): `Trades 5 · 0W / 5L`, `Win rate 0%`, `Σ return -66.69%`, `Avg / trade -13.34%`, `Avg win` an em dash, `Avg R:R`
-an em dash, `TP1 hit 0%`; with `2026-09-26`, a day with no row: `Trades 0 · 0W / 0L` and an em dash in the six others, with `No trades on this
-session, clear the date for the Overview.` under them (JOURNAL-13). On an own row written through the form (an entry at 279.01, an exit at
+an em dash, `TP1 hit 0%`; with `2026-09-26`, a day with no row: `Trades 0 · 0W / 0L` and an em dash in the six others, with `No trades on this session, clear the date for the Overview.` under them (JOURNAL-13). On an own row written through the form (an entry at 279.01, an exit at
 280.50): `Trades 1 · 1W / 0L`, `Win rate 100%`, `Σ return +0.53%`, `Avg / trade +0.53%`, `Avg win +0.53%`, `Avg R:R` and `TP1 hit` em dashes.
 
 **Needs:** The rows of the active view and nothing else: `GET /api/journal/trades/{ticker}` or `GET /api/journal/examples/{ticker}`
@@ -9089,8 +8759,7 @@ reads zeros and dashes for a session with none (above). It shows no age (JOURNAL
   `Σ return`, `Avg / trade`, `Avg win`, `Avg R:R` and `TP1 hit` are labelled, `2.50` and `100%` show and the Trades tile reads `1W / 1L`
   (`defaults to Examples when own journal is empty`, whose title goes on with EX badges, 7 populated tiles and the em dashes of the risk columns,
   `tests/journal/journal-onestop.spec.ts`, on main).
-- Given an Examples union of an admin row and a pipeline row, both wins, then the Trades tile reads `2W / 0L` (`renders a pipeline-labeled row
-  alongside an admin EX row; tiles aggregate both`, the same file).
+- Given an Examples union of an admin row and a pipeline row, both wins, then the Trades tile reads `2W / 0L` (`renders a pipeline-labeled row alongside an admin EX row; tiles aggregate both`, the same file).
 - Given entries with a null return, then no aggregate counts them, the win and loss counts add up to the number with a return, a replay
   entry is excluded unless asked for, an unscored plan gives a null R:R, a CALL reaching TP1 counts as a hit and a PUT does when the exit is
   at or below it, and a date scopes every aggregate (the 17 tests of `src/routes/journalStats.test.ts`).
@@ -9119,26 +8788,20 @@ banner shown on IWM was gone after a pick of SPY, with the idle text for SPY). T
 `mined from your closed trades · walk-forward validated` (`:53`) and one button, `Mine my style` (`:56-64`, test id `mine-style-btn`), which posts
 `{ticker}` to `POST /api/style/mine-and-validate` (`useMineMyStyle`, `src/hooks/useJournalChartTrades.ts:749-773`, a mutation, so nothing is requested
 until the click). It has five states, in the order the file lists them (`:15-23`):
-- idle, with no result and no error: `Finds the market conditions your winning <ticker> trades share, then backtests them out-of-sample. Needs 10+
-  closed trades.` (`:71-76`);
-- pending: the button disabled and reading `Mining…`, with `Mining <ticker> closed trades and running the walk-forward validation, this takes a few
-  seconds.` (`:65-70`, executed with the request held for 2.5 s);
+- idle, with no result and no error: `Finds the market conditions your winning <ticker> trades share, then backtests them out-of-sample. Needs 10+ closed trades.` (`:71-76`);
+- pending: the button disabled and reading `Mining…`, with `Mining <ticker> closed trades and running the walk-forward validation, this takes a few seconds.` (`:65-70`, executed with the request held for 2.5 s);
 - unavailable: the server's `reason` in an amber box (`:88-95`, test id `my-style-unavailable`), an expected state the file's header calls "not an error";
 - error: `Style mining failed: <message>` in a red box (`:79-86`, test id `my-style-error`), the message being the response's `detail`, or
   `mine-and-validate failed: <status>` when the body is not JSON (`useJournalChartTrades.ts:757-768`; executed: a plain-text 500 gave
   `Style mining failed: mine-and-validate failed: 500` and a 401 with the detail `sign in to continue` gave `Style mining failed: sign in to continue`);
 - success (`:97-147`, test id `my-style-result`): the direction badge (`CALL` green, otherwise red), one chip for each condition of the profile through
-  `styleConditionLabel` (`useJournalChartTrades.ts:705-736`: `RSI 25-50`, `RSI 50-75`, `Above VWAP`, `Below VWAP`, `StochRSI oversold`, `StochRSI
-  overbought`, `3+ up moves` and `3+ down moves` for the parameterised two, and any other string with its underscores replaced by spaces), a `staged`
-  badge when the answer says so (its tooltip reads `This profile was staged server-side for signal evaluation`), the sentence `Mined from <support> of
-  <total> closed trades · win rate <x>% · expectancy <+x.xx%> over <n> out-of-sample trades` (`:129-139`: the win rate is the 0 to 1 fraction times
-  100 with no decimals, the expectancy is already a percent, signed, with two decimals, and either is an em dash when null) and the line `Validated across
-  <n> folds · stability <x>%` (`:141-145`, test id `my-style-validation`), which reads `Stability <x>%` when the answer has no fold count.
+  `styleConditionLabel` (`useJournalChartTrades.ts:705-736`: `RSI 25-50`, `RSI 50-75`, `Above VWAP`, `Below VWAP`, `StochRSI oversold`, `StochRSI overbought`, `3+ up moves` and `3+ down moves` for the parameterised two, and any other string with its underscores replaced by spaces), a `staged`
+  badge when the answer says so (its tooltip reads `This profile was staged server-side for signal evaluation`), the sentence `Mined from <support> of <total> closed trades · win rate <x>% · expectancy <+x.xx%> over <n> out-of-sample trades` (`:129-139`: the win rate is the 0 to 1 fraction times
+  100 with no decimals, the expectancy is already a percent, signed, with two decimals, and either is an em dash when null) and the line `Validated across <n> folds · stability <x>%` (`:141-145`, test id `my-style-validation`), which reads `Stability <x>%` when the answer has no fold count.
 
 The handler (`platform/api/routers/backtest.py:690-910`, a plain `def`) reads the caller's own rows of the ticker whose `source` is `manual` or `chart`
 (`:711-723`, so a `replay` row and an imported row are not counted, whatever the panel's copy says) through the swallowing `query_to_dataframe`, keeps
-the closed ones (status `win`, `loss` or `breakeven` and an `exit_ts`, `:653-666`), and answers 200 `{"status": "unavailable", "reason": "need >= 10
-closed trades, have <n>"}` below ten (`:732-736`). With ten or more it loads the one-minute bars of each entry date (`_replay_bar_loader`, which is
+the closed ones (status `win`, `loss` or `breakeven` and an `exit_ts`, `:653-666`), and answers 200 `{"status": "unavailable", "reason": "need >= 10 closed trades, have <n>"}` below ten (`:732-736`). With ten or more it loads the one-minute bars of each entry date (`_replay_bar_loader`, which is
 `_load_date_data` of `platform/api/main.py`), mines a condition profile for each direction with `lib/style_miner.py` (a direction needs five resolved
 entries and a condition shared by 60 percent of them, and an entry in the first 14 bars of its day or with no matching bar is left out of both counts),
 takes the top profile (highest support share, ties to more conditions), loads six months of bars through `DataLoader.load_best_available`
@@ -9149,8 +8812,7 @@ row into `user_style_results`, upserts one candidate into `playbook_cards_stagin
 
 What it drew (executed, real handler over the scratch database, IWM, My journal): the idle text; with the request held, the pending state, with the
 button disabled; then the real answer for an own journal with no rows, `need >= 10 closed trades, have 0` in the amber box. With twelve closed manual and
-chart rows written through the real create route for the one stored session, the real handler read them, mined a profile and answered `200
-{"status": "unavailable", "reason": "no market data available for IWM"}`: the scratch environment sets no `CLOUD_SQL_CONNECTION_NAME`, and the six-month
+chart rows written through the real create route for the one stored session, the real handler read them, mined a profile and answered `200 {"status": "unavailable", "reason": "no market data available for IWM"}`: the scratch environment sets no `CLOUD_SQL_CONNECTION_NAME`, and the six-month
 loader reads `market_data_intraday` only when it is set (`lib/data_loader.py:266-270`), so this run did not reach the fold loop. The success answer was not
 executed on real bars and is not checked here; the page renders it as the Playwright test below asserts.
 
@@ -9164,8 +8826,7 @@ run has completed and written there and the panel can only answer `unavailable` 
 one-minute IWM bar is 2026-10-01 00:00 UTC. The six months of bars were not read for this body: not checked.
 
 **States:** The five above. The panel has no empty or stale state of its own: with no rows it shows the idle text, and the answer carries no age. A
-Cloud SQL outage during the read of the closed rows is not an error state: the handler answers the same 200 `unavailable` as a short journal, `need >= 10
-closed trades, have 0` (executed with the database unreachable and a signed-in owner patched in, so the panel would show a reason that is not true,
+Cloud SQL outage during the read of the closed rows is not an error state: the handler answers the same 200 `unavailable` as a short journal, `need >= 10 closed trades, have 0` (executed with the database unreachable and a signed-in owner patched in, so the panel would show a reason that is not true,
 matrix Gaps). The panel is outside the Examples view, so a user on Examples never sees it (JOURNAL-11).
 
 **Acceptance criteria:**
@@ -9175,10 +8836,8 @@ matrix Gaps). The panel is outside the Examples view, so a user on Examples neve
   (`not-enough-signal envelope renders as a muted note with the server reason, not an error`, the same file).
 - Given a success answer with three conditions, 9 of 14 trades, a win rate of 0.57, an expectancy of 0.42, 63 trades, 5 folds and a stability of
   0.8, then three chips read `RSI 50-75`, `Above VWAP` and `3+ up moves`, the sentence carries `Mined from 9 of 14 closed trades`, `57%`, `+0.42%` and
-  `63 out-of-sample trades`, the line reads `Validated across 5 folds · stability 80%`, the `staged` badge shows and the request body is `{"ticker":
-  "IWM"}` (`success renders condition chips, sample sizes and the fold/stability line; POST carries the ticker`, the same file).
-- Given the server answers 503 with a detail, then the detail shows in the red box after `Style mining failed:` and no result shows (`a genuine backend
-  failure surfaces as a loud inline error with the server detail`, the same file).
+  `63 out-of-sample trades`, the line reads `Validated across 5 folds · stability 80%`, the `staged` badge shows and the request body is `{"ticker":"IWM"}` (`success renders condition chips, sample sizes and the fold/stability line; POST carries the ticker`, the same file).
+- Given the server answers 503 with a detail, then the detail shows in the red box after `Style mining failed:` and no result shows (`a genuine backend failure surfaces as a loud inline error with the server detail`, the same file).
 - Given fewer than ten closed `manual` or `chart` trades, then the handler answers 200 `unavailable` with `need >= 10 closed trades, have <n>` and calls
   neither the miner nor the writes, and given ten closed rows and three open ones, then the miner receives exactly the ten (`test_endpoint_fewer_than_ten_closed_trades_returns_unavailable`,
   `test_endpoint_excludes_open_trades_before_mine_style`, [`tests/lib/test_style_walk_forward.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_style_walk_forward.py), run against stub loaders and a stub validator).
@@ -9276,8 +8935,7 @@ trade moved -0.079% (the stored `-0.0788`), and the Examples handler's multiplic
 column shows `20m time-stop` and `R:R` an em dash on each of them. With the session `2026-09-30` picked the table held 5 rows. After a trade saved through the form (JOURNAL-08) the row read `2026-10-01 CALL 09:30 $279.01 10:00 $280.50 +0.53%` with dashes
 for the plan columns, and after the real exit of a chart mark it read `2026-09-30 CALL 10:25 $279.36 13:20 $279.67 +0.11%` with an em dash for the stop, `280.10` for the targets and an em dash for R:R (JOURNAL-07).
 
-**Needs:** The rows of the active view: `GET /api/journal/trades/{ticker}` (the caller's rows, newest first, no limit, `ORDER BY entry_ts DESC`, `platform/api/routers/journal.py:882-922`) or `GET /api/journal/examples/{ticker}` (JOURNAL-02), and `DELETE
-/api/journal/trades/{trade_id}` for the button. All three are gated (V evidence: 401 without a token on staging). Production (V evidence, 2026-10-01 20:14 UTC): the Examples feed holds 812 live regular-hours IWM rows (810 closed, 2 open), 1,009 for SPY and 914 for QQQ,
+**Needs:** The rows of the active view: `GET /api/journal/trades/{ticker}` (the caller's rows, newest first, no limit, `ORDER BY entry_ts DESC`, `platform/api/routers/journal.py:882-922`) or `GET /api/journal/examples/{ticker}` (JOURNAL-02), and `DELETE/api/journal/trades/{trade_id}` for the button. All three are gated (V evidence: 401 without a token on staging). Production (V evidence, 2026-10-01 20:14 UTC): the Examples feed holds 812 live regular-hours IWM rows (810 closed, 2 open), 1,009 for SPY and 914 for QQQ,
 newest entry on 2026-10-01 for each; `journal_entries` holds two rows, both the examples admin's.
 
 **States:** The table's own states are above. A failed delete is silent: the row stays and nothing shows (executed with a 500: the request was sent, the row stayed, no banner). A deleted own row disappears when the refetch returns (executed). An own row for a date outside the
@@ -9312,8 +8970,7 @@ shows the prompt of the step in amber, with an `x` that cancels:
 3. `Click TP1 (ESC to skip)`, `Click TP2 (ESC to skip)`, `Click TP3 (ESC to skip)`: each click adds a take-profit price, up to three; `Escape` at any of them skips the rest of the targets;
 4. `Click Stop Loss (ESC to skip)`: a click sets the stop price, and `Escape` skips it; either completes the mark and posts it.
 `Escape` at the first two steps and at the exit step cancels the whole thing (`useTradeMarking.ts:182-196`). Nothing checks that a target or the stop lies on the right side of the entry (executed: a CALL whose TP1 was clicked below the entry, `278.46` under `279.26`, was
-posted and stored, the handler accepting it as well). On completion the page calls `createChartTrade.mutate(vars)` and sets the view to My journal in the same breath, without waiting for the answer (`:585-590`): the post is `POST /api/journal/trades` with `{ticker, direction,
-entry_date, entry_time, entry_price, stop_loss, take_profits, source: "chart"}` (`useCreateChartTrade`, `src/hooks/useJournalChartTrades.ts:390-417`; a stop or targets that were skipped are left out) and a 2xx refetches the ticker's journal. The mark creates an open trade (JOURNAL-08 is the closed
+posted and stored, the handler accepting it as well). On completion the page calls `createChartTrade.mutate(vars)` and sets the view to My journal in the same breath, without waiting for the answer (`:585-590`): the post is `POST /api/journal/trades` with `{ticker, direction, entry_date, entry_time, entry_price, stop_loss, take_profits, source: "chart"}` (`useCreateChartTrade`, `src/hooks/useJournalChartTrades.ts:390-417`; a stop or targets that were skipped are left out) and a 2xx refetches the ticker's journal. The mark creates an open trade (JOURNAL-08 is the closed
 form), and a `replay` source exists only on the Charts page's replay trainer, never here.
 
 The exit is the second half of the row: a rail card of an own trade whose status is `active` carries an icon button titled `Mark exit` (`src/components/journal/TradeRailCard.tsx:115-123`); it calls `startExitMode(id)`, the header shows `Click chart to set exit price`, and the next chart click sends
@@ -9401,8 +9058,7 @@ body with `PUT` was stored as a loss of -0.534 (`A2b`, executed).
    one `generic` parser and show six selects, `Ticker`, `Direction (CALL/PUT)`, `Action (open/close)`, `Timestamp`, `Price` and `Quantity`, whose options are the header cells of the chosen file (read in the browser, split on commas, `:150-158`). Schwab, Fidelity and IBKR start from a guessed
    preset of five columns (`:52-56`), `Direction` has none, and a mapping a user sets is kept in `localStorage` under `journal-import-mapping-preset:<broker>` (executed: the Schwab and `Other` keys held the six names after the selects were set). `Preview` is enabled with a file and a broker, and for a generic broker only
    with all six selects set. An error from the preview shows in a red alert with the server's `detail` (`:291-298`).
-2. **Preview** (`POST /api/journal/import/preview`, a multipart form with the file, `broker` and for `generic` a JSON `mapping`). A table of the paired round trips (`import-preview-table`: a checkbox, `Ticker`, `Dir`, `Entry`, `Entry $`, `Exit`, `Exit $`, `Return`, `Qty`), a row flagged `duplicate: already in journal` starts unchecked and a row with no exit reads `imports as
-   active`, then `Skipped rows (<n>)` with `Row <n>: <reason>` for each input row the parser dropped (`import-skipped-list`), so no dropped row is silent. `Back` returns to step one, and `Import <n> trade(s)` (disabled at zero checked, `Importing…` while pending) commits the checked rows.
+2. **Preview** (`POST /api/journal/import/preview`, a multipart form with the file, `broker` and for `generic` a JSON `mapping`). A table of the paired round trips (`import-preview-table`: a checkbox, `Ticker`, `Dir`, `Entry`, `Entry $`, `Exit`, `Exit $`, `Return`, `Qty`), a row flagged `duplicate: already in journal` starts unchecked and a row with no exit reads `imports as active`, then `Skipped rows (<n>)` with `Row <n>: <reason>` for each input row the parser dropped (`import-skipped-list`), so no dropped row is silent. `Back` returns to step one, and `Import <n> trade(s)` (disabled at zero checked, `Importing…` while pending) commits the checked rows.
 3. **Result.** `Imported <n> · <m> duplicates skipped` and `Done`. A commit that fails shows its error in the same red alert on the preview and stays there. A success refetches every ticker's own journal (`useImportCommit`, `src/hooks/useJournalChartTrades.ts:866-907`: the bare `journal-chart-trades` key, because a statement can span tickers) and the page flips the view to My journal
    (`onImported`, `:965`).
 
@@ -11013,8 +10669,7 @@ no such event nothing is drawn, no message either; the panel is part of what `Da
 
 What the production answer draws (executed 2026-10-01): 61 events dated today (45) or tomorrow (16) are High
 (counted in the response: today 30 earnings rows, 12 `EARNINGS_NEWS`, 2 `MERGER_ACQUISITION` and 1 `IPO`; tomorrow 12
-earnings rows and 4 High economic events, `Employment Situation`, `Non-Farm Employment Change`, `Average Hourly
-Earnings m/m` and `Unemployment Rate`). The panel drew ten, all of them `AV news` rows dated
+earnings rows and 4 High economic events, `Employment Situation`, `Non-Farm Employment Change`, `Average Hourly Earnings m/m` and `Unemployment Rate`). The panel drew ten, all of them `AV news` rows dated
 today (GOOGL, NVDA, BSET, GNS, JBL, ADSE, ANSS, SNPS, MCK and CALM): none of today's 30 earnings reporters, none of
 tomorrow's events. The same Synopsys headline fills two of the ten, once for ANSS and once for SNPS. The panel says
 neither how many qualifying events there are nor that it stops at ten, and the dates it compares are not all ET days:
@@ -11070,8 +10725,7 @@ An event with no impact at all counts as Medium (`impactKey` defaults to `Medium
 know counts as `l` while the filter ranks it as Medium (`impactScore`, `:75-77`). The counters cover every fetched
 event, independent of both filters, and include the news dated outside the range (CATALYSTS-04).
 
-What the production answer draws (executed 2026-10-01): `1565 events 1113H / 287M / 165L ·
-Benzinga + DB (news + sec, 1565)`, which equals the tiers in the answer (counted: 1,113 High, of which 897 are earnings
+What the production answer draws (executed 2026-10-01): `1565 events 1113H / 287M / 165L · Benzinga + DB (news + sec, 1565)`, which equals the tiers in the answer (counted: 1,113 High, of which 897 are earnings
 rows, 197 news rows, 14 economic and 5 8-K rows; 287 Medium; 165 Low, all news). `High` left 1,113 rows over 10 of the 13
 cards, `Medium` 1,400 rows over 13 cards and `All` 1,565, and each click took 0.9 s to 1.6 s to redraw (sandbox
 figures); the header and Hot Now did not change under any setting. Two events with no impact, drawn in the hermetic page,
@@ -11102,8 +10756,7 @@ the header outside it (CATALYSTS-14).
 
 **Tests:** On main two page tests in `tests/catalysts/catalysts.spec.ts`: `renders impact tier counters in header`
 asserts that text matching `\d+\s*events` and `\d+H\s*/\s*\d+M\s*/\s*\d+L` is visible, a shape and no number
-(in a scratch copy of the page, 2026-10-01, counting every High event as zero passed it), and `Min-impact filter
-restricts the timeline` asserts that after `High` is clicked the Medium `Investor Day` row is gone from the timeline
+(in a scratch copy of the page, 2026-10-01, counting every High event as zero passed it), and `Min-impact filter restricts the timeline` asserts that after `High` is clicked the Medium `Investor Day` row is gone from the timeline
 and `Q2 2026 Earnings` is visible (ignoring the `High` setting in a scratch copy failed it, ignoring the `Medium`
 setting passed). Nothing asserts the counters' values or the `Medium` setting. The
 tiering is asserted on the handler side by no test (the handler's mapping is not run by [`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py),
@@ -11274,8 +10927,7 @@ the one case CATALYSTS-14 describes.
   window the newest cluster, 2026-09-23, precedes; matrix Gaps).
 
 **Tests:** On main two page tests, both from `tests/catalysts/catalysts.spec.ts`: `lists upcoming events` asserts that text
-matching `AAPL` (first match) and `Q2 2026 Earnings` are visible, the fixture's earnings row four days ahead, and `news
-rows show a sentiment indicator` that a `▲` is visible (first match). Mutations of a scratch copy of the page
+matching `AAPL` (first match) and `Q2 2026 Earnings` are visible, the fixture's earnings row four days ahead, and `news rows show a sentiment indicator` that a `▲` is visible (first match). Mutations of a scratch copy of the page
 (2026-10-01) show what that buys: removing the timeline fails the first (and `Min-impact filter restricts the timeline`), reversing the
 arrows fails the second, and drawing the cards newest first passed. The mapping of the five
 reads (tiers, titles, the dedupe, the order) is asserted by no test: [`tests/api/test_catalysts_news_filter.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_catalysts_news_filter.py) covers
@@ -11429,8 +11081,7 @@ inside `DataGate` (CATALYSTS-14).
 - Given a Min impact setting and a chip, when both are set, then a row must pass both (executed: `Economic` and `High`,
   18 rows).
 - Given only a chip, then the timeline holds that type's rows (executed: `Earnings`, 897).
-- Given only `High` or `Medium`, then the timeline holds the events at or above it (executed: 1,113 and 1,400; `Min-impact
-  filter restricts the timeline` asserts that `High` removes the Medium `Investor Day` row and keeps `Q2 2026 Earnings`).
+- Given only `High` or `Medium`, then the timeline holds the events at or above it (executed: 1,113 and 1,400; `Min-impact filter restricts the timeline` asserts that `High` removes the Medium `Investor Day` row and keeps `Q2 2026 Earnings`).
 - Given `All` and `All Types`, then every row returns (executed).
 - Given any setting, then Hot Now, the header counters and the chips are unchanged (executed).
 - Given a combination that leaves nothing, then the timeline is empty, without a message (executed; matrix Gaps).
@@ -11487,8 +11138,7 @@ branch, which ran and passed in [solyra CI run 37586449560](https://github.com/T
 ##### CATALYSTS-09 · Open insight report
 
 **Shows or does:** Two controls in every row that has a ticker open that ticker's insight report: the ticker button (`title`
-`Open <ticker> insight report`, `src/routes/CatalystsPage.tsx:269-276`) and a `View` button at the row's end (`title` `Open
-insight report`, `:299-308`) that is transparent until the row is hovered and stays transparent under keyboard focus
+`Open <ticker> insight report`, `src/routes/CatalystsPage.tsx:269-276`) and a `View` button at the row's end (`title` `Open insight report`, `:299-308`) that is transparent until the row is hovered and stays transparent under keyboard focus
 (executed: opacity 0 focused, 1 hovered), so a keyboard user can tab to it and cannot see it. Both call `handleOpenTicker`
 (`:410-414`), which does nothing for an empty ticker or `MACRO` and otherwise sets the ticker store's `activeTicker` to the
 upper-cased ticker and navigates to `/insights`. A `MACRO` or tickerless row draws the text `MACRO` and neither control
@@ -11575,11 +11225,9 @@ page (the loading state shows for a moment before that), and removing the spinne
 ##### CATALYSTS-11 · State: empty
 
 **Shows or does:** There is no empty branch (`src/routes/CatalystsPage.tsx:606-628` holds the spinner, the error box and
-the timeline, and the timeline maps over zero cards). An answer with no events draws the header `0 events 0H / 0M / 0L ·
-<source>`, the range controls, the Min impact bar, no chips (the row needs a type), no Hot Now, no timeline and the Wall
+the timeline, and the timeline maps over zero cards). An answer with no events draws the header `0 events 0H / 0M / 0L · <source>`, the range controls, the Min impact bar, no chips (the row needs a type), no Hot Now, no timeline and the Wall
 Street Horizon card; no sentence says that the range holds nothing and no element has a role (executed: the real handler's
-answer for a range whose reads all returned nothing, `{"status":"ok","source":"Benzinga","date_range":{...},"total":0,
-"events_by_date":{}}`, rendered in the hermetic page). The rows replaced are the ones loading and error also replace:
+answer for a range whose reads all returned nothing, `{"status":"ok","source":"Benzinga","date_range":{...},"total":0, "events_by_date":{}}`, rendered in the hermetic page). The rows replaced are the ones loading and error also replace:
 CATALYSTS-01 to CATALYSTS-04. The record's seed journey, a quiet week with an empty timeline, does not happen on a live range:
 the news read ignores the range, so the timeline is empty only when the last 48 hours of news is empty too (a weekend or a
 Monday morning, matrix Gaps) or when every read fails.
@@ -11729,8 +11377,7 @@ CATALYSTS-09 live inside it; the header and the range controls (CATALYSTS-06) st
 - Given a signed-in user and a 401 on both routes, then the shell shows its expired-session strip and the page its error
   box, with no `Sign in to load data` and no sign-in prompt of its own (executed).
 - Given a signed-out user in `firebase` mode, then the sign-in screen replaces the page and no catalysts request is sent
-  (executed; the screen is asserted on `/dashboard` by `firebase mode, signed out → login screen blocks the
-  app`, `tests/shared/auth-gate.spec.ts`, on main at eca7078).
+  (executed; the screen is asserted on `/dashboard` by `firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main at eca7078).
 - Given a gated 401, then the wrapper calls the callback registered with `setOnUnauthorized`, and a 401 from an open path
   does not (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`,
   `src/lib/authedFetch.test.ts`, on main); no code outside the tests registers one, so no behaviour hangs on it, and the flag
@@ -11817,20 +11464,16 @@ hermetic browser (the e2e launcher's Vite server, an en-US locale and the New Yo
 `mockAdminApi` fixtures of `tests/helpers/fixtures/admin.ts` or, where a body says "over the real handler", by the JSON that the real stocks
 admin router of `cbb58e20` produced. Handler: that router (and `predict_one`, and `/api/me`) driven through FastAPI's `TestClient` with
 fakes substituted only at its own indirections, the Firebase Admin SDK module, the `user_roles` reads and writes, the lease statements and
-the Cloud Run client, so its own branches ran; its data-sources answer was computed over the staging service's own `GET
-/api/health/freshness` report (an open endpoint, read 2026-10-02 00:26 UTC) and its state answer over the real objects of the bucket's
+the Cloud Run client, so its own branches ran; its data-sources answer was computed over the staging service's own `GET/api/health/freshness` report (an open endpoint, read 2026-10-02 00:26 UTC) and its state answer over the real objects of the bucket's
 `research/strat_engine/` prefix, read with the session's service account. Mutation: one statement or block of the product code changed in a
 scratch copy and the named spec or tests run. "Read" marks what was only read in the code, and "V evidence" the comment on stocks issue 1234
 that the matrix links.
 
 ##### ADMIN-01 · Users and roles tab
 
-**Shows or does:** The first of the page's three tabs and the one it opens on (`src/routes/AdminPage.tsx:16-22,38,76-85`): an `h2` `Users &
-roles`, the line `Toggle a role to grant or revoke it immediately. Disabling a user blocks sign-in without deleting their history.` and
-`UsersPanel` (`src/components/admin/UsersPanel.tsx:24-173`). The three tabs share one strip (`role="tablist"`, `aria-label` `Admin
-sections`, `aria-selected` on the open one, test ids `admin-tab-users`, `admin-tab-data` and `admin-tab-models`, `AdminPage.tsx:55-74`); a
-click opens a tab, and the arrow keys do not move between them, Tab then Enter does (executed). The panel has a search box (`Search email,
-name or UID`, test id `admin-users-search`, `UsersPanel.tsx:72-81`) that keeps the accounts whose email, display name or uid contains the
+**Shows or does:** The first of the page's three tabs and the one it opens on (`src/routes/AdminPage.tsx:16-22,38,76-85`): an `h2` `Users & roles`, the line `Toggle a role to grant or revoke it immediately. Disabling a user blocks sign-in without deleting their history.` and
+`UsersPanel` (`src/components/admin/UsersPanel.tsx:24-173`). The three tabs share one strip (`role="tablist"`, `aria-label` `Admin sections`, `aria-selected` on the open one, test ids `admin-tab-users`, `admin-tab-data` and `admin-tab-models`, `AdminPage.tsx:55-74`); a
+click opens a tab, and the arrow keys do not move between them, Tab then Enter does (executed). The panel has a search box (`Search email, name or UID`, test id `admin-users-search`, `UsersPanel.tsx:72-81`) that keeps the accounts whose email, display name or uid contains the
 text, ignoring case and surrounding spaces (`:33-43`), a counter `N of M`, the kept accounts over all of them (`:82-84`), and a table
 (`:98-170`) with the columns `User`, `Roles`, `Created`, `Last sign-in` and `Access`. `User` shows the email, else the display name, else an
 em-dash placeholder, with the uid under it (`:112-117`). `Roles` holds one chip for each role the server lists as assignable, in the
@@ -11843,8 +11486,7 @@ The rows are the Firebase accounts of the project, not the accounts that hold a 
 and the `ADMIN_EMAIL` account shows `admin` pressed with or without a `user_roles` row (`platform/api/routers/admin.py:992-1004`, executed
 over the handler), so the break-glass account reads as an admin that the chips cannot remove (ADMIN-04).
 
-Executed on the real page with the fixture directory of `src/mocks/admin.ts` (three accounts, en-US, New York zone): the counter read `3 of
-3`; each row carried the chips `admin`, `user` and `dev`, pressed only for the admin account's `admin`; an account created at
+Executed on the real page with the fixture directory of `src/mocks/admin.ts` (three accounts, en-US, New York zone): the counter read `3 of 3`; each row carried the chips `admin`, `user` and `dev`, pressed only for the admin account's `admin`; an account created at
 `2026-01-05T15:00:00Z` read `1/5/2026`; the account with no sign-in and no creation time read an em-dash placeholder in both columns. Four
 switches between the three tabs made one `GET /api/admin/users` (executed): the answer is held 30 s, so a role granted in another session
 shows here only after that and a remount, which the Data tab's own line, `nothing here is cached client-side`, does not say (matrix Gaps).
@@ -11864,21 +11506,17 @@ session, so this tab is not ticked at V (matrix Gaps).
 
 **States:** Loading: a spinner replaces the panel (ADMIN-09). Error: a red card `Could not load users: <message>` (test id
 `admin-users-error`) replaces the search and the table (`UsersPanel.tsx:58-67`, ADMIN-11); the message is `unauthorized` for a 401 or a 403
-and otherwise `GET /api/admin/users failed: <status> <body>`: with the handler answering 503 it read `Could not load users: GET
-/api/admin/users failed: 503 {"detail":"user directory temporarily unavailable"}`, after two requests, the first and the retry (executed).
+and otherwise `GET /api/admin/users failed: <status> <body>`: with the handler answering 503 it read `Could not load users: GET/api/admin/users failed: 503 {"detail":"user directory temporarily unavailable"}`, after two requests, the first and the retry (executed).
 Empty: a search that matches nothing and a directory with no accounts both show `No users match this search.` in place of the table
 (`:93-96`, ADMIN-10); for an empty directory the counter reads `0 of 0` over that text, a search wording for a directory that is simply
 empty (executed, matrix Gaps). The line above the table that carries a failed write belongs to ADMIN-04 and ADMIN-05.
 
 **Acceptance criteria:**
-- Given an admin opens `/admin`, then the `Users & roles` tab is selected and its table shows, and the Data and Models panels do not (`lands
-  on Users & roles; tabs switch panels`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given an admin opens `/admin`, then the `Users & roles` tab is selected and its table shows, and the Data and Models panels do not (`lands on Users & roles; tabs switch panels`, `tests/admin/admin-tabs.spec.ts`, on main).
 - Given an account with no display name and no sign-in time, then its row shows an em-dash placeholder and no `Invalid Date`, and an
   account's email shows in the table (`renders users; null name/timestamps render as em-dash, never a fabricated value`).
-- Given a search text that matches one email, then only that account's row shows; given text that matches none, then `No users match this
-  search.` shows and the table does not (`search filters rows and shows the honest empty state`).
-- Given the users request fails, then `Could not load users` shows with the server's message and the table does not (`load failure surfaces
-  a visible error, not an empty table`, a 500).
+- Given a search text that matches one email, then only that account's row shows; given text that matches none, then `No users match this search.` shows and the table does not (`search filters rows and shows the honest empty state`).
+- Given the users request fails, then `Could not load users` shows with the server's message and the table does not (`load failure surfaces a visible error, not an empty table`, a 500).
 - Given Firebase accounts and stored roles, then the handler answers each account with its stored role, `admin` for the `ADMIN_EMAIL`
   account with no row, null for a missing name, email or time, and `available_roles` (`test_users_merge_firebase_and_roles`,
   [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given the Admin SDK fails, then 503 (`test_users_directory_failure_is_loud_503`;
@@ -11890,10 +11528,7 @@ empty (executed, matrix Gaps). The line above the table that carries a failed wr
   no test asserts a date).
 - Given a directory with no accounts, then the panel reads `0 of 0` and `No users match this search.` (executed; no test).
 
-**Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the default tab and its panel (`lands on Users & roles; tabs switch
-panels`), the email in the table, the em-dash cells and the absence of `Invalid Date` for the account with no name and no sign-in (`renders
-users; null name/timestamps render as em-dash, never a fabricated value`), the search and its empty text (`search filters rows and shows the
-honest empty state`) and the error card for a 500 (`load failure surfaces a visible error, not an empty table`). The handler is asserted by
+**Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the default tab and its panel (`lands on Users & roles; tabs switch panels`), the email in the table, the em-dash cells and the absence of `Invalid Date` for the account with no name and no sign-in (`renders users; null name/timestamps render as em-dash, never a fabricated value`), the search and its empty text (`search filters rows and shows the honest empty state`) and the error card for a 500 (`load failure surfaces a visible error, not an empty table`). The handler is asserted by
 stocks [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py) (`test_users_merge_firebase_and_roles`: the merge of the directory with the role rows,
 the `ADMIN_EMAIL` account admin with no row, a missing name, email and times staying null, and `available_roles`;
 `test_users_directory_failure_is_loud_503`; `test_endpoints_require_admin`: 401 anonymous and 403 non-admin) and by
@@ -11909,15 +11544,13 @@ asserted; the chips are ADMIN-04's.
 
 ##### ADMIN-02 · Chart and report data tab
 
-**Shows or does:** The second tab (`src/routes/AdminPage.tsx:87-98`): an `h2` `Chart & report data`, the line `Freshness and coverage for
-every dataset the charts and reports read from. Refresh queues a job on the pipeline; nothing here is cached client-side.` and
+**Shows or does:** The second tab (`src/routes/AdminPage.tsx:87-98`): an `h2` `Chart & report data`, the line `Freshness and coverage for every dataset the charts and reports read from. Refresh queues a job on the pipeline; nothing here is cached client-side.` and
 `DataSourcesPanel` (`src/components/admin/DataSourcesPanel.tsx:17-135`). The panel opens with a row of filter chips, `all` and then each
 category the answer holds in alphabetical order (test ids `source-filter-<category>`, `:53-69`), and a table (`:82-131`) with the columns
 `Dataset`, `Feeds`, `Status`, `Rows`, `Coverage`, `Last refresh` and the Refresh button of ADMIN-06. `Dataset` shows the label, the id in
 mono type and, when the server sent one, a message under both (`:98-104`); `Feeds` is the category; `Status` is a badge with the status
 word, outlined green for `ok`, amber for `stale`, red for `error` and neutral for anything else
-(`src/components/admin/dataSourceFormat.ts:17-22`); `Rows` is the count with thousands separators; `Coverage` is `<start> → <end>`; `Last
-refresh` is the stored time in the viewer's zone through `toLocaleString`; each of the three shows an em-dash placeholder for a missing
+(`src/components/admin/dataSourceFormat.ts:17-22`); `Rows` is the count with thousands separators; `Coverage` is `<start> → <end>`; `Last refresh` is the stored time in the viewer's zone through `toLocaleString`; each of the three shows an em-dash placeholder for a missing
 value, and `Coverage` a single one when both bounds are missing (`dataSourceFormat.ts:6-27`).
 
 What the handler puts in those columns (read, then executed below): one row for each of the thirteen datasets of the registry
@@ -11928,28 +11561,23 @@ the audit's count of the rows dated the expected trading day of its audit row, s
 [`scripts/audit_data_freshness.py:458-476,552`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py#L458-L476)), which is not the table's size, and it is null unless every member reported a count
 (`admin.py:1310-1388`); the page heads it `Rows`. `Coverage` has no start, because the audit computes none (`:1384`), so it reads an em-dash
 placeholder, an arrow and the end, which repeats `Last refresh` in the audit's own text: a bare date for a daily table, a full ISO time for
-an intraday one. A diagnostic row of the audit for a registered table (`<table> [gap]`, `<table> [sanity]`, `market_data_daily.atr_14
-enrichment coverage`, `strat_features_5m.<column>`) adds its status and message to its dataset and not its count or time
+an intraday one. A diagnostic row of the audit for a registered table (`<table> [gap]`, `<table> [sanity]`, `market_data_daily.atr_14 enrichment coverage`, `strat_features_5m.<column>`) adds its status and message to its dataset and not its count or time
 (`:1281-1302,1323-1359`); one for a table outside the registry (`job_runs.<job> duration`, `strat_features_levels_5m.<column>`) is a row of
 its own under `other`. The gap, sanity, nullity and `job_runs` rows exist only while they fail, and the live report held none of them, only
 the one enrichment row folded into `market_data_daily` (executed).
 
 Executed over the real handler, fed the staging service's own freshness report (an open endpoint, read 2026-10-02 00:26 UTC: 34 audit rows,
-`ok` overall), on the real page in a New York zone: fourteen rows, all `ok` and none with a message: `market_data_daily` `Rows` 3 and `Last
-refresh` `2026-09-30`, `market_data_intraday` 2,803 and `2026-10-01T00:00:00+00:00`, `strat_features_5m`, `strat_features_15m` and
+`ok` overall), on the real page in a New York zone: fourteen rows, all `ok` and none with a message: `market_data_daily` `Rows` 3 and `Last refresh` `2026-09-30`, `market_data_intraday` 2,803 and `2026-10-01T00:00:00+00:00`, `strat_features_5m`, `strat_features_15m` and
 `strat_features_30m` 234, 78 and 39, `etf_options_snapshots` 2,550,694, `economic_events` and `daily_rates` 0 (the expected day holds none),
 `earnings_calendar` 372, `premarket_analysis` 3, `insight_reports` 3, `signal_alerts` 15, `historical_signals` 1,299, and `playbook_cards`
 36 under `other` with its id as its label. The date-only values read a day early with an invented time: `market_data_daily` `Last refresh`
 read `9/29/2026, 8:00:00 PM` beside `— → 2026-09-30`, a bare date parsed as UTC midnight and shown in the viewer's zone (matrix Gaps), while
-the intraday row, a real instant, read `9/30/2026, 8:00:00 PM`, the 20:00 ET bar. Four switches between the tabs made one `GET
-/api/admin/data-sources` (executed), the page's own line notwithstanding.
+the intraday row, a real instant, read `9/30/2026, 8:00:00 PM`, the 20:00 ET bar. Four switches between the tabs made one `GET/api/admin/data-sources` (executed), the page's own line notwithstanding.
 
 **Needs:** `GET /api/admin/data-sources` through `useAdminDataSources` (`src/hooks/useAdmin.ts:344-351`, 30 s stale time, no polling, the
-app's single retry). The handler (`platform/api/routers/admin.py:1391-1425`) checks the admin role, then reads the report that `GET
-/api/health/freshness` serves, through `freshness_report_dict` (`platform/api/routers/health.py:67-124`): [`scripts/audit_data_freshness.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py)
+app's single retry). The handler (`platform/api/routers/admin.py:1391-1425`) checks the admin role, then reads the report that `GET/api/health/freshness` serves, through `freshness_report_dict` (`platform/api/routers/health.py:67-124`): [`scripts/audit_data_freshness.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/audit_data_freshness.py)
 `audit_all`, held five minutes (`_CACHE_TTL`, `:42`), one audit at a time; a request that arrives while another request audits is not made
-to wait, and gets the last report with `stale` true and `stale_age_seconds`, or 503 `Freshness audit in progress and no cached report is
-available yet. Retry shortly.` when nothing is cached; an audit that cannot reach Cloud SQL is a 503 (`:137-150`). The handler runs no query
+to wait, and gets the last report with `stale` true and `stale_age_seconds`, or 503 `Freshness audit in progress and no cached report is available yet. Retry shortly.` when nothing is cached; an audit that cannot reach Cloud SQL is a 503 (`:137-150`). The handler runs no query
 of its own. A request that starts the audit waits for it: two cold requests to the staging service's `GET /api/health/freshness` took 67.3 s
 and 51.5 s, the warm one 0.26 s (V evidence), and the page shows only its spinner for that long (read, ADMIN-09).
 
@@ -11968,12 +11596,10 @@ not (ADMIN-12). A failed refresh shows above the table (ADMIN-06).
 
 **Acceptance criteria:**
 - Given a healthy source, a stale one with a message and one with a null count and time, then the labels, the status words and the message
-  `last fetch skipped: vendor quota` show, and the null count and time read an em-dash placeholder and never `NaN` (`renders sources with
-  statuses; null rows/refresh render as em-dash`, `tests/admin/admin-tabs.spec.ts`, on main).
+  `last fetch skipped: vendor quota` show, and the null count and time read an em-dash placeholder and never `NaN` (`renders sources with statuses; null rows/refresh render as em-dash`, `tests/admin/admin-tabs.spec.ts`, on main).
 - Given the `reports` chip, then only the reports datasets show, and `all` brings the rest back (`category filter narrows the table`).
 - Given a missing count, a missing or invalid time, or one missing coverage bound, then the formatters give an em-dash placeholder, never
-  `0`, and keep the bound that exists (`renders a missing row count as an em-dash, never 0`, `renders a missing or invalid timestamp as an
-  em-dash`, `renders coverage honestly when one bound is missing`, `src/components/admin/dataSourceFormat.test.ts`).
+  `0`, and keep the bound that exists (`renders a missing row count as an em-dash, never 0`, `renders a missing or invalid timestamp as an em-dash`, `renders coverage honestly when one bound is missing`, `src/components/admin/dataSourceFormat.test.ts`).
 - Given audit rows for one dataset, among them a gap row, a nullity row and a skipped enrichment row, then the handler folds them into the
   dataset's status, reads `warn` as `stale` with the lag in the message, gives a missing per-ticker count as null, an absent dataset as
   `unknown`, an audited table outside the registry as an `other` row and a cost-gated dataset as not refreshable
@@ -11987,8 +11613,7 @@ not (ADMIN-12). A failed refresh shows above the table (ADMIN-06).
 
 **Tests:** On main, solyra `tests/admin/admin-tabs.spec.ts` asserts the rows of the fixture, one source's message, an em-dash row with no
 `NaN` (`renders sources with statuses; null rows/refresh render as em-dash`) and the chip filter (`category filter narrows the table`);
-`dataSourceFormat.test.ts` asserts `renders a missing row count as an em-dash, never 0`, `renders a missing or invalid timestamp as an
-em-dash` and `renders coverage honestly when one bound is missing`. The handler's regrouping is asserted by stocks
+`dataSourceFormat.test.ts` asserts `renders a missing row count as an em-dash, never 0`, `renders a missing or invalid timestamp as an em-dash` and `renders coverage honestly when one bound is missing`. The handler's regrouping is asserted by stocks
 [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py) (`test_data_sources_aggregation`, `test_endpoints_require_admin`), the audit's own thresholds,
 row floors and gap scans by [`tests/audits/test_audit_data_freshness.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/audits/test_audit_data_freshness.py), and the report's cache and its stale copy by
 [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py) (`test_freshness_decliner_serves_a_stale_report_rather_than_waiting`,
@@ -12009,35 +11634,25 @@ that fails leaves the others standing (executed). `Model Routing` (`RoutingPanel
 role, `Role` in mono type, a `Provider` select, a `Model` select, `Updated` and a `Save` button (`:239-307`); the selects and `Save` are
 ADMIN-07's. `Updated` reads `<local date and time> · <updated_by>`, the date through `toLocaleString`, an em-dash placeholder when the
 server sent none (`:287-290`). `Structure Brief`, badged `dev only · deploy blocked`
-(`src/components/structure_brief/StructureBrief.tsx:134-389`): the server's scope statement, a strip `N / 9 cells available · M muted · ECE
-ceiling 0.050`, then three columns, IWM, SPY and QQQ, of the cells 5m, 15m and 30m. A cell the server calls unavailable shows `unavailable`
-and the server's note (`No live data.` when it sent none); a muted one shows the mute reason, the time of its refresh and `live ECE <x> /
-ceiling 0.050`; an available one shows `next bar <P>% likely to be type <C>`, four bars for the classes `1`, `2U`, `2D` and `3` with
-whole-percent labels, and that footer; a cell the server did not send is left out (`:175-186`). `On-Demand Predict`, badged `admin tool ·
-single bar`, is ADMIN-08's. `Model State Snapshot`, badged `operator view · on shelf`
-(`src/components/structure_brief/ModelStateSnapshot.tsx:17-151`): a strip `N / M models trained · K muted · ECE ceiling 0.050` and `live ECE
-snapshot present` or `no live ECE snapshot yet`, a table of `Ticker`, `TF`, `Status` (`ready`, `muted` or `no artifact`), `Model Version`,
-`Last Trained` (a relative time under a week old, a date beyond, `no refresh` when null) and `Live ECE`, and the line `On the shelf, no
-scheduler. Activation gated by stocks: docs/STRAT_ENGINE_OPERATIONS.md §8.`, the path a link. The brief takes its mute from the server's
+(`src/components/structure_brief/StructureBrief.tsx:134-389`): the server's scope statement, a strip `N / 9 cells available · M muted · ECE ceiling 0.050`, then three columns, IWM, SPY and QQQ, of the cells 5m, 15m and 30m. A cell the server calls unavailable shows `unavailable`
+and the server's note (`No live data.` when it sent none); a muted one shows the mute reason, the time of its refresh and `live ECE <x> /ceiling 0.050`; an available one shows `next bar <P>% likely to be type <C>`, four bars for the classes `1`, `2U`, `2D` and `3` with
+whole-percent labels, and that footer; a cell the server did not send is left out (`:175-186`). `On-Demand Predict`, badged `admin tool · single bar`, is ADMIN-08's. `Model State Snapshot`, badged `operator view · on shelf`
+(`src/components/structure_brief/ModelStateSnapshot.tsx:17-151`): a strip `N / M models trained · K muted · ECE ceiling 0.050` and `live ECE snapshot present` or `no live ECE snapshot yet`, a table of `Ticker`, `TF`, `Status` (`ready`, `muted` or `no artifact`), `Model Version`,
+`Last Trained` (a relative time under a week old, a date beyond, `no refresh` when null) and `Live ECE`, and the line `On the shelf, no scheduler. Activation gated by stocks: docs/STRAT_ENGINE_OPERATIONS.md §8.`, the path a link. The brief takes its mute from the server's
 `muted`; the state decides `muted` in the browser, a live ECE above the ceiling (`:39-41,111`); the helpers `decideMute` and `applyMute` of
 `StructureBrief.tsx:66-96` are called by nothing but their test.
 
 Executed over what production holds. The routing table over the seven rows the production table holds (V evidence, 2026-10-02), in the order
-`analyst`, `bull`, `bear`, `judge`, `trader`, `risk`, `portfolio_manager`, each on `vertex`, the model select reading `gemini-3.1-flash-lite
-· $0.25/$1.5`, `Updated` `5/11/2026, 8:34:31 PM · claude-code/ab-test-restore-2026-05-12` and every `Save` disabled, over the model list the
+`analyst`, `bull`, `bear`, `judge`, `trader`, `risk`, `portfolio_manager`, each on `vertex`, the model select reading `gemini-3.1-flash-lite · $0.25/$1.5`, `Updated` `5/11/2026, 8:34:31 PM · claude-code/ab-test-restore-2026-05-12` and every `Save` disabled, over the model list the
 real handler produced: twelve priced models, `anthropic` 3, `openai` 2 and `vertex` 7, so the provider select offers `anthropic`, `openai`
 and `vertex` in that order. The brief over the real handler: `0 / 9 cells available · 0 muted · ECE ceiling 0.050` and nine `unavailable`
 cells, each reading `No live snapshot available. Production data source is blocked behind the Track B / Track C deploy gate.`. The state
-over the real handler reading the real objects of the bucket's `research/strat_engine/` prefix with the session's service account: `9 / 9
-models trained · 0 muted · ECE ceiling 0.050 · no live ECE snapshot yet`, nine `ready` rows, `Last Trained` `5/26/2026` for IWM and
-`6/4/2026` for SPY and QQQ (129 and 120 days before 2026-10-02, with no flag, ADMIN-12), `Live ECE` an em-dash placeholder, and `Model
-Version` `strat-engine-<five characters>` for eight cells and `epoch-1779781975` for IWM 15m.
+over the real handler reading the real objects of the bucket's `research/strat_engine/` prefix with the session's service account: `9 / 9 models trained · 0 muted · ECE ceiling 0.050 · no live ECE snapshot yet`, nine `ready` rows, `Last Trained` `5/26/2026` for IWM and
+`6/4/2026` for SPY and QQQ (129 and 120 days before 2026-10-02, with no flag, ADMIN-12), `Live ECE` an em-dash placeholder, and `Model Version` `strat-engine-<five characters>` for eight cells and `epoch-1779781975` for IWM 15m.
 
 **Needs:** `GET /api/admin/routes` (`useAdminRoutes`, `src/hooks/useAdmin.ts:37-49`, 30 s) and `GET /api/admin/models` (`useAdminModels`,
-`:55-67`, five minutes) for the routing table, `GET /api/admin/structure-brief` (`useStructureBrief`, `:112-124`, 60 s) and `GET
-/api/admin/strat-engine/state` (`useStratEngineState`, `:173-185`, 60 s); each section requests its own data, and nothing polls. Routes
-(`platform/api/routers/admin.py:129-154`): the rows of `model_routing` in the fixed role order, 503 `model route store temporarily
-unavailable` for an infrastructure failure and a 500 for a defect. Models (`:208-213`): every priced model with `has_credentials`, true for
+`:55-67`, five minutes) for the routing table, `GET /api/admin/structure-brief` (`useStructureBrief`, `:112-124`, 60 s) and `GET/api/admin/strat-engine/state` (`useStratEngineState`, `:173-185`, 60 s); each section requests its own data, and nothing polls. Routes
+(`platform/api/routers/admin.py:129-154`): the rows of `model_routing` in the fixed role order, 503 `model route store temporarily unavailable` for an infrastructure failure and a 500 for a defect. Models (`:208-213`): every priced model with `has_credentials`, true for
 a provider with a registered adapter, which on both services is Vertex alone (`platform/api/routers/insights.py:41` registers it; executed:
 `available_providers()` read `['vertex']`), so every `anthropic` and `openai` model reads `(no creds)`; neither service sets
 `ANTHROPIC_API_KEY` (V evidence). Brief (`:342-363`): one GCS object, `research/strat_engine/structure_brief_latest.json`, which
@@ -12063,10 +11678,8 @@ storage outage reaches the page (ADMIN-10, matrix Gaps). Stale: the models' ages
 routing section and is lost when the tab is left (ADMIN-07).
 
 **Acceptance criteria:**
-- Given an admin opens the Models tab, then the routing table shows and the Users and Data tables do not (`lands on Users & roles; tabs
-  switch panels`, `tests/admin/admin-tabs.spec.ts`, on main).
-- Given the fixture's routes, then the table holds a row for `analyst` and one for `portfolio_manager` (`admin role renders the dashboard
-  directly — no token prompt exists`, `tests/admin/admin.spec.ts`).
+- Given an admin opens the Models tab, then the routing table shows and the Users and Data tables do not (`lands on Users & roles; tabs switch panels`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given the fixture's routes, then the table holds a row for `analyst` and one for `portfolio_manager` (`admin role renders the dashboard directly — no token prompt exists`, `tests/admin/admin.spec.ts`).
 - Given the production rows, then the table shows seven roles on `vertex` `gemini-3.1-flash-lite` with `Updated` showing
   `claude-code/ab-test-restore-2026-05-12` and every `Save` disabled (executed; no test).
 - Given the real brief answer, then the strip reads `0 / 9 cells available · 0 muted · ECE ceiling 0.050` and each of the nine cells reads
@@ -12116,8 +11729,7 @@ solyra#77). The `dev` role turns on the app's mock-data mode for the account and
 (`platform/api/routers/admin.py:889-895`).
 
 What the handler does (`:1065-1134`, executed over the real router with the directory and the table faked): it lower-cases and sorts the
-roles, answers 422 `unknown role(s) ['superuser']; available: ['admin', 'user', 'dev']` for a role outside the three, 422 `an account holds
-one role — send [], ["user"], or ["admin"]` for two (a message that leaves out `dev`, nothing written), 404 `no such user` for an unknown
+roles, answers 422 `unknown role(s) ['superuser']; available: ['admin', 'user', 'dev']` for a role outside the three, 422 `an account holds one role — send [], ["user"], or ["admin"]` for two (a message that leaves out `dev`, nothing written), 404 `no such user` for an unknown
 uid, 422 `this account has no email; roles are keyed by email` for an account with no email, and 409 for the `ADMIN_EMAIL` account unless
 `admin` is in the new list (its admin comes from the service configuration, so it cannot be removed here). Otherwise it upserts `user_roles`
 on the lower-cased email, stamped with the caller as `created_by`, or deletes the row for `[]`, reads the table back and answers the
@@ -12178,22 +11790,17 @@ Te is ticked: the page's request and the handler's answers are asserted; the res
 outline for one whose `disabled` is true. A click sends `PUT /api/admin/users/<uid>/status` with `{"disabled": <the flipped value>}`
 (`src/hooks/useAdmin.ts:297-307`) at once, with no confirmation step (read), and on success refetches the list, which brings the new label.
 While a status write is in flight every `Access` button is disabled and the role chips are not (`:152`; executed: three of three `Access`
-buttons, none of the nine chips). A failure shows in the line above the table that ADMIN-04 describes, raw: `PUT
-/api/admin/users/<uid>/status failed: <status> <body>` (executed with a 409), `unauthorized` for a 401 or a 403.
+buttons, none of the nine chips). A failure shows in the line above the table that ADMIN-04 describes, raw: `PUT/api/admin/users/<uid>/status failed: <status> <body>` (executed with a 409), `unauthorized` for a 401 or a 403.
 
 What the handler does (`platform/api/routers/admin.py:1137-1200`, executed over the real router with the Admin SDK faked). In `iap` mode it
-refuses every request with 409 `this deployment authenticates at the IAP edge — Firebase account status does not govern access here; manage
-access in IAP / Cloud IAM instead` (`:1158-1166`): there the identity is the IAP header, and neither the middleware nor `_require_admin`
+refuses every request with 409 `this deployment authenticates at the IAP edge — Firebase account status does not govern access here; manage access in IAP / Cloud IAM instead` (`:1158-1166`): there the identity is the IAP header, and neither the middleware nor `_require_admin`
 reads a Firebase account's status, so a flip would report `disabled: true` while the person kept full access. In `firebase` mode a Disable
-of the caller's own account answers 409 `you cannot disable your own account` and a Disable of the `ADMIN_EMAIL` account 409 `ADMIN_EMAIL is
-the break-glass account and cannot be disabled here` (`:1171-1181`), an unknown uid 404 `no such user`, and otherwise the account is updated
+of the caller's own account answers 409 `you cannot disable your own account` and a Disable of the `ADMIN_EMAIL` account 409 `ADMIN_EMAIL is the break-glass account and cannot be disabled here` (`:1171-1181`), an unknown uid 404 `no such user`, and otherwise the account is updated
 through the Admin SDK and, for a Disable, its refresh tokens are revoked (`:1183-1191`; an Enable does not revoke); the answer is the
-account's row. A failing SDK is 503 `user directory temporarily unavailable`, and a failing role read after the update is 503 `role store
-temporarily unavailable` although the account has changed (`:1193-1200`, read).
+account's row. A failing SDK is 503 `user directory temporarily unavailable`, and a failing role read after the update is 503 `role store temporarily unavailable` although the account has changed (`:1193-1200`, read).
 
 A Disable does not end a session at once: the middleware verifies an ID token without a revocation check (`platform/api/auth.py:136`, read),
-so a token already issued works for up to an hour, which the handler's own docstring says. The page's line `Disabling a user blocks sign-in
-without deleting their history` holds for the next sign-in and the next token refresh. Production runs `AUTH_MODE=iap` (V evidence,
+so a token already issued works for up to an hour, which the handler's own docstring says. The page's line `Disabling a user blocks sign-in without deleting their history` holds for the next sign-in and the next token refresh. Production runs `AUTH_MODE=iap` (V evidence,
 2026-10-02), so every Disable and Enable there answers 409 while the page offers both for every account (solyra#78); staging runs
 `AUTH_MODE=firebase` with `ADMIN_EMAIL` set, the one place the handler acts.
 
@@ -12202,8 +11809,7 @@ evidence, 2026-10-02), for `update_user` and `revoke_refresh_tokens`; `user_role
 `AUTH_MODE` of the service (`platform/api/auth.py:55`), read when the request arrives.
 
 **States:** A disabled account reads `Enable` with a red outline, the only mark (ADMIN-01). Pending: every `Access` button is disabled
-(ADMIN-09). Error: the raw line above the table (ADMIN-11); on production it is always the IAP refusal, `PUT /api/admin/users/<uid>/status
-failed: 409 {"detail":"this deployment authenticates at the IAP edge ..."}` (the handler's text executed in `iap` mode; the page's raw
+(ADMIN-09). Error: the raw line above the table (ADMIN-11); on production it is always the IAP refusal, `PUT /api/admin/users/<uid>/status failed: 409 {"detail":"this deployment authenticates at the IAP edge ..."}` (the handler's text executed in `iap` mode; the page's raw
 rendering of a 409 executed with the self-disable text). The line carries `rolesMut.error ?? statusMut.error`, so a status error is hidden
 while a role error is on it (ADMIN-04).
 
@@ -12247,8 +11853,7 @@ and, on success, refetches the list (`src/hooks/useAdmin.ts:359-369`). A success
 read, and the refetch is served from the server's five-minute audit cache, so the table does not change until the job has written its table
 and the cache has expired (executed: the DOM was identical before and after a press, and the list was requested once more). While a refresh
 is in flight every `Refresh` button is disabled and every icon spins, not only the pressed row's (`:117,123`, executed). A failure shows
-above the table, raw (`:71-75`): `POST /api/admin/data-sources/strat_features_15m/refresh failed: 429 {"detail":"strat-engine was dispatched
-moments ago — wait 60s between refreshes"}` for a refused press and a line of the same shape for a 503 (both executed).
+above the table, raw (`:71-75`): `POST /api/admin/data-sources/strat_features_15m/refresh failed: 429 {"detail":"strat-engine was dispatched moments ago — wait 60s between refreshes"}` for a refused press and a line of the same shape for a 503 (both executed).
 
 What the handler does (`platform/api/routers/admin.py:1524-1580`, executed over the real router with the lease table and the Cloud Run
 client faked). It answers 404 `unknown data source '<id>'` for an id outside the registry (the `playbook_cards` row is outside it, and its
@@ -12260,14 +11865,12 @@ on `strat_features_5m` is a 429 (executed), which the page shows as raw JSON. Wi
 `projects/<project>/locations/<region>/jobs/<job>` with no override, so `strat-engine` runs its default module
 `gcp.research.strat_engine.strat_data_builder`, and answers `{id, queued: true, job_id: <execution id>}` without waiting for the run
 (`:1489-1521`); the region is `GCP_REGION` else `us-east1`, and production, which has no `GCP_REGION`, takes the default. A failing lease
-store is 503 `refresh coordination unavailable — see server logs` and nothing is dispatched (`:1550-1560`); a failing dispatch is 503 `could
-not queue <job> — see server logs`, and the lease is aged so a retry is not locked out (`:1566-1577`).
+store is 503 `refresh coordination unavailable — see server logs` and nothing is dispatched (`:1550-1560`); a failing dispatch is 503 `could not queue <job> — see server logs`, and the lease is aged so a retry is not locked out (`:1566-1577`).
 
 The nine refreshable datasets map to seven jobs: `market_data_daily` to `fetch-market-data`, `strat_features_5m`, `strat_features_15m` and
 `strat_features_30m` to `strat-engine`, `etf_options_snapshots` to `fetch-av-options-backfill`, `daily_rates` to `fetch-fred-rates`,
 `economic_events` to `fetch-economic-events`, `earnings_calendar` to `fetch-earnings-calendar` and `historical_signals` to
-`historical-signals-watchlist` (`:1261-1279`). The reason the registry gives for `market_data_intraday`, `only writer is the monthly bulk
-backfill`, is not true of the schedules (matrix Gaps), and the page never shows a reason: the button is disabled with the generic title.
+`historical-signals-watchlist` (`:1261-1279`). The reason the registry gives for `market_data_intraday`, `only writer is the monthly bulk backfill`, is not true of the schedules (matrix Gaps), and the page never shows a reason: the button is disabled with the generic title.
 
 **Needs:** `POST /api/admin/data-sources/{source_id}/refresh`; `admin_refresh_leases` (`job_name`, `dispatched_at`), which held no row in
 production on 2026-10-02 (V evidence), so no press has been accepted since the table was created, unless a row was deleted by hand: a failed
@@ -12282,8 +11885,7 @@ a 401 or a 403. Success: nothing shows (above).
 
 **Acceptance criteria:**
 - Given `market_data_daily`, whose `refreshable` is true, when its `Refresh` is pressed, then a POST goes to
-  `/api/admin/data-sources/market_data_daily/refresh`; given a dataset whose `refreshable` is false, then its button is disabled (`refresh
-  POSTs for a refreshable source; non-refreshable button is disabled`, `tests/admin/admin-tabs.spec.ts`, on main).
+  `/api/admin/data-sources/market_data_daily/refresh`; given a dataset whose `refreshable` is false, then its button is disabled (`refresh POSTs for a refreshable source; non-refreshable button is disabled`, `tests/admin/admin-tabs.spec.ts`, on main).
 - Given an id outside the registry, then 404 (`test_refresh_unknown_source_is_404`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given a
   dataset with no job, then 409 with its reason (`test_refresh_non_refreshable_is_409_with_reason`).
 - Given a refreshable dataset, then the first press dispatches its job and answers the execution id, and a second press inside the cool down
@@ -12318,8 +11920,7 @@ are asserted; the lease against a table and the dispatch against Cloud Run are n
 **Shows or does:** Three controls on each row of the routing table (`src/routes/AdminPage.tsx:239-307`, ADMIN-03): a `Provider` select (test
 id `provider-<role>`), a `Model` select (`model-<role>`, `ModelSelect`, `:317-344`) and a `Save` button (`save-<role>`). The provider select
 lists the providers of the model list in the server's order, `anthropic`, `openai`, `vertex` (`:254`). The model select lists the selected
-provider's models as `<model>`, then ` (no creds)` and a disabled option when that provider has no registered adapter, then ` ·
-$<in>/$<out>`, the USD per million input and output tokens (`:335-340`). Both start at the row's stored values and keep a draft for the row
+provider's models as `<model>`, then ` (no creds)` and a disabled option when that provider has no registered adapter, then ` · $<in>/$<out>`, the USD per million input and output tokens (`:335-340`). Both start at the row's stored values and keep a draft for the row
 in component state (`:174-206`). A change of provider re-points the model at the first model that provider lists, whether or not that option
 can be chosen (`:262-268`): on the real list, `anthropic` lands on `claude-haiku-4-5-20251001`, a disabled `(no creds)` option, with `Save`
 enabled, and a return to `vertex` lands on `gemini-2.0-flash` (executed), the first Vertex model of the list, which the schema's seed
@@ -12329,13 +11930,11 @@ differs from its stored provider or model while no save is in flight (`:208-214,
 A click sends `PUT /api/admin/routes/<role>` with `{"provider", "model"}` for that row only (`src/hooks/useAdmin.ts:207-231`) and, on
 success, clears the draft and refetches the routes, so the row shows the saved pair and `Updated` reads `<local time> · admin-ui` with
 `Save` disabled again (executed). While a save is in flight every `Save` is disabled, other dirty rows' too (executed). On a refusal the
-draft stays, so the pair can be fixed, and the server's text shows under the table, raw: `update route failed: 400 {"detail":"Provider
-'anthropic' has no registered adapter — the pipeline will crash if this route is activated. Install the SDK and set credentials first."}`
+draft stays, so the pair can be fixed, and the server's text shows under the table, raw: `update route failed: 400 {"detail":"Provider 'anthropic' has no registered adapter — the pipeline will crash if this route is activated. Install the SDK and set credentials first."}`
 (`:308-312`, executed). The click handler awaits `mutateAsync` and has no catch (`:216-225`), so a refusal is also an unhandled promise
 rejection, a `pageerror` in the browser (executed). A draft is lost when the tab is left, because the panel unmounts (executed).
 
-What the handler does (`platform/api/routers/admin.py:157-205`, executed over the real router against a faked table): 400 `unknown role:
-wizard` for a role outside the seven; then `set_route` (`lib/agents/model_routing.py:164-206`) refuses a pair outside the price table, 400
+What the handler does (`platform/api/routers/admin.py:157-205`, executed over the real router against a faked table): 400 `unknown role:wizard` for a role outside the seven; then `set_route` (`lib/agents/model_routing.py:164-206`) refuses a pair outside the price table, 400
 `vertex:gemini-imaginary is not in the known price table — add it to lib/agents/pricing.py first`, and a provider with no registered
 adapter, 400 with the text above for `anthropic`; otherwise it upserts `model_routing` stamped `admin-ui` with `updated_at` set to now,
 reads the routes back and answers the row (200 for `judge` on `vertex` `gemini-2.5-pro`); an outage at the write or the read-back is 503
@@ -12344,8 +11943,7 @@ against Vertex, so the page can save any priced Vertex model (matrix Gaps). The 
 a run and never again during it (`load_routes_snapshot`, `lib/agents/model_routing.py:209-226`, read), so a saved route applies from the
 next run.
 
-**Needs:** `GET /api/admin/models` for the options (twelve priced models, `has_credentials` true for Vertex's seven only, ADMIN-03) and `PUT
-/api/admin/routes/{role}`; `model_routing` (`role` varchar(32) primary key, `provider` varchar(32), `model` varchar(64), `updated_at`
+**Needs:** `GET /api/admin/models` for the options (twelve priced models, `has_credentials` true for Vertex's seven only, ADMIN-03) and `PUT/api/admin/routes/{role}`; `model_routing` (`role` varchar(32) primary key, `provider` varchar(32), `model` varchar(64), `updated_at`
 defaulted and refreshed by a trigger, `updated_by` varchar(64), `gcp/schema.sql:1503-1546`), which the insight producers read for each
 role's model (INSIGHTS-01). Production (V evidence, 2026-10-02): seven rows, all `vertex` `gemini-3.1-flash-lite`, updated 2026-05-12
 00:34:31 UTC by `claude-code/ab-test-restore-2026-05-12`, none by `admin-ui`, so the page has never written the production table.
@@ -12357,14 +11955,11 @@ with no adapter, `unauthorized` for a 401 or a 403, and the line is gone once a 
 the new pair and `admin-ui` (executed). A failed models list leaves the selects with nothing to choose and no message (executed, ADMIN-11).
 
 **Acceptance criteria:**
-- Given a change of the `trader` model within `vertex`, when `Save` is pressed, then `PUT /api/admin/routes/trader` carries `{provider:
-  'vertex', model: 'gemini-2.5-pro'}` (`editing a route saves via PUT and reflects the new value`, `tests/admin/admin.spec.ts`, and `admin
-  role can edit a route with no extra credential`, `tests/admin/admin-auth.spec.ts`, both on main; the body and the role, nothing about the
+- Given a change of the `trader` model within `vertex`, when `Save` is pressed, then `PUT /api/admin/routes/trader` carries `{provider:'vertex', model: 'gemini-2.5-pro'}` (`editing a route saves via PUT and reflects the new value`, `tests/admin/admin.spec.ts`, and `admin role can edit a route with no extra credential`, `tests/admin/admin-auth.spec.ts`, both on main; the body and the role, nothing about the
   row afterwards).
 - Given a change of provider to one with no credentials, then the model select shows that provider's first model with `(no creds)` and
   `Save` is enabled; given the server refuses it, then its reason shows and the row is not updated; given a credentialed pair is then saved,
-  then the refetched row shows `admin-ui` and `Save` is disabled (`a provider change re-points the model select, a refused save shows the
-  server reason and an accepted save updates the row`, `tests/admin/admin-tabs.spec.ts`, added on this branch, not on main).
+  then the refetched row shows `admin-ui` and `Save` is disabled (`a provider change re-points the model select, a refused save shows the server reason and an accepted save updates the row`, `tests/admin/admin-tabs.spec.ts`, added on this branch, not on main).
 - Given an unknown role or an unpriced model, then 400 (`test_admin_update_route_unknown_role`, `test_admin_update_route_unpriced_model`,
   [`tests/lib/test_routers_insights_admin.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/lib/test_routers_insights_admin.py), which skip in the Backtest Pipeline for want of a test Postgres); given a provider with no
   registered adapter, then 400, which the handler answered (executed) while `test_admin_update_route` in the same file expects a 200 for it
@@ -12401,16 +11996,13 @@ branch's test ran and passed in [solyra CI run 37586449560](https://github.com/T
 
 **Shows or does:** The `On-Demand Predict` section of the Models tab, `PredictForm`
 (`src/components/structure_brief/PredictForm.tsx:31-125`): a card titled `Run a structure prediction` with `Ticker` (`IWM`, `SPY`, `QQQ`,
-starting on `IWM`, test id `predict-ticker`), `Timeframe` (`5m`, `15m`, `30m`, starting on `15m`, `predict-timeframe`), `Bar timestamp
-(optional)` (a `datetime-local` input, `predict-as-of`) and a `Predict` button (`predict-submit`). A submit POSTs
+starting on `IWM`, test id `predict-ticker`), `Timeframe` (`5m`, `15m`, `30m`, starting on `15m`, `predict-timeframe`), `Bar timestamp (optional)` (a `datetime-local` input, `predict-as-of`) and a `Predict` button (`predict-submit`). A submit POSTs
 `/api/admin/strat-engine/predict` with `{"ticker", "timeframe"}` and, when the field is filled, `as_of_timestamp` set to the input's value
 as typed, `YYYY-MM-DDTHH:mm` with no zone (`:39-44`, `src/hooks/useAdmin.ts:188-204`; executed: `{"ticker":"IWM","timeframe":"15m"}` with
 the field empty and `{"ticker":"IWM","timeframe":"15m","as_of_timestamp":"2026-09-30T15:45"}` with it filled). While the request is in
-flight the button reads `Predicting…` and is disabled (`:96-113`, executed). A failure shows beside the button, raw: `predict failed:
-<status> <body>` (`:114-118`, executed with a 400 and a 503), `unauthorized` for a 401 or a 403. The answer shows as a card under the form
+flight the button reads `Predicting…` and is disabled (`:96-113`, executed). A failure shows beside the button, raw: `predict failed:<status> <body>` (`:114-118`, executed with a 400 and a 503), `unauthorized` for a 401 or a 403. The answer shows as a card under the form
 (`PredictResultCard`, `:128-226`). An answer with `available` false is a dashed card with `<ticker> · <timeframe>`, `unavailable`, the
-server's note (`No model artifact available.` when it sent none) and the scope statement, and it has no test id (executed: `No features
-available in the lookback window for IWM 15m. The strat-features tables may be stale; re-run the data build pipeline.`). An available
+server's note (`No model artifact available.` when it sent none) and the scope statement, and it has no test id (executed: `No features available in the lookback window for IWM 15m. The strat-features tables may be stale; re-run the data build pipeline.`). An available
 answer, test id `predict-result`, shows `<ticker> · <timeframe>`, `based on bar @ <ts>` with the server's ISO text as it came, then either
 the mute reason in an amber box (`model muted, ECE breach` when none came) or `next bar <P>% likely to be type <C>` with four bars, `1`,
 `2U`, `2D` and `3`, each with a whole-percent label, a class missing from `class_probs` drawn as `0%` by an unmarked `?? 0` (`:183`,
@@ -12418,8 +12010,7 @@ executed, matrix Gaps), and the footer `live ECE <x or an em-dash placeholder>`,
 the scope statement.
 
 What the server does (`platform/api/routers/admin.py:594-669`, executed over the real router and the real `predict_one` with a stub model
-and patched loaders): 400 for a ticker outside `IWM`, `SPY`, `QQQ` or a timeframe outside `5m`, `15m`, `30m`; 400 `as_of_timestamp must be
-an ISO-8601 timestamp; got '<raw>'` for a value pandas cannot read (`:380-418`, parsed before the outage guard, so it is not reported as an
+and patched loaders): 400 for a ticker outside `IWM`, `SPY`, `QQQ` or a timeframe outside `5m`, `15m`, `30m`; 400 `as_of_timestamp must be an ISO-8601 timestamp; got '<raw>'` for a value pandas cannot read (`:380-418`, parsed before the outage guard, so it is not reported as an
 outage); then `predict_one` (`gcp/research/strat_engine/strat_pred_serve.py:270-460`) loads the cell's model, answers unavailable with a
 note when there is none, decides the mute from the live-ECE snapshot before it reads any bar (`:343-354`), reads the newest bar at or before
 `as_of` within the last 30 days (`:372-380`) from `strat_features_<tf>` left-joined to `strat_features_levels_<tf>`
@@ -12442,8 +12033,7 @@ the levels tables fresh, nine served models trained 2026-05-26 and 2026-06-04 an
 placeholder for every cell and none is ever muted; `strat-engine-daily` (23:35 ET Mon-Fri) and `strat-enrich-daily` (02:00 ET Tue-Sat) were
 enabled and their newest executions had succeeded.
 
-**States:** Idle: the form, and the card of the last answer. Pending: `Predicting…`, the button disabled (ADMIN-09). Error: `predict failed:
-<status> <body>` beside the button (ADMIN-11). Unavailable: the dashed card, for a missing model or no bar in the window (ADMIN-10). Muted:
+**States:** Idle: the form, and the card of the last answer. Pending: `Predicting…`, the button disabled (ADMIN-09). Error: `predict failed:<status> <body>` beside the button (ADMIN-11). Unavailable: the dashed card, for a missing model or no bar in the window (ADMIN-10). Muted:
 the amber reason and no bars. Available: the bars and the footer. The answer is a single bar's, with no age beyond `based on bar @ <ts>` and
 `trained <date>` (ADMIN-12).
 
@@ -12553,13 +12143,11 @@ state of are ADMIN-01, ADMIN-02 and ADMIN-03, the ones whose content an empty an
   (`src/routes/AdminPage.tsx:189-190,239-307`, executed).
 - ADMIN-03, brief: an answer with no cells reads `0 / 9 cells available · 0 muted · ECE ceiling 0.050` over the three headings IWM, SPY and
   QQQ and no cell (`src/components/structure_brief/StructureBrief.tsx:154-189`, executed). The handler's answer for an absent snapshot,
-  which is production's today, is nine cells reading `unavailable` over the note `No live snapshot available. Production data source is
-  blocked behind the Track B / Track C deploy gate.`, and a snapshot that lacks a cell gives `Cell missing from snapshot.`
+  which is production's today, is nine cells reading `unavailable` over the note `No live snapshot available. Production data source is blocked behind the Track B / Track C deploy gate.`, and a snapshot that lacks a cell gives `Cell missing from snapshot.`
   (`platform/api/routers/admin.py:286-307`; the first executed over the real handler, the second read).
 - ADMIN-03, state: an answer with no cells reads `0 / 0 models trained · 0 muted · ECE ceiling 0.050 · no live ECE snapshot yet` over an
   empty table (`src/components/structure_brief/ModelStateSnapshot.tsx:37-68`, executed). That is how a storage outage reaches the page:
-  `_strat_engine_state_cells` returns no cells when the storage client cannot be built (`admin.py:486-495`, executed: 200 with `{"cells":
-  [], "ece_ceiling": 0.05}`), and marks a cell unavailable when its object cannot be read (`:516-522`, executed with every read denied: nine
+  `_strat_engine_state_cells` returns no cells when the storage client cannot be built (`admin.py:486-495`, executed: 200 with `{"cells":[], "ece_ceiling": 0.05}`), and marks a cell unavailable when its object cannot be read (`:516-522`, executed with every read denied: nine
   cells with `available` false, which the table draws as `no artifact`, read), and the brief takes the same swallowed read for an absent
   snapshot (`:262-283`, executed).
 
@@ -12571,8 +12159,7 @@ not exist.
 failed one: a storage outage reads as an empty shelf (matrix Gaps).
 
 **Acceptance criteria:**
-- Given a search that matches nothing, then `No users match this search.` shows and the table does not (`search filters rows and shows the
-  honest empty state`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given a search that matches nothing, then `No users match this search.` shows and the table does not (`search filters rows and shows the honest empty state`, `tests/admin/admin-tabs.spec.ts`, on main).
 - Given a directory with no accounts, then the counter reads `0 of 0` over `No users match this search.` (executed; no test).
 - Given an answer with no sources, then only the `all` chip and `No data sources reported for this category.` show (executed; no test).
 - Given the brief answer of nine unavailable cells, then the strip reads `0 / 9 cells available` and each cell shows its note (executed over
@@ -12581,11 +12168,8 @@ failed one: a storage outage reads as an empty shelf (matrix Gaps).
 - Given the storage client failing, then the brief and the state routes answer 200 ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins the 200,
   executed), and the page reads as above.
 
-**Tests:** On main, `search filters rows and shows the honest empty state` (`tests/admin/admin-tabs.spec.ts`) asserts `No users match this
-search.` for a search that matches nothing and the table's absence, and stocks [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `GET
-/api/admin/structure-brief` and `GET /api/admin/strat-engine/state` at 200 with the storage client failing, which is the swallowed read and
-not the empty states' text. No test on main asserts the empty category's text, an empty directory, the Model State Snapshot's `0 / 0 models
-trained` or the brief's unavailable cells. Te stays unticked: one of the page's four empty presentations is asserted.
+**Tests:** On main, `search filters rows and shows the honest empty state` (`tests/admin/admin-tabs.spec.ts`) asserts `No users match this search.` for a search that matches nothing and the table's absence, and stocks [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `GET/api/admin/structure-brief` and `GET /api/admin/strat-engine/state` at 200 with the storage client failing, which is the swallowed read and
+not the empty states' text. No test on main asserts the empty category's text, an empty directory, the Model State Snapshot's `0 / 0 models trained` or the brief's unavailable cells. Te stays unticked: one of the page's four empty presentations is asserted.
 
 **Code:** `src/components/admin/UsersPanel.tsx:93-96,120-121`, `src/components/admin/DataSourcesPanel.tsx:77-80`,
 `src/routes/AdminPage.tsx:189-190,239-307`, `src/components/structure_brief/StructureBrief.tsx:154-189,237-251`,
@@ -12598,22 +12182,17 @@ state of are ADMIN-01 to ADMIN-08, the ones whose content a failure replaces or 
 the server's status and body as it came, or `unauthorized` for a 401 or a 403 (`src/hooks/useAdmin.ts:12-15`), and nothing is worded for the
 operator:
 - ADMIN-01: a red card `Could not load users: <message>` (test id `admin-users-error`) in place of the search and the table
-  (`src/components/admin/UsersPanel.tsx:58-67`); with the handler answering 503 it read `Could not load users: GET /api/admin/users failed:
-  503 {"detail":"user directory temporarily unavailable"}` (executed).
+  (`src/components/admin/UsersPanel.tsx:58-67`); with the handler answering 503 it read `Could not load users: GET /api/admin/users failed:503 {"detail":"user directory temporarily unavailable"}` (executed).
 - ADMIN-02: a red card `Could not load data sources: <message>` (`admin-sources-error`) in place of the chips and the table
   (`src/components/admin/DataSourcesPanel.tsx:40-49`), `Could not load data sources: GET /api/admin/data-sources failed: 503 {...}`
   (executed).
-- ADMIN-03, routing: one red line (`admin-error`) in place of the section (`src/routes/AdminPage.tsx:179-187`): `The server rejected this
-  account for admin routes — sign in again, or check the admin role assignment.` for a 401 or a 403, otherwise `Failed to load routes: admin
-  routes <status>` (executed with a 503). A failed models list shows nothing and leaves every select empty (executed, matrix Gaps).
+- ADMIN-03, routing: one red line (`admin-error`) in place of the section (`src/routes/AdminPage.tsx:179-187`): `The server rejected this account for admin routes — sign in again, or check the admin role assignment.` for a 401 or a 403, otherwise `Failed to load routes: admin routes <status>` (executed with a 503). A failed models list shows nothing and leaves every select empty (executed, matrix Gaps).
 - ADMIN-03, brief and state: `Structure brief unavailable: <message>` (`src/components/structure_brief/StructureBrief.tsx:143-148`) and
   `Model state unavailable: <message>` (`src/components/structure_brief/ModelStateSnapshot.tsx:29-35`), each in a bordered box in the muted
   colour, the messages `structure brief <status>`, `state <status>` or `unauthorized` (executed with a 503 and a 403).
-- ADMIN-04 and ADMIN-05: the line above the users table (`admin-users-mutation-error`, `UsersPanel.tsx:87-91`), `PUT
-  /api/admin/users/<uid>/roles failed: <status> <body>` or `.../status failed: ...` (executed with a 422 and a 409), showing the role
+- ADMIN-04 and ADMIN-05: the line above the users table (`admin-users-mutation-error`, `UsersPanel.tsx:87-91`), `PUT/api/admin/users/<uid>/roles failed: <status> <body>` or `.../status failed: ...` (executed with a 422 and a 409), showing the role
   write's error in preference to the status write's.
-- ADMIN-06: the line above the data table (`admin-sources-refresh-error`, `DataSourcesPanel.tsx:71-75`), `POST
-  /api/admin/data-sources/<id>/refresh failed: <status> <body>` (executed with a 429 and a 503).
+- ADMIN-06: the line above the data table (`admin-sources-refresh-error`, `DataSourcesPanel.tsx:71-75`), `POST/api/admin/data-sources/<id>/refresh failed: <status> <body>` (executed with a 429 and a 503).
 - ADMIN-07: the line under the routing table (`AdminPage.tsx:308-312`), `update route failed: <status> <body>` (executed with a 400).
 - ADMIN-08: `predict failed: <status> <body>` beside the button (`PredictForm.tsx:114-118`, executed with a 400 and a 503).
 
@@ -12622,8 +12201,7 @@ was made twice). A 401 from an admin route also turns the shell's strip to `Sess
 mode, `src/lib/authedFetch.ts:158,249`, `src/components/shared/AuthStatusIndicator.tsx:43`, ADMIN-13). A failing `/api/me` reads as a
 denial, not as an error (ADMIN-13).
 
-What reaches those lines from the server (read, with the handler answers of ADMIN-01 to ADMIN-08 executed): 503 `user directory temporarily
-unavailable` and `role store temporarily unavailable` from the users routes (`platform/api/routers/admin.py:921-958,1021-1200`), 503
+What reaches those lines from the server (read, with the handler answers of ADMIN-01 to ADMIN-08 executed): 503 `user directory temporarily unavailable` and `role store temporarily unavailable` from the users routes (`platform/api/routers/admin.py:921-958,1021-1200`), 503
 `Freshness audit unavailable: <error>` or `Freshness audit in progress and no cached report is available yet. Retry shortly.` from the
 data-sources route and a 500 for an audit defect (`platform/api/routers/health.py:113-151`), 503 `model route store temporarily unavailable`
 from the route list and write (`admin.py:129-205`), 503 `strat engine temporarily unavailable` from the predict (`:660-668`), and 503
@@ -12638,8 +12216,7 @@ line (ADMIN-05).
 time has passed, read), none names a cause in words, and a write's error line is cleared only by the next write of its kind (ADMIN-04).
 
 **Acceptance criteria:**
-- Given the users request fails with a 500, then `Could not load users` shows with the server's text and the table does not (`load failure
-  surfaces a visible error, not an empty table`, `tests/admin/admin-tabs.spec.ts`, on main).
+- Given the users request fails with a 500, then `Could not load users` shows with the server's text and the table does not (`load failure surfaces a visible error, not an empty table`, `tests/admin/admin-tabs.spec.ts`, on main).
 - Given the Firebase Admin SDK is unavailable, then the users routes answer 503 with `user directory temporarily unavailable`
   (`test_users_directory_failure_is_loud_503`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py);
   `test_admin_answers_503_when_firebase_is_unavailable`, [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py), for the three user requests).
@@ -12699,8 +12276,7 @@ the age:
 
 **Acceptance criteria:**
 - Given an audit status of `warn` or `stale` for a dataset, then its row reads `stale` with the lag in the message (the handler,
-  `test_data_sources_aggregation`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py), on main; the page, `renders sources with statuses; null
-  rows/refresh render as em-dash`, `tests/admin/admin-tabs.spec.ts`, asserts the fixture's message and not the badge).
+  `test_data_sources_aggregation`, [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py), on main; the page, `renders sources with statuses; null rows/refresh render as em-dash`, `tests/admin/admin-tabs.spec.ts`, asserts the fixture's message and not the badge).
 - Given a report served as a stale copy, then the handler answers `stale` true with its age (executed;
   `test_freshness_decliner_serves_a_stale_report_rather_than_waiting`, [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py), asserts it of the shared
   report) and the page shows nothing different (executed; matrix Gaps).
@@ -12711,8 +12287,7 @@ the age:
 lag in the message; [`tests/api/test_threadpool_races.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_threadpool_races.py) asserts the shared report's stale copy
 (`test_freshness_decliner_serves_a_stale_report_rather_than_waiting`) and
 `test_a_stale_freshness_report_stays_stale_through_the_admin_view`, which asserts only that the response models declare `stale` and
-`stale_age_seconds`; solyra `dataSourceFormat.test.ts` asserts a missing or invalid time as an em-dash placeholder (`renders a missing or
-invalid timestamp as an em-dash`). No test on main asserts that the handler passes the report's `stale` on, the `stale` badge on the page or
+`stale_age_seconds`; solyra `dataSourceFormat.test.ts` asserts a missing or invalid time as an em-dash placeholder (`renders a missing or invalid timestamp as an em-dash`). No test on main asserts that the handler passes the report's `stale` on, the `stale` badge on the page or
 the Model State Snapshot's `Last Trained`. Te stays unticked: the handler's fold is asserted and no presentation of the page is.
 
 **Code:** `src/components/admin/DataSourcesPanel.tsx:98-113`, `src/components/admin/dataSourceFormat.ts:11-22`,
@@ -12725,9 +12300,7 @@ the Model State Snapshot's `Last Trained`. Te stays unticked: the handler's fold
 **Shows or does:** The permission presentations of the page. The rows it is the state of are ADMIN-01 to ADMIN-08, all of which are gated
 twice, by the page and by every route, and each bullet names its gate:
 - The page's gate: `AdminPage` mounts its tabs only when `/api/me` reports `is_admin` true (`src/routes/AdminPage.tsx:36-53`). For anyone
-  else, a failed `/api/me` included, it keeps the `h1` `Admin` and shows a card, test id `admin-denied` (`:136-151`): `Admin access
-  required` over `Admin access is granted per account: the signed-in identity must hold the admin role (assigned server-side alongside the
-  Firebase sign-in). This account doesn't. Shared admin tokens are no longer accepted.` (executed). A denied page makes no admin request
+  else, a failed `/api/me` included, it keeps the `h1` `Admin` and shows a card, test id `admin-denied` (`:136-151`): `Admin access required` over `Admin access is granted per account: the signed-in identity must hold the admin role (assigned server-side alongside the Firebase sign-in). This account doesn't. Shared admin tokens are no longer accepted.` (executed). A denied page makes no admin request
   (executed: none). While `/api/me` loads, a bare spinner shows (ADMIN-09). A `/api/me` that answers a non-OK status is retried once and
   then reads as not admin (`src/hooks/useUser.ts:58-79`), so a server failure on it shows as the verdict above (executed with a 500: two
   requests, then the card).
@@ -12736,9 +12309,7 @@ twice, by the page and by every route, and each bullet names its gate:
   first: 401 `sign in to continue` for a missing token, and each of the eleven admin routes did so without one (V evidence, 2026-10-02). In
   `iap` mode, production's, IAP in front of the service answers a 302 to Google sign-in (V evidence: the production GETs).
 - Role drift: when `/api/me` says admin and the routes disagree, as after a role is revoked, the page is mounted and each panel says so:
-  `Could not load users: unauthorized`, `Could not load data sources: unauthorized`, the routing line `The server rejected this account for
-  admin routes — sign in again, or check the admin role assignment.`, `Structure brief unavailable: unauthorized`, `Model state unavailable:
-  unauthorized`, and `unauthorized` beside `Predict` after a click (`src/hooks/useAdmin.ts:12-15`, executed with every admin route answering
+  `Could not load users: unauthorized`, `Could not load data sources: unauthorized`, the routing line `The server rejected this account for admin routes — sign in again, or check the admin role assignment.`, `Structure brief unavailable: unauthorized`, `Model state unavailable:unauthorized`, and `unauthorized` beside `Predict` after a click (`src/hooks/useAdmin.ts:12-15`, executed with every admin route answering
   403). A 401 also turns the shell's strip to `Session expired` and a 403 does not (executed in `open` auth mode). The page returns to the
   card only when `/api/me` is read again, after its 30 s.
 - The link: the shell lists `Admin` only for an admin (`src/components/layout/navConfig.ts:89`, `TopTabs.tsx:98`, `Sidebar.tsx:54`, the
@@ -12761,16 +12332,13 @@ so a role-store outage reads as a missing role: `/api/me` answered 200 with `is_
 **States:** The three above: the card, the role drift lines and the shell's strip. The card names no way to ask for access.
 
 **Acceptance criteria:**
-- Given `/api/me` says anonymous or a non-admin account, then the denied card shows and the routing table does not (`anonymous user sees the
-  access-denied card`, `non-admin email sees the access-denied card`, `tests/admin/admin-auth.spec.ts`; `non-admin account sees the
-  access-denied card, never the table`, `tests/admin/admin.spec.ts`; they assert the card's test id and the table's absence, not the card's
+- Given `/api/me` says anonymous or a non-admin account, then the denied card shows and the routing table does not (`anonymous user sees the access-denied card`, `non-admin email sees the access-denied card`, `tests/admin/admin-auth.spec.ts`; `non-admin account sees the access-denied card, never the table`, `tests/admin/admin.spec.ts`; they assert the card's test id and the table's absence, not the card's
   text).
 - Given `/api/me` fails with a 500, then the denied card shows and not the dashboard (`/api/me failure denies rather than granting`).
 - Given an admin account, then the dashboard renders and no card shows (executed on every page of this record; the tests that assert the
   dashboard are credited under ADMIN-03 and ADMIN-07).
 - Given `/api/me` says admin and the admin routes answer 403, then the users, data and routing panels each say the server rejected the
-  account and no empty table shows (`an account that /api/me calls admin, whose admin routes answer 403, sees the rejection on every tab and
-  never an empty table`, `tests/admin/admin-tabs.spec.ts`, added on this branch, not on main).
+  account and no empty table shows (`an account that /api/me calls admin, whose admin routes answer 403, sees the rejection on every tab and never an empty table`, `tests/admin/admin-tabs.spec.ts`, added on this branch, not on main).
 - Given an anonymous or a non-admin caller, then the five user and data-source requests answer 401 or 403 (`test_endpoints_require_admin`,
   [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given the `ADMIN_EMAIL` account, a stored admin, a stored user and an anonymous request,
   then `/api/me` flags them accordingly, and `is_admin_email` grants from the environment without the database, from the table, denies a
@@ -12779,9 +12347,7 @@ so a role-store outage reads as a missing role: `/api/me` answered 200 with `is_
   evidence).
 - Given the role lookup fails, then `/api/me` answers `is_admin` false for a stored admin (executed; matrix Gaps).
 
-**Tests:** On main, solyra `tests/admin/admin-auth.spec.ts` (`anonymous user sees the access-denied card`, `non-admin email sees the
-access-denied card`, `/api/me failure denies rather than granting`) and `tests/admin/admin.spec.ts` (`non-admin account sees the
-access-denied card, never the table`) assert the card's test id and the routing table's absence for an anonymous account, a non-admin one
+**Tests:** On main, solyra `tests/admin/admin-auth.spec.ts` (`anonymous user sees the access-denied card`, `non-admin email sees the access-denied card`, `/api/me failure denies rather than granting`) and `tests/admin/admin.spec.ts` (`non-admin account sees the access-denied card, never the table`) assert the card's test id and the routing table's absence for an anonymous account, a non-admin one
 and a failing `/api/me`. Stocks [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) asserts `/api/me`'s flags (`test_me_dev_role_sets_is_dev_not_is_admin`,
 `test_me_admin_role_sets_is_admin_not_is_dev`, `test_me_env_fallback_admin_without_table_row`, `test_me_plain_user_and_anonymous`) and
 `is_admin_email` over a stubbed lookup (`test_admin_env_fallback_matches_without_touching_db`, `test_admin_from_user_roles_table`,
@@ -12789,8 +12355,7 @@ and a failing `/api/me`. Stocks [`tests/api/test_platform_auth.py`](https://gith
 `test_is_admin_email_binds_against_a_real_engine` skips for want of a test Postgres), and [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)
 asserts 401 and 403 for the five user and data-source requests (`test_endpoints_require_admin`). No test on main asserts the card's text,
 that a denied page makes no admin request, a 401 or a 403 from an admin route for an account `/api/me` calls admin, or the gate of the
-route, model, brief, state and predict routes in a test that runs in CI. This branch adds `an account that /api/me calls admin, whose admin
-routes answer 403, sees the rejection on every tab and never an empty table` to `tests/admin/admin-tabs.spec.ts` (solyra `f2c6863`, not on
+route, model, brief, state and predict routes in a test that runs in CI. This branch adds `an account that /api/me calls admin, whose admin routes answer 403, sees the rejection on every tab and never an empty table` to `tests/admin/admin-tabs.spec.ts` (solyra `f2c6863`, not on
 main): it asserts the rejection text of the users, data and routing panels, the absence of their tables and of the denied card, the
 role-drift presentation that main leaves unasserted. It passed on the existing behaviour, so it was shown to fail by mutation, five changes
 to a scratch copy of the product code, one statement or block each, each failing it for the stated reason: a 403 no longer read as
@@ -12880,8 +12445,7 @@ not this box (executed on the deployed host; V evidence). It has no loading, err
 - Given the page has loaded, then the box is visible and empty and reads `Search terms...` (`search input is present`,
   `tests/help/help.spec.ts`, on main, asserts only that the first match of `input[type="text"], input[placeholder*="search" i]` is visible;
   the placeholder and the empty value are executed).
-- Given text is typed, then the list narrows as it is typed (HELP-05; `search narrows the list by term or short text, ignoring case, and
-  says when nothing matches`, `tests/help/help.spec.ts`, added on this branch, not on main; executed).
+- Given text is typed, then the list narrows as it is typed (HELP-05; `search narrows the list by term or short text, ignoring case, and says when nothing matches`, `tests/help/help.spec.ts`, added on this branch, not on main; executed).
 - Given Enter or Escape is pressed in the box, then nothing happens and the text stays (executed; no test).
 - Given the page is reloaded, or `/help?q=king` is opened, then the box is empty and all 131 entries show (executed; matrix Gaps).
 - Given only the keyboard, then from the box Tab reaches `All`, the pills and then the rows (executed; no test).
@@ -12902,8 +12466,7 @@ and ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAske
 **Shows or does:** The pill row between the box and the list (`src/routes/HelpPage.tsx:229-257`): `All (131)` first (`:231-240`, the length
 of the whole glossary), then one pill per category in the order its first entry appears in the page's array (`:200`, `:241-256`):
 `Performance (7)`, `The Strat (23)`, `Indicators (9)`, `ORB (2)`, `Options (22)`, `Earnings Brief (31)`, `Gamma Levels (12)`, `Signals (4)`,
-`Playbook (4)`, `Dashboard (4)` and `Structural Levels (13)`, which add up to 131 (executed). The categories are read from the entries (`new
-Set(glossary.map(g => g.category))`), so an entry with a new category string adds a pill and no pill can be empty (the smallest, `ORB`,
+`Playbook (4)`, `Dashboard (4)` and `Structural Levels (13)`, which add up to 131 (executed). The categories are read from the entries (`new Set(glossary.map(g => g.category))`), so an entry with a new category string adds a pill and no pill can be empty (the smallest, `ORB`,
 holds two entries). Each number counts the whole glossary and never moves with the search (executed), so with a query typed a pill can
 promise rows the list does not show. The active pill is filled with the accent colour and the others are outlined (`:233-237`, `:247-251`);
 that colour is the only cue: no pill carries `aria-pressed`, and the only `aria-*` attribute on the page's content is an icon's
@@ -12917,8 +12480,7 @@ HELP-01. It has no loading, error or stale presentation.
 
 **Acceptance criteria:**
 - Given the page has loaded, then the row reads `All (131)` and the eleven pills above, with `All` filled (executed).
-- Given any pill is clicked, then the rows shown equal its number and every row carries its category's badge (executed for all eleven; `a
-  category pill narrows the list, a second click returns to all, and another pill switches`, `tests/help/help.spec.ts`, added on this
+- Given any pill is clicked, then the rows shown equal its number and every row carries its category's badge (executed for all eleven; `a category pill narrows the list, a second click returns to all, and another pill switches`, `tests/help/help.spec.ts`, added on this
   branch, not on main, asserts the numbers of `The Strat` and `Options`, and that of `All` against the whole list).
 - Given a query that matches nothing, then the pills keep their numbers and an active pill stays active (executed; matrix Gaps).
 - Given only the keyboard, then Tab visits `All` and the pills in order and Enter or Space activates each (executed; no test).
@@ -12935,8 +12497,7 @@ this branch, and only for `The Strat` and `Options` (and for `All` against the w
 ##### HELP-03 · Glossary entries
 
 **Shows or does:** The list under the pills (`src/routes/HelpPage.tsx:259-292`): one row for each entry that passes the box and the active
-pill (HELP-05, HELP-06), in the order of the page's array and not alphabetically (the first rows are `Win Rate`, `Profit Factor` and `Total
-Return`, and the Earnings Brief entries come in two runs, `:108-114` and `:164-188`). A row (`:265-289`) is one button: the term in bold, a
+pill (HELP-05, HELP-06), in the order of the page's array and not alphabetically (the first rows are `Win Rate`, `Profit Factor` and `Total Return`, and the Earnings Brief entries come in two runs, `:108-114` and `:164-188`). A row (`:265-289`) is one button: the term in bold, a
 category badge, the one-line `short` text and a `+` marker, which turns into a minus sign when the row is open (HELP-07). There are 131
 entries with 131 distinct terms, and each opens to a non-empty detail (executed). They are literals in `buildGlossary` (`:16-190`), except
 six `detail` strings that interpolate nine values read from the indicator config: RSI (`:63`: period, oversold, overbought), EMA (`:64`: the
@@ -12956,8 +12517,7 @@ when a held read was answered (matrix Gaps).
 What the page says about the King: `King Node (★)` reads `The strike with the largest absolute net GEX in the visible window.`
 (`src/routes/HelpPage.tsx:123`) and `Gate Node (◆)` reads `A secondary high-gamma strike (≥20% of the King's |GEX|).`
 (`src/routes/HelpPage.tsx:124`). The Options Flow legend reads `kings[0]`, the lowest-strike King, which is not the largest: the executed
-measurement is in the Options Flow Gaps of the matrix (section 07, `The King chip on Swing and Trinity is the lowest-strike King, not the
-largest`) and is not repeated here. The Gamma Map's tooltip and the server's dictionary define the King in two further ways (HELP-08; matrix
+measurement is in the Options Flow Gaps of the matrix (section 07, `The King chip on Swing and Trinity is the lowest-strike King, not the largest`) and is not repeated here. The Gamma Map's tooltip and the server's dictionary define the King in two further ways (HELP-08; matrix
 Gaps).
 
 **Needs:** `GET /api/config/indicators`, gated (401 on staging and IAP's 302 on production without a token; V evidence), through
@@ -12978,10 +12538,8 @@ whole page (executed), while a missing field inside an object that is present fa
 Stale: none, the answer is held 24 hours with no marker. Permission: the sign-in screen in `firebase` mode (executed on the deployed host).
 
 **Acceptance criteria:**
-- Given the page has loaded, then it lists 131 entries and the pill numbers add up to 131 (executed; `search narrows the list by term or
-  short text, ignoring case, and says when nothing matches`, added on this branch, asserts the rows equal the `All` number).
-- Given the Gamma Levels pill is clicked, then `GEX (Gamma Exposure)`, `Gamma Flip`, `King Node (★)`, `Gate Node (◆)`, `Regime: Positive
-  Gamma` and `Regime: Negative Gamma` are visible, and under The Strat `Failed 2U`, `Failed 2D`, `22 Continuation` and `212 Reversal` are
+- Given the page has loaded, then it lists 131 entries and the pill numbers add up to 131 (executed; `search narrows the list by term or short text, ignoring case, and says when nothing matches`, added on this branch, asserts the rows equal the `All` number).
+- Given the Gamma Levels pill is clicked, then `GEX (Gamma Exposure)`, `Gamma Flip`, `King Node (★)`, `Gate Node (◆)`, `Regime: Positive Gamma` and `Regime: Negative Gamma` are visible, and under The Strat `Failed 2U`, `Failed 2D`, `22 Continuation` and `212 Reversal` are
   (`clicking the Gamma Levels pill filters the glossary` and `Failed 2U / Failed 2D entries exist under The Strat category`,
   `tests/shared/gamma-levels.spec.ts`, on main; they assert the ten terms are visible and would pass with every entry listed).
 - Given the config answers with the real handler's values, then the six rows quote them (executed; no test).
@@ -12989,15 +12547,12 @@ Stale: none, the answer is held 24 hours with no marker. Permission: the sign-in
 - Given the answer lacks the `rsi` object, then the route's error screen replaces the page (executed; matrix Gaps).
 - Given a signed-out visitor on the deployed host, then the sign-in screen shows and not the glossary (executed; V evidence).
 
-**Tests:** No test on main asserts an entry beyond ten terms: `renders Help heading` (`tests/help/help.spec.ts`) asserts the `h1`, `renders
-within perf budget (strict 3s, static page)` the load time, and `route /help loads without fatal errors` (`tests/shared/navigation.spec.ts`)
+**Tests:** No test on main asserts an entry beyond ten terms: `renders Help heading` (`tests/help/help.spec.ts`) asserts the `h1`, `renders within perf budget (strict 3s, static page)` the load time, and `route /help loads without fatal errors` (`tests/shared/navigation.spec.ts`)
 a `nav`, a `main` and a quiet console. The two Help tests of `tests/shared/gamma-levels.spec.ts` that open the pills assert the ten terms
 above and nothing of their short text, badge or detail; no test opens a row (HELP-07). The config route is pinned as a contract and not as
 thresholds: `test_operation_answers` for `GET /api/config/indicators` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) pins the status 200 with a JSON
 envelope against a dead backend (the handler reads no database), `src/mocks/contract.test.ts` checks that the request of
-`src/hooks/useConfig.ts` is a declared operation and that the shared mock's answer matches `IndicatorConfigResponse` (`every /api request
-the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no
-undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`) fails when the committed
+`src/hooks/useConfig.ts` is a declared operation and that the shared mock's answer matches `IndicatorConfigResponse` (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`) fails when the committed
 `platform/api/openapi.json`, the document solyra vendors, stops matching the route or the model; none asserts a value, and the mock differs
 from the real answer in six of 22 fields (matrix Gaps). Te stays unticked: the page layer is the presence of ten terms and the handler layer
 is a status and a shape.
@@ -13023,8 +12578,7 @@ says it is "not yet wired into any page"; no page ever imported them, and both w
 branches such as `origin/chore/ci-workflow` that main's history does not contain (this branch's tree and `origin/main` hold neither file,
 executed by `ls` and `git ls-tree`; `docs/TEST_COVERAGE_AUDIT.md` section 3 gives the forensics).
 
-The two glossaries do not agree. The Gamma Map's tooltip defines the King as `Strike where |Net GEX| ≥ 50% of max in window, primary dealer
-magnet / pin.` (`src/data/gammaMapMock.ts:256-261`), which allows several Kings; this page's `King Node (★)` entry gives the strike with the
+The two glossaries do not agree. The Gamma Map's tooltip defines the King as `Strike where |Net GEX| ≥ 50% of max in window, primary dealer magnet / pin.` (`src/data/gammaMapMock.ts:256-261`), which allows several Kings; this page's `King Node (★)` entry gives the strike with the
 largest absolute net GEX in the visible window (`src/routes/HelpPage.tsx:123`); and the dictionary that `GET /api/glossary/gamma` serves
 gives the same short definition (the strike with the largest absolute net GEX in the window) and lets several Kings coexist within 50% of
 the maximum in its long text (`lib/gamma_glossary.py:99-122`). What the Options Flow legend shows for the King is in the Options Flow Gaps
@@ -13038,8 +12592,7 @@ of the matrix (section 07). `GET /api/glossary/gamma` has no caller in solyra: i
 **Acceptance criteria:**
 - Given a term on the Gamma Map, then its span carries a `title` with the mock glossary's text for it and is neither a link nor focusable
   (executed: the attribute, no anchor and no `tabindex`; the native tooltip itself was not captured; no test).
-- Given the `Glossary` button is clicked, then the URL becomes `/help` and nothing is preselected (`Refresh refetches the grid and Glossary
-  navigates to /help`, `tests/shared/navigation.spec.ts`, on main, asserts the URL only; executed for the rest).
+- Given the `Glossary` button is clicked, then the URL becomes `/help` and nothing is preselected (`Refresh refetches the grid and Glossary navigates to /help`, `tests/shared/navigation.spec.ts`, on main, asserts the URL only; executed for the rest).
 - Given a URL that names a term, then the Help page ignores it (executed; matrix Gaps).
 - Given a `TermHover` is looked for in the tree, then none is found (executed; matrix Gaps).
 
@@ -13056,15 +12609,13 @@ which stops at the URL.
 **What happens:** `filtered` (`src/routes/HelpPage.tsx:202-206`) keeps an entry when the box is empty or the lower-cased query is contained
 in the lower-cased term or in the lower-cased `short` text, and the active pill allows its category (`matchesCat`, `:204`; HELP-06). It is a
 plain substring test: no regular expression (a typed `(` matches the 53 entries that contain one), no word boundaries, no ranking, no
-highlighting and no trimming. Executed: `king node` lists 1 entry (`King Node (★)`); `KING` and `King` list 2 (`King Node (★)` and `Gate
-Node (◆)`, whose short text says `the King's`); `★` lists 1; `2-1-2` lists `Strat Combo`, by its short text; `rsi` lists 5, the two RSI
+highlighting and no trimming. Executed: `king node` lists 1 entry (`King Node (★)`); `KING` and `King` list 2 (`King Node (★)` and `Gate Node (◆)`, whose short text says `the King's`); `★` lists 1; `2-1-2` lists `Strat Combo`, by its short text; `rsi` lists 5, the two RSI
 entries and `Iron Condor`, `MAE / MFE` and `Archetype: reversal_play`, whose short text has `rsi` inside `version`, `Excursion` and
 `reversing`; `gamma` lists 9 entries (`Gamma`, `GEX (Gamma Exposure)`, `Gamma Flip`, `Gamma Balance`, the two regimes, `Gate Node (◆)`,
 `Gamma Balance Tag (⇅)` and `Zero Gamma`) and not `King Node (★)`. A single space lists all 131 entries, ` king` lists only `Gate Node (◆)`
 and `king ` only `King Node (★)`: the query is not trimmed. What it does not read: the expanded `detail` (`oversold` and `Rob Smith` list
 nothing, though the RSI, StochRSI and The Strat entries contain them) and the category (`Structural Levels` lists the 2 entries whose short
-text says so, not the 13 of the category). With a pill active it narrows within the category (executed: `The Strat` with `gap` lists `Gap
-High / Gap Low`, and with the pill cleared 5 entries match `gap`). The list changes on each keystroke, and the pills' numbers do not move
+text says so, not the 13 of the category). With a pill active it narrows within the category (executed: `The Strat` with `gap` lists `Gap High / Gap Low`, and with the pill cleared 5 entries match `gap`). The list changes on each keystroke, and the pills' numbers do not move
 (executed).
 
 **Needs:** Nothing but the entries (HELP-03); no request.
@@ -13072,8 +12623,7 @@ High / Gap Low`, and with the pill cleared 5 entries match `gap`). The list chan
 **States:** A result is the list of HELP-03; no match is HELP-04. Behind sign-in as HELP-01.
 
 **Acceptance criteria:**
-- Given `GATE NODE` is typed, then `Gate Node (◆)` is listed, `Win Rate` is gone and every row left contains the query in any case (`search
-  narrows the list by term or short text, ignoring case, and says when nothing matches`, `tests/help/help.spec.ts`, added on this branch,
+- Given `GATE NODE` is typed, then `Gate Node (◆)` is listed, `Win Rate` is gone and every row left contains the query in any case (`search narrows the list by term or short text, ignoring case, and says when nothing matches`, `tests/help/help.spec.ts`, added on this branch,
   not on main).
 - Given `King Node` is typed, then `King Node (★)` is visible (`search "King Node" returns the gamma entry`,
   `tests/shared/gamma-levels.spec.ts`, on main; it asserts only that the entry is visible).
@@ -13106,23 +12656,20 @@ and a reload clears it (executed).
 **States:** A pill never empties the list on its own, since each category holds at least two entries (HELP-04). Behind sign-in as HELP-01.
 
 **Acceptance criteria:**
-- Given a pill is clicked, then only its category's rows show and their number equals the pill's (`a category pill narrows the list, a
-  second click returns to all, and another pill switches`, `tests/help/help.spec.ts`, added on this branch, not on main, for `The Strat` and
+- Given a pill is clicked, then only its category's rows show and their number equals the pill's (`a category pill narrows the list, a second click returns to all, and another pill switches`, `tests/help/help.spec.ts`, added on this branch, not on main, for `The Strat` and
   `Options`; executed for all eleven).
 - Given the active pill is clicked again, then every row returns and `All` is filled (the added test; executed for all eleven).
 - Given another pill is clicked while one is active, then it replaces the first (the added test).
 - Given `All` is clicked with a category active, then every row returns, and a query in the box stays (the added test asserts the rows; the
   query kept is executed).
 - Given the Gamma Levels pill is clicked, then `GEX (Gamma Exposure)`, `Gamma Flip`, `King Node (★)`, `Gate Node (◆)` and the two regime
-  entries are visible, and under The Strat `Failed 2U`, `Failed 2D`, `22 Continuation` and `212 Reversal` are (`clicking the Gamma Levels
-  pill filters the glossary` and `Failed 2U / Failed 2D entries exist under The Strat category`, `tests/shared/gamma-levels.spec.ts`, on
+  entries are visible, and under The Strat `Failed 2U`, `Failed 2D`, `22 Continuation` and `212 Reversal` are (`clicking the Gamma Levels pill filters the glossary` and `Failed 2U / Failed 2D entries exist under The Strat category`, `tests/shared/gamma-levels.spec.ts`, on
   main).
 
 **Tests:** The two tests on main click a pill and assert that ten terms are visible; neither asserts that another entry is hidden, a count,
 a second click, a switch or `All`. With a pill that never filters (mutation: `matchesCat = true` at `src/routes/HelpPage.tsx:204`) all seven
 Help tests on main stay green. The added test fails under that mutation, under a second click that does not return to all
-(`setActiveCategory(cat)` at `:246`), under a click that does not replace the active pill, under an `All` that does nothing (`onClick={() =>
-{}}` at `:232`) and under a pill that announces one entry too many (`.length + 1` at `:242`). Te is ticked: the assertions that matter are in the added test, which ran
+(`setActiveCategory(cat)` at `:246`), under a click that does not replace the active pill, under an `All` that does nothing (`onClick={() => {}}` at `:232`) and under a pill that announces one entry too many (`.length + 1` at `:242`). Te is ticked: the assertions that matter are in the added test, which ran
 and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866) (head db678a4, 2026-10-07) (matrix Gaps).
 
 **Code:** `src/routes/HelpPage.tsx:194,200,204,229-257`.
@@ -13148,15 +12695,13 @@ lacking an object the page reads replaces the whole page before any row can be o
 - Given a row is clicked, then its detail shows and the marker reads a minus sign (executed; no test).
 - Given the same row is clicked again, or another row is clicked, then its detail goes (executed; no test).
 - Given a row has focus, then Enter opens it and Space closes it (executed; no test).
-- Given the RSI row is opened with the real handler's answer, then it reads `Below 30 = oversold` and `RSI 14 (14-period)`, StochRSI `Below
-  30 = oversold. Above 70 = overbought` and Signal Score `A score of 3/5 is the minimum` (executed; no test).
+- Given the RSI row is opened with the real handler's answer, then it reads `Below 30 = oversold` and `RSI 14 (14-period)`, StochRSI `Below 30 = oversold. Above 70 = overbought` and Signal Score `A score of 3/5 is the minimum` (executed; no test).
 - Given the config read has failed, then those rows quote the fallbacks and nothing says so (executed; matrix Gaps).
 - Given a screen reader, then whether a row is open is not announced (executed; matrix Gaps).
 
 **Tests:** No test on main or on this branch opens a row: the specs and the Vitest files hold no assertion on an expanded detail or on the
 marker, and with an entry click that expands nothing (mutation: `onClick={() => {}}` at `src/routes/HelpPage.tsx:267`) all seven Help tests
-on main and the two added tests stay green. The config route is pinned as in HELP-03: `test_operation_answers` for `GET
-/api/config/indicators` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) pins the status, `src/mocks/contract.test.ts` and
+on main and the two added tests stay green. The config route is pinned as in HELP-03: `test_operation_answers` for `GET/api/config/indicators` ([`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py)) pins the status, `src/mocks/contract.test.ts` and
 [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) pin the declaration and the shape, and none asserts a value. Te stays unticked: no test asserts the row
 at either layer.
 
@@ -13164,8 +12709,7 @@ at either layer.
 
 ##### HELP-04 · State: empty (no entry matches)
 
-**Shows or does:** When no entry passes the box and the active pill, the list is replaced by one centred paragraph, `No matching terms
-found.` (`src/routes/HelpPage.tsx:261-262`: `py-8 text-center text-sm`, muted colour). The box and the pills stay as they were: the numbers
+**Shows or does:** When no entry passes the box and the active pill, the list is replaced by one centred paragraph, `No matching terms found.` (`src/routes/HelpPage.tsx:261-262`: `py-8 text-center text-sm`, muted colour). The box and the pills stay as they were: the numbers
 still count the whole glossary, `All (131)` stays filled when no category is active, and an active category pill stays active (executed).
 The message names neither the query nor the active category, offers no clear button or link back, and sits in no `aria-live` region
 (executed: no `role=alert`, no `aria-live`, no button in the list region), so a screen reader is not told that the list emptied. It can only
@@ -13181,8 +12725,7 @@ emptied).
 is no loading, error or stale form of it.
 
 **Acceptance criteria:**
-- Given a query that matches no term or short text, such as `zzzz-no-such-term`, then `No matching terms found.` replaces every row (`search
-  narrows the list by term or short text, ignoring case, and says when nothing matches`, `tests/help/help.spec.ts`, added on this branch,
+- Given a query that matches no term or short text, such as `zzzz-no-such-term`, then `No matching terms found.` replaces every row (`search narrows the list by term or short text, ignoring case, and says when nothing matches`, `tests/help/help.spec.ts`, added on this branch,
   not on main; executed).
 - Given the box is emptied afterwards, then the 131 rows return and the message goes (the same test; executed).
 - Given a category is active and the query matches only other categories (`ORB` active, `king` typed), then the same message shows and the
@@ -13266,8 +12809,7 @@ In every body below, "executed" means one of three things, named where a body ne
 **Shows or does:** The first of the page's five tabs and the one it opens on (`src/routes/SettingsPage.tsx:124,219-298`). All five share one
 strip, a `role="tablist"` labelled `Settings sections` holding five `role="tab"` buttons with `aria-selected` on the open one
 (`:36-43,197-217`); there is no `tabpanel`, no `aria-controls` and no roving focus, and the arrow keys do not move between the tabs while
-Tab then Enter does (executed; matrix Gaps). Above the strip the page keeps an `h1` `Settings`, the line `Your profile, appearance and
-trading defaults. Saved to your account, so they follow you to any device.` and the status line of SETTINGS-09 to SETTINGS-12 (`:174-195`).
+Tab then Enter does (executed; matrix Gaps). Above the strip the page keeps an `h1` `Settings`, the line `Your profile, appearance and trading defaults. Saved to your account, so they follow you to any device.` and the status line of SETTINGS-09 to SETTINGS-12 (`:174-195`).
 
 The tab holds two sections and the save bar of SETTINGS-07 (`:296`):
 - `Your account` (`Identity from your sign-in, plus how you appear in the app.`, `:221-261`): a round avatar holding one letter, the name,
@@ -13314,8 +12856,7 @@ Permission: a signed-out visitor never reaches the tab (SETTINGS-13).
 - Given the page opens, then the heading `Settings` and the five tabs show, `Profile` is the selected tab and the `Your account` section
   shows (`renders the five tabs, lands on Profile, and reports synced once hydrated`, `tests/settings/settings.spec.ts`, on main).
 - Given a stored profile and an admin account, then the avatar, the name, the email, one `Admin` badge and each stored value show (executed;
-  no test on main applies a stored profile, every settings spec answers `{}`; the branch's `Discard returns the draft to the stored values
-  and persists nothing` asserts the Display name only).
+  no test on main applies a stored profile, every settings spec answers `{}`; the branch's `Discard returns the draft to the stored values and persists nothing` asserts the Display name only).
 - Given nothing is stored, then the boxes are empty with `Not set`, the avatar reads `?` or the email's letter and the switch is off
   (executed; no test).
 - Given the user types in `Display name`, then the avatar and the name follow the draft before any save (executed; no test).
@@ -13327,15 +12868,12 @@ Permission: a signed-out visitor never reaches the tab (SETTINGS-13).
 
 **Tests:** On main, `tests/settings/settings.spec.ts` `renders the five tabs, lands on Profile, and reports synced once hydrated` asserts
 the heading, the five tab names, `aria-selected` on `Profile`, the `Your account` section and the `Synced to your account.` line; it answers
-every read with nothing stored and asserts no field, no value and no identity block. `editing the draft marks it dirty; Save PUTs only the
-diff and confirms` and `a failed save is rendered, never reported as saved (Rule 4)` type into Display name only. The handler is asserted by
+every read with nothing stored and asserts no field, no value and no identity block. `editing the draft marks it dirty; Save PUTs only the diff and confirms` and `a failed save is rendered, never reported as saved (Rule 4)` type into Display name only. The handler is asserted by
 [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) (the three GET tests above) and pinned by [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`GET /api/me/profile`
 answers 503 against a dead backend, `GET /api/me` 200), and `/api/me`'s flags by [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)
 (`test_me_dev_role_sets_is_dev_not_is_admin`, `test_me_admin_role_sets_is_admin_not_is_dev`, `test_me_env_fallback_admin_without_table_row`,
-`test_me_plain_user_and_anonymous`); the three pytest files run in the lean CI job. `src/mocks/contract.test.ts` checks that the app's `GET
-/api/me/profile` and `GET /api/me` are declared operations (`every /api request the app makes (verb + path) is a declared operation`) and
-that their mock answers, `MOCK_PROFILE` and `MOCK_ME_DEV`, carry no field the schema does not declare (`every mock payload for a typed 200
-response matches its response schema (no undeclared fields)`; Vitest; the contract, not the page). [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in
+`test_me_plain_user_and_anonymous`); the three pytest files run in the lean CI job. `src/mocks/contract.test.ts` checks that the app's `GET/api/me/profile` and `GET /api/me` are declared operations (`every /api request the app makes (verb + path) is a declared operation`) and
+that their mock answers, `MOCK_PROFILE` and `MOCK_ME_DEV`, carry no field the schema does not declare (`every mock payload for a typed 200 response matches its response schema (no undeclared fields)`; Vitest; the contract, not the page). [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in
 the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `ProfileResponse` or to `MeResponse` is caught there; it
 asserts nothing about a handler or the page. Te stays unticked: no test on main asserts a stored profile, the identity block or any field
@@ -13350,8 +12888,7 @@ but Display name.
 **Shows or does:** The second tab (`src/routes/SettingsPage.tsx:300-369`): four sections, each a single-selection control, and no save bar
 (each control acts at once, SETTINGS-06). `Theme` (`Light or dark color scheme (also toggleable from the header).`) holds the radios `Dark`
 and `Light` (`:302-316`); `Navigation` (`Top tab bar or a left sidebar for the primary nav.`) holds `Tabs` and `Sidebar` (`:318-333`);
-`Density` (`Spacing and sizing across tables and cards.`) holds `Comfy`, `Default` and `Dense` (`:335-350`); `Accent` (`Highlight color for
-active state, links, and charts.`) holds twelve round swatches with no text, each named only by its `aria-label` (`dawn`, `blue`, `amber`,
+`Density` (`Spacing and sizing across tables and cards.`) holds `Comfy`, `Default` and `Dense` (`:335-350`); `Accent` (`Highlight color for active state, links, and charts.`) holds twelve round swatches with no text, each named only by its `aria-label` (`dawn`, `blue`, `amber`,
 `violet`, `cyan`, `teal`, `pink`, `magenta`, `orange`, `yellow`, `indigo`, `rose`) and pressed when it is the current accent (`:352-367`;
 the colours are `ACCENT_SWATCH`, `:30-34`, and the list is `ACCENTS`, `src/stores/settingsStore.ts:20-33`). A group cannot be emptied:
 clicking the selected radio keeps it selected and sends nothing (`disallowEmptySelection`; executed: a Sidebar click, a Tabs click and a
@@ -13383,11 +12920,9 @@ and the local values still apply (SETTINGS-11). Stale: the stored values are app
 SETTINGS-13.
 
 **Acceptance criteria:**
-- Given the Appearance tab, when `Light` is chosen, then `html[data-theme]` reads `light` and the write carries `{theme: 'light',
-  nav_pattern: 'top-tabs', density: 'dense', accent: 'dawn'}` (`theme toggle applies data-theme and writes through`,
+- Given the Appearance tab, when `Light` is chosen, then `html[data-theme]` reads `light` and the write carries `{theme: 'light', nav_pattern: 'top-tabs', density: 'dense', accent: 'dawn'}` (`theme toggle applies data-theme and writes through`,
   `tests/settings/settings.spec.ts`, on main).
-- Given `Sidebar` is chosen, then `platform-shell-settings` holds `navPattern: 'sidebar'` and the write carries `{theme: 'dark',
-  nav_pattern: 'sidebar', density: 'dense', accent: 'dawn'}` (`navigation toggle persists the shell choice and writes through`), and the
+- Given `Sidebar` is chosen, then `platform-shell-settings` holds `navPattern: 'sidebar'` and the write carries `{theme: 'dark', nav_pattern: 'sidebar', density: 'dense', accent: 'dawn'}` (`navigation toggle persists the shell choice and writes through`), and the
   shell becomes a sidebar at once (executed: an `aside` appears and goes with `Tabs`; the test does not assert the shell).
 - Given `Comfy` and then `violet`, then `<body>` carries `density-comfy` and then `accent-violet` and each write carries all four fields
   (`density and accent picks land on <body> and write through`).
@@ -13402,9 +12937,7 @@ SETTINGS-13.
 - Given no stored settings, then the store starts at `top-tabs`, `dense` and `dawn` with those classes on `<body>`, a partial stored object
   is merged over the defaults and corrupt JSON falls back to them (`defaults to top-tabs / dense / dawn and applies the body classes`,
   `merges a PARTIAL persisted object over the defaults`, `falls back to defaults on corrupt stored JSON (user preference, not data)`,
-  `src/stores/settingsStore.test.ts`); the theme defaults to dark, honours a stored `light` and ignores a corrupt value (`defaults to dark
-  regardless of OS preference (product default)`, `honors an explicitly stored light choice`, `ignores a corrupt stored value and falls back
-  to dark`, `src/stores/themeStore.test.ts`).
+  `src/stores/settingsStore.test.ts`); the theme defaults to dark, honours a stored `light` and ignores a corrupt value (`defaults to dark regardless of OS preference (product default)`, `honors an explicitly stored light choice`, `ignores a corrupt stored value and falls back to dark`, `src/stores/themeStore.test.ts`).
 
 **Tests:** On main, the three `tests/settings/settings.spec.ts` tests above each wait for `Synced to your account.`, open the tab, click a
 radio or a swatch by name and assert the effect (`html[data-theme]`, `<body>` classes, the `localStorage` key) and the last write's payload;
@@ -13415,11 +12948,8 @@ no residue and persisting the triple, `setAccent`, `setNavPattern`; `src/stores/
 [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) (404, a stored row with its nulls intact, 503, the partial upsert, the explicit null, the empty body,
 five 422 cases, the unknown field, 503 on write, the 401 fail-closed and the normalized owner) and pinned by
 [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`GET /api/me/preferences` 503 against a dead backend; `PUT` 422 with `body_ran=False`, so its body never
-reaches the handler's own code). `src/mocks/contract.test.ts` checks that both verbs are declared operations (`every /api request the app
-makes (verb + path) is a declared operation`), that the mock answers, `MOCK_PREFERENCES_EMPTY` for the `GET` (a 200 with all-null fields,
-not the 404) and the echo for the `PUT`, match the response schema (`every mock payload for a typed 200 response matches its response schema
-(no undeclared fields)`) and that the four-field `PUT` sample matches the request schema (`every request body the app sends matches its
-operation request schema`): the contract, not the page. [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed
+reaches the handler's own code). `src/mocks/contract.test.ts` checks that both verbs are declared operations (`every /api request the app makes (verb + path) is a declared operation`), that the mock answers, `MOCK_PREFERENCES_EMPTY` for the `GET` (a 200 with all-null fields,
+not the 404) and the echo for the `PUT`, match the response schema (`every mock payload for a typed 200 response matches its response schema (no undeclared fields)`) and that the four-field `PUT` sample matches the request schema (`every request body the app sends matches its operation request schema`): the contract, not the page. [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed
 `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `PreferencesResponse` or to `PreferencesUpdate` is caught
 there; it asserts nothing about a handler or the page. Te is ticked: the controls, their effect and their write are asserted on the page,
@@ -13436,8 +12966,7 @@ names and a no-op re-click, is in the matrix Gaps.
 - `Defaults` (`What loads first on the charts, options and signals pages.`, `:373-398`): `Default ticker` (text, placeholder `Not set`;
   whatever is typed is upper-cased and blank becomes null, `:375-384`; nothing checks that it is a ticker, and the server takes 16
   characters) and `Default timeframe` (a select: `Not set`, `1D`, `5D`, `1M`, `3M`, `6M`, `1Y`, `:385-396`).
-- `Risk` (`Used to pre-fill position sizing in the journal and playbook.`, `:400-421`): `Account size (USD)` (hint `Left blank means no
-  sizing suggestion is shown.`) and `Risk per trade (%)`, both text boxes with `inputMode="decimal"` and the placeholder `Not set`
+- `Risk` (`Used to pre-fill position sizing in the journal and playbook.`, `:400-421`): `Account size (USD)` (hint `Left blank means no sizing suggestion is shown.`) and `Risk per trade (%)`, both text boxes with `inputMode="decimal"` and the placeholder `Not set`
   (`:402-419`). Every keystroke goes through `parseNum` (`:90-94`): blank becomes null, anything `Number()` cannot read becomes null and a
   finite number stays a number, and the box then shows `numValue` of the draft (`:85-87`, `:406`, `:415`), so a stored `0` shows `0` and
   null shows empty (executed with a stored `0` and a stored `1.5`).
@@ -13446,8 +12975,7 @@ The page uses none of these values: no page loads a default ticker or a default 
 risk (read: no module of the app reads a profile field outside this page; matrix Gaps).
 
 Typing a number key by key does not give the number typed (executed in Chromium with real key events). Into `Risk per trade (%)`, `1.5`
-produced `15` and `0.5` produced `5`: the point is lost, because `1.` parses as 1 and the controlled box is set back to `1`. Into `Account
-size (USD)`, `25000` then `x` emptied the box, `-5` produced `5`, `1e3` produced `3` and `1,000` produced `0`. With a stored 25000, one
+produced `15` and `0.5` produced `5`: the point is lost, because `1.` parses as 1 and the controlled box is set back to `1`. Into `Account size (USD)`, `25000` then `x` emptied the box, `-5` produced `5`, `1e3` produced `3` and `1,000` produced `0`. With a stored 25000, one
 stray `k` emptied the box and `Save changes` sent `{"account_size": null}`, which clears the stored value; the typed `1.5` saved as
 `{"risk_per_trade_pct": 15}`. A whole value filled at once (`1.5`) is read correctly (matrix Gaps).
 
@@ -13469,8 +12997,7 @@ The tab is not ticked at V: its data is a signed-in user's row behind a gated ro
 
 **Acceptance criteria:**
 - Given a stored profile with `account_size` 0 and `risk_per_trade_pct` 1.5, then the boxes show `0` and `1.5` (executed; no test).
-- Given `iwm` is typed into `Default ticker`, then the box shows `IWM`; given `Default timeframe` is set to `Not set` or `Account size
-  (USD)` is cleared, then Save sends `null` for that field (executed; no test).
+- Given `iwm` is typed into `Default ticker`, then the box shows `IWM`; given `Default timeframe` is set to `Not set` or `Account size (USD)` is cleared, then Save sends `null` for that field (executed; no test).
 - Given `1.5` is typed key by key into `Risk per trade (%)`, then the box reads `15` and Save sends 15 (executed; a defect, matrix Gaps);
   given `1.5` is pasted, then it reads `1.5`.
 - Given a stored account size and one stray character typed into the box, then the box empties and Save sends `account_size: null`
@@ -13488,8 +13015,7 @@ The tab is not ticked at V: its data is a signed-in user's row behind a gated ro
 
 **Tests:** No Playwright test opens this tab: the profile specs type into Display name only. Vitest `src/mocks/contract.test.ts` checks that
 both profile verbs are declared operations (`every /api request the app makes (verb + path) is a declared operation`), that the mock
-answers, `MOCK_PROFILE` for the `GET` and the echo for the `PUT`, match the response schema (`every mock payload for a typed 200 response
-matches its response schema (no undeclared fields)`), that the `PUT /api/me/profile` request samples, dense and sparse, validate against the
+answers, `MOCK_PROFILE` for the `GET` and the echo for the `PUT`, match the response schema (`every mock payload for a typed 200 response matches its response schema (no undeclared fields)`), that the `PUT /api/me/profile` request samples, dense and sparse, validate against the
 request schema and that the dense one carries every profile field (`every request body the app sends matches its operation request schema`,
 `the profile sample covers every field a partial update can send`). The handler is asserted by [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) (the tests
 above, run in the lean CI job). [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed
@@ -13538,8 +13064,7 @@ SETTINGS-12. Permission: SETTINGS-13.
 
 **Tests:** No Playwright test opens this tab. The handler is asserted by [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) (the 422 above and the partial
 upsert, in the lean CI job), and `src/mocks/contract.test.ts` checks that both profile verbs are declared operations and that their mock
-answers match the response schema (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed
-200 response matches its response schema (no undeclared fields)`) and that the sparse request sample `{notify_daily_digest: false}` matches
+answers match the response schema (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`) and that the sparse request sample `{notify_daily_digest: false}` matches
 the request schema (`every request body the app sends matches its operation request schema`); [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the
 lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either profile route, to `ProfileResponse` or to `ProfileUpdate` is caught
@@ -13562,14 +13087,12 @@ definition list of three rows (`:456-471`) and `Session` with the Sign out butto
   answers a fake dev admin, so the tab then shows `dev@mock.solyra` and `Admin` (executed with an `is_dev` answer;
   `src/mocks/common.ts:41-45`).
 
-The tab has no state of its own. While `/api/me` is pending, and after it fails, in `open` and `iap` mode, the rows read `Email —` and `Role
-Member` with nothing marking the wait or the failure (executed: with the request held, then answering 500; matrix Gaps). In `firebase` mode
+The tab has no state of its own. While `/api/me` is pending, and after it fails, in `open` and `iap` mode, the rows read `Email —` and `Role Member` with nothing marking the wait or the failure (executed: with the request held, then answering 500; matrix Gaps). In `firebase` mode
 `AuthGate` stands in front of the page until `/api/me` has answered (`src/components/auth/AuthGate.tsx:19-25`), and when it keeps failing
 the gate never settles: the app showed a spinner with a flash of the page about every second, 13 requests in 7 s, and never the tab or the
 sign-in screen (executed with a 500 for a signed-in account; AuthGate's behaviour found while checking this row; matrix Gaps).
 
-Executed: `open` mode and an admin `/api/me` read `Email trader@example.test`, `Auth mode open`, `Role Admin`; an anonymous one read `Email
-—`, `Auth mode open`, `Role Member`; `iap` mode and a non-admin read `Auth mode iap`, `Role Member`; `firebase` mode, signed in as a
+Executed: `open` mode and an admin `/api/me` read `Email trader@example.test`, `Auth mode open`, `Role Admin`; an anonymous one read `Email —`, `Auth mode open`, `Role Member`; `iap` mode and a non-admin read `Auth mode iap`, `Role Member`; `firebase` mode, signed in as a
 non-admin, read `Auth mode firebase`, `Role Member`.
 
 **Needs:** `GET /api/me` through `useUser` (`src/hooks/useUser.ts:50-85`: keyed by the uid, 30 s, one retry; in `firebase` mode only once
@@ -13607,8 +13130,7 @@ asserted by the four `test_me_*` tests of [`tests/api/test_platform_auth.py`](ht
 `test_firebase_requires_valid_token` on a stub app, and the route's status is pinned by [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py). The shapes are
 pinned by `src/mocks/contract.test.ts`, which checks that `GET /api/me` (requested by `src/hooks/useUser.ts`) and `GET /api/config/firebase`
 (requested by `src/components/auth/ConfigGate.tsx`) are declared operations and that their mock answers, `MOCK_ME_DEV` and
-`MOCK_FIREBASE_CONFIG_OPEN`, match the response schemas (`every /api request the app makes (verb + path) is a declared operation`, `every
-mock payload for a typed 200 response matches its response schema (no undeclared fields)`; Vitest), and by
+`MOCK_FIREBASE_CONFIG_OPEN`, match the response schemas (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`; Vitest), and by
 [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors,
 stops matching the one the app generates (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `MeResponse` or to
 `RuntimeConfigResponse` is caught there; neither asserts what the tab shows. Te stays unticked: the page layer is asserted by nothing.
@@ -13656,12 +13178,9 @@ identity. The answer replaces the cached read (`onSuccess: setQueryData`, `src/h
 Permission: SETTINGS-13.
 
 **Acceptance criteria:**
-- Given the Appearance tab, when a control is chosen, then its effect shows at once and the write carries all four fields (`theme toggle
-  applies data-theme and writes through`, `navigation toggle persists the shell choice and writes through`, `density and accent picks land
-  on <body> and write through`, `tests/settings/settings.spec.ts`, on main).
+- Given the Appearance tab, when a control is chosen, then its effect shows at once and the write carries all four fields (`theme toggle applies data-theme and writes through`, `navigation toggle persists the shell choice and writes through`, `density and accent picks land on <body> and write through`, `tests/settings/settings.spec.ts`, on main).
 - Given the stored values arrive, then none is written back (executed; no test).
-- Given the write is refused, then the header says so and the pick stays applied (executed; `a failed profile read and a failed appearance
-  write are each announced, never swallowed (Rule 4)` asserts it, added on this branch, not on main); it is not retried, the next change
+- Given the write is refused, then the header says so and the pick stays applied (executed; `a failed profile read and a failed appearance write are each announced, never swallowed (Rule 4)` asserts it, added on this branch, not on main); it is not retried, the next change
   sends all four values again, and a new session applies the stored values over the pick (executed; matrix Gaps).
 - Given a pick made while the stored values load, then it is reverted or never stored (executed; matrix Gaps).
 - Given a partial body, then one upsert sets only the provided columns and returns the row, an explicit null clears one, an empty body
@@ -13674,19 +13193,14 @@ Permission: SETTINGS-13.
   only bound parameter); the owner is the verified identity, lower-cased (`test_owner_is_the_server_verified_identity`) and a `firebase`
   request with none is 401 (`test_firebase_mode_without_identity_fails_closed_401`).
 - Given a store change, then it applies and persists (`toggleTheme flips, applies, and persists on every flip`,
-  `src/stores/themeStore.test.ts`; `setDensity swaps the body class with NO stale residue and persists the triple`, `setAccent swaps only
-  the accent class and keeps the current density`, `setNavPattern persists without touching the body classes`,
-  `src/stores/settingsStore.test.ts`), and the payload is the snake_case contract (`maps local store state to the snake_case server
-  contract`, `src/hooks/usePreferences.test.ts`).
+  `src/stores/themeStore.test.ts`; `setDensity swaps the body class with NO stale residue and persists the triple`, `setAccent swaps only the accent class and keeps the current density`, `setNavPattern persists without touching the body classes`,
+  `src/stores/settingsStore.test.ts`), and the payload is the snake_case contract (`maps local store state to the snake_case server contract`, `src/hooks/usePreferences.test.ts`).
 
 **Tests:** The tests above, on main: the three page tests assert each control's effect and the last payload (they do not assert that nothing
 was written before the click, the three skips, a refused write or a pick during loading), the Vitest files assert the stores and the payload
-mapping, [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) the handler (in the lean CI job), and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `PUT
-/api/me/preferences` at 422 with `body_ran=False`, so its body never reaches the handler's code. `src/mocks/contract.test.ts` checks that
+mapping, [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) the handler (in the lean CI job), and [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) pins `PUT/api/me/preferences` at 422 with `body_ran=False`, so its body never reaches the handler's code. `src/mocks/contract.test.ts` checks that
 `PUT /api/me/preferences` is a declared operation (`every /api request the app makes (verb + path) is a declared operation`), that its mock
-answer, the echo, matches the response schema (`every mock payload for a typed 200 response matches its response schema (no undeclared
-fields)`) and that the four-field sample matches the request schema (`every request body the app sends matches its operation request
-schema`): the contract, not the page. [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed
+answer, the echo, matches the response schema (`every mock payload for a typed 200 response matches its response schema (no undeclared fields)`) and that the four-field sample matches the request schema (`every request body the app sends matches its operation request schema`): the contract, not the page. [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed
 `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to the route, to `PreferencesResponse` or to `PreferencesUpdate` is caught
 there; it asserts nothing about a handler or the page. Te is ticked: the write-through is asserted on the page, in the stores and in the
@@ -13709,8 +13223,7 @@ differs from the stored profile) and one status line. The bar is sticky at the b
   `src/hooks/useProfile.ts:83-91`). While the request is in flight it reads `Saving…` and is disabled, `Discard` is disabled, the boxes stay
   editable and the status line still reads `Unsaved changes.` (executed). On success the answer, the full stored row, becomes the stored
   profile and the draft is re-seeded from it (`onSuccess: setQueryData`, `src/hooks/useProfile.ts:103-106`,
-  `src/routes/SettingsPage.tsx:133-137`), and the line reads `Saved.` until the next edit (executed). On failure the line reads `Could not
-  save your profile (HTTP <status>)` in red and never `Saved.` (executed with 500 and 422).
+  `src/routes/SettingsPage.tsx:133-137`), and the line reads `Saved.` until the next edit (executed). On failure the line reads `Could not save your profile (HTTP <status>)` in red and never `Saved.` (executed with 500 and 422).
 - `Discard` (`src/routes/SettingsPage.tsx:157-161`) sets the draft to the stored profile and persists nothing (executed with a stored
   profile: after an edit and Discard the box read the stored value again, `Discard` and the dirty line were gone, `Save changes` was
   disabled, no request had been sent and the next Save carried only its own field).
@@ -13737,8 +13250,7 @@ Permission: a 401 shows as the same error (SETTINGS-13).
 **Acceptance criteria:**
 - Given an edit, then `Unsaved changes.` shows and `Save changes` is enabled; given Save, then only the changed field is sent and `Saved.`
   shows (`editing the draft marks it dirty; Save PUTs only the diff and confirms`, `tests/settings/settings.spec.ts`, on main).
-- Given the save fails with a 500, then the error text shows and `Saved.` does not (`a failed save is rendered, never reported as saved
-  (Rule 4)`, same file, on main).
+- Given the save fails with a 500, then the error text shows and `Saved.` does not (`a failed save is rendered, never reported as saved (Rule 4)`, same file, on main).
 - Given a stored profile, an edit and Discard, then the draft returns to the stored values, the bar is quiet, `Save changes` is disabled and
   the next save carries only its own field (`Discard returns the draft to the stored values and persists nothing`, same file, added on this
   branch, not on main).
@@ -13757,9 +13269,7 @@ Permission: a 401 shows as the same error (SETTINGS-13).
 **Tests:** On main, the first two page tests above assert the save and its failure: the dirty line, the enabled button, the exact diff body
 `{display_name: 'Teneika A.'}` and `Saved.`, and the error text with no `Saved.`. They never use `Discard`. The handler is asserted by the
 pytest tests above (in the lean CI job) and pinned by [`tests/api/test_route_coverage.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_route_coverage.py) (`PUT /api/me/profile` answers 503 against a dead
-backend), and `src/mocks/contract.test.ts` checks that `PUT /api/me/profile` is a declared operation (`every /api request the app makes
-(verb + path) is a declared operation`), that its mock answer, the echo, matches the response schema (`every mock payload for a typed 200
-response matches its response schema (no undeclared fields)`) and that the dense and sparse request samples, the sparse ones including the
+backend), and `src/mocks/contract.test.ts` checks that `PUT /api/me/profile` is a declared operation (`every /api request the app makes (verb + path) is a declared operation`), that its mock answer, the echo, matches the response schema (`every mock payload for a typed 200 response matches its response schema (no undeclared fields)`) and that the dense and sparse request samples, the sparse ones including the
 empty body, match the request schema (`every request body the app sends matches its operation request schema`);
 [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails when the committed `platform/api/openapi.json`, the document solyra vendors,
 stops matching the one the app generates (`test_committed_openapi_snapshot_matches_app`), so a change to the route, to `ProfileResponse` or
@@ -13789,8 +13299,7 @@ Gaps). Te is ticked: `Discard` is asserted only by that test, which ran and pass
   the previous identity survives; this button does not. Executed with two accounts in `firebase` mode and answers keyed per bearer token:
   account A opened Settings (display name `Alice A`, account size 250000, risk per trade 2.5, daily digest on, stored theme `light`),
   pressed this button, and the sign-in screen showed; account B then signed in without a reload. The Settings page showed A's display name
-  beside B's email, A's account size, risk and digest switch on the Trading and Notifications tabs, kept A's theme, and made no `GET
-  /api/me/profile` and no `GET /api/me/preferences` for B, only `GET /api/me`. The same steps through the header's button fetched both reads
+  beside B's email, A's account size, risk and digest switch on the Trading and Notifications tabs, kept A's theme, and made no `GET/api/me/profile` and no `GET /api/me/preferences` for B, only `GET /api/me`. The same steps through the header's button fetched both reads
   for B and showed B's `Bob B`. With six minutes between A's sign-out and B's sign-in, past the profile's five-minute stale time and the
   five minutes for which TanStack Query keeps an unused entry by default (read), B's page fetched its own profile and showed nothing of A's.
   So the leak lasts as long as the stale time and the cache allow, not until a reload (matrix Gaps).
@@ -13816,8 +13325,7 @@ or error presentation.
 - Given either path, then the next account on the device starts with the previous account's theme when the server holds none (executed;
   matrix Gaps).
 
-**Tests:** No test asserts this button. A search of `tests/` for `sign-out`, `sign out` and `Sign out` finds the branch's `sign out returns
-to the sign-in screen` (`tests/shared/auth-gate.spec.ts`, added on this branch, not on main; it presses the header's button) and
+**Tests:** No test asserts this button. A search of `tests/` for `sign-out`, `sign out` and `Sign out` finds the branch's `sign out returns to the sign-in screen` (`tests/shared/auth-gate.spec.ts`, added on this branch, not on main; it presses the header's button) and
 `tests/shared/navigation.spec.ts`, which asserts the account menu's button is absent in `open` mode. The Settings button is mounted by
 `src/routes/SettingsPage.tsx:473-481` and pressed by no spec. Te stays unticked.
 
@@ -13899,21 +13407,18 @@ answer 401 without a token on staging; this state is not ticked at V.
 **States:** This is the state. Its neighbours: Loading until the answer lands (SETTINGS-09) and Error for anything but a 404 (SETTINGS-11).
 
 **Acceptance criteria:**
-- Given no row for the caller, then `GET /api/me/profile` answers 404 `no profile stored` and `GET /api/me/preferences` 404 `no preferences
-  stored` (`test_get_with_nothing_stored_is_404` in [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) and in [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py)).
+- Given no row for the caller, then `GET /api/me/profile` answers 404 `no profile stored` and `GET /api/me/preferences` 404 `no preferences stored` (`test_get_with_nothing_stored_is_404` in [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py) and in [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py)).
 - Given a 404 on both reads, then the boxes are empty with `Not set`, the switches are off, `Save changes` is disabled and the status line
   reads `Synced to your account.` (executed; no test).
 - Given a 404 on the preferences read, then the local appearance stands and nothing is written (executed; no test).
-- Given a stored row with every field null, then the page reads as for no row (read; `renders the five tabs, lands on Profile, and reports
-  synced once hydrated` answers all-null preferences and `{}` for the profile and asserts the status line only).
+- Given a stored row with every field null, then the page reads as for no row (read; `renders the five tabs, lands on Profile, and reports synced once hydrated` answers all-null preferences and `{}` for the profile and asserts the status line only).
 
 **Tests:** The handlers' 404s are asserted by the two pytest tests above (in the lean CI job). On the page, the one spec that mocks nothing
 stored answers 200 with all-null preferences and an empty profile, which exercises the all-null branch of `sanitizePreferences` and
 `sanitizeProfile`, not the 404 branch of either hook, and asserts only the `Synced to your account.` line; no test asserts a `Not set` box,
 an empty switch, a disabled Save or the 404 branch. `src/mocks/contract.test.ts` checks that both `GET` routes are declared operations and
 that their mock answers, `MOCK_PROFILE` and `MOCK_PREFERENCES_EMPTY` (a 200 with all-null fields, which is the all-null branch above and not
-the 404), match the response schemas (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a
-typed 200 response matches its response schema (no undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails
+the 404), match the response schemas (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (in the lean CI job) fails
 when the committed `platform/api/openapi.json`, the document solyra vendors, stops matching the one the app generates
 (`test_committed_openapi_snapshot_matches_app`), so a change to either route, to `ProfileResponse` or to `PreferencesResponse` is caught
 there; the document declares no 404, so neither pins the empty answer. Te stays unticked: the page layer is asserted by nothing.
@@ -13926,21 +13431,17 @@ there; the document declares no 404, so neither pins the empty answer. Te stays 
 
 **Shows or does:** Every failure the page can meet is shown, in two places (executed with 500, 503 and 422 answers).
 - The header status line (`src/routes/SettingsPage.tsx:182-194`) is one line with a fixed order of four cases. First, a preferences error,
-  read or write: `Appearance not synced, <message>. Changes still apply on this device.`, where the message is `Could not load preferences
-  (HTTP <status>)` or `Could not save preferences (HTTP <status>)` (`src/hooks/usePreferences.ts:96,106,216`). Second, a profile read error:
-  `Could not load your profile (HTTP <status>)` (`src/hooks/useProfile.ts:79`). Third, the loading line (SETTINGS-09). Fourth, `Synced to
-  your account.`. Only one case shows: with both reads failing, only the appearance line showed and the profile error was not on the page
+  read or write: `Appearance not synced, <message>. Changes still apply on this device.`, where the message is `Could not load preferences (HTTP <status>)` or `Could not save preferences (HTTP <status>)` (`src/hooks/usePreferences.ts:96,106,216`). Second, a profile read error:
+  `Could not load your profile (HTTP <status>)` (`src/hooks/useProfile.ts:79`). Third, the loading line (SETTINGS-09). Fourth, `Synced to your account.`. Only one case shows: with both reads failing, only the appearance line showed and the profile error was not on the page
   (executed; matrix Gaps). A failed read is retried once first, so the line shows after the retry (executed: two requests each). A failed
   appearance write is not retried: the pick stays applied on this device and the next change sends all four fields again, after which the
   line reads `Synced to your account.` (executed). After a failed profile read the form stays on screen, empty and editable, and a Save
-  writes only what was typed; the answer, the full stored row, becomes the stored profile and the header then reads `Synced to your
-  account.` although the page never read the profile (executed; matrix Gaps).
+  writes only what was typed; the answer, the full stored row, becomes the stored profile and the header then reads `Synced to your account.` although the page never read the profile (executed; matrix Gaps).
 - The save bar (SETTINGS-07): `Could not save your profile (HTTP <status>)` in red, in place of the other bar texts and never `Saved.`
   (executed with 500 and 422). It stays through further edits and through Discard, and the server's reason is dropped for the bare status
   (executed; matrix Gaps).
 
-What the handlers answer: every exception, a defect included, is a 503 `preferences temporarily unavailable` or `profile temporarily
-unavailable` (`platform/api/routers/preferences.py:137-141,189-193`, `platform/api/routers/profile.py:150-154,201-205`; executed with a
+What the handlers answer: every exception, a defect included, is a 503 `preferences temporarily unavailable` or `profile temporarily unavailable` (`platform/api/routers/preferences.py:137-141,189-193`, `platform/api/routers/profile.py:150-154,201-205`; executed with a
 `TypeError` raised in the row read: both answered 503, where the admin router checks `is_infrastructure_error` first,
 `platform/api/routers/admin.py:147-153`; stocks#1052 lists both routers; matrix Gaps). A body outside the lists, an unknown field and a
 string over its limit are 422 (executed). A refusal of the identity is SETTINGS-13.
@@ -13955,12 +13456,9 @@ again, and so does a window focus (read).
 - Given the preferences read fails with a 500, then the line reads `Appearance not synced`, then `Changes still apply on this device.`, and
   not `Synced to your account.` (`a failed preferences read is announced, never swallowed (Rule 4)`, `tests/settings/settings.spec.ts`, on
   main).
-- Given the profile save fails with a 500, then the bar shows `Could not save your profile` and not `Saved.` (`a failed save is rendered,
-  never reported as saved (Rule 4)`, same file, on main).
+- Given the profile save fails with a 500, then the bar shows `Could not save your profile` and not `Saved.` (`a failed save is rendered, never reported as saved (Rule 4)`, same file, on main).
 - Given the profile read fails with a 503, then the line reads `Could not load your profile (HTTP 503)` and not `Synced to your account.`;
-  and given an appearance write refused with a 500, then it reads `Appearance not synced, Could not save preferences (HTTP 500)`, `Changes
-  still apply on this device.`, the theme is applied on the page and one write was sent (`a failed profile read and a failed appearance
-  write are each announced, never swallowed (Rule 4)`, same file, added on this branch, not on main).
+  and given an appearance write refused with a 500, then it reads `Appearance not synced, Could not save preferences (HTTP 500)`, `Changes still apply on this device.`, the theme is applied on the page and one write was sent (`a failed profile read and a failed appearance write are each announced, never swallowed (Rule 4)`, same file, added on this branch, not on main).
 - Given both reads fail, then only the appearance line shows (executed; matrix Gaps).
 - Given a database failure, then 503 on both verbs of both routes (`test_get_db_failure_is_loud_503` and `test_put_db_failure_is_loud_503`
   in [`tests/api/test_preferences_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_preferences_router.py) and [`tests/api/test_profile_router.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_profile_router.py)); given a defect in the row read, then 503 as well
@@ -13973,8 +13471,7 @@ the profile read and the appearance write (the third criterion, solyra `tests/se
 so it was shown to fail by mutation, two changes of one line each to a scratch copy of the product code, that dropped the profile read line
 from the header and dropped a failed write from the sync status; with the second, the seven tests on main stay green, so only the new test
 sees it (see the Gaps). The routes' 200 answers, request samples and models are pinned as in SETTINGS-02 and SETTINGS-03 by
-`src/mocks/contract.test.ts` (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200
-response matches its response schema (no undeclared fields)`, `every request body the app sends matches its operation request schema`) and
+`src/mocks/contract.test.ts` (`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`, `every request body the app sends matches its operation request schema`) and
 [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`); the document declares a 422 for the two `PUT` routes
 and no 503, and no check asserts a failure answer. Te is ticked: the two presentations above ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/solyra/actions/runs/37586449560/job/112677567866)
 (head db678a4, 2026-10-07); the precedence and the retained save error are asserted by nothing and stay recorded in the Gaps.
@@ -14008,8 +13505,7 @@ and the TanStack defaults of the app (`src/App.tsx:30-37`).
 way to apply a newer appearance.
 
 **Acceptance criteria:**
-- Given the page has loaded, then `Synced to your account.` shows (`renders the five tabs, lands on Profile, and reports synced once
-  hydrated`, `tests/settings/settings.spec.ts`, on main).
+- Given the page has loaded, then `Synced to your account.` shows (`renders the five tabs, lands on Profile, and reports synced once hydrated`, `tests/settings/settings.spec.ts`, on main).
 - Given the server's stored appearance changed after the session started, then the stores keep the local values (executed; no test).
 - Given the profile answer changed after five minutes and the window is refocused, then the form shows the new values and an unsaved edit is
   gone (executed; a defect, matrix Gaps).
@@ -14019,8 +13515,7 @@ way to apply a newer appearance.
 under StrictMode (its own comment). No test applies a stored value, moves the clock or changes an answer between two reads;
 `src/hooks/usePreferences.test.ts` covers only `sanitizePreferences` and `toPayload`, and there is no `useProfile` test.
 `src/mocks/contract.test.ts` checks that the two `GET` routes are declared operations and that their mock answers match the response schemas
-(`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response
-schema (no undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`) pins both routes
+(`every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`), and [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py) (`test_committed_openapi_snapshot_matches_app`) pins both routes
 and their models; neither response model carries a time, so neither can assert one. Te stays unticked.
 
 **Code:** `src/routes/SettingsPage.tsx:132-142,182-194`, `src/hooks/usePreferences.ts:119-226`, `src/hooks/useProfile.ts:93-122`,
@@ -14039,14 +13534,12 @@ and their models; neither response model carries a time, so neither can assert o
   (`platform/api/auth.py:69-70,169-185,188-213`). Executed over the real app `api.main.app` in `firebase` mode: `/api/me` 200 with the
   anonymous body, and `GET` and `PUT` of `/api/me/profile` and `/api/me/preferences`, and `/api/me/anything`, 401 `sign in to continue`, a
   garbage token 401 `invalid or expired sign-in`. Staging answered the same on 2026-10-02 (the four route and verb pairs with no token: 401
-  `sign in to continue`; V evidence), and production's IAP answered 302 to Google's sign-in for a `GET` and 401 `Invalid IAP credentials:
-  empty token` for a `PUT`, before any handler. Each router also fails closed when the request reaches it with no identity: in `firebase`
+  `sign in to continue`; V evidence), and production's IAP answered 302 to Google's sign-in for a `GET` and 401 `Invalid IAP credentials:empty token` for a `PUT`, before any handler. Each router also fails closed when the request reaches it with no identity: in `firebase`
   mode `_prefs_owner` and `_profile_owner` answer 401 (`platform/api/routers/preferences.py:87-107`,
   `platform/api/routers/profile.py:108-120`), but in `open` mode and in `iap` mode with no identity header they serve the shared `local`
   owner's row (executed over the routers: `GET` and `PUT` answered 200 with the owner key `local` in both; matrix Gaps).
 - What a signed-in account sees when a route refuses it is the error of its own row, not a sign-in state. A 401 from `GET /api/me/profile`
-  or `GET /api/me/preferences` read as `Could not load your profile (HTTP 401)` and `Appearance not synced, Could not load preferences (HTTP
-  401). Changes still apply on this device.`, of which only the second showed (executed with a signed-in `firebase` account: each read made
+  or `GET /api/me/preferences` read as `Could not load your profile (HTTP 401)` and `Appearance not synced, Could not load preferences (HTTP 401). Changes still apply on this device.`, of which only the second showed (executed with a signed-in `firebase` account: each read made
   twice, React Query's one retry). The client treats `/api/me` and everything below it as open (`OPEN_PREFIXES`,
   `src/lib/authedFetch.ts:45,89-92`), while the server opens `/api/me` alone (`_OPEN_API_EXACT`, `platform/api/auth.py:69`), so such a 401
   is not retried with a fresh token (`:153,235-246`), does not mark the session blocked and shows no `Session expired` (executed: no
@@ -14086,8 +13579,7 @@ navigation, with `/dashboard` as the route), and the routes' gate by the two rou
 `test_firebase_mode_without_identity_fails_closed_401` (GET and PUT, 401, no database call), `test_owner_is_the_server_verified_identity`
 and [`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py) (`test_firebase_requires_valid_token`, `test_firebase_open_me_is_exact_match_and_subpaths_are_gated`),
 all in the lean CI job. The routes' shapes are pinned by `src/mocks/contract.test.ts` (the four route and verb pairs are declared
-operations, their 200 mock answers match the response schemas and the `PUT` samples the request schemas: `every /api request the app makes
-(verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`,
+operations, their 200 mock answers match the response schemas and the `PUT` samples the request schemas: `every /api request the app makes (verb + path) is a declared operation`, `every mock payload for a typed 200 response matches its response schema (no undeclared fields)`,
 `every request body the app sends matches its operation request schema`) and by [`tests/api/test_openapi_snapshot.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_openapi_snapshot.py)
 (`test_committed_openapi_snapshot_matches_app`: the four operations and their models, until the committed `platform/api/openapi.json` is
 regenerated); the document declares no 401, so neither asserts a refusal. Not asserted on main: the middleware on the real app for these two
