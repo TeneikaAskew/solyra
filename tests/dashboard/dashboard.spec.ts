@@ -14,6 +14,7 @@ import { M } from '../helpers/mocks';
 import {
   mockDashboard,
   mockDashboardCards,
+  MOCK_DASHBOARD_BRIEF,
   MOCK_PLAYBOOK_FRESH,
   MOCK_PLAYBOOK_STALE_DETAIL,
   MOCK_SECTORS,
@@ -144,5 +145,69 @@ test.describe('Dashboard', () => {
     await expect(page.getByText(/playbook unavailable/i)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/2026-06-13 is 85 days old/)).toBeVisible();
     await expect(page.getByText(/run the pipeline to populate/i)).toHaveCount(0);
+  });
+
+  // DASHBOARD-11. The Refresh button is `window.location.reload()`, not a
+  // refetch: the document is loaded again and the whole fan-out is asked for
+  // again. Both halves are asserted: a second `load` event fires, and the brief
+  // endpoint is requested a second time.
+  test('Refresh reloads the document and asks for the data again', async ({ page }) => {
+    let briefRequests = 0;
+    let documentLoads = 0;
+    page.on('load', () => {
+      documentLoads += 1;
+    });
+    await page.route('**/api/dashboard/brief/IWM*', (r) => {
+      briefRequests += 1;
+      return r.fulfill(M.ok(MOCK_DASHBOARD_BRIEF));
+    });
+    await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('h1', { hasText: 'Overview' }).first()).toBeVisible({ timeout: 10_000 });
+    const requestsBefore = briefRequests;
+    const loadsBefore = documentLoads;
+    expect(requestsBefore).toBeGreaterThanOrEqual(1);
+    expect(loadsBefore).toBe(1);
+
+    await page.getByRole('button', { name: 'Refresh' }).click();
+
+    await expect.poll(() => documentLoads).toBe(loadsBefore + 1);
+    await expect.poll(() => briefRequests).toBeGreaterThan(requestsBefore);
+    await expect(page.locator('h1', { hasText: 'Overview' }).first()).toBeVisible({ timeout: 10_000 });
+  });
+
+  // DASHBOARD-12. The style choice is written to localStorage `overview-chart`
+  // and read back on the next mount, so Area survives a reload while Candles
+  // (the fixed-height candle slot) is the default. The existing toggle test
+  // asserts the Recharts surface appears; this one asserts the memory.
+  test('the Candles or Area choice is stored and survives a reload', async ({ page }) => {
+    await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
+    const area = page.getByRole('button', { name: 'Area', exact: true });
+    const candles = page.getByRole('button', { name: 'Candles', exact: true });
+    const candleSlot = page.getByTestId('intraday-chart-slot');
+    const stored = () => page.evaluate(() => localStorage.getItem('overview-chart'));
+
+    // Default: Candles, nothing stored yet.
+    await expect(candleSlot).toBeVisible({ timeout: 10_000 });
+    await expect(candles).toHaveClass(/active/);
+    expect(await stored()).toBeNull();
+
+    await area.click();
+    await expect(candleSlot).toHaveCount(0);
+    await expect(page.locator('svg.recharts-surface').first()).toBeVisible();
+    await expect(area).toHaveClass(/active/);
+    expect(await stored()).toBe('area');
+
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText('IWM · intraday')).toBeVisible({ timeout: 10_000 });
+    await expect(area).toHaveClass(/active/);
+    await expect(candleSlot).toHaveCount(0);
+
+    await candles.click();
+    await expect(candleSlot).toBeVisible();
+    await expect(candles).toHaveClass(/active/);
+    expect(await stored()).toBe('candle');
   });
 });

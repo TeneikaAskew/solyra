@@ -14,9 +14,9 @@
  * documentElement's data-theme (themeStore), the density/accent classes
  * settingsStore puts on body, and the persisted shell-settings key.
  */
-import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import type { UserPreferences } from '@/types/preferences';
+import { MOCK_PROFILE } from '@/mocks/common';
 import { M, mockCommon } from '../helpers/mocks';
 
 /** Wire the two settings endpoints with PUT recorders. GETs answer "nothing
@@ -189,5 +189,89 @@ test.describe('Settings — profile draft & save', () => {
 
     await expect(page.getByText(/could not save your profile/i)).toBeVisible();
     await expect(page.getByText('Saved.')).not.toBeVisible();
+  });
+
+  test('Discard returns the draft to the stored values and persists nothing', async ({ page }) => {
+    const profilePuts: unknown[] = [];
+    await mockSettingsApi(page);
+    // Registered after mockSettingsApi so it wins (newest-first matching): a
+    // stored profile, so Discard has a real value to go back to.
+    await page.route('**/api/me/profile', (r) => {
+      const req = r.request();
+      if (req.method() === 'PUT') {
+        const body = JSON.parse(req.postData() || '{}');
+        profilePuts.push(body);
+        return r.fulfill(M.ok({ ...MOCK_PROFILE, ...body }));
+      }
+      return r.fulfill(M.ok(MOCK_PROFILE));
+    });
+    await page.goto('/settings');
+    await expect(page.getByText('Synced to your account.')).toBeVisible();
+
+    const name = page.getByLabel('Display name');
+    const saveBtn = page.getByRole('button', { name: 'Save changes' });
+    const discardBtn = page.getByRole('button', { name: 'Discard' });
+    await expect(name).toHaveValue(MOCK_PROFILE.display_name);
+    await expect(discardBtn).toHaveCount(0);
+
+    await name.fill('Half typed');
+    await expect(page.getByText('Unsaved changes.')).toBeVisible();
+    await expect(saveBtn).toBeEnabled();
+    await discardBtn.click();
+
+    // Back to the stored value, with a quiet save bar and nothing to save.
+    await expect(name).toHaveValue(MOCK_PROFILE.display_name);
+    await expect(page.getByText('Unsaved changes.')).not.toBeVisible();
+    await expect(discardBtn).toHaveCount(0);
+    await expect(saveBtn).toBeDisabled();
+
+    // Nothing half-typed was persisted: the next save carries its own field only.
+    await page.getByLabel('Time zone').fill('Europe/London');
+    await saveBtn.click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+    expect(profilePuts).toEqual([{ timezone: 'Europe/London' }]);
+  });
+});
+
+test.describe('Settings — failures are announced', () => {
+  test('a failed profile read and a failed appearance write are each announced, never swallowed (Rule 4)', async ({
+    page,
+  }) => {
+    const prefPuts: unknown[] = [];
+    await mockSettingsApi(page);
+    // Registered after mockSettingsApi so these win (newest-first matching).
+    await page.route('**/api/me/profile', (r) =>
+      r.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: '{"detail":"profile temporarily unavailable"}',
+      }),
+    );
+    await page.route('**/api/me/preferences', (r) => {
+      if (r.request().method() === 'PUT') {
+        prefPuts.push(JSON.parse(r.request().postData() || '{}'));
+        return r.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"boom"}' });
+      }
+      return r.fulfill(
+        M.ok({ theme: null, nav_pattern: null, density: null, accent: null } satisfies UserPreferences),
+      );
+    });
+    await page.goto('/settings');
+
+    // The read is retried once, then the header says so instead of "Synced".
+    await expect(page.getByText('Could not load your profile (HTTP 503)')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText('Synced to your account.')).not.toBeVisible();
+
+    // A refused appearance write is announced, and the pick still applies here.
+    await openAppearance(page);
+    await section(page, 'Theme').getByRole('radio', { name: /light/i }).click();
+    await expect(
+      page.getByText(/appearance not synced, could not save preferences \(http 500\)/i),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/changes still apply on this device/i)).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    expect(prefPuts).toHaveLength(1);
   });
 });
