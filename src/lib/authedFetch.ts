@@ -177,10 +177,14 @@ export function installAuthFetch(): void {
     // "Sign in to load data" empty state on 401 instead of rendering blank.
     // `uid` is the account the request was made as, when known (firebase
     // mode): a success clears the verify-email flag only for that account.
-    const track = (resp: Response, uid?: string | null): Response => {
-      if (resp.status === 401) markAuthBlocked();
-      else if (resp.ok) {
-        clearAuthBlocked();
+    // `sameAccount` is false when the signed-in account changed while the
+    // request was out: the blocked flag is not keyed by uid, so a late answer
+    // to the previous account must not set or clear the current one's state.
+    const track = (resp: Response, uid?: string | null, sameAccount = true): Response => {
+      if (resp.status === 401) {
+        if (sameAccount) markAuthBlocked();
+      } else if (resp.ok) {
+        if (sameAccount) clearAuthBlocked();
         clearVerificationRequired(uid);
       }
       return resp;
@@ -273,13 +277,14 @@ export function installAuthFetch(): void {
     // Only gated paths signal "signed out": an open path answers without auth
     // by design, so a 401 from one is a server bug, not an expired session.
     if (resp.status === 401 && gated && _onUnauthorized) _onUnauthorized();
+    const sameAccount = (await getCurrentUid()) === uidAtStart;
     // The verify-email 403 proves the token was accepted, so a "session
     // expired" left over from a previous account must not linger beside it.
     if (gated && uidAtStart && (await isVerifyEmail403(resp))) {
       markVerificationRequired(uidAtStart);
-      clearAuthBlocked();
+      if (sameAccount) clearAuthBlocked();
     }
-    return gated ? track(resp, uidAtStart) : resp;
+    return gated ? track(resp, uidAtStart, sameAccount) : resp;
   };
 }
 

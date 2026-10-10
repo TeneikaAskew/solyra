@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { LogIn, LogOut, Lock, ShieldCheck, MailWarning } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { clearVerificationRequired, useAuthBlocked, useVerificationEmailState } from '@/lib/authGate';
+import {
+  clearVerificationRequired,
+  useAuthBlocked,
+  useVerificationEmailState,
+  useVerificationRequired,
+} from '@/lib/authGate';
 import { useUser } from '@/hooks/useUser';
 import { firebaseSignOut, refreshEmailVerified, resendVerificationEmail } from '@/lib/firebase';
 
@@ -206,6 +211,18 @@ export async function confirmEmailVerified(
 }
 
 /**
+ * Whether the verify-email banner shows: while the profile reads unverified,
+ * or while the API still answers this account's gated calls with the
+ * verify-email 403. The second covers the lag between the two: the profile can
+ * read verified while the cached ID token still carries the old claim, and on
+ * pages without DataGate (Admin, Settings) the banner is the only place that
+ * says why their calls fail. `emailVerified` is null with no account.
+ */
+export function showVerificationBanner(emailVerified: boolean | null, verificationRequired: boolean): boolean {
+  return emailVerified === false || (emailVerified === true && verificationRequired);
+}
+
+/**
  * Strip shown to a signed-in email/password account whose address is not yet
  * confirmed. Since stocks#1360 the API refuses that account's gated calls
  * until it confirms, so the strip says so and offers the two things the user
@@ -243,8 +260,11 @@ function EmailVerificationBannerFor() {
   >({ state: 'idle' });
   const [checking, setChecking] = useState(false);
   const [stillUnverified, setStillUnverified] = useState(false);
+  const verificationRequired = useVerificationRequired(uid);
 
-  if (emailVerified !== false || confirmed) return null;
+  // A confirmation that succeeded here counts as the profile reading verified;
+  // the banner then returns only if the API answers the verify-email 403 again.
+  if (!showVerificationBanner(confirmed ? true : emailVerified, verificationRequired)) return null;
 
   const onResend = async () => {
     setResend({ state: 'sending' });

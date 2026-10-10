@@ -591,9 +591,14 @@ test.describe('/auth/action', () => {
 
 /**
  * Sign in an email account that reads unverified, with every gated call
- * answering the API's verify-email 403 until `markVerified()` flips both the
- * account and the API. Data mocks come first, then firebase mode (it
- * re-registers mockCommon and the firebase config last; the latest route wins).
+ * answering the API's verify-email 403. `markVerified()` flips the account;
+ * from then on the API accepts only the fresh ID token that I've confirmed
+ * mints, because the real API decides from the token's claim, not the
+ * profile. Accepting the old token too would let a card's retry or poll
+ * succeed before the click, clear the flag, and pull every other card's
+ * confirm button out of the page. Data mocks come first, then firebase mode
+ * (it re-registers mockCommon and the firebase config last; the latest route
+ * wins).
  */
 async function signInUnverified(page: Page): Promise<{ markVerified: () => void }> {
   await mockDashboard(page);
@@ -650,13 +655,14 @@ async function signInUnverified(page: Page): Promise<{ markVerified: () => void 
       }),
     }),
   );
-  // Registered last, so it answers first. Open paths, and every path once
-  // verified, fall through to the data mocks above.
+  // Registered last, so it answers first. Open paths, and every path carrying
+  // the token minted after verification, fall through to the data mocks above.
   const open = (path: string) =>
     path === '/api/me' || ['/api/health', '/api/config/firebase', '/api/waitlist'].some((p) => path.startsWith(p));
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (verified || open(path)) return route.fallback();
+    const freshToken = route.request().headers()['authorization'] === 'Bearer fake-id-token-2';
+    if (open(path) || (verified && freshToken)) return route.fallback();
     return route.fulfill({
       status: 403,
       contentType: 'application/json',

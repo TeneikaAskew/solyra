@@ -6,7 +6,7 @@ vi.mock('@/lib/firebase', () => ({
   resendVerificationEmail: vi.fn(),
 }));
 
-import { confirmEmailVerified } from './AuthStatusIndicator';
+import { confirmEmailVerified, showVerificationBanner } from './AuthStatusIndicator';
 import { clearVerificationRequired, isVerificationRequired, markVerificationRequired } from '@/lib/authGate';
 
 afterEach(() => clearVerificationRequired());
@@ -46,5 +46,19 @@ describe('confirmEmailVerified', () => {
     await confirming;
 
     expect(isVerificationRequired('uid-b')).toBe(true);
+  });
+});
+
+describe('showVerificationBanner', () => {
+  it('shows while the profile reads unverified', () => {
+    expect(showVerificationBanner(false, false)).toBe(true);
+    expect(showVerificationBanner(false, true)).toBe(true);
+  });
+  it('shows while the API still answers the verification 403, even when the profile reads verified', () => {
+    expect(showVerificationBanner(true, true)).toBe(true);
+  });
+  it('hides for a verified profile the API accepts, and with no account', () => {
+    expect(showVerificationBanner(true, false)).toBe(false);
+    expect(showVerificationBanner(null, false)).toBe(false);
   });
 });

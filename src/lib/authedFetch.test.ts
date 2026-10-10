@@ -317,6 +317,53 @@ describe('installAuthFetch — the verify-email 403', () => {
     expect(gate.isVerificationRequired('uid-b')).toBe(true);
   });
 
+  /** Start a gated request as the signed-in account and hold its answer until released. */
+  async function holdRequest(native: Mock, fetch: typeof window.fetch) {
+    let release: (r: Response) => void = () => {};
+    native.mockImplementationOnce(() => new Promise<Response>((res) => (release = res)));
+    const calls = native.mock.calls.length;
+    const pending = fetch('/api/glossary');
+    await vi.waitFor(() => expect(native).toHaveBeenCalledTimes(calls + 1));
+    return { pending, release: (r: Response) => release(r) };
+  }
+
+  function switchTo(uid: string) {
+    getCurrentUid.mockResolvedValue(uid);
+    getIdToken.mockResolvedValue(`tok-${uid}`);
+  }
+
+  it("a late verification 403 or success from account A leaves account B's auth-blocked flag set", async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    const late403 = await holdRequest(native, fetch);
+    const lateOk = await holdRequest(native, fetch);
+
+    switchTo('uid-b');
+    native.mockResolvedValueOnce(new Response('{}', { status: 401 }));
+    await fetch('/api/glossary');
+    expect(gate.isAuthBlocked()).toBe(true);
+
+    late403.release(verify403());
+    await late403.pending;
+    expect(gate.isAuthBlocked()).toBe(true);
+    lateOk.release(new Response('{}', { status: 200 }));
+    await lateOk.pending;
+    expect(gate.isAuthBlocked()).toBe(true);
+  });
+
+  it('a late 401 from account A does not mark account B as auth-blocked', async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    const late401 = await holdRequest(native, fetch);
+
+    switchTo('uid-b');
+    late401.release(new Response('{}', { status: 401 }));
+    await late401.pending;
+    expect(gate.isAuthBlocked()).toBe(false);
+  });
+
   it('treats /api/me/preferences as gated, matching the server, while /api/me stays open', async () => {
     signedInAs('uid-a');
     const { native, onUnauthorized, fetch } = await install();
