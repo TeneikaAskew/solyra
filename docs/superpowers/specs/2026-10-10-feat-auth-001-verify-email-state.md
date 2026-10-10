@@ -8,13 +8,14 @@ done_when:
   - "src/components/shared/WidgetState.test.ts asserts that widgetErrorKind returns 'verify' for a 403 error while the flag is set, 'auth' for a 401, and 'error' for a 403 when the flag is not set"
   - "src/components/shared/AuthStatusIndicator.test.ts asserts that confirmEmailVerified invalidates the query cache when the refresh reports verified, and leaves it untouched when the refresh reports unverified"
   - "tests/shared/auth-gate.spec.ts signs in an email account whose accounts:lookup reports emailVerified false, answers the dashboard's gated calls with 403 'verify your email to continue', and asserts a card shows 'Confirm your email to load data' while the verification banner is visible"
+  - "src/lib/apiTargets.test.ts asserts isStaticFrontendHost is true for stocks.insightscollective.org, solyra-stocks.lovable.app and a lovableproject.com host, and false for insightscollective.org, evil-stocks.insightscollective.org, stocks.insightscollective.org.evil.com and localhost"
   - "Each new test is shown failing against main when the PR opens, and the solyra CI checks and e2e jobs are green on the PR head"
   - "02-FEATURE-CATALOG FEAT-AUTH-001 row shows a Status, this PR's date and number"
 status: approved
 supersedes: null
 ---
 
-# Tell an unverified account why its data does not load
+# Tell an unverified account why its data does not load, and sign in from stocks.insightscollective.org
 
 ## Problem
 
@@ -36,6 +37,13 @@ Firebase account whose email is not verified, with
 stocks#1360's spec left this side out on purpose ("Making the banner block the app is a solyra
 change of its own"). This is that change.
 
+The same day the owner connected `stocks.insightscollective.org` to this Lovable project (DNS at
+Squarespace already resolves), and added it to Firebase Auth's authorized domains so Google
+sign-in can start there. Lovable serves the bundle without an `/api` route, but
+`src/lib/apiTargets.ts` only recognises `*.lovable.app` and `*.lovableproject.com` as such static
+hosts. On the new address the site would send `/api/*` to Lovable, get `index.html` back, and
+neither sign in nor load data.
+
 ## Non-goals
 
 - No change to the API or its 403. The detail string is the contract this change reads.
@@ -43,6 +51,9 @@ change of its own"). This is that change.
   shows public data keeps showing it.
 - Not the Google sign-in path. Google accounts arrive verified and never see this state.
 - Not `DataGate`, which stays the signed-out gate.
+- Not the API side of the new address. The stocks API's CORS pattern admitting
+  `https://stocks.insightscollective.org` is stocks#1363's change, and the sign-in domain
+  (`auth.stocks.insightscollective.org`) is project configuration recorded in the docs.
 - Not the site traceability matrix. A new AUTH state row and its ticks go on a `docs/` branch in
   stocks after this merges.
 
@@ -88,6 +99,12 @@ calls `queryClient.invalidateQueries()`, so every card refetches with the new to
 successful response clears the flag. `EmailVerificationBanner` uses it, its copy becomes
 "Confirm your email address to load your data.", and its comment stops calling it non-blocking.
 
+`src/lib/apiTargets.ts`: a second list, `STATIC_FRONTEND_HOSTS = ['stocks.insightscollective.org']`,
+matched exactly, beside the existing suffix list; `isStaticFrontendHost` returns true for either.
+Exact, not a suffix: `endsWith('stocks.insightscollective.org')` would also match
+`evil-stocks.insightscollective.org`, and the apex serves a different site. The header comment's
+"two places need the new origin" note gains this host and its stocks counterpart.
+
 Tests: listed in done_when. The Playwright test reuses the identity-toolkit mocking already in
 `tests/shared/auth-gate.spec.ts`, with `emailVerified: false` on `accounts:lookup`.
 
@@ -102,3 +119,6 @@ Capacity: n/a. The site runs no workload; the change reads one small JSON body o
   unverified) reads as "confirm your email". That account cannot load anything until it confirms,
   so the message is still the right first step.
 - Reading the clone delays the caller by one body read on a 403 only; 200 responses are untouched.
+- The new host ships before the API admits it. Calls from `stocks.insightscollective.org` then
+  fail CORS exactly as they do today, and `solyra-stocks.lovable.app` is unaffected; the two
+  PRs can merge in either order.
