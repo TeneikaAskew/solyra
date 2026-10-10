@@ -4,11 +4,12 @@ req_ids: [REQ-UX-001, REQ-AUTH-001]
 issues: []
 canvases: []
 done_when:
-  - "src/lib/authedFetch.test.ts asserts that a gated 403 whose detail is 'verify your email to continue', on a request made while uid A is signed in, marks verification required for uid A and clears the auth-blocked flag; that a gated 403 with any other detail does neither; that a later successful gated response clears it; that the caller can still read the 403 response body; and that /api/me/preferences is gated (its verification 403 is tracked and its 401 fires onUnauthorized) while /api/me stays open"
-  - "src/lib/authGate.test.ts asserts that verification marked required for uid A reads as not required for uid B and for no uid, and that clearing it resets uid A"
+  - "src/lib/authedFetch.test.ts asserts that a gated 403 whose detail is 'verify your email to continue', on a request made while uid A is signed in, marks verification required for uid A and clears the auth-blocked flag; that a gated 403 with any other detail does neither; that a later successful gated response for uid A clears it while a late success for uid A after uid B was marked leaves B's flag in place; that the caller can still read the 403 response body; and that /api/me/preferences is gated (its verification 403 is tracked and its 401 fires onUnauthorized) while /api/me stays open"
+  - "src/lib/authGate.test.ts asserts that verification marked required for uid A reads as not required for uid B and for no uid, that clearing for uid B leaves uid A's flag, and that clearing for uid A resets it"
+  - "src/components/auth/AuthGate.test.ts asserts that isAccountChange is true from uid A to uid B and from uid A to no uid, and false from no uid to uid A and from uid A to uid A"
   - "src/components/shared/WidgetState.test.ts asserts that widgetErrorKind returns 'auth' for a 401 error, 'verify' for both Error('verify your email to continue') and Error('403') when verification is required, and 'error' for those two errors when it is not"
   - "src/components/shared/AuthStatusIndicator.test.ts asserts that confirmEmailVerified, when the refresh reports verified, clears the verification flag and invalidates the query cache, and when it reports unverified leaves both untouched"
-  - "tests/shared/auth-gate.spec.ts signs in an email account whose accounts:lookup reports emailVerified false and whose gated calls answer 403 'verify your email to continue', asserts that a Dashboard card and the Signals page show 'Confirm your email to load data' with the banner visible, then makes accounts:lookup report verified and the gated calls answer 200, clicks the banner's I've confirmed, and asserts the Dashboard card renders its data without a page reload"
+  - "tests/shared/auth-gate.spec.ts signs in an email account whose accounts:lookup reports emailVerified false and whose gated calls answer 403 'verify your email to continue', asserts that a Dashboard card and the Signals page show 'Confirm your email to load data' with the banner visible, then makes accounts:lookup report verified and the gated calls answer 200, clicks the banner's I've confirmed, and asserts the Dashboard card renders its data without a page reload; a second test does the same through the Dashboard card's own I've confirmed instead of the banner's"
   - "src/lib/apiTargets.test.ts asserts isStaticFrontendHost is true for stocks.insightscollective.org, solyra-stocks.lovable.app and a lovableproject.com host, and false for insightscollective.org, evil-stocks.insightscollective.org, stocks.insightscollective.org.evil.com and localhost"
   - "Each new test is shown failing against main when the PR opens, and the solyra CI checks and e2e jobs are green on the PR head"
   - "02-FEATURE-CATALOG FEAT-AUTH-001 row shows a Status, this PR's date and number"
@@ -50,6 +51,9 @@ the site would send `/api/*` to Lovable, get `index.html` back, and neither sign
 - No change to the API or its 403. The detail string is the contract this change reads.
 - Not the Google sign-in path. Google accounts arrive verified and never see this state.
 - Not `DataGate`'s signed-out behaviour, which stays as it is.
+- Not Admin or Settings, which do not use `DataGate`. An unverified account resolves to no
+  identity on `/api/me` (verified live 2026-10-10), so Admin shows its existing not-authorized view;
+  Settings keeps its own sync errors. On both, the banner at the top states the cause.
 - Not the API side of the new address. The stocks API's CORS pattern admitting
   `https://stocks.insightscollective.org` is stocks' own change, and the sign-in domain
   (`auth.stocks.insightscollective.org`) is project configuration recorded in the docs.
@@ -74,17 +78,19 @@ Chosen on 2026-10-10 under the owner's instruction to make this change after sto
 ## Design
 
 `src/lib/authGate.ts`: beside the `blocked` flag, a verification flag keyed by uid:
-`markVerificationRequired(uid)`, `clearVerificationRequired()`, `isVerificationRequired(uid)`
-(true only when the flag was marked for that same uid) and `useVerificationRequired(uid)`, with
-the existing subscribe pattern. Keyed for the same reason the verification-email store is: an
+`markVerificationRequired(uid)`, `clearVerificationRequired(uid)` (clears only a flag marked for
+that same uid), `isVerificationRequired(uid)` (true only when the flag was marked for that same
+uid) and `useVerificationRequired(uid)`, with the existing subscribe pattern. Keyed for the same reason the verification-email store is: an
 account switch in another tab does not reload this one, and most query keys omit the uid.
 
 `src/lib/authedFetch.ts`: in firebase mode, on a gated 403 it reads the detail from
 `resp.clone()` (the caller's body stays unread) and, when the detail is exactly
 `verify your email to continue`, calls `markVerificationRequired(uidAtStart)` and
 `clearAuthBlocked()`: that 403 proves the token was accepted, so a "session expired" left by a
-previous account must not linger beside it. A successful gated response clears both flags. A body
-that is not JSON leaves them alone.
+previous account must not linger beside it. A successful gated response clears `blocked` and
+`clearVerificationRequired(uidAtStart)`: scoped to the request's own uid, so a late success from
+account A cannot erase the flag account B's 403 just set. A body that is not JSON leaves them
+alone.
 
 The open-path list stops treating everything under `/api/me` as open. It becomes
 `OPEN_EXACT = ['/api/me']` plus `OPEN_PREFIXES = ['/api/health', '/api/config/firebase',
@@ -119,6 +125,13 @@ the verification flag and calls `queryClient.invalidateQueries()`. Clearing firs
 refetch nothing and the state would never lift. If the server still answers 403 the next response
 marks it again. `EmailVerificationBanner` uses the same helper, its copy becomes "Confirm your
 email address to load your data.", and its comment stops calling it non-blocking.
+
+`src/components/auth/AuthGate.tsx`: when the signed-in uid changes away from a previous account
+(A to B, or A to signed out), it clears the React Query cache, as `SignOutButton` already does for
+a sign-out in this tab. Most query keys omit the uid, so without this an account switched in from
+another tab is served the previous account's cached results, journal rows included, with no
+request made and so no 403 to set the flag. The decision is a pure, exported
+`isAccountChange(prev, next)`: true when `prev` is a uid and `next` differs from it.
 
 `src/lib/apiTargets.ts`: a second list, `STATIC_FRONTEND_HOSTS = ['stocks.insightscollective.org']`,
 matched exactly, beside the existing suffix list; `isStaticFrontendHost` returns true for either.
