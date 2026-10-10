@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  clearVerificationRequired,
   getVerificationEmailState,
+  isVerificationRequired,
+  markVerificationRequired,
   recordVerificationEmail,
   subscribeVerificationEmail,
 } from './authGate';
@@ -45,5 +48,25 @@ describe('verification-email delivery state', () => {
     recordVerificationEmail('uid-b', { status: 'failed', message: 'auth/too-many-requests' });
     expect(getVerificationEmailState('uid-b')).toEqual({ status: 'failed', message: 'auth/too-many-requests' });
     expect(getVerificationEmailState('uid-a')).toEqual({ status: 'unknown' });
+  });
+});
+
+describe('verification-required flag', () => {
+  it('is keyed by uid, so a switched-in account does not inherit it', () => {
+    clearVerificationRequired();
+    markVerificationRequired('uid-a');
+    expect(isVerificationRequired('uid-a')).toBe(true);
+    expect(isVerificationRequired('uid-b')).toBe(false);
+    expect(isVerificationRequired(null)).toBe(false);
+    clearVerificationRequired();
+    expect(isVerificationRequired('uid-a')).toBe(false);
+  });
+
+  it('clears only the account it is asked to clear', () => {
+    markVerificationRequired('uid-a');
+    clearVerificationRequired('uid-b');
+    expect(isVerificationRequired('uid-a')).toBe(true);
+    clearVerificationRequired('uid-a');
+    expect(isVerificationRequired('uid-a')).toBe(false);
   });
 });

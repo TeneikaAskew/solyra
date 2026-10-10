@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isAuthError, errorMessage } from './WidgetState';
+import { isAuthError, errorMessage, widgetErrorKind } from './WidgetState';
 
 describe('isAuthError', () => {
   it('detects a 401 status message', () => {
@@ -25,5 +25,21 @@ describe('errorMessage', () => {
   });
   it('returns null when there is nothing to show', () => {
     expect(errorMessage(undefined)).toBe(null);
+  });
+});
+
+describe('widgetErrorKind', () => {
+  it('keeps a 401 as the sign-in state whatever the verification flag says', () => {
+    expect(widgetErrorKind(new Error('401'), true)).toBe('auth');
+    expect(widgetErrorKind(new Error('401'), false)).toBe('auth');
+  });
+  it('reads any other error as verify-your-email while verification is required', () => {
+    // useMarketData throws the bare detail, with no status in it.
+    expect(widgetErrorKind(new Error('verify your email to continue'), true)).toBe('verify');
+    expect(widgetErrorKind(new Error('403'), true)).toBe('verify');
+  });
+  it('leaves the same errors generic when verification is not required', () => {
+    expect(widgetErrorKind(new Error('verify your email to continue'), false)).toBe('error');
+    expect(widgetErrorKind(new Error('403'), false)).toBe('error');
   });
 });

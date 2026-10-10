@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { LogIn, LogOut, Lock, ShieldCheck, MailWarning } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuthBlocked, useVerificationEmailState } from '@/lib/authGate';
+import { clearVerificationRequired, useAuthBlocked, useVerificationEmailState } from '@/lib/authGate';
 import { useUser } from '@/hooks/useUser';
 import { firebaseSignOut, refreshEmailVerified, resendVerificationEmail } from '@/lib/firebase';
 
@@ -182,9 +182,34 @@ export function AuthStatusBanner() {
 }
 
 /**
+ * "I've confirmed": re-read the account (forcing a fresh ID token) and, once it
+ * reads verified, clear the verify-email flag and refetch every query. Clearing
+ * comes first because DataGate swaps a page body for the verify-email state,
+ * which unmounts that page's queries; invalidation alone would refetch nothing
+ * and the state would never lift. If the server still answers 403, the next
+ * response marks the flag again. `uid` is the account that clicked: only its
+ * flag clears, so a confirmation that returns after an account switch cannot
+ * erase the flag the new account's 403 set. Pure so it can be tested without
+ * a component.
+ */
+export async function confirmEmailVerified(
+  uid: string | null,
+  refresh: () => Promise<boolean | null>,
+  queryClient: { invalidateQueries: () => Promise<unknown> },
+): Promise<boolean> {
+  const verified = (await refresh()) === true;
+  if (verified) {
+    clearVerificationRequired(uid);
+    await queryClient.invalidateQueries();
+  }
+  return verified;
+}
+
+/**
  * Strip shown to a signed-in email/password account whose address is not yet
- * confirmed. Non-blocking: the app stays usable, the banner just keeps the
- * task visible and offers the two things the user can do about it. Never
+ * confirmed. Since stocks#1360 the API refuses that account's gated calls
+ * until it confirms, so the strip says so and offers the two things the user
+ * can do about it; cards and page bodies show the matching verify-email state. Never
  * renders outside `firebase` mode (emailVerified is null there) and never for
  * Google sign-ins (they arrive verified).
  *
@@ -203,6 +228,7 @@ export function EmailVerificationBanner() {
 
 function EmailVerificationBannerFor() {
   const { email, emailVerified, uid } = useUser();
+  const queryClient = useQueryClient();
   // What actually happened to the sign-up email: sign-up records it in the
   // authGate store because SignInScreen is unmounted by the time the send
   // resolves. Keyed by uid so an account switch without a reload never
@@ -241,7 +267,7 @@ function EmailVerificationBannerFor() {
     setChecking(true);
     setStillUnverified(false);
     try {
-      const verified = await refreshEmailVerified();
+      const verified = await confirmEmailVerified(uid, refreshEmailVerified, queryClient);
       if (verified) setConfirmed(true);
       else setStillUnverified(true);
     } catch (err) {
@@ -263,7 +289,7 @@ function EmailVerificationBannerFor() {
     >
       <span className="flex items-center gap-1.5" data-delivery={delivery.status}>
         <MailWarning size={13} className="text-[var(--warning, var(--on-surface-variant))]" aria-hidden />
-        Confirm your email address.
+        Confirm your email address to load your data.
         {delivery.status === 'sent'
           ? email
             ? ` We sent a link to ${email}.`

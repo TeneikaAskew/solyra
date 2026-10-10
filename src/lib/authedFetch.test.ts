@@ -240,3 +240,96 @@ describe('installAuthFetch — stale token retry', () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('installAuthFetch — the verify-email 403', () => {
+  const verify403 = () =>
+    new Response(JSON.stringify({ detail: 'verify your email to continue' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  function signedInAs(uid: string) {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue(uid);
+    getIdToken.mockResolvedValue(`tok-${uid}`);
+  }
+
+  it('marks verification required for the signed-in uid and clears a stale auth-blocked flag', async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    gate.markAuthBlocked();
+    native.mockResolvedValueOnce(verify403());
+
+    const resp = await fetch('/api/glossary');
+
+    expect(gate.isVerificationRequired('uid-a')).toBe(true);
+    expect(gate.isVerificationRequired('uid-b')).toBe(false);
+    expect(gate.isAuthBlocked()).toBe(false);
+    // The caller still reads the body the server sent.
+    expect(resp.status).toBe(403);
+    expect(await resp.json()).toEqual({ detail: 'verify your email to continue' });
+  });
+
+  it('leaves both flags alone on a 403 with any other detail', async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    gate.markAuthBlocked();
+    native.mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'this account is not allowed' }), { status: 403 }));
+
+    await fetch('/api/glossary');
+
+    expect(gate.isVerificationRequired('uid-a')).toBe(false);
+    expect(gate.isAuthBlocked()).toBe(true);
+  });
+
+  it('clears the flag on the next successful gated response', async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    native.mockResolvedValueOnce(verify403()).mockResolvedValueOnce(new Response('{}', { status: 200 }));
+
+    await fetch('/api/glossary');
+    expect(gate.isVerificationRequired('uid-a')).toBe(true);
+    await fetch('/api/glossary');
+    expect(gate.isVerificationRequired('uid-a')).toBe(false);
+  });
+
+  it("a late success from account A does not erase account B's flag", async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    // A's request is in flight when the tab switches to B, whose call 403s first.
+    let releaseA: (r: Response) => void = () => {};
+    native.mockImplementationOnce(() => new Promise<Response>((res) => (releaseA = res)));
+    const aInFlight = fetch('/api/glossary');
+    await vi.waitFor(() => expect(native).toHaveBeenCalledTimes(1));
+
+    getCurrentUid.mockResolvedValue('uid-b');
+    getIdToken.mockResolvedValue('tok-uid-b');
+    native.mockResolvedValueOnce(verify403());
+    await fetch('/api/glossary');
+    expect(gate.isVerificationRequired('uid-b')).toBe(true);
+
+    releaseA(new Response('{}', { status: 200 }));
+    await aInFlight;
+    expect(gate.isVerificationRequired('uid-b')).toBe(true);
+  });
+
+  it('treats /api/me/preferences as gated, matching the server, while /api/me stays open', async () => {
+    signedInAs('uid-a');
+    const { native, onUnauthorized, fetch } = await install();
+    const gate = await import('./authGate');
+
+    native.mockResolvedValueOnce(verify403());
+    await fetch('/api/me/preferences');
+    expect(gate.isVerificationRequired('uid-a')).toBe(true);
+
+    native.mockResolvedValue(new Response('{}', { status: 401 }));
+    await fetch('/api/me');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    await fetch('/api/me/preferences');
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+});

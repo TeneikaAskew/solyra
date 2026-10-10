@@ -17,6 +17,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mockCommon } from '../helpers/mocks';
 import { mockAllPages } from '../helpers/fixtures/all';
+import { mockDashboard, mockDashboardCards } from '../helpers/fixtures/dashboard';
 
 // A well-formed (but fake) Firebase web config — enough for initializeApp() to
 // construct without throwing; no network is needed to render the signed-out UI.
@@ -576,5 +577,131 @@ test.describe('/auth/action', () => {
     await mockCommon(page); // authMode: open
     await page.goto('/auth/action?mode=verifyEmail&oobCode=x', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('auth-action-unavailable')).toBeVisible();
+  });
+});
+
+// ── Unverified email account ───────────────────────────────────────────────
+//
+// Since stocks#1360 the API answers every gated call from an account whose
+// email is not verified with 403 "verify your email to continue". The site
+// recognises that answer once, in the fetch layer, and shows it on cards
+// (WidgetState) and page bodies (DataGate); confirming refetches without a
+// reload. The identity toolkit and the token refresh are mocked as above, so
+// the real Firebase SDK runs end to end.
+
+/**
+ * Sign in an email account that reads unverified, with every gated call
+ * answering the API's verify-email 403 until `markVerified()` flips both the
+ * account and the API. Data mocks come first, then firebase mode (it
+ * re-registers mockCommon and the firebase config last; the latest route wins).
+ */
+async function signInUnverified(page: Page): Promise<{ markVerified: () => void }> {
+  await mockDashboard(page);
+  await mockDashboardCards(page);
+  await firebaseMode(page);
+
+  let verified = false;
+  await mockIdentityToolkit(page, (call) => {
+    if (call.path.endsWith('accounts:signInWithPassword')) {
+      return {
+        status: 200,
+        body: {
+          idToken: 'fake-id-token',
+          email: 'trader@example.test',
+          refreshToken: 'fake-refresh-token',
+          expiresIn: '3600',
+          localId: 'uid-trader',
+        },
+      };
+    }
+    if (call.path.endsWith('accounts:lookup')) {
+      return {
+        status: 200,
+        body: {
+          kind: 'identitytoolkit#GetAccountInfoResponse',
+          users: [
+            {
+              localId: 'uid-trader',
+              email: 'trader@example.test',
+              emailVerified: verified,
+              providerUserInfo: [],
+              validSince: '1',
+              lastLoginAt: String(Date.now()),
+              createdAt: String(Date.now()),
+            },
+          ],
+        },
+      };
+    }
+    return itkError('UNEXPECTED_CALL');
+  });
+  // I've confirmed forces a fresh ID token through the token endpoint.
+  await page.route('**/securetoken.googleapis.com/**', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        access_token: 'fake-id-token-2',
+        id_token: 'fake-id-token-2',
+        refresh_token: 'fake-refresh-token',
+        expires_in: '3600',
+        token_type: 'Bearer',
+        user_id: 'uid-trader',
+      }),
+    }),
+  );
+  // Registered last, so it answers first. Open paths, and every path once
+  // verified, fall through to the data mocks above.
+  const open = (path: string) =>
+    path === '/api/me' || ['/api/health', '/api/config/firebase', '/api/waitlist'].some((p) => path.startsWith(p));
+  await page.route('**/api/**', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (verified || open(path)) return route.fallback();
+    return route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'verify your email to continue' }),
+    });
+  });
+
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('login-email').fill('trader@example.test');
+  await page.getByTestId('login-password').fill('correct-horse-9');
+  await page.getByTestId('login-submit').click();
+  return { markVerified: () => (verified = true) };
+}
+
+test.describe('Unverified email account', () => {
+  test('cards and pages ask to confirm the email, and the banner confirm loads the data', async ({ page }) => {
+    const { markVerified } = await signInUnverified(page);
+
+    await expect(page.getByTestId('email-verification-banner')).toBeVisible();
+    await expect(page.getByTestId('verify-email-state').first()).toContainText('Confirm your email to load data');
+    await expect(page.getByText('Pre-market brief')).toHaveCount(0);
+
+    // A page with its own error branch says the same thing instead of "run
+    // the generation pipeline". The session survives the navigation (the SDK
+    // persists it); the first gated 403 there marks the flag again.
+    await page.goto('/signals', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('verify-email-state').first()).toContainText('Confirm your email to load data');
+
+    // The address is confirmed in another tab; the banner's check refetches
+    // the cards with a fresh token, no reload.
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('verify-email-state').first()).toBeVisible();
+    markVerified();
+    await page.getByTestId('verification-check').click();
+    await expect(page.getByText('Pre-market brief').first()).toBeVisible();
+    await expect(page.getByTestId('verify-email-state')).toHaveCount(0);
+  });
+
+  test("a card's own confirm loads the data", async ({ page }) => {
+    const { markVerified } = await signInUnverified(page);
+
+    await expect(page.getByTestId('verify-email-state').first()).toBeVisible();
+    markVerified();
+    await page.getByTestId('verify-email-state-check').first().click();
+    await expect(page.getByText('Pre-market brief').first()).toBeVisible();
+    await expect(page.getByTestId('verify-email-state')).toHaveCount(0);
   });
 });

@@ -32,17 +32,25 @@
  */
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
-import { markAuthBlocked, clearAuthBlocked } from './authGate';
+import { markAuthBlocked, clearAuthBlocked, markVerificationRequired, clearVerificationRequired } from './authGate';
 import { isMockModeActive } from './mockMode';
 
-// Paths the backend answers WITHOUT auth (api/auth._OPEN_API_PREFIXES — keep
-// in sync), so the sign-in screen, shell, and public landing page can work.
+// Paths the backend answers WITHOUT auth, so the sign-in screen, shell, and
+// public landing page can work. The same split as the backend's
+// api/auth._OPEN_API_EXACT and _OPEN_API_PREFIXES (keep in sync): /api/me
+// itself is open, but /api/me/preferences and /api/me/profile carry per-user
+// data and are gated there, so they are gated here too.
 // Open ≠ anonymous: the ID token still attaches when present, because
 // /api/me resolves a presented bearer token server-side
-// (auth.current_user_email) to the real email + is_admin. This list decides
+// (auth.current_user_email) to the real email + is_admin. These lists decide
 // which 401s mean "signed out", and (with isIdentityPath) which requests may
 // still go out anonymously when token acquisition fails.
-const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase', '/api/waitlist'];
+const OPEN_EXACT = ['/api/me'];
+const OPEN_PREFIXES = ['/api/health', '/api/config/firebase', '/api/waitlist'];
+
+// The API's answer to a gated call from an account whose email is not
+// verified (stocks platform/api/auth.py, pinned by its tests).
+const VERIFY_EMAIL_DETAIL = 'verify your email to continue';
 
 /**
  * Absolute origin for `/api/*`, or '' to keep requests same-origin.
@@ -88,7 +96,20 @@ function pathOf(input: RequestInfo | URL): string {
 
 function isGatedApiPath(path: string): boolean {
   if (!path.startsWith('/api/')) return false;
+  if (OPEN_EXACT.includes(path)) return false;
   return !OPEN_PREFIXES.some((p) => path === p || path.startsWith(p));
+}
+
+/** True when a gated 403 is the API's verify-email answer. Reads a clone, so
+ *  the caller's body stays unread; a body that is not JSON is not that answer. */
+async function isVerifyEmail403(resp: Response): Promise<boolean> {
+  if (resp.status !== 403) return false;
+  try {
+    const body = (await resp.clone().json()) as { detail?: unknown };
+    return body?.detail === VERIFY_EMAIL_DETAIL;
+  } catch {
+    return false; // not JSON: some other 403, leave the flags alone
+  }
 }
 
 /**
@@ -154,9 +175,14 @@ export function installAuthFetch(): void {
 
     // Track gated-call outcomes in every auth mode so data cards can show a
     // "Sign in to load data" empty state on 401 instead of rendering blank.
-    const track = (resp: Response): Response => {
+    // `uid` is the account the request was made as, when known (firebase
+    // mode): a success clears the verify-email flag only for that account.
+    const track = (resp: Response, uid?: string | null): Response => {
       if (resp.status === 401) markAuthBlocked();
-      else if (resp.ok) clearAuthBlocked();
+      else if (resp.ok) {
+        clearAuthBlocked();
+        clearVerificationRequired(uid);
+      }
       return resp;
     };
 
@@ -247,7 +273,13 @@ export function installAuthFetch(): void {
     // Only gated paths signal "signed out": an open path answers without auth
     // by design, so a 401 from one is a server bug, not an expired session.
     if (resp.status === 401 && gated && _onUnauthorized) _onUnauthorized();
-    return gated ? track(resp) : resp;
+    // The verify-email 403 proves the token was accepted, so a "session
+    // expired" left over from a previous account must not linger beside it.
+    if (gated && uidAtStart && (await isVerifyEmail403(resp))) {
+      markVerificationRequired(uidAtStart);
+      clearAuthBlocked();
+    }
+    return gated ? track(resp, uidAtStart) : resp;
   };
 }
 

@@ -46,6 +46,57 @@ export function useAuthBlocked(): boolean {
   return useSyncExternalStore(subscribeAuthGate, isAuthBlocked, () => false);
 }
 
+// ── Verification required (the API's 403) ──────────────────────────────────
+//
+// Since stocks#1360 the API answers every gated call from an account whose
+// email is unverified with 403 {"detail": "verify your email to continue"}.
+// The fetch layer records that answer here so cards and page bodies can say
+// why there is no data. Keyed by uid for the same reason as the delivery
+// state below: an account switch in another tab does not reload this one,
+// and most query keys omit the uid, so account B must not inherit A's flag.
+
+let verificationRequiredFor: string | null = null;
+const verificationRequiredListeners = new Set<() => void>();
+
+function emitVerificationRequired(): void {
+  for (const l of verificationRequiredListeners) l();
+}
+
+/** Called by the fetch layer when a gated call answers the verify-email 403. */
+export function markVerificationRequired(uid: string): void {
+  if (verificationRequiredFor === uid) return;
+  verificationRequiredFor = uid;
+  emitVerificationRequired();
+}
+
+/**
+ * Called on a successful gated response (with the request's uid, so a late
+ * success from account A cannot erase the flag account B's 403 just set) and,
+ * with no uid, once the signed-in account reads verified.
+ */
+export function clearVerificationRequired(uid?: string | null): void {
+  if (verificationRequiredFor === null) return;
+  if (uid !== undefined && verificationRequiredFor !== uid) return;
+  verificationRequiredFor = null;
+  emitVerificationRequired();
+}
+
+/** True only when the flag was marked for this same account. */
+export function isVerificationRequired(uid: string | null): boolean {
+  return uid !== null && verificationRequiredFor === uid;
+}
+
+export function subscribeVerificationRequired(cb: () => void): () => void {
+  verificationRequiredListeners.add(cb);
+  return () => verificationRequiredListeners.delete(cb);
+}
+
+/** React hook: true while this account's gated calls answer the verify-email 403. */
+export function useVerificationRequired(uid: string | null): boolean {
+  const read = () => isVerificationRequired(uid);
+  return useSyncExternalStore(subscribeVerificationRequired, read, () => false);
+}
+
 // ── Verification-email delivery state ───────────────────────────────────────
 //
 // Sign-up creates the account and Firebase flips onAuthStateChanged before
