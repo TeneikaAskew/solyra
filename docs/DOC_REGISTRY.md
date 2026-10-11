@@ -122,7 +122,7 @@ renames are ignored, so a file-move wave does not flag every document.
 | C | docs/superpowers/**/*.md | | |
 | D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json, src/index.css | |
 | D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows, AGENTS.md, tests, playwright.config.ts, package.json | |
-| D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/App.tsx | |
+| D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/mocks, src/App.tsx, vite.config.ts, tsconfig.app.json, tsconfig.node.json, tsconfig.test.json, playwright.config.ts, package.json, tests, scripts/e2e-server.mjs, README.md | |
 | D | docs/UI-SCREENS.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/mocks, src/types, src/App.tsx, src/main.tsx, tests, .github/workflows/ci.yml, .github/workflows/e2e.yml | |
 | D | docs/DESIGN_SYSTEM.md | src/index.css, vite.config.ts, src/components/primitives, src/stores/themeStore.ts, src/lib/chartTheme.ts, src/stores/settingsStore.ts, src/hooks/usePreferences.ts, src/routes/SettingsPage.tsx, src/routes/AuthActionPage.tsx, src/components/shared/MetricCard.tsx, src/App.tsx, src/components/auth/ConfigGate.tsx, src/components/layout, src/routes/LandingPage.tsx, src/components/landing | |
 | D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs, package.json, .github/workflows, src/App.tsx, src/index.css, src/lib/authGate.ts, src/mocks/contract.test.ts | |
@@ -169,3 +169,13 @@ different thing.
 | CLAUDE.md | across ~(\d+) files | grep-files src fetch\(\s*['"`]/api/ |
 | CLAUDE.md | (\d+) files under `src/` and | grep-files src,tests Rule 3\.7\|§3\.7 |
 | README.md | ~(\d+) bare | grep-count src fetch\(\s*['"`]/api/ |
+| FRONTEND.md | \*\*(\d+) route-level pages\*\* | grep-count src/App.tsx errorElement, element: |
+| FRONTEND.md | \*\*(\d+) child routes\*\* | grep-count src/App.tsx errorElement, element: |
+| FRONTEND.md | The (\d+) routes \( | grep-count src/App.tsx path: ' |
+| FRONTEND.md | \((\d+) pages plus the | grep-count src/App.tsx = lazy\(\(\) => import\('@/routes/ |
+| FRONTEND.md | \((\d+) of them, one the | grep-count src/components/layout/navConfig.ts \{ path: ' |
+| FRONTEND.md | The (\d+) data-fetching hook modules | grep-files src/hooks from '@tanstack/react-query' |
+| FRONTEND.md | (\d+) stores in | grep-files src/stores ^export const use[A-Za-z]+Store = create |
+| FRONTEND.md | (\d+) of the \d+ modules | grep-files src/lib from 'vitest' |
+| FRONTEND.md | \d+ of the (\d+) modules | grep-files src/lib ^export[[:space:]] |
+| FRONTEND.md | The (\d+) non-GET call sites | grep-count src/hooks,src/routes,src/components/landing/waitlist.ts method: '(POST\|PUT\|PATCH\|DELETE)' |
