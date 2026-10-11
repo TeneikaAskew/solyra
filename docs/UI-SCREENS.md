@@ -120,6 +120,9 @@ requests and on pushes to `main`: the `checks` job in `.github/workflows/ci.yml`
 The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#00--shared-under-every-page) traces the infrastructure every screen inherits and this document does not repeat per screen: the API service and auth middleware, the authedFetch data path, mock mode, React Query defaults, the failure lane and the freshness watchdog.
 
 #### Elements
+
+<a id="shared-01--api-service-and-auth-middleware-solyra-api-staging-solyra-api-prod-auth_mode"></a>
+
 ##### SHARED-01 · API service and auth middleware (solyra-api-staging, AUTH_MODE)
 
 **Shows or does:** No UI of its own. `platform/api/auth.py` is global ASGI middleware
