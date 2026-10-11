@@ -90,6 +90,13 @@ diagnosis is wrong.
 2. `npx tsc -b` — clean
 3. `npm test` (or the narrowest relevant test file)
 4. Confirm no regression in the adjacent feature
+5. A bug a user sees in the site is verified with a Playwright run of solyra's
+   hermetic suite that reproduces it before the fix and passes after it, with
+   screenshots of both (the test saves them with `page.screenshot` into
+   `testInfo.outputPath(...)`; `AGENTS.md`, `## Review guidelines`). This agent
+   hands that run's assertions to `playwright-tester`, which its scope gives
+   test-logic failures, and reports the before and after runs. A bug whose fix
+   belongs in stocks is handed to stocks, as this agent's scope says.
 
 If any verification fails, back out and return to Step 2 — you had the wrong
 root cause.

@@ -424,6 +424,15 @@ stocks.
    fix, re-run. Document what each iteration found.
 4. **Never claim done without evidence.** Run the command and read the output
    before saying it passes.
+5. **Prove a visible change in the browser.** A change a user can see in the
+   site is proven with a Playwright run of the hermetic suite in `tests/` that
+   exercises it, with screenshots of the state before and after the change,
+   which the test saves with `page.screenshot` (see `AGENTS.md`,
+   `## Review guidelines`). When it depends on a stocks API change, it also
+   needs a `*.cloud.spec.ts` written for that change that the owner runs with
+   `npm run e2e:cloud` against the deployed site once staging has deployed it
+   and posts on the PR as a close-out step. The Testing table above says no
+   cloud spec exists yet: this is what the first one is for.
 
 ---
 
