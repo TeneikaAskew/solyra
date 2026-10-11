@@ -51,6 +51,8 @@ interface PriceAreaChartProps {
   valueFormatter?: (v: number) => string;
   /** Tooltip value formatter. Default: `$X.XX`. */
   tooltipFormatter?: (v: number) => string;
+  /** Horizontal price markers (e.g. live price, prior close). */
+  priceLines?: { value: number; label: string; tone: 'brand' | 'muted' }[];
 }
 
 interface TooltipEntry { value?: number | string }
@@ -93,17 +95,18 @@ export function PriceAreaChart({
   showDots = true,
   valueFormatter,
   tooltipFormatter,
+  priceLines = [],
 }: PriceAreaChartProps) {
   const theme = useChartTheme();
   // Compute Y-axis domain with 2% padding so the line doesn't hug the card edges
   const yDomain = useMemo<[number, number]>(() => {
     if (!data.length) return [0, 1];
-    const prices = data.map((d) => d.price);
+    const prices = [...data.map((d) => d.price), ...priceLines.map((l) => l.value)];
     const min = Math.min(...prices);
     const max = Math.max(...prices);
     const pad = (max - min) * 0.08 || 1;
     return [min - pad, max + pad];
-  }, [data]);
+  }, [data, priceLines]);
 
   const range = yDomain[1] - yDomain[0];
 
@@ -196,6 +199,16 @@ export function PriceAreaChart({
               }}
             />
           )}
+
+          {priceLines.map((line) => (
+            <ReferenceLine
+              key={line.label}
+              y={line.value}
+              stroke={line.tone === 'brand' ? theme.brand : theme.textLabel}
+              strokeDasharray={line.tone === 'brand' ? undefined : '4 4'}
+              label={{ value: `${line.label} ${line.value.toFixed(2)}`, position: 'insideTopRight', fill: line.tone === 'brand' ? theme.brand : theme.textMuted, fontSize: 10 }}
+            />
+          ))}
 
           <Area
             type="monotone"
