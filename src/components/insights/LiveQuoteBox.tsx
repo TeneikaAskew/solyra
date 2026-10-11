@@ -62,5 +62,10 @@ export function LivePriceChart({ ticker }: { ticker: string }) {
   }, [quote.data]);
   if (history.isError) return <p className="text-xs text-[var(--warn)]">Price history unavailable for {ticker}.</p>;
   if (history.isLoading) return <div className="h-[180px] animate-pulse rounded-md bg-[var(--surface-1)]" />;
-  return <PriceAreaChart data={points} height={180} showDots={false} seriesLabel={`${ticker} price`} priceLines={lines} />;
+  return (
+    <div>
+      {dayLabel && <p className="mb-1 text-[11px] font-semibold text-[var(--on-surface-muted)]">{dayLabel}</p>}
+      <PriceAreaChart data={points} height={180} showDots={false} seriesLabel={`${ticker} price`} priceLines={lines} />
+    </div>
+  );
 }
