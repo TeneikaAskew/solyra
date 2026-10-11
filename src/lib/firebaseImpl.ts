@@ -131,12 +131,14 @@ export async function resendVerificationEmail(): Promise<void> {
  * claims until it expires, and authedFetch's non-forcing getIdToken() would
  * hand that stale token to the next /api/me. null = nobody signed in.
  */
-export async function refreshEmailVerified(): Promise<boolean | null> {
+export async function refreshEmailVerified(): Promise<{ uid: string; emailVerified: boolean } | null> {
   const user = _auth?.currentUser;
   if (!user) return null;
   await user.reload();
   await user.getIdToken(true);
-  return _auth?.currentUser?.emailVerified ?? null;
+  // The user refreshed above, not currentUser: another tab can switch the
+  // account while these awaits run, and its status is not this one's.
+  return { uid: user.uid, emailVerified: user.emailVerified };
 }
 
 // ── Email action links (/auth/action) ───────────────────────────────────────

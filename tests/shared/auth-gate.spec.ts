@@ -705,6 +705,9 @@ test.describe('Unverified email account', () => {
     const { markVerified } = await signInUnverified(page);
 
     await expect(page.getByTestId('verify-email-state').first()).toBeVisible();
+    // Before the link is opened, the check says so instead of doing nothing.
+    await page.getByTestId('verify-email-state-check').first().click();
+    await expect(page.getByText('Not confirmed yet').first()).toBeVisible();
     markVerified();
     await page.getByTestId('verify-email-state-check').first().click();
     await expect(page.getByText('Pre-market brief').first()).toBeVisible();

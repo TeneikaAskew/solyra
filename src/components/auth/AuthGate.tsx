@@ -1,5 +1,4 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useUser } from '@/hooks/useUser';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { SignInScreen } from './SignInScreen';
@@ -14,17 +13,17 @@ import { SignInScreen } from './SignInScreen';
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   const { authMode, isSignedIn, isLoading, uid } = useUser();
-  const queryClient = useQueryClient();
   const previousUid = useRef<string | null>(uid);
 
   // An account switched in from another tab does not reload this one, and
-  // most query keys omit the uid, so the new account would be served the
-  // previous account's cached results (journal rows included) with no request
-  // made. Reset every query on each change away from an account.
+  // nearly all client state is account-blind: query keys omit the uid, the
+  // appearance stores and their sync guard outlive the switch, and a save
+  // still in flight writes into whatever the cache now shows. Reloading on
+  // every change away from an account starts all of it over for the new one.
   useEffect(() => {
-    if (isAccountChange(previousUid.current, uid)) void resetAccountQueries(queryClient);
+    reloadOnAccountChange(previousUid.current, uid, () => window.location.reload());
     previousUid.current = uid;
-  }, [uid, queryClient]);
+  }, [uid]);
 
   if (authMode !== 'firebase') return <>{children}</>;
 
@@ -46,13 +45,7 @@ export function isAccountChange(prev: string | null, next: string | null): boole
   return prev !== null && prev !== next;
 }
 
-/**
- * Return every query to its initial state and refetch the active ones under the
- * new account's token. Not queryClient.clear(): by the time AuthGate's effect
- * runs, useUser has already started the new account's ['me', uid] query, and
- * clear() destroys it in flight, so its answer is discarded and the gate stays
- * on its spinner; clear() also leaves a mounted view showing the old rows.
- */
-export function resetAccountQueries(queryClient: QueryClient): Promise<void> {
-  return queryClient.resetQueries();
+/** Reload the page when the signed-in account changes away from a previous one. */
+export function reloadOnAccountChange(prev: string | null, next: string | null, reload: () => void): void {
+  if (isAccountChange(prev, next)) reload();
 }

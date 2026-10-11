@@ -10,9 +10,8 @@
  * the other (issue #11).
  *
  * If the published app ever serves from a domain that is NOT listed in
- * STATIC_FRONTEND_HOST_SUFFIXES or STATIC_FRONTEND_HOSTS, TWO places need the
- * new origin:
- *  1. one of the lists below (so the browser re-points /api/* at staging), and
+ * STATIC_FRONTEND_HOST_SUFFIXES, TWO places need the new origin:
+ *  1. the suffix list below (so the browser re-points /api/* at staging), and
  *  2. the CORS allow-list in the stocks repo's API (so the browser is allowed
  *     to make that cross-origin call at all).
  * Keep this comment in sync with that reality — it is the "allowed-origin
@@ -37,18 +36,7 @@ export const STAGING_API = 'https://solyra-api-staging-5sjtb3yl7a-ue.a.run.app'
  */
 const STATIC_FRONTEND_HOST_SUFFIXES = ['.lovable.app', '.lovableproject.com']
 
-/**
- * Exact static hosts: the Lovable site's custom domain (connected 2026-10-10).
- * Exact rather than a suffix, because `endsWith` would also match
- * `evil-stocks.insightscollective.org`, and the apex serves a different site.
- * Its stocks counterpart is the CORS origin in platform/api/main.py.
- */
-const STATIC_FRONTEND_HOSTS = ['stocks.insightscollective.org']
-
 /** True when the given browser hostname is a known static (API-less) host. */
 export function isStaticFrontendHost(hostname: string): boolean {
-  return (
-    STATIC_FRONTEND_HOSTS.includes(hostname) ||
-    STATIC_FRONTEND_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix))
-  )
+  return STATIC_FRONTEND_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix))
 }

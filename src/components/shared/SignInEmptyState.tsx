@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuthBlocked, useVerificationRequired } from '@/lib/authGate';
 import { useUser } from '@/hooks/useUser';
 import { refreshEmailVerified } from '@/lib/firebase';
-import { confirmEmailVerified } from '@/components/shared/AuthStatusIndicator';
+import { confirmEmailVerified, type ConfirmResult } from '@/components/shared/AuthStatusIndicator';
 
 /**
  * Empty state shown inside a data card when the API answered 401: the user
@@ -64,12 +64,12 @@ export function VerifyEmailEmptyState({ compact = false }: { compact?: boolean }
   const { uid } = useUser();
   const queryClient = useQueryClient();
   const [checking, setChecking] = useState(false);
-  const [stillUnverified, setStillUnverified] = useState(false);
+  const [result, setResult] = useState<ConfirmResult | null>(null);
   const onConfirmed = async () => {
     setChecking(true);
-    setStillUnverified(false);
+    setResult(null);
     try {
-      if (!(await confirmEmailVerified(uid, refreshEmailVerified, queryClient))) setStillUnverified(true);
+      setResult(await confirmEmailVerified(uid, refreshEmailVerified, queryClient));
     } finally {
       setChecking(false);
     }
@@ -97,8 +97,13 @@ export function VerifyEmailEmptyState({ compact = false }: { compact?: boolean }
       >
         {checking ? 'Checking…' : "I've confirmed"}
       </button>
-      {stillUnverified && (
+      {result?.outcome === 'unverified' && (
         <p className="text-[12px] text-[var(--on-surface-muted)]">Not confirmed yet. Open the link in the email, then try again.</p>
+      )}
+      {result?.outcome === 'failed' && (
+        <p role="alert" className="text-[12px] text-[var(--on-surface-muted)]">
+          Could not check the account: {result.message}
+        </p>
       )}
     </div>
   );
@@ -149,10 +154,26 @@ export function DataGate({ children, compact = false }: { children: ReactNode; c
   const blocked = useAuthBlocked();
   const { isSignedIn, isLoading, uid } = useUser();
   const verificationRequired = useVerificationRequired(uid);
-  if (blocked && !isLoading && !isSignedIn) return <SignInEmptyState compact={compact} />;
-  // Signed in, but the API refuses this account until its email is confirmed:
-  // the page's own error branches would otherwise speak first ("run the
-  // generation pipeline" on /signals), none of them naming the real remedy.
-  if (verificationRequired && isSignedIn) return <VerifyEmailEmptyState compact={compact} />;
+  const view = dataGateView({ blocked, isLoading, isSignedIn, verificationRequired });
+  if (view === 'sign-in') return <SignInEmptyState compact={compact} />;
+  if (view === 'verify') return <VerifyEmailEmptyState compact={compact} />;
   return <>{children}</>;
+}
+
+/**
+ * What DataGate shows. Signed in, but the API refuses this account until its
+ * email is confirmed: the page's own error branches would otherwise speak
+ * first ("run the generation pipeline" on /signals), none of them naming the
+ * real remedy. A blocked session (a 401) takes precedence, as it does in
+ * WidgetState: an expired session is not a verification problem.
+ */
+export function dataGateView(s: {
+  blocked: boolean;
+  isLoading: boolean;
+  isSignedIn: boolean;
+  verificationRequired: boolean;
+}): 'sign-in' | 'verify' | 'children' {
+  if (s.blocked && !s.isLoading && !s.isSignedIn) return 'sign-in';
+  if (s.verificationRequired && s.isSignedIn && !s.blocked) return 'verify';
+  return 'children';
 }

@@ -12,13 +12,15 @@ import { clearVerificationRequired, isVerificationRequired, markVerificationRequ
 afterEach(() => clearVerificationRequired());
 
 describe('confirmEmailVerified', () => {
+  const as = (uid: string, emailVerified: boolean) => async () => ({ uid, emailVerified });
+
   it('clears the verification flag and refetches every query once the account reads verified', async () => {
     markVerificationRequired('uid-a');
     const queryClient = { invalidateQueries: vi.fn(async () => {}) };
 
-    const verified = await confirmEmailVerified('uid-a', async () => true, queryClient);
+    const result = await confirmEmailVerified('uid-a', as('uid-a', true), queryClient);
 
-    expect(verified).toBe(true);
+    expect(result).toEqual({ outcome: 'verified' });
     expect(isVerificationRequired('uid-a')).toBe(false);
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
   });
@@ -27,9 +29,34 @@ describe('confirmEmailVerified', () => {
     markVerificationRequired('uid-a');
     const queryClient = { invalidateQueries: vi.fn(async () => {}) };
 
-    const verified = await confirmEmailVerified('uid-a', async () => false, queryClient);
+    const result = await confirmEmailVerified('uid-a', as('uid-a', false), queryClient);
 
-    expect(verified).toBe(false);
+    expect(result).toEqual({ outcome: 'unverified' });
+    expect(isVerificationRequired('uid-a')).toBe(true);
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed check instead of throwing, and changes nothing', async () => {
+    markVerificationRequired('uid-a');
+    const queryClient = { invalidateQueries: vi.fn(async () => {}) };
+    const refresh = async () => {
+      throw new Error('network down');
+    };
+
+    const result = await confirmEmailVerified('uid-a', refresh, queryClient);
+
+    expect(result).toEqual({ outcome: 'failed', message: 'network down' });
+    expect(isVerificationRequired('uid-a')).toBe(true);
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("does not count another account's verified result for the account that clicked", async () => {
+    markVerificationRequired('uid-a');
+    const queryClient = { invalidateQueries: vi.fn(async () => {}) };
+
+    const result = await confirmEmailVerified('uid-a', as('uid-b', true), queryClient);
+
+    expect(result).toEqual({ outcome: 'unverified' });
     expect(isVerificationRequired('uid-a')).toBe(true);
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
   });
@@ -37,12 +64,12 @@ describe('confirmEmailVerified', () => {
   it("leaves account B's flag in place when A's confirmation returns after the switch", async () => {
     markVerificationRequired('uid-a');
     const queryClient = { invalidateQueries: vi.fn(async () => {}) };
-    let reportVerified: (verified: boolean) => void = () => {};
-    const refresh = () => new Promise<boolean>((resolve) => { reportVerified = resolve; });
+    let report: (r: { uid: string; emailVerified: boolean }) => void = () => {};
+    const refresh = () => new Promise<{ uid: string; emailVerified: boolean }>((resolve) => { report = resolve; });
 
     const confirming = confirmEmailVerified('uid-a', refresh, queryClient);
     markVerificationRequired('uid-b');
-    reportVerified(true);
+    report({ uid: 'uid-a', emailVerified: true });
     await confirming;
 
     expect(isVerificationRequired('uid-b')).toBe(true);

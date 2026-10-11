@@ -194,20 +194,31 @@ export function AuthStatusBanner() {
  * and the state would never lift. If the server still answers 403, the next
  * response marks the flag again. `uid` is the account that clicked: only its
  * flag clears, so a confirmation that returns after an account switch cannot
- * erase the flag the new account's 403 set. Pure so it can be tested without
- * a component.
+ * erase the flag the new account's 403 set. A failed check is returned, not
+ * thrown, so every caller can say so. Pure so it can be tested without a
+ * component.
  */
+/** What an "I've confirmed" check found, for the surface to say. */
+export type ConfirmResult = { outcome: 'verified' } | { outcome: 'unverified' } | { outcome: 'failed'; message: string };
+
 export async function confirmEmailVerified(
   uid: string | null,
-  refresh: () => Promise<boolean | null>,
+  refresh: () => Promise<{ uid: string; emailVerified: boolean } | null>,
   queryClient: { invalidateQueries: () => Promise<unknown> },
-): Promise<boolean> {
-  const verified = (await refresh()) === true;
-  if (verified) {
-    clearVerificationRequired(uid);
-    await queryClient.invalidateQueries();
+): Promise<ConfirmResult> {
+  let account: { uid: string; emailVerified: boolean } | null;
+  try {
+    account = await refresh();
+  } catch (err) {
+    const message = err instanceof Error && err.message ? err.message : 'the check failed';
+    return { outcome: 'failed', message };
   }
-  return verified;
+  // Only the account that clicked counts: a result read for another account
+  // (switched in while the check ran) says nothing about this one.
+  if (!uid || account?.uid !== uid || !account.emailVerified) return { outcome: 'unverified' };
+  clearVerificationRequired(uid);
+  await queryClient.invalidateQueries();
+  return { outcome: 'verified' };
 }
 
 /**
@@ -287,12 +298,10 @@ function EmailVerificationBannerFor() {
     setChecking(true);
     setStillUnverified(false);
     try {
-      const verified = await confirmEmailVerified(uid, refreshEmailVerified, queryClient);
-      if (verified) setConfirmed(true);
-      else setStillUnverified(true);
-    } catch (err) {
-      const e = err as { message?: string };
-      setResend({ state: 'error', message: `Could not check the account${e.message ? `: ${e.message}` : '.'}` });
+      const result = await confirmEmailVerified(uid, refreshEmailVerified, queryClient);
+      if (result.outcome === 'verified') setConfirmed(true);
+      else if (result.outcome === 'unverified') setStillUnverified(true);
+      else setResend({ state: 'error', message: `Could not check the account: ${result.message}` });
     } finally {
       setChecking(false);
     }

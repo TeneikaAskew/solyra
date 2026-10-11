@@ -1,6 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
-import { isAccountChange, resetAccountQueries } from './AuthGate';
+import { describe, expect, it, vi } from 'vitest';
+import { isAccountChange, reloadOnAccountChange } from './AuthGate';
 
 describe('isAccountChange', () => {
   it('is true when the signed-in account changes away from a previous one', () => {
@@ -14,38 +13,17 @@ describe('isAccountChange', () => {
   });
 });
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
-
-describe('resetAccountQueries', () => {
-  it("drops account A's rows from a mounted view and lets B's in-flight identity query resolve", async () => {
-    const queryClient = new QueryClient();
-
-    // Account A's journal rows, cached under a key with no uid and still mounted.
-    const rows = [['A-row'], ['B-row']];
-    const journal = new QueryObserver(queryClient, { queryKey: ['journal'], queryFn: async () => rows.shift() });
-    const stopJournal = journal.subscribe(() => {});
-    await settle();
-    expect(journal.getCurrentResult().data).toEqual(['A-row']);
-
-    // Account B's /api/me, started by useUser before AuthGate's effect runs.
-    const answers: Array<(me: { email: string }) => void> = [];
-    const me = new QueryObserver(queryClient, {
-      queryKey: ['me', 'uid-b'],
-      queryFn: () => new Promise<{ email: string }>((resolve) => answers.push(resolve)),
-    });
-    const stopMe = me.subscribe(() => {});
-    await settle();
-
-    await Promise.race([resetAccountQueries(queryClient), settle()]);
-    expect(journal.getCurrentResult().data).not.toEqual(['A-row']);
-
-    answers.forEach((answer) => answer({ email: 'b@example.com' }));
-    await settle();
-
-    expect(me.getCurrentResult().status).toBe('success');
-    expect(me.getCurrentResult().data).toEqual({ email: 'b@example.com' });
-    expect(journal.getCurrentResult().data).toEqual(['B-row']);
-    stopJournal();
-    stopMe();
+describe('reloadOnAccountChange', () => {
+  it('reloads the page when the signed-in account changes away from a previous one', () => {
+    const reload = vi.fn();
+    reloadOnAccountChange('uid-a', 'uid-b', reload);
+    reloadOnAccountChange('uid-a', null, reload);
+    expect(reload).toHaveBeenCalledTimes(2);
+  });
+  it('does not reload for a first sign-in or the same account', () => {
+    const reload = vi.fn();
+    reloadOnAccountChange(null, 'uid-a', reload);
+    reloadOnAccountChange('uid-a', 'uid-a', reload);
+    expect(reload).not.toHaveBeenCalled();
   });
 });

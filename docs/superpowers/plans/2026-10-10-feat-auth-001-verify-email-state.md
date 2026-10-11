@@ -27,37 +27,31 @@ Spec: § Design, `authGate.ts` and `authedFetch.ts`. Advances done_when[0] and [
 
 ## Task 2: the surfaces and the confirm flow
 Spec: § Design, `WidgetState.tsx`, `SignInEmptyState.tsx`, `AuthStatusIndicator.tsx`. Advances
-done_when[3], [4] and [5].
+done_when[3], [4], [5] and [6].
 - [ ] Write the failing tests: `widgetErrorKind` in `src/components/shared/WidgetState.test.ts`;
-      `confirmEmailVerified(uid, refresh, queryClient)` in
-      `src/components/shared/AuthStatusIndicator.test.ts`, including B marked while A's refresh is
-      pending, and `showVerificationBanner`; the two "Unverified email account" tests in
-      `tests/shared/auth-gate.spec.ts`, whose mock API accepts only the token minted by the
-      confirm (the server decides from the token's claim)
+      `dataGateView` in `src/components/shared/SignInEmptyState.test.ts`;
+      `confirmEmailVerified(uid, refresh, queryClient)` and its three outcomes, the refreshed
+      user's uid, B marked while A's refresh is pending, and `showVerificationBanner` in
+      `src/components/shared/AuthStatusIndicator.test.ts`; the two "Unverified email account"
+      tests in `tests/shared/auth-gate.spec.ts`, whose mock API accepts only the token minted by
+      the confirm (the server decides from the token's claim)
 - [ ] Run them (expect FAIL)
 - [ ] Implement `widgetErrorKind` and the `'verify'` branch in `WidgetState`;
-      `VerifyEmailEmptyState` and the `DataGate` branch; `confirmEmailVerified` with the scoped
-      clear, used by the banner and the empty state with `useUser().uid`; the banner copy and its
-      visibility through `showVerificationBanner`
+      `VerifyEmailEmptyState`, `dataGateView` and `DataGate`; `refreshEmailVerified` returning the
+      refreshed user's `{ uid, emailVerified }`; `confirmEmailVerified` returning
+      `ConfirmResult`, used by the banner and the empty state with `useUser().uid`; the banner copy
+      and its visibility through `showVerificationBanner`
 - [ ] Run again (expect PASS), then `npx playwright test tests/shared/auth-gate.spec.ts`
 
 ## Task 3: the account switch
 Spec: § Design, `AuthGate.tsx`. Advances done_when[2].
-- [ ] Write the failing tests in `src/components/auth/AuthGate.test.ts`: `isAccountChange`, and
-      `resetAccountQueries` on a QueryClient with A's rows mounted and B's `['me', uid]` in flight
-- [ ] Run (expect FAIL); confirm the reset test also fails with `clear()` in its place
-- [ ] Implement `isAccountChange`, `resetAccountQueries` (`queryClient.resetQueries()`) and the
-      effect in `AuthGate`
-- [ ] Run again (expect PASS)
-
-## Task 4: the new static host
-Spec: § Design, `apiTargets.ts`. Advances done_when[6].
-- [ ] Write the failing test `src/lib/apiTargets.test.ts`
+- [ ] Write the failing tests in `src/components/auth/AuthGate.test.ts`: `isAccountChange` and
+      `reloadOnAccountChange` with a spy reload
 - [ ] Run (expect FAIL)
-- [ ] Add `STATIC_FRONTEND_HOSTS = ['stocks.insightscollective.org']`, matched exactly
+- [ ] Implement both and the effect in `AuthGate`, reloading with `window.location.reload()`
 - [ ] Run again (expect PASS)
 
-## Task 5: close
+## Task 4: close
 Spec: done_when[7] and [8].
 - [ ] Run every new test against `main` and record the failures in the PR body
 - [ ] `02-FEATURE-CATALOG.md` FEAT-AUTH-001 row: Status, Last reviewed, this PR in the PRs column
