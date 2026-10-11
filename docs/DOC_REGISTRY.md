@@ -16,7 +16,7 @@ kinds of document live here and each one fails differently:
 | **A** | **Machine-owned.** A job or tool writes it. | Audits it, writes only outside the generated regions, and **routes** every other fix. Also checks the owning job actually **delivered**. |
 | **B** | **Frozen.** A deliberate hand-maintained snapshot. | Nothing. Never read as current, never written. |
 | **X** | **Out of scope.** Agent and command instructions, templates, Lovable's own plan records. Not product documentation. | Nothing. Distinct from unclassified, which means the registry has a gap. |
-| **C** | **Dated record.** An audit or design record whose whole purpose is to state what was true on its date. | Read for cross-references only. **Never re-dated, never rewritten** — rewriting a dated record destroys the record. May receive an *appended*, dated status block. |
+| **C** | **Dated record.** An audit or design record whose whole purpose is to state what was true on its date, a spec or plan under `docs/superpowers/` included. | Read for cross-references only. **Never re-dated, never rewritten** — rewriting a dated record destroys the record. May receive an *appended*, dated status block. A plan's status done and a spec's status superseded, the frontmatter changes the product-delivery skill requires (`status: done` once the plan's PR merges, `status: superseded` once an approved spec replaces it), are not rewrites: they are the record's lifecycle. |
 | **D** | **Living.** Describes the system as it is now. | Full audit: review marker, issue/PR citations, links, and drift against the code it declares. |
 
 ### Class A is audited, not skipped
@@ -113,6 +113,7 @@ renames are ignored, so a file-move wave does not flag every document.
 | C | docs/expected-move-affordances-design.md | | |
 | C | docs/journal-one-stop-shop-design.md | | |
 | C | docs/solyra-landing-page-design.md | | |
+| C | docs/superpowers/**/*.md | | |
 | D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json | |
 | D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows | |
 | D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/App.tsx | |
