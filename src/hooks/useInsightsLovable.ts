@@ -1,16 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { getIdToken } from '@/lib/firebase';
+import { getAuthMode } from '@/lib/runtimeConfig';
 import type { ResearchMode, ResearchSessionDetail, ResearchSessionSummary, ResearchSource, ResearchStage, ResearchStreamEvent, ResearchAnswer } from '@/types/insightsLovable';
 
 const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/insights-research`;
 
 async function request(body: unknown, signal?: AbortSignal): Promise<Response> {
   const token = await getIdToken();
-  if (!token) throw new Error('Sign in to use the research workspace.');
+  if (!token && !(import.meta.env.DEV && getAuthMode() === 'open')) {
+    throw new Error('Sign in to use the research workspace.');
+  }
   const response = await fetch(functionUrl, {
     method: 'POST', signal,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) {

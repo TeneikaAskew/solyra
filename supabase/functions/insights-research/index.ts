@@ -213,8 +213,31 @@ Deno.serve(async (req) => {
       const { data: run } = await db.from('insight_research_runs').insert({ session_id: sessionId, message_id: messageId, owner_uid: user.uid, status: 'gathering', model_id: MODEL }).select('id').single();
       runId = run?.id ?? null;
       await emit({ type: 'status', stage: 'gathering', label: 'Gathering approved evidence' });
-      const evidence = await gather(body.ticker, user.authorization, body.mode, body.replayCutoff);
-      await db.from('insight_research_sources').insert(evidence.map((source) => ({ session_id: sessionId, message_id: messageId, owner_uid: user.uid, citation_id: source.id, source_type: source.type, source_label: source.label, source_url: source.path, source_as_of: source.asOf, freshness: source.freshness, excerpt: source.excerpt, payload_hash: source.hash, metadata: { available: source.payload !== null } })));
+      let evidence: Evidence[];
+      if (body.sessionId) {
+        const { data: frozen, error: frozenError } = await db
+          .from('insight_research_sources')
+          .select('citation_id,source_type,source_label,source_url,source_as_of,freshness,excerpt,payload_hash,metadata')
+          .eq('session_id', body.sessionId)
+          .eq('owner_uid', user.uid)
+          .order('created_at')
+          .limit(6);
+        if (frozenError || !frozen || frozen.length === 0) throw new Error('The frozen evidence snapshot for this session is unavailable.');
+        evidence = frozen.map((source) => ({
+          id: source.citation_id,
+          type: source.source_type,
+          label: source.source_label,
+          path: source.source_url,
+          asOf: source.source_as_of,
+          freshness: source.freshness as Evidence['freshness'],
+          excerpt: source.excerpt,
+          payload: (source.metadata as { payload?: unknown } | null)?.payload ?? null,
+          hash: source.payload_hash,
+        }));
+      } else {
+        evidence = await gather(body.ticker, user.authorization, body.mode, body.replayCutoff);
+      }
+      await db.from('insight_research_sources').insert(evidence.map((source) => ({ session_id: sessionId, message_id: messageId, owner_uid: user.uid, citation_id: source.id, source_type: source.type, source_label: source.label, source_url: source.path, source_as_of: source.asOf, freshness: source.freshness, excerpt: source.excerpt, payload_hash: source.hash, metadata: { available: source.payload !== null, payload: source.payload } })));
       await emit({ type: 'sources', sources: evidence.map(({ payload: _payload, hash: _hash, ...source }) => source) });
       await db.from('insight_research_messages').update({ run_state: 'synthesizing' }).eq('id', messageId).eq('owner_uid', user.uid);
       if (runId) await db.from('insight_research_runs').update({ status: 'synthesizing', evidence_count: evidence.length }).eq('id', runId).eq('owner_uid', user.uid);
