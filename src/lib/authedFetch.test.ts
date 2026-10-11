@@ -378,6 +378,30 @@ describe('installAuthFetch — the verify-email 403', () => {
     expect(gate.isAuthBlocked()).toBe(false);
   });
 
+  it("a late verification 403 from account A leaves account B's verification flag in place", async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    const late403 = await holdRequest(native, fetch);
+    const late403NoToken = await holdRequest(native, fetch);
+
+    switchTo('uid-b');
+    native.mockResolvedValueOnce(verify403());
+    await fetch('/api/glossary');
+    expect(gate.isVerificationRequired('uid-b')).toBe(true);
+
+    // B's token differs from the one A's request carried.
+    late403.release(verify403());
+    await late403.pending;
+    expect(gate.isVerificationRequired('uid-b')).toBe(true);
+    // Reading B's token fails, so the token comparison cannot decide; the account check still does.
+    getIdToken.mockRejectedValue(new Error('refresh down'));
+    late403NoToken.release(verify403());
+    await late403NoToken.pending;
+    expect(gate.isVerificationRequired('uid-b')).toBe(true);
+    expect(gate.isVerificationRequired('uid-a')).toBe(false);
+  });
+
   it('treats /api/me/preferences as gated, matching the server, while /api/me stays open', async () => {
     signedInAs('uid-a');
     const { native, onUnauthorized, fetch } = await install();

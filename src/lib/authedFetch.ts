@@ -285,9 +285,11 @@ export function installAuthFetch(): void {
     if (gated && uidAtStart && (await isVerifyEmail403(resp))) {
       // A 403 answered to a token that I've confirmed has since replaced is
       // stale: requests now carry the verified claim, so it must not re-mark.
+      // One from an account no longer signed in must not replace the current
+      // account's flag either, even when its token cannot be read to compare.
       const current = await getIdToken().catch(() => null);
       const superseded = sentToken !== null && current !== null && current !== sentToken;
-      if (!superseded) markVerificationRequired(uidAtStart);
+      if (!superseded && sameAccount) markVerificationRequired(uidAtStart);
       if (sameAccount) clearAuthBlocked();
     }
     return gated ? track(resp, uidAtStart, sameAccount) : resp;
