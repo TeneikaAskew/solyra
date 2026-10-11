@@ -96,8 +96,13 @@ single-branch CI clone, where no such ref exists. Pass `--since origin/main`
 when the recorded provenance has to name a mainline commit.
 
 Placement is "the first paragraph after the first H1", never a fixed line
-number: seven living docs here open with an HTML comment block and carry their
-H1 on line 9, where a line-3 insert would land inside the comment.
+number: six living docs here (`FRONTEND.md`, `docs/UI-SCREENS.md`,
+`docs/E2E_TEST_PLAN.md`, `docs/REDESIGN.md`,
+`docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md`,
+`docs/solyra-landing-page-plan.md`) open with an HTML comment block and carry
+their H1 on line 9, where a line-3 insert would land inside the comment.
+`AGENTS.md` opens with a comment block too (Lovable's fence) but its H1 is on
+line 12, so a marker goes after that.
 
 ## Registry
 
@@ -161,3 +166,4 @@ different thing.
 | CLAUDE.md | ~(\d+) bare relative | grep-count src fetch\(\s*['"`]/api/ |
 | CLAUDE.md | across ~(\d+) files | grep-files src fetch\(\s*['"`]/api/ |
 | CLAUDE.md | (\d+) files under `src/` and | grep-files src,tests Rule 3\.7\|§3\.7 |
+| README.md | ~(\d+) bare | grep-count src fetch\(\s*['"`]/api/ |

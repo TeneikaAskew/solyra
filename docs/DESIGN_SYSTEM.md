@@ -14,6 +14,26 @@ By moving away from the bright greens of the reference material and adopting a s
 
 The palette is anchored in deep charcoals and obsidian blacks, providing a high-contrast stage for critical data points.
 
+> **Scope of this section (checked against `src/index.css` and
+> `src/stores/settingsStore.ts`, 2026-10-11).** The blue described below is
+> the `blue` accent in **dark** theme. It is one of twelve user-selectable
+> accents (`ACCENTS` in `settingsStore.ts`: `dawn`, `blue`, `amber`, `violet`,
+> `cyan`, `teal`, `pink`, `magenta`, `orange`, `yellow`, `indigo`, `rose`), and
+> it is not the default: new users get **`dawn`** (`--brand: #ff7a4d`, orange;
+> `DEFAULTS` in `settingsStore.ts`), applied as an `accent-*` class on `<body>`
+> at module load, before any component renders. Every accent except `blue`
+> remaps `--brand`, `--brand-glow` and `--outline` through an `.accent-*` rule
+> in `src/index.css`; `blue` needs no override because it falls through to the
+> base variables (`--brand: #8bceff` in the dark `:root` block). Under
+> `[data-theme="light"]` those base variables are redefined instead
+> (`--brand: #0072c6`, `--brand-container: #004f8a`, `--brand-glow: #3b9fde`;
+> §6 lists the first), so the hex values in this section hold for `blue` in
+> dark theme only. A user picks the accent in Settings › Appearance; it
+> persists to `localStorage` and is written through to the account's
+> preferences. The other eleven accents were not audited for this note, so
+> read every hex value below as "true for the `blue` accent in dark theme",
+> not as a repo-wide constant.
+
 > **Naming note:** this document uses Material-style role names
 > (`surface-container-low`, `primary`, …). The implemented custom properties
 > in `src/index.css` use shorter names (`--surface-1`, `--brand`, …) — the
@@ -217,11 +237,15 @@ the paths below were `platform/src/...` in that repo.
 imports **Montserrat** only (`:1`), and uses it for both display and body.
 
 The §3 type scale is only partially implemented, and not at the documented
-sizes. Of the table's nine rows, `src/index.css` defines classes for two:
-`.display-lg` at **3rem**, not the specified 3.5rem, and `.headline-sm` at
-the specified 1.125rem — plus a `.label-micro` (11px) the table doesn't
-name. The remaining rows (`display-md`, `display-sm`, `headline-lg`,
-`body-*`, `label-*`) have no implementation yet.
+sizes. Of the table's nine rows, `src/index.css` defines classes for three:
+`.display-lg` at **3rem**, not the specified 3.5rem; `.headline-sm` at the
+specified 1.125rem; and `display-sm`, whose spec (1.75rem / 700) is
+implemented exactly but under a different class name, `.metric-value`. Its own
+comment ("Display-sm: KPI card value") and `MetricCard.tsx`'s use of it match
+the KPI value that §5's KPI Card Anatomy diagram labels `display-sm`. There is
+also a `.label-micro` (11px) the table doesn't name. The remaining six rows
+(`display-md`, `headline-lg`, `body-lg`, `body-md`, `label-md`, `label-sm`)
+have no implementation yet.
 
 These are recorded rather than silently reconciled, because closing them is
 a design decision: load the specified pair or ratify Montserrat, and either
