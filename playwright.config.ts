@@ -7,11 +7,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Cloud E2E navigates SPA routes (/dashboard, /charts, …), so its baseURL must
 // be the host that SERVES THE SPA — not the API. Since the #957 split the API
 // image contains no dist/ (platform/Dockerfile copies none, and main.py mounts
-// the SPA only when platform/dist exists), so solyra-api-prod answers /dashboard
+// the SPA only when platform/dist exists), so the API service answers /dashboard
 // with 404 {"detail":"Not Found"}. Verified 2026-09-05 against solyra-api-staging,
-// which runs the same image without IAP in front. This default previously pointed
-// at the API service, which is why `npm run e2e:cloud` could not have worked since
-// #957 (Codex, solyra#44).
+// the only API service since solyra-api-prod was retired on 2026-10-10. This
+// default previously pointed at the API service, which is why `npm run e2e:cloud`
+// could not have worked since #957 (Codex, solyra#44).
 const FRONTEND_URL =
   process.env.E2E_CLOUD_URL ?? 'https://solyra-stocks.lovable.app';
 

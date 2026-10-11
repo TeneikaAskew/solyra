@@ -850,18 +850,28 @@ In order:
    out is resolving a thread you never validated.
 4. Verify each finding against the code before fixing it: reproduce, write the
    failing test, fix, show it pass.
-   **If this produced a commit, go back to step 1 on the new head.** A fix
-   commit moves the head past the review that approved it, so merging from
-   here lets the review-fix itself merge unreviewed — the same stale-head
-   condition, arriving by a different route. Push, let the review re-run on
-   the new SHA, re-check. No round limit.
+   **If this produced a commit for a finding from the PR's first review round,
+   go back to step 1 on the new head.** A fix commit moves the head past the
+   review that approved it, so merging from here lets the review-fix itself
+   merge unreviewed — the same stale-head condition, arriving by a different
+   route. Push, let the review re-run on the new SHA, re-check: that run is
+   the PR's second review round.
+   **Two review rounds, then split, re-cut or discard** (CLAUDE.md, "Review
+   cap"; the product-delivery skill, Phase 4). A finding from the second
+   round is classified (CLAUDE.md Rule 2.5) and the PR split, re-cut or
+   discarded, with no in-place fix and no third review: present that choice
+   (`superpowers:finishing-a-development-branch`) and stop.
    **A completed review with no findings posts no review at all**, only a 👍
    reaction, so an absent review for a SHA means either "clean" or "not yet
    run". Read the review summary comment's status table alongside the review
    list to tell them apart.
 5. **Now zero unresolved**, across every page: each thread fixed-and-resolved
    naming what changed and the covering test and commit, or replied to with
-   why not. Then CI green on the current head, and no merge conflict.
+   why not. A thread holding a finding that a reviewer posted after its own
+   first review is resolved only after a reply on it classifies each
+   location: uncounted, missed (with the SHA of the commit that first review
+   covered) or new (with the SHA of the later commit), as CLAUDE.md Rule 2.5
+   says. Then CI green on the current head, and no merge conflict.
 6. **Merge it, bound to the SHA that passed.** Steps 1-5 are the gate, not
    the destination; stopping here leaves the fix on a branch while Phase 9
    describes the issue as landed. Merge once every step above passes, and
