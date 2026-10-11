@@ -98,6 +98,34 @@ function trimLists(value: unknown, keep: number): unknown {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, trimLists(v, keep)]));
   return value;
 }
+// Builds a short human-readable summary of an evidence payload for the evidence panel.
+function summarize(payload: unknown, type: string): string {
+  if (!payload || typeof payload !== 'object') return 'No detail available.';
+  const p = payload as Record<string, unknown>;
+  const parts: string[] = [];
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const report = (p.report && typeof p.report === 'object' ? p.report : p) as Record<string, unknown>;
+  const thesis = str(report.thesis) ?? str(p.thesis) ?? str(p.summary) ?? str(p.brief);
+  if (thesis) parts.push(thesis.length > 220 ? `${thesis.slice(0, 220)}…` : thesis);
+  const bias = str(p.bias) ?? str(report.regime);
+  if (bias) parts.push(`Bias/regime: ${bias}.`);
+  const price = num(p.price) ?? num(report.price);
+  if (price !== null) parts.push(`Price: ${price}.`);
+  const rsi = num(p.rsi);
+  if (rsi !== null) parts.push(`RSI: ${rsi}.`);
+  if (Array.isArray(p.cards) && p.cards.length) {
+    const names = p.cards.slice(0, 3).map((c) => str((c as Record<string, unknown>).name)).filter(Boolean);
+    if (names.length) parts.push(`Playbook setups: ${names.join('; ')}.`);
+  }
+  if (Array.isArray(p.events) && p.events.length) {
+    const names = p.events.slice(0, 3).map((e) => str((e as Record<string, unknown>).title) ?? str((e as Record<string, unknown>).name)).filter(Boolean);
+    if (names.length) parts.push(`Upcoming events: ${names.join('; ')}.`);
+  }
+  if (Array.isArray(p.signals) && p.signals.length) parts.push(`${p.signals.length} recent signals on record.`);
+  if (!parts.length) parts.push(`${type} data available; see the full report on its page.`);
+  return parts.join(' ').slice(0, 480);
+}
 async function getEvidence(path: string, label: string, type: string, auth: string, cutoff: string | null, index: number): Promise<Evidence> {
   try {
     const response = await fetch(`${STOCKS_API}${path}`, { headers: { Authorization: auth } });
@@ -115,7 +143,7 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
     if (serialized.length > 45_000) throw new Error('Response too large to use as evidence');
     const asOf = valueAsOf(payload);
     const age = asOf ? Date.now() - new Date(asOf).getTime() : null;
-    return { id: `S${index}`, type, label, path, asOf, freshness: age !== null && age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: serialized.slice(0, 320), payload, hash: await digest(serialized) };
+    return { id: `S${index}`, type, label, path, asOf, freshness: age !== null && age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: summarize(payload, type), payload, hash: await digest(serialized) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unavailable';
     return { id: `S${index}`, type, label, path, asOf: null, freshness: 'unavailable', excerpt: reason, payload: null, hash: await digest(reason) };
