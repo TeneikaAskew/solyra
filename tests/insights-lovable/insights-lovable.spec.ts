@@ -45,6 +45,17 @@ test('asks a cited live research question without changing legacy insights', asy
   await expect(page.getByRole('heading', { name: 'AI Insights' })).toBeVisible();
 });
 
+test('accepts a typed ticker and offers quick ticker suggestions', async ({ page }) => {
+  await page.goto('/insights-lovable');
+  const ticker = page.getByRole('textbox', { name: 'Research ticker' });
+  await expect(ticker).toHaveValue('IWM');
+  await expect(page.getByRole('button', { name: 'QQQ', exact: true })).toBeVisible();
+  await ticker.fill('AAPL');
+  await ticker.press('Enter');
+  await expect(ticker).toHaveValue('AAPL');
+  await expect(page.getByPlaceholder(/Ask about AAPL/)).toBeVisible();
+});
+
 test('replay mode requires and preserves a cutoff with no mobile overflow', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 411, height: 771 });
   await page.goto('/insights-lovable');

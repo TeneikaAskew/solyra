@@ -39,7 +39,7 @@ function EvidencePanel({ sources, onClose }: { sources: ResearchSource[]; onClos
 }
 
 export default function InsightsLovablePage() {
-  const { activeTicker } = useTickerStore();
+  const { activeTicker, quickPicks, setTicker, pushRecent } = useTickerStore();
   const { isSignedIn, authMode } = useUser();
   const research = useInsightsLovable();
   const [mode, setMode] = useState<ResearchMode>('live');
@@ -47,6 +47,7 @@ export default function InsightsLovablePage() {
   const [question, setQuestion] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [tickerDraft, setTickerDraft] = useState(activeTicker);
   const activeSession = research.detail?.session ?? null;
   const busy = research.stage === 'gathering' || research.stage === 'synthesizing';
   const promptAllowed = authMode !== 'firebase' || isSignedIn;
@@ -54,6 +55,16 @@ export default function InsightsLovablePage() {
 
   useEffect(() => { if (promptAllowed) void research.loadSessions(); }, [promptAllowed, research.loadSessions]);
   useEffect(() => { if (activeSession) { setMode(activeSession.mode); setCutoff(activeSession.replay_cutoff ? activeSession.replay_cutoff.slice(0, 16) : ''); } }, [activeSession]);
+  useEffect(() => { setTickerDraft(activeTicker); }, [activeTicker]);
+
+  const chooseTicker = (value: string) => {
+    if (activeSession) return;
+    const symbol = value.trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9.]{0,9}$/.test(symbol)) return;
+    setTicker(symbol);
+    pushRecent(symbol);
+    setTickerDraft(symbol);
+  };
 
   const submit = () => {
     const trimmed = question.trim();
@@ -65,13 +76,13 @@ export default function InsightsLovablePage() {
     <div className="mx-auto min-h-full max-w-[1420px]">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--outline-variant)] pb-5">
         <div><div className="flex items-center gap-2"><h1 className="text-[24px] font-bold text-[var(--on-surface)]">Insights Lab</h1><Pill tone="brand">LAB</Pill></div><p className="mt-1 max-w-2xl text-sm text-[var(--on-surface-variant)]">Ask a market question. Get a concise answer grounded in Solyra evidence.</p></div>
-        <div className="flex gap-2"><Button variant="ghost" size="sm" onPress={() => setHistoryOpen(true)}><History size={15} />History</Button><TickerCombobox /></div>
+        <div className="flex gap-2"><Button variant="ghost" size="sm" onPress={() => setHistoryOpen(true)}><History size={15} />History</Button><div className="hidden sm:block"><TickerCombobox /></div></div>
       </header>
 
       {!promptAllowed ? <div className="py-24 text-center"><Search className="mx-auto text-[var(--on-surface-muted)]" /><h2 className="mt-4 text-lg font-semibold">Sign in to research</h2><p className="mt-2 text-sm text-[var(--on-surface-muted)]">Research sessions and evidence are private to your account.</p></div> : <div className="grid min-w-0 gap-8 py-6 xl:grid-cols-[minmax(0,1fr)_290px]">
         <main className="min-w-0">
           <section aria-label="Research composer" className="border-b border-[var(--outline-variant)] pb-6">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><MicroLabel>Research target</MicroLabel><div className="mt-1 text-[30px] font-bold leading-none text-[var(--on-surface)]">{activeSession?.ticker ?? activeTicker}</div></div><div className="flex rounded-md bg-[var(--surface-2)] p-1" aria-label="Evidence mode">{(['live','replay'] as ResearchMode[]).map((value) => <Button key={value} size="sm" variant={mode === value ? 'primary' : 'ghost'} isDisabled={Boolean(activeSession)} onPress={() => setMode(value)}>{value === 'live' ? <Sparkles size={14} /> : <CalendarClock size={14} />}{value === 'live' ? 'Live' : 'Replay'}</Button>)}</div></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><MicroLabel>Research target</MicroLabel>{activeSession ? <div className="mt-1 text-[30px] font-bold leading-none text-[var(--on-surface)]">{activeSession.ticker}</div> : <div className="mt-2 max-w-md"><div className="flex items-center gap-2 rounded-md border border-[var(--outline-variant)] bg-[var(--surface-lowest)] px-3 py-2 focus-within:border-[var(--brand)]"><Search size={17} className="shrink-0 text-[var(--on-surface-muted)]" /><input aria-label="Research ticker" value={tickerDraft} onChange={(event) => setTickerDraft(event.target.value.toUpperCase().replace(/[^A-Z0-9.]/g, '').slice(0, 10))} onBlur={() => chooseTicker(tickerDraft)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); chooseTicker(tickerDraft); } }} className="min-w-0 flex-1 bg-transparent text-xl font-bold text-[var(--on-surface)] outline-none" /></div><div className="mt-2 flex flex-wrap gap-2" aria-label="Suggested tickers">{quickPicks.map((ticker) => <button key={ticker} type="button" onClick={() => chooseTicker(ticker)} className={`rounded border px-2.5 py-1 text-xs font-semibold ${ticker === activeTicker ? 'border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]' : 'border-[var(--outline-variant)] text-[var(--on-surface-variant)] hover:text-[var(--on-surface)]'}`}>{ticker}</button>)}</div></div>}</div><div className="flex rounded-md bg-[var(--surface-2)] p-1" aria-label="Evidence mode">{(['live','replay'] as ResearchMode[]).map((value) => <Button key={value} size="sm" variant={mode === value ? 'primary' : 'ghost'} isDisabled={Boolean(activeSession)} onPress={() => setMode(value)}>{value === 'live' ? <Sparkles size={14} /> : <CalendarClock size={14} />}{value === 'live' ? 'Live' : 'Replay'}</Button>)}</div></div>
             {mode === 'replay' && <label className="mt-4 block"><span className="text-xs font-semibold text-[var(--on-surface-variant)]">Evidence cutoff</span><input type="datetime-local" value={cutoff} disabled={Boolean(activeSession)} onChange={(event) => setCutoff(event.target.value)} max={new Date().toISOString().slice(0,16)} className="mt-1 block w-full max-w-xs rounded-md border border-[var(--outline-variant)] bg-[var(--surface-lowest)] px-3 py-2 text-sm text-[var(--on-surface)] focus:border-[var(--brand)] focus:outline-none" /></label>}
             <label className="mt-5 block"><span className="sr-only">Question</span><textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') submit(); }} maxLength={1200} rows={4} placeholder={`Ask about ${activeSession?.ticker ?? activeTicker} catalysts, risks, or ${mode === 'replay' ? 'what was knowable then' : 'the current setup'}…`} className="w-full resize-none rounded-md border border-[var(--outline-variant)] bg-[var(--surface-lowest)] px-4 py-3 text-[15px] leading-6 text-[var(--on-surface)] outline-none transition focus:border-[var(--brand)]" /></label>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{!activeSession && PROMPTS.map((prompt) => <button key={prompt} type="button" onClick={() => { setQuestion(prompt); if (prompt.startsWith('At this replay')) setMode('replay'); }} className="rounded-md border border-[var(--outline-variant)] px-2.5 py-1.5 text-left text-[11px] text-[var(--on-surface-variant)] hover:border-[var(--outline)] hover:text-[var(--on-surface)]">{prompt}</button>)}</div>{busy ? <Button variant="danger" onPress={research.stop}><CircleStop size={15} />Stop</Button> : <Button variant="primary" onPress={submit} isDisabled={question.trim().length < 8 || (mode === 'replay' && !cutoffIso)}>Research<ArrowUpRight size={15} /></Button>}</div>

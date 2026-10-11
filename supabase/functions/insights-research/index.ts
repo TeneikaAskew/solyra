@@ -30,18 +30,21 @@ type Evidence = {
   hash: string;
 };
 
-const answerSchema = {
+function researchAnswerSchema(availableCitationIds: string[]) {
+  const citationId = { type: 'string', enum: availableCitationIds };
+  return {
   type: 'object', additionalProperties: false,
   properties: {
     answer: { type: 'string' },
-    facts: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' }, citations: { type: 'array', items: { type: 'string' } } }, required: ['text', 'citations'] } },
+    facts: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' }, citations: { type: 'array', items: citationId } }, required: ['text', 'citations'] } },
     bullCase: { type: 'string' }, bearCase: { type: 'string' }, invalidation: { type: 'string' },
     unknowns: { type: 'array', items: { type: 'string' } },
-    catalystTimeline: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { date: { type: ['string', 'null'] }, event: { type: 'string' }, impact: { type: 'string' }, citations: { type: 'array', items: { type: 'string' } } }, required: ['date', 'event', 'impact', 'citations'] } },
+    catalystTimeline: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { date: { type: ['string', 'null'] }, event: { type: 'string' }, impact: { type: 'string' }, citations: { type: 'array', items: citationId } }, required: ['date', 'event', 'impact', 'citations'] } },
     replayContext: { type: ['string', 'null'] },
   },
   required: ['answer', 'facts', 'bullCase', 'bearCase', 'invalidation', 'unknowns', 'catalystTimeline', 'replayContext'],
-};
+  };
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -243,13 +246,15 @@ Deno.serve(async (req) => {
       if (runId) await db.from('insight_research_runs').update({ status: 'synthesizing', evidence_count: evidence.length }).eq('id', runId).eq('owner_uid', user.uid);
       await emit({ type: 'status', stage: 'synthesizing', label: 'Synthesizing cited answer' });
       const prior = await db.from('insight_research_messages').select('question,answer').eq('session_id', sessionId).eq('owner_uid', user.uid).eq('run_state', 'completed').order('created_at').limit(8);
-      const input = [{ role: 'system', content: [{ type: 'input_text', text: 'You are Solyra Research. Answer only from the supplied evidence. Distinguish sourced facts from interpretation. Never invent a price, metric, event, timestamp, or citation. When evidence is missing, stale, or contradictory, say so. Citation IDs must exactly match supplied IDs. Keep the direct answer concise and decision-oriented. This is research, not financial advice.' }] }, { role: 'user', content: [{ type: 'input_text', text: JSON.stringify({ ticker: body.ticker, mode: body.mode, replayCutoff: body.replayCutoff, question: body.question, priorTurns: prior.data ?? [], evidence }) }] }];
-      const ai = await fetch(GATEWAY, { method: 'POST', signal: req.signal, headers: { 'Content-Type': 'application/json', 'Lovable-API-Key': apiKey, 'X-Lovable-AIG-SDK': 'fetch' }, body: JSON.stringify({ model: MODEL, input, stream: true, store: false, reasoning: { effort: 'medium', summary: 'auto' }, include: ['reasoning.encrypted_content'], text: { format: { type: 'json_schema', name: 'research_answer', strict: true, schema: answerSchema } } }) });
+      const availableCitationIds = evidence.filter((source) => source.payload !== null).map((source) => source.id);
+      const unavailableCitationIds = evidence.filter((source) => source.payload === null).map((source) => source.id);
+      const input = [{ role: 'system', content: [{ type: 'input_text', text: 'You are Solyra Research. Answer only from the supplied evidence. Distinguish sourced facts from interpretation. Never invent a price, metric, event, timestamp, or citation. Use citations only from availableCitationIds; unavailableCitationIds must never appear in a citation array. Put missing evidence in unknowns instead. When evidence is missing, stale, or contradictory, say so. Keep the direct answer concise and decision-oriented. This is research, not financial advice.' }] }, { role: 'user', content: [{ type: 'input_text', text: JSON.stringify({ ticker: body.ticker, mode: body.mode, replayCutoff: body.replayCutoff, question: body.question, priorTurns: prior.data ?? [], availableCitationIds, unavailableCitationIds, evidence }) }] }];
+      const ai = await fetch(GATEWAY, { method: 'POST', signal: req.signal, headers: { 'Content-Type': 'application/json', 'Lovable-API-Key': apiKey, 'X-Lovable-AIG-SDK': 'fetch' }, body: JSON.stringify({ model: MODEL, input, stream: true, store: false, reasoning: { effort: 'medium', summary: 'auto' }, include: ['reasoning.encrypted_content'], text: { format: { type: 'json_schema', name: 'research_answer', strict: true, schema: researchAnswerSchema(availableCitationIds) } } }) });
       const gatewayRunId = ai.headers.get('X-Lovable-AIG-Run-ID');
       if (!ai.ok) { const raw = await ai.text(); throw Object.assign(new Error(safeMessage(ai.status, raw)), { status: ai.status }); }
       const rawAnswer = await readGateway(ai, (delta) => { void emit({ type: 'delta', delta }); });
       const answer = JSON.parse(rawAnswer) as Record<string, unknown>;
-      const allowed = new Set(evidence.filter((source) => source.payload !== null).map((source) => source.id));
+      const allowed = new Set(availableCitationIds);
       const unsupported = citations(answer).filter((id) => !allowed.has(id));
       if (unsupported.length > 0) throw new Error(`Answer cited unsupported evidence: ${unsupported.join(', ')}.`);
       await db.from('insight_research_messages').update({ answer, run_state: 'completed' }).eq('id', messageId).eq('owner_uid', user.uid);
