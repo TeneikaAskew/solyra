@@ -14,7 +14,212 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      insight_research_messages: {
+        Row: {
+          answer: Json | null
+          created_at: string
+          error_code: string | null
+          error_message: string | null
+          id: string
+          owner_uid: string
+          question: string | null
+          role: string
+          run_state: string
+          session_id: string
+        }
+        Insert: {
+          answer?: Json | null
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          owner_uid: string
+          question?: string | null
+          role: string
+          run_state: string
+          session_id: string
+        }
+        Update: {
+          answer?: Json | null
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          owner_uid?: string
+          question?: string | null
+          role?: string
+          run_state?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insight_research_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "insight_research_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      insight_research_runs: {
+        Row: {
+          evidence_count: number
+          failure_class: string | null
+          finished_at: string | null
+          gateway_run_id: string | null
+          id: string
+          message_id: string
+          model_id: string
+          owner_uid: string
+          session_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          evidence_count?: number
+          failure_class?: string | null
+          finished_at?: string | null
+          gateway_run_id?: string | null
+          id?: string
+          message_id: string
+          model_id: string
+          owner_uid: string
+          session_id: string
+          started_at?: string
+          status: string
+        }
+        Update: {
+          evidence_count?: number
+          failure_class?: string | null
+          finished_at?: string | null
+          gateway_run_id?: string | null
+          id?: string
+          message_id?: string
+          model_id?: string
+          owner_uid?: string
+          session_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insight_research_runs_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "insight_research_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "insight_research_runs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "insight_research_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      insight_research_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          mode: string
+          owner_uid: string
+          replay_cutoff: string | null
+          status: string
+          ticker: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mode: string
+          owner_uid: string
+          replay_cutoff?: string | null
+          status?: string
+          ticker: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mode?: string
+          owner_uid?: string
+          replay_cutoff?: string | null
+          status?: string
+          ticker?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      insight_research_sources: {
+        Row: {
+          citation_id: string
+          created_at: string
+          excerpt: string | null
+          freshness: string
+          id: string
+          message_id: string
+          metadata: Json
+          owner_uid: string
+          payload_hash: string
+          session_id: string
+          source_as_of: string | null
+          source_label: string
+          source_type: string
+          source_url: string
+        }
+        Insert: {
+          citation_id: string
+          created_at?: string
+          excerpt?: string | null
+          freshness: string
+          id?: string
+          message_id: string
+          metadata?: Json
+          owner_uid: string
+          payload_hash: string
+          session_id: string
+          source_as_of?: string | null
+          source_label: string
+          source_type: string
+          source_url: string
+        }
+        Update: {
+          citation_id?: string
+          created_at?: string
+          excerpt?: string | null
+          freshness?: string
+          id?: string
+          message_id?: string
+          metadata?: Json
+          owner_uid?: string
+          payload_hash?: string
+          session_id?: string
+          source_as_of?: string | null
+          source_label?: string
+          source_type?: string
+          source_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insight_research_sources_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "insight_research_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "insight_research_sources_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "insight_research_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
