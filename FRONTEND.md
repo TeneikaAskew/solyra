@@ -136,7 +136,7 @@ Three concentric loops:
 
 ### Hook → endpoint map
 
-Every `use*` function exported by a module listed here has its own row (check with `grep -n "^export function use" src/hooks/<module>.ts`). Modules not in the map yet, which the `hooks/` line of the tree counts: `useGammaGrid`, `useJournalChartTrades`, `useMovementStatement`, `useOptionsDates`, `usePreferences`, `useProfile`, `useReviewQuote`. `useDebouncedValue`, `useReplaySession` and `useTradeMarking` make no request.
+Every `use*` function exported by a hook module that makes a request has its own row (check with `grep -n "^export function use" src/hooks/<module>.ts`). `useDebouncedValue`, `useReplaySession` and `useTradeMarking` make no request and have no row.
 
 | Hook                       | Endpoint(s) hit                                            | Reads                              |
 |----------------------------|------------------------------------------------------------|------------------------------------|
@@ -180,6 +180,25 @@ Every `use*` function exported by a module listed here has its own row (check wi
 | `usePredictMutation`       | `/api/admin/strat-engine/predict` (POST)                   | On-demand single-bar prediction (same module) |
 | `useIndicatorConfig`       | `/api/config/indicators`                                   | Server-resolved config (module `useConfig.ts`) |
 | `useMarketHours`           | `/api/config/market-hours`                                 | Server-resolved config (same module) |
+| `useGammaGrid`             | `/api/options/{ticker}/grid` (live) or `/api/options/{ticker}/{date}/grid` | Strike × expiration GEX/VEX/OI grid for Swing |
+| `useJournalChartTrades`    | `/api/journal/trades/{ticker}`                             | The ticker's trades for the chart's date (module `useJournalChartTrades.ts`) |
+| `useJournalTradesFull`     | `/api/journal/trades/{ticker}`                             | Every trade for the ticker (same module) |
+| `useJournalExamples`       | `/api/journal/examples/{ticker}`                           | Admin teaching examples (same module) |
+| `useCreateChartTrade`      | `/api/journal/trades` (POST)                               | Records a trade marked on the chart (same module) |
+| `useCloseChartTrade`       | `/api/journal/trades/{id}` (PATCH)                         | Closes a trade (same module) |
+| `useDeleteChartTrade`      | `/api/journal/trades/{id}` (DELETE, `?ticker=`)            | Deletes a trade (same module) |
+| `useSeedTrades`            | `/api/journal/seed/{ticker}` (`?date=`)                    | Seed trades for a date (same module) |
+| `useReplayTrades`          | `/api/backtest/replay-trades` (POST)                       | Scores trades by replay; writes nothing (same module) |
+| `useMineMyStyle`           | `/api/style/mine-and-validate` (POST)                      | Mines and validates the trader's style (same module) |
+| `useImportPreview`         | `/api/journal/import/preview` (POST, multipart)            | Parses an import file; writes nothing (same module) |
+| `useImportCommit`          | `/api/journal/import/commit` (POST)                        | Writes the previewed import (same module) |
+| `useMovementStatement`     | `/api/movement-statement` (`?ticker=`, `?timeframe=`)      | Dashboard movement read |
+| `useLatestOptionsDate`     | `/api/options/dates/{ticker}` (`?limit=1`)                 | Latest options date (module `useOptionsDates.ts`) |
+| `useAllOptionsDates`       | `/api/options/dates/{ticker}`                              | Every options date, for the picker (same module) |
+| `usePreferencesSync`       | `/api/me/preferences` (GET, PUT)                           | Loads and saves theme, nav, density and accent (module `usePreferences.ts`) |
+| `usePreferencesStatus`     | none                                                       | Reads the sync status for components that don't own the syncer (same module) |
+| `useProfile`               | `/api/me/profile` (GET, PUT)                               | Settings profile, read and save |
+| `useReviewQuote`           | `/api/market/data/{ticker}/{date}` (`?timeframe=1`)        | Review-mode quote rebuilt from that day's 1-minute bars |
 | `useUser` (above)          | `/api/me`                                                  |                                    |
 
 Pages read `useTickerStore().activeTicker` and pass it to the ticker-scoped hooks, which key the query on it (no hook reads the store itself), so flipping the ticker switcher refetches every ticker-scoped query in one move. `useUser`, `useLiveStatus`, `useIndicatorConfig`/`useMarketHours`, `useWatchlist`, `useTickerSearch` and the admin hooks are not ticker-scoped.

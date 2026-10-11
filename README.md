@@ -83,9 +83,10 @@ which `npm test` also runs.
 **E2E** — Playwright, in `tests/`. These need no **backend**: every `/api` call
 a test asserts on is intercepted with `page.route`. They are not fully
 network-isolated, though. `src/index.css:1` loads Montserrat from
-`fonts.googleapis.com`, a real external request that `playwright.config.ts`
-works around with `ignoreHTTPSErrors: true` rather than mocking, so an offline
-or egress-restricted runner can still fail on it. And a few requests can escape
+`fonts.googleapis.com`. Specs that call `mockCommon` (`tests/helpers/mocks.ts`)
+stub both font hosts, but three dashboard specs set up their own routes and let
+the request go out, relying on `playwright.config.ts`'s `ignoreHTTPSErrors:
+true`, so an offline or egress-restricted runner can still fail on them. And a few requests can escape
 interception after a test's own assertions finish (a mutation's refetch, a
 navigation's fan-out, in the window before Playwright tears the context down);
 they reach Vite's proxy and get `ECONNREFUSED`. `docs/TEST_COVERAGE_AUDIT.md`
