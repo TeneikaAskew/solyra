@@ -7,7 +7,12 @@ vi.mock('@/lib/firebase', () => ({
 }));
 
 import { confirmEmailVerified, showVerificationBanner } from './AuthStatusIndicator';
-import { clearVerificationRequired, isVerificationRequired, markVerificationRequired } from '@/lib/authGate';
+import {
+  clearVerificationRequired,
+  isEmailConfirmed,
+  isVerificationRequired,
+  markVerificationRequired,
+} from '@/lib/authGate';
 
 afterEach(() => clearVerificationRequired());
 
@@ -23,17 +28,21 @@ describe('confirmEmailVerified', () => {
     expect(result).toEqual({ outcome: 'verified' });
     expect(isVerificationRequired('uid-a')).toBe(false);
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+    // Recorded for every surface, so the banner hides after a card's confirm too.
+    expect(isEmailConfirmed('uid-a')).toBe(true);
   });
 
   it('changes nothing while the account still reads unverified', async () => {
-    markVerificationRequired('uid-a');
+    // Its own account: the confirmed record is module state the test above set for uid-a.
+    markVerificationRequired('uid-u');
     const queryClient = { invalidateQueries: vi.fn(async () => {}) };
 
-    const result = await confirmEmailVerified('uid-a', as('uid-a', false), queryClient);
+    const result = await confirmEmailVerified('uid-u', as('uid-u', false), queryClient);
 
     expect(result).toEqual({ outcome: 'unverified' });
-    expect(isVerificationRequired('uid-a')).toBe(true);
+    expect(isVerificationRequired('uid-u')).toBe(true);
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+    expect(isEmailConfirmed('uid-u')).toBe(false);
   });
 
   it('reports a failed check instead of throwing, and changes nothing', async () => {

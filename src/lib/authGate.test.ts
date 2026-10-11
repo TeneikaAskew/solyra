@@ -70,3 +70,13 @@ describe('verification-required flag', () => {
     expect(isVerificationRequired('uid-a')).toBe(false);
   });
 });
+
+describe('email-confirmed record', () => {
+  it('is keyed by uid, so a confirmation by account A says nothing about account B', async () => {
+    const gate = await import('./authGate');
+    gate.markEmailConfirmed('uid-a');
+    expect(gate.isEmailConfirmed('uid-a')).toBe(true);
+    expect(gate.isEmailConfirmed('uid-b')).toBe(false);
+    expect(gate.isEmailConfirmed(null)).toBe(false);
+  });
+});

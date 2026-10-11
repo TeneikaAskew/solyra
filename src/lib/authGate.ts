@@ -97,6 +97,27 @@ export function useVerificationRequired(uid: string | null): boolean {
   return useSyncExternalStore(subscribeVerificationRequired, read, () => false);
 }
 
+// The account an I've confirmed check last found verified. Firebase fires no
+// auth event when a reload/token refresh flips emailVerified, so useUser's
+// value stays stale; every surface reads this instead of keeping its own.
+let emailConfirmedFor: string | null = null;
+
+export function markEmailConfirmed(uid: string): void {
+  if (emailConfirmedFor === uid) return;
+  emailConfirmedFor = uid;
+  emitVerificationRequired();
+}
+
+export function isEmailConfirmed(uid: string | null): boolean {
+  return uid !== null && emailConfirmedFor === uid;
+}
+
+/** React hook: true once an I've confirmed check found this account verified. */
+export function useEmailConfirmed(uid: string | null): boolean {
+  const read = () => isEmailConfirmed(uid);
+  return useSyncExternalStore(subscribeVerificationRequired, read, () => false);
+}
+
 // ── Verification-email delivery state ───────────────────────────────────────
 //
 // Sign-up creates the account and Firebase flips onAuthStateChanged before

@@ -252,6 +252,7 @@ export function installAuthFetch(): void {
     const nextInit = token ? withToken(token) : init;
 
     let resp = await nativeFetch(target, nextInit);
+    let sentToken = token;
 
     // A gated 401 while a user IS signed in usually means the cached ID token
     // went stale (hour-long expiry, a sleeping tab, clock skew) rather than a
@@ -271,6 +272,7 @@ export function installAuthFetch(): void {
       }
       if (fresh && fresh !== token && (await getCurrentUid()) === uidAtStart) {
         resp = await nativeFetch(target, withToken(fresh));
+        sentToken = fresh;
       }
     }
 
@@ -281,7 +283,11 @@ export function installAuthFetch(): void {
     // The verify-email 403 proves the token was accepted, so a "session
     // expired" left over from a previous account must not linger beside it.
     if (gated && uidAtStart && (await isVerifyEmail403(resp))) {
-      markVerificationRequired(uidAtStart);
+      // A 403 answered to a token that I've confirmed has since replaced is
+      // stale: requests now carry the verified claim, so it must not re-mark.
+      const current = await getIdToken().catch(() => null);
+      const superseded = sentToken !== null && current !== null && current !== sentToken;
+      if (!superseded) markVerificationRequired(uidAtStart);
       if (sameAccount) clearAuthBlocked();
     }
     return gated ? track(resp, uidAtStart, sameAccount) : resp;

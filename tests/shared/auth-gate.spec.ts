@@ -712,5 +712,7 @@ test.describe('Unverified email account', () => {
     await page.getByTestId('verify-email-state-check').first().click();
     await expect(page.getByText('Pre-market brief').first()).toBeVisible();
     await expect(page.getByTestId('verify-email-state')).toHaveCount(0);
+    // The banner learns of the confirmation too, though Firebase fires no auth event for it.
+    await expect(page.getByTestId('email-verification-banner')).toHaveCount(0);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useUser } from '@/hooks/useUser';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { SignInScreen } from './SignInScreen';
@@ -12,18 +12,7 @@ import { SignInScreen } from './SignInScreen';
  * the existing E2E specs (open mode) rendering as before.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { authMode, isSignedIn, isLoading, uid } = useUser();
-  const previousUid = useRef<string | null>(uid);
-
-  // An account switched in from another tab does not reload this one, and
-  // nearly all client state is account-blind: query keys omit the uid, the
-  // appearance stores and their sync guard outlive the switch, and a save
-  // still in flight writes into whatever the cache now shows. Reloading on
-  // every change away from an account starts all of it over for the new one.
-  useEffect(() => {
-    reloadOnAccountChange(previousUid.current, uid, () => window.location.reload());
-    previousUid.current = uid;
-  }, [uid]);
+  const { authMode, isSignedIn, isLoading } = useUser();
 
   if (authMode !== 'firebase') return <>{children}</>;
 
@@ -38,14 +27,4 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (!isSignedIn) return <SignInScreen />;
 
   return <>{children}</>;
-}
-
-/** True when the signed-in uid moves away from a previous account (A to B, or A to signed out). */
-export function isAccountChange(prev: string | null, next: string | null): boolean {
-  return prev !== null && prev !== next;
-}
-
-/** Reload the page when the signed-in account changes away from a previous one. */
-export function reloadOnAccountChange(prev: string | null, next: string | null, reload: () => void): void {
-  if (isAccountChange(prev, next)) reload();
 }

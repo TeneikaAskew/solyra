@@ -352,6 +352,20 @@ describe('installAuthFetch — the verify-email 403', () => {
     expect(gate.isAuthBlocked()).toBe(true);
   });
 
+  it('ignores a verification 403 sent with a token the confirm has since replaced', async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    const sentWithOldToken = await holdRequest(native, fetch);
+
+    // I've confirmed forced a fresh token for the same account; requests now carry it.
+    getIdToken.mockResolvedValue('tok-uid-a-fresh');
+    sentWithOldToken.release(verify403());
+    await sentWithOldToken.pending;
+
+    expect(gate.isVerificationRequired('uid-a')).toBe(false);
+  });
+
   it('a late 401 from account A does not mark account B as auth-blocked', async () => {
     signedInAs('uid-a');
     const { native, fetch } = await install();

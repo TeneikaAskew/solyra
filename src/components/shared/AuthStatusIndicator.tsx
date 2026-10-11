@@ -3,7 +3,9 @@ import { LogIn, LogOut, Lock, ShieldCheck, MailWarning } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   clearVerificationRequired,
+  markEmailConfirmed,
   useAuthBlocked,
+  useEmailConfirmed,
   useVerificationEmailState,
   useVerificationRequired,
 } from '@/lib/authGate';
@@ -217,6 +219,7 @@ export async function confirmEmailVerified(
   // (switched in while the check ran) says nothing about this one.
   if (!uid || account?.uid !== uid || !account.emailVerified) return { outcome: 'unverified' };
   clearVerificationRequired(uid);
+  markEmailConfirmed(uid);
   await queryClient.invalidateQueries();
   return { outcome: 'verified' };
 }
@@ -263,9 +266,9 @@ function EmailVerificationBannerFor() {
   // inherits the previous account's outcome; 'unknown' = no send for this
   // account this session, so no claim is made.
   const delivery = useVerificationEmailState(uid);
-  // Local override once a refresh reports verified; the subscription value
-  // only updates on the next auth-state event.
-  const [confirmed, setConfirmed] = useState(false);
+  // Set by any surface's I've confirmed (the banner's or a card's): the
+  // profile value above only updates on the next auth-state event.
+  const confirmed = useEmailConfirmed(uid);
   const [resend, setResend] = useState<
     { state: 'idle' } | { state: 'sending' } | { state: 'sent' } | { state: 'error'; message: string }
   >({ state: 'idle' });
@@ -299,9 +302,8 @@ function EmailVerificationBannerFor() {
     setStillUnverified(false);
     try {
       const result = await confirmEmailVerified(uid, refreshEmailVerified, queryClient);
-      if (result.outcome === 'verified') setConfirmed(true);
-      else if (result.outcome === 'unverified') setStillUnverified(true);
-      else setResend({ state: 'error', message: `Could not check the account: ${result.message}` });
+      if (result.outcome === 'unverified') setStillUnverified(true);
+      else if (result.outcome === 'failed') setResend({ state: 'error', message: `Could not check the account: ${result.message}` });
     } finally {
       setChecking(false);
     }
