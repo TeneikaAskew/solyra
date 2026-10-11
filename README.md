@@ -11,8 +11,9 @@ pipeline, and the GCP jobs live in the **stocks** repo; the API is deployed
 as the `solyra-api-staging` Cloud Run service, the only API service since
 `solyra-api-prod` was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
 Solyra's dev server proxies `/api/*` to that backend, so the browser still
-sees same-origin requests and none of the ~73 bare `fetch('/api/...')` call
-sites need to know where the API actually is.
+sees same-origin requests and no call site needs to know where the API
+actually is: `src/` holds ~101 bare `fetch('/api/...')` literals, its colocated
+tests included.
 
 Built with [Lovable](https://lovable.dev).
 
@@ -80,9 +81,25 @@ mock.
 documentation auditor is tested beside itself at `scripts/docs-audit.test.mjs`,
 which `npm test` also runs.
 
-**E2E** — Playwright, in `tests/`. These are **hermetic**: every `/api` call is
-intercepted with `page.route`, so they need no backend and no network. Test
-data lives in `tests/helpers/`:
+**E2E** — Playwright, in `tests/`. These need no **backend**: every `/api` call
+a test asserts on is intercepted with `page.route` or, in the mock-mode spec,
+answered inside the page by mock-data mode. They are not fully
+network-isolated, though. `src/index.css:1` loads Montserrat from
+`fonts.googleapis.com`. `mockCommon` (`tests/helpers/mocks.ts`) stubs both font
+hosts, and every spec reaches it, directly or through a fixture helper, with
+two exceptions. The `Mock mode ON` tests in `tests/shared/mock-mode.spec.ts`
+stub both font hosts themselves and let mock-data mode answer `/api` inside
+the page. `tests/landing/landing.spec.ts` routes only `/api/config/firebase`,
+so it sends the font request to the real CDN. `playwright.config.ts` sets
+`ignoreHTTPSErrors: true`, which lets that request complete despite the
+headless shell's missing root CAs when the CDN is reachable; the landing spec
+does not assert on console errors. And a few requests can escape
+interception after a test's own assertions finish (a mutation's refetch, a
+navigation's fan-out, in the window before Playwright tears the context down);
+they reach Vite's proxy and get `ECONNREFUSED`. `docs/TEST_COVERAGE_AUDIT.md`
+§10.7 counted 25 of them on 2026-09-07 (not re-measured since) and classes them
+as accepted teardown noise, not missing fixtures. Test data lives in
+`tests/helpers/`:
 
 - `mocks.ts` — `mockCommon` (the cross-cutting endpoints every page hits) plus
   the `M` fulfil helpers.
