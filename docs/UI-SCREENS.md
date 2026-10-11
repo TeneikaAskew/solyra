@@ -208,8 +208,9 @@ accidentally opened.
 `fetch('/api/...')` call actually reaches, so the same bundle works unmodified on Cloud Run
 (same origin), local dev (Vite proxy) and Lovable's static hosting (cross origin to
 staging). `src/lib/apiTargets.ts` is the single source for both origins (`LOCAL_API`,
-`STAGING_API`) and the static-host detector (`isStaticFrontendHost`, matching `.lovable.app`
-and `.lovableproject.com` suffixes), imported by both the Node side dev proxy
+`STAGING_API`) and the static-host detector (`isStaticFrontendHost`, matching the `.lovable.app`
+and `.lovableproject.com` suffixes and, exactly, the custom domain `stocks.insightscollective.org`),
+imported by both the Node side dev proxy
 (`vite.config.ts`) and the browser side rewrite (`src/lib/authedFetch.ts`). In the browser,
 `resolveApiBase()` picks, in order: an explicit build-time `VITE_API_BASE_URL`, then
 `STAGING_API` when the hostname is a known static host, then same origin (`''`).

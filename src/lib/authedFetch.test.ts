@@ -34,12 +34,13 @@ interface Installed {
 }
 
 /** Fresh module + fresh fake window per test (the wrapper installs once per module). */
-async function install(): Promise<Installed> {
+async function install(hostname = 'localhost'): Promise<Installed> {
   vi.resetModules();
   const native = vi.fn(async () => new Response('{}', { status: 200 }));
+  const origin = hostname === 'localhost' ? 'http://localhost:5173' : `https://${hostname}`;
   const win = {
     fetch: native as unknown as typeof fetch,
-    location: { origin: 'http://localhost:5173', hostname: 'localhost' },
+    location: { origin, hostname },
   };
   vi.stubGlobal('window', win);
   const mod = await import('./authedFetch');
@@ -238,5 +239,28 @@ describe('installAuthFetch — stale token retry', () => {
 
     expect(native).toHaveBeenCalledTimes(2);
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('installAuthFetch — where /api goes', () => {
+  const sentUrl = (native: Mock) => String(native.mock.calls[0]?.[0]);
+
+  it('sends /api/* to the staging API from the custom domain, which Lovable serves without an /api route', async () => {
+    getAuthMode.mockReturnValue('open');
+    const { native, fetch } = await install('stocks.insightscollective.org');
+    const { STAGING_API } = await import('./apiTargets');
+
+    await fetch('/api/config/firebase');
+
+    expect(sentUrl(native)).toBe(`${STAGING_API}/api/config/firebase`);
+  });
+
+  it('keeps /api/* same-origin on localhost', async () => {
+    getAuthMode.mockReturnValue('open');
+    const { native, fetch } = await install();
+
+    await fetch('/api/config/firebase');
+
+    expect(sentUrl(native)).toBe('/api/config/firebase');
   });
 });

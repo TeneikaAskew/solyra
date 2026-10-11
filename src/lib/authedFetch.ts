@@ -47,9 +47,10 @@ const OPEN_PREFIXES = ['/api/health', '/api/me', '/api/config/firebase', '/api/w
 /**
  * Absolute origin for `/api/*`, or '' to keep requests same-origin.
  *
- * Explicit env var wins, so any host can be pointed anywhere. Otherwise
- * `*.lovable.app` — preview and published alike — gets staging, because those
- * are static hosts that would answer `/api/*` with index.html. Everything else
+ * Explicit env var wins, so any host can be pointed anywhere. Otherwise a
+ * static host (`isStaticFrontendHost`: the Lovable preview and published
+ * domains and the custom domain) gets staging, because those answer `/api/*`
+ * with index.html. Everything else
  * (local dev behind the Vite proxy, Cloud Run serving SPA and API from one
  * container) stays same-origin.
  */
