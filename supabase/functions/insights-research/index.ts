@@ -41,8 +41,12 @@ function researchAnswerSchema(availableCitationIds: string[]) {
     unknowns: { type: 'array', items: { type: 'string' } },
     catalystTimeline: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { date: { type: ['string', 'null'] }, event: { type: 'string' }, impact: { type: 'string' }, citations: { type: 'array', items: citationId } }, required: ['date', 'event', 'impact', 'citations'] } },
     replayContext: { type: ['string', 'null'] },
+    verdict: { type: 'string' },
+    confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+    keyLevels: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { label: { type: 'string' }, value: { type: 'string' }, citations: { type: 'array', items: citationId } }, required: ['label', 'value', 'citations'] } },
+    followUps: { type: 'array', items: { type: 'string' } },
   },
-  required: ['answer', 'facts', 'bullCase', 'bearCase', 'invalidation', 'unknowns', 'catalystTimeline', 'replayContext'],
+  required: ['answer', 'facts', 'bullCase', 'bearCase', 'invalidation', 'unknowns', 'catalystTimeline', 'replayContext', 'verdict', 'confidence', 'keyLevels', 'followUps'],
   };
 }
 
@@ -290,7 +294,7 @@ Deno.serve(async (req) => {
       const prior = await db.from('insight_research_messages').select('question,answer').eq('session_id', sessionId).eq('owner_uid', user.uid).eq('run_state', 'completed').order('created_at').limit(8);
       const availableCitationIds = evidence.filter((source) => source.payload !== null).map((source) => source.id);
       const unavailableCitationIds = evidence.filter((source) => source.payload === null).map((source) => source.id);
-      const input = [{ role: 'system', content: [{ type: 'input_text', text: 'You are Solyra Research. Answer only from the supplied evidence. Distinguish sourced facts from interpretation. Never invent a price, metric, event, timestamp, or citation. Use citations only from availableCitationIds; unavailableCitationIds must never appear in a citation array. Put missing evidence in unknowns instead. When evidence is missing, stale, or contradictory, say so. Keep the direct answer concise and decision-oriented. This is research, not financial advice.' }] }, { role: 'user', content: [{ type: 'input_text', text: JSON.stringify({ ticker: body.ticker, mode: body.mode, replayCutoff: body.replayCutoff, question: body.question, priorTurns: prior.data ?? [], availableCitationIds, unavailableCitationIds, evidence }) }] }];
+      const input = [{ role: 'system', content: [{ type: 'input_text', text: 'You are Solyra Research. Answer only from the supplied evidence. Distinguish sourced facts from interpretation. Never invent a price, metric, event, timestamp, or citation. Use citations only from availableCitationIds; unavailableCitationIds must never appear in a citation array. Put missing evidence in unknowns instead. When evidence is missing, stale, or contradictory, say so. Keep answer to at most 3 short sentences. verdict is one plain-English line under 15 words. keyLevels lists up to 5 sourced prices or levels (support, resistance, last price, targets) with short value strings. followUps lists 3 short next questions a trader would ask. Keep facts to at most 5 and bull/bear cases to 2 sentences each. This is research, not financial advice.' }] }, { role: 'user', content: [{ type: 'input_text', text: JSON.stringify({ ticker: body.ticker, mode: body.mode, replayCutoff: body.replayCutoff, question: body.question, priorTurns: prior.data ?? [], availableCitationIds, unavailableCitationIds, evidence }) }] }];
       const ai = await fetch(GATEWAY, { method: 'POST', signal: req.signal, headers: { 'Content-Type': 'application/json', 'Lovable-API-Key': apiKey, 'X-Lovable-AIG-SDK': 'fetch' }, body: JSON.stringify({ model: MODEL, input, stream: true, store: false, reasoning: { effort: 'medium', summary: 'auto' }, include: ['reasoning.encrypted_content'], text: { format: { type: 'json_schema', name: 'research_answer', strict: true, schema: researchAnswerSchema(availableCitationIds) } } }) });
       const gatewayRunId = ai.headers.get('X-Lovable-AIG-Run-ID');
       if (!ai.ok) { const raw = await ai.text(); throw Object.assign(new Error(safeMessage(ai.status, raw)), { status: ai.status }); }
