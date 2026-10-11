@@ -165,7 +165,7 @@ async function gather(ticker: string, auth: string, mode: 'live' | 'replay', cut
     [`/api/dashboard/brief/${ticker}`, 'House market brief', 'market_brief'],
     [`/api/playbook/${ticker}`, 'Trading playbook', 'playbook'],
     [`/api/signals/${ticker}?${signalQs}`, 'Signal history', 'signals'],
-    [`/api/catalysts/events?date_from=${from}&date_to=${to}`, 'Catalyst calendar', 'catalysts'],
+    [`/api/catalysts/events?date_from=${from}&date_to=${to}&tickers=${ticker}`, 'Catalyst calendar', 'catalysts'],
     [`/api/live/history/${ticker}`, 'Price replay history', 'price_history'],
   ];
   return Promise.all(entries.map(([path, label, type], i) => getEvidence(path, label, type, auth, cutoff, i + 1)));

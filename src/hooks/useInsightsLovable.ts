@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useCallback, useRef, useState } from 'react';
 import { getIdToken } from '@/lib/firebase';
 import { getAuthMode } from '@/lib/runtimeConfig';
 import type { ResearchMode, ResearchSessionDetail, ResearchSessionSummary, ResearchSource, ResearchStage, ResearchStreamEvent, ResearchAnswer } from '@/types/insightsLovable';
 
-const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/insights-research`;
+// Resolved per request so a slow-to-load env never crashes the page at import time.
+function functionUrl(): string {
+  const base = import.meta.env.VITE_SUPABASE_URL;
+  if (!base) throw new Error('Research service is still loading. Try again in a moment.');
+  return `${base}/functions/v1/insights-research`;
+}
 
 async function request(body: unknown, signal?: AbortSignal): Promise<Response> {
   const token = await getIdToken();
   if (!token && !(import.meta.env.DEV && getAuthMode() === 'open')) {
     throw new Error('Sign in to use the research workspace.');
   }
-  const response = await fetch(functionUrl, {
+  const response = await fetch(functionUrl(), {
     method: 'POST', signal,
     headers: {
       'Content-Type': 'application/json',
@@ -36,6 +40,7 @@ export function useInsightsLovable() {
   const [sources, setSources] = useState<ResearchSource[]>([]);
   const [answer, setAnswer] = useState<ResearchAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [question, setQuestion] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
 
   const loadSessions = useCallback(async () => {
@@ -51,6 +56,7 @@ export function useInsightsLovable() {
       const latest = payload.messages[payload.messages.length - 1] ?? null;
       const completed = [...payload.messages].reverse().find((message) => message.answer !== null);
       setAnswer(completed?.answer ?? null);
+      setQuestion(completed?.question ?? latest?.question ?? payload.session.title);
       setSources(payload.sources.filter((source) => !completed || source.message_id === completed.id));
       setStage(completed ? 'completed' : latest?.run_state === 'failed' ? 'failed' : 'idle');
       setError(!completed && latest
@@ -60,13 +66,12 @@ export function useInsightsLovable() {
       setError(cause instanceof Error ? `Could not open this research: ${cause.message}` : 'Could not open this research.');
     }
   }, []);
-  useEffect(() => { void supabase.auth.getSession(); }, []);
 
   const research = useCallback(async (input: { ticker: string; question: string; mode: ResearchMode; replayCutoff: string | null; sessionId: string | null }) => {
     controller.current?.abort();
     const nextController = new AbortController();
     controller.current = nextController;
-    setStage('gathering'); setStageLabel('Gathering approved evidence'); setStreamText(''); setSources([]); setError(null);
+    setStage('gathering'); setStageLabel('Gathering approved evidence'); setStreamText(''); setSources([]); setError(null); setQuestion(input.question);
     try {
       const response = await request({ action: 'research', ...input }, nextController.signal);
       if (!response.body) throw new Error('Research stream was unavailable.');
@@ -96,5 +101,5 @@ export function useInsightsLovable() {
     } finally { if (controller.current === nextController) controller.current = null; }
   }, [loadSessions, openSession]);
 
-  return { sessions, detail, stage, stageLabel, streamText, sources, answer, error, loadSessions, openSession, research, stop: () => controller.current?.abort() };
+  return { sessions, detail, question, stage, stageLabel, streamText, sources, answer, error, loadSessions, openSession, research, stop: () => controller.current?.abort() };
 }
