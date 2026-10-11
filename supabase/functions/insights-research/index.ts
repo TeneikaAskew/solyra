@@ -41,8 +41,12 @@ function researchAnswerSchema(availableCitationIds: string[]) {
     unknowns: { type: 'array', items: { type: 'string' } },
     catalystTimeline: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { date: { type: ['string', 'null'] }, event: { type: 'string' }, impact: { type: 'string' }, citations: { type: 'array', items: citationId } }, required: ['date', 'event', 'impact', 'citations'] } },
     replayContext: { type: ['string', 'null'] },
+    verdict: { type: 'string' },
+    confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+    keyLevels: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { label: { type: 'string' }, value: { type: 'string' }, citations: { type: 'array', items: citationId } }, required: ['label', 'value', 'citations'] } },
+    followUps: { type: 'array', items: { type: 'string' } },
   },
-  required: ['answer', 'facts', 'bullCase', 'bearCase', 'invalidation', 'unknowns', 'catalystTimeline', 'replayContext'],
+  required: ['answer', 'facts', 'bullCase', 'bearCase', 'invalidation', 'unknowns', 'catalystTimeline', 'replayContext', 'verdict', 'confidence', 'keyLevels', 'followUps'],
   };
 }
 
