@@ -17,8 +17,8 @@
 ## TL;DR
 
 - **Stack:** React 19 + TypeScript 5.9 + Vite 7 + Tailwind 4, Zustand for client state, TanStack Query for server state, TanStack Table for tables, Recharts + lightweight-charts for visualisations, react-router-dom v7 with a single nested layout route.
-- **Layout:** one root `BrowserRouter` with an `AppShell` (sidebar + header) wrapping **13 route-level pages**, each lazy-loaded with `React.lazy` + `Suspense` and isolated by a per-route `RouteErrorBoundary` so a single page crash doesn't take down the chrome.
-- **API surface:** ~30 endpoints all under `/api/*`, served by the FastAPI service in the stocks repo (`solyra-api-staging`, the only API service since `solyra-api-prod` was retired on 2026-10-10, TeneikaAskew/stocks#1366). Dev uses Vite on 5173 proxying to FastAPI on 8000, falling back to `solyra-api-staging` when nothing is listening locally.
+- **Layout:** one `createBrowserRouter` tree with an `AppShell` (the `TopTabs` nav by default, or `Sidebar` + `Header` when the user picks the sidebar layout) wrapping **13 route-level pages**, each lazy-loaded with `React.lazy` + `Suspense` and isolated by a per-route `RouteErrorBoundary` so a single page crash doesn't take down the chrome.
+- **API surface:** 70 distinct `/api/*` paths, all served by the FastAPI service in the stocks repo (`solyra-api-staging`, the only API service since `solyra-api-prod` was retired on 2026-10-10, TeneikaAskew/stocks#1366). Counted from the `/api/...` request literals in app code under `src/` (tests, `src/mocks/` and generated types excluded), with path parameters collapsed and query strings dropped, so `GET /api/journal/trades/{ticker}` and `PATCH`/`DELETE /api/journal/trades/{id}` count once. Dev uses Vite on 5173 proxying to FastAPI on 8000, falling back to `solyra-api-staging` when nothing is listening locally.
 - **Build/deploy:** `npm run build` → `dist/`, deployed as a static frontend (Lovable-published). It is NOT bundled into the API image any more. `api.stocks.insightscollective.org` maps to `solyra-api-staging` (since 2026-09-06); `stocks.insightscollective.org` is the Firebase auth-email sending domain and, since solyra#242, the Lovable custom domain that serves this SPA (`solyra-stocks.lovable.app` redirects there), which is not on Cloud Run.
 - **Backend deploy (stocks repo):** merging to `main` auto-deploys `solyra-api-staging`, the only API service. `solyra-api-prod` and its manual `deploy-solyra-api-prod` Cloud Build trigger were retired on 2026-10-10 (TeneikaAskew/stocks#1366).
 
@@ -43,6 +43,7 @@ solyra/
 │  ├─ App.tsx                   # QueryClientProvider + RouterProvider (16 paths: 15 lazy pages + the /welcome redirect)
 │  ├─ routes/                   # 15 lazy-loaded pages (13 in the app shell + landing + auth action)
 │  │  ├─ LandingPage.tsx        # /         — public marketing/landing (all auth modes)
+│  │  ├─ AuthActionPage.tsx     # /auth/action — where the Firebase auth emails land (outside the shell)
 │  │  ├─ DashboardPage.tsx      # /dashboard— briefing-first Overview (brief, KPIs, cards)
 │  │  ├─ LiveMarketPage.tsx     # /live     — real-time quote + indicators
 │  │  ├─ ChartsPage.tsx         # /charts   — candlestick / area chart + strategy conditions
@@ -57,7 +58,7 @@ solyra/
 │  │  ├─ HelpPage.tsx           # /help     — glossary, Strat methodology refs
 │  │  └─ SettingsPage.tsx       # /settings — user preferences
 │  ├─ components/
-│  │  ├─ layout/                # AppShell, Header, Sidebar (14 nav items; Admin only for admins, one is the /#faq anchor)
+│  │  ├─ layout/                # among them AppShell, TopTabs (default nav), Sidebar + Header (sidebar layout), CommandPalette; navConfig.ts has 14 nav items (Admin only for admins, one is the /#faq anchor)
 │  │  ├─ shared/                # DataTable, MetricCard, Modal, Tabs, DateSelector,
 │  │  │                         # LoadingSpinner, RouteErrorBoundary
 │  │  ├─ dashboard/             # MovementRead, expectedMove
@@ -65,14 +66,13 @@ solyra/
 │  │  ├─ charts/                # CandlestickChart, PriceAreaChart,
 │  │  │                         # StrategyConditionsCard, SimilarSetupsCard
 │  │  └─ backtest/              # BacktesterSection
-│  ├─ hooks/                    # 23 TanStack-Query-backed hook MODULES (see hook map below — 7 aren't in it yet). Several export more than one hook (e.g. useJournalChartTrades.ts exports 11), so this is a module count, not an exported-hook count
-│  ├─ stores/                   # Zustand client state (5 stores)
-│  │  ├─ tickerStore.ts         # activeTicker + availableTickers (IWM/SPY/QQQ)
-│  │  ├─ tradeStore.ts          # in-flight trade form state
+│  ├─ hooks/                    # 23 TanStack-Query-backed hook MODULES (see hook map below). Several export more than one hook (e.g. useJournalChartTrades.ts exports 11), so this is a module count, not an exported-hook count
+│  ├─ stores/                   # Zustand client state (4 stores; usePreferences.ts keeps a fifth, module-private one for sync status)
+│  │  ├─ tickerStore.ts         # activeTicker + quickPicks (IWM/SPY/QQQ) + recentTickers
 │  │  ├─ themeStore.ts          # dark/light toggle
-│  │  ├─ settingsStore.ts       # sidebar collapsed, etc.
-│  │  └─ reviewDateStore.ts     # date selector for weekend review
-│  ├─ lib/                      # pure helpers (clock, formatting, snapshot building); the indicator and playbook math lives in the backend lib/
+│  │  ├─ settingsStore.ts       # nav pattern, density, accent, sidebar collapsed, chart timeframe, sound
+│  │  └─ reviewDateStore.ts     # review (replay) date + time, set by ReplayControl
+│  ├─ lib/                      # helpers (clock, formatting, snapshot building) plus browser-runtime modules such as authedFetch.ts (patches window.fetch), firebase.ts and runtimeConfig.ts; the indicator and playbook math lives in the backend lib/
 │  │  ├─ indicators.ts          # indicator types only (math: lib/indicators.py behind POST /api/live/indicators)
 │  │  ├─ playbookEvaluator.ts   # builds the MarketSnapshot sent to POST /api/playbook/evaluate; the server evaluates
 │  │  ├─ marketSession.ts       # pre/RTH/post-market clock
@@ -99,9 +99,9 @@ Each child:
 
 - is `React.lazy`-loaded, so the initial bundle is only the shell + the active page;
 - is wrapped in a `<Suspense fallback={<PageLoader />}>` for the lazy-load handoff;
-- carries its own `errorElement={<RouteErrorBoundary />}` — when a page crashes during render, the boundary catches it, keeps sidebar + header rendered, and shows a card with the error + a refresh button. The crash does **not** unmount the chrome.
+- carries its own `errorElement={<RouteErrorBoundary />}` — when a page crashes during render, the boundary catches it, keeps the nav chrome rendered, and shows a card with the error + a refresh button. The crash does **not** unmount the chrome.
 
-The 16 routes (15 pages plus the `/welcome` redirect). *Primary API surface* lists what the page's own code and hooks request; calls the app shell makes on every page are listed once under the table.
+The 16 routes (15 pages plus the `/welcome` redirect). *Primary API surface* lists what the page's own code and hooks request. The calls the app shell makes are listed under the table instead; a row repeats one only where the page also requests it itself.
 
 | Path        | Page                 | Purpose | Primary API surface |
 |-------------|----------------------|---------|---------------------|
@@ -122,17 +122,17 @@ The 16 routes (15 pages plus the `/welcome` redirect). *Primary API surface* lis
 | `/help`     | `HelpPage`           | Glossary + Strat methodology refs (static text) | `/api/config/indicators` (indicator periods and thresholds) |
 | `/settings` | `SettingsPage`       | Profile and appearance preferences | `/api/me/profile` (GET/PUT) |
 
-Shell-level calls not repeated per row: `/api/me` (`useUser`, every app page), `/api/me/preferences` (GET/PUT, `usePreferencesSync` in `AppShell`), `/api/config/market-hours` (Header `ReplayControl`), and `/api/market/most-active` (`MostActiveBar`, shown on `/live`, `/charts`, `/options`, `/signals` and `/journal`). `/dashboard`, `/options`, `/signals`, `/journal` and `/insights` also mount `TickerCombobox`, which calls `/api/insights/ticker/search`, `/api/market/coverage` and, when a ticker is added, `POST /api/insights/watchlist/add`.
+Shell calls: `/api/config/firebase` (`ConfigGate`, which wraps the shell and `/auth/action`); `/api/me` (`useUser`, which `AuthGate`, `AppShell` and the nav call); `/api/me/preferences` (GET, and PUT on a change, from `usePreferencesSync` in `AppShell`); `/api/config/market-hours` (`ReplayControl`, which sits in `TopTabs`, the default nav, or in the sidebar layout's `Header`, and fetches it on every app page although it renders only on `/dashboard`, `/live`, `/charts` and `/signals`); `/api/live/status` (`MarketSessionBadge` → `useLiveStatus`, mounted by `TopTabs` and by the expanded `Sidebar`); and `/api/market/most-active` (`MostActiveBar`, shown on `/live`, `/charts`, `/options`, `/signals` and `/journal`). `/dashboard`, `/options`, `/signals`, `/journal` and `/insights` also mount `TickerCombobox`, which calls `/api/insights/ticker/search`, `/api/market/coverage` and, when a ticker is added, `POST /api/insights/watchlist/add`.
 
-The `Sidebar` filters `/admin` out for non-admin users (server-resolved via `useUser` → `/api/me`).
+Both navs (`TopTabs` and `Sidebar`) filter `/admin` out for non-admin users (server-resolved via `useUser` → `/api/me`).
 
 ## Data flow
 
 Three concentric loops:
 
-1. **Server state — TanStack Query.** The 23 data-fetching hook modules under `src/hooks/use*.ts` use `useQuery`/`useMutation` keyed by `[resource, ...params]` (`useDebouncedValue`, `useReplaySession` and `useTradeMarking` are plain React state hooks with no request). The `QueryClient` in `App.tsx` sets `staleTime: 5 min` and `retry: 1` — most market data is "fresh enough for 5 minutes," and a single retry catches transient Cloud Run cold-starts without thrashing on real outages.
-2. **Client state — Zustand.** Five stores hold UI-only state: active ticker (`tickerStore`), in-flight trade form (`tradeStore`), dark/light (`themeStore`), sidebar collapsed (`settingsStore`), date selector (`reviewDateStore`). No server data leaks into Zustand — that lives in the query cache.
-3. **Local computation — `src/lib/*.ts`.** Pure functions: market-session clock (`marketSession.ts`), ET date helpers (`time.ts`), display formatting, and the playbook snapshot builder (`playbookEvaluator.ts`). The indicator and playbook math is not here: it lives in the backend `lib/*.py` and is reached through `POST /api/live/indicators` and `POST /api/playbook/evaluate` (`indicators.ts` holds types only). **Tested with Vitest** (`*.test.ts` files alongside).
+1. **Server state — TanStack Query.** The 23 data-fetching hook modules under `src/hooks/use*.ts` read through `useQuery`, keyed by `[resource, ...params]`; that includes the `POST` endpoints that only compute (`useLiveIndicators`, `useSignalSeries`, `useOptionsGreeks`, `usePlaybookEvaluation`, `usePlaybookBatch`), whose keys are built from the request they send (`useSignalSeries` adds the ticker and date). Their writes go through `useMutation` with no `mutationKey`: nothing in `src/` sets one. (`useDebouncedValue`, `useReplaySession` and `useTradeMarking` are plain React state hooks with no request.) The `QueryClient` in `App.tsx` sets query defaults only, `staleTime: 5 min` and `retry: 1` — most market data is "fresh enough for 5 minutes," and a single retry catches transient Cloud Run cold-starts without thrashing on real outages. It configures no mutation defaults.
+2. **Client state — Zustand.** Four stores in `src/stores/` hold client state: the active ticker plus quick picks and recent tickers (`tickerStore`), dark/light (`themeStore`), nav pattern, density, accent, sidebar collapsed, chart timeframe and sound (`settingsStore`), and the review (replay) date and time (`reviewDateStore`); `usePreferences.ts` keeps a fifth, module-private store for its sync status. Server responses stay in the query cache, with one exception: `usePreferencesSync` applies the account's saved theme, nav pattern, density and accent to `themeStore` and `settingsStore`.
+3. **Local computation — helpers in `src/lib/`:** market-session clock (`marketSession.ts`), ET date helpers (`time.ts`), display formatting, and the playbook snapshot builder (`playbookEvaluator.ts`). `src/lib/` is not only pure helpers: it also holds browser-runtime modules such as `authedFetch.ts`, which patches `window.fetch`, `firebase.ts` and `runtimeConfig.ts`. The indicator and playbook math is not here: it lives in the backend `lib/*.py` and is reached through `POST /api/live/indicators` and `POST /api/playbook/evaluate` (`indicators.ts` holds types only). **Tested with Vitest:** 14 of the 22 modules have a `*.test.ts` alongside.
 
 ### Hook → endpoint map
 
@@ -201,11 +201,11 @@ Every `use*` function exported by a hook module that makes a request has its own
 | `useReviewQuote`           | `/api/market/data/{ticker}/{date}` (`?timeframe=1`)        | Review-mode quote rebuilt from that day's 1-minute bars |
 | `useUser` (above)          | `/api/me`                                                  |                                    |
 
-Pages read `useTickerStore().activeTicker` and pass it to the ticker-scoped hooks, which key the query on it (no hook reads the store itself), so flipping the ticker switcher refetches every ticker-scoped query in one move. `useUser`, `useLiveStatus`, `useIndicatorConfig`/`useMarketHours`, `useWatchlist`, `useTickerSearch` and the admin hooks are not ticker-scoped.
+Pages read `useTickerStore().activeTicker` and pass it to the ticker-scoped hooks, which key the query on it (no hook reads the store itself), so changing `activeTicker` (from a page's `TickerCombobox`, the ⌘K command palette, or a ticker click on `/catalysts` or `/insights`) refetches every ticker-scoped query in one move. The queries not keyed on the ticker: `useUser`, `usePreferencesSync` and `useProfile` (keyed `['me', …]`); `useLiveStatus`, `useIndicatorConfig`, `useMarketHours` and `useWatchlist`; `useTickerSearch` and `useTickerCoverage` (keyed on the search text and the result symbols); `useInsightReportById` and `useRunStatus` (a report or run id); the admin queries; and `useLiveIndicators`, `useOptionsGreeks`, `usePlaybookEvaluation` and `usePlaybookBatch`, keyed on the payload they `POST`. Mutations carry no key at all.
 
 ## Refresh semantics — AI insights write path
 
-Most pages only read. The write that goes through Cloud Tasks is the **insights refresh button**, which closes a loop through Cloud Tasks:
+Most calls only read. The write that goes through Cloud Tasks is the **insights refresh button**, which closes a loop through Cloud Tasks:
 
 ```
 Browser (InsightsPage / ReportCards)
@@ -220,7 +220,7 @@ Browser re-polls /api/insights/report/{ticker} via TanStack Query refetch
   ↓ new row appears
 ```
 
-This is the only write that goes through Cloud Tasks, but not the only write. The 26 non-GET call sites in `src/` send 24 distinct verb + path pairs: 15 persist data or dispatch work (insights refresh and watchlist add; journal create, close, delete, import commit, export and style-mine; profile and preferences; four admin calls for the model route, user roles, user status and data-source refresh; and the landing-page waitlist signup), 8 only compute or preview (`/api/live/indicators`, `/api/live/signal-series`, `/api/options/greeks`, `/api/playbook/evaluate`, `/api/insights/chat`, `/api/backtest/replay-trades`, `/api/journal/import/preview`, `/api/admin/strat-engine/predict`), and 1 is defined but never called (`DELETE /api/insights/watchlist/{ticker}` via `useRemoveFromWatchlist`).
+This is the only write that goes through Cloud Tasks, but not the only write. The 26 non-GET call sites in `src/` send 24 distinct verb + path pairs: 14 persist data or dispatch work (insights refresh and watchlist add; journal create, close, delete, import commit and style-mine; profile and preferences; four admin calls for the model route, user roles, user status and data-source refresh; and the landing-page waitlist signup), 9 only compute or preview (`/api/live/indicators`, `/api/live/signal-series`, `/api/options/greeks`, `/api/playbook/evaluate`, `/api/insights/chat`, `/api/backtest/replay-trades`, `/api/journal/import/preview`, `/api/admin/strat-engine/predict`, and `/api/journal/export/{ticker}`, which writes a CSV to `data/signals/` on the API container's ephemeral disk and changes no table), and 1 is defined but never called (`DELETE /api/insights/watchlist/{ticker}` via `useRemoveFromWatchlist`). The split goes by HTTP verb, so it does not count writes a `GET` triggers on the server. One of them: `SwingMode` (the `/options` Gamma Map's default Swing view) runs `useGammaGrid` in live mode by default, and for an off-list ticker with no stored chain `GET /api/options/{ticker}/grid` fetches one from AlphaVantage on demand and upserts it into `etf_options_snapshots` (stocks `platform/api/routers/grid.py`, `get_grid_live` → `_fetch_on_demand`).
 
 ## Build pipeline
 
@@ -233,7 +233,7 @@ npm run dev                        # vite on :5173, proxies /api → :8000 if a 
 make dev                           # FastAPI on :8000 (Makefile `dev` → scripts/dev_server.sh)
 ```
 
-`vite.config.ts` proxies `/api/*` (and `/dev/*`) to `localhost:8000` when something is listening there, and to `solyra-api-staging` otherwise (see "Where `/api` goes" in `README.md`), so the browser only talks to `:5173`. Hot-module reload works for `.tsx`/`.css`; FastAPI auto-reloads via `uvicorn --reload`.
+`vite.config.ts` proxies `/api/*` (and `/dev/*`) to `localhost:8000` when something is listening there, and to `solyra-api-staging` otherwise (see "Where `/api` goes" in `README.md`), so the browser sends its `/api` requests to `:5173` only. Hot-module reload works for `.tsx`/`.css`; FastAPI auto-reloads via `uvicorn --reload`.
 
 ### Production build
 
@@ -298,10 +298,10 @@ Workload Identity Federation as `arch-refresh-bot@`, clamped to `main`.
 
 ## Testing
 
-- **Unit (`npm test` → Vitest):** pure helpers in `src/lib/*.ts` have co-located `*.test.ts`. Currently covers `playbookEvaluator`, `strategySignals`, `strategySignalsForSeries`, `marketSession`.
-- **Component:** none currently — Vitest is config'd for component tests via `@testing-library/react`, but the suite is empty. Filed as a coverage gap.
-- **E2E (`npm run e2e` → Playwright):** `tests/*.spec.ts` runs the full app under `chromium`. Two project profiles:
-  - `chromium` (default) — local dev against `npm run dev`;
+- **Unit (`npm test` → Vitest):** co-located `*.test.ts{,x}` files under `src/`. In `src/lib/`, 14 of the 22 modules have one, `playbookEvaluator.test.ts` and `marketSession.test.ts` among them.
+- **Component:** none currently — no Vitest test renders a component, and `@testing-library/react` is not a dependency. Filed as a coverage gap.
+- **E2E (`npm run e2e` → Playwright):** the specs under `tests/<page>/` run the full app under `chromium`. `playwright.config.ts` has four projects (`warmup`, `chromium`, `iap-setup`, `cloud`); the two meant to run specs:
+  - `chromium` (default) — against its own Vite on `:5199` (`node scripts/e2e-server.mjs`), never your `npm run dev` server;
   - `cloud` — targets the PUBLISHED FRONTEND (the `playwright.config.ts` default `https://solyra-stocks.lovable.app`, which now redirects to the custom domain `https://stocks.insightscollective.org`), not a Cloud Run URL and not behind IAP. IAP left this path at the #957 split: the SPA is published separately and the API is gated per request by a Firebase ID token. `e2e:cloud:auth` opens a browser for an interactive Firebase sign-in, refuses to save unless the signed-in shell renders, and captures Firebase's IndexedDB persistence so the session actually restores. **It currently has no specs to run**: `cloud` matches `*.cloud.spec.ts` and none exist, so `npm run e2e:cloud` exits with "No tests found". That is deliberate — it previously ran the 29 hermetic specs, which intercept every `/api` call and force `authMode: 'open'`, so a green run said nothing about the deployment. Deployment specs (no `mockCommon`, live responses) are the outstanding work.
 - **Lint:** `npm run lint` → ESLint 9 with `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`.
 
@@ -342,17 +342,18 @@ served** — that is Lovable, at its custom domain `https://stocks.insightscolle
   `platform/deploy.sh` records the incident), `--timeout 300`, and
   **`--cpu-throttling`**: CPU is NOT allocated between requests. Sources:
   `--cpu-throttling` is line 355 of `platform/deploy.sh` on stocks `main`
-  (`1a6ff45e`), the manual operator path (the auto-deploy Cloud Build trigger swaps only the
-  image and leaves these settings on the service), and the live service read
+  (`1a6ff45e`), the manual operator path (the auto-deploy Cloud Build trigger deploys the
+  image by digest with one merged env var, `--update-env-vars=MOVEMENT_STATEMENT_ENABLED=true`,
+  and leaves these settings on the service), and the live service read
   on 2026-10-11 reports `run.googleapis.com/cpu-throttling: 'true'`, `cpu: '1'`,
   `memory: 2Gi`, `timeoutSeconds: 300`, revision `maxScale: 5` and no
   `minScale`. **Corrected 2026-10-11:** this bullet previously said
   `--no-cpu-throttling` (PR #507, "FastAPI BackgroundTasks need full CPU after
   the response is sent"). #507 did the opposite: it pinned `--cpu-throttling`
   and `--min-instances 0` in `platform/deploy.sh` to stop always-allocated
-  billing on a service taking ~38 requests a day. `--no-cpu-throttling`
-  exists in stocks only on the `discord-interactions` service
-  (`gcp/deploy.sh:1260`, where BackgroundTasks finish the deferred reply).
+  billing on a service taking ~38 requests a day. The only stocks deploy
+  command that sets `--no-cpu-throttling` is the `discord-interactions`
+  service's (`gcp/deploy.sh:1260`, where BackgroundTasks finish the deferred reply).
   There is no `--no-cpu-throttling` anywhere in `platform/deploy.sh`.
 - **Logging:** stdout → Cloud Logging; the failure-notifier sink does NOT cover the service (its filter is `resource.type=cloud_run_job`), so service errors don't auto-create GitHub issues. Pager-style monitoring is via Cloud Logging alert policies (not yet wired — open todo).
 
@@ -360,9 +361,9 @@ served** — that is Lovable, at its custom domain `https://stocks.insightscolle
 
 - **No service worker / offline mode.** A reload during a network hiccup shows the browser's network-error page.
 - **No code-coverage gate in CI.** Vitest runs but coverage isn't enforced; coverage gaps in `hooks/` and `components/` are not visible until they cause a runtime regression.
-- **No component-test layer.** Vitest is only running pure-helper unit tests; the `@testing-library/react` install is dead weight until someone writes the first component test.
+- **No component-test layer.** No Vitest test renders a component, and `@testing-library/react` is not installed.
 - **No Storybook / design-system doc.** Components are documented only by usage. Adding Storybook would help the Tailwind 4 + custom tokens story stay coherent.
-- **`/api/me` not cached.** Every page-mount refetches identity. Cheap (single Cloud SQL row) but unnecessary churn.
+- **`/api/me` is cached for only 30 s.** `useUser` sets `staleTime: 30_000` so a role change reaches the UI quickly; a page mount after that refetches identity.
 
 ## Open work
 
