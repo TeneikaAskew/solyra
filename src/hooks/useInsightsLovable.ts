@@ -44,14 +44,21 @@ export function useInsightsLovable() {
     setSessions(payload.sessions ?? []);
   }, []);
   const openSession = useCallback(async (sessionId: string) => {
-    const response = await request({ action: 'read', sessionId });
-    const payload: ResearchSessionDetail = await response.json();
-    setDetail(payload);
-    const completed = [...payload.messages].reverse().find((message) => message.answer !== null);
-    setAnswer(completed?.answer ?? null);
-    setSources(payload.sources.filter((source) => !completed || source.message_id === completed.id));
-    setStage(completed ? 'completed' : 'idle');
-    setError(null);
+    try {
+      const response = await request({ action: 'read', sessionId });
+      const payload: ResearchSessionDetail = await response.json();
+      setDetail(payload);
+      const latest = payload.messages[payload.messages.length - 1] ?? null;
+      const completed = [...payload.messages].reverse().find((message) => message.answer !== null);
+      setAnswer(completed?.answer ?? null);
+      setSources(payload.sources.filter((source) => !completed || source.message_id === completed.id));
+      setStage(completed ? 'completed' : latest?.run_state === 'failed' ? 'failed' : 'idle');
+      setError(!completed && latest
+        ? `“${latest.question ?? payload.session.title}” did not finish: ${latest.error_message ?? 'no answer was saved.'} Ask it again to retry.`
+        : null);
+    } catch (cause) {
+      setError(cause instanceof Error ? `Could not open this research: ${cause.message}` : 'Could not open this research.');
+    }
   }, []);
   useEffect(() => { void supabase.auth.getSession(); }, []);
 

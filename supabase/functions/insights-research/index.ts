@@ -92,16 +92,30 @@ function clipReplay(value: unknown, cutoff: string): unknown {
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, clipReplay(v, cutoff)]));
 }
+// Keeps the most recent rows of long lists so large payloads stay valid JSON instead of being cut mid-string.
+function trimLists(value: unknown, keep: number): unknown {
+  if (Array.isArray(value)) return value.slice(-keep).map((item) => trimLists(item, keep));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, trimLists(v, keep)]));
+  return value;
+}
 async function getEvidence(path: string, label: string, type: string, auth: string, cutoff: string | null, index: number): Promise<Evidence> {
   try {
     const response = await fetch(`${STOCKS_API}${path}`, { headers: { Authorization: auth } });
-    if (!response.ok) throw new Error(`${response.status}`);
-    let payload: unknown = await response.json();
+    if (!response.ok) throw new Error(`Solyra API returned ${response.status}`);
+    const raw = await response.text();
+    if (!raw.trim()) throw new Error('Solyra API returned an empty response');
+    let payload: unknown = JSON.parse(raw);
     if (cutoff) payload = clipReplay(payload, cutoff);
-    const serialized = JSON.stringify(payload).slice(0, 45_000);
+    let serialized = JSON.stringify(payload);
+    for (const keep of [120, 60, 30, 15, 8]) {
+      if (serialized.length <= 45_000) break;
+      payload = trimLists(payload, keep);
+      serialized = JSON.stringify(payload);
+    }
+    if (serialized.length > 45_000) throw new Error('Response too large to use as evidence');
     const asOf = valueAsOf(payload);
     const age = asOf ? Date.now() - new Date(asOf).getTime() : null;
-    return { id: `S${index}`, type, label, path, asOf, freshness: age !== null && age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: serialized.slice(0, 320), payload: JSON.parse(serialized), hash: await digest(serialized) };
+    return { id: `S${index}`, type, label, path, asOf, freshness: age !== null && age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: serialized.slice(0, 320), payload, hash: await digest(serialized) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unavailable';
     return { id: `S${index}`, type, label, path, asOf: null, freshness: 'unavailable', excerpt: reason, payload: null, hash: await digest(reason) };
