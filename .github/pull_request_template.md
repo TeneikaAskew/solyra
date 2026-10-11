@@ -66,5 +66,10 @@ Canvas refresh pending: none
 - [ ] Zero unresolved review threads: each one fixed-and-resolved (naming
       what changed and the covering test/commit) or replied to with why it
       isn't being actioned
+- [ ] Each thread holding a finding a reviewer posted after its own first
+      review carries the reply classifying each location before it is
+      resolved: uncounted, missed (with the SHA of the commit the first
+      review covered) or new (with the SHA of the later commit), as
+      CLAUDE.md Rule 2.5 says
 - [ ] CI green on the current head
 - [ ] No merge conflict
