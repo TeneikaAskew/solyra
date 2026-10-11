@@ -101,8 +101,9 @@ number: six living docs here (`FRONTEND.md`, `docs/UI-SCREENS.md`,
 `docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md`,
 `docs/solyra-landing-page-plan.md`) open with an HTML comment block and carry
 their H1 on line 9, where a line-3 insert would land inside the comment.
-`AGENTS.md` opens with a comment block too (Lovable's fence) but its H1 is on
-line 12, so a marker goes after that.
+`AGENTS.md` opens instead with Lovable's fence, a rendered callout between
+`<!-- LOVABLE:BEGIN -->` and `<!-- LOVABLE:END -->`, and its H1 is on line 12,
+so a marker goes after that.
 
 ## Registry
 

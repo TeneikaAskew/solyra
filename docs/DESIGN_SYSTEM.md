@@ -25,19 +25,22 @@ The palette is anchored in deep charcoals and obsidian blacks, providing a high-
 > the app-shell chunk loads, or on `/auth/action`, which imports the store for
 > this side effect (`AuthActionPage.tsx:6-13`): `ConfigGate` and the
 > `PageLoader` fallback render before it, and `/` never imports the store, so
-> a visit that starts at the landing page sets no `accent-*` class. Every
+> the landing page never carries an `accent-*` class (its Sign in link is a
+> full page load of `/dashboard`, which does). Every
 > accent except `blue` remaps `--brand`, `--brand-glow` and `--outline`
 > through an `.accent-*` rule in `src/index.css`; `blue` needs no override
 > because it falls through to the base variables (`--brand: #8bceff` in the
 > dark `:root` block). Under
 > `[data-theme="light"]` those base variables are redefined instead
 > (`--brand: #0072c6`, `--brand-container: #004f8a`, `--brand-glow: #3b9fde`;
-> §6 lists the first), so the hex values in this section hold for `blue` in
-> dark theme only. A user picks the accent in Settings › Appearance; it
+> §6 lists the first), so `#8bceff` here, with its glow and outline, is the
+> `blue` accent's dark-theme value. The `.accent-*` rules change only
+> `--brand`, `--brand-glow` and `--outline`; nothing else in this section
+> depends on the accent. `--brand-container` (`#00b2ff`) and the surface
+> colours are the same under all twelve accents, `dawn` included, and only the
+> theme changes them. A user picks the accent in Settings › Appearance; it
 > persists to `localStorage` and is written through to the account's
-> preferences. The other eleven accents were not audited for this note, so
-> read every hex value below as "true for the `blue` accent in dark theme",
-> not as a repo-wide constant.
+> preferences.
 
 > **Naming note:** this document uses Material-style role names
 > (`surface-container-low`, `primary`, …). The implemented custom properties
@@ -241,8 +244,8 @@ the paths below were `platform/src/...` in that repo.
 §3 specifies a **Space Grotesk / Manrope** pair. `src/index.css` currently
 imports **Montserrat** only (`:1`), and uses it for both display and body.
 
-The §3 type scale is only partially implemented, and not at the documented
-sizes. Of the table's nine rows, `src/index.css` defines classes for three:
+The §3 type scale is only partially implemented, and one of its implemented
+rows is not at the documented size. Of the table's nine rows, `src/index.css` defines classes for three:
 `.display-lg` at **3rem**, not the specified 3.5rem; `.headline-sm` at the
 specified 1.125rem; and `display-sm`, whose spec (1.75rem / 700) is
 implemented exactly but under a different class name, `.metric-value`. Its own

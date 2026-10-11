@@ -15,13 +15,20 @@ comment says "The 2D heatmap grid is REAL". It is not entirely real, though.
 The tactical-read card is illustrative (the banner says "Tactical read is
 illustrative"), and the Legend's Hedge chip and the node list's Midpoint and
 Hedge rows come from `HS.nodes` in `src/data/gammaMapMock.ts` whenever real
-`/levels` data is present. The backend already serves both node types:
+`/levels` data is present. The schema already has room for both:
 `GET /api/options/{ticker}/nodes` and `/api/options/{ticker}/{date}/nodes`
-return `GammaNodesResponse`, whose `midpoints` and `hedge_nodes` are exactly
-these (`tests/fixtures/stocks-openapi.json`). Nothing in the app reads them yet
-(`src/mocks/options.ts:66` says so), so the fix is to wire Swing to `/nodes`,
-not to build an endpoint. Until then the banner labels only the tactical read,
-and those chips and rows render unlabeled.
+declare `midpoints` and `hedge_nodes` in `GammaNodesResponse`
+(`tests/fixtures/stocks-openapi.json`). But stocks `main` returns both as empty
+arrays: `_build_nodes_payload` in
+[`platform/api/routers/grid.py`](https://github.com/TeneikaAskew/stocks/blob/main/platform/api/routers/grid.py)
+defers midpoints and leaves hedge nodes waiting on an `economic_events` join.
+Nothing in the app reads `/nodes` either (`src/mocks/options.ts:66` says so).
+Midpoints are computed today only by `POST /api/options/greeks`
+(`nodes.midpoints`, from `detect_nodes` in
+[`lib/gamma.py`](https://github.com/TeneikaAskew/stocks/blob/main/lib/gamma.py)),
+which Profiles already reads. Hedge nodes have no source anywhere, so replacing
+`HS.nodes` needs work in stocks first. Until then the banner labels only the
+tactical read, and those chips and rows render unlabeled.
 Section (A) below proposed a `/surface` endpoint to make Swing real. The grid
 endpoint already ships that (per-cell GEX, VEX and open interest by strike and
 expiration; `/surface` is not in the vendored OpenAPI snapshot,
@@ -32,7 +39,7 @@ the record; do not build it.
 |------|-----------|-----------|--------------------|
 | GEX/VEX profile | Profiles | **Real** — `/api/options/dates/{t}` (date list, `useAllOptionsDates`), `/api/options/{t}/{date}` with `/api/options/live/{t}/{date}` as the 404 fallback (chain, via `ProfilesTab.tsx`'s local `useOptionsData`), `/api/options/{t}/{date}/levels` (`useGammaLevels`) + `POST /api/options/greeks` | — |
 | Trinity 3-panel | Gamma Map · Trinity | **Real** — `/api/options/dates/{t}?limit=1` (`useLatestOptionsDate`, which gates the query) + `useGammaLevels` for SPX/SPY/QQQ | — |
-| Swing 2D heatmap | Gamma Map · Swing | **Real** — live mode (the default) reads the date-less `/api/options/{t}/grid` and does not wait on a date (`useGammaGrid`, `SwingMode.tsx:804-807`); historical mode reads `/api/options/{t}/{date}/grid` once the `?limit=1` date resolves; `useGammaLevels` waits on that date in both modes. Illustrative only, from `src/data/gammaMapMock.ts`: the tactical-read card, the Legend's Hedge chip and the node list's Midpoint/Hedge rows (see the note above) | — |
+| Swing 2D heatmap | Gamma Map · Swing | **Real** — live mode (the default) reads the date-less `/api/options/{t}/grid` and does not wait on a date (`useGammaGrid`, `SwingMode.tsx:804-807`); historical mode reads `/api/options/{t}/{date}/grid` once the `?limit=1` date resolves; `useGammaLevels` waits on that date in both modes. Illustrative only, from `src/data/gammaMapMock.ts`: the tactical-read card, the Legend's Hedge chip and the node list's Midpoint/Hedge rows (see the note above) | Hedge and Midpoint nodes for Swing, and a source for the tactical read (see the note above) |
 | Live flow tape | Flow · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |
 | Contract drilldown | Flow · Drilldown | Mock `src/data/contractDrilldownMock.ts` | **(C)** per-contract tape |
 
