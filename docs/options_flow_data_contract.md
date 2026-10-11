@@ -31,20 +31,28 @@ which Profiles already reads. Hedge nodes have no source anywhere, so replacing
 `HS.nodes` needs work in stocks first. Until then the banner labels only the
 tactical read, and those chips and rows render unlabeled.
 
-**The Flip on Profiles and Swing is the balance price, not the zero-gamma
-level** (TeneikaAskew/solyra#89). `/levels` returns two levels:
-`gamma_balance`, the cumulative-net-gamma balance price (formerly mislabeled
-`flip`), and `gamma_flip`, the Black-Scholes zero-gamma level that divides the
-regimes (`src/hooks/useGammaLevels.ts:45-49`). Swing sets its Flip to
+**The Flip on Profiles and Swing is the balance price or the strikes beside
+it, not the zero-gamma level** (TeneikaAskew/solyra#89). `/levels` returns two
+levels (`src/hooks/useGammaLevels.ts:45-49`): `gamma_balance`, the gamma-median
+balance price, with half the chain's absolute gamma below it and half above
+(formerly mislabeled `flip`; `compute_gamma_balance` in stocks `lib/gamma.py`),
+and `gamma_flip`, the Black-Scholes zero-gamma level that divides the regimes. Swing sets its Flip to
 `levels.gamma_balance ?? grid?.gamma_flip` (`SwingMode.tsx:843`), so whenever
 `/levels` returns a balance price, the Legend's Flip chip, the node list's Flip
 row (marked zero-gamma, `SwingMode.tsx:522-523`) and the dashed flip row on the
 heatmap show it. They show the grid's `gamma_flip` only when `/levels` has no
-balance price or no data (`SwingMode.tsx:843`, `:880`). Profiles' Gamma Flip card shows
-`gamma_balance`, falling back to the Greeks endpoint's `metrics.zero_gamma`
-(`ProfilesTab.tsx:307`, `:512-515`), and its ⇅ Flip chips list
-`gamma_balance_levels` (`ProfilesTab.tsx:568-575`). Until solyra's mapping
-reads `gamma_flip`, read the Flip on Profiles and Swing as the balance price.
+balance price or no data (`SwingMode.tsx:843`, `:880`). Profiles' Gamma Flip
+card shows `gamma_balance`, falling back to the Greeks endpoint's
+`metrics.zero_gamma` (`ProfilesTab.tsx:307`, `:512-515`). Its ⇅ Flip chips
+show the strikes on either side of the balance price instead: one chip per
+entry in `gamma_balance_levels`, which stocks fills with the nearest strike at
+or below the balance price and the nearest at or above it (`classify_levels` in
+[`lib/gamma.py`](https://github.com/TeneikaAskew/stocks/blob/main/lib/gamma.py)).
+The typed mock has a 219.5 balance and a 219 chip (`src/mocks/options.ts:204`,
+`:217`). Each chip is titled "Adjacent to flip @" with the balance price
+(`ProfilesTab.tsx:568-575`). Until solyra's mapping reads `gamma_flip`, read
+the Flip on Swing and Profiles' Gamma Flip card as the balance price, and
+Profiles' Flip chips as the strikes beside it.
 
 Section (A) below proposed a `/surface` endpoint to make Swing real. The grid
 endpoint already ships that (per-cell GEX, VEX and open interest by strike and
@@ -54,7 +62,7 @@ the record; do not build it.
 
 | View | Tab · Mode | Data today | Real source needed |
 |------|-----------|-----------|--------------------|
-| GEX/VEX profile | Profiles | **Real** — `/api/options/dates/{t}` (date list, `useAllOptionsDates`), `/api/options/{t}/{date}` with `/api/options/live/{t}/{date}` as the 404 fallback (chain, via `ProfilesTab.tsx`'s local `useOptionsData`), `/api/options/{t}/{date}/levels` (`useGammaLevels`) + `POST /api/options/greeks`. The Gamma Flip card and the ⇅ Flip chips show the balance price (see the note above) | Read `gamma_flip` for the Flip, a solyra fix (TeneikaAskew/solyra#89) |
+| GEX/VEX profile | Profiles | **Real** — `/api/options/dates/{t}` (date list, `useAllOptionsDates`), `/api/options/{t}/{date}` with `/api/options/live/{t}/{date}` as the 404 fallback (chain, via `ProfilesTab.tsx`'s local `useOptionsData`), `/api/options/{t}/{date}/levels` (`useGammaLevels`) + `POST /api/options/greeks`. The Gamma Flip card shows the balance price and the ⇅ Flip chips the strikes beside it (see the note above) | Read `gamma_flip` for the Flip, a solyra fix (TeneikaAskew/solyra#89) |
 | Trinity 3-panel | Gamma Map · Trinity | **Real** — `/api/options/dates/{t}?limit=1` (`useLatestOptionsDate`, which gates the query) + `useGammaLevels` for SPX/SPY/QQQ | — |
 | Swing 2D heatmap | Gamma Map · Swing | **Real** — live mode (the default) reads the date-less `/api/options/{t}/grid` and does not wait on a date (`useGammaGrid`, `SwingMode.tsx:804-807`); historical mode reads `/api/options/{t}/{date}/grid` once the `?limit=1` date resolves; `useGammaLevels` waits on that date in both modes. Illustrative only, from `src/data/gammaMapMock.ts`: the tactical-read card, the Legend's Hedge chip and the node list's Midpoint/Hedge rows (see the note above). The Flip chip, the node list's Flip row and the dashed flip row show the balance price whenever `/levels` returns one (see the note above) | Hedge and Midpoint nodes for Swing, and a source for the tactical read (see the note above); read `gamma_flip` for the Flip, a solyra fix (TeneikaAskew/solyra#89) |
 | Live flow tape | Flow · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |
