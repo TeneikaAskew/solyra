@@ -2,7 +2,7 @@
 feat_id: FEAT-AUTH-001
 spec: docs/superpowers/specs/2026-10-10-feat-auth-001-verify-email-state.md
 branch: feature/feat-auth-001-verify-email-state
-pr: null
+pr: 241
 status: ready
 ---
 
