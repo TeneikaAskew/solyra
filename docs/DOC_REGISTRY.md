@@ -107,7 +107,7 @@ renames are ignored, so a file-move wave does not flag every document.
 
 | Class | Path glob | Declared code paths | Generated regions |
 |---|---|---|---|
-| D | AGENTS.md | scripts/gate, .claude/skills/product-delivery | fence:LOVABLE |
+| D | AGENTS.md | scripts/gate, .claude/skills/product-delivery, CLAUDE.md, tests, playwright.config.ts, .github/workflows/e2e.yml | fence:LOVABLE |
 | C | docs/LOVABLE_COMMITS_REVIEW.md | | |
 | C | docs/TEST_COVERAGE_AUDIT.md | | |
 | C | docs/expected-move-affordances-design.md | | |
@@ -115,7 +115,7 @@ renames are ignored, so a file-move wave does not flag every document.
 | C | docs/solyra-landing-page-design.md | | |
 | C | docs/superpowers/**/*.md | | |
 | D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json | |
-| D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows | |
+| D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows, AGENTS.md, tests, playwright.config.ts | |
 | D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/App.tsx | |
 | D | docs/UI-SCREENS.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/mocks, src/types, src/App.tsx, src/main.tsx, tests, .github/workflows/ci.yml, .github/workflows/e2e.yml | |
 | D | docs/DESIGN_SYSTEM.md | src/index.css, vite.config.ts, src/components/primitives, src/stores/themeStore.ts, src/lib/chartTheme.ts | |
