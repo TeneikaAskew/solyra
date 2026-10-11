@@ -41,35 +41,36 @@ same image without IAP in front:
 /api/health HTTP 200
 ```
 
-The SPA is served by Lovable at `https://solyra-stocks.lovable.app` (HTTP 200, probed
-2026-09-05), which calls the API cross-origin at `STAGING_API` via `authedFetch`. Full
-environment inventory is in
+The SPA is served by Lovable at its custom domain `https://stocks.insightscollective.org`
+(solyra#242); `https://solyra-stocks.lovable.app`, which answered HTTP 200 when probed
+2026-09-05, now redirects there. It calls the API cross-origin at `STAGING_API` via
+`authedFetch`. Full environment inventory is in
 [05](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/05-INFRASTRUCTURE.md#environments-and-urls).
 
-| Screen | Route | Published URL (Lovable) | Local dev |
+| Screen | Route | Published URL (Lovable custom domain) | Local dev |
 |---|---|---|---|
-| Landing | `/` | `https://solyra-stocks.lovable.app/` | `http://localhost:5173/` |
-| Welcome redirect | `/welcome` | `https://solyra-stocks.lovable.app/welcome` | `http://localhost:5173/welcome` |
-| Dashboard | `/dashboard` | `https://solyra-stocks.lovable.app/dashboard` | `http://localhost:5173/dashboard` |
-| Live Market | `/live` | `https://solyra-stocks.lovable.app/live` | `http://localhost:5173/live` |
-| Charts | `/charts` | `https://solyra-stocks.lovable.app/charts` | `http://localhost:5173/charts` |
-| Options Flow | `/options` | `https://solyra-stocks.lovable.app/options` | `http://localhost:5173/options` |
-| Playbook | `/playbook` | `https://solyra-stocks.lovable.app/playbook` | `http://localhost:5173/playbook` |
-| Reports | `/reports` | `https://solyra-stocks.lovable.app/reports` | `http://localhost:5173/reports` |
-| Signals | `/signals` | `https://solyra-stocks.lovable.app/signals` | `http://localhost:5173/signals` |
-| Journal | `/journal` | `https://solyra-stocks.lovable.app/journal` | `http://localhost:5173/journal` |
-| AI Insights | `/insights` | `https://solyra-stocks.lovable.app/insights` | `http://localhost:5173/insights` |
-| Catalysts | `/catalysts` | `https://solyra-stocks.lovable.app/catalysts` | `http://localhost:5173/catalysts` |
-| Admin | `/admin` | `https://solyra-stocks.lovable.app/admin` | `http://localhost:5173/admin` |
-| Help & Glossary | `/help` | `https://solyra-stocks.lovable.app/help` | `http://localhost:5173/help` |
-| Settings | `/settings` | `https://solyra-stocks.lovable.app/settings` | `http://localhost:5173/settings` |
+| Landing | `/` | `https://stocks.insightscollective.org/` | `http://localhost:5173/` |
+| Welcome redirect | `/welcome` | `https://stocks.insightscollective.org/welcome` | `http://localhost:5173/welcome` |
+| Dashboard | `/dashboard` | `https://stocks.insightscollective.org/dashboard` | `http://localhost:5173/dashboard` |
+| Live Market | `/live` | `https://stocks.insightscollective.org/live` | `http://localhost:5173/live` |
+| Charts | `/charts` | `https://stocks.insightscollective.org/charts` | `http://localhost:5173/charts` |
+| Options Flow | `/options` | `https://stocks.insightscollective.org/options` | `http://localhost:5173/options` |
+| Playbook | `/playbook` | `https://stocks.insightscollective.org/playbook` | `http://localhost:5173/playbook` |
+| Reports | `/reports` | `https://stocks.insightscollective.org/reports` | `http://localhost:5173/reports` |
+| Signals | `/signals` | `https://stocks.insightscollective.org/signals` | `http://localhost:5173/signals` |
+| Journal | `/journal` | `https://stocks.insightscollective.org/journal` | `http://localhost:5173/journal` |
+| AI Insights | `/insights` | `https://stocks.insightscollective.org/insights` | `http://localhost:5173/insights` |
+| Catalysts | `/catalysts` | `https://stocks.insightscollective.org/catalysts` | `http://localhost:5173/catalysts` |
+| Admin | `/admin` | `https://stocks.insightscollective.org/admin` | `http://localhost:5173/admin` |
+| Help & Glossary | `/help` | `https://stocks.insightscollective.org/help` | `http://localhost:5173/help` |
+| Settings | `/settings` | `https://stocks.insightscollective.org/settings` | `http://localhost:5173/settings` |
 
 Operational endpoints are served by the API, not the frontend host, so they live on the Cloud Run
-services: `/dev` (the unauthenticated-on-staging page — see
+service: `/dev` (the unauthenticated-on-staging page — see
 [09](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/09-SECURITY-AUTH.md)),
 `/api/health` and `/api/health/freshness`, on
-`https://solyra-api-staging-5sjtb3yl7a-ue.a.run.app` (public, Firebase-gated) or
-`https://solyra-api-prod-5sjtb3yl7a-ue.a.run.app` (behind IAP).
+`https://solyra-api-staging-5sjtb3yl7a-ue.a.run.app` (public, Firebase-gated), the only API
+service since `solyra-api-prod` (behind IAP) was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
 In local development the Vite server proxies `/api` to `http://localhost:8000`
 (`vite.config.ts:21,27`), so the API is reachable at both ports.
 
@@ -127,14 +128,15 @@ The matrix's [SHARED area](https://github.com/TeneikaAskew/stocks/blob/main/docs
 env var and validated once at process start: `open` (local dev, a no-op), `firebase` (bearer
 token verified per request, the public `solyra-api-staging` service), `iap` (pass-through,
 identity read from the `X-Goog-Authenticated-User-Email` header IAP injects at the edge, the
-`solyra-api-prod` service). On the frontend, `ConfigGate` fetches `GET /api/config/firebase`
+mode of `solyra-api-prod`, retired on 2026-10-10 (TeneikaAskew/stocks#1366), so no deployed
+service runs it now). On the frontend, `ConfigGate` fetches `GET /api/config/firebase`
 once at boot and blocks every gated route behind it: `loading` while the fetch is in flight,
 `ready` once a valid `authMode` is parsed, or the fail loud `ConfigErrorScreen`
 (`data-testid="config-error"`) on any network error, non 2xx status or unparseable body.
 
 **Needs:**
 - `GET /api/config/firebase` returning `RuntimeConfigResponse { authMode: "open" | "firebase" | "iap", firebase?: { apiKey, authDomain, projectId, appId } }` (`platform/api/schemas.py:200-207`)
-- env `AUTH_MODE` on the Cloud Run service (`solyra-api-staging` firebase, `solyra-api-prod` iap)
+- env `AUTH_MODE` on the Cloud Run service (`solyra-api-staging` firebase; the retired `solyra-api-prod` ran iap)
 - env `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID` (firebase mode only)
 
 **States:**
@@ -778,8 +780,9 @@ string on failure; table `waitlist_signups` (`email UNIQUE, source, user_agent, 
 - Given a syntactically valid, previously-unseen email and an empty honeypot, when the
   form is submitted, then the browser POSTs `{email (trimmed, lowercased), source:"landing", website: ""}` to `/api/waitlist`, the backend inserts a new
   `waitlist_signups` row and returns `{"status":"ok"}` (`test_valid_email_upserts_and_returns_ok`; `waitlist.test.ts`'s `POSTs email + source + empty honeypot and resolves on 200`).
-- Given the app is served from a `*.lovable.app` host (Lovable, the production SPA host
-  for this area), when `submitWaitlist` calls the bare global `fetch('/api/waitlist',...)`, then `installAuthFetch`'s wrapper, installed unconditionally at boot before
+- Given the app is served from a `*.lovable.app` host or the custom domain
+  `stocks.insightscollective.org` (Lovable; the custom domain is the production SPA host
+  for this area, `src/lib/apiTargets.ts:46`), when `submitWaitlist` calls the bare global `fetch('/api/waitlist',...)`, then `installAuthFetch`'s wrapper, installed unconditionally at boot before
   ConfigGate specifically because "the landing page's own waitlist POST needs that
   rewrite too" (`src/main.tsx:14-25`), rewrites it onto `STAGING_API`
   (`src/lib/apiTargets.ts:29,37`, `authedFetch.ts:56-63,109-129`), because a static host
@@ -7035,7 +7038,7 @@ the strip is set by the fetch wrapper on any gated 401 and cleared by any later 
 `GET /api/live/status`, `GET /api/live/history/IWM`, `GET /api/live/quote/IWM`, `GET /api/live/avg-volume/IWM`,
 `GET /api/market/reference/IWM/20261001`, `POST /api/live/indicators` and `POST /api/playbook/evaluate`, as did `GET /api/playbook/IWM?date=...`, and
 `GET /api/health` and `GET /api/config/firebase` answered 200 in the same run (`authMode: firebase`) (V evidence, 2026-10-01).
-`solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to `/api/playbook/IWM`, `/api/live/status` and
+`solyra-api-prod` (retired 2026-10-10) ran `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to `/api/playbook/IWM`, `/api/live/status` and
 `/api/health`, so the 401 proof is staging's. The wrapper's `OPEN_PREFIXES` must match the backend's `_OPEN_API_PREFIXES` (CLAUDE.md, Auth).
 
 **States:** This is the permission state of the count and age of PLAYBOOK-01 (through the playbook request's 401), of the cards of
@@ -7082,7 +7085,7 @@ stays unticked.
 | GET /api/reports/{ticker}/{phase} | plain-text markdown body (`text/plain`), rendered through `renderReportHtml` (`src/lib/reports.ts`; marked with GFM and no soft breaks, then DOMPurify with its defaults); each text opens with its own `Generated:` line, which the page does not read | the same objects and the same absence of a job | 24-hour server cache per ticker and phase; 5min client staleTime | `useReportContent` (`ReportViewer`, inline in `ReportsPage.tsx`) → Report body |
 | store: ticker | activeTicker (recentTickers is stored with it) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette): this page and the header have no picker of their own | | the label, the list request and the body request |
 
-No table backs either endpoint: both read markdown objects from the GCS bucket `adept-mountain-474619-d4-trading-data` prefix `raw/reports/`, which `solyra-api-prod` and `solyra-api-staging` read as `trading-platform-svc@` (`roles/storage.objectViewer`). No code or workflow in the stocks repository writes the prefix (matrix Backend notes), so the Produced by column names the scripts that write such files and the upload they wait for rather than a Cloud Run job.
+No table backs either endpoint: both read markdown objects from the GCS bucket `adept-mountain-474619-d4-trading-data` prefix `raw/reports/`, which `solyra-api-staging` reads as `trading-platform-svc@` (`roles/storage.objectViewer`). No code or workflow in the stocks repository writes the prefix (matrix Backend notes), so the Produced by column names the scripts that write such files and the upload they wait for rather than a Cloud Run job.
 
 #### Displayed
 | ID | Element | Component |
@@ -7551,7 +7554,7 @@ set by the fetch wrapper on any gated 401 and cleared by any later gated success
 
 **Needs:** The 401 itself. Both gated routes answered 401 `{"detail":"sign in to continue"}` without a token on staging,
 `GET /api/reports/list/IWM` and `GET /api/reports/IWM/phase6_playbook`, as did `GET /api/reports/list/AAPL` and `GET/api/reports/IWM/phase99`, and `GET /api/health` and `GET /api/config/firebase` answered 200 in the same run (`authMode: firebase`) (V
-evidence, 2026-10-01). `solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to both routes and
+evidence, 2026-10-01). `solyra-api-prod` (retired 2026-10-10) ran `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to both routes and
 to `/api/health`, so the 401 proof is staging's. The wrapper's `OPEN_PREFIXES` must match the backend's `_OPEN_API_PREFIXES` (CLAUDE.md,
 Auth).
 
@@ -9119,7 +9122,7 @@ What it did (executed, IWM, the real handler over the scratch database, the expo
 trade's two times, and the line read `Exported 1 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv` and was gone after 5 seconds. With the export route answering 503, the same button downloaded `iwm_journal.csv` holding the one closed trade and showed `API unavailable: downloaded CSV locally` in green. With only an open trade, it posted `{"trades": []}`, the handler wrote a header-only file
 and the line read `Exported 0 closed trades · 1 not closed, skipped → iwm_trade_tracker.csv`.
 
-**Needs:** The rows of the active view (JOURNAL-01, JOURNAL-02) and, for `Export to Pipeline`, `POST /api/journal/export/{ticker}`, gated (V evidence: 401 without a token on staging). It needs a writable `data/signals/` on the serving instance; whether `solyra-api-prod` has one was not checked. No table is read or written.
+**Needs:** The rows of the active view (JOURNAL-01, JOURNAL-02) and, for `Export to Pipeline`, `POST /api/journal/export/{ticker}`, gated (V evidence: 401 without a token on staging). It needs a writable `data/signals/` on the serving instance; whether `solyra-api-staging`, the only API service since `solyra-api-prod` was retired on 2026-10-10, has one was not checked. No table is read or written.
 
 **States:** Both buttons are absent with no rows. `Export to Pipeline` is absent on Examples. The status line shows for 5 seconds after a click and has no pending state: the button can be pressed again while the request is out. A failure shows as the fallback line, in the success colour (JOURNAL-14).
 
@@ -9289,7 +9292,7 @@ What the schedules did on 2026-10-01 (V evidence, read at 21:25 to 21:26 UTC): t
   and `isSignedIn` is `firebaseMode ? signedIn : true` (`src/hooks/useUser.ts:81`). In `firebase` mode `AuthGate` shows the sign-in screen to a visitor with no session before any page mounts (executed with `/journal` opened signed out against a `firebase` answer of `/api/config/firebase`: the screen with the heading `Sign in`, no `Trade Journal` text, and `GET /api/config/firebase` as the only API request). In `open` and `iap` modes the user is always signed in. So
   the block cannot be reached on this page, which the Reports page shares (REPORTS-10).
 - **A signed-in user whose session fails.** Every gated call that answers 401 marks the session blocked, and the shell, not the page, says so: `Session expired` and a `Sign in` button in the top bar, the strip `Your session expired, so live data is not loading.` with a `Sign in` button (`src/components/shared/AuthStatusIndicator.tsx:160-180`) and `SIGN IN TO LOAD DATA` in the most-active bar. The page keeps its body and shows each failure as JOURNAL-14 does: the amber Examples box and card, the label `Local storage ...`, the chart card's empty text, and `Style mining failed: sign in to continue` on a mine (executed in `open` mode with a 401 on every journal and market route).
-- **The server.** Every `/api/` route the page calls is gated by the auth middleware, which answers 401 `{"detail": "sign in to continue"}` without a bearer token on staging (`AUTH_MODE=firebase`; V evidence); `solyra-api-prod` runs `AUTH_MODE=iap` and answers 302 from its IAP front door before the handler (V evidence). The own journal is scoped to the verified email (`_journal_owner`, `platform/api/routers/journal.py:152-161`), and in `open` mode every caller is the shared `local` owner; a signed-in caller whose database read fails gets 503 and never
+- **The server.** Every `/api/` route the page calls is gated by the auth middleware, which answers 401 `{"detail": "sign in to continue"}` without a bearer token on staging (`AUTH_MODE=firebase`; V evidence); `solyra-api-prod` (retired 2026-10-10) ran `AUTH_MODE=iap` and answered 302 from its IAP front door before the handler (V evidence). The own journal is scoped to the verified email (`_journal_owner`, `platform/api/routers/journal.py:152-161`), and in `open` mode every caller is the shared `local` owner; a signed-in caller whose database read fails gets 503 and never
   the shared file (JOURNAL-14). Examples are the same for every signed-in user: the examples admin's rows other than `replay` and the pipeline's live rows, whoever asks. No element of the page reads the user's role.
 
 **Needs:** The 401 of each gated route without a token (V evidence, staging, 2026-10-01): `GET /api/journal/trades/{ticker}`, `GET /api/journal/examples/{ticker}`, `POST /api/journal/trades`, `PATCH` and `DELETE /api/journal/trades/{trade_id}`, `POST /api/journal/export/{ticker}`, `POST /api/journal/import/preview` and `/commit`, `POST /api/style/mine-and-validate`, `GET /api/market/dates/{ticker}`, `GET /api/market/data/{ticker}/{date}`, `GET /api/config/market-hours`, `GET /api/insights/ticker/search`, `GET /api/market/coverage` and `POST /api/insights/watchlist/add`. The identity comes from the Firebase token on staging and the IAP header on prod.
@@ -9297,7 +9300,7 @@ What the schedules did on 2026-10-01 (V evidence, read at 21:25 to 21:26 UTC): t
 **States:** Signed out (`firebase` mode): the sign-in screen, no page. Signed in with a failing session: the shell's strip over a page that shows each failure as in JOURNAL-14. The wrapper's block: not reachable (above).
 
 **Acceptance criteria:**
-- Given no token, then each of the routes above answers 401 on staging and the production service answers 302 from IAP (V evidence).
+- Given no token, then each of the routes above answers 401 on staging (V evidence; the production service, retired 2026-10-10, answered 302 from IAP).
 - Given `firebase` mode and no session, then the sign-in screen shows and the app does not (`firebase mode, signed out → login screen blocks the app`, `tests/shared/auth-gate.spec.ts`, on main, which opens `/dashboard`; executed for `/journal`, where the only API request was `GET /api/config/firebase`).
 - Given a signed-in user whose calls answer 401, then the shell's strip shows and the page should say each failure as a permission failure (executed: the page says `Examples unavailable, the journal database didn't respond.`, which names the wrong cause, and nothing for the own read).
 - Given a gated path answers 401, then the fetch layer reports the session blocked, and given an open path answers 401, then it does not (`a 401 from a gated path fires onUnauthorized`, `a 401 from an OPEN path does not fire onUnauthorized`, `src/lib/authedFetch.test.ts`, on main).
@@ -11366,7 +11369,7 @@ flag behind the strip is set by the fetch wrapper on any gated 401 and cleared b
 **Needs:** The 401 itself. Both routes the page calls are gated: staging answered 401 without a token to
 `GET /api/catalysts/events?date_from=2026-09-28&date_to=2026-10-15` and `GET /api/catalysts/types`, and 200 to
 `GET /api/health` and `GET /api/config/firebase` (`authMode: firebase`) in the same run (V evidence, 2026-10-01).
-`solyra-api-prod` runs `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to the same two catalysts paths and to
+`solyra-api-prod` (retired 2026-10-10) ran `AUTH_MODE=iap` and answered 302 (`Invalid IAP credentials: empty token`) to the same two catalysts paths and to
 `/api/health`, so the 401 proof is staging's. The wrapper's `OPEN_PREFIXES` must match the backend's
 `_OPEN_API_PREFIXES` (CLAUDE.md, Auth).
 
@@ -11418,13 +11421,13 @@ on a synthetic `/api/secret` route and not on a catalysts route) and the sign-in
 | GET /api/admin/structure-brief | scope_statement, ece_ceiling, cells[].ticker/timeframe/available/top_class/top_prob/distribution/live_ece/ece_ceiling/muted/mute_reason/refreshed_at/note (types: `useAdmin.ts` StructureBriefResponse) | the GCS object `research/strat_engine/structure_brief_latest.json`, which `strat_ece_snapshot.py` writes on demand and no schedule writes; it does not exist in production, so all nine cells are unavailable, and a storage error is answered the same way, in a 200 | 60s staleTime; a cell's `refreshed_at` reads as a relative time | `useStructureBrief` (`useAdmin.ts`) → `StructureBrief` panel |
 | GET /api/admin/strat-engine/state | cells[].ticker/timeframe/available/model_version/last_train_date/live_ece, ece_ceiling (types: `useAdmin.ts` StratEngineStateResponse) | the GCS objects of the nine cells (`model.pkl`, `metrics_<epoch>.json`), written by `strat_pred_train.py` through a manual dispatch of `strat-engine`: IWM's from 2026-05-26, SPY's and QQQ's from 2026-06-04 (V evidence); `live_ece` from the absent snapshot; a storage outage reads as no cells | 60s staleTime; `Last Trained` carries no age flag | `useStratEngineState` (`useAdmin.ts`) → `ModelStateSnapshot` panel |
 | PUT /api/admin/users/{uid}/roles | request: roles[]; the answer is not read (types: `useAdmin.ts` AdminUserRow) | the user (upserts or deletes the account's `user_roles` row, one role per account, so a second role is a 422) | none: a success refetches the users list | `useUpdateUserRoles` (`useAdmin.ts`) → Grant or revoke roles |
-| PUT /api/admin/users/{uid}/status | request: disabled; the answer is not read (types: `useAdmin.ts` AdminUserRow) | the user (the Firebase account's `disabled` flag and, for a Disable, its refresh tokens; refused with 409 wherever `AUTH_MODE` is `iap`, which is production) | none: a success refetches the users list | `useUpdateUserStatus` (`useAdmin.ts`) → Disable a user |
+| PUT /api/admin/users/{uid}/status | request: disabled; the answer is not read (types: `useAdmin.ts` AdminUserRow) | the user (the Firebase account's `disabled` flag and, for a Disable, its refresh tokens; refused with 409 wherever `AUTH_MODE` is `iap`, which was production until its retirement on 2026-10-10) | none: a success refetches the users list | `useUpdateUserStatus` (`useAdmin.ts`) → Disable a user |
 | POST /api/admin/data-sources/{source_id}/refresh | request: `{}`; the answer (`id`, `queued`, `job_id`) is not read (types: `useAdmin.ts` DataSourceRefreshResult) | the user (takes a 60 s lease on the dataset's job in `admin_refresh_leases` and dispatches that Cloud Run job; seven jobs serve nine datasets) | none: a success refetches the list, which the audit's cache answers | `useRefreshDataSource` (`useAdmin.ts`) → Refresh a data source |
 | PUT /api/admin/routes/{role} | request: provider, model; the answer is not read (types: `useAdmin.ts` RouteRow) | the user (upserts the role's `model_routing` row, stamped `admin-ui`) | none: a success refetches the routes | `useUpdateAdminRoute` (`useAdmin.ts`) → Change provider or model per role and save |
 | POST /api/admin/strat-engine/predict | ticker, timeframe, ts, available, top_class, top_prob, class_probs, model_version, last_train_date, live_ece, muted, mute_reason, scope_statement, note (types: `useAdmin.ts` StratPredictRequest/StratPredictResponse) | `strat_features_5m/15m/30m` joined to their levels tables (strat-engine 23:35 ET Mon-Fri and 02:00 ET Tue-Sat) and the cell's GCS model | none: a mutation run on a click | `usePredictMutation` (`useAdmin.ts`) → Run a predict |
 | GET /api/me | email, is_admin, is_dev (types: `useUser.ts` MeResponse) | the verified identity and one `user_roles` lookup; an open path | 30s staleTime, the app's one retry | `useUser` (`useUser.ts`) → the admin access gate |
 
-Every admin route is gated: on staging each answers 401 without a token and on production IAP answers a 302 (V evidence), and each handler checks the admin role again (read); the page reads and writes `user_roles`, `model_routing` and `admin_refresh_leases`, reads the freshness audit's tables and the strat feature tables, and reads the GCS prefix `research/strat_engine/`.
+Every admin route is gated: on staging each answers 401 without a token and on production (retired 2026-10-10) IAP answered a 302 (V evidence), and each handler checks the admin role again (read); the page reads and writes `user_roles`, `model_routing` and `admin_refresh_leases`, reads the freshness audit's tables and the strat feature tables, and reads the GCS prefix `research/strat_engine/`.
 
 #### Displayed
 | ID | Element | Component |
@@ -11437,7 +11440,7 @@ Every admin route is gated: on staging each answers 401 without a token and on p
 | ID | Action | What happens |
 |---|---|---|
 | ADMIN-04 | Grant or revoke roles | `toggleRole` (`UsersPanel.tsx`) sends the account's current roles plus or minus the clicked one through `useUpdateUserRoles`. The server keeps one role per account: a click on a chip of an account with no role (a grant) and a click on the pressed chip (a revoke) succeed, and a click on another chip of an account that holds a role sends two roles and answers 422, so a change of role is a revoke and then a grant (solyra#77). An admin other than the `ADMIN_EMAIL` account can revoke their own role, and the `ADMIN_EMAIL` account's admin role cannot be removed (409). |
-| ADMIN-05 | Disable a user | Disable / Enable buttons call `useUpdateUserStatus`; refused (409) wherever `AUTH_MODE` is `iap`, which is production (solyra#78), for the caller's own account, and for the `ADMIN_EMAIL` account. A Disable revokes the account's refresh tokens, and an ID token already issued works for up to an hour. |
+| ADMIN-05 | Disable a user | Disable / Enable buttons call `useUpdateUserStatus`; refused (409) wherever `AUTH_MODE` is `iap`, which was production (solyra#78) until its retirement on 2026-10-10, for the caller's own account, and for the `ADMIN_EMAIL` account. A Disable revokes the account's refresh tokens, and an ID token already issued works for up to an hour. |
 | ADMIN-06 | Refresh a data source | The Refresh button calls `useRefreshDataSource`, which takes a 60 s lease on the dataset's job, dispatches that Cloud Run job and refetches the list; nothing shows on success, the three `strat_features_*` datasets share one job and so one lease (a second press inside a minute is a raw 429), and it is disabled with a tooltip when `refreshable` is false. |
 | ADMIN-07 | Change provider or model per role and save | Provider and model selects (`(no creds)` models disabled; a change of provider re-points the model at that provider's first model, which can be a disabled one); Save calls `useUpdateAdminRoute` for the one changed row only, and a refusal shows raw under the table and raises an unhandled rejection. |
 | ADMIN-08 | Run a predict | `PredictForm` posts ticker, timeframe and an optional as-of time through `usePredictMutation`; the time is sent as typed, with no zone, and the server reads it as UTC, so a time typed as Eastern scores a bar four or five hours early. |
@@ -11502,7 +11505,7 @@ answers 503 `user directory temporarily unavailable` (`:921-958,1033-1037`) and 
 milliseconds turned into ISO UTC, null for an account that never signed in (`:974-983`); `available_roles` is `admin`, `user` and `dev`
 (`:895`, executed).
 
-Both services run as `trading-platform-svc@`, which holds `roles/firebaseauth.admin`, and the production `user_roles` table holds two rows,
+Both services ran as `trading-platform-svc@` (`solyra-api-prod` was retired on 2026-10-10), which holds `roles/firebaseauth.admin`, and the production `user_roles` table holds two rows,
 one `admin` and one `dev` (V evidence, 2026-10-02). What either service's directory lists was not read: the listing needs a signed-in
 session, so this tab is not ticked at V (matrix Gaps).
 
@@ -11811,7 +11814,7 @@ evidence, 2026-10-02), for `update_user` and `revoke_refresh_tokens`; `user_role
 `AUTH_MODE` of the service (`platform/api/auth.py:55`), read when the request arrives.
 
 **States:** A disabled account reads `Enable` with a red outline, the only mark (ADMIN-01). Pending: every `Access` button is disabled
-(ADMIN-09). Error: the raw line above the table (ADMIN-11); on production it is always the IAP refusal, `PUT /api/admin/users/<uid>/status failed: 409 {"detail":"this deployment authenticates at the IAP edge ..."}` (the handler's text executed in `iap` mode; the page's raw
+(ADMIN-09). Error: the raw line above the table (ADMIN-11); on production (retired 2026-10-10) it was always the IAP refusal, `PUT /api/admin/users/<uid>/status failed: 409 {"detail":"this deployment authenticates at the IAP edge ..."}` (the handler's text executed in `iap` mode; the page's raw
 rendering of a 409 executed with the self-disable text). The line carries `rolesMut.error ?? statusMut.error`, so a status error is hidden
 while a role error is on it (ADMIN-04).
 
@@ -11826,7 +11829,7 @@ while a role error is on it (ADMIN-04).
   it is not the `ADMIN_EMAIL` account, or of the `ADMIN_EMAIL` account by another admin, then 409 by the handler's code (`:1171-1181`, read)
   and by no test; given an unknown uid, then 404 (`test_status_unknown_uid_is_404`); given `iap` mode, then 409
   (`test_status_refused_in_iap_mode`).
-- Given production's `iap` mode, then a click on `Disable` shows the 409 as raw text and nothing changes (executed over the handler and the
+- Given `iap` mode (production's until its retirement on 2026-10-10), then a click on `Disable` shows the 409 as raw text and nothing changes (executed over the handler and the
   page; solyra#78; no page test).
 - Given a status write in flight, then every `Access` button is disabled and the chips are not (executed; no test).
 
@@ -12309,7 +12312,7 @@ twice, by the page and by every route, and each bullet names its gate:
 - The routes' gate: every `/api/admin` route answers 401 `sign-in required` for a request with no identity and 403 `admin access required`
   for one without the role (`platform/api/routers/admin.py:52-67`, executed). In `firebase` mode, which is staging's, the middleware answers
   first: 401 `sign in to continue` for a missing token, and each of the eleven admin routes did so without one (V evidence, 2026-10-02). In
-  `iap` mode, production's, IAP in front of the service answers a 302 to Google sign-in (V evidence: the production GETs).
+  `iap` mode, production's until its retirement on 2026-10-10, IAP in front of the service answered a 302 to Google sign-in (V evidence: the production GETs).
 - Role drift: when `/api/me` says admin and the routes disagree, as after a role is revoked, the page is mounted and each panel says so:
   `Could not load users: unauthorized`, `Could not load data sources: unauthorized`, the routing line `The server rejected this account for admin routes — sign in again, or check the admin role assignment.`, `Structure brief unavailable: unauthorized`, `Model state unavailable:unauthorized`, and `unauthorized` beside `Predict` after a click (`src/hooks/useAdmin.ts:12-15`, executed with every admin route answering
   403). A 401 also turns the shell's strip to `Session expired` and a 403 does not (executed in `open` auth mode). The page returns to the
@@ -12345,7 +12348,7 @@ so a role-store outage reads as a missing role: `/api/me` answered 200 with `is_
   [`tests/api/test_admin_users_datasources.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_admin_users_datasources.py)); given the `ADMIN_EMAIL` account, a stored admin, a stored user and an anonymous request,
   then `/api/me` flags them accordingly, and `is_admin_email` grants from the environment without the database, from the table, denies a
   non-admin, denies when the lookup fails, normalizes the address and denies no identity ([`tests/api/test_platform_auth.py`](https://github.com/TeneikaAskew/stocks/blob/main/tests/api/test_platform_auth.py)).
-- Given no token, then each of the eleven admin routes answers 401 on staging and the production GETs answer a 302 to Google sign-in (V
+- Given no token, then each of the eleven admin routes answers 401 on staging and the production GETs answered a 302 to Google sign-in before its retirement on 2026-10-10 (V
   evidence).
 - Given the role lookup fails, then `/api/me` answers `is_admin` false for a stored admin (executed; matrix Gaps).
 
@@ -12390,7 +12393,7 @@ ran and passed in [solyra CI run 37586449560](https://github.com/TeneikaAskew/so
 #### Data it needs
 | Endpoint | Fields read | Produced by | Freshness assumed | Consumer |
 |---|---|---|---|---|
-| GET /api/config/indicators | rsi.{period, oversold, overbought}, ema.periods[0] and [1], stoch_rsi.{oversold, overbought}, rvol.signal_threshold, signal.min_conditions (types: `src/hooks/useConfig.ts` IndicatorConfig; the answer carries 22 leaf fields and the page reads these nine) | `get_indicator_config` in `platform/api/routers/config.py`: literals for the RSI thresholds, the five zones, ATR 2.0 and RVOL 1.0, and the `AppConfig` defaults of `lib/config.py` for the rest, since neither service's image holds an `alert_config.json` (V evidence); a gated route, 401 on staging and IAP's 302 on production | 24hr staleTime and gcTime, one retry; the literal fallbacks (RSI 14, 30 and 70, EMA 9 and 20, StochRSI 20 and 80, RVOL 1.0, 3 conditions) substitute while the query is pending or failed, with no visible marker, and the StochRSI fallback differs from the server's 30 and 70 | `useIndicatorConfig` (`src/hooks/useConfig.ts`) → `buildGlossary` → the six entries whose detail reads the live thresholds |
+| GET /api/config/indicators | rsi.{period, oversold, overbought}, ema.periods[0] and [1], stoch_rsi.{oversold, overbought}, rvol.signal_threshold, signal.min_conditions (types: `src/hooks/useConfig.ts` IndicatorConfig; the answer carries 22 leaf fields and the page reads these nine) | `get_indicator_config` in `platform/api/routers/config.py`: literals for the RSI thresholds, the five zones, ATR 2.0 and RVOL 1.0, and the `AppConfig` defaults of `lib/config.py` for the rest, since neither service's image holds an `alert_config.json` (V evidence); a gated route, 401 on staging and IAP's 302 on production before its retirement on 2026-10-10 | 24hr staleTime and gcTime, one retry; the literal fallbacks (RSI 14, 30 and 70, EMA 9 and 20, StochRSI 20 and 80, RVOL 1.0, 3 conditions) substitute while the query is pending or failed, with no visible marker, and the StochRSI fallback differs from the server's 30 and 70 | `useIndicatorConfig` (`src/hooks/useConfig.ts`) → `buildGlossary` → the six entries whose detail reads the live thresholds |
 | static content: 131 glossary entries in 11 categories |  | literals in `buildGlossary` (`src/routes/HelpPage.tsx:16-190`); the deployed host serves the same 131 (V evidence) |  | `buildGlossary` → Search box, Category pills, Glossary entries |
 
 No schedule or job feeds this page and it reads no table. `GET /api/glossary/gamma` serves a separate dictionary of 14 terms from `lib/gamma_glossary.py` and nothing in this app calls it.
@@ -12522,7 +12525,7 @@ What the page says about the King: `King Node (★)` reads `The strike with the 
 measurement is in the Options Flow Gaps of the matrix (section 07, `The King chip on Swing and Trinity is the lowest-strike King, not the largest`) and is not repeated here. The Gamma Map's tooltip and the server's dictionary define the King in two further ways (HELP-08; matrix
 Gaps).
 
-**Needs:** `GET /api/config/indicators`, gated (401 on staging and IAP's 302 on production without a token; V evidence), through
+**Needs:** `GET /api/config/indicators`, gated (401 on staging, and IAP's 302 on production before its retirement on 2026-10-10, without a token; V evidence), through
 `useIndicatorConfig`. The handler (`platform/api/routers/config.py:75-128`) answers the RSI thresholds, the five RSI zones, ATR 2.0 and RVOL
 1.0 from literals, the RSI and EMA periods from `IndicatorConfig` (`lib/config.py:21-38`) and the StochRSI thresholds and `min_conditions`
 from `SignalConfig` (`lib/config.py:423-436`); neither service's image holds an `alert_config.json`, so `load_config` returns those defaults
@@ -12765,10 +12768,10 @@ the unchanged page and fails with the message's text removed (mutation: `>No mat
 | GET /api/me/profile | display_name, timezone, default_ticker, default_timeframe, account_size, risk_per_trade_pct, notify_daily_digest, notify_catalyst_alerts, notify_signal_alerts, number_format, date_format, show_extended_hours (types: `src/types/profile.ts` UserProfile) | the user, through `PUT /api/me/profile`: `user_profile`, no row on 2026-10-02 (V evidence), so every read is a 404 today; read by nothing but this page | five-minute stale time, one retry; a changed answer replaces the draft, unsaved edits included; no age shown | `useProfile` (`src/hooks/useProfile.ts`) → Profile tab, Trading tab, Notifications tab, Save changes or Discard |
 | PUT /api/me/profile | request: the changed fields only (types: `src/types/profile.ts` UserProfileUpdate); the answer, the full stored row, becomes the cached read | the user (one upsert of the fields sent into `user_profile`; an explicit null clears a field) | none: written when Save changes is pressed | `useProfile` → Save changes or Discard |
 | GET /api/me | email, is_admin, is_dev (types: `src/hooks/useUser.ts` MeResponse) | the verified identity (the Firebase token's email, the IAP header's, none in open mode) and one `user_roles` lookup, where a failed lookup reads as no role; an open path | 30s staleTime, keyed by the Firebase uid, one retry | `useUser` (`src/hooks/useUser.ts`) → Account tab, the identity block of the Profile tab, `Sending to` on the Notifications tab |
-| GET /api/config/firebase (read once at boot) | authMode (types: `src/lib/runtimeConfig.ts` RuntimeConfig) | the service's `AUTH_MODE` setting (`firebase` on staging, `iap` on production); an open path | read once when the app boots | `getAuthMode` (`src/lib/runtimeConfig.ts`) → Account tab (`Auth mode`), Sign out |
+| GET /api/config/firebase (read once at boot) | authMode (types: `src/lib/runtimeConfig.ts` RuntimeConfig) | the service's `AUTH_MODE` setting (`firebase` on staging, the only API service; `iap` on production until its retirement on 2026-10-10); an open path | read once when the app boots | `getAuthMode` (`src/lib/runtimeConfig.ts`) → Account tab (`Auth mode`), Sign out |
 | store: theme, nav pattern, density, accent | | Zustand, mirrored in `localStorage` keys `platform-theme` and `platform-shell-settings`, and never cleared by a sign-out | | `src/stores/themeStore.ts`, `src/stores/settingsStore.ts` → every Appearance control, AppShell nav pattern |
 
-Every route above except `GET /api/me` and `GET /api/config/firebase` is gated: on staging each answers 401 without a token and on production IAP answers before any handler (V evidence). The page reads and writes `user_preferences` and `user_profile` and reads `user_roles`; no schedule or job feeds any of the three, and no code outside the two routers reads the first two.
+Every route above except `GET /api/me` and `GET /api/config/firebase` is gated: on staging each answers 401 without a token and on production (retired 2026-10-10) IAP answered before any handler (V evidence). The page reads and writes `user_preferences` and `user_profile` and reads `user_roles`; no schedule or job feeds any of the three, and no code outside the two routers reads the first two.
 
 #### Displayed
 | ID | Element | Component |
@@ -12846,7 +12849,7 @@ is an open path: the verified email, `is_admin` and `is_dev` from one `user_role
 list or a boolean that is not a boolean becomes null (`sanitizeProfile`, `src/hooks/useProfile.ts:28-62`, read).
 
 `user_profile` held no row on 2026-10-02 and `user_roles` two, one `admin` and one `dev` (V evidence). `GET /api/me/profile` answers 401
-without a token on staging and IAP answers 302 on production (V evidence), so this tab is not ticked at V: what it shows is a signed-in
+without a token on staging and IAP answered 302 on production, retired 2026-10-10 (V evidence), so this tab is not ticked at V: what it shows is a signed-in
 user's own row, and the open `/api/me` answers only the identity block.
 
 **States:** Loading: the tab renders at once with empty boxes and the header reads `Loading your saved settings…`; the boxes accept typing
@@ -12913,7 +12916,7 @@ hydration skips a null field, so the local value stands (`src/hooks/usePreferenc
 classes on `<body>`, `:58-71`).
 
 `user_preferences` held one row on 2026-10-02, all four columns set, its newest `updated_at` 2026-09-05 23:58:57 UTC (V evidence). The gated
-route answers 401 without a token on staging and IAP answers 302 on production (V evidence), so this tab is not ticked at V: what it shows
+route answers 401 without a token on staging and IAP answered 302 on production, retired 2026-10-10 (V evidence), so this tab is not ticked at V: what it shows
 is a signed-in user's own row.
 
 **States:** Loading: the controls show the local choice and work before the read lands, and a pick made then is lost or never stored
@@ -13103,11 +13106,11 @@ mode, the IAP header's in `iap`, none in `open`), `is_admin` (the `ADMIN_EMAIL` 
 `dev` role) from one `user_roles` lookup. `stored_role_for` answers no role at once for no email (`platform/api/auth.py:242-243`) and, when
 the lookup fails, logs it and answers no role (`:246-264`), so a role-store outage reads as `Member` on this tab (read; the same defect is
 recorded for the Admin page). The route is open: `GET /api/me` answers 200 `{"email":null,"is_admin":false,"is_dev":false}` without a token
-on staging and `GET /api/config/firebase` answers 200 with `authMode: firebase`; production answers 302 to Google's sign-in for both, from
+on staging and `GET /api/config/firebase` answers 200 with `authMode: firebase`; production (retired 2026-10-10) answered 302 to Google's sign-in for both, from
 IAP (V evidence, 2026-10-02). `user_roles` held two rows, one `admin` and one `dev` (V evidence).
 
 V is ticked on those two open answers. What the tick does not cover: a signed-in account's email, role or flags (the anonymous call returns
-before it reaches `user_roles`, `platform/api/auth.py:242-243`), the tab as a signed-in user sees it, and production's own answer, which is
+before it reaches `user_roles`, `platform/api/auth.py:242-243`), the tab as a signed-in user sees it, and production's own answer, which was
 IAP's; the display defects above are in the matrix Gaps.
 
 **States:** Loading and error: none (above). Empty: an anonymous or failed answer reads `—` and `Member`. Stale: held 30 s, no age shown
@@ -13547,14 +13550,14 @@ and their models; neither response model carries a time, so neither can assert o
   is not retried with a fresh token (`:153,235-246`), does not mark the session blocked and shows no `Session expired` (executed: no
   `securetoken` call and no strip text), and does not take the user to the sign-in screen (matrix Gaps).
 
-**Needs:** The two gated routes and the middleware above. `GET /api/config/firebase` is open (200 on staging, 302 from IAP on production; V
+**Needs:** The two gated routes and the middleware above. `GET /api/config/firebase` is open (200 on staging, 302 from IAP on production before its retirement on 2026-10-10; V
 evidence). The bearer token is attached by `window.fetch`'s wrapper to every `/api` request when signed in
 (`src/lib/authedFetch.ts:190-224`); the page is not involved.
 
 V is ticked on the 401: staging answered 401 to every gated route and verb the Chain names and production's IAP answered before any handler,
 so a request with no identity reaches neither router. What the tick does not cover: the sign-in screen, which is a browser state, a
 signed-in account's refusal (a 403 from the allowlist, a stale token), `iap` mode's shared `local` row (the 302 and the 401 above are IAP's,
-not the routers'), and the handlers' own 401 on production, which IAP answers first.
+not the routers'), and the handlers' own 401 on production, which IAP answered first.
 
 **States:** This is the state. Its presentations are the sign-in screen for a signed-out visitor and the error lines above for a refused
 route.
