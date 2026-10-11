@@ -31,8 +31,10 @@
 import { test as setup } from '@playwright/test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const authFile = path.join(__dirname, '.auth', 'iap-state.json');
+// package.json sets "type": "module", and an ES module has no __dirname.
+const authFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '.auth', 'iap-state.json');
 
 setup('capture signed-in browser state', async ({ page }) => {
   fs.mkdirSync(path.dirname(authFile), { recursive: true });
