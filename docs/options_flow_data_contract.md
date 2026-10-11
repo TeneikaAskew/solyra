@@ -28,7 +28,7 @@ the record; do not build it.
 |------|-----------|-----------|--------------------|
 | GEX/VEX profile | Profiles | **Real** — `/api/options/dates/{t}` (date list, `useAllOptionsDates`), `/api/options/{t}/{date}` with `/api/options/live/{t}/{date}` as the 404 fallback (chain, via `ProfilesTab.tsx`'s local `useOptionsData`), `/api/options/{t}/{date}/levels` (`useGammaLevels`) + `POST /api/options/greeks` | — |
 | Trinity 3-panel | Gamma Map · Trinity | **Real** — `/api/options/dates/{t}?limit=1` (`useLatestOptionsDate`, which gates the query) + `useGammaLevels` for SPX/SPY/QQQ | — |
-| Swing 2D heatmap | Gamma Map · Swing | **Real** — the same `?limit=1` date gate, then the grid (`useGammaGrid`) + `useGammaLevels`. Illustrative only, from `src/data/gammaMapMock.ts`: the tactical-read card, the Legend's Hedge chip and the node list's Midpoint/Hedge rows (see the note above) | — |
+| Swing 2D heatmap | Gamma Map · Swing | **Real** — live mode (the default) reads the date-less `/api/options/{t}/grid` and does not wait on a date (`useGammaGrid`, `SwingMode.tsx:804-807`); historical mode reads `/api/options/{t}/{date}/grid` once the `?limit=1` date resolves; `useGammaLevels` waits on that date in both modes. Illustrative only, from `src/data/gammaMapMock.ts`: the tactical-read card, the Legend's Hedge chip and the node list's Midpoint/Hedge rows (see the note above) | — |
 | Live flow tape | Flow · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |
 | Contract drilldown | Flow · Drilldown | Mock `src/data/contractDrilldownMock.ts` | **(C)** per-contract tape |
 
