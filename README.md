@@ -11,8 +11,9 @@ pipeline, and the GCP jobs live in the **stocks** repo; the API is deployed
 as the `solyra-api-staging` Cloud Run service, the only API service since
 `solyra-api-prod` was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
 Solyra's dev server proxies `/api/*` to that backend, so the browser still
-sees same-origin requests and none of the ~101 bare `fetch('/api/...')` call
-sites need to know where the API actually is.
+sees same-origin requests and none of the ~101 bare `fetch('/api/...')`
+literals under `src/`, tests included (68 of them outside the `*.test.*`
+files), need to know where the API actually is.
 
 Built with [Lovable](https://lovable.dev).
 
@@ -83,10 +84,13 @@ which `npm test` also runs.
 **E2E** — Playwright, in `tests/`. These need no **backend**: every `/api` call
 a test asserts on is intercepted with `page.route`. They are not fully
 network-isolated, though. `src/index.css:1` loads Montserrat from
-`fonts.googleapis.com`. Specs that call `mockCommon` (`tests/helpers/mocks.ts`)
-stub both font hosts, but three dashboard specs set up their own routes and let
-the request go out, relying on `playwright.config.ts`'s `ignoreHTTPSErrors:
-true`, so an offline or egress-restricted runner can still fail on them. And a few requests can escape
+`fonts.googleapis.com`. `mockCommon` (`tests/helpers/mocks.ts`) stubs both font
+hosts, and every spec reaches it, directly or through a fixture helper, except
+`tests/landing/landing.spec.ts`, which routes only `/api/config/firebase` and
+so sends the font request to the real CDN. `playwright.config.ts` sets
+`ignoreHTTPSErrors: true`, which lets that request complete despite the
+headless shell's missing root CAs when the CDN is reachable; the landing spec
+does not assert on console errors. And a few requests can escape
 interception after a test's own assertions finish (a mutation's refetch, a
 navigation's fan-out, in the window before Playwright tears the context down);
 they reach Vite's proxy and get `ECONNREFUSED`. `docs/TEST_COVERAGE_AUDIT.md`
