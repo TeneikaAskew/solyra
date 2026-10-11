@@ -14,7 +14,7 @@ done_when:
   - "Every new public Cloud table has explicit authenticated and service_role GRANT statements before RLS and ownership policies in the same migration"
   - "The real Lovable AI Gateway stream completes with safe server-held credentials and its final structured answer passes citation validation"
   - "02-FEATURE-CATALOG FEAT-INSIGHT-001 row shows Status, Last reviewed, and this PR"
-status: draft
+status: approved
 supersedes: null
 ---
 
