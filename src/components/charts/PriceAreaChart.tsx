@@ -200,6 +200,16 @@ export function PriceAreaChart({
             />
           )}
 
+          {priceLines.map((line) => (
+            <ReferenceLine
+              key={line.label}
+              y={line.value}
+              stroke={line.tone === 'brand' ? theme.brand : theme.textLabel}
+              strokeDasharray={line.tone === 'brand' ? undefined : '4 4'}
+              label={{ value: `${line.label} ${line.value.toFixed(2)}`, position: 'insideTopRight', fill: line.tone === 'brand' ? theme.brand : theme.textMuted, fontSize: 10 }}
+            />
+          ))}
+
           <Area
             type="monotone"
             dataKey="price"
