@@ -23,8 +23,9 @@ options/gamma analysis, signals, the trade journal, AI insights, and catalysts.
 
 **This repo holds the frontend only.** The FastAPI backend, the research
 pipeline (`lib/`), and the GCP jobs live in the **stocks** repo
-(`TeneikaAskew/stocks`) and deploy together as the `solyra-api-prod` Cloud Run
-service. Solyra's dev server proxies `/api/*` to that backend, so the browser
+(`TeneikaAskew/stocks`); the API deploys as `solyra-api-staging`, the only API
+Cloud Run service since `solyra-api-prod` was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
+Solyra's dev server proxies `/api/*` to that backend, so the browser
 sees same-origin requests and none of the ~73 bare `fetch('/api/...')` call
 sites need to know where the API actually is.
 
@@ -33,7 +34,7 @@ sites need to know where the API actually is.
 | Stack | React 19, Vite 7, TypeScript 5.9, Tailwind 4, HeroUI 3, TanStack Query/Table, Recharts, d3, lightweight-charts, Zustand, Firebase Auth |
 | Tests | Vitest (unit, colocated in `src/`), Playwright (E2E, in `tests/`) |
 | Editor sync | [Lovable](https://lovable.dev) — commits on the connected branch sync into the editor |
-| Backend | stocks repo → `solyra-api-prod` (prod) / `solyra-api-staging` (Cloud Run) |
+| Backend | stocks repo → `solyra-api-staging` (Cloud Run), the only API service since `solyra-api-prod` was retired on 2026-10-10 |
 
 ---
 
