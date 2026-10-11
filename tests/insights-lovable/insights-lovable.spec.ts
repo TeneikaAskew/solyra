@@ -17,7 +17,11 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/functions/v1/insights-research', async (route) => {
     const body = route.request().postDataJSON();
     if (body.action === 'list') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions: [] }) });
-    if (body.action === 'read') return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+    if (body.action === 'read') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      session: { id: body.sessionId, ticker: 'IWM', mode: 'live', replay_cutoff: null, title: 'What catalysts matter most?', status: 'active', created_at: '2026-10-11T12:00:00Z', updated_at: '2026-10-11T12:01:00Z' },
+      messages: [{ id: '22222222-2222-4222-8222-222222222222', session_id: body.sessionId, question: 'What catalysts matter most?', answer, run_state: 'completed', error_code: null, error_message: null, created_at: '2026-10-11T12:01:00Z' }],
+      sources: [{ message_id: '22222222-2222-4222-8222-222222222222', citation_id: 'S1', source_type: 'catalysts', source_label: 'Catalyst calendar', source_url: '/api/catalysts/events', source_as_of: '2026-10-11T12:00:00Z', freshness: 'current', excerpt: 'CPI release' }],
+    }) });
     const events = [
       { type: 'session', sessionId: '11111111-1111-4111-8111-111111111111' },
       { type: 'status', stage: 'gathering', label: 'Gathering approved evidence' },
