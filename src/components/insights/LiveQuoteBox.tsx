@@ -39,8 +39,8 @@ export function LivePriceChart({ ticker }: { ticker: string }) {
   const history = useLiveHistory(ticker);
   const quote = useLiveQuote(ticker);
   const points = useMemo<PricePoint[]>(() => (history.data?.bars ?? []).slice(-60).map((b) => {
-    const d = new Date(b.time * 1000);
-    return { time: b.time, price: b.close, label: d.toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) };
+    const d = new Date(b.time);
+    return { time: Math.floor(d.getTime() / 1000), price: b.close, label: d.toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) };
   }), [history.data]);
   const lines = useMemo(() => {
     const out: { value: number; label: string; tone: 'brand' | 'muted' }[] = [];

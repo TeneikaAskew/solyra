@@ -168,6 +168,8 @@ async function gather(ticker: string, auth: string, mode: 'live' | 'replay', cut
     [`/api/catalysts/events?date_from=${from}&date_to=${to}&tickers=${ticker}`, 'Catalyst calendar', 'catalysts'],
     [`/api/live/history/${ticker}`, 'Price replay history', 'price_history'],
   ];
+  // Live quote is the single reference price for live answers; replay must not see it.
+  if (mode === 'live') entries.push([`/api/live/quote/${ticker}`, 'Live quote (reference price)', 'live_quote']);
   return Promise.all(entries.map(([path, label, type], i) => getEvidence(path, label, type, auth, cutoff, i + 1)));
 }
 function citations(answer: Record<string, unknown>): string[] {
