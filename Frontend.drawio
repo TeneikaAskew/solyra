@@ -7,7 +7,7 @@
                 <mxCell id="title" value="Trading Platform — Frontend Architecture (React 19 + Vite 7 + Tailwind 4)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;fontColor=#222222;" parent="1" vertex="1">
                     <mxGeometry x="40" y="20" width="2320" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="subtitle" value="15 lazy-loaded pages • 23 TanStack-Query hook modules • 5 Zustand stores • Published separately at solyra-stocks.lovable.app; calls the API cross-origin (STAGING_API). NOT shipped inside the Cloud Run image since #957 • Verified 2026-09-05" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#666666;" parent="1" vertex="1">
+                <mxCell id="subtitle" value="15 lazy-loaded pages • 23 TanStack-Query hook modules • 4 Zustand stores in src/stores • Published separately at solyra-stocks.lovable.app; calls the API cross-origin (STAGING_API). NOT shipped inside the Cloud Run image since #957 • Verified 2026-09-05" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#666666;" parent="1" vertex="1">
                     <mxGeometry x="40" y="48" width="2320" height="20" as="geometry"/>
                 </mxCell>
 
@@ -83,7 +83,7 @@
                 <mxCell id="r_help" value="/help Help &amp; Glossary&#xa;Strat methodology refs&#xa;(static + /api/config/indicators)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#4d7eb8;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="2190" y="255" width="150" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="routes_note" value="Each page lazy-loaded with React.lazy. The 13 shell pages each carry errorElement={RouteErrorBoundary}, which keeps Sidebar + Header rendered on a page crash; the public / and /auth/action have none, so a crash there shows React Router's default error page. Sidebar filters /admin for non-admins via useUser→/api/me. Not drawn: /settings (GET/PUT /api/me/profile; preferences sync via /api/me/preferences), the public landing / (POST /api/waitlist) and /auth/action (no API call of its own)." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#444444;fontStyle=2;" parent="1" vertex="1">
+                <mxCell id="routes_note" value="Each page lazy-loaded with React.lazy. The 13 shell pages each carry errorElement={RouteErrorBoundary}, which keeps the nav (TopTabs by default, or Sidebar + Header) rendered on a page crash; the public / and /auth/action have none, so a crash there shows React Router's default error page. Both navs filter /admin for non-admins via useUser→/api/me. Not drawn: /settings (GET/PUT /api/me/profile; preferences sync via /api/me/preferences), the public landing / (POST /api/waitlist) and /auth/action (no API call of its own)." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#444444;fontStyle=2;" parent="1" vertex="1">
                     <mxGeometry x="60" y="325" width="2280" height="60" as="geometry"/>
                 </mxCell>
 
@@ -94,7 +94,7 @@
                 <mxCell id="c_appshell" value="layout/AppShell.tsx&#xa;outlet + Sidebar + Header" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="60" y="455" width="180" height="55" as="geometry"/>
                 </mxCell>
-                <mxCell id="c_sidebar" value="layout/Sidebar.tsx&#xa;14 nav items, ticker switcher,&#xa;collapse toggle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
+                <mxCell id="c_sidebar" value="layout/Sidebar.tsx (sidebar layout only)&#xa;search trigger, the 14 navConfig items,&#xa;collapse toggle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="260" y="455" width="200" height="55" as="geometry"/>
                 </mxCell>
                 <mxCell id="c_header" value="layout/Header.tsx&#xa;identity badge + theme" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
@@ -121,7 +121,7 @@
                 <mxCell id="c_eb" value="shared/RouteErrorBoundary.tsx&#xa;per-route ErrorBoundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="620" y="530" width="240" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="c_feature" value="Feature components:&#xa;dashboard/MovementRead · insights/{ReportCards, WatchlistPanel} · charts/{CandlestickChart, PriceAreaChart, StrategyConditionsCard, SimilarSetupsCard} · backtest/BacktesterSection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=9;fontStyle=2;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="c_feature" value="Feature components, among them:&#xa;dashboard/MovementRead · insights/{ReportCards, WatchlistPanel} · charts/{CandlestickChart, PriceAreaChart, StrategyConditionsCard, SimilarSetupsCard} · backtest/BacktesterSection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=9;fontStyle=2;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="880" y="525" width="280" height="80" as="geometry"/>
                 </mxCell>
 
@@ -129,10 +129,10 @@
                 <mxCell id="state_group" value="④ State management — Zustand client state + TanStack Query server state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;dashed=0;verticalAlign=top;fontStyle=1;fontSize=12;fontColor=#333333;" parent="1" vertex="1">
                     <mxGeometry x="1200" y="420" width="1160" height="200" as="geometry"/>
                 </mxCell>
-                <mxCell id="zustand_box" value="Zustand stores — UI-only client state (no server data leaks here)&#xa;&#xa;• tickerStore.ts — activeTicker (IWM/SPY/QQQ) + availableTickers&#xa;• tradeStore.ts — in-flight trade form state&#xa;• themeStore.ts — dark/light toggle&#xa;• settingsStore.ts — sidebar collapsed, etc.&#xa;• reviewDateStore.ts — date selector for weekend review" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" parent="1" vertex="1">
+                <mxCell id="zustand_box" value="Zustand stores (src/stores) — client state; server responses stay in the query cache, except the saved appearance preferences usePreferencesSync applies&#xa;• tickerStore.ts — activeTicker + quickPicks (IWM/SPY/QQQ) + recentTickers&#xa;• themeStore.ts — dark/light toggle&#xa;• settingsStore.ts — nav pattern, density, accent, sidebar collapsed, chart timeframe, sound&#xa;• reviewDateStore.ts — review (replay) date + time&#xa;(usePreferences.ts keeps a fifth, module-private store for sync status)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" parent="1" vertex="1">
                     <mxGeometry x="1220" y="455" width="540" height="155" as="geometry"/>
                 </mxCell>
-                <mxCell id="rq_box" value="TanStack Query — server cache&#xa;&#xa;Configured in App.tsx:&#xa;• staleTime: 5 min&#xa;• retry: 1 (catches cold-starts, not real outages)&#xa;&#xa;23 hook modules under src/hooks/use*.ts — ticker-scoped queries keyed by&#xa;[resource, ticker, ...params] so flipping the ticker&#xa;switcher refetches every ticker-scoped query in one move." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" parent="1" vertex="1">
+                <mxCell id="rq_box" value="TanStack Query — server cache&#xa;&#xa;Query defaults in App.tsx (no mutation defaults):&#xa;• staleTime: 5 min&#xa;• retry: 1 (catches cold-starts, not real outages)&#xa;&#xa;23 hook modules under src/hooks/use*.ts — ticker-scoped queries keyed by&#xa;[resource, ticker, ...params], so changing activeTicker&#xa;refetches every ticker-scoped query in one move. Mutations carry no key." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;" parent="1" vertex="1">
                     <mxGeometry x="1780" y="455" width="560" height="155" as="geometry"/>
                 </mxCell>
 
@@ -194,7 +194,7 @@
                 <mxCell id="h_dash" value="useBriefDirection · (DashboardPage's local useFetch)&#xa;/api/dashboard/brief/{ticker}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#4d7eb8;fontSize=9;" parent="1" vertex="1">
                     <mxGeometry x="1780" y="745" width="280" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="hooks_note" value="Pages read useTickerStore().activeTicker and pass it to the ticker-scoped hooks, which include it in the query key — flipping the sidebar ticker refetches every ticker-scoped query at once (useUser, useLiveStatus, useConfig, useWatchlist and the admin hooks are not ticker-scoped). ★ useRefreshInsight is the only hook whose write goes through Cloud Tasks: POST /refresh enqueues Cloud Tasks → insight-pipeline Job runs in GCP → writes insight_reports/insight_runs → frontend refetches GET." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#444444;fontStyle=2;" parent="1" vertex="1">
+                <mxCell id="hooks_note" value="Pages read useTickerStore().activeTicker and pass it to the ticker-scoped hooks, which include it in the query key — changing activeTicker (a page's TickerCombobox, the ⌘K palette, a ticker click on /catalysts or /insights) refetches every ticker-scoped query at once. Not keyed on the ticker: useUser, usePreferencesSync, useProfile, useLiveStatus, useIndicatorConfig, useMarketHours, useWatchlist, useTickerSearch, useTickerCoverage, useInsightReportById, useRunStatus, the admin queries, and useLiveIndicators, useOptionsGreeks, usePlaybookEvaluation and usePlaybookBatch (keyed on the payload they POST); mutations carry no key. ★ useRefreshInsight is the only hook whose write goes through Cloud Tasks: POST /refresh enqueues Cloud Tasks → insight-pipeline Job runs in GCP → writes insight_reports/insight_runs → frontend refetches GET." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#444444;fontStyle=2;" parent="1" vertex="1">
                     <mxGeometry x="60" y="810" width="2280" height="50" as="geometry"/>
                 </mxCell>
 
@@ -225,7 +225,7 @@
                 </mxCell>
 
                 <!-- ⑦ Local helpers / lib -->
-                <mxCell id="locallib_group" value="⑦ Local helpers — src/lib/*.ts (pure functions: clock, formatting, snapshot building; the indicator and playbook math lives in lib/*.py)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;dashed=0;verticalAlign=top;fontStyle=1;fontSize=12;fontColor=#333333;" parent="1" vertex="1">
+                <mxCell id="locallib_group" value="⑦ Local helpers — src/lib/*.ts (clock, formatting, snapshot building; src/lib also holds browser-runtime modules such as authedFetch.ts, which patches window.fetch; the indicator and playbook math lives in lib/*.py)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;dashed=0;verticalAlign=top;fontStyle=1;fontSize=12;fontColor=#333333;" parent="1" vertex="1">
                     <mxGeometry x="40" y="1070" width="1140" height="170" as="geometry"/>
                 </mxCell>
                 <mxCell id="ll_ind" value="indicators.ts&#xa;indicator types only&#xa;(math: lib/indicators.py via POST /api/live/indicators)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
@@ -243,7 +243,7 @@
                 <mxCell id="ll_t" value="time.ts&#xa;ET-aware date helpers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="1020" y="1105" width="140" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="ll_ss" value="strategySignals.test.ts · strategySignalsForSeries.test.ts · playbookEvaluator.test.ts · marketSession.test.ts — Vitest unit suite (npm test → vitest run)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;fontStyle=2;" parent="1" vertex="1">
+                <mxCell id="ll_ss" value="playbookEvaluator.test.ts · marketSession.test.ts · … — co-located Vitest suite; 14 of the 22 src/lib modules have a test (npm test → vitest run)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;fontStyle=2;" parent="1" vertex="1">
                     <mxGeometry x="60" y="1180" width="1100" height="40" as="geometry"/>
                 </mxCell>
 
