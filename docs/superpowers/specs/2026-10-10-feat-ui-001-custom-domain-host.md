@@ -2,10 +2,12 @@
 feat_id: FEAT-UI-001
 req_ids: [REQ-UX-001]
 issues: []
-canvases: []
+canvases:
+  - https://claude.ai/artifact/Wdf4yL4hqQYK6bNU8BtMuK
 done_when:
   - "src/lib/apiTargets.test.ts asserts isStaticFrontendHost is true for stocks.insightscollective.org, solyra-stocks.lovable.app and a lovableproject.com host, and false for insightscollective.org, evil-stocks.insightscollective.org, stocks.insightscollective.org.evil.com and localhost"
   - "src/lib/authedFetch.test.ts asserts that, loaded on stocks.insightscollective.org, a request for /api/config/firebase is sent to STAGING_API + '/api/config/firebase', and that on localhost it stays '/api/config/firebase'"
+  - "docs/UI-SCREENS.md SHARED-03 names stocks.insightscollective.org as an exact static host beside the .lovable.app and .lovableproject.com suffixes"
   - "Each new test is shown failing against main when the PR opens, and the solyra CI checks and e2e jobs are green on the PR head"
   - "02-FEATURE-CATALOG FEAT-UI-001 row shows a Status, this PR's date and number"
 status: approved
@@ -54,6 +56,10 @@ Lovable answers it with `index.html`. Checked on 2026-10-10:
 matched with `includes` (exact), beside `STATIC_FRONTEND_HOST_SUFFIXES`; `isStaticFrontendHost`
 returns true for either. The header comment's "two places need the new origin" note names the
 exact list and its stocks counterpart, the CORS origin in `platform/api/main.py`.
+
+`docs/UI-SCREENS.md` SHARED-03, which describes `isStaticFrontendHost` as matching the two
+Lovable suffixes, names the exact host beside them. It is the source of the registered "Solyra
+website structure diagram" canvas (report-only), which is checked after merge.
 
 `src/lib/authedFetch.ts` is unchanged in behaviour: `resolveApiBase()` already returns
 `STAGING_API` for any static host, and its comment is corrected to say "static hosts" rather than
