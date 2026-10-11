@@ -125,9 +125,9 @@ export async function resendVerificationEmail(): Promise<void> {
   return (await _ready).resendVerificationEmail();
 }
 
-/** Server-fresh `emailVerified` for the signed-in user; null when signed out
- *  or when firebase mode never engaged. */
-export async function refreshEmailVerified(): Promise<boolean | null> {
+/** Server-fresh `emailVerified` for the signed-in user, with the uid it was
+ *  read for; null when signed out or when firebase mode never engaged. */
+export async function refreshEmailVerified(): Promise<{ uid: string; emailVerified: boolean } | null> {
   if (!_ready) return null;
   return (await _ready).refreshEmailVerified();
 }

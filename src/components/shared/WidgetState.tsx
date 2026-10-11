@@ -1,10 +1,13 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { SignInEmptyState } from '@/components/shared/SignInEmptyState';
+import { SignInEmptyState, VerifyEmailEmptyState } from '@/components/shared/SignInEmptyState';
+import { useUser } from '@/hooks/useUser';
+import { useVerificationRequired } from '@/lib/authGate';
 
 /**
  * Per-widget states: each data card owns its own loading skeleton, auth
- * (401) state, and network/error state with a retry button. No fabricated
+ * (401) state, verify-email (403) state, and network/error state with a retry
+ * button. No fabricated
  * values are rendered in any of these branches.
  */
 
@@ -101,15 +104,30 @@ export function WidgetState({
   compact?: boolean;
   skeletonRows?: number;
 }) {
+  const { uid } = useUser();
+  const verificationRequired = useVerificationRequired(uid);
   const loading = query.isLoading ?? query.isPending ?? false;
   const retry = query.refetch ? () => void query.refetch?.() : undefined;
 
   if (loading) return <WidgetSkeleton rows={skeletonRows} compact={compact} />;
-  if (query.isError && isAuthError(query.error)) {
-    return <SignInEmptyState compact={compact} onRetry={retry} />;
-  }
   if (query.isError) {
+    const kind = widgetErrorKind(query.error, verificationRequired);
+    if (kind === 'auth') return <SignInEmptyState compact={compact} onRetry={retry} />;
+    // No Retry here: a plain refetch reuses the stale token and gets the same 403.
+    if (kind === 'verify') return <VerifyEmailEmptyState compact={compact} />;
     return <WidgetError message={errorMessage(query.error)} onRetry={retry} compact={compact} />;
   }
   return <>{children}</>;
+}
+
+/**
+ * Which state a failed widget shows. A 401 is always the sign-in state. While
+ * the API is answering this account's gated calls with the verify-email 403
+ * (tracked by the fetch layer, not read from the message, since some hooks
+ * throw only the detail), any other error is that 403: an unverified account
+ * cannot load gated data at all, and the flag clears on the first success.
+ */
+export function widgetErrorKind(error: unknown, verificationRequired: boolean): 'auth' | 'verify' | 'error' {
+  if (isAuthError(error)) return 'auth';
+  return verificationRequired ? 'verify' : 'error';
 }

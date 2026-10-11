@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { LogIn, LogOut, Lock, ShieldCheck, MailWarning } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuthBlocked, useVerificationEmailState } from '@/lib/authGate';
+import {
+  clearVerificationRequired,
+  markEmailConfirmed,
+  useAuthBlocked,
+  useEmailConfirmed,
+  useVerificationEmailState,
+  useVerificationRequired,
+} from '@/lib/authGate';
 import { useUser } from '@/hooks/useUser';
 import { firebaseSignOut, refreshEmailVerified, resendVerificationEmail } from '@/lib/firebase';
 
@@ -182,9 +189,58 @@ export function AuthStatusBanner() {
 }
 
 /**
+ * "I've confirmed": re-read the account (forcing a fresh ID token) and, once it
+ * reads verified, clear the verify-email flag and refetch every query. Clearing
+ * comes first because DataGate swaps a page body for the verify-email state,
+ * which unmounts that page's queries; invalidation alone would refetch nothing
+ * and the state would never lift. If the server still answers 403, the next
+ * response marks the flag again. `uid` is the account that clicked: only its
+ * flag clears, so a confirmation that returns after an account switch cannot
+ * erase the flag the new account's 403 set. A failed check is returned, not
+ * thrown, so every caller can say so. Pure so it can be tested without a
+ * component.
+ */
+/** What an "I've confirmed" check found, for the surface to say. */
+export type ConfirmResult = { outcome: 'verified' } | { outcome: 'unverified' } | { outcome: 'failed'; message: string };
+
+export async function confirmEmailVerified(
+  uid: string | null,
+  refresh: () => Promise<{ uid: string; emailVerified: boolean } | null>,
+  queryClient: { invalidateQueries: () => Promise<unknown> },
+): Promise<ConfirmResult> {
+  let account: { uid: string; emailVerified: boolean } | null;
+  try {
+    account = await refresh();
+  } catch (err) {
+    const message = err instanceof Error && err.message ? err.message : 'the check failed';
+    return { outcome: 'failed', message };
+  }
+  // Only the account that clicked counts: a result read for another account
+  // (switched in while the check ran) says nothing about this one.
+  if (!uid || account?.uid !== uid || !account.emailVerified) return { outcome: 'unverified' };
+  clearVerificationRequired(uid);
+  markEmailConfirmed(uid);
+  await queryClient.invalidateQueries();
+  return { outcome: 'verified' };
+}
+
+/**
+ * Whether the verify-email banner shows: while the profile reads unverified,
+ * or while the API still answers this account's gated calls with the
+ * verify-email 403. The second covers the lag between the two: the profile can
+ * read verified while the cached ID token still carries the old claim, and on
+ * pages without DataGate (Admin, Settings) the banner is the only place that
+ * says why their calls fail. `emailVerified` is null with no account.
+ */
+export function showVerificationBanner(emailVerified: boolean | null, verificationRequired: boolean): boolean {
+  return emailVerified === false || (emailVerified === true && verificationRequired);
+}
+
+/**
  * Strip shown to a signed-in email/password account whose address is not yet
- * confirmed. Non-blocking: the app stays usable, the banner just keeps the
- * task visible and offers the two things the user can do about it. Never
+ * confirmed. Since stocks#1360 the API refuses that account's gated calls
+ * until it confirms, so the strip says so and offers the two things the user
+ * can do about it; cards and page bodies show the matching verify-email state. Never
  * renders outside `firebase` mode (emailVerified is null there) and never for
  * Google sign-ins (they arrive verified).
  *
@@ -203,22 +259,26 @@ export function EmailVerificationBanner() {
 
 function EmailVerificationBannerFor() {
   const { email, emailVerified, uid } = useUser();
+  const queryClient = useQueryClient();
   // What actually happened to the sign-up email: sign-up records it in the
   // authGate store because SignInScreen is unmounted by the time the send
   // resolves. Keyed by uid so an account switch without a reload never
   // inherits the previous account's outcome; 'unknown' = no send for this
   // account this session, so no claim is made.
   const delivery = useVerificationEmailState(uid);
-  // Local override once a refresh reports verified; the subscription value
-  // only updates on the next auth-state event.
-  const [confirmed, setConfirmed] = useState(false);
+  // Set by any surface's I've confirmed (the banner's or a card's): the
+  // profile value above only updates on the next auth-state event.
+  const confirmed = useEmailConfirmed(uid);
   const [resend, setResend] = useState<
     { state: 'idle' } | { state: 'sending' } | { state: 'sent' } | { state: 'error'; message: string }
   >({ state: 'idle' });
   const [checking, setChecking] = useState(false);
   const [stillUnverified, setStillUnverified] = useState(false);
+  const verificationRequired = useVerificationRequired(uid);
 
-  if (emailVerified !== false || confirmed) return null;
+  // A confirmation that succeeded here counts as the profile reading verified;
+  // the banner then returns only if the API answers the verify-email 403 again.
+  if (!showVerificationBanner(confirmed ? true : emailVerified, verificationRequired)) return null;
 
   const onResend = async () => {
     setResend({ state: 'sending' });
@@ -241,12 +301,9 @@ function EmailVerificationBannerFor() {
     setChecking(true);
     setStillUnverified(false);
     try {
-      const verified = await refreshEmailVerified();
-      if (verified) setConfirmed(true);
-      else setStillUnverified(true);
-    } catch (err) {
-      const e = err as { message?: string };
-      setResend({ state: 'error', message: `Could not check the account${e.message ? `: ${e.message}` : '.'}` });
+      const result = await confirmEmailVerified(uid, refreshEmailVerified, queryClient);
+      if (result.outcome === 'unverified') setStillUnverified(true);
+      else if (result.outcome === 'failed') setResend({ state: 'error', message: `Could not check the account: ${result.message}` });
     } finally {
       setChecking(false);
     }
@@ -263,7 +320,7 @@ function EmailVerificationBannerFor() {
     >
       <span className="flex items-center gap-1.5" data-delivery={delivery.status}>
         <MailWarning size={13} className="text-[var(--warning, var(--on-surface-variant))]" aria-hidden />
-        Confirm your email address.
+        Confirm your email address to load your data.
         {delivery.status === 'sent'
           ? email
             ? ` We sent a link to ${email}.`
