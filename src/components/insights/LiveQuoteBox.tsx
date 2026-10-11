@@ -38,10 +38,22 @@ export function LiveQuoteBox({ ticker }: { ticker: string }) {
 export function LivePriceChart({ ticker }: { ticker: string }) {
   const history = useLiveHistory(ticker);
   const quote = useLiveQuote(ticker);
-  const points = useMemo<PricePoint[]>(() => (history.data?.bars ?? []).slice(-60).map((b) => {
-    const d = new Date(b.time);
-    return { time: Math.floor(d.getTime() / 1000), price: b.close, label: d.toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) };
-  }), [history.data]);
+  const { points, dayLabel } = useMemo<{ points: PricePoint[]; dayLabel: string | null }>(() => {
+    const bars = (history.data?.bars ?? []).slice(-60);
+    const dates = bars.map((b) => new Date(b.time));
+    const sameDay = dates.length > 0 && dates.every((d) => d.toDateString() === dates[0].toDateString());
+    const points = bars.map((b, i) => {
+      const d = dates[i];
+      const label = sameDay
+        ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+        : d.toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+      return { time: Math.floor(d.getTime() / 1000), price: b.close, label };
+    });
+    const dayLabel = sameDay
+      ? dates[0].toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+    return { points, dayLabel };
+  }, [history.data]);
   const lines = useMemo(() => {
     const out: { value: number; label: string; tone: 'brand' | 'muted' }[] = [];
     if (quote.data) out.push({ value: quote.data.price, label: 'Live', tone: 'brand' });
@@ -50,5 +62,10 @@ export function LivePriceChart({ ticker }: { ticker: string }) {
   }, [quote.data]);
   if (history.isError) return <p className="text-xs text-[var(--warn)]">Price history unavailable for {ticker}.</p>;
   if (history.isLoading) return <div className="h-[180px] animate-pulse rounded-md bg-[var(--surface-1)]" />;
-  return <PriceAreaChart data={points} height={180} showDots={false} seriesLabel={`${ticker} price`} priceLines={lines} />;
+  return (
+    <div>
+      {dayLabel && <p className="mb-1 text-[11px] font-semibold text-[var(--on-surface-muted)]">{dayLabel}</p>}
+      <PriceAreaChart data={points} height={180} showDots={false} seriesLabel={`${ticker} price`} priceLines={lines} />
+    </div>
+  );
 }
