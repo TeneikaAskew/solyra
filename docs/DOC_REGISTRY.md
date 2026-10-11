@@ -120,18 +120,18 @@ renames are ignored, so a file-move wave does not flag every document.
 | C | docs/journal-one-stop-shop-design.md | | |
 | C | docs/solyra-landing-page-design.md | | |
 | C | docs/superpowers/**/*.md | | |
-| D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json | |
+| D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json, src/index.css | |
 | D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows, AGENTS.md, tests, playwright.config.ts, package.json | |
 | D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/App.tsx | |
 | D | docs/UI-SCREENS.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/mocks, src/types, src/App.tsx, src/main.tsx, tests, .github/workflows/ci.yml, .github/workflows/e2e.yml | |
-| D | docs/DESIGN_SYSTEM.md | src/index.css, vite.config.ts, src/components/primitives, src/stores/themeStore.ts, src/lib/chartTheme.ts | |
-| D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs | |
+| D | docs/DESIGN_SYSTEM.md | src/index.css, vite.config.ts, src/components/primitives, src/stores/themeStore.ts, src/lib/chartTheme.ts, src/stores/settingsStore.ts, src/hooks/usePreferences.ts, src/routes/SettingsPage.tsx, src/routes/AuthActionPage.tsx, src/components/shared/MetricCard.tsx, src/App.tsx, src/components/landing/LandingNav.tsx | |
+| D | docs/E2E_TEST_PLAN.md | tests, playwright.config.ts, scripts/e2e-server.mjs, package.json, .github/workflows, src/App.tsx, src/index.css, src/lib/authGate.ts, src/mocks/contract.test.ts | |
 | D | docs/REDESIGN.md | src/components, src/index.css | |
 | D | docs/STRAT_ENGINE_FRONTEND_DESIGN_BRIEF.md | src/routes/AdminPage.tsx, src/hooks/useAdmin.ts | |
-| D | docs/options_flow_data_contract.md | src/types, src/hooks/useOptionsGreeks.ts | |
+| D | docs/options_flow_data_contract.md | src/types, src/hooks/useOptionsGreeks.ts, src/hooks/useGammaGrid.ts, src/hooks/useGammaLevels.ts, src/hooks/useOptionsDates.ts, src/components/options, src/data, src/mocks/options.ts, tests/fixtures/stocks-openapi.json | |
 | D | docs/solyra-landing-page-plan.md | src/components/landing | |
 | D | docs/product/02-FEATURE-CATALOG.md | | |
-| D | docs/DOC_REGISTRY.md | scripts/docs-audit.mjs | |
+| D | docs/DOC_REGISTRY.md | scripts/docs-audit.mjs, AGENTS.md, .claude/skills/product-delivery, scripts/gate | |
 | X | .claude/agents/*.md | | |
 | X | .claude/commands/*.md | | |
 | X | .claude/skills/**/*.md | | |

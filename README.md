@@ -12,9 +12,8 @@ as the `solyra-api-staging` Cloud Run service, the only API service since
 `solyra-api-prod` was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
 Solyra's dev server proxies `/api/*` to that backend, so the browser still
 sees same-origin requests and no call site needs to know where the API
-actually is: `src/` holds ~101 bare `fetch('/api/...')` literals, 67 of them
-app call sites outside the `*.test.*` files (the 68th outside tests is a doc
-comment in `src/lib/authedFetch.ts`).
+actually is: `src/` holds ~101 bare `fetch('/api/...')` literals, its colocated
+tests included.
 
 Built with [Lovable](https://lovable.dev).
 
