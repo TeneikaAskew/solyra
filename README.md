@@ -7,11 +7,12 @@ covering the market dashboard, live quotes, charts, options/gamma analysis,
 signals, the trade journal, AI insights, and catalysts.
 
 **This repo holds the frontend only.** The FastAPI backend, the research
-pipeline, and the GCP jobs live in the **stocks** repo and are deployed
-together as the `solyra-api-prod` Cloud Run service. Solyra's dev server
-proxies `/api/*` to that backend, so the browser still sees same-origin
-requests and none of the ~73 bare `fetch('/api/...')` call sites need to know
-where the API actually is.
+pipeline, and the GCP jobs live in the **stocks** repo; the API is deployed
+as the `solyra-api-staging` Cloud Run service, the only API service since
+`solyra-api-prod` was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
+Solyra's dev server proxies `/api/*` to that backend, so the browser still
+sees same-origin requests and none of the ~73 bare `fetch('/api/...')` call
+sites need to know where the API actually is.
 
 Built with [Lovable](https://lovable.dev).
 

@@ -35,7 +35,7 @@
 
 **Config:** `playwright.config.ts` — `testDir: ./tests`, 3 projects:
 - **`chromium`** (default): boots its **own** Vite on the dedicated E2E port (`:5199`, never your `:5173` dev server), all `/api/**` **mocked** per-spec → no backend needed, hermetic, fast.
-- **`iap-setup`** / **`cloud`**: run against the deployed FRONTEND (`solyra-stocks.lovable.app`), not a Cloud Run URL, and **not** behind IAP — the SPA is published separately since #957 and its API is gated per request by a Firebase ID token. `iap-setup` captures a real signed-in session interactively (including Firebase's IndexedDB persistence). `cloud` matches `*.cloud.spec.ts` and **none exist yet**, so it exits `No tests found` rather than running the hermetic specs against production, which would have forced `authMode: 'open'` and measured the mocks. Writing that suite is outstanding work. Both are skipped by the default command.
+- **`iap-setup`** / **`cloud`**: run against the deployed FRONTEND (`solyra-stocks.lovable.app`, which now redirects to `stocks.insightscollective.org`), not a Cloud Run URL, and **not** behind IAP — the SPA is published separately since #957 and its API is gated per request by a Firebase ID token. `iap-setup` captures a real signed-in session interactively (including Firebase's IndexedDB persistence). `cloud` matches `*.cloud.spec.ts` and **none exist yet**, so it exits `No tests found` rather than running the hermetic specs against production, which would have forced `authMode: 'open'` and measured the mocks. Writing that suite is outstanding work. Both are skipped by the default command.
 
 **Mock strategy:** `tests/helpers/mocks.ts` `mockCommon(page)` stubs the cross-cutting endpoints (`/api/health`, `/api/live/status`, brief, watchlist); each spec adds its own `page.route('**/api/<endpoint>', …)` with realistic fixtures. **Fixtures must match the production response shape** (CLAUDE.md Rule 0.3) — e.g. the dashboard brief mock carries `daily_indicators.close`, the signals mock carries `analytics/summary`.
 
@@ -100,8 +100,8 @@ bash scripts/db_query_cr.sh -q "SELECT 'intraday' t, COUNT(*) n, MAX(ts)::text F
   SELECT 'news', COUNT(*), MAX(published_ts)::text FROM news_sentiment"
 
 # Service + freshness endpoint (routers/health.py). Aim it at STAGING: that is
-# the service the SPA calls and the one carrying traffic. The prod URL is
-# IAP-gated, so a bare curl gets the Google SSO redirect, not JSON.
+# the service the SPA calls and the only API service: solyra-api-prod was
+# retired on 2026-10-10 (TeneikaAskew/stocks#1366).
 gcloud run services list --project=adept-mountain-474619-d4 --format='table(metadata.name,status.url)'
 curl -s https://solyra-api-staging-5sjtb3yl7a-ue.a.run.app/api/health/freshness
 ```
