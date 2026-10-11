@@ -141,19 +141,30 @@ Three concentric loops:
 | `useAddToWatchlist`        | `/api/insights/watchlist/add` (POST)                       | Watchlist add (same module)        |
 | `useRemoveFromWatchlist`   | `/api/insights/watchlist/{ticker}` (DELETE)                | Watchlist remove (same module)     |
 | `useLiveQuote`             | `/api/live/quote/{ticker}`                                 | Latest 1-min bar                   |
-| `useLiveIndicators`        | `/api/live/indicators`                                     | Wilder RSI/EMA/ATR/VWAP            |
+| `useLiveIndicators`        | `/api/live/indicators` (POST)                              | Wilder RSI/EMA/ATR/VWAP            |
 | `useLiveHistory`           | `/api/live/history/{ticker}`                               | Intraday history window            |
-| `useLiveStatus`            | `/api/live/status`                                         | Market session + fetcher freshness |
-| `useMarketData`            | `/api/market/data/{ticker}/{date}`, `/dates`, `/reference` | Daily OHLCV for chart              |
+| `useLiveStatus`            | `/api/live/status`                                         | Market open/closed, session name, next open |
+| `useMarketData`            | `/api/market/data/{ticker}/{date}`                         | Intraday OHLCV candles + volume for one date (`?timeframe=` 1/5/15/30/60) |
+| `useAvailableDates`        | `/api/market/dates/{ticker}`                               | Dates with data (same module as `useMarketData`) |
+| `useReferenceLevels`       | `/api/market/reference/{ticker}/{date}`                    | Reference OHLC + week stats for the date (same module) |
 | `useGammaLevels`           | `/api/options/{ticker}/{date}/levels`                      | King/Gate/Spot/Flip                |
-| `useOptionsGreeks`         | `/api/options/greeks`                                      | BSM delta/gamma/theta/vega         |
-| `usePlaybookEvaluation`    | `/api/playbook/evaluate`                                   | trigger/target/stop                |
-| `useInsights`              | `/api/insights/report/{ticker}`, `/refresh`, `/history`    | AI insight reports                 |
-| `useWatchlist`             | `/api/insights/watchlist`                                  | Watchlist CRUD                     |
+| `useOptionsGreeks`         | `/api/options/greeks` (POST)                               | BSM delta/gamma/theta/vega         |
+| `usePlaybookEvaluation`    | `/api/playbook/evaluate` (POST)                            | trigger/target/stop                |
+| `usePlaybookBatch`         | `/api/playbook/evaluate` (POST)                            | Per-card batches (same module; this is the one PlaybookPage calls) |
+| `useInsightReport`         | `/api/insights/report/{ticker}` (`?as_of=`)                | Latest AI insight report           |
+| `useInsightReportById`     | `/api/insights/reports/{reportId}`                         | A past report (same module)        |
+| `useInsightHistory`        | `/api/insights/report/{ticker}/history` (`?limit=`)        | Report history list (same module)  |
+| `useRefreshInsight`        | `/api/insights/report/{ticker}/refresh` (POST)             | Enqueues a pipeline run (same module) |
+| `useRunStatus`             | `/api/insights/runs/{runId}`                               | Run status, polled every 3 s while queued/running (same module) |
+| `useBriefDirection`        | `/api/dashboard/brief/{ticker}`                            | Brief bias + FTFC direction (same module) |
+| `useWatchlist`             | `/api/insights/watchlist` (`?catalyst=`, `?limit=`)        | Ranked watchlist, read-only (add/remove are the `useTickerSearch` module rows above) |
 | `useSimilarSetups`         | `/api/signals/{ticker}/similar`                            | Historical near-neighbours         |
-| `useTradeAnalytics`        | `/api/analytics/summary/{ticker}`, `/trade-stats`          | Per-ticker analytics               |
-| `useAdmin`                 | `/api/admin/models`, `/api/admin/routes/{role}`            | Model routing, RBAC                |
-| `useConfig`                | `/api/config/indicators`, `/api/config/market-hours`       | Server-resolved config             |
+| `useTradeSummary`          | `/api/analytics/summary/{ticker}` (`?days=`)               | Per-ticker analytics (module `useTradeAnalytics.ts`; `/api/analytics/trade-stats` has no frontend caller) |
+| `useAdminModels`           | `/api/admin/models`                                        | Model catalog (module `useAdmin.ts`) |
+| `useAdminRoutes`           | `/api/admin/routes`                                        | Model routing, RBAC (same module)  |
+| `useUpdateAdminRoute`      | `/api/admin/routes/{role}` (PUT)                           | Route grant update (same module)   |
+| `useIndicatorConfig`       | `/api/config/indicators`                                   | Server-resolved config (module `useConfig.ts`) |
+| `useMarketHours`           | `/api/config/market-hours`                                 | Server-resolved config (same module) |
 | `useUser` (above)          | `/api/me`                                                  |                                    |
 
 All hooks read `useTickerStore().activeTicker` (or a per-page override) and key the query on it, so flipping the sidebar ticker switcher refetches every ticker-scoped query in one move.

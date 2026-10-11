@@ -207,7 +207,7 @@
                 <mxCell id="title" value="Trading Platform — Frontend Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1f2933;" parent="1" vertex="1">
                     <mxGeometry x="40" y="24" width="2320" height="32" as="geometry"/>
                 </mxCell>
-                <mxCell id="sub" value="React 19 · TypeScript 5.9 · Vite 7 · Tailwind 4  |  12 lazy routes · 17 TanStack-Query hooks · 5 Zustand stores · ~30 /api/* endpoints  |  published on Lovable (solyra-stocks.lovable.app), calls solyra-api-staging cross-origin — NOT shipped inside the Cloud Run image since #957  |  rebuilt 2026-09-05" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" vertex="1">
+                <mxCell id="sub" value="React 19 · TypeScript 5.9 · Vite 7 · Tailwind 4  |  12 lazy routes · 23 TanStack-Query hook modules · 5 Zustand stores · ~30 /api/* endpoints  |  published on Lovable (solyra-stocks.lovable.app), calls solyra-api-staging cross-origin — NOT shipped inside the Cloud Run image since #957  |  rebuilt 2026-09-05" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" vertex="1">
                     <mxGeometry x="40" y="56" width="2320" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="g_br" value="Browser entry — Lovable serves the SPA; /api/* cross-origin to Cloud Run" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
@@ -276,10 +276,10 @@
                 <mxCell id="rt_11" value="/help   HelpPage&#xa;Glossary + Strat methodology&#xa;→ static" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1787" y="412" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="g_hk" value="Server state — 17 TanStack-Query hooks  (src/hooks/use*.ts, keyed on activeTicker)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#f6f7f9;strokeColor=#9aa5b1;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
+                <mxCell id="g_hk" value="Server state — 23 TanStack-Query hook modules  (src/hooks/use*.ts, keyed on activeTicker)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#f6f7f9;strokeColor=#9aa5b1;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
                     <mxGeometry x="40" y="502" width="1150" height="300" as="geometry"/>
                 </mxCell>
-                <mxCell id="hk" value="useUser → /api/me (identity + admin; verified Firebase token)&#xa;useTickerSearch → client filter over availableTickers&#xa;useLiveQuote → /api/live/quote/{ticker}&#xa;useLiveIndicators → /api/live/indicators&#xa;useLiveHistory → /api/live/history/{ticker}&#xa;useLiveStatus → /api/live/status&#xa;useMarketData → /api/market/data · dates · reference&#xa;useGammaLevels → /api/options/greeks (per-strike GEX)&#xa;useOptionsGreeks → /api/options/greeks (BSM)&#xa;usePlaybookEvaluation → /api/playbook/evaluate&#xa;useInsights → /api/insights/report · refresh · history&#xa;useWatchlist → /api/insights/watchlist&#xa;useSimilarSetups → /api/signals/{ticker}/similar&#xa;useTradeAnalytics → /api/analytics/summary · trade-stats&#xa;useAdmin → /api/admin/models · routes/{role}&#xa;useConfig → /api/config/indicators · market-hours" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;fillColor=#eef2fb;strokeColor=#6b83c9;strokeWidth=1;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=5;" parent="1" vertex="1">
+                <mxCell id="hk" value="useUser → /api/me (identity + admin; verified Firebase token)&#xa;useTickerSearch → /api/insights/ticker/search&#xa;useLiveQuote → /api/live/quote/{ticker}&#xa;useLiveIndicators → /api/live/indicators (POST)&#xa;useLiveHistory → /api/live/history/{ticker}&#xa;useLiveStatus → /api/live/status&#xa;useMarketData · useAvailableDates · useReferenceLevels → /api/market/data · dates · reference&#xa;useGammaLevels → /api/options/{ticker}/{date}/levels (per-strike GEX)&#xa;useOptionsGreeks → /api/options/greeks (BSM, POST)&#xa;usePlaybookEvaluation → /api/playbook/evaluate (POST)&#xa;useInsightReport · useInsightHistory → /api/insights/report/{ticker} · /history&#xa;useRefreshInsight → /api/insights/report/{ticker}/refresh (POST)&#xa;useInsightReportById → /api/insights/reports/{id} · useRunStatus → /api/insights/runs/{run_id}&#xa;useWatchlist → /api/insights/watchlist&#xa;useSimilarSetups → /api/signals/{ticker}/similar&#xa;useTradeSummary → /api/analytics/summary/{ticker}&#xa;useAdminModels → /api/admin/models · useAdminRoutes → /api/admin/routes&#xa;useUpdateAdminRoute → /api/admin/routes/{role} (PUT)&#xa;useIndicatorConfig · useMarketHours → /api/config/indicators · market-hours" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;fillColor=#eef2fb;strokeColor=#6b83c9;strokeWidth=1;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=5;" parent="1" vertex="1">
                     <mxGeometry x="62" y="538" width="1108" height="252" as="geometry"/>
                 </mxCell>
                 <mxCell id="g_st" value="Client state — 5 Zustand stores  (UI-only; no server data leaks in)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#f6f7f9;strokeColor=#9aa5b1;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
@@ -571,7 +571,7 @@
                 <mxCell id="dash_r6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="usePlaybookEvaluation → POST /api/playbook/evaluate → playbook.py (compute only)" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="462"/>
                 </mxCell>
-                <mxCell id="dash_r7" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useDashboardBrief → GET /api/dashboard/brief/{t} → dashboard.py → READ premarket_analysis + market_data_daily" vertex="1">
+                <mxCell id="dash_r7" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useFetch (DashboardPage-local) → GET /api/dashboard/brief/{t} → dashboard.py → READ premarket_analysis + market_data_daily" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="502"/>
                 </mxCell>
                 <mxCell id="dash_r8" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="DataPipelineStatus → GET /api/health/freshness → health.py → freshness scan across Cloud SQL tables" vertex="1">
@@ -755,7 +755,7 @@
                 <mxCell id="charts_r4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useGammaLevels → GET /api/options/{t}/{d}/levels → options.py → READ etf_options_snapshots → lib/gamma" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="382"/>
                 </mxCell>
-                <mxCell id="charts_r5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useTradeAnalytics → POST /api/analytics/trade-stats → analytics.py (compute only)" vertex="1">
+                <mxCell id="charts_r5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useSignalSeries → POST /api/live/signal-series → live.py → lib/signals (compute only)" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="422"/>
                 </mxCell>
                 <mxCell id="charts_r6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useSimilarSetups → GET /api/signals/{t}/similar → signals.py → READ historical_signals" vertex="1">
@@ -764,7 +764,7 @@
                 <mxCell id="charts_r7" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="BacktesterSection → GET /api/backtest/all|results|equity → backtest.py → GCS CSVs" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="502"/>
                 </mxCell>
-                <mxCell id="charts_ic_run" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" value="FastAPI routers&#xa;main · options · analytics&#xa;signals · backtest" vertex="1">
+                <mxCell id="charts_ic_run" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" value="FastAPI routers&#xa;main · options · live&#xa;signals · backtest" vertex="1">
                     <mxGeometry as="geometry" width="56" height="56" x="90" y="550"/>
                 </mxCell>
                 <mxCell id="charts_ic_sql" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_sql;" parent="1" value="Cloud SQL reads&#xa;market_data_intraday · market_data_daily&#xa;etf_options_snapshots · historical_signals" vertex="1">
@@ -838,7 +838,7 @@
                 <mxCell id="opt_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="384" x="40" y="226"/>
                 </mxCell>
-                <mxCell id="opt_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useOptionsDates → GET /api/options/dates/{t} → options.py → READ etf_options_snapshots" vertex="1">
+                <mxCell id="opt_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useAllOptionsDates / useLatestOptionsDate (?limit=1) → GET /api/options/dates/{t} → options.py → READ etf_options_snapshots" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="262"/>
                 </mxCell>
                 <mxCell id="opt_r2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useOptionsData → GET /api/options/{t}/{d} → options.py → READ etf_options_snapshots" vertex="1">
@@ -930,7 +930,7 @@
                 <mxCell id="play_r2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useReference → GET /api/market/reference/{t}/{today} → main.py → AV + READ market_data_daily" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="302"/>
                 </mxCell>
-                <mxCell id="play_r3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useLiveQuote/History/Status/AvgVolume → live.py → AV + READ market_data_daily" vertex="1">
+                <mxCell id="play_r3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useLiveQuote/useLiveHistory/useLiveStatus/useAvgVolume → live.py → AV + READ market_data_daily" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="342"/>
                 </mxCell>
                 <mxCell id="play_r4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useLiveIndicators → POST /api/live/indicators → live.py → lib/indicators" vertex="1">
@@ -1155,7 +1155,7 @@
                 <mxCell id="jrnl_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="224" x="40" y="226"/>
                 </mxCell>
-                <mxCell id="jrnl_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useJournalTrades → GET /api/journal/trades/{t} → journal.py → READ journal_entries" vertex="1">
+                <mxCell id="jrnl_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useJournalChartTrades / useJournalTradesFull → GET /api/journal/trades/{t} → journal.py → READ journal_entries" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="262"/>
                 </mxCell>
                 <mxCell id="jrnl_ic_run" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" value="FastAPI routers&#xa;journal.py" vertex="1">
@@ -1170,7 +1170,7 @@
                 <mxCell id="jrnl_w1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5f5e3;strokeColor=#1e8449;strokeWidth=1.5;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontStyle=1;fontColor=#1f2933;" parent="1" value="useAddTrade → POST /api/journal/trades → journal.py → WRITE journal_entries (INSERT)" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="500"/>
                 </mxCell>
-                <mxCell id="jrnl_w2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5f5e3;strokeColor=#1e8449;strokeWidth=1.5;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontStyle=1;fontColor=#1f2933;" parent="1" value="useDeleteTrade → DELETE /api/journal/trades/{id} → journal.py → WRITE journal_entries (DELETE)" vertex="1">
+                <mxCell id="jrnl_w2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5f5e3;strokeColor=#1e8449;strokeWidth=1.5;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontStyle=1;fontColor=#1f2933;" parent="1" value="useDeleteChartTrade → DELETE /api/journal/trades/{id}?ticker={t} → journal.py → WRITE journal_entries (DELETE)" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="540"/>
                 </mxCell>
                 <mxCell id="jrnl_w3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5f5e3;strokeColor=#1e8449;strokeWidth=1.5;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontStyle=1;fontColor=#1f2933;" parent="1" value="exportPipeline → POST /api/journal/export/{t} → writes data/signals/{t}_trade_tracker.csv (server FS, not SQL)" vertex="1">
@@ -1241,7 +1241,7 @@
                 <mxCell id="ins_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="424" x="40" y="226"/>
                 </mxCell>
-                <mxCell id="ins_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useInsightReport/ById/History → GET /api/insights/report/... → insights.py → READ insight_reports" vertex="1">
+                <mxCell id="ins_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useInsightReport/History → GET /api/insights/report/{t}[/history]; useInsightReportById → GET /api/insights/reports/{id} → insights.py → READ insight_reports" vertex="1">
                     <mxGeometry as="geometry" width="1440" height="32" x="70" y="262"/>
                 </mxCell>
                 <mxCell id="ins_r2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useRunStatus (3s poll) → GET /api/insights/runs/{run_id} → insights.py → READ insight_runs" vertex="1">
