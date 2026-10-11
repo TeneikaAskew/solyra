@@ -143,7 +143,7 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
     if (serialized.length > 45_000) throw new Error('Response too large to use as evidence');
     const asOf = valueAsOf(payload);
     const age = asOf ? Date.now() - new Date(asOf).getTime() : null;
-    return { id: `S${index}`, type, label, path, asOf, freshness: age !== null && age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: serialized.slice(0, 320), payload, hash: await digest(serialized) };
+    return { id: `S${index}`, type, label, path, asOf, freshness: age !== null && age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: summarize(payload, type), payload, hash: await digest(serialized) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unavailable';
     return { id: `S${index}`, type, label, path, asOf: null, freshness: 'unavailable', excerpt: reason, payload: null, hash: await digest(reason) };
