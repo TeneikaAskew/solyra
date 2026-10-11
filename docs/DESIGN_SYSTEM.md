@@ -21,10 +21,15 @@ The palette is anchored in deep charcoals and obsidian blacks, providing a high-
 > `cyan`, `teal`, `pink`, `magenta`, `orange`, `yellow`, `indigo`, `rose`), and
 > it is not the default: new users get **`dawn`** (`--brand: #ff7a4d`, orange;
 > `DEFAULTS` in `settingsStore.ts`), applied as an `accent-*` class on `<body>`
-> at module load, before any component renders. Every accent except `blue`
-> remaps `--brand`, `--brand-glow` and `--outline` through an `.accent-*` rule
-> in `src/index.css`; `blue` needs no override because it falls through to the
-> base variables (`--brand: #8bceff` in the dark `:root` block). Under
+> when `settingsStore.ts` is first evaluated (`:95-96`). That happens only once
+> the app-shell chunk loads, or on `/auth/action`, which imports the store for
+> this side effect (`AuthActionPage.tsx:6-13`): `ConfigGate` and the
+> `PageLoader` fallback render before it, and `/` never imports the store, so
+> a visit that starts at the landing page sets no `accent-*` class. Every
+> accent except `blue` remaps `--brand`, `--brand-glow` and `--outline`
+> through an `.accent-*` rule in `src/index.css`; `blue` needs no override
+> because it falls through to the base variables (`--brand: #8bceff` in the
+> dark `:root` block). Under
 > `[data-theme="light"]` those base variables are redefined instead
 > (`--brand: #0072c6`, `--brand-container: #004f8a`, `--brand-glow: #3b9fde`;
 > §6 lists the first), so the hex values in this section hold for `blue` in

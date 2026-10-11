@@ -41,8 +41,10 @@ the record; do not build it.
 **Do not build this.** It was written when Swing's grid was still mocked. The
 real grid endpoint (`useGammaGrid.ts`) now returns per-cell (strike ×
 expiration) GEX, VEX and open interest, and `/levels` (`useGammaLevels.ts`)
-already supplies the King/Gate/Flip nodes that this proposal's `nodes` field
-duplicates. Kept for the record, not as a spec to implement:
+already supplies the King and Gate nodes; both it and the grid response
+return the spot price that the proposal's `spot_row` marks. So this
+proposal's `nodes` field, `{ king, gates, spot_row }`, duplicates what
+ships. Kept for the record, not as a spec to implement:
 
 The current chain endpoints return a single snapshot collapsed across
 expirations, so per-cell (strike × expiration) GEX/VEX can't be computed
