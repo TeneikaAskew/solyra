@@ -27,6 +27,10 @@ export interface ResearchAnswer {
   unknowns: string[];
   catalystTimeline: CatalystItem[];
   replayContext: string | null;
+  verdict?: string;
+  confidence?: 'low' | 'medium' | 'high';
+  keyLevels?: { label: string; value: string; citations: string[] }[];
+  followUps?: string[];
 }
 export interface ResearchSessionSummary {
   id: string; ticker: string; mode: ResearchMode; replay_cutoff: string | null; title: string; status: string; created_at: string; updated_at: string;
