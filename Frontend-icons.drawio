@@ -7,7 +7,7 @@
                 <mxCell id="t" value="Process Flow: Request Lifecycle, Write Path, Deploy Pipeline" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1f2933;" parent="1" vertex="1">
                     <mxGeometry x="40" y="22" width="2320" height="32" as="geometry"/>
                 </mxCell>
-                <mxCell id="s" value="Read path (every page) · the insights-refresh write path (the only one through Cloud Tasks) · deploy flow · counts as measured on 2026-10-11 at solyra 7f40db5 and stocks 17bbacd3" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" vertex="1">
+                <mxCell id="s" value="Read path (every page) · the insights-refresh write path (the only one through Cloud Tasks) · deploy flow · counts as measured on 2026-10-11 at solyra 517c90e and stocks 17bbacd3" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" vertex="1">
                     <mxGeometry x="40" y="54" width="2320" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="f1" value="Lane 1 · Read request lifecycle (every page load)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
@@ -207,7 +207,7 @@
                 <mxCell id="title" value="Trading Platform — Frontend Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1f2933;" parent="1" vertex="1">
                     <mxGeometry x="40" y="24" width="2320" height="32" as="geometry"/>
                 </mxCell>
-                <mxCell id="sub" value="React 19 · TypeScript 5.9 · Vite 7 · Tailwind 4  |  15 lazy pages · 23 TanStack-Query hook modules · 4 Zustand stores in src/stores  |  published on Lovable (solyra-stocks.lovable.app), calls solyra-api-staging cross-origin — NOT shipped inside the Cloud Run image since #957  |  rebuilt 2026-09-05, counts as measured on 2026-10-11 at solyra 7f40db5" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" vertex="1">
+                <mxCell id="sub" value="React 19 · TypeScript 5.9 · Vite 7 · Tailwind 4  |  15 lazy pages · 23 TanStack-Query hook modules · 4 Zustand stores in src/stores  |  published on Lovable (solyra-stocks.lovable.app), calls solyra-api-staging cross-origin — NOT shipped inside the Cloud Run image since #957  |  rebuilt 2026-09-05, counts as measured on 2026-10-11 at solyra 517c90e" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" vertex="1">
                     <mxGeometry x="40" y="56" width="2320" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="g_br" value="Browser entry — Lovable serves the SPA; /api/* cross-origin to Cloud Run" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
@@ -240,37 +240,37 @@
                 <mxCell id="g_rt" value="15 lazy-loaded pages: 13 in the app shell (12 drawn; /settings is not), each React.lazy + Suspense + RouteErrorBoundary, plus the public / and /auth/action" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#f6f7f9;strokeColor=#9aa5b1;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" vertex="1">
                     <mxGeometry x="40" y="232" width="2320" height="260" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_0" value="/dashboard   DashboardPage&#xa;Briefing, KPIs, live signals, catalysts, sector rotation&#xa;→ /api/dashboard/brief · playbook · signals · catalysts/events · market/sectors · market/reference · market/data · insights/report · movement-statement · live/quote · live/status · config/market-hours" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_0" value="/dashboard   DashboardPage&#xa;Briefing, KPIs, live signals, catalysts, sector rotation&#xa;→ /api/dashboard/brief · playbook · signals · catalysts/events · market/sectors · market/reference · market/data · insights/report · movement-statement · live/quote · live/status · config/market-hours · me (useUser) · insights/ticker/search · market/coverage · insights/watchlist/add (TickerCombobox)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="62" y="268" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_1" value="/live   LiveMarketPage&#xa;Real-time quote + intraday indicators&#xa;→ /api/live/quote · indicators · history · avg-volume · status · market/data (review mode) · market/reference" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_1" value="/live   LiveMarketPage&#xa;Real-time quote + intraday indicators&#xa;→ /api/live/quote · indicators · history · avg-volume · status · market/data (review mode) · market/reference · /api/me (useUser)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="637" y="268" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_2" value="/charts   ChartsPage&#xa;Candlestick + strategy-conditions&#xa;→ /api/market/data/{ticker}/{date} · dates · reference · options/{t}/{d}/levels · live/indicators · live/signal-series · signals/{t}/similar · journal/trades (+ /{t}, /{id}) · backtest/* · config/market-hours" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_2" value="/charts   ChartsPage&#xa;Candlestick + strategy-conditions&#xa;→ /api/market/data/{ticker}/{date} · dates · reference · options/{t}/{d}/levels · live/indicators · live/signal-series · signals/{t}/similar · journal/trades (+ /{t}, and /{id}, a PATCH wired but unreachable here) · backtest/* · config/market-hours · /api/me (useUser)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1212" y="268" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_3" value="/options   OptionsFlowPage&#xa;Greeks · GEX · options chain&#xa;→ /api/options/greeks · dates/{t} · {t}/{d} (+ live/{t}/{d}) · {t}/{d}/levels · {t}/grid · {t}/{d}/grid" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_3" value="/options   OptionsFlowPage&#xa;Greeks · GEX · options chain&#xa;→ /api/options/greeks · dates/{t} · {t}/{d} (+ live/{t}/{d}) · {t}/{d}/levels · {t}/grid · {t}/{d}/grid · /api/me (useUser) · /api/insights/ticker/search · /api/market/coverage · /api/insights/watchlist/add (TickerCombobox)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1787" y="268" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_4" value="/playbook   PlaybookPage&#xa;Pre-market trigger/target/stop eval&#xa;→ /api/playbook/{ticker} · playbook/evaluate (POST) · live/* · market/reference (client playbookEvaluator.ts only builds the snapshot)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_4" value="/playbook   PlaybookPage&#xa;Pre-market trigger/target/stop eval&#xa;→ /api/playbook/{ticker} · playbook/evaluate (POST) · live/* · market/reference · /api/me (useUser) (client playbookEvaluator.ts only builds the snapshot)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="62" y="340" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_5" value="/reports   ReportsPage&#xa;Per-ticker phase reports (markdown)&#xa;→ /api/reports/list/{ticker} · /api/reports/{ticker}/{phase}" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_5" value="/reports   ReportsPage&#xa;Per-ticker phase reports (markdown)&#xa;→ /api/reports/list/{ticker} · /api/reports/{ticker}/{phase} · /api/me (useUser)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="637" y="340" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_6" value="/signals   SignalsPage&#xa;Historical signals (historical_signals)&#xa;→ /api/signals/{ticker} · /api/analytics/summary/{ticker}" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_6" value="/signals   SignalsPage&#xa;Historical signals (historical_signals)&#xa;→ /api/signals/{ticker} · /api/analytics/summary/{ticker} · /api/me (useUser) · /api/insights/ticker/search · /api/market/coverage · /api/insights/watchlist/add (TickerCombobox)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1212" y="340" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_7" value="/journal   JournalPage&#xa;Trade journal CRUD&#xa;→ /api/journal/* · /api/style/mine-and-validate · market/data · market/dates · config/market-hours" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_7" value="/journal   JournalPage&#xa;Trade journal CRUD&#xa;→ /api/journal/* · /api/style/mine-and-validate · market/data · market/dates · config/market-hours · /api/me (useUser) · /api/insights/ticker/search · /api/market/coverage · /api/insights/watchlist/add (TickerCombobox)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1787" y="340" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_8" value="/insights   InsightsPage&#xa;AI insight cards + refresh&#xa;→ /api/insights/report · reports/{id} · history · refresh · runs/{id} · watchlist · chat · /api/dashboard/brief · /api/admin/routes (AgentsPanel)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_8" value="/insights   InsightsPage&#xa;AI insight cards + refresh&#xa;→ /api/insights/report · reports/{id} · history · refresh · runs/{id} · watchlist · chat · /api/dashboard/brief · /api/admin/routes (AgentsPanel) · /api/me (useUser) · /api/insights/ticker/search · /api/market/coverage · /api/insights/watchlist/add (TickerCombobox; WatchlistPanel also searches and adds)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="62" y="412" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_9" value="/catalysts   CatalystsPage&#xa;Benzinga catalysts calendar&#xa;→ /api/catalysts/events · types" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_9" value="/catalysts   CatalystsPage&#xa;Benzinga catalysts calendar&#xa;→ /api/catalysts/events · types · /api/me (useUser)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="637" y="412" width="560" height="62" as="geometry"/>
                 </mxCell>
-                <mxCell id="rt_10" value="/admin   AdminPage&#xa;Admin-only: user role grants · data sources · per-role model routing&#xa;→ /api/admin/users (+ /{uid}/roles · /status, PUT) · data-sources (+ /{id}/refresh, POST) · models · routes (+ /routes/{role}, PUT) · structure-brief · strat-engine/state · strat-engine/predict (POST)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="rt_10" value="/admin   AdminPage&#xa;Admin-only: user role grants · data sources · per-role model routing&#xa;→ /api/admin/users (+ /{uid}/roles · /status, PUT) · data-sources (+ /{id}/refresh, POST) · models · routes (+ /routes/{role}, PUT) · structure-brief · strat-engine/state · strat-engine/predict (POST) · /api/me (useUser)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1212" y="412" width="560" height="62" as="geometry"/>
                 </mxCell>
                 <mxCell id="rt_11" value="/help   HelpPage&#xa;Glossary + Strat methodology&#xa;→ /api/config/indicators (glossary text is static)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#e9f0fb;strokeColor=#5c7cc4;strokeWidth=1.5;fontSize=9;fontColor=#1f2933;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" parent="1" vertex="1">
@@ -511,7 +511,7 @@
                 <mxCell id="dash_title" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1f2933;" parent="1" value="/dashboard  ·  DashboardPage.tsx" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="30" x="40" y="16"/>
                 </mxCell>
-                <mxCell id="dash_sub" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" value="Zustand: tickerStore · reviewDateStore" vertex="1">
+                <mxCell id="dash_sub" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" value="Zustand: tickerStore · reviewDateStore · themeStore (chart colors, via useChartTheme)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="20" x="40" y="48"/>
                 </mxCell>
                 <mxCell id="dash_la" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#fdf1e3;strokeColor=#e0913f;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane A · User flow" vertex="1">
@@ -550,7 +550,7 @@
                 <mxCell id="dash_ae4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="dash_as3" target="dash_as4">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="dash_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="dash_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="664" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="dash_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useLiveStatus → GET /api/live/status → live.py (ET session clock, no SQL)" vertex="1">
@@ -651,7 +651,7 @@
                 <mxCell id="live_ae3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="live_as2" target="live_as3">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="live_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="live_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="424" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="live_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useLiveStatus → GET /api/live/status → live.py (session clock)" vertex="1">
@@ -701,7 +701,7 @@
                 <mxCell id="charts_title" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1f2933;" parent="1" value="/charts  ·  ChartsPage.tsx" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="30" x="40" y="16"/>
                 </mxCell>
-                <mxCell id="charts_sub" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" value="Zustand: tickerStore · settingsStore · reviewDateStore" vertex="1">
+                <mxCell id="charts_sub" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" value="Zustand: tickerStore · settingsStore · reviewDateStore · themeStore (chart colors, via useChartTheme)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="20" x="40" y="48"/>
                 </mxCell>
                 <mxCell id="charts_la" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#fdf1e3;strokeColor=#e0913f;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane A · User flow" vertex="1">
@@ -740,7 +740,7 @@
                 <mxCell id="charts_ae4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="charts_as3" target="charts_as4">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="charts_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="charts_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="464" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="charts_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useAvailableDates → GET /api/market/dates/{t} → main.py → READ market_data_intraday (distinct dates)" vertex="1">
@@ -835,7 +835,7 @@
                 <mxCell id="opt_ae4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="opt_as3" target="opt_as4">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="opt_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="opt_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="384" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="opt_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useAllOptionsDates / useLatestOptionsDate (?limit=1) → GET /api/options/dates/{t} → options.py → READ etf_options_snapshots" vertex="1">
@@ -921,7 +921,7 @@
                 <mxCell id="play_ae4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="play_as3" target="play_as4">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="play_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="play_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="384" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="play_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="usePlaybook → GET /api/playbook/{t} → playbook.py → READ playbook_cards" vertex="1">
@@ -1001,7 +1001,7 @@
                 <mxCell id="rep_ae3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="rep_as2" target="rep_as3">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="rep_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="rep_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="264" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="rep_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useReportList → GET /api/reports/list/{t} → playbook.py → GCS raw/reports/phase*.md" vertex="1">
@@ -1013,7 +1013,7 @@
                 <mxCell id="rep_ic_run" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_run;" parent="1" value="FastAPI routers&#xa;playbook.py" vertex="1">
                     <mxGeometry as="geometry" width="56" height="56" x="90" y="350"/>
                 </mxCell>
-                <mxCell id="rep_ic_sql" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_sql;" parent="1" value="Cloud SQL reads&#xa;(none — GCS only)" vertex="1">
+                <mxCell id="rep_ic_sql" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_sql;" parent="1" value="Cloud SQL reads&#xa;none for the reports&#xa;(GCS only)" vertex="1">
                     <mxGeometry as="geometry" width="56" height="56" x="350" y="350"/>
                 </mxCell>
                 <mxCell id="rep_ic_gcs" style="sketch=0;html=1;aspect=fixed;strokeColor=none;shadow=0;fillColor=#4285F4;verticalLabelPosition=bottom;verticalAlign=top;labelPosition=center;align=center;fontSize=11;fontStyle=1;fontColor=#1f2933;shape=mxgraph.gcp2.cloud_storage;" parent="1" value="Cloud Storage&#xa;raw/ reports + CSV/parquet" vertex="1">
@@ -1025,7 +1025,7 @@
                 <mxCell id="rep_w0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="No write path — read-only page." vertex="1">
                     <mxGeometry as="geometry" width="500" height="32" x="70" y="540"/>
                 </mxCell>
-                <mxCell id="rep_note" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff6e0;strokeColor=#d6b656;strokeWidth=1;fontSize=10;align=left;verticalAlign=top;spacing=8;fontColor=#1f2933;" parent="1" value="Read-only page, no Cloud SQL at all — pure GCS markdown viewer." vertex="1">
+                <mxCell id="rep_note" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff6e0;strokeColor=#d6b656;strokeWidth=1;fontSize=10;align=left;verticalAlign=top;spacing=8;fontColor=#1f2933;" parent="1" value="Read-only page: the reports themselves are GCS markdown, and none of their content comes from Cloud SQL." vertex="1">
                     <mxGeometry as="geometry" width="1520" height="60" x="40" y="638"/>
                 </mxCell>
             </root>
@@ -1069,7 +1069,7 @@
                 <mxCell id="sig_ae3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="sig_as2" target="sig_as3">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="sig_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="sig_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="224" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="sig_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useSignals → GET /api/signals/{t}?limit=5000&amp;end_date&amp;end_time → signals.py → READ historical_signals (GCS parquet fallback)" vertex="1">
@@ -1090,7 +1090,7 @@
                 <mxCell id="sig_w0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="Writes only via the shared TickerCombobox: POST /api/insights/watchlist/add." vertex="1">
                     <mxGeometry as="geometry" width="500" height="32" x="70" y="500"/>
                 </mxCell>
-                <mxCell id="sig_note" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff6e0;strokeColor=#d6b656;strokeWidth=1;fontSize=10;align=left;verticalAlign=top;spacing=8;fontColor=#1f2933;" parent="1" value="One fat signals query plus one analytics/summary read, then all interaction is local." vertex="1">
+                <mxCell id="sig_note" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff6e0;strokeColor=#d6b656;strokeWidth=1;fontSize=10;align=left;verticalAlign=top;spacing=8;fontColor=#1f2933;" parent="1" value="The table is one signals query and the trade summary one analytics/summary read; sorting the table and its direction, score and date-range filters are then local (a review date refetches with ?end_date and ?end_time)." vertex="1">
                     <mxGeometry as="geometry" width="1520" height="60" x="40" y="598"/>
                 </mxCell>
             </root>
@@ -1104,7 +1104,7 @@
                 <mxCell id="jrnl_title" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1f2933;" parent="1" value="/journal  ·  JournalPage.tsx" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="30" x="40" y="16"/>
                 </mxCell>
-                <mxCell id="jrnl_sub" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" value="Zustand: tickerStore · settingsStore" vertex="1">
+                <mxCell id="jrnl_sub" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2;fontColor=#7b8794;" parent="1" value="Zustand: tickerStore · settingsStore · themeStore (chart colors, via useChartTheme)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="20" x="40" y="48"/>
                 </mxCell>
                 <mxCell id="jrnl_la" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#fdf1e3;strokeColor=#e0913f;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane A · User flow" vertex="1">
@@ -1152,7 +1152,7 @@
                 <mxCell id="jrnl_ae5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="jrnl_as4" target="jrnl_as5">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="jrnl_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="jrnl_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="224" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="jrnl_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useJournalChartTrades / useJournalTradesFull → GET /api/journal/trades/{t} → journal.py → READ journal_entries" vertex="1">
@@ -1238,7 +1238,7 @@
                 <mxCell id="ins_ae5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="ins_as4" target="ins_as5">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="ins_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="ins_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="424" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="ins_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useInsightReport/History → GET /api/insights/report/{t}[/history]; useInsightReportById → GET /api/insights/reports/{id} → insights.py → READ insight_reports" vertex="1">
@@ -1345,7 +1345,7 @@
                 <mxCell id="cat_ae4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="cat_as3" target="cat_as4">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="cat_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="cat_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="264" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="cat_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useCatalystEvents → GET /api/catalysts/events → catalysts.py → Benzinga (refresh) + READ news_sentiment · economic_events · earnings_calendar · insider_transactions · sec_filings" vertex="1">
@@ -1422,7 +1422,7 @@
                 <mxCell id="adm_ae4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="adm_as3" target="adm_as4">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="adm_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="adm_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="304" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="adm_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useUser → GET /api/me → main.py (verified Firebase token)" vertex="1">
@@ -1490,7 +1490,7 @@
                 <mxCell id="help_ae3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;endArrow=block;endFill=1;strokeColor=#1a73e8;strokeWidth=1.5;fontSize=9;fontColor=#52606d;labelBackgroundColor=#ffffff;" parent="1" edge="1" source="help_as2" target="help_as3">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="help_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads" vertex="1">
+                <mxCell id="help_lb" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#e9eefb;strokeColor=#5c7cc4;dashed=0;verticalAlign=top;fontStyle=1;fontSize=13;fontColor=#1f2933;spacingTop=6;spacingLeft=10;" parent="1" value="Lane B · Data in — reads (the main ones; FRONTEND.md's route table lists every request)" vertex="1">
                     <mxGeometry as="geometry" width="1520" height="224" x="40" y="226"/>
                 </mxCell>
                 <mxCell id="help_r1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#7b8794;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;fontColor=#1f2933;" parent="1" value="useIndicatorConfig → GET /api/config/indicators → config.py → lib/config (no SQL)" vertex="1">
