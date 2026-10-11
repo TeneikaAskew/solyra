@@ -65,7 +65,7 @@ solyra/
 │  │  ├─ charts/                # CandlestickChart, PriceAreaChart,
 │  │  │                         # StrategyConditionsCard, SimilarSetupsCard
 │  │  └─ backtest/              # BacktesterSection
-│  ├─ hooks/                    # 17 TanStack-Query-backed data hooks (see hook map below)
+│  ├─ hooks/                    # 23 TanStack-Query-backed hook MODULES (see hook map below — 7 aren't in it yet). Several export more than one hook (e.g. useJournalChartTrades.ts exports 11), so this is a module count, not an exported-hook count
 │  ├─ stores/                   # Zustand client state (5 stores)
 │  │  ├─ tickerStore.ts         # activeTicker + availableTickers (IWM/SPY/QQQ)
 │  │  ├─ tradeStore.ts          # in-flight trade form state
@@ -136,13 +136,16 @@ Three concentric loops:
 | Hook                       | Endpoint(s) hit                                            | Reads                              |
 |----------------------------|------------------------------------------------------------|------------------------------------|
 | `useUser`                  | `/api/me`                                                  | Identity + server-computed `is_admin`. Source: a verified Firebase token on staging, the only API service (the trusted IAP header applied only to `solyra-api-prod`, retired 2026-10-10) |
-| `useTickerSearch`          | (client-side filter over `availableTickers`)               | Zustand `tickerStore`              |
+| `useTickerSearch`          | `/api/insights/ticker/search`                              | Keyword ticker search              |
+| `useTickerCoverage`        | `/api/market/coverage`                                     | Full / daily / new data-coverage badges (same module as `useTickerSearch`) |
+| `useAddToWatchlist`        | `/api/insights/watchlist/add` (POST)                       | Watchlist add (same module)        |
+| `useRemoveFromWatchlist`   | `/api/insights/watchlist/{ticker}` (DELETE)                | Watchlist remove (same module)     |
 | `useLiveQuote`             | `/api/live/quote/{ticker}`                                 | Latest 1-min bar                   |
 | `useLiveIndicators`        | `/api/live/indicators`                                     | Wilder RSI/EMA/ATR/VWAP            |
 | `useLiveHistory`           | `/api/live/history/{ticker}`                               | Intraday history window            |
 | `useLiveStatus`            | `/api/live/status`                                         | Market session + fetcher freshness |
 | `useMarketData`            | `/api/market/data/{ticker}/{date}`, `/dates`, `/reference` | Daily OHLCV for chart              |
-| `useGammaLevels`           | `/api/options/greeks` (per-strike GEX)                     | King/Gate/Spot/Flip                |
+| `useGammaLevels`           | `/api/options/{ticker}/{date}/levels`                      | King/Gate/Spot/Flip                |
 | `useOptionsGreeks`         | `/api/options/greeks`                                      | BSM delta/gamma/theta/vega         |
 | `usePlaybookEvaluation`    | `/api/playbook/evaluate`                                   | trigger/target/stop                |
 | `useInsights`              | `/api/insights/report/{ticker}`, `/refresh`, `/history`    | AI insight reports                 |
@@ -179,21 +182,21 @@ This is the only path that mutates production data from the frontend — everyth
 ### Local dev
 
 ```bash
-cd platform && npm install         # one-time
-npm run dev                        # vite on :5173, proxies /api → :8000
-# In another terminal:
-make dev                           # FastAPI on :8000 (from repo root)
+npm install                        # one-time — this repo IS the frontend root
+npm run dev                        # vite on :5173, proxies /api → :8000 if a backend is listening
+# In another terminal, from the stocks repo (the backend lives there now):
+make dev                           # FastAPI on :8000 (Makefile `dev` → scripts/dev_server.sh)
 ```
 
-`vite.config.ts` proxies `/api/*` (and `/dev/*`) to `localhost:8000`, so the browser only talks to `:5173`. Hot-module reload works for `.tsx`/`.css`; FastAPI auto-reloads via `uvicorn --reload`.
+`vite.config.ts` proxies `/api/*` (and `/dev/*`) to `localhost:8000` when something is listening there, and to `solyra-api-staging` otherwise (see "Where `/api` goes" in `README.md`), so the browser only talks to `:5173`. Hot-module reload works for `.tsx`/`.css`; FastAPI auto-reloads via `uvicorn --reload`.
 
 ### Production build
 
 ```bash
-npm run build                       # tsc -b && vite build → platform/dist/
+npm run build                       # tsc -b && vite build → dist/
 ```
 
-`tsc -b` runs project-references compilation (`tsconfig.app.json` + `tsconfig.node.json`) — type-checks the whole app before bundling. `vite build` produces tree-shaken, code-split chunks (each lazy route is its own chunk) into `platform/dist/`.
+`tsc -b` runs project-references compilation (`tsconfig.app.json` + `tsconfig.node.json` + `tsconfig.test.json`) — type-checks the whole app, and the E2E fixtures against the real API types, before bundling. `vite build` produces tree-shaken, code-split chunks (each lazy route is its own chunk) into `dist/` (Vite's default; `vite.config.ts` sets no `outDir`).
 
 ### Docker image
 
@@ -232,12 +235,14 @@ deploy lands in is now the service name, not a traffic percentage.
 
 `platform/deploy.sh` kept a legacy `STAGING=1` revision-tag mode for one-off
 operator use; since TeneikaAskew/stocks#1366 it refuses that mode and any run
-without `STAGING_SERVICE=1`. `.github/workflows/deploy-staging.yml` is a
-manual one-click staging redeploy with an optional schema apply.
+without `STAGING_SERVICE=1`. Stocks'
+[`.github/workflows/deploy-staging.yml`](https://github.com/TeneikaAskew/stocks/blob/main/.github/workflows/deploy-staging.yml)
+(this repo has no such workflow) is a manual (`workflow_dispatch`) one-click
+staging redeploy with an opt-in schema apply.
 
 The Cloud Build triggers run as `trading-runner@`. The separate
-`deploy-staging.yml` GitHub Actions workflow authenticates via Workload
-Identity Federation as `arch-refresh-bot@`, clamped to `main`.
+`deploy-staging.yml` GitHub Actions workflow (in stocks) authenticates via
+Workload Identity Federation as `arch-refresh-bot@`, clamped to `main`.
 
 > Superseding an earlier note here: that note said two GitHub Actions workflows
 > (`deploy-platform-staging.yml` / `promote-platform-prod.yml`) had been removed
@@ -285,7 +290,25 @@ served** — that is Lovable, at its custom domain `https://stocks.insightscolle
   attaches the ID token per request, which the middleware **does** verify. The
   SPA talks to staging, the only API service, so **Firebase is the only path that runs**.
   `useUser` gates `/admin` off the server-computed `is_admin` in either mode.
-- **Cloud Run config:** `min-instances=0` — `minScale` was unset on both services, verified live 2026-09-05 (prod since retired). An earlier revision said `min-instances=1` and credited it with avoiding cold starts against Discord's 3-second interaction-ack budget; no such warm instance is configured, so do not rely on one. `--no-cpu-throttling` (PR #507 — FastAPI BackgroundTasks need full CPU after the response is sent), `max-instances=5`, 1 vCPU / 2 GiB (1 GiB OOM-killed full-chain GEX on `/api/options/*/levels`).
+- **Cloud Run config** (`solyra-api-staging`, the only API service): `--min-instances 0`
+  (no warm instance is configured, so do not rely on one to avoid cold starts),
+  `--max-instances 5`, `--cpu 1`, `--memory 2Gi` (a 1 GiB instance OOM-killed
+  full-chain GEX on `/api/options/*/levels`; the comment above the flags in
+  `platform/deploy.sh` records the incident), `--timeout 300`, and
+  **`--cpu-throttling`**: CPU is NOT allocated between requests. Sources:
+  `--cpu-throttling` is line 355 of `platform/deploy.sh` on stocks `main`
+  (`1a6ff45e`), the manual operator path (the auto-deploy Cloud Build trigger swaps only the
+  image and leaves these settings on the service), and the live service read
+  on 2026-10-11 reports `run.googleapis.com/cpu-throttling: 'true'`, `cpu: '1'`,
+  `memory: 2Gi`, `timeoutSeconds: 300`, revision `maxScale: 5` and no
+  `minScale`. **Corrected 2026-10-11:** this bullet previously said
+  `--no-cpu-throttling` (PR #507, "FastAPI BackgroundTasks need full CPU after
+  the response is sent"). #507 did the opposite: it pinned `--cpu-throttling`
+  and `--min-instances 0` in `platform/deploy.sh` to stop always-allocated
+  billing on a service taking ~38 requests a day. `--no-cpu-throttling`
+  exists in stocks only on the `discord-interactions` service
+  (`gcp/deploy.sh:1260`, where BackgroundTasks finish the deferred reply).
+  There is no `--no-cpu-throttling` anywhere in `platform/deploy.sh`.
 - **Logging:** stdout → Cloud Logging; the failure-notifier sink does NOT cover the service (its filter is `resource.type=cloud_run_job`), so service errors don't auto-create GitHub issues. Pager-style monitoring is via Cloud Logging alert policies (not yet wired — open todo).
 
 ## Known limitations

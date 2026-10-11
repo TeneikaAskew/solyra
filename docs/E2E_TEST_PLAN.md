@@ -23,7 +23,7 @@
 
 | Layer | What it proves | Tooling | Where | Run command |
 |---|---|---|---|---|
-| **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `tests/*.spec.ts` | `npm run e2e` |
+| **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `tests/<page>/*.spec.ts` | `npm run e2e` |
 | **Frontend E2E (live)** | **NOT IMPLEMENTED.** Would prove the deployed app serves real data | Playwright (`cloud` project) | `*.cloud.spec.ts` — **none exist**, so `e2e:cloud` exits `No tests found` | `npm run e2e:cloud:auth` (interactive Firebase sign-in) then `npm run e2e:cloud` |
 | **Backend unit** | `lib/` math (indicators, strat, gamma, backtest), API contracts | pytest | `tests/test_*.py` | `make test` |
 | **Backend E2E / scripts** | Pipeline scripts, fetchers, signal monitor | pytest | stocks repo: `tests/test_e2e.py`, `tests/test_scripts_*.py` | `make test-e2e` · `make test-scripts` |
@@ -33,8 +33,9 @@
 
 ## 1. Frontend E2E (Playwright) — primary
 
-**Config:** `playwright.config.ts` — `testDir: ./tests`, 3 projects:
-- **`chromium`** (default): boots its **own** Vite on the dedicated E2E port (`:5199`, never your `:5173` dev server), all `/api/**` **mocked** per-spec → no backend needed, hermetic, fast.
+**Config:** `playwright.config.ts` — `testDir: ./tests`, 4 projects:
+- **`warmup`**: not run directly — a dependency of `chromium` only. Warms the 14 routes in `tests/routes.warmup.ts`'s `ROUTES` against the freshly-booted Vite so the specs' wall-clock budgets measure a warm server, not a cold transform. Two lazy routes are outside that list: `/welcome` deliberately (a redirect, no chunk of its own) and `/auth/action` (`AuthActionPage` is lazy in `src/App.tsx` and is not in `ROUTES`), so `tests/shared/auth-gate.spec.ts`'s `/auth/action` cases still pay for a cold transform.
+- **`chromium`** (default): boots its **own** Vite on the dedicated E2E port (`:5199`, never your `:5173` dev server), all `/api/**` a test asserts on **mocked** per-spec → no backend needed, fast. Not fully network-isolated: `src/index.css:1` loads Montserrat from `fonts.googleapis.com` for real, which `playwright.config.ts` handles with `ignoreHTTPSErrors: true` rather than mocking, and a few requests can escape interception during teardown (`docs/TEST_COVERAGE_AUDIT.md` §10.7 counted 25 on 2026-09-07, as accepted `ECONNREFUSED` noise against Vite's dead proxy, not a fixture gap).
 - **`iap-setup`** / **`cloud`**: run against the deployed FRONTEND (`solyra-stocks.lovable.app`, which now redirects to `stocks.insightscollective.org`), not a Cloud Run URL, and **not** behind IAP — the SPA is published separately since #957 and its API is gated per request by a Firebase ID token. `iap-setup` captures a real signed-in session interactively (including Firebase's IndexedDB persistence). `cloud` matches `*.cloud.spec.ts` and **none exist yet**, so it exits `No tests found` rather than running the hermetic specs against production, which would have forced `authMode: 'open'` and measured the mocks. Writing that suite is outstanding work. Both are skipped by the default command.
 
 **Mock strategy:** `tests/helpers/mocks.ts` `mockCommon(page)` stubs the cross-cutting endpoints (`/api/health`, `/api/live/status`, brief, watchlist); each spec adds its own `page.route('**/api/<endpoint>', …)` with realistic fixtures. **Fixtures must match the production response shape** (CLAUDE.md Rule 0.3) — e.g. the dashboard brief mock carries `daily_indicators.close`, the signals mock carries `analytics/summary`.
@@ -43,23 +44,28 @@
 
 | Spec | Route / surface | Asserts |
 |---|---|---|
-| `dashboard.spec.ts` | `/` Overview | "Overview" heading · pre-market brief · KPI tiles (prev/latest close, 2-day, RSI) · **Candles\|Area chart toggle** · perf budget |
+| `landing.spec.ts` | `/` | landing page sections render, signed-out, in every auth mode |
+| `dashboard.spec.ts` | `/dashboard` Overview | "Overview" heading · pre-market brief · KPI tiles (prev/latest close, 2-day, RSI) · **Candles\|Area chart toggle** · perf budget |
 | `signals.spec.ts` | `/signals` | **90-day Performance P&L card** (win rate / profit factor) · explorer rows · CALL/PUT · empty state |
 | `insights.spec.ts` (+ Agents) | `/insights` | Briefing dossier · **Agents tab** (run cost/latency · per-role pipeline · model-routing roster · recent runs) |
 | `journal.spec.ts` | `/journal` | **KPI tiles + equity curve** · add/delete trade · CSV export |
 | `catalysts.spec.ts` | `/catalysts` | feed grouped by date · impact/type filter chips · sentiment |
 | `options-flow.spec.ts` · `gamma-levels.spec.ts` | `/options` | Gamma Map grid · GEX/VEX · King/Gate fallback · live-AV badge |
-| `live-market.spec.ts` · `charts-cards.spec.ts` · `phase1-charts.spec.ts` | `/live` `/charts` | hero tiles · candlestick canvas · reference levels |
+| `live-market.spec.ts` · `charts-cards.spec.ts` | `/live` `/charts` | hero tiles · candlestick canvas · reference levels |
 | `playbook.spec.ts` · `reports.spec.ts` · `help.spec.ts` · `admin.spec.ts` · `admin-auth.spec.ts` | `/playbook` `/reports` `/help` `/admin` | cards · glossary · admin auth gate |
+| `settings.spec.ts` | `/settings` | five tabs, lands on Profile · appearance write-through (`PUT /api/me/preferences`) · profile draft + Save (`PUT /api/me/profile`) · sync and save failures rendered, not swallowed |
 | `navigation.spec.ts` | every route | each route loads without a fatal error |
-| `api-smoke.spec.ts` | API contracts | health/freshness, market dates, signals, options, backtest, insights as-of-replay rejects bad cutoffs |
+
+Each spec lives in its page's folder under `tests/` (`tests/dashboard/dashboard.spec.ts`, `tests/shared/gamma-levels.spec.ts`, …); the table names the file, not the path.
+
+There is **no Playwright spec for API contracts in this repo.** An earlier version of this table listed `api-smoke.spec.ts` and `phase1-charts.spec.ts`; the frontend-only split deleted both (`49f9710`; `docs/TEST_COVERAGE_AUDIT.md` records where each one's coverage went) and neither file exists anywhere on `main`. A related but different check, of mock payloads and request shapes against the vendored OpenAPI snapshot, is `src/mocks/contract.test.ts`, a Vitest test (CLAUDE.md Rule 6).
 
 ### Run
 ```bash
 # From this repo's root. Playwright always boots its own Vite on :5199 —
 # it never adopts a running dev server (see playwright.config.ts).
 npm run e2e
-npx playwright test --project=chromium tests/journal.spec.ts   # a single spec
+npx playwright test --project=chromium tests/journal/journal.spec.ts   # a single spec
 ```
 
 ---
@@ -112,9 +118,27 @@ Known prod caveats validated there: AV-on-request endpoints require the
 
 ---
 
-## 5. CI gating (recommended)
-- **PR to `main`**: `npm run lint` + `npm run build` + `npm run e2e` (chromium, mocked) + `make test` must pass.
-- **Pre-deploy**: add the `cloud` Playwright project against a staging revision before promoting traffic.
+## 5. CI gating
+
+Two independent workflows run on every PR to `main` and every push to `main`;
+neither waits for the other:
+
+- **`.github/workflows/ci.yml` → `checks` (types · unit · build):** `npx tsc -b`
+  (type-checks the E2E fixtures against the real API contracts), then
+  `npm test`, then `npm run build`, then `npm run contract:check` (the vendored
+  OpenAPI snapshot against stocks `main` — CLAUDE.md Rule 6).
+- **`.github/workflows/e2e.yml` → `e2e` (chromium, mocked):** `npm run e2e`. It
+  is its own workflow so that a change touching only `docs/` or Markdown files
+  skips it (`paths-ignore: ['docs/**', '**/*.md']`).
+
+Two deliberate deviations from what this section used to prescribe, both
+explained in `ci.yml`'s header comment: `npm run lint` is not gated (the header
+records it exiting 1 on `main` with 32 errors when it was written, 27 of them on
+a pattern this codebase uses on purpose), and `make test` is gone, since it
+exercised the Python backend, which no longer lives in this repo.
+
+- **Pre-deploy:** the `cloud` Playwright project is the intended check against
+  the deployed frontend, but it has no specs (§1), so no such gate exists yet.
 
 ---
 
