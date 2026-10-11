@@ -21,6 +21,10 @@ The only other shapes are `docs/<slug>` (documentation only), `chore/<slug>` (de
 lockfiles and the gate's own files), `spike/<slug>` (local commits, never a PR) and `bot/superpowers-*`
 (the vendored skills), as Phase 0 of the product-delivery skill sets out.
 
+## Insights research architecture
+
+- Keep stocks as the source of truth for financial evidence; Lovable Cloud only owns research-session persistence and AI orchestration, preventing duplicated market logic.
+
 ## Review guidelines
 
 For every reviewer of a pull request in this repository: Codex, which reads this section; Claude,

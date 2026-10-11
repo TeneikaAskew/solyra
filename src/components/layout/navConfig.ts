@@ -8,6 +8,7 @@ import {
   Search,
   NotebookPen,
   BrainCircuit,
+  FlaskConical,
   Zap,
   Settings,
   SlidersHorizontal,
@@ -68,6 +69,7 @@ export const NAV_GROUPS: NavGroup[] = [
     group: 'INTELLIGENCE',
     items: [
       { path: '/insights', label: 'AI Insights', icon: BrainCircuit },
+      { path: '/insights-lovable', label: 'Insights Lab', icon: FlaskConical, badge: { text: 'LAB' } },
       { path: '/catalysts', label: 'Catalysts', icon: Zap },
     ],
   },
