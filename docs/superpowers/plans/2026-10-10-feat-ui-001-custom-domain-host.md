@@ -20,9 +20,10 @@ Spec: § Design, `apiTargets.ts` and `authedFetch.ts`. Advances done_when[0], [1
 - [ ] Add `STATIC_FRONTEND_HOSTS = ['stocks.insightscollective.org']`, matched exactly, and
       correct `resolveApiBase`'s comment
 - [ ] Run again (expect PASS), then `npx tsc -b` and `npx vitest run src/lib src/components`
+- [ ] `docs/UI-SCREENS.md` SHARED-03: name the exact host beside the two suffixes (done_when[2])
 
 ## Task 2: close
-Spec: done_when[2] and [3].
+Spec: done_when[3] and [4].
 - [ ] Run the new tests against `main` and record the failures in the PR body
 - [ ] `02-FEATURE-CATALOG.md` FEAT-UI-001 row: Status, Last reviewed, this PR in the PRs column
 - [ ] `node scripts/docs-audit.mjs` on the branch and on `origin/main`;
