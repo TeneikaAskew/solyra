@@ -46,7 +46,7 @@ solyra/
 │  │  ├─ AuthActionPage.tsx     # /auth/action — where the Firebase auth emails land (outside the shell)
 │  │  ├─ DashboardPage.tsx      # /dashboard— briefing-first Overview (brief, KPIs, cards)
 │  │  ├─ LiveMarketPage.tsx     # /live     — real-time quote + indicators
-│  │  ├─ ChartsPage.tsx         # /charts   — candlestick / area chart + strategy conditions
+│  │  ├─ ChartsPage.tsx         # /charts   — candlestick chart + strategy conditions
 │  │  ├─ OptionsFlowPage.tsx    # /options  — Greeks, GEX, options table
 │  │  ├─ PlaybookPage.tsx       # /playbook — pre-market playbook evaluator
 │  │  ├─ ReportsPage.tsx        # /reports  — per-ticker research reports by phase
@@ -59,8 +59,9 @@ solyra/
 │  │  └─ SettingsPage.tsx       # /settings — user preferences
 │  ├─ components/
 │  │  ├─ layout/                # among them AppShell, TopTabs (default nav), Sidebar + Header (sidebar layout), CommandPalette; navConfig.ts has 14 nav items (Admin only for admins, one is the /#faq anchor)
-│  │  ├─ shared/                # DataTable, MetricCard, Modal, Tabs, DateSelector,
-│  │  │                         # LoadingSpinner, RouteErrorBoundary
+│  │  ├─ shared/                # among them MetricCard, Modal, LoadingSpinner, RouteErrorBoundary,
+│  │  │                         # TickerCombobox, ReplayControl, MostActiveBar (no shared DataTable:
+│  │  │                         # SignalsPage and BacktesterSection use TanStack Table directly)
 │  │  ├─ dashboard/             # MovementRead, expectedMove
 │  │  ├─ insights/              # ReportCards, WatchlistPanel
 │  │  ├─ charts/                # CandlestickChart, PriceAreaChart,
@@ -110,7 +111,7 @@ The 16 routes (15 pages plus the `/welcome` redirect). *Primary API surface* lis
 | `/auth/action` | `AuthActionPage`  | Where the Firebase auth emails land — password reset, email confirmation, recovery | none of its own (Firebase SDK; the `ConfigGate` around it loads `/api/config/firebase`) |
 | `/dashboard`| `DashboardPage`      | Briefing-first Overview — pre-market brief, hero ticker + top setup, live signals, today's catalysts, sector rotation, AI take, news feed | `/api/dashboard/brief/{ticker}`, `/api/playbook/{ticker}`, `/api/signals/{ticker}`, `/api/catalysts/events`, `/api/market/sectors`, `/api/market/reference/{ticker}/{date}`, `/api/market/data/{ticker}/{date}`, `/api/insights/report/{ticker}`, `/api/movement-statement`, `/api/live/quote/{ticker}`, `/api/live/status`, `/api/config/market-hours` |
 | `/live`     | `LiveMarketPage`     | Real-time quote, intraday indicators | `/api/live/quote/{ticker}`, `/api/live/indicators` (POST), `/api/live/history/{ticker}`, `/api/live/avg-volume/{ticker}`, `/api/live/status`, `/api/market/data/{ticker}/{date}` (review mode), `/api/market/reference/{ticker}/{date}` |
-| `/charts`   | `ChartsPage`         | Candlestick + area + strategy-conditions card, gamma levels, signal overlay, similar setups, trade marking, backtester | `/api/market/data/{ticker}/{date}`, `/api/market/dates/{ticker}`, `/api/market/reference/{ticker}/{date}`, `/api/options/{ticker}/{date}/levels`, `/api/live/indicators` (POST), `/api/live/signal-series` (POST), `/api/signals/{ticker}/similar`, `/api/journal/trades` (GET/POST/PATCH), `/api/backtest/replay-trades` (POST), `/api/backtest/{all,results,equity}/{ticker}`, `/api/config/market-hours` |
+| `/charts`   | `ChartsPage`         | Candlestick chart + strategy-conditions card, gamma levels, signal overlay, similar setups, trade marking, backtester | `/api/market/data/{ticker}/{date}`, `/api/market/dates/{ticker}`, `/api/market/reference/{ticker}/{date}`, `/api/options/{ticker}/{date}/levels`, `/api/live/indicators` (POST), `/api/live/signal-series` (POST), `/api/signals/{ticker}/similar`, `/api/journal/trades/{ticker}` (GET), `/api/journal/trades` (POST), `/api/journal/trades/{id}` (PATCH), `/api/backtest/replay-trades` (POST), `/api/backtest/{all,results,equity}/{ticker}`, `/api/config/market-hours` |
 | `/options`  | `OptionsFlowPage`    | Greeks, GEX, options chain | `/api/options/greeks` (POST), `/api/options/dates/{ticker}`, `/api/options/{ticker}/{date}` (404 falls back to `/api/options/live/{ticker}/{date}`), `/api/options/{ticker}/{date}/levels`, `/api/options/{ticker}/grid` and `/{date}/grid` |
 | `/playbook` | `PlaybookPage`       | Pre-market playbook trigger/target/stop evaluator | `/api/playbook/{ticker}`, `/api/playbook/evaluate` (POST), `/api/live/quote/{ticker}`, `/api/live/indicators` (POST), `/api/live/history/{ticker}`, `/api/live/avg-volume/{ticker}`, `/api/live/status`, `/api/market/reference/{ticker}/{date}`. Client-side `playbookEvaluator.ts` only builds the snapshot; the server evaluates the conditions |
 | `/reports`  | `ReportsPage`        | Per-ticker research reports by phase (markdown) | `/api/reports/list/{ticker}`, `/api/reports/{ticker}/{phase}` |
@@ -130,7 +131,7 @@ Both navs (`TopTabs` and `Sidebar`) filter `/admin` out for non-admin users (ser
 
 Three concentric loops:
 
-1. **Server state — TanStack Query.** The 23 data-fetching hook modules under `src/hooks/use*.ts` read through `useQuery`, keyed by `[resource, ...params]`; that includes the `POST` endpoints that only compute (`useLiveIndicators`, `useSignalSeries`, `useOptionsGreeks`, `usePlaybookEvaluation`, `usePlaybookBatch`), whose keys are built from the request they send (`useSignalSeries` adds the ticker and date). Their writes go through `useMutation` with no `mutationKey`: nothing in `src/` sets one. (`useDebouncedValue`, `useReplaySession` and `useTradeMarking` are plain React state hooks with no request.) The `QueryClient` in `App.tsx` sets query defaults only, `staleTime: 5 min` and `retry: 1` — most market data is "fresh enough for 5 minutes," and a single retry catches transient Cloud Run cold-starts without thrashing on real outages. It configures no mutation defaults.
+1. **Server state — TanStack Query.** The 23 data-fetching hook modules under `src/hooks/use*.ts` read through `useQuery`, keyed by `[resource, ...params]`; that includes the `POST` endpoints that only compute (`useLiveIndicators`, `useSignalSeries`, `useOptionsGreeks`, `usePlaybookEvaluation`, `usePlaybookBatch`), whose keys are a digest of the request they send rather than the whole body (for example bar count and last-bar time; contract count, spot and strike range; a snapshot signature plus the conditions), with `useSignalSeries` adding the ticker and date. Their writes go through `useMutation` with no `mutationKey`: nothing in `src/` sets one. (`useDebouncedValue`, `useReplaySession` and `useTradeMarking` are plain React state hooks with no request.) The `QueryClient` in `App.tsx` sets query defaults only, `staleTime: 5 min` and `retry: 1` — most market data is "fresh enough for 5 minutes," and a single retry catches transient Cloud Run cold-starts without thrashing on real outages. It configures no mutation defaults.
 2. **Client state — Zustand.** Four stores in `src/stores/` hold client state: the active ticker plus quick picks and recent tickers (`tickerStore`), dark/light (`themeStore`), nav pattern, density, accent, sidebar collapsed, chart timeframe and sound (`settingsStore`), and the review (replay) date and time (`reviewDateStore`); `usePreferences.ts` keeps a fifth, module-private store for its sync status. Server responses stay in the query cache, with one exception: `usePreferencesSync` applies the account's saved theme, nav pattern, density and accent to `themeStore` and `settingsStore`.
 3. **Local computation — helpers in `src/lib/`:** market-session clock (`marketSession.ts`), ET date helpers (`time.ts`), display formatting, and the playbook snapshot builder (`playbookEvaluator.ts`). `src/lib/` is not only pure helpers: it also holds browser-runtime modules such as `authedFetch.ts`, which patches `window.fetch`, `firebase.ts` and `runtimeConfig.ts`. The indicator and playbook math is not here: it lives in the backend `lib/*.py` and is reached through `POST /api/live/indicators` and `POST /api/playbook/evaluate` (`indicators.ts` holds types only). **Tested with Vitest:** 14 of the 22 modules have a `*.test.ts` alongside.
 
@@ -156,7 +157,7 @@ Every `use*` function exported by a hook module that makes a request has its own
 | `useReferenceLevels`       | `/api/market/reference/{ticker}/{date}`                    | Reference OHLC + week stats for the date (same module) |
 | `useGammaLevels`           | `/api/options/{ticker}/{date}/levels`                      | King/Gate/Spot/Flip                |
 | `useOptionsGreeks`         | `/api/options/greeks` (POST)                               | BSM delta/gamma/theta/vega         |
-| `usePlaybookEvaluation`    | `/api/playbook/evaluate` (POST)                            | trigger/target/stop                |
+| `usePlaybookEvaluation`    | `/api/playbook/evaluate` (POST)                            | trigger/target/stop for a flat condition list (defined, no caller in `src/` yet: PlaybookPage calls `usePlaybookBatch`) |
 | `usePlaybookBatch`         | `/api/playbook/evaluate` (POST)                            | Per-card batches (same module; this is the one PlaybookPage calls) |
 | `useInsightReport`         | `/api/insights/report/{ticker}` (`?as_of=`)                | Latest AI insight report           |
 | `useInsightReportById`     | `/api/insights/reports/{reportId}`                         | A past report (same module)        |
@@ -187,7 +188,7 @@ Every `use*` function exported by a hook module that makes a request has its own
 | `useCreateChartTrade`      | `/api/journal/trades` (POST)                               | Records a trade marked on the chart (same module) |
 | `useCloseChartTrade`       | `/api/journal/trades/{id}` (PATCH)                         | Closes a trade (same module) |
 | `useDeleteChartTrade`      | `/api/journal/trades/{id}` (DELETE, `?ticker=`)            | Deletes a trade (same module) |
-| `useSeedTrades`            | `/api/journal/seed/{ticker}` (`?date=`)                    | Seed trades for a date (same module) |
+| `useSeedTrades`            | `/api/journal/seed/{ticker}` (`?date=`)                    | Seed trades for a date (same module; defined, no caller in `src/` yet) |
 | `useReplayTrades`          | `/api/backtest/replay-trades` (POST)                       | Scores trades by replay; writes nothing (same module) |
 | `useMineMyStyle`           | `/api/style/mine-and-validate` (POST)                      | Mines and validates the trader's style (same module) |
 | `useImportPreview`         | `/api/journal/import/preview` (POST, multipart)            | Parses an import file; writes nothing (same module) |
@@ -201,7 +202,7 @@ Every `use*` function exported by a hook module that makes a request has its own
 | `useReviewQuote`           | `/api/market/data/{ticker}/{date}` (`?timeframe=1`)        | Review-mode quote rebuilt from that day's 1-minute bars |
 | `useUser` (above)          | `/api/me`                                                  |                                    |
 
-Pages read `useTickerStore().activeTicker` and pass it to the ticker-scoped hooks, which key the query on it (no hook reads the store itself), so changing `activeTicker` (from a page's `TickerCombobox`, the ⌘K command palette, or a ticker click on `/catalysts` or `/insights`) refetches every ticker-scoped query in one move. The queries not keyed on the ticker: `useUser`, `usePreferencesSync` and `useProfile` (keyed `['me', …]`); `useLiveStatus`, `useIndicatorConfig`, `useMarketHours` and `useWatchlist`; `useTickerSearch` and `useTickerCoverage` (keyed on the search text and the result symbols); `useInsightReportById` and `useRunStatus` (a report or run id); the admin queries; and `useLiveIndicators`, `useOptionsGreeks`, `usePlaybookEvaluation` and `usePlaybookBatch`, keyed on the payload they `POST`. Mutations carry no key at all.
+Pages read `useTickerStore().activeTicker` and pass it to the ticker-scoped hooks, which key the query on it (no hook reads the store itself), so changing `activeTicker` (from a page's `TickerCombobox`, the ⌘K command palette, or a ticker click on `/catalysts` or `/insights`) refetches every ticker-scoped query in one move. Among the `src/hooks` hooks, the queries not keyed on the ticker: `useUser`, `usePreferencesSync` and `useProfile` (keyed `['me', …]`); `useLiveStatus`, `useIndicatorConfig`, `useMarketHours` and `useWatchlist`; `useTickerSearch` and `useTickerCoverage` (keyed on the search text and the result symbols); `useInsightReportById` and `useRunStatus` (a report or run id); the admin queries; and `useLiveIndicators`, `useOptionsGreeks`, `usePlaybookEvaluation` and `usePlaybookBatch`, keyed on a digest of what they `POST` (see above). Page-local queries are not ticker-keyed either: the dashboard's catalysts (`['catalysts-overview', from]`) and sector rotation (`['market-sectors']`), `CatalystsPage`'s events and types, `MostActiveBar` (`['most-active']`) and `ReplayControl` (`['market-hours']`). Mutations carry no key at all.
 
 ## Refresh semantics — AI insights write path
 
@@ -346,8 +347,9 @@ served** — that is Lovable, at its custom domain `https://stocks.insightscolle
   image by digest with one merged env var, `--update-env-vars=MOVEMENT_STATEMENT_ENABLED=true`,
   and leaves these settings on the service), and the live service read
   on 2026-10-11 reports `run.googleapis.com/cpu-throttling: 'true'`, `cpu: '1'`,
-  `memory: 2Gi`, `timeoutSeconds: 300`, revision `maxScale: 5` and no
-  `minScale`. **Corrected 2026-10-11:** this bullet previously said
+  `memory: 2Gi`, `timeoutSeconds: 300`, revision `maxScale: 5` (the service
+  object also carries a service-level `run.googleapis.com/maxScale: '20'`
+  annotation) and no `minScale`. **Corrected 2026-10-11:** this bullet previously said
   `--no-cpu-throttling` (PR #507, "FastAPI BackgroundTasks need full CPU after
   the response is sent"). #507 did the opposite: it pinned `--cpu-throttling`
   and `--min-instances 0` in `platform/deploy.sh` to stop always-allocated
@@ -367,7 +369,7 @@ served** — that is Lovable, at its custom domain `https://stocks.insightscolle
 
 ## Open work
 
-1. **Component test bed.** Set up `@testing-library/react` and write tests for at least `DataTable`, `MetricCard`, `Sidebar` route gating, `RouteErrorBoundary`.
+1. **Component test bed.** Set up `@testing-library/react` and write tests for at least `MetricCard`, the `/admin` gating in `TopTabs` and `Sidebar`, and `RouteErrorBoundary`.
 2. **Coverage gate.** Wire Vitest `--coverage` into the staging-deploy workflow as an advisory check.
 3. **Cloud Logging alert policy** for the `solyra-api-staging` service (5xx rate, p95 latency); this named `solyra-api-prod` until that service was retired on 2026-10-10.
 4. **Component documentation surface** (Storybook or Ladle) — the Tailwind 4 token system is undocumented outside of `chartTheme.ts`.
