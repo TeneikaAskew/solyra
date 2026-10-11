@@ -3,7 +3,7 @@ feat_id: FEAT-UI-001
 spec: docs/superpowers/specs/2026-10-10-feat-ui-001-custom-domain-host.md
 branch: feature/feat-ui-001-custom-domain-host
 pr: 242
-status: ready
+status: done
 ---
 
 # Serve the site from stocks.insightscollective.org: implementation plan
