@@ -23,8 +23,9 @@ options/gamma analysis, signals, the trade journal, AI insights, and catalysts.
 
 **This repo holds the frontend only.** The FastAPI backend, the research
 pipeline (`lib/`), and the GCP jobs live in the **stocks** repo
-(`TeneikaAskew/stocks`) and deploy together as the `solyra-api-prod` Cloud Run
-service. Solyra's dev server proxies `/api/*` to that backend, so the browser
+(`TeneikaAskew/stocks`); the API deploys as `solyra-api-staging`, the only API
+Cloud Run service since `solyra-api-prod` was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
+Solyra's dev server proxies `/api/*` to that backend, so the browser
 sees same-origin requests and none of the ~73 bare `fetch('/api/...')` call
 sites need to know where the API actually is.
 
@@ -33,7 +34,7 @@ sites need to know where the API actually is.
 | Stack | React 19, Vite 7, TypeScript 5.9, Tailwind 4, HeroUI 3, TanStack Query/Table, Recharts, d3, lightweight-charts, Zustand, Firebase Auth |
 | Tests | Vitest (unit, colocated in `src/`), Playwright (E2E, in `tests/`) |
 | Editor sync | [Lovable](https://lovable.dev) — commits on the connected branch sync into the editor |
-| Backend | stocks repo → `solyra-api-prod` (prod) / `solyra-api-staging` (Cloud Run) |
+| Backend | stocks repo → `solyra-api-staging` (Cloud Run), the only API service since `solyra-api-prod` was retired on 2026-10-10 |
 
 ---
 
@@ -137,6 +138,35 @@ landed in a different PR, say which one.
 built on a misread finding is worse than no fix. For each finding: confirm it
 against the code, write the failing test first, then fix, then show the same
 test passing.
+
+#### Reviewing a pull request
+
+A reviewer of a pull request here, Claude included, follows
+`AGENTS.md`'s `## Review guidelines`: its first review is the complete one.
+Claude Code loads this file and not `AGENTS.md`, so this is where a Claude
+reviewer is sent to them.
+
+#### A finding raised after a reviewer's first review
+
+A reviewer is one account, split by review type where the account runs
+separately triggered types (Codex's code review and its security review are
+two), and its first review is the earliest review it completes on the pull
+request, including one that posts no findings (REQ-GOV-003).
+
+A thread holding a finding that a reviewer posted after its own first review
+is not resolved until a reply on it classifies each location, taking the
+first class that applies: uncounted (not a defect, a defect the pull request
+neither introduces nor makes worse, or one that first review raised there),
+missed (the pull request had introduced or worsened it by the commit that
+first review covered, named by SHA), or new (a later commit introduced or
+worsened it, named by SHA). The missed count per reviewer and pull request is
+the lower bound REQ-GOV-003 keeps on what a first review misses.
+
+A first review that posts no findings leaves no review object, so the commit
+it covered is the one Codex's review-summary comment shows for that review
+type when that row first reads Completed, and the author records that SHA in
+a PR comment then, since the next run replaces the row:
+`First Codex code review: Completed on <sha>, no findings.`
 
 ### 3. Commit Guidelines
 
@@ -395,6 +425,15 @@ stocks.
    fix, re-run. Document what each iteration found.
 4. **Never claim done without evidence.** Run the command and read the output
    before saying it passes.
+5. **Prove a visible change in the browser.** A change a user can see in the
+   site is proven with a Playwright run of the hermetic suite in `tests/` that
+   exercises it, with screenshots of the state before and after the change,
+   which the test saves with `page.screenshot` (see `AGENTS.md`,
+   `## Review guidelines`). When it depends on a stocks API change, it also
+   needs a `*.cloud.spec.ts` written for that change that the owner runs with
+   `npm run e2e:cloud` against the deployed site once staging has deployed it
+   and posts on the PR as a close-out step. The Testing table above says no
+   cloud spec exists yet: this is what the first one is for.
 
 ---
 

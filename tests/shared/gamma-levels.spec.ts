@@ -11,10 +11,10 @@
  * The "Gamma Levels: API contract" describe that used to head this file made
  * live requests to a FastAPI backend on :8000. It asserted the GammaSummary /
  * greeks response shapes -- i.e. it tested the BACKEND, which no longer lives
- * in this repo (it moved to stocks, deployed as the solyra-api-prod Cloud Run
- * service). Those contract tests belong beside the code they exercise; what
- * stays here is the frontend's rendering of that contract, mocked via
- * mockOptionsApi so it is deterministic and needs no backend.
+ * in this repo (it moved to stocks, deployed as solyra-api-staging, its only
+ * API Cloud Run service). Those contract tests belong beside the code they
+ * exercise; what stays here is the frontend's rendering of that contract,
+ * mocked via mockOptionsApi so it is deterministic and needs no backend.
  *
  * Requires: Vite dev server on :5173.
  */
