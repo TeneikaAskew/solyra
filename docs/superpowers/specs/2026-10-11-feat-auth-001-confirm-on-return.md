@@ -14,7 +14,7 @@ done_when:
   - "The first e2e test saves a screenshot with page.screenshot before and after the focus event into its output directory under test-results/, and a PR comment describes each"
   - "Each new test is shown failing against main when the PR opens, and the solyra CI checks and e2e jobs are green on the PR head"
   - "02-FEATURE-CATALOG FEAT-AUTH-001 row shows a Status, this PR's date and number"
-status: approved
+status: superseded
 supersedes: null
 ---
 
