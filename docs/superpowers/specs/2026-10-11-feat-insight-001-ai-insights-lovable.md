@@ -15,7 +15,7 @@ done_when:
   - "Cloud function tests prove unavailable, empty, invalid-response, stale, conflicting, and dependency-failed source states remain distinct through persistence and rendering"
   - "The real Lovable AI Gateway stream completes with safe server-held credentials and its final structured decision brief passes same-run citation validation"
   - "02-FEATURE-CATALOG FEAT-INSIGHT-001 row shows Status, Last reviewed, /ai-insights-lovable, and this PR"
-status: approved
+status: superseded
 supersedes: null
 ---
 
