@@ -167,9 +167,7 @@ export default function AiInsightsLovablePage() {
               </div>
             )}
 
-            <div className="sticky top-0 z-10">
-              <DecisionBar ticker={activeTicker} report={report} asOf={envelope?.as_of ?? report.as_of ?? null} historical={!!historicalId} onOpenAgents={() => setTab('agents')} />
-            </div>
+            <DecisionBar ticker={activeTicker} report={report} asOf={envelope?.as_of ?? report.as_of ?? null} historical={!!historicalId} onOpenAgents={() => setTab('agents')} />
 
             <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
               <div className="min-w-0 space-y-6">
