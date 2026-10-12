@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { M } from '../helpers/mocks';
-import { MOCK_MARKET_DATA } from '@/mocks/charts';
+import { MOCK_MARKET_DATA, MOCK_MARKET_DATES } from '@/mocks/charts';
 import { MOCK_INSIGHT_HISTORY, MOCK_INSIGHT_REPORT_DEGRADED, mockInsightsApi } from '../helpers/fixtures/insights';
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/market/dates/IWM', (r) => r.fulfill(M.ok(MOCK_MARKET_DATES)));
   await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
 });
 
