@@ -88,8 +88,12 @@ export function ResearchCandleChart({
   const [showVolume, setShowVolume] = useState(true);
   const [rthOnly, setRthOnly] = useState(false);
   const isReplay = mode === 'replay' && Boolean(replayCutoff);
-  const date = isReplay && replayCutoff ? replayCutoff.slice(0, 10) : localDate(new Date());
+  const targetCompact = isReplay && replayCutoff
+    ? replayCutoff.slice(0, 10).replace(/-/g, '')
+    : localDateCompact(new Date());
   const endTime = isReplay && replayCutoff ? replayCutoff.slice(11, 16) : null;
+  const datesQ = useAvailableDates(ticker);
+  const date = resolveChartDate(datesQ.data?.dates, targetCompact);
   const market = useMarketData(ticker, date, timeframe, endTime);
   const quote = useLiveQuote(ticker);
   const bars = useMemo(() => toChartBars(market.data), [market.data]);
