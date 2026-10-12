@@ -101,3 +101,16 @@ describe('unifiedHistory', () => {
     expect(unifiedHistory(reports, sessions, 'research').map((i) => i.id)).toEqual(['s1']);
   });
 });
+
+import { latestSignal } from './decision';
+describe('latestSignal', () => {
+  it('picks the newest complete signal', () => {
+    expect(latestSignal([
+      { time: '2026-04-24 17:00:00', direction: 'PUT', score: 3, rsi: 38 },
+      { time: '2026-04-24 18:00:00', direction: 'CALL', score: 4.5, rsi: null },
+    ])).toEqual({ direction: 'PUT', rsi: 38, score: 3 });
+  });
+  it('returns null when no signal is usable', () => {
+    expect(latestSignal([])).toBeNull();
+  });
+});
