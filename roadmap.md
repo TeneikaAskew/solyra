@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Order timeframe levels Day to Year and remove the floating decision summary; verify with signed-in data.
+- [x] Order timeframe levels Day to Year and remove the floating decision summary; verified with signed-in data and 16 passing unit tests.
 
 - [x] Correct key-level grouping and verify four side-by-side desktop columns with signed-in data.
 
