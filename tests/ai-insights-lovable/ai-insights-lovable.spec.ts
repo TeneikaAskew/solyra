@@ -19,6 +19,11 @@ test('leads with the decision bar, chart and context rail', async ({ page }, tes
   await expect(page.getByRole('region', { name: 'Catalysts' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('desktop-report.png') });
 
+  const persona = page.getByRole('region', { name: 'Plan by trader style' });
+  await persona.scrollIntoViewIfNeeded();
+  await expect(persona.getByText('Entry', { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('persona-plan.png') });
+
   await page.getByRole('tab', { name: /History/ }).click();
   await expect(page.getByRole('tabpanel', { name: 'History' }).getByText('Report run').first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('history-tab.png') });
