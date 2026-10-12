@@ -18,9 +18,22 @@ test('leads with the decision bar, chart and context rail', async ({ page }, tes
   await expect(page.getByRole('region', { name: 'Catalysts' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('desktop-report.png') });
 
-  await page.getByRole('button', { name: /History/ }).click();
-  await expect(page.getByRole('dialog', { name: /report history/ })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('history-sheet.png') });
+  await page.getByRole('tab', { name: /History/ }).click();
+  await expect(page.getByRole('tabpanel', { name: 'History' }).getByText('Report run').first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('history-tab.png') });
+});
+
+test('exposes all five tabs with one ticker selector', async ({ page }, testInfo) => {
+  await mockInsightsApi(page, { history: MOCK_INSIGHT_HISTORY });
+  await page.goto('/ai-insights-lovable');
+  for (const name of ['Briefing', 'Agents', 'History', 'Watchlist', 'Chat']) {
+    await page.getByRole('tab', { name: new RegExp(name) }).click();
+    await expect(page.getByRole('tab', { name: new RegExp(name) })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel', { name }).or(page.getByRole('region', { name: 'Decision' }))).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`tab-${name.toLowerCase()}.png`) });
+  }
+  await expect(page.getByPlaceholder(/Ask about IWM/)).toBeVisible();
+  expect(await page.getByRole('textbox', { name: 'Research ticker' }).count()).toBe(0);
 });
 
 test('shows failed sections in the data health chip', async ({ page }, testInfo) => {
