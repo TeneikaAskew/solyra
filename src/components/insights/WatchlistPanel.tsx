@@ -1,3 +1,4 @@
+import { useTickerStore } from '@/stores/tickerStore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
@@ -66,6 +67,7 @@ export function WatchlistPanel({
   refreshing,
   refreshingTicker,
 }: Props) {
+  const activeTicker = useTickerStore((st) => st.activeTicker);
   const [activeFilters, setActiveFilters] = useState<Set<CatalystType>>(
     new Set(),
   );
@@ -173,6 +175,14 @@ export function WatchlistPanel({
             catalyst data tables are empty. Once Phase 2 fetchers have
             run a full day, this list will populate.
           </div>
+          {onAskResearch && (
+            <button
+              onClick={() => onAskResearch(activeTicker)}
+              className="mt-2 rounded border border-[var(--color-border)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-primary)] hover:border-[var(--color-accent-blue)]"
+            >
+              Ask research about {activeTicker} instead
+            </button>
+          )}
         </div>
       ) : (
         <>
