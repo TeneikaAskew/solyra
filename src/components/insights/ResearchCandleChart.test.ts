@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toChartBars } from './ResearchCandleChart';
+import { resolveChartDate, toChartBars } from './ResearchCandleChart';
 
 const bar = { time: 1728600000, open: 100, high: 101, low: 99, close: 100.5 };
 const vol = { time: 1728600000, value: 12345, color: '#22c55e' };
