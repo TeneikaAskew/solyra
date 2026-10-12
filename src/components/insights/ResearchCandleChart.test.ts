@@ -28,3 +28,33 @@ describe('toChartBars', () => {
     expect(result?.volume).toEqual([vol]);
   });
 });
+
+describe('resolveChartDate', () => {
+  const dates = ['20261009', '20261008', '20261007']; // sorted DESC, compact
+
+  it('returns an empty string while the dates list is still loading', () => {
+    expect(resolveChartDate(undefined, '20261011')).toBe('');
+  });
+
+  it('keeps the target when it is a real trading day', () => {
+    expect(resolveChartDate(dates, '20261009')).toBe('20261009');
+  });
+
+  it('snaps a weekend target back to the most recent trading day', () => {
+    // 2026-10-11 is a Sunday; the chart must ask for Friday's session.
+    expect(resolveChartDate(dates, '20261011')).toBe('20261009');
+  });
+
+  it('snaps a replay cutoff to the nearest earlier trading day', () => {
+    expect(resolveChartDate(dates, '20261008')).toBe('20261008');
+    expect(resolveChartDate(dates, '20261010')).toBe('20261009');
+  });
+
+  it('falls back to the oldest available date when the target predates the list', () => {
+    expect(resolveChartDate(dates, '20261001')).toBe('20261007');
+  });
+
+  it('uses the target when the dates list is empty so the error surfaces', () => {
+    expect(resolveChartDate([], '20261011')).toBe('20261011');
+  });
+});
