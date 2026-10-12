@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import type { InsightReport } from '@/types/insights';
-import { dataHealth, planSummary, sortCatalysts, sortRisks, withDirectionChange, unifiedHistory } from './decision';
+import { dataHealth, groupKeyLevels, planSummary, sortCatalysts, sortRisks, withDirectionChange, unifiedHistory } from './decision';
 
 const base = {
   entry_zone: { low: 100, high: 102 }, stop: 98, targets: [106, 110],
   failed_sections: [], failed_section_reasons: {},
 } as unknown as InsightReport;
+
+describe('groupKeyLevels', () => {
+  it('puts display-label previous highs and lows into the first two groups', () => {
+    const groups = groupKeyLevels({ 'Prev Quarter High': 305.18, 'Prev Month Low': 277.41 });
+    expect(groups[0].rows).toEqual([['Prev Quarter High', 305.18]]);
+    expect(groups[1].rows).toEqual([['Prev Month Low', 277.41]]);
+    expect(groups[3].rows).toEqual([]);
+  });
+  it('groups averages and effective levels separately from gamma', () => {
+    const groups = groupKeyLevels({ 'EMA 20': 283.05, 'Effective PDH': 277.83, 'Gamma Balance': 274.4 });
+    expect(groups[2].rows).toEqual([['EMA 20', 283.05], ['Effective PDH', 277.83]]);
+    expect(groups[3].rows).toEqual([['Gamma Balance', 274.4]]);
+  });
+  it('still accepts snake_case keys without changing their values', () => {
+    expect(groupKeyLevels({ prev_day_high: 277.83 })[0].rows).toEqual([['prev_day_high', 277.83]]);
+  });
+});
 
 describe('planSummary', () => {
   it('computes R:R from the entry midpoint, first target and stop', () => {
