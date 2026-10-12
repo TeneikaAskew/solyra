@@ -89,3 +89,29 @@ export function ageLabel(iso: string | null | undefined, now = Date.now()): stri
   if (hrs < 48) return `${hrs}h old`;
   return `${Math.round(hrs / 24)}d old`;
 }
+
+/** One timeline row: a structured report run or a saved research question. Never merged into one shape. */
+export type HistoryItem =
+  | { kind: 'report'; id: string; at: string | null; label: 'Report run'; row: InsightHistoryRow }
+  | { kind: 'research'; id: string; at: string | null; label: 'Research question'; session: { id: string; ticker: string; mode: string; title: string; status: string; updated_at: string; replay_cutoff: string | null } };
+
+export type HistoryFilter = 'all' | 'reports' | 'research';
+
+/** Newest first; rows without a timestamp sort last rather than being given a fabricated date. */
+export function unifiedHistory(
+  reports: InsightHistoryRow[],
+  sessions: { id: string; ticker: string; mode: string; title: string; status: string; updated_at: string; replay_cutoff: string | null }[],
+  filter: HistoryFilter = 'all',
+): HistoryItem[] {
+  const items: HistoryItem[] = [];
+  if (filter !== 'research') for (const row of reports) items.push({ kind: 'report', id: row.id, at: row.as_of ?? null, label: 'Report run', row });
+  if (filter !== 'reports') for (const s of sessions) items.push({ kind: 'research', id: s.id, at: s.updated_at ?? null, label: 'Research question', session: s });
+  const t = (iso: string | null) => { const v = iso ? Date.parse(iso) : NaN; return Number.isFinite(v) ? v : null; };
+  return items.sort((a, b) => {
+    const ta = t(a.at); const tb = t(b.at);
+    if (ta == null && tb == null) return 0;
+    if (ta == null) return 1;
+    if (tb == null) return -1;
+    return tb - ta;
+  });
+}

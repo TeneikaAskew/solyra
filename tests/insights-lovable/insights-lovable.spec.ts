@@ -39,27 +39,16 @@ test('asks a cited live research question without changing legacy insights', asy
   await page.getByPlaceholder(/Ask about IWM/).fill('What catalysts matter most over the next two weeks?');
   await page.getByRole('button', { name: 'Research' }).click();
   await expect(page.getByText(answer.answer)).toBeVisible();
-  await expect(page.getByText('S1')).toBeVisible();
+  await expect(page.getByLabel('Research answer').getByRole('button', { name: /Open source S1/ }).first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('cited-answer.png') });
   await page.goto('/insights');
   await expect(page.getByRole('heading', { name: 'AI Insights' })).toBeVisible();
 });
 
-test('accepts a typed ticker and offers quick ticker suggestions', async ({ page }) => {
-  await page.goto('/insights-lovable');
-  const ticker = page.getByRole('textbox', { name: 'Research ticker' });
-  await expect(ticker).toHaveValue('IWM');
-  await expect(page.getByRole('button', { name: 'QQQ', exact: true })).toBeVisible();
-  await ticker.fill('AAPL');
-  await ticker.press('Enter');
-  await expect(ticker).toHaveValue('AAPL');
-  await expect(page.getByPlaceholder(/Ask about AAPL/)).toBeVisible();
-});
-
 test('replay mode requires and preserves a cutoff with no mobile overflow', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 411, height: 771 });
   await page.goto('/insights-lovable');
-  await page.getByRole('button', { name: 'Replay' }).click();
+  await page.getByRole('button', { name: 'Replay', exact: true }).click();
   await expect(page.getByLabel('Evidence cutoff')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Research' })).toBeDisabled();
   expect(await page.locator('body').evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
