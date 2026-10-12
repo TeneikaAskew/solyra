@@ -73,7 +73,7 @@ test('replay mode sends the cutoff to the chart data request', async ({ page }) 
   const requests: string[] = [];
   await page.route('**/api/market/data/IWM/*', (r) => { requests.push(r.request().url()); return r.fulfill(M.ok(MOCK_MARKET_DATA)); });
   await page.goto('/ai-insights-lovable');
-  await page.getByRole('button', { name: 'Replay' }).click();
+  await page.getByRole('button', { name: 'Replay', exact: true }).click();
   await page.getByLabel('Evidence cutoff').fill('2026-10-10T14:30');
   await expect.poll(() => requests.some((url) => url.includes('end_time=14%3A30') || url.includes('end_time=14:30'))).toBe(true);
 });
