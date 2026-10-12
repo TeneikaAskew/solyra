@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { MicroLabel } from '@/components/primitives';
 import { CandlestickChart } from '@/components/charts/CandlestickChart';
-import { useMarketData, type CandlestickBar, type VolumeBar } from '@/hooks/useMarketData';
+import { useAvailableDates, useMarketData, type CandlestickBar, type VolumeBar } from '@/hooks/useMarketData';
 import { useLiveQuote } from '@/hooks/useLiveQuote';
 import { chartTheme } from '@/lib/chartTheme';
 import type { Timeframe } from '@/types';
@@ -42,8 +42,28 @@ export function toChartBars(
   return { candlestick: data.candlestick, volume };
 }
 
-function localDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function localDateCompact(d: Date): string {
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function displayDate(compact: string): string {
+  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+}
+
+/**
+ * Resolve the trading day to chart. The market-data API wants YYYYMMDD and
+ * only has bars for real sessions — asking for "today" on a weekend/holiday
+ * (or before the day's file lands) returns nothing. Snap to the newest
+ * available date at or before the target, mirroring ChartsPage's snapping.
+ * Returns '' while the dates list is still loading so no bad request fires.
+ */
+export function resolveChartDate(
+  availableDates: string[] | undefined,
+  targetCompact: string,
+): string {
+  if (!availableDates) return '';
+  if (availableDates.length === 0) return targetCompact;
+  return availableDates.find((d) => d <= targetCompact) ?? availableDates[availableDates.length - 1];
 }
 
 /**
@@ -68,8 +88,12 @@ export function ResearchCandleChart({
   const [showVolume, setShowVolume] = useState(true);
   const [rthOnly, setRthOnly] = useState(false);
   const isReplay = mode === 'replay' && Boolean(replayCutoff);
-  const date = isReplay && replayCutoff ? replayCutoff.slice(0, 10) : localDate(new Date());
+  const targetCompact = isReplay && replayCutoff
+    ? replayCutoff.slice(0, 10).replace(/-/g, '')
+    : localDateCompact(new Date());
   const endTime = isReplay && replayCutoff ? replayCutoff.slice(11, 16) : null;
+  const datesQ = useAvailableDates(ticker);
+  const date = datesQ.isError ? targetCompact : resolveChartDate(datesQ.data?.dates, targetCompact);
   const market = useMarketData(ticker, date, timeframe, endTime);
   const quote = useLiveQuote(ticker);
   const bars = useMemo(() => toChartBars(market.data), [market.data]);
@@ -87,7 +111,7 @@ export function ResearchCandleChart({
   return (
     <section aria-label="Price chart" className="min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <MicroLabel>{isReplay ? `Replay chart · ${date}` : 'Live chart'}</MicroLabel>
+        <MicroLabel>{isReplay ? `Replay chart · ${displayDate(date || targetCompact)}` : `Live chart · ${displayDate(date || targetCompact)}`}</MicroLabel>
         <div className="flex flex-wrap items-center gap-1" aria-label="Chart controls">
           <div className="flex rounded-md bg-[var(--surface-2)] p-0.5" role="group" aria-label="Timeframe">
             {TIMEFRAMES.map((tf) => (
@@ -121,15 +145,15 @@ export function ResearchCandleChart({
         </div>
       </div>
       <div className="mt-2">
-        {market.isLoading ? (
+        {datesQ.isLoading || market.isLoading ? (
           <div className="h-[320px] animate-pulse rounded-md bg-[var(--surface-1)]" />
         ) : market.isError ? (
           <p role="note" className="rounded-md border border-[var(--warn)]/40 bg-[var(--surface-1)] px-4 py-3 text-xs text-[var(--warn)]">
-            Chart data unavailable for {ticker} on {date}. {market.error instanceof Error ? market.error.message : ''}
+            Chart data unavailable for {ticker} on {displayDate(date)}. {market.error instanceof Error ? market.error.message : ''}
           </p>
         ) : !bars ? (
           <p role="note" className="rounded-md border border-[var(--warn)]/40 bg-[var(--surface-1)] px-4 py-3 text-xs text-[var(--warn)]">
-            Chart data for {ticker} on {date} was missing or invalid, so no chart is shown.
+            Chart data for {ticker} on {displayDate(date)} was missing or invalid, so no chart is shown.
           </p>
         ) : (
           <CandlestickChart
