@@ -1697,7 +1697,7 @@ test.describe('Solyra landing page', () => {
 - [ ] **Step 2: Run the e2e**
 
 Run (in `platform/`, with `npm run dev` running in another shell — or `PLAYWRIGHT_START_VITE=1`): `npx playwright test tests/landing/landing.spec.ts --project=chromium`
-Expected: 2 passed.
+Expected: every test in the file passes.
 
 - [ ] **Step 3: Fill the proof number from real data (spec §6)**
 
