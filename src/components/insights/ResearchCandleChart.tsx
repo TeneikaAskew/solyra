@@ -111,7 +111,7 @@ export function ResearchCandleChart({
   return (
     <section aria-label="Price chart" className="min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <MicroLabel>{isReplay ? `Replay chart · ${date}` : 'Live chart'}</MicroLabel>
+        <MicroLabel>{isReplay ? `Replay chart · ${displayDate(date || targetCompact)}` : `Live chart · ${displayDate(date || targetCompact)}`}</MicroLabel>
         <div className="flex flex-wrap items-center gap-1" aria-label="Chart controls">
           <div className="flex rounded-md bg-[var(--surface-2)] p-0.5" role="group" aria-label="Timeframe">
             {TIMEFRAMES.map((tf) => (
@@ -145,15 +145,15 @@ export function ResearchCandleChart({
         </div>
       </div>
       <div className="mt-2">
-        {market.isLoading ? (
+        {datesQ.isLoading || market.isLoading ? (
           <div className="h-[320px] animate-pulse rounded-md bg-[var(--surface-1)]" />
         ) : market.isError ? (
           <p role="note" className="rounded-md border border-[var(--warn)]/40 bg-[var(--surface-1)] px-4 py-3 text-xs text-[var(--warn)]">
-            Chart data unavailable for {ticker} on {date}. {market.error instanceof Error ? market.error.message : ''}
+            Chart data unavailable for {ticker} on {displayDate(date)}. {market.error instanceof Error ? market.error.message : ''}
           </p>
         ) : !bars ? (
           <p role="note" className="rounded-md border border-[var(--warn)]/40 bg-[var(--surface-1)] px-4 py-3 text-xs text-[var(--warn)]">
-            Chart data for {ticker} on {date} was missing or invalid, so no chart is shown.
+            Chart data for {ticker} on {displayDate(date)} was missing or invalid, so no chart is shown.
           </p>
         ) : (
           <CandlestickChart
