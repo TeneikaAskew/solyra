@@ -15,7 +15,7 @@ done_when:
   - "tests/insights/insights.spec.ts and tests/insights-lovable/insights-lovable.spec.ts prove /insights and /insights-lovable retain their existing behavior"
   - "Unit tests prove unified-history ordering and artifact labels, shared Live/Replay context, decision data health, and research-session selection without fabricated financial values"
   - "02-FEATURE-CATALOG FEAT-INSIGHT-001 row shows the reviewed status, /ai-insights-lovable, and this PR"
-status: draft
+status: approved
 supersedes: docs/superpowers/specs/2026-10-11-feat-insight-001-ai-insights-lovable.md
 ---
 
