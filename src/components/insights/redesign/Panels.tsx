@@ -163,12 +163,36 @@ export function PersonaTabs({ plans }: { plans: PersonaPlan[] }) {
           </button>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Entry" value={p.entry_zone ? `${fmtPrice(p.entry_zone.low)} - ${fmtPrice(p.entry_zone.high)}` : NA} />
-        <Metric label="Stop" value={fmtPrice(p.stop)} tone="bear" />
-        <Metric label="Targets" value={Array.isArray(p.targets) && p.targets.length ? p.targets.map((t) => fmtPrice(t)).join(' / ') : NA} tone="bull" />
-        <Metric label="Size" value={typeof p.position_size_pct === 'number' ? `${p.position_size_pct}%` : NA} />
-      </div>
+      <dl className="mt-3 max-w-md space-y-1.5 text-sm tabular-nums">
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="shrink-0 text-[var(--on-surface-muted)]">Entry</dt>
+          <dd className="text-right font-mono font-semibold text-[var(--on-surface)]">
+            {p.entry_zone ? `${fmtPrice(p.entry_zone.low)} – ${fmtPrice(p.entry_zone.high)}` : NA}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="shrink-0 text-[var(--on-surface-muted)]">Stop</dt>
+          <dd className="text-right font-mono font-semibold text-[var(--bear)]">{fmtPrice(p.stop)}</dd>
+        </div>
+        {(Array.isArray(p.targets) ? p.targets : []).map((t, i) => (
+          <div key={i} className="flex items-baseline justify-between gap-4">
+            <dt className="shrink-0 text-[var(--on-surface-muted)]">Target {i + 1}</dt>
+            <dd className="text-right font-mono font-semibold text-[var(--bull)]">{fmtPrice(t)}</dd>
+          </div>
+        ))}
+        {(!Array.isArray(p.targets) || p.targets.length === 0) && (
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="shrink-0 text-[var(--on-surface-muted)]">Targets</dt>
+            <dd className="text-right font-mono text-[var(--on-surface-muted)]">{NA}</dd>
+          </div>
+        )}
+        <div className="flex items-baseline justify-between gap-4 border-t border-[var(--outline-variant)] pt-1.5">
+          <dt className="shrink-0 text-[var(--on-surface-muted)]">Size</dt>
+          <dd className="text-right font-mono font-semibold text-[var(--on-surface)]">
+            {typeof p.position_size_pct === 'number' ? `${p.position_size_pct}%` : NA}
+          </dd>
+        </div>
+      </dl>
       {p.rationale && <p className="mt-3 text-sm leading-6 text-[var(--on-surface-variant)]">{p.rationale}</p>}
     </div>
   );
