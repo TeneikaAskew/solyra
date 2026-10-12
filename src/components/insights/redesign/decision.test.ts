@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InsightReport } from '@/types/insights';
-import { dataHealth, planSummary, sortCatalysts, sortRisks, withDirectionChange } from './decision';
+import { dataHealth, planSummary, sortCatalysts, sortRisks, withDirectionChange, unifiedHistory } from './decision';
 
 const base = {
   entry_zone: { low: 100, high: 102 }, stop: 98, targets: [106, 110],
