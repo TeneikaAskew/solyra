@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { mockCommon } from '../helpers/mocks';
+import { mockCommon, M } from '../helpers/mocks';
+import { MOCK_MARKET_DATA, MOCK_MARKET_DATES } from '@/mocks/charts';
 
 const answer = {
   answer: 'IWM has one confirmed macro catalyst; the rest of the setup depends on stale report evidence.',
@@ -14,6 +15,8 @@ const answer = {
 
 test.beforeEach(async ({ page }) => {
   await mockCommon(page);
+  await page.route('**/api/market/dates/IWM', (r) => r.fulfill(M.ok(MOCK_MARKET_DATES)));
+  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
   await page.route('**/functions/v1/insights-research', async (route) => {
     const body = route.request().postDataJSON();
     if (body.action === 'list') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sessions: [] }) });
