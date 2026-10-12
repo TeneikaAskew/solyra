@@ -86,3 +86,7 @@ has deployed it are close-out steps the owner posts on the PR, not boxes the PR 
   images cannot be attached to a PR from a Claude Code session.
 
 The reviewer asks for the hermetic run or the API test when the PR lacks it.
+
+## AI Insights Lab (`/ai-insights-lovable`)
+
+- It is a decision-first redesign of `/insights` built on the same stocks report endpoints and hooks; its pure helpers live in `src/components/insights/redesign/decision.ts` so trade-plan rules stay unit-testable and never duplicate backend math.
