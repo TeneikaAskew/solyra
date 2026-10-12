@@ -42,8 +42,28 @@ export function toChartBars(
   return { candlestick: data.candlestick, volume };
 }
 
-function localDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function localDateCompact(d: Date): string {
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function displayDate(compact: string): string {
+  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+}
+
+/**
+ * Resolve the trading day to chart. The market-data API wants YYYYMMDD and
+ * only has bars for real sessions — asking for "today" on a weekend/holiday
+ * (or before the day's file lands) returns nothing. Snap to the newest
+ * available date at or before the target, mirroring ChartsPage's snapping.
+ * Returns '' while the dates list is still loading so no bad request fires.
+ */
+export function resolveChartDate(
+  availableDates: string[] | undefined,
+  targetCompact: string,
+): string {
+  if (!availableDates) return '';
+  if (availableDates.length === 0) return targetCompact;
+  return availableDates.find((d) => d <= targetCompact) ?? availableDates[availableDates.length - 1];
 }
 
 /**
