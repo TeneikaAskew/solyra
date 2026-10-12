@@ -7,6 +7,34 @@ export function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
+/** API reports use both display labels and snake_case keys. Group without changing prices. */
+export function groupKeyLevels(levels: Record<string, number> | null | undefined) {
+  const normalize = (key: string) => key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const timeframeOrder = ['year', 'quarter', 'month', 'week', 'day'];
+  const definitions = [
+    { title: 'Prev highs', match: (key: string) => key.startsWith('prev_') && key.endsWith('_high') },
+    { title: 'Prev lows', match: (key: string) => key.startsWith('prev_') && key.endsWith('_low') },
+    { title: 'Averages & effective', match: (key: string) => /^(ema|sma|effective)_/.test(key) },
+    { title: 'Gamma & other', match: () => true },
+  ];
+  const entries = Object.entries(levels ?? {}).filter(([, value]) => num(value) != null);
+  return definitions.map((column, index) => ({
+    title: column.title,
+    rows: entries.filter(([key]) => definitions.findIndex((definition) => definition.match(normalize(key))) === index)
+      .sort((a, b) => {
+        if (index < 2) {
+          const rank = (key: string) => {
+            const position = timeframeOrder.findIndex((timeframe) => normalize(key).includes(`_${timeframe}_`));
+            return position < 0 ? timeframeOrder.length : position;
+          };
+          const difference = rank(a[0]) - rank(b[0]);
+          if (difference !== 0) return index === 0 ? difference : -difference;
+        }
+        return b[1] - a[1];
+      }),
+  }));
+}
+
 export interface PlanSummary {
   entryLow: number | null;
   entryHigh: number | null;
