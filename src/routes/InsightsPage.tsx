@@ -467,7 +467,7 @@ type ChatMsg = { role: 'user' | 'assistant'; content: string };
 
 const CHAT_MODES = ['chat', 'market', 'strategy', 'trade'] as const;
 
-function ChatView({ ticker }: { ticker: string }) {
+export function ChatView({ ticker, suggestions }: { ticker: string; suggestions?: string[] }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<(typeof CHAT_MODES)[number]>('chat');
@@ -556,7 +556,17 @@ function ChatView({ ticker }: { ticker: string }) {
       <div className="flex-1 flex flex-col gap-3 overflow-y-auto rounded-xl bg-[var(--surface-1)] p-4">
         {messages.length === 0 && (
           <div className="flex h-full items-center justify-center text-xs text-[var(--on-surface-muted)]">
-            Ask a question about {ticker} in {mode} mode.
+            {suggestions && suggestions.length > 0 ? (
+              <div className="flex w-full flex-col gap-2">
+                {suggestions.map((q) => (
+                  <button key={q} type="button" onClick={() => setInput(q)} className="rounded-lg border border-[var(--outline-variant)] px-3 py-2 text-left text-xs text-[var(--on-surface-variant)] hover:border-[var(--brand)] hover:text-[var(--on-surface)]">
+                    {q}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <>Ask a question about {ticker} in {mode} mode.</>
+            )}
           </div>
         )}
         {messages.map((msg, i) => (

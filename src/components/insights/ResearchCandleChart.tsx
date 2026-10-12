@@ -14,7 +14,7 @@ const TIMEFRAMES: { value: Timeframe; label: string }[] = [
   { value: '60', label: '1h' },
 ];
 
-interface PriceLine { price: number; color: string; title: string }
+export interface PriceLine { price: number; color: string; title: string }
 
 /**
  * Validate a stocks OHLCV payload before it reaches the chart. Any missing or
@@ -56,10 +56,13 @@ export function ResearchCandleChart({
   ticker,
   mode,
   replayCutoff,
+  planLines = [],
 }: {
   ticker: string;
   mode: ResearchMode;
   replayCutoff: string | null;
+  /** Extra levels from a trade plan (entry, stop, targets, key levels). */
+  planLines?: PriceLine[];
 }) {
   const [timeframe, setTimeframe] = useState<Timeframe>('15');
   const [showVolume, setShowVolume] = useState(true);
@@ -73,13 +76,13 @@ export function ResearchCandleChart({
 
   const priceLines = useMemo<PriceLine[]>(() => {
     // Live quote is authoritative price evidence in Live mode only — never in Replay.
-    if (isReplay || !quote.data) return [];
-    const lines: PriceLine[] = [{ price: quote.data.price, color: chartTheme.brand, title: 'Live' }];
+    if (isReplay || !quote.data) return planLines;
+    const lines: PriceLine[] = [...planLines, { price: quote.data.price, color: chartTheme.brand, title: 'Live' }];
     if (quote.data.prev_close != null) {
       lines.push({ price: quote.data.prev_close, color: chartTheme.textMuted, title: 'Prior close' });
     }
     return lines;
-  }, [isReplay, quote.data]);
+  }, [isReplay, quote.data, planLines]);
 
   return (
     <section aria-label="Price chart" className="min-w-0">
