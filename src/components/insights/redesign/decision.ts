@@ -143,3 +143,17 @@ export function unifiedHistory(
     return tb - ta;
   });
 }
+
+/** One row of GET /api/signals/{ticker}. */
+export interface SignalFeedRow { time: string; direction: string; score: number | null; rsi?: number | null }
+
+/** Newest signal usable as a similar-setups bucket; null when none has direction, RSI and score. */
+export function latestSignal(rows: SignalFeedRow[]): { direction: 'CALL' | 'PUT'; rsi: number; score: number } | null {
+  const sorted = [...rows].sort((a, b) => String(b.time).localeCompare(String(a.time)));
+  for (const r of sorted) {
+    if ((r.direction === 'CALL' || r.direction === 'PUT') && typeof r.rsi === 'number' && typeof r.score === 'number') {
+      return { direction: r.direction, rsi: r.rsi, score: r.score };
+    }
+  }
+  return null;
+}

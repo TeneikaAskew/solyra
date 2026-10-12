@@ -127,6 +127,11 @@ function summarize(payload: unknown, type: string): string {
     if (names.length) parts.push(`Upcoming events: ${names.join('; ')}.`);
   }
   if (Array.isArray(p.signals) && p.signals.length) parts.push(`${p.signals.length} recent signals on record.`);
+  const stats = p.stats && typeof p.stats === 'object' ? p.stats as Record<string, unknown> : null;
+  if (stats && num(stats.count) !== null) {
+    const win = num(stats.pct_profitable); const r20 = num(stats.avg_return_20min);
+    parts.push(`${stats.count} similar ${str(p.direction) ?? ''} setups since ${str(stats.earliest)?.slice(0, 10) ?? 'unknown'}${win !== null ? `, ${(win * 100).toFixed(1)}% profitable` : ''}${r20 !== null ? `, avg 20-min return ${(r20 * 100).toFixed(3)}%` : ''}.`);
+  }
   if (!parts.length) parts.push(`${type} data available; see the full report on its page.`);
   return parts.join(' ').slice(0, 480);
 }
@@ -170,7 +175,19 @@ async function gather(ticker: string, auth: string, mode: 'live' | 'replay', cut
   ];
   // Live quote is the single reference price for live answers; replay must not see it.
   if (mode === 'live') entries.push([`/api/live/quote/${ticker}`, 'Live quote (reference price)', 'live_quote']);
-  return Promise.all(entries.map(([path, label, type], i) => getEvidence(path, label, type, auth, cutoff, i + 1)));
+  const evidence = await Promise.all(entries.map(([path, label, type], i) => getEvidence(path, label, type, auth, cutoff, i + 1)));
+  // Historical win rates for the newest signal's bucket (direction + score + RSI ±5).
+  const rows = ((evidence.find((e) => e.type === 'signals')?.payload as { signals?: Array<Record<string, unknown>> } | null)?.signals ?? [])
+    .filter((r) => (r.direction === 'CALL' || r.direction === 'PUT') && typeof r.rsi === 'number' && typeof r.score === 'number')
+    .sort((a, b) => String(b.time).localeCompare(String(a.time)));
+  const idx = evidence.length + 1;
+  if (rows[0]) {
+    const qs = new URLSearchParams({ direction: String(rows[0].direction), rsi: String(rows[0].rsi), score: String(rows[0].score), rsi_band: '5', limit: '10' });
+    evidence.push(await getEvidence(`/api/signals/${ticker}/similar?${qs}`, 'Similar historical setups (win rates)', 'similar_setups', auth, cutoff, idx));
+  } else {
+    evidence.push({ id: `S${idx}`, type: 'similar_setups', label: 'Similar historical setups (win rates)', path: `/api/signals/${ticker}/similar`, asOf: null, freshness: 'unavailable', excerpt: 'No recent signal with direction, RSI and score to match against.', payload: null, hash: await digest('no-signal') });
+  }
+  return evidence;
 }
 function citations(answer: Record<string, unknown>): string[] {
   const ids: string[] = [];
@@ -272,7 +289,7 @@ Deno.serve(async (req) => {
           .eq('session_id', body.sessionId)
           .eq('owner_uid', user.uid)
           .order('created_at')
-          .limit(6);
+          .limit(10);
         if (frozenError || !frozen || frozen.length === 0) throw new Error('The frozen evidence snapshot for this session is unavailable.');
         evidence = frozen.map((source) => ({
           id: source.citation_id,
