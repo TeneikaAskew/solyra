@@ -8,7 +8,7 @@
 
 # Solyra Landing Page Implementation Plan
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-10-12 · **Owner:** TBD
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1657,7 +1657,7 @@ git commit -m "feat: landing waitlist form, FAQ, and full page assembly"
 ### Task 8: E2E smoke, lint, proof-number fill, PR
 
 **Files:**
-- Create: `tests/landing.spec.ts`
+- Create: `tests/landing/landing.spec.ts`
 - Possibly modify: `src/components/landing/fixtures.ts` (proof number)
 
 **Interfaces:**
@@ -1665,7 +1665,7 @@ git commit -m "feat: landing waitlist form, FAQ, and full page assembly"
 
 - [ ] **Step 1: Write the e2e spec**
 
-Create `tests/landing.spec.ts`:
+Create `tests/landing/landing.spec.ts`:
 
 ```ts
 import { expect, test } from '@playwright/test';
@@ -1696,8 +1696,8 @@ test.describe('Solyra landing page', () => {
 
 - [ ] **Step 2: Run the e2e**
 
-Run (in `platform/`, with `npm run dev` running in another shell — or `PLAYWRIGHT_START_VITE=1`): `npx playwright test tests/landing.spec.ts --project=chromium`
-Expected: 2 passed.
+Run (in `platform/`, with `npm run dev` running in another shell — or `PLAYWRIGHT_START_VITE=1`): `npx playwright test tests/landing/landing.spec.ts --project=chromium`
+Expected: every test in the file passes.
 
 - [ ] **Step 3: Fill the proof number from real data (spec §6)**
 
@@ -1719,7 +1719,7 @@ Run (in `platform/`): `npm run lint` → clean. `npm run build` → passes. `npx
 - [ ] **Step 5: Commit + PR**
 
 ```bash
-git add tests/landing.spec.ts src/components/landing/fixtures.ts
+git add tests/landing/landing.spec.ts src/components/landing/fixtures.ts
 git commit -m "test: landing page e2e smoke + proof tile data"
 git push -u origin feature/feat-waitlist-001-landing
 gh pr create --base main --title "feat: Solyra public landing page + waitlist API" --body "Implements docs/solyra-landing-page-design.md — landing page as the default / route (app moves to /dashboard), waitlist endpoint + table, 10 marketing sections with app-faithful gamma visuals. Deployment note: apply gcp/schema.sql (waitlist_signups) via the apply-schema-migrations Cloud Run job before flipping firebase-mode traffic."
