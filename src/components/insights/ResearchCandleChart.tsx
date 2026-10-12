@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { MicroLabel } from '@/components/primitives';
 import { CandlestickChart } from '@/components/charts/CandlestickChart';
-import { useMarketData, type CandlestickBar, type VolumeBar } from '@/hooks/useMarketData';
+import { useAvailableDates, useMarketData, type CandlestickBar, type VolumeBar } from '@/hooks/useMarketData';
 import { useLiveQuote } from '@/hooks/useLiveQuote';
 import { chartTheme } from '@/lib/chartTheme';
 import type { Timeframe } from '@/types';
