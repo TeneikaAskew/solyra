@@ -4,7 +4,7 @@ req_ids: [REQ-UX-001, REQ-ACCESS-001, REQ-DATA-001, REQ-DATA-002, REQ-DATA-003, 
 issues: [827, 867, 1215, 1216]
 canvases: []
 done_when:
-  - "tests/ai-insights-lovable/ai-insights-lovable.spec.ts proves /ai-inisghts-lovable renders the existing lightweight-charts candlestick and volume experience with quote, prior-close, cited-level, timeframe, volume, RTH, and OHLC interactions"
+  - "tests/ai-insights-lovable/ai-insights-lovable.spec.ts proves /ai-insights-lovable renders the existing lightweight-charts candlestick and volume experience with quote, prior-close, cited-level, timeframe, volume, RTH, and OHLC interactions"
   - "tests/ai-insights-lovable/ai-insights-lovable.spec.ts proves a trader can ask a live question, receive a structured cited decision brief, use a contextual follow-up action, reload the saved session, and leave /insights and /insights-lovable unchanged"
   - "tests/ai-insights-lovable/ai-insights-lovable.spec.ts proves replay renders no bar, source, level, signal, or catalyst after the selected cutoff and restores the same persistent cutoff from history"
   - "tests/ai-insights-lovable/ai-insights-lovable.spec.ts proves missing, stale, conflicting, invalid, signed-out, stopped, credit-blocked, policy-blocked, rate-limited, and dependency-failed states remain explicit without deleting the last completed answer"
@@ -14,8 +14,8 @@ done_when:
   - "Cloud function tests prove every generated claim, action, scenario, contradiction, and chart level cites evidence fetched for the same run and unsupported citations fail explicitly"
   - "Cloud function tests prove unavailable, empty, invalid-response, stale, conflicting, and dependency-failed source states remain distinct through persistence and rendering"
   - "The real Lovable AI Gateway stream completes with safe server-held credentials and its final structured decision brief passes same-run citation validation"
-  - "02-FEATURE-CATALOG FEAT-INSIGHT-001 row shows Status, Last reviewed, /ai-inisghts-lovable, and this PR"
-status: draft
+  - "02-FEATURE-CATALOG FEAT-INSIGHT-001 row shows Status, Last reviewed, /ai-insights-lovable, and this PR"
+status: approved
 supersedes: null
 ---
 
@@ -25,7 +25,7 @@ supersedes: null
 
 The existing `/insights` page has a broad structured dossier, report replay, history, watchlist discovery, model telemetry, and chat, but separates them into system-oriented tabs and makes the trader assemble the decision across many equal-weight cards. The parallel `/insights-lovable` page improves question-led research, citations, evidence freshness, and session continuity, but its chart is a Recharts area line rather than the professional candlestick and volume chart already used by `/charts`. It also omits several high-value decision surfaces from the original page.
 
-Create a third comparison route at `/ai-inisghts-lovable`, preserving the user-requested spelling exactly. It must combine the original page's structured market intelligence with the Lab's cited AI research in a quant-workflow hierarchy where every prominent item explains what the trader can inspect, verify, compare, or research next. It must expose unavailable and contradictory data rather than smoothing it into a complete-looking answer.
+Create a third comparison route at `/ai-insights-lovable`, preserving the user-requested spelling exactly. It must combine the original page's structured market intelligence with the Lab's cited AI research in a quant-workflow hierarchy where every prominent item explains what the trader can inspect, verify, compare, or research next. It must expose unavailable and contradictory data rather than smoothing it into a complete-looking answer.
 
 ## Non-goals
 
@@ -47,7 +47,7 @@ Create a third comparison route at `/ai-inisghts-lovable`, preserving the user-r
 
 ### Route and information hierarchy
 
-Add a lazy route and experimental Intelligence navigation entry for `/ai-inisghts-lovable`. The page shares the global ticker store and retains both existing Insights routes without behavior changes.
+Add a lazy route and experimental Intelligence navigation entry for `/ai-insights-lovable`. The page shares the global ticker store and retains both existing Insights routes without behavior changes.
 
 The first viewport contains:
 

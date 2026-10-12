@@ -21,6 +21,7 @@ const SignalsPage = lazy(() => import('@/routes/SignalsPage'));
 const JournalPage = lazy(() => import('@/routes/JournalPage'));
 const InsightsPage = lazy(() => import('@/routes/InsightsPage'));
 const InsightsLovablePage = lazy(() => import('@/routes/InsightsLovablePage'));
+const AiInsightsLovablePage = lazy(() => import('@/routes/AiInsightsLovablePage'));
 const CatalystsPage = lazy(() => import('@/routes/CatalystsPage'));
 const AdminPage = lazy(() => import('@/routes/AdminPage'));
 const HelpPage = lazy(() => import('@/routes/HelpPage'));
@@ -92,6 +93,7 @@ const router = createBrowserRouter([
       { path: '/journal', errorElement, element: <Suspense fallback={<PageLoader />}><JournalPage /></Suspense> },
       { path: '/insights', errorElement, element: <Suspense fallback={<PageLoader />}><InsightsPage /></Suspense> },
       { path: '/insights-lovable', errorElement, element: <Suspense fallback={<PageLoader />}><InsightsLovablePage /></Suspense> },
+      { path: '/ai-insights-lovable', errorElement, element: <Suspense fallback={<PageLoader />}><AiInsightsLovablePage /></Suspense> },
       { path: '/catalysts', errorElement, element: <Suspense fallback={<PageLoader />}><CatalystsPage /></Suspense> },
       { path: '/admin', errorElement, element: <Suspense fallback={<PageLoader />}><AdminPage /></Suspense> },
       { path: '/help', errorElement, element: <Suspense fallback={<PageLoader />}><HelpPage /></Suspense> },

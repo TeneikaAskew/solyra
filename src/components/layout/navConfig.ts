@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Activity,
   CandlestickChart,
+  ChartCandlestick,
   Layers,
   BookOpen,
   BarChart3,
@@ -70,6 +71,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { path: '/insights', label: 'AI Insights', icon: BrainCircuit },
       { path: '/insights-lovable', label: 'Insights Lab', icon: FlaskConical, badge: { text: 'LAB' } },
+      { path: '/ai-insights-lovable', label: 'AI Insights Lab', icon: ChartCandlestick, badge: { text: 'LAB' } },
       { path: '/catalysts', label: 'Catalysts', icon: Zap },
     ],
   },
