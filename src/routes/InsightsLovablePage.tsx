@@ -89,6 +89,7 @@ export function ResearchWorkspace({ research, embedded = false, sharedCutoff, pr
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [prevOpen, setPrevOpen] = useState(false);
   // The answer renders below the history list, often off-screen: scroll it
   // into view so a click visibly opens the saved question.
   const openSaved = async (session: { id: string; replay_cutoff: string | null }) => {
