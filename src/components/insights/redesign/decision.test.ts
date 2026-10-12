@@ -49,3 +49,20 @@ describe('ordering', () => {
     expect(withDirectionChange([{ id: '2', direction: 'long' }, { id: '1', direction: 'flat' }])[0].previous).toBe('flat');
   });
 });
+
+describe('unifiedHistory', () => {
+  const reports = [{ id: 'r1', as_of: '2026-10-10T10:00:00Z', direction: 'long' }, { id: 'r2', as_of: null }];
+  const sessions = [{ id: 's1', ticker: 'IWM', mode: 'live', title: 'Catalysts?', status: 'active', updated_at: '2026-10-11T10:00:00Z', replay_cutoff: null }];
+  it('orders newest first and puts undated rows last', () => {
+    expect(unifiedHistory(reports, sessions).map((i) => i.id)).toEqual(['s1', 'r1', 'r2']);
+  });
+  it('labels each artifact by its source', () => {
+    const items = unifiedHistory(reports, sessions);
+    expect(items.find((i) => i.id === 's1')?.label).toBe('Research question');
+    expect(items.find((i) => i.id === 'r1')?.label).toBe('Report run');
+  });
+  it('filters by artifact type', () => {
+    expect(unifiedHistory(reports, sessions, 'reports').map((i) => i.id)).toEqual(['r1', 'r2']);
+    expect(unifiedHistory(reports, sessions, 'research').map((i) => i.id)).toEqual(['s1']);
+  });
+});
