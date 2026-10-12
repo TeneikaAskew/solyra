@@ -231,16 +231,49 @@ export function RiskRail({ report }: { report: InsightReport }) {
   );
 }
 
+const KEY_LEVEL_COLUMNS: { title: string; match: (k: string) => boolean }[] = [
+  { title: 'Prev highs', match: (k) => k.startsWith('prev_') && k.endsWith('_high') },
+  { title: 'Prev lows', match: (k) => k.startsWith('prev_') && k.endsWith('_low') },
+  { title: 'Averages & effective', match: (k) => k.startsWith('ema_') || k.startsWith('sma_') || k.startsWith('effective_') },
+  { title: 'Gamma & other', match: () => true },
+];
+
+const PREV_TIMEFRAME_ORDER = ['year', 'quarter', 'month', 'week', 'day'];
+
 export function KeyLevelChips({ levels }: { levels: Record<string, number> | null | undefined }) {
-  const entries = Object.entries(levels ?? {}).filter(([, v]) => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => b[1] - a[1]);
+  const entries = Object.entries(levels ?? {}).filter(([, v]) => typeof v === 'number' && Number.isFinite(v));
   if (entries.length === 0) return <p className="text-xs text-[var(--on-surface-muted)]">No key levels in this report.</p>;
+  const columns = KEY_LEVEL_COLUMNS.map((col, colIdx) => {
+    const rows = entries
+      .filter(([k]) => KEY_LEVEL_COLUMNS.slice(0, colIdx).every((prev) => !prev.match(k)) && col.match(k))
+      .sort((a, b) => {
+        if (colIdx < 2) {
+          const rank = (k: string) => { const i = PREV_TIMEFRAME_ORDER.findIndex((t) => k.includes(`_${t}_`)); return i === -1 ? PREV_TIMEFRAME_ORDER.length : i; };
+          const d = rank(a[0]) - rank(b[0]);
+          if (d !== 0) return colIdx === 0 ? d : -d;
+        }
+        return b[1] - a[1];
+      });
+    return { title: col.title, rows };
+  });
   return (
-    <div className="flex flex-wrap gap-2">
-      {entries.map(([k, v]) => (
-        <span key={k} className="rounded-lg border border-[var(--outline-variant)] px-2.5 py-1 text-xs">
-          <span className="text-[var(--on-surface-muted)]">{k.replace(/_/g, ' ')}</span>{' '}
-          <b className="font-mono tabular-nums text-[var(--on-surface)]">{fmtPrice(v)}</b>
-        </span>
+    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+      {columns.map((col) => (
+        <div key={col.title}>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--on-surface-muted)]">{col.title}</p>
+          {col.rows.length === 0 ? (
+            <p className="text-xs text-[var(--on-surface-muted)]">—</p>
+          ) : (
+            <ul className="space-y-1">
+              {col.rows.map(([k, v]) => (
+                <li key={k} className="flex items-baseline justify-between gap-3 text-xs">
+                  <span className="text-[var(--on-surface-muted)]">{k.replace(/_/g, ' ')}</span>
+                  <b className="font-mono tabular-nums text-[var(--on-surface)]">{fmtPrice(v)}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       ))}
     </div>
   );
