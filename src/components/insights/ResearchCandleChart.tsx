@@ -93,7 +93,7 @@ export function ResearchCandleChart({
     : localDateCompact(new Date());
   const endTime = isReplay && replayCutoff ? replayCutoff.slice(11, 16) : null;
   const datesQ = useAvailableDates(ticker);
-  const date = resolveChartDate(datesQ.data?.dates, targetCompact);
+  const date = datesQ.isError ? targetCompact : resolveChartDate(datesQ.data?.dates, targetCompact);
   const market = useMarketData(ticker, date, timeframe, endTime);
   const quote = useLiveQuote(ticker);
   const bars = useMemo(() => toChartBars(market.data), [market.data]);
