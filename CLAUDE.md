@@ -1,6 +1,6 @@
 # Project Instructions for Claude Code — Solyra
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-10-12 · **Owner:** TBD
 
 ## Before any change (read this first)
 Any edit, fix, refactor, or feature, however small: invoke the `product-delivery` skill before touching code.
@@ -26,7 +26,7 @@ pipeline (`lib/`), and the GCP jobs live in the **stocks** repo
 (`TeneikaAskew/stocks`); the API deploys as `solyra-api-staging`, the only API
 Cloud Run service since `solyra-api-prod` was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
 Solyra's dev server proxies `/api/*` to that backend, so the browser
-sees same-origin requests and none of the ~73 bare `fetch('/api/...')` call
+sees same-origin requests and none of the ~101 bare `fetch('/api/...')` call
 sites need to know where the API actually is.
 
 | | |
@@ -488,7 +488,7 @@ so every gated call would 401.
 `src/lib/authedFetch.ts` monkeypatches `window.fetch` to (1) re-point `/api/*`
 at an absolute origin when one is configured (using `apiTargets.ts`) and
 (2) attach the Firebase ID token. It's a global wrapper because the app makes
-~73 bare relative `fetch('/api/...')` calls across ~30 files with no central
+~101 bare relative `fetch('/api/...')` calls across ~34 files with no central
 client.
 
 `OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`) must stay in

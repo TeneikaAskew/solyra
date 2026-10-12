@@ -8,7 +8,7 @@
 
 # Solyra Landing Page Implementation Plan
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-10-12 · **Owner:** TBD
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1657,7 +1657,7 @@ git commit -m "feat: landing waitlist form, FAQ, and full page assembly"
 ### Task 8: E2E smoke, lint, proof-number fill, PR
 
 **Files:**
-- Create: `tests/landing.spec.ts`
+- Create: `tests/landing/landing.spec.ts`
 - Possibly modify: `src/components/landing/fixtures.ts` (proof number)
 
 **Interfaces:**
@@ -1665,7 +1665,7 @@ git commit -m "feat: landing waitlist form, FAQ, and full page assembly"
 
 - [ ] **Step 1: Write the e2e spec**
 
-Create `tests/landing.spec.ts`:
+Create `tests/landing/landing.spec.ts`:
 
 ```ts
 import { expect, test } from '@playwright/test';
