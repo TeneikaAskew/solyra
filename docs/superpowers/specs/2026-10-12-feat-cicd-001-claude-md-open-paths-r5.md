@@ -6,14 +6,14 @@ canvases: []
 done_when:
   - "node scripts/docs-audit.mjs on the PR head reports no count-claim finding on CLAUDE.md or README.md, where main at 5fbdbb9 reports two at CLAUDE.md:491: claims 73 where the grep-count derivation gives 101, and claims 30 where the grep-files derivation gives 34"
   - "node scripts/docs-audit.mjs reports no finding on the PR head that it does not report on origin/main"
-  - "git grep -nE '^[|] [^|]+ [|].*grep-(count|files) src fetch' -- docs/DOC_REGISTRY.md prints one line, the README.md Claims row, so no Claims row derives a fetch count for CLAUDE.md and README.md's row is the only one; on main it prints three, the two CLAUDE.md rows and the README.md row"
-  - "git grep -nE '[0-9]+ (bare|backend calls|relative)|about [0-9]+ bare|across (~|about )?[0-9]+ files|~?[0-9]+ .?fetch[(]' -- CLAUDE.md docs/UI-SCREENS.md src/lib/authedFetch.ts vite.config.ts prints nothing, so CLAUDE.md and the three other copies state no fetch count; on main it prints CLAUDE.md:29, CLAUDE.md:491, docs/UI-SCREENS.md:229, src/lib/authedFetch.ts:7 and vite.config.ts:14"
-  - "git grep -nE 'OPEN(_API)?_PREFIXES[^/]*/api/health., ./api/me.,|everything below it as open|an .OPEN_PREFIXES. entry|sits in OPEN_PREFIXES|the note on OPEN_PREFIXES|OPEN-prefix paths like|authedFetch.ts:(39-)?45([^0-9]|$)|authedFetch.ts:156-158|Open in the auth sense|api/auth._OPEN_API_PREFIXES|Changes .OPEN_PREFIXES. in|and is .OPEN_PREFIXES. in|[|] .OPEN_PREFIXES. or origin|authedFetch.s OPEN_PREFIXES,|(The|wrapper.s) .OPEN_PREFIXES. (list )?must|^.OPEN_PREFIXES. must' -- . ':!docs/superpowers' ':!docs/solyra-landing-page-plan.md' ':!src/types/stocksOpenApi.gen.d.ts' ':!tests/fixtures' prints nothing; on main it prints 38 lines in CLAUDE.md, the defect template, the five agent and command files, docs/UI-SCREENS.md, src/lib/authedFetch.ts and src/lib/authedFetch.test.ts"
-  - "git grep -niE 'open prefix|open paths 200|200 to the open paths|and the open paths$|[(]the open paths[)]' -- . ':!docs/superpowers' ':!docs/solyra-landing-page-plan.md' prints nothing, so no text calls every open path a prefix or calls three of them all of them; on main it prints docs/UI-SCREENS.md:130, :163, :1346, :6406, :7062, :7578, :8449, :8827, :10586 and :11395"
-  - "git grep -c 'id=.shared-02--open-prefixes-kept-in-sync-apiauthpy-and-authedfetch-open_prefixes.' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:1, the fragment stocks docs/product/03-SITE-TRACEABILITY.md:108 links to, kept above the renamed SHARED-02 heading; on main it prints nothing"
-  - "CLAUDE.md's Auth section names OPEN_EXACT with /api/me beside _OPEN_API_EXACT, and OPEN_PREFIXES with /api/health, /api/config/firebase and /api/waitlist beside _OPEN_API_PREFIXES, the entries src/lib/authedFetch.ts:48-49 and stocks platform/api/auth.py:69-70 hold on main; docs/UI-SCREENS.md's SHARED-02 names the same two lists with the same entries and says the browser matches a relative URL string whole, so a relative /api/me with a query string is gated in the browser, and states the server's half as read from stocks' platform/api/auth.py (it matches the path without its query and leaves the same request open) without crediting any test with it: git grep -c 'half is read from' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:2, and git grep -nE 'which the server leaves open|matching the server' -- src docs/UI-SCREENS.md prints nothing, where on main it prints src/lib/authedFetch.test.ts:406; .github/ISSUE_TEMPLATE/01-defect.yml names /api/me as the OPEN_EXACT path and /api/health, /api/config/firebase and /api/waitlist as the OPEN_PREFIXES paths; and CLAUDE.md states no such exception of its own but points at SHARED-02 and solyra#266 for it: git grep -c 'solyra#266' -- CLAUDE.md docs/UI-SCREENS.md src/lib/authedFetch.test.ts prints CLAUDE.md:1, docs/UI-SCREENS.md:1 and src/lib/authedFetch.test.ts:1, where on main it prints nothing, and git grep -nE 'gated in the browser|query included' -- CLAUDE.md prints nothing"
-  - "docs/UI-SCREENS.md says a gated 401 is retried once only in firebase mode, when the wrapper sent a token, the request can be re-sent and a forced refresh returns a different token for the same account, and that a retry that succeeds neither fires onUnauthorized nor marks the session blocked, in SHARED-02's Shows or does paragraph and in SETTINGS-13's bullet at main's lines 13549-13554, and that no other element states how the auth-blocked flag, its strip and banner, the wrapper's retry or the callback follow a gated call's answer without those conditions (the flag is set by a final 401 and cleared by a later success, each only when that answer counts: always in open and iap mode, where there is no account, and in firebase mode when the account signed in as the answer arrives is the one signed in when the request began, no account counting as one), or says the wrapper's tests never read the flag; and SHARED-02 says the flag is one global value that an account switch does not clear, citing solyra#270: git grep -c 'the request can be re-sent' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:3 (SHARED-02, AUTH-08's retry criterion and SETTINGS-13), git grep -c 'solyra#270' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:8, where on main it prints nothing, git grep -c -e 'has no account to compare' -e 'sent and answered while signed out counts' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:2, where on main it prints nothing, git grep -nE 'final 401 for the same account|is 401 for the same account|been 401 for the same account|whose account is still signed in|while its account is still signed in|for that account .SHARED-02.|unless the account changed meanwhile|signed-in account has not changed|account that sent the request is still signed in' -- docs/UI-SCREENS.md prints nothing, where the r4 Design (solyra#272) prints 45 lines, and git grep -nE 'except identity paths, which throw instead|gated path returns 401: .track|when the response status is 401, then .track|only when the wrapper sent a token and a forced|any gated 401|gated-path 401 and|on any page.s 401|ANY gated ./api/[*]. 401|any gated ./api/[*]. call answers 401|Given a gated 401, then|Given a 401 from a gated path, then|gated path answers 401, then|Every gated call that answers 401|Given a gated call answers 401, (then|when .track)|a 401 sets the flag|call returns 401 .AUTH-08.|cleared by any later gated success|any successful gated response clears|Given a gated call succeeds again, then|next gated-path success [(]|^answer clears .|next successful gated call clears|follows the last answer .read|a gated call has answered 401|when a gated call has$|last gated answer was a 401|while a gated call answers 401|Given a signed-in user and a 401 on|Given a signed-in user whose calls answer 401|by which answer came$|Given a stale token, when a gated call first 401s|answers 401, after one retry with a freshly minted|reflects the last gated answer, not|signed-in user.s 401|Given a 401 on the market data|then the page shows the load errors above|What a signed-in account sees when a route refuses|^route[.]$|no assertion in it reads the resulting flag|that file reads the resulting flag|15 tests, Vitest|never .isAuthBlocked|reads .markAuthBlocked. or .useAuthBlocked|The .isAuthBlocked. branch itself' -- docs/UI-SCREENS.md prints nothing, where on main it prints 73 lines: SHARED-02's 193, 194 and 203 and 70 lines in other elements; and the code facts SHARED-02 states hold: git grep -nE '(mark|clear)AuthBlocked[(][)];' -- src ':!*.test.ts' prints only src/lib/authedFetch.ts:186, :188 and :294, so only a gated answer sets or clears the flag, and git grep -n 'setOnUnauthorized(' -- src ':!*.test.ts' prints only src/lib/authedFetch.ts:81, its definition"
-  - "npx vitest run src/lib/authedFetch.test.ts src/mocks/contract.test.ts passes on the PR head with the 37 tests of src/lib/authedFetch.test.ts, the two tests the Design renames and the eleven it adds included, and each added test fails when src/lib/authedFetch.ts is changed as the Design's mutation table names for it: pathOf dropping a relative URL's query or keeping an absolute string's, isReplayable always true, the retry without its different-token check, without its same-account check or without its sent-token check, a gated answer outside firebase mode returned untracked, sameAccount false for a request that began signed out or true for any request that began signed out, an open path's answer tracked or its 401 retried, an identity path sent when the refresh returns another account's token, and a present token kept off the OPEN_PREFIXES paths"
+  - "git grep -nE '^[|] [^|]+ [|].*grep-(count|files) src fetch' -- docs/DOC_REGISTRY.md prints one line, the README.md Claims row, so no Claims row derives a fetch count for CLAUDE.md and README.md's row is the only one; at 5fbdbb9 it prints three, the two CLAUDE.md rows and the README.md row"
+  - "git grep -nE '[0-9]+ (bare|backend calls|relative)|about [0-9]+ bare|across (~|about )?[0-9]+ files|~?[0-9]+ .?fetch[(]' -- CLAUDE.md docs/UI-SCREENS.md src/lib/authedFetch.ts vite.config.ts prints nothing, so CLAUDE.md and the three other copies state no fetch count; at 5fbdbb9 it prints CLAUDE.md:29, CLAUDE.md:491, docs/UI-SCREENS.md:229, src/lib/authedFetch.ts:7 and vite.config.ts:14"
+  - "git grep -nE 'OPEN(_API)?_PREFIXES[^/]*/api/health., ./api/me.,|everything below it as open|an .OPEN_PREFIXES. entry|sits in OPEN_PREFIXES|the note on OPEN_PREFIXES|OPEN-prefix paths like|authedFetch.ts:(39-)?45([^0-9]|$)|authedFetch.ts:156-158|Open in the auth sense|api/auth._OPEN_API_PREFIXES|Changes .OPEN_PREFIXES. in|and is .OPEN_PREFIXES. in|[|] .OPEN_PREFIXES. or origin|authedFetch.s OPEN_PREFIXES,|(The|wrapper.s) .OPEN_PREFIXES. (list )?must|^.OPEN_PREFIXES. must' -- . ':!docs/superpowers' ':!docs/solyra-landing-page-plan.md' ':!src/types/stocksOpenApi.gen.d.ts' ':!tests/fixtures' prints nothing; at 5fbdbb9 it prints 38 lines in CLAUDE.md, the defect template, the five agent and command files, docs/UI-SCREENS.md, src/lib/authedFetch.ts and src/lib/authedFetch.test.ts"
+  - "git grep -niE 'open prefix|open paths 200|200 to the open paths|and the open paths$|[(]the open paths[)]' -- . ':!docs/superpowers' ':!docs/solyra-landing-page-plan.md' prints nothing, so no text calls every open path a prefix or calls three of them all of them; at 5fbdbb9 it prints docs/UI-SCREENS.md:130, :163, :1346, :6406, :7062, :7578, :8449, :8827, :10586 and :11395"
+  - "git grep -c 'id=.shared-02--open-prefixes-kept-in-sync-apiauthpy-and-authedfetch-open_prefixes.' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:1, the fragment stocks docs/product/03-SITE-TRACEABILITY.md:108 links to, kept above the renamed SHARED-02 heading; at 5fbdbb9 it prints nothing"
+  - "CLAUDE.md's Auth section names OPEN_EXACT with /api/me beside _OPEN_API_EXACT, and OPEN_PREFIXES with /api/health, /api/config/firebase and /api/waitlist beside _OPEN_API_PREFIXES, the entries the OPEN_EXACT and OPEN_PREFIXES declarations in src/lib/authedFetch.ts and _OPEN_API_EXACT and _OPEN_API_PREFIXES in stocks platform/api/auth.py hold; docs/UI-SCREENS.md's SHARED-02 names the same two lists with the same entries and says the browser matches a relative URL string whole, so a relative /api/me with a query string is gated in the browser, and states the server's half as read from stocks' platform/api/auth.py (it matches the path without its query and leaves the same request open) without crediting any test with it: git grep -c 'half is read from' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:2, and git grep -nE 'which the server leaves open|matching the server' -- src docs/UI-SCREENS.md prints nothing, where at 5fbdbb9 it prints src/lib/authedFetch.test.ts:406; .github/ISSUE_TEMPLATE/01-defect.yml names /api/me as the OPEN_EXACT path and /api/health, /api/config/firebase and /api/waitlist as the OPEN_PREFIXES paths; and CLAUDE.md states no such exception of its own but points at SHARED-02 and solyra#266 for it: git grep -c 'solyra#266' -- CLAUDE.md docs/UI-SCREENS.md src/lib/authedFetch.test.ts prints CLAUDE.md:1, docs/UI-SCREENS.md:1 and src/lib/authedFetch.test.ts:1, where at 5fbdbb9 it prints nothing, and git grep -nE 'gated in the browser|query included' -- CLAUDE.md prints nothing"
+  - "docs/UI-SCREENS.md says a gated 401 is retried once only in firebase mode, when the wrapper sent a token, the request can be re-sent and a forced refresh returns a different token for the same account, and that a retry that succeeds neither fires onUnauthorized nor marks the session blocked, in SHARED-02's Shows or does paragraph and in SETTINGS-13's bullet at main's lines 13549-13554, and that no other element states how the auth-blocked flag, its strip and banner, the wrapper's retry or the callback follow a gated call's answer without those conditions (the flag is set by a final 401 and cleared by a later success, each only when that answer counts: always in open and iap mode, where there is no account, and in firebase mode when the account signed in as the answer arrives is the one signed in when the request began, no account counting as one), or says the wrapper's tests never read the flag; and SHARED-02 says the flag is one global value that an account switch does not clear, citing solyra#270: git grep -c 'the request can be re-sent' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:3 (SHARED-02, AUTH-08's retry criterion and SETTINGS-13), git grep -c 'solyra#270' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:8, where at 5fbdbb9 it prints nothing, git grep -c -e 'has no account to compare' -e 'sent and answered while signed out counts' -- docs/UI-SCREENS.md prints docs/UI-SCREENS.md:2, where at 5fbdbb9 it prints nothing, git grep -nE 'final 401 for the same account|is 401 for the same account|been 401 for the same account|whose account is still signed in|while its account is still signed in|for that account .SHARED-02.|unless the account changed meanwhile|signed-in account has not changed|account that sent the request is still signed in' -- docs/UI-SCREENS.md prints nothing, where the r4 Design (solyra#272) prints 45 lines, and git grep -nE 'except identity paths, which throw instead|gated path returns 401: .track|when the response status is 401, then .track|only when the wrapper sent a token and a forced|any gated 401|gated-path 401 and|on any page.s 401|ANY gated ./api/[*]. 401|any gated ./api/[*]. call answers 401|Given a gated 401, then|Given a 401 from a gated path, then|gated path answers 401, then|Every gated call that answers 401|Given a gated call answers 401, (then|when .track)|a 401 sets the flag|call returns 401 .AUTH-08.|cleared by any later gated success|any successful gated response clears|Given a gated call succeeds again, then|next gated-path success [(]|^answer clears .|next successful gated call clears|follows the last answer .read|a gated call has answered 401|when a gated call has$|last gated answer was a 401|while a gated call answers 401|Given a signed-in user and a 401 on|Given a signed-in user whose calls answer 401|by which answer came$|Given a stale token, when a gated call first 401s|answers 401, after one retry with a freshly minted|reflects the last gated answer, not|signed-in user.s 401|Given a 401 on the market data|then the page shows the load errors above|What a signed-in account sees when a route refuses|^route[.]$|no assertion in it reads the resulting flag|that file reads the resulting flag|15 tests, Vitest|never .isAuthBlocked|reads .markAuthBlocked. or .useAuthBlocked|The .isAuthBlocked. branch itself' -- docs/UI-SCREENS.md prints nothing, where at 5fbdbb9 it prints 73 lines: SHARED-02's 193, 194 and 203 and 70 lines in other elements; and the code facts SHARED-02 states hold: git grep -cE '(mark|clear)AuthBlocked[(][)];' -- src ':!*.test.ts' prints only src/lib/authedFetch.ts:3, the three calls in the wrapper's answer handling, so only a gated answer sets or clears the flag, and git grep -c 'setOnUnauthorized(' -- src ':!*.test.ts' prints only src/lib/authedFetch.ts:1, its definition"
+  - "npx vitest run src/lib/authedFetch.test.ts src/mocks/contract.test.ts passes on the PR head with the 41 tests of src/lib/authedFetch.test.ts, the two tests the Design renames and the fifteen it adds included, and each added test fails when src/lib/authedFetch.ts is changed as the Design's mutation table names for it: pathOf dropping a relative URL's query or keeping an absolute string's, isReplayable always true, the retry without its different-token check, without its same-account check or without its sent-token check, a gated answer outside firebase mode returned untracked, sameAccount false for a request that began signed out or true for any request that began signed out, an open path's answer tracked or its 401 retried, an identity path sent when the refresh returns another account's token, a present token kept off the OPEN_PREFIXES paths, a Request with a streamed body counted as replayable, a verify-email 403 to a request made signed out clearing the flag, a signed-in account's gated success leaving the flag set, and a late 401 from another account clearing it"
   - "The bash block under security-scan.md's Auth-gate surface, run in a scratch repository whose OPEN_PREFIXES array has a comment line ending in a closing bracket after its fifth entry and a comment on the line after its closing bracket, once with the array spanning thirteen lines and once twenty-nine, prints in both the changed-since-merge-base HIGH line when an entry is added or removed after the eighth line, when an entry is added below that in-array comment and when the one-line OPEN_EXACT gains an entry; prints no HIGH line when only the comment after the closing bracket changes; prints the not-found HIGH line when both lists are renamed; and prints the changed HIGH line when an entry is added in a third copy whose OPEN_PREFIXES declaration line ends in a line comment ending in a closing bracket, and in a fourth whose declaration line ends in a block comment, closed on the next line, ending in a closing bracket"
   - "git diff --name-only origin/main...HEAD names no path outside the thirteen files the Design edits, docs/product/02-FEATURE-CATALOG.md and docs/superpowers/"
   - "python3 scripts/gate/spec_gate.py --pr origin/main passes on the PR head"
@@ -102,8 +102,8 @@ Evidence was re-read on 2026-10-12 from `5fbdbb9`, still solyra main, and from s
    12 lines passes the thirteen-line array alone. It also includes a case that a read ending on any
    `]` fails (an entry below an in-array comment ending in `]`).
 
-The tests the Design adds hold fifteen `fetch('/api/...')` literals under `src/`, so the count
-README.md carries moves from 101 to 116 and README.md:15 is in the Design for that number.
+The tests the Design adds hold nineteen `fetch('/api/...')` literals under `src/`, so the count
+README.md carries moves from 101 to 120 and README.md:15 is in the Design for that number.
 
 ## Changes from solyra#272
 
@@ -146,10 +146,13 @@ raised three findings, so this re-cut replaces it as #272 replaced #262, and #27
    "Checked"): the forced refresh returning the same token or failing, another account signed in by
    the time it returns, a request sent without a token, the accountless cases of 6, an open path's
    401 neither retried nor tracked, an `/api/me` request aborted when the refresh returns another
-   account's token, and a present token attached to the OPEN_PREFIXES paths. Two statements the wrapper's
-   tests cannot reach are checked against the code instead (done_when 9): only the wrapper's answers
-   set or clear the flag, so an account switch alone leaves it set (solyra#270), and nothing in the
-   app registers `onUnauthorized` (solyra#161).
+   account's token, a present token attached to the OPEN_PREFIXES paths, a `Request` with a streamed
+   body, a signed-in account's gated success clearing the flag, a late 401 from another account
+   leaving it set, and a verify-email 403 to a request made signed out leaving it set. Two
+   statements say that nothing else in the app does something, which no test of the wrapper can
+   show, so done_when 9 counts the call sites instead: only the wrapper's answers set or clear the
+   flag, so an account switch alone leaves it set (solyra#270), and nothing in the app registers
+   `onUnauthorized` (solyra#161).
 
 ## Problem
 
@@ -233,8 +236,9 @@ point at line 45, or name only the prefix list as what must stay in sync:
     an answer to a request made as an account that is no longer signed in (`a late 401 from account
     A does not mark account B as auth-blocked`, `a late verification 403 or success from account A
     leaves account B's auth-blocked flag set`); in `open` and `iap` modes, and for a `firebase`
-    request sent and answered while signed out, every final gated answer sets or clears it
-    (executed; Changes from solyra#272, 6); and the callback fires only in `firebase` mode.
+    request sent and answered while signed out, every final gated 401 sets it and every final gated
+    success clears it (executed; Changes from solyra#272, 6); and the callback fires only in
+    `firebase` mode.
     The flag is one module-level boolean (`src/lib/authGate.ts:14`), not kept per account, and an
     account switch does not clear it: after account A's final 401, account B sees the strip until
     B's first gated success (executed; solyra#270).
@@ -366,7 +370,11 @@ Thirteen files, plus the catalog close-out. Each old text below occurs exactly o
 Code-line pointers, the callback criterion, the strip-flag sentence and the sentence after it), one
 exactly four times (the pointer after the strip-flag sentence where it shares the line) and two
 exactly six times (`DataGate`'s condition and the summary rows' "a signed-in user's 401"). The
-apply script refuses any other count.
+apply script refuses any other count. Every `src/lib/authedFetch.ts` and
+`src/lib/authedFetch.test.ts` line this spec cites, in its prose and in the text the Design writes,
+is a line at `5fbdbb9`. If either file has changed on the implementation branch's base, the
+implementer re-points each pointer the Design writes to the same code; no done_when item depends
+on those lines.
 
 ### CLAUDE.md
 
@@ -425,8 +433,8 @@ before and after #266.
 
 ### README.md
 
-Line 15: "`src/` holds ~101 bare `fetch('/api/...')` literals" becomes "`src/` holds ~116 bare
-`fetch('/api/...')` literals". The tests below add fifteen literals; the implementer writes what
+Line 15: "`src/` holds ~101 bare `fetch('/api/...')` literals" becomes "`src/` holds ~120 bare
+`fetch('/api/...')` literals". The tests below add nineteen literals; the implementer writes what
 the grep-count derivation gives on the branch.
 
 ### docs/DOC_REGISTRY.md
@@ -512,7 +520,8 @@ account changes, so after account A's final 401, account B sees the expired-sess
 B's first gated success (solyra#270, FEAT-AUTH-001, will change this).
 In `open` and `iap` modes a gated 401 is not retried and fires no callback. A 401 from an open path such as `/api/me` is
 not retried and never reaches `track()`, so neither fires; an open path answering without a
-token is expected, not a sign the session is blocked.
+token is expected, not a sign the session is blocked. None of this runs in mock-data mode
+(SHARED-04): `authedFetch.ts:167-170` answers from fixtures first (read from the code).
 ```
 
 States, lines 190-194:
@@ -548,7 +557,7 @@ After line 204, six new acceptance criteria:
 ```
 - In `firebase` mode, given a signed in user, when the frontend's request to `/api/me/preferences` answers 401 to every attempt, then the registered `onUnauthorized` callback fires, as for any gated path, while a 401 from `/api/me` does not fire it (`treats /api/me/preferences as gated while /api/me stays open`).
 - In `firebase` mode, given a signed in user, when the frontend requests the relative URL `/api/me?source=x` and it answers 401, then the wrapper treats it as gated and fires `onUnauthorized`, while the same URL given as an absolute string, a `URL` or a `Request` stays open (`classifies a relative /api/me with a query string as gated, unlike its absolute forms`). The backend matches the path alone (`platform/api/auth.py:199`) and so leaves all four forms open, the relative one included; that half is read from its code, and no test sends it a query.
-- In `firebase` mode, given a signed in user and a gated 401, then the wrapper does not retry when the request's body cannot be re-sent, when the forced refresh returns the same token or fails, or when another account is signed in by the time it returns, and in that last case `onUnauthorized` still fires and the flag is left as it was (`does not retry a gated 401 whose body cannot be re-sent`, `does not retry a gated 401 when the forced refresh returns the same token or fails`, `does not retry a gated 401 with another account's token`).
+- In `firebase` mode, given a signed in user and a gated 401, then the wrapper does not retry when the request's body cannot be re-sent, when the forced refresh returns the same token or fails, or when another account is signed in by the time it returns, and in that last case `onUnauthorized` still fires and the flag is left as it was (`does not retry a gated 401 whose body cannot be re-sent`, `does not retry a gated 401 to a Request whose body is a stream`, `does not retry a gated 401 when the forced refresh returns the same token or fails`, `does not retry a gated 401 with another account's token`).
 - In `firebase` mode with no account signed in, when a gated call answers 401, then it is not retried, `onUnauthorized` fires and the session is marked blocked, and a later gated success clears it; when an account signs in before the 401 arrives, the session is not marked (`marks the session blocked on a gated 401 sent and answered while signed out, with no retry`, `does not mark the session blocked when an account signs in while a signed-out request is out`).
 - In `open` and `iap` modes, when a gated call answers 401, then the session is marked blocked with no retry and no callback, and a later gated success clears it (`in open mode a gated 401 marks the session blocked with no retry or callback, and a gated success clears it`, and the same in `iap` mode).
 - In `firebase` mode, given a signed in user, when an open path such as `/api/me` answers 401, then it is not retried and the session is not marked blocked (`neither retries an open path that answers 401 nor marks the session blocked`); when the cached token fails and the forced refresh returns another account's token, then a request to `/api/me` is aborted (`aborts an /api/me request when the account switches during the forced token refresh`).
@@ -562,7 +571,7 @@ classification only, and stocks has no test that sends `/api/me` a query (`git g
 
 Line 206 (Tests): the renamed test; `treats /api/me/preferences as gated while /api/me stays open`,
 renamed from "treats /api/me/preferences as gated, matching the server, while /api/me stays open",
-a name that claimed a server behaviour no solyra test can check; and the eleven tests the test
+a name that claimed a server behaviour no solyra test can check; and the fifteen tests the test
 file gains below, added to the list.
 
 Line 208 (Code): `platform/api/auth.py:56-70` becomes `:57-70`, and the solyra part becomes
@@ -729,11 +738,11 @@ Statements that no test reads the flag, which the account-switch and verify-emai
   401-on-gated-path mechanics and the token-retry behavior, though its assertions target the /
   `onUnauthorized` callback and the `Authorization` header, not `isAuthBlocked()` directly; /
   `markAuthBlocked`/`clearAuthBlocked` run for real as an unmocked side effect, but no assertion in /
-  that file reads the resulting flag." becomes "(37 tests, Vitest, CI-run) is real, passing coverage
+  that file reads the resulting flag." becomes "(41 tests, Vitest, CI-run) is real, passing coverage
   of / the 401-on-gated-path mechanics and the token-retry behavior. Most of its assertions target
   the / `onUnauthorized` callback and the `Authorization` header; the account-switch, verify-email
   and / retry-condition tests also read the flag through `isAuthBlocked()` (`a late 401 from account
-  A does not mark account B as / auth-blocked`)." The file holds 26 tests on main and 37 with this
+  A does not mark account B as / auth-blocked`)." The file holds 26 tests on main and 41 with this
   change.
 - `:1377` (AUTH-08 Tests): "The `isAuthBlocked` branch itself remains untested" becomes "The
   `isAuthBlocked` → `Sign in to load data` rendering branch itself remains untested", so the line
@@ -956,11 +965,10 @@ add
 
 The absolute string adds no literal the README count matches (it does not start with `/api/`).
 
-The ten tests below pin each condition the Design's text states about the wrapper's retry, the
-flag and the callback (Changes from solyra#272, 6 and 7). Each fails under the change to
+The fourteen tests below pin each condition the Design's text states about the wrapper's retry,
+the flag and the callback (Changes from solyra#272, 6 and 7). Each fails under the change to
 `src/lib/authedFetch.ts` the mutation table under "Checked" names for it, and passes on main's code.
-The new block's title uses a colon where the file's other titles use a dash, since this change adds
-no dash. Line numbers are main's.
+Each goes into an existing `describe` block. Line numbers are main's at `5fbdbb9`.
 
 After the test ending at line 84 (`attaches the bearer token to gated paths`), add
 
@@ -1012,6 +1020,39 @@ After the test ending at line 186 (`a 401 from a gated path fires onUnauthorized
     expect(native).toHaveBeenCalledTimes(1);
     expect(gate.isAuthBlocked()).toBe(false);
   });
+
+  it('marks the session blocked on a gated 401 sent and answered while signed out, with no retry', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue(null);
+    // No cached token; a refresh that did yield one must not turn this into a retry.
+    getIdToken.mockImplementation(async (force?: boolean) => (force ? 'tok-late' : null));
+    const { native, onUnauthorized, fetch } = await install();
+    const gate = await import('./authGate');
+    native.mockResolvedValueOnce(new Response('{}', { status: 401 }));
+
+    await fetch('/api/admin/routes');
+    expect(sentAuthHeader(native)).toBeNull();
+    expect(native).toHaveBeenCalledTimes(1);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(gate.isAuthBlocked()).toBe(true);
+
+    await fetch('/api/admin/routes');
+    expect(gate.isAuthBlocked()).toBe(false);
+  });
+
+  it('does not mark the session blocked when an account signs in while a signed-out request is out', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValueOnce(null).mockResolvedValue('uid-a');
+    getIdToken.mockResolvedValue(null);
+    const { native, onUnauthorized, fetch } = await install();
+    const gate = await import('./authGate');
+    native.mockResolvedValueOnce(new Response('{}', { status: 401 }));
+
+    await fetch('/api/admin/routes');
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(gate.isAuthBlocked()).toBe(false);
+  });
 ```
 
 After the test ending at line 208 (`firebase mode leaves non-/api requests untouched`), inside the same block, add
@@ -1036,7 +1077,7 @@ After the test ending at line 208 (`firebase mode leaves non-/api requests untou
   );
 ```
 
-After the test ending at line 242 (`reports signed-out when the refreshed token also 401s, and retries only once`), at the end of that block, add
+After the test ending at line 242 (`reports signed-out when the refreshed token also 401s, and retries only once`), inside the same block, add
 
 ```ts
   it('does not retry a gated 401 whose body cannot be re-sent', async () => {
@@ -1046,7 +1087,7 @@ After the test ending at line 242 (`reports signed-out when the refreshed token 
     const { native, onUnauthorized, fetch } = await install();
     const gate = await import('./authGate');
     native.mockResolvedValue(new Response('{}', { status: 401 }));
-    // The first send consumes a streamed body, so isReplayable refuses a second one.
+    // isReplayable refuses a streamed body, which cannot be read twice.
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.close();
@@ -1059,6 +1100,25 @@ After the test ending at line 242 (`reports signed-out when the refreshed token 
     expect(getIdToken).not.toHaveBeenCalledWith(true);
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(gate.isAuthBlocked()).toBe(true);
+  });
+
+  it('does not retry a gated 401 to a Request whose body is a stream', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-1');
+    getIdToken.mockImplementation(async (force?: boolean) => (force ? 'tok-fresh' : 'tok-stale'));
+    const { native, fetch } = await install();
+    native.mockResolvedValue(new Response('{}', { status: 401 }));
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+
+    await fetch(
+      new Request('http://localhost:5173/api/me/preferences', { method: 'PUT', body, duplex: 'half' } as RequestInit),
+    );
+
+    expect(native).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry a gated 401 when the forced refresh returns the same token or fails', async () => {
@@ -1096,45 +1156,55 @@ After the test ending at line 242 (`reports signed-out when the refreshed token 
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(gate.isAuthBlocked()).toBe(false);
   });
-```
 
-and after that block, before the verify-email block, add
-
-```ts
-describe('installAuthFetch: signed out in firebase mode', () => {
-  it('marks the session blocked on a gated 401 sent and answered while signed out, with no retry', async () => {
+  it("clears the flag on a signed-in account's next gated success", async () => {
     getAuthMode.mockReturnValue('firebase');
-    getCurrentUid.mockResolvedValue(null);
-    // No cached token; a refresh that did yield one must not turn this into a retry.
-    getIdToken.mockImplementation(async (force?: boolean) => (force ? 'tok-late' : null));
-    const { native, onUnauthorized, fetch } = await install();
+    getCurrentUid.mockResolvedValue('uid-1');
+    getIdToken.mockResolvedValue('tok-1');
+    const { native, fetch } = await install();
     const gate = await import('./authGate');
     native.mockResolvedValueOnce(new Response('{}', { status: 401 }));
 
     await fetch('/api/admin/routes');
-    expect(sentAuthHeader(native)).toBeNull();
-    expect(native).toHaveBeenCalledTimes(1);
-    expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(gate.isAuthBlocked()).toBe(true);
 
     await fetch('/api/admin/routes');
     expect(gate.isAuthBlocked()).toBe(false);
   });
+```
 
-  it('does not mark the session blocked when an account signs in while a signed-out request is out', async () => {
-    getAuthMode.mockReturnValue('firebase');
-    getCurrentUid.mockResolvedValueOnce(null).mockResolvedValue('uid-a');
-    getIdToken.mockResolvedValue(null);
-    const { native, onUnauthorized, fetch } = await install();
+After the test ending at line 380 (`a late 401 from account A does not mark account B as auth-blocked`), inside the same block (it uses that block's `holdRequest`, `switchTo` and `verify403`), add
+
+```ts
+  it("a late 401 from account A leaves account B's auth-blocked flag set", async () => {
+    signedInAs('uid-a');
+    const { native, fetch } = await install();
     const gate = await import('./authGate');
+    const late401 = await holdRequest(native, fetch);
+
+    switchTo('uid-b');
     native.mockResolvedValueOnce(new Response('{}', { status: 401 }));
+    await fetch('/api/glossary');
+    expect(gate.isAuthBlocked()).toBe(true);
 
-    await fetch('/api/admin/routes');
-
-    expect(onUnauthorized).toHaveBeenCalledTimes(1);
-    expect(gate.isAuthBlocked()).toBe(false);
+    late401.release(new Response('{}', { status: 401 }));
+    await late401.pending;
+    expect(gate.isAuthBlocked()).toBe(true);
   });
-});
+
+  it('leaves the auth-blocked flag set on a verify-email 403 to a request made signed out', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue(null);
+    getIdToken.mockResolvedValue(null);
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    gate.markAuthBlocked();
+    native.mockResolvedValueOnce(verify403());
+
+    await fetch('/api/glossary');
+
+    expect(gate.isAuthBlocked()).toBe(true);
+  });
 ```
 
 ### vite.config.ts (comment only)
@@ -1154,21 +1224,22 @@ Capacity: n/a. Solyra runs no workload; this changes prose, comments and tests.
 
 ### Checked on a scratch copy of 5fbdbb9 (2026-10-12)
 
-The apply script runs on a fresh detached worktree of `5fbdbb9` with `npm ci`: "applied 102 edits
+The apply script runs on a fresh detached worktree of `5fbdbb9` with `npm ci`: "applied 103 edits
 plus 36 counted replacements to 13 files". Each old text sits at the same line on `517c90e` and
 `5fbdbb9`.
 
 The mutation table. Each row changes `src/lib/authedFetch.ts` on the applied tree by one text
 replacement, runs `npx vitest run src/lib/authedFetch.test.ts`, and restores the file; the last
 column runs the same change against the previous cut's 27 tests (solyra#272). On the unchanged code
-all 37 pass, and under each change every test not named in its row still passes.
+all 41 pass, and under each change every test not named in its row still passes.
 
 | Change | Replacement in `src/lib/authedFetch.ts` | Fails with this Design | Fails with #272's tests |
 |---|---|---|---|
 | `pathOf` drops a relative URL's query | `input.startsWith('http') ? new URL(input).pathname : input` becomes `new URL(input, window.location.origin).pathname` | `classifies a relative /api/me with a query string as gated, unlike its absolute forms` | its query test |
 | `pathOf` keeps an absolute string's query | `new URL(input).pathname : input` becomes `new URL(input).pathname + new URL(input).search : input` | the same | its query test |
-| `isReplayable` always true | `return true;` as the first line of `isReplayable` | `does not retry a gated 401 whose body cannot be re-sent` | none |
-| the retry without its different-token check | `fresh && fresh !== token && (await getCurrentUid()) === uidAtStart` loses `fresh !== token &&` | `does not retry a gated 401 when the forced refresh returns the same token or fails`, and `a late verification 403 or success from account A leaves account B's auth-blocked flag set` | the second only |
+| `isReplayable` always true | `return true;` as the first line of `isReplayable` | `does not retry a gated 401 whose body cannot be re-sent` and `does not retry a gated 401 to a Request whose body is a stream` | none |
+| a `Request` with a streamed body counted as replayable | `isReplayable`'s `Request` branch returns `true` | `does not retry a gated 401 to a Request whose body is a stream` | none |
+| the retry without its different-token check | `fresh && fresh !== token && (await getCurrentUid()) === uidAtStart` loses `fresh !== token &&` | `does not retry a gated 401 when the forced refresh returns the same token or fails`, and three that send the same token twice: `clears the flag on a signed-in account's next gated success`, `a late 401 from account A leaves account B's auth-blocked flag set` and `a late verification 403 or success from account A leaves account B's auth-blocked flag set` | the last only |
 | the retry without its same-account check | the same condition loses `&& (await getCurrentUid()) === uidAtStart` | `does not retry a gated 401 with another account's token` | none |
 | the retry without its sent-token check | `resp.status === 401 && gated && token && isReplayable(init, target)` loses `token &&` | `marks the session blocked on a gated 401 sent and answered while signed out, with no retry` | none |
 | a gated answer outside `firebase` mode returned untracked | in the branch for other modes, `return gated ? track(resp) : resp;` becomes `return resp;` | `in open mode a gated 401 marks the session blocked with no retry or callback, and a gated success clears it` and its `iap` twin | none |
@@ -1178,16 +1249,23 @@ all 37 pass, and under each change every test not named in its row still passes.
 | an open path's 401 retried | the retry condition loses `gated &&` | the same | none |
 | an identity path sent when the refresh returns another account's token | in the account-change branch of token acquisition, `isIdentityPath(path) \|\| isGatedApiPath(path)` becomes `isGatedApiPath(path)` | `aborts an /api/me request when the account switches during the forced token refresh` | none |
 | a present token kept off the OPEN_PREFIXES paths | `const nextInit = token ? withToken(token) : init;` becomes `token && (isGatedApiPath(path) \|\| isIdentityPath(path)) ? withToken(token) : init` | `attaches the bearer token to the OPEN_PREFIXES paths too` | none |
+| a verify-email 403 to a request made signed out clears the flag | `if (gated && uidAtStart && (await isVerifyEmail403(resp)))` loses `uidAtStart &&` | `leaves the auth-blocked flag set on a verify-email 403 to a request made signed out` | none |
+| a signed-in account's gated success leaves the flag set | in `track()`, `if (sameAccount) clearAuthBlocked();` becomes `if (sameAccount && !uid) clearAuthBlocked();` | `clears the flag on a signed-in account's next gated success` | none |
+| a late 401 from another account clears the flag | in `track()`, `if (sameAccount) markAuthBlocked();` gains `else clearAuthBlocked();` | `a late 401 from account A leaves account B's auth-blocked flag set` | none |
 
-Ten of the thirteen changes passed every test of the previous cut, the finding of 4250017207 and
-the sweep of Changes from solyra#272, 7; each now fails one named test.
+Fourteen of the seventeen changes passed every test of the previous cut, the finding of
+4250017207 and the sweep of Changes from solyra#272, 7; each now fails a named test. Four rows (the
+`Request` branch, the signed-out verify-email 403, the signed-in success and the late 401 from
+another account) came from the r5 pre-review, whose probe tests passed on the unchanged code and
+failed under each change, as the committed tests now do.
 
-Two facts SHARED-02 states sit outside what the wrapper's harness can change, and done_when 9
-reads them from the code: `markAuthBlocked()` and `clearAuthBlocked()` are called only at
-`src/lib/authedFetch.ts:186`, `:188` and `:294`, so nothing clears the flag when the account
-changes (the switch happens in the Firebase SDK, which the harness mocks), and nothing outside the
-tests calls `setOnUnauthorized` (`git grep -n "setOnUnauthorized(" -- src ':!*.test.ts'` finds only
-its definition).
+Two facts SHARED-02 states are claims that nothing else in the app does something, which a test
+of the wrapper cannot show, so done_when 9 counts their call sites: `markAuthBlocked()` and
+`clearAuthBlocked()` are called only in the wrapper's answer handling (three calls, at
+`src/lib/authedFetch.ts:186`, `:188` and `:294` at `5fbdbb9`), so nothing clears the flag when the
+account changes, and nothing outside the tests calls `setOnUnauthorized` (one match, its
+definition). The harness can simulate an account switch through `getCurrentUid`, as the
+account-switch tests do; what it cannot show is that no other code clears the flag.
 
 The flag across accounts, in the same harness:
 - after account B's gated 401 the flag is set, a late 200 to a request account A made leaves it
@@ -1195,8 +1273,9 @@ The flag across accounts, in the same harness:
   `a late verification 403 or success from account A leaves account B's auth-blocked flag set` and
   `marks verification required for the signed-in uid and clears a stale auth-blocked flag`);
 - after account A's final 401 and a switch to account B, the flag is still set before any answer
-  for B, and B's first gated success clears it (solyra#270; executed, and read from the code as
-  above, since the switch itself happens outside the wrapper);
+  for B, and B's first gated success clears it (solyra#270; executed in the harness, which
+  simulates the switch through `getCurrentUid`; that no other code clears the flag is the call-site
+  count above);
 - a late final 401 to a request A made, arriving after the switch, fires `onUnauthorized` and
   leaves the flag as it was (pinned by `does not retry a gated 401 with another account's token`
   and `a late 401 from account A does not mark account B as auth-blocked`).
@@ -1257,7 +1336,7 @@ the read there, and an entry added below it gives no HIGH (Risks).
 With all thirteen files edited, on `5fbdbb9`:
 
 - `node scripts/docs-audit.mjs`: the two CLAUDE.md count-claim findings are gone and no finding is
-  new; README's ~116 equals the derivation. Main's six FRONTEND.md count-claim findings (the
+  new; README's ~120 equals the derivation. Main's six FRONTEND.md count-claim findings (the
   Lovable routes) and its `roadmap.md` unclassified finding stay, as on main.
 - Each grep in done_when prints what its item says, against `HEAD` (main) and on the edited tree.
 - Each item that describes behaviour fails against a deliberately broken copy:
@@ -1265,8 +1344,8 @@ With all thirteen files edited, on `5fbdbb9`:
   | Item | Broken copy | Result |
   |---|---|---|
   | 3 | Claims rows kept | 3 lines |
-  | 4 | "~116 bare" written into UI-SCREENS' call-site line | 1 line |
-  | 4 | "(~116 `fetch('/api/...')` literals" written there | 1 line |
+  | 4 | "~120 bare" written into UI-SCREENS' call-site line | 1 line |
+  | 4 | "(~120 `fetch('/api/...')` literals" written there | 1 line |
   | 5 | LANDING-10's Code line left at `:45` | 1 line |
   | 6 | `:8827` left as "the open prefixes" | 1 line |
   | 7 | the kept anchor dropped | nothing |
@@ -1278,13 +1357,13 @@ With all thirteen files edited, on `5fbdbb9`:
   | 9 | SETTINGS-13 without "the request can be re-sent" | `docs/UI-SCREENS.md:2` |
   | 9 | AUTH-08's `:1377` left as it was | 1 line |
   | 9 | the previous cut's Design (solyra#272) | its qualifiers print 45 lines; the no-account count prints nothing |
-  | 9 | `clearAuthBlocked();` called from a new place in `src/` | an extra line beside `:186`, `:188` and `:294` |
+  | 9 | `clearAuthBlocked();` called from a new function in `src/lib/authGate.ts` | a second line, `src/lib/authGate.ts:1` |
   | 10 | each change in the mutation table | the test its row names fails |
   | 11 | each variant in the table above, the r3 block on the third copy, and a block that excludes only `//` on the fourth | at least one wrong case |
   | 12 | a stray file added | the stray path printed |
 
 - `npx vitest run src/lib/authedFetch.test.ts src/mocks/contract.test.ts --testTimeout=60000`: 2
-  files, 51 tests passed; `scripts/docs-audit.test.mjs` with the `npm ci` `node_modules`: 643 of 643
+  files, 55 tests passed; `scripts/docs-audit.test.mjs` with the `npm ci` `node_modules`: 643 of 643
   passed.
 - `npx tsc -b` and eslint on the three touched source files: clean, with `node_modules` from
   `npm ci` on `5fbdbb9` (the lockfile #265 synced).
@@ -1297,7 +1376,7 @@ With all thirteen files edited, on `5fbdbb9`:
 - The recurring count finding the first draft carried is gone: CLAUDE.md states no fetch count,
   and the one fetch count the audit checks sits in `README.md`, which any branch that can add a
   call may also edit (a `chore/` branch cannot, and adds no call). This change uses that path
-  itself (101 to 116). The Rule 3.7 count at `CLAUDE.md:183` stays audited.
+  itself (101 to 120). The Rule 3.7 count at `CLAUDE.md:183` stays audited.
 - The documented query-string difference is real behaviour. Its browser half is pinned by a test;
   its server half is read from stocks' code and no test in either repository checks it, so a
   stocks change to how the middleware reads a path would not fail this repository's suite. That
@@ -1309,9 +1388,9 @@ With all thirteen files edited, on `5fbdbb9`:
   one renamed here. Until #266 lands a relative `/api/me` with a query is treated as gated in the
   browser.
 - The expired-session flag survives an account switch: after account A's final 401, account B sees
-  the strip until B's first gated success. No test pins it, since the switch happens in the
-  Firebase SDK, outside the wrapper the tests drive; done_when 9 reads from the code that only the
-  wrapper's answers set or clear the flag. This change describes that in SHARED-02 and in the lines
+  the strip until B's first gated success. No test pins it: the harness can simulate the switch
+  through `getCurrentUid`, but the claim is that no other code clears the flag, which done_when 9
+  checks by counting the call sites of `markAuthBlocked()` and `clearAuthBlocked()`. This change describes that in SHARED-02 and in the lines
   that say the flag follows "the last answer that counted", and cites solyra#270 (FEAT-AUTH-001),
   which will change it. #270's done_when has its PR drop that caveat from SHARED-02 and the
   qualified strip rows, all in `docs/UI-SCREENS.md`, which a FEAT-AUTH-001 branch may edit.
@@ -1338,7 +1417,7 @@ With all thirteen files edited, on `5fbdbb9`:
   counts (`tests/admin/admin-auth.spec.ts:236`, `:249`), the top nav and the shell branding
   (`tests/shared/navigation.spec.ts:48`, `:78`) and three Lovable insights specs
   (`tests/insights-lovable/insights-lovable.spec.ts:36`, `:48`, `:59`). This change does not cause
-  them: in `src/` it edits comments in `authedFetch.ts`, renames two unit tests and adds eleven, and in
+  them: in `src/` it edits comments in `authedFetch.ts`, renames two unit tests and adds fifteen, and in
   `vite.config.ts` one comment. Its e2e run will show the same seven failures until a
   FEAT-INSIGHT-001 fix lands; whether to merge past them is the owner's call under CLAUDE.md
   Rule 2.5 ("CI is green").
