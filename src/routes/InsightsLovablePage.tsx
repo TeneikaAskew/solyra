@@ -60,7 +60,7 @@ function EvidencePanel({ sources, onClose, focusId }: { sources: ResearchSource[
 }
 
 export default function InsightsLovablePage() {
-  const { activeTicker, quickPicks, setTicker, pushRecent } = useTickerStore();
+  const { activeTicker } = useTickerStore();
   const { isSignedIn, authMode } = useUser();
   const research = useInsightsLovable();
   const [mode, setMode] = useState<ResearchMode>('live');
@@ -71,7 +71,6 @@ export default function InsightsLovablePage() {
   const [focusId, setFocusId] = useState<string | null>(null);
   const openSource = (id: string) => { setFocusId(id); if (!window.matchMedia('(min-width: 1280px)').matches) setEvidenceOpen(true); };
   const followUp = (q: string) => { setQuestion(q); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const [tickerDraft, setTickerDraft] = useState(activeTicker);
   const activeSession = research.detail?.session ?? null;
   const busy = research.stage === 'gathering' || research.stage === 'synthesizing';
   const promptAllowed = authMode !== 'firebase' || isSignedIn;
@@ -79,16 +78,6 @@ export default function InsightsLovablePage() {
 
   useEffect(() => { if (promptAllowed) void research.loadSessions(); }, [promptAllowed, research.loadSessions]);
   useEffect(() => { if (activeSession) { setMode(activeSession.mode); setCutoff(activeSession.replay_cutoff ? activeSession.replay_cutoff.slice(0, 16) : ''); } }, [activeSession]);
-  useEffect(() => { setTickerDraft(activeTicker); }, [activeTicker]);
-
-  const chooseTicker = (value: string) => {
-    if (activeSession) return;
-    const symbol = value.trim().toUpperCase();
-    if (!/^[A-Z][A-Z0-9.]{0,9}$/.test(symbol)) return;
-    setTicker(symbol);
-    pushRecent(symbol);
-    setTickerDraft(symbol);
-  };
 
   const submit = () => {
     const trimmed = question.trim();
@@ -100,7 +89,7 @@ export default function InsightsLovablePage() {
     <div className="mx-auto min-h-full max-w-[1420px]">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--outline-variant)] pb-5">
         <div><div className="flex items-center gap-2"><h1 className="text-[24px] font-bold text-[var(--on-surface)]">Insights Lab</h1><Pill tone="brand">LAB</Pill></div><p className="mt-1 max-w-2xl text-sm text-[var(--on-surface-variant)]">Ask a market question. Get a concise answer grounded in Solyra evidence.</p></div>
-        <div className="flex gap-2"><Button variant="ghost" size="sm" onPress={() => setHistoryOpen(true)}><History size={15} />History</Button><div className="hidden sm:block"><TickerCombobox /></div></div>
+        <div className="flex gap-2"><Button variant="ghost" size="sm" onPress={() => setHistoryOpen(true)}><History size={15} />History</Button><TickerCombobox /></div>
       </header>
 
       {!promptAllowed ? <div className="py-24 text-center"><Search className="mx-auto text-[var(--on-surface-muted)]" /><h2 className="mt-4 text-lg font-semibold">Sign in to research</h2><p className="mt-2 text-sm text-[var(--on-surface-muted)]">Research sessions and evidence are private to your account.</p></div> : <div className="grid min-w-0 gap-8 py-6 xl:grid-cols-[minmax(0,1fr)_290px]">
