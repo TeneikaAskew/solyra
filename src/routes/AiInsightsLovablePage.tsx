@@ -59,7 +59,11 @@ export default function AiInsightsLovablePage() {
   const runStatus = useRunStatus(runId, activeTicker);
 
   useEffect(() => { setHistoricalId(null); }, [activeTicker]);
-  useEffect(() => { if (researchAllowed) void research.loadSessions().catch(() => undefined); }, [researchAllowed, research.loadSessions]);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!researchAllowed) return;
+    research.loadSessions().then(() => setSessionsError(null), (e: unknown) => setSessionsError(e instanceof Error ? e.message : 'Could not load saved research.'));
+  }, [researchAllowed, research.loadSessions]);
   const timeline = useMemo(() => unifiedHistory(historyQuery.data?.reports ?? [], research.sessions, historyFilter), [historyQuery.data, research.sessions, historyFilter]);
   const askResearch = (text: string) => { setPrefill({ text, nonce: Date.now() }); setTab('chat'); };
   useEffect(() => {
@@ -207,6 +211,7 @@ export default function AiInsightsLovablePage() {
             ))}
           </div>
           {historyQuery.error && <p role="alert" className="text-xs text-[var(--bear)]">Report history unavailable: {(historyQuery.error as Error).message}</p>}
+          {sessionsError && <p role="alert" className="text-xs text-[var(--bear)]">Saved research unavailable: {sessionsError}</p>}
           {!researchAllowed && <p className="text-xs text-[var(--on-surface-muted)]">Sign in to include your saved research questions.</p>}
           {historyQuery.isLoading ? <Loader2 size={18} className="animate-spin" /> : timeline.length === 0 ? (
             <p className="py-10 text-center text-sm text-[var(--on-surface-muted)]">Nothing saved for {activeTicker} yet.</p>
@@ -247,7 +252,7 @@ export default function AiInsightsLovablePage() {
 
       {tab === 'chat' && (
         <section role="tabpanel" aria-label="Chat">
-          <ResearchWorkspace research={research} embedded sharedCutoff={asOf} prefill={prefill} />
+          <ResearchWorkspace research={research} embedded sharedCutoff={asOf} prefill={prefill} sessionsError={sessionsError} onOpenSession={(s) => setAsOf(s.replay_cutoff ? s.replay_cutoff.slice(0, 16) : '')} />
         </section>
       )}
     </div>
