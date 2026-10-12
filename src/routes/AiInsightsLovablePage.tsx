@@ -11,7 +11,8 @@ import {
   useRefreshInsight,
   useRunStatus,
 } from '@/hooks/useInsights';
-import { BriefVsInsightsCard, SignalsCard, SimilarTradesCard } from '@/components/insights/ReportCards';
+import { BriefVsInsightsCard, SimilarTradesCard } from '@/components/insights/ReportCards';
+import { MarketSignals } from '@/components/insights/redesign/MarketSignals';
 import { AgentsPanel } from '@/components/insights/AgentsPanel';
 import { WatchlistPanel } from '@/components/insights/WatchlistPanel';
 import { ResearchCandleChart, type PriceLine } from '@/components/insights/ResearchCandleChart';
@@ -182,7 +183,7 @@ export default function AiInsightsLovablePage() {
                 <BriefVsInsightsCard ticker={activeTicker} brief={briefQuery.data ?? null} briefError={briefQuery.isError} insightDirection={report.direction} />
                 <Section title="Catalysts"><CatalystRail report={report} /></Section>
                 <Section title="Risk flags"><RiskRail report={report} /></Section>
-                <SignalsCard signals={(report.supporting_signals ?? []).slice(0, 5)} />
+                <MarketSignals ticker={activeTicker} replayCutoff={asOf || null} reportSignals={report.supporting_signals ?? []} />
                 <SimilarTradesCard trades={report.similar_past_trades ?? []} />
               </aside>
             </div>

@@ -170,7 +170,19 @@ async function gather(ticker: string, auth: string, mode: 'live' | 'replay', cut
   ];
   // Live quote is the single reference price for live answers; replay must not see it.
   if (mode === 'live') entries.push([`/api/live/quote/${ticker}`, 'Live quote (reference price)', 'live_quote']);
-  return Promise.all(entries.map(([path, label, type], i) => getEvidence(path, label, type, auth, cutoff, i + 1)));
+  const evidence = await Promise.all(entries.map(([path, label, type], i) => getEvidence(path, label, type, auth, cutoff, i + 1)));
+  // Historical win rates for the newest signal's bucket (direction + score + RSI ±5).
+  const rows = ((evidence.find((e) => e.type === 'signals')?.payload as { signals?: Array<Record<string, unknown>> } | null)?.signals ?? [])
+    .filter((r) => (r.direction === 'CALL' || r.direction === 'PUT') && typeof r.rsi === 'number' && typeof r.score === 'number')
+    .sort((a, b) => String(b.time).localeCompare(String(a.time)));
+  const idx = evidence.length + 1;
+  if (rows[0]) {
+    const qs = new URLSearchParams({ direction: String(rows[0].direction), rsi: String(rows[0].rsi), score: String(rows[0].score), rsi_band: '5', limit: '10' });
+    evidence.push(await getEvidence(`/api/signals/${ticker}/similar?${qs}`, 'Similar historical setups (win rates)', 'similar_setups', auth, cutoff, idx));
+  } else {
+    evidence.push({ id: `S${idx}`, type: 'similar_setups', label: 'Similar historical setups (win rates)', path: `/api/signals/${ticker}/similar`, asOf: null, freshness: 'unavailable', excerpt: 'No recent signal with direction, RSI and score to match against.', payload: null, hash: await digest('no-signal') });
+  }
+  return evidence;
 }
 function citations(answer: Record<string, unknown>): string[] {
   const ids: string[] = [];
