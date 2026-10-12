@@ -1696,7 +1696,7 @@ test.describe('Solyra landing page', () => {
 
 - [ ] **Step 2: Run the e2e**
 
-Run (in `platform/`, with `npm run dev` running in another shell — or `PLAYWRIGHT_START_VITE=1`): `npx playwright test tests/landing.spec.ts --project=chromium`
+Run (in `platform/`, with `npm run dev` running in another shell — or `PLAYWRIGHT_START_VITE=1`): `npx playwright test tests/landing/landing.spec.ts --project=chromium`
 Expected: 2 passed.
 
 - [ ] **Step 3: Fill the proof number from real data (spec §6)**
@@ -1719,7 +1719,7 @@ Run (in `platform/`): `npm run lint` → clean. `npm run build` → passes. `npx
 - [ ] **Step 5: Commit + PR**
 
 ```bash
-git add tests/landing.spec.ts src/components/landing/fixtures.ts
+git add tests/landing/landing.spec.ts src/components/landing/fixtures.ts
 git commit -m "test: landing page e2e smoke + proof tile data"
 git push -u origin feature/feat-waitlist-001-landing
 gh pr create --base main --title "feat: Solyra public landing page + waitlist API" --body "Implements docs/solyra-landing-page-design.md — landing page as the default / route (app moves to /dashboard), waitlist endpoint + table, 10 marketing sections with app-faithful gamma visuals. Deployment note: apply gcp/schema.sql (waitlist_signups) via the apply-schema-migrations Cloud Run job before flipping firebase-mode traffic."
