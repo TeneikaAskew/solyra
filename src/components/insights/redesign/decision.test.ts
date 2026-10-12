@@ -8,6 +8,24 @@ const base = {
 } as unknown as InsightReport;
 
 describe('groupKeyLevels', () => {
+  it.each(['High', 'Low'])('orders previous %s levels Day through Year regardless of price', (type) => {
+    const groups = groupKeyLevels({
+      [`Prev Year ${type}`]: 258.20,
+      [`Prev Quarter ${type}`]: 305.18,
+      [`Prev Month ${type}`]: 296.18,
+      [`Prev Week ${type}`]: 283.56,
+      [`Prev Day ${type}`]: 277.83,
+    });
+    expect(groups[type === 'High' ? 0 : 1].rows.map(([key]) => key)).toEqual(
+      ['Day', 'Week', 'Month', 'Quarter', 'Year'].map((period) => `Prev ${period} ${type}`),
+    );
+  });
+  it.each(['Effective', 'Gamma'])('orders timeframe-based %s levels Day through Year', (prefix) => {
+    const groups = groupKeyLevels({ [`${prefix} Year`]: 500, [`${prefix} Day`]: 100, [`${prefix} Month`]: 300, [`${prefix} Week`]: 200, [`${prefix} Quarter`]: 400 });
+    expect(groups[prefix === 'Effective' ? 2 : 3].rows.map(([key]) => key)).toEqual(
+      ['Day', 'Week', 'Month', 'Quarter', 'Year'].map((period) => `${prefix} ${period}`),
+    );
+  });
   it('puts display-label previous highs and lows into the first two groups', () => {
     const groups = groupKeyLevels({ 'Prev Quarter High': 305.18, 'Prev Month Low': 277.41 });
     expect(groups[0].rows).toEqual([['Prev Quarter High', 305.18]]);
