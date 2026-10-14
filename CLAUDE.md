@@ -7,7 +7,7 @@ Any edit, fix, refactor, or feature, however small: invoke the `product-delivery
 It classifies the work (TRIVIAL / SPIKE / CHANGE), requires a FEAT-ID from docs/product/02-FEATURE-CATALOG.md,
 and runs the Superpowers brainstorming -> writing-plans -> subagent-driven-development chain.
 Commits and PRs that skip it are rejected by `scripts/gate/spec_gate.py` (pre-commit hook and CI).
-Review cap on every PR: two rounds, then split, re-cut, or discard. Never a third round, never a stacked follow-up.
+Review cap on every PR: two rounds. After the second, a PR with no finding that blocks the merge (AGENTS.md `## Review guidelines`) merges; one with such a finding is split, re-cut, or discarded. Never a third round, never a stacked follow-up.
 Gate files (`scripts/gate/`, `.githooks/pre-commit`, `.github/workflows/spec-gate.yml`, `registry-check.yml`, their suites)
 get a red-team pass before every push: one reviewer per attack surface (shell, YAML/Actions, exporter and policy docs),
 each bypass proven by running the gate against a concrete snippet, everything found fixed in one batch, repeated until a
@@ -122,7 +122,9 @@ that window.** Before any merge:
 1. Read the review comments — **before** checking CI, not after. An empty
    result 60 seconds after opening the PR means nothing; wait and re-check.
 2. Every thread either resolved, or replied to with why it isn't being
-   actioned. Zero unresolved threads is the bar.
+   actioned. Zero unresolved threads is the bar. A finding that does not block
+   the merge (AGENTS.md `## Review guidelines`) may get a reply instead of a
+   fix, linking an issue when it is real; its thread is then resolved.
 3. Only then CI, then merge.
 
 A PR is done when CI is green **and** there are no unresolved review threads
