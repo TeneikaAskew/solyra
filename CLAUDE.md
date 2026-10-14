@@ -122,7 +122,9 @@ that window.** Before any merge:
 1. Read the review comments — **before** checking CI, not after. An empty
    result 60 seconds after opening the PR means nothing; wait and re-check.
 2. Every thread either resolved, or replied to with why it isn't being
-   actioned. Zero unresolved threads is the bar.
+   actioned. Zero unresolved threads is the bar. A finding that does not block
+   the merge (AGENTS.md `## Review guidelines`) may get a reply instead of a
+   fix, linking an issue when it is real; its thread is then resolved.
 3. Only then CI, then merge.
 
 A PR is done when CI is green **and** there are no unresolved review threads
