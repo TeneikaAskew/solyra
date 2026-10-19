@@ -1,6 +1,6 @@
 # Documentation registry
 
-**Last reviewed:** unknown · **Last scanned:** 2026-10-12 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-10-19 · **Owner:** TBD
 
 Which documents this repo maintains, who owns each one, and what code each one
 describes. `scripts/docs-audit.mjs` reads the tables below; the prose around
