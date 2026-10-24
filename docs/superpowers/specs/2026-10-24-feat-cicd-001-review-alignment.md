@@ -8,7 +8,7 @@ done_when:
   - "S2: C10-C11 record exact generated evidence identities and accepted/refused single-writer controls without claiming hashes are atomic locks"
   - "S3: unchanged base/head spec gates, affected existing suites and full documentation audits pass with no new finding identities; FEAT-CICD-001 records the draft implementation PR"
   - "S4: the evidence links stocks#1577 and stocks#1583 without resetting history and separates local instruction exercises from the prospective ten-lineage live observation protocol"
-status: draft
+status: approved
 supersedes: null
 ---
 
@@ -16,10 +16,15 @@ supersedes: null
 
 ## Authority, scope and current evidence
 
-This is a reviewable specification proposal, not active policy. Solyra written-spec approval,
-specification merge and reviewed implementation plan remain prerequisites to its own draft
-implementation. No merge, deployment, production write, external Claude contact or automatic
-issue closure is authorized here. Current Solyra instructions govern until implementation lands.
+The owner authorized the existing scoped specification and implementation finish pass on
+October 24, 2026 (user message `Sentinel_314cdf4cfde8819183c963502f76acbb`: “Do all the work
+needed”, confirmed by `Sentinel_ec7949686db08191a3818ce255a4c9b7`). This approves the existing
+written design and reuse of its reviewed plan, required GitHub Codex review and conditional
+merges when current-head checks pass. It does not make proposed policy active before merge.
+The specification must land before Solyra implementation; preserve its own plan/gate records.
+No production write, external Claude contact, unrelated change or automatic issue closure is
+authorized. Current Solyra instructions govern until implementation lands. Observe actual
+behavior on already-needed release PRs, not invented PRs or forced writer handoffs.
 
 The owner authorized matching Solyra requirements as part of the stocks alignment. The binding
 upstream design is stocks spec PR [#1577](https://github.com/TeneikaAskew/stocks/pull/1577),
