@@ -2,7 +2,7 @@
 feat_id: FEAT-CICD-001
 spec: docs/superpowers/specs/2026-10-24-feat-cicd-001-review-alignment.md
 branch: feature/feat-cicd-001-review-alignment
-pr: null
+pr: 287
 status: ready
 ---
 

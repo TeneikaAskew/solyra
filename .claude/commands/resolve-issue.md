@@ -818,16 +818,12 @@ In order:
 2. Confirm the current head SHA **has been reviewed**, which is not the same as
    "a review object exists for it". A clean run posts no review at all, only a
    reaction, so requiring a review object would deadlock every PR that has
-   nothing wrong with it. Either of these satisfies this step:
-   - a review **authored by the review bot**, not `CHANGES_REQUESTED`, whose
-     `commit_id` is the head SHA (listings return oldest first, so it is on the
-     last page); or
-   - the authenticated Code Review summary row showing **Completed** against the head SHA
-     with its own completion time after the latest push/ready/manual-review trigger,
-     **and authored by the review bot**. Anyone who can comment on the PR can
-     post a comment that says Completed and names the head; the author check
-     below is about review objects and does not reach this path, so without
-     this clause the cheaper of the two conditions is the forgeable one.
+   nothing wrong with it. Require the authenticated Code Review summary row showing
+   **Completed** against the current head SHA, with its own completion time after the
+   latest push/ready/manual-review trigger. A review object alone does not establish
+   the review type or timing; security rows and author replies cannot substitute.
+   Authenticate the summary's bot author too: an arbitrary comment naming the head
+   and saying Completed is not review evidence.
 
    **Check the author, not just the SHA.** Every reply you post on a thread is
    itself recorded as a review on the current head, so a SHA-only test lets
