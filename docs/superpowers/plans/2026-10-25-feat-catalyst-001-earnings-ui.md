@@ -2,7 +2,7 @@
 feat_id: FEAT-CATALYST-001
 spec: docs/superpowers/specs/2026-10-25-feat-catalyst-001-earnings-api-binding.md
 branch: feature/feat-catalyst-001-earnings-ui
-pr: null
+pr: 289
 status: ready
 ---
 
