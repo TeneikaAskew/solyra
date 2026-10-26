@@ -120,4 +120,25 @@ test.describe('Existing-app earnings history', () => {
     await expect(panel.getByTestId('earnings-events')).toHaveCount(0);
     await expect(panel.getByTestId('earnings-native-percentages')).toHaveCount(0);
   });
+
+  test('a verified IAP identity change does not reuse the previous account history', async ({ page }) => {
+    await page.clock.install();
+    let account = 'first@example.test';
+    await page.route('**/api/config/firebase', r => r.fulfill(M.ok({ authMode: 'iap', firebase: null })));
+    await page.route('**/api/me', r => r.fulfill(M.ok({ email: account, is_admin: false })));
+    await page.route('**/api/earnings/history/*', r => r.fulfill(account.startsWith('first')
+      ? M.ok(MOCK_EARNINGS_HISTORY) : M.notFound()));
+    await page.route('**/api/earnings/ticker/*/lean', r => r.fulfill(account.startsWith('first')
+      ? M.ok(MOCK_EARNINGS_LEAN) : M.notFound()));
+    await page.goto('/catalysts');
+    const panel = page.getByTestId('earnings-history');
+    await expect(panel.getByTestId('earnings-events')).toBeVisible();
+    account = 'second@example.test';
+    // Let the existing /me cache become stale, then exercise its normal focus revalidation.
+    await page.clock.fastForward(31_000);
+    await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+    await expect(panel.getByText('Stored event history unavailable', { exact: false })).toBeVisible();
+    await expect(panel.getByTestId('earnings-events')).toHaveCount(0);
+    await expect(panel.getByTestId('earnings-native-percentages')).toHaveCount(0);
+  });
 });
