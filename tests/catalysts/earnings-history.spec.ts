@@ -82,4 +82,42 @@ test.describe('Existing-app earnings history', () => {
     await expect(panel.getByTestId('earnings-native-percentages')).toHaveCount(0);
     await expect(panel.getByTestId('earnings-events')).toBeVisible();
   });
+
+  test('signed-out Firebase mode dispatches no earnings requests', async ({ page }) => {
+    const requests: string[] = [];
+    page.on('request', r => { if (r.url().includes('/api/earnings/')) requests.push(r.url()); });
+    await page.route('**/api/config/firebase', r => r.fulfill(M.ok({ authMode: 'firebase',
+      firebase: { apiKey: 'AIzaSyFAKE-key-for-tests-000000000000000', authDomain: 'demo-test.firebaseapp.com',
+        projectId: 'demo-test', appId: '1:1234567890:web:abcdef0123456789' } })));
+    await page.goto('/catalysts');
+    await expect(page.getByTestId('signin-screen')).toBeVisible();
+    expect(requests).toEqual([]);
+    await expect(page.getByTestId('earnings-history')).toHaveCount(0);
+  });
+
+  test('a late prior-ticker history cannot populate the newly selected ticker', async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let received!: () => void;
+    const started = new Promise<void>(resolve => { received = resolve; });
+    await page.route('**/api/earnings/history/DEMO?*', async r => {
+      received();
+      await gate;
+      await r.fulfill(M.ok(MOCK_EARNINGS_HISTORY));
+    });
+    await page.goto('/catalysts');
+    await started;
+    // Exercise the same production store action while the section remains mounted.
+    await page.evaluate(async () => {
+      const path = '/src/stores/tickerStore.ts';
+      const module = await import(/* @vite-ignore */ path);
+      module.useTickerStore.getState().setTicker('OTHER');
+    });
+    const panel = page.getByTestId('earnings-history');
+    await expect(panel.getByRole('heading', { name: 'Earnings history — OTHER' })).toBeVisible();
+    await expect(panel.getByText('Stored event history unavailable', { exact: false })).toBeVisible();
+    release();
+    await expect(panel.getByTestId('earnings-events')).toHaveCount(0);
+    await expect(panel.getByTestId('earnings-native-percentages')).toHaveCount(0);
+  });
 });
