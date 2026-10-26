@@ -5,7 +5,7 @@ issues: []
 canvases: []
 done_when:
   - "tests/catalysts/earnings-history.spec.ts exercises the actual existing /catalysts page and selected ticker through the earnings history and ticker-lean endpoints, with a qualified positive response and visible historical summary and event rows"
-  - "The earnings presentation unit tests and Playwright assertions preserve backend percentages, denominators, native five-day sustain, separate closing-step/gap-fill outcomes, maturity, censoring and unavailable states without client financial recomputation"
+  - "src/components/catalysts/EarningsHistory.test.tsx and tests/catalysts/earnings-history.spec.ts preserve backend percentages, denominators, native five-day sustain, separate closing-step/gap-fill outcomes, maturity, censoring and unavailable states without client financial recomputation"
   - "tests/catalysts/earnings-history.spec.ts verifies signed-out gating, 401/403/404/503 and malformed responses, missing additive fields, ticker/account changes and late responses without stale-other-ticker display or fabricated financial defaults"
   - "The actual stocks API serialization tests are linked; the vendored OpenAPI snapshot, frontend types, contract fixtures and request parameters agree with the merged backend contract, and contract checks, unit tests, build and affected hermetic browser tests pass"
   - "The changed-screen hermetic tests retain screenshots and a deployed earnings-history.cloud.spec.ts is prepared for owner-run post-deployment verification against the same API responses, without describing mocked screenshots as GCP integration proof"
