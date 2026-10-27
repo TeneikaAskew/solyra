@@ -102,6 +102,10 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           ...(process.env as Record<string, string>),
+          // Local research requests must hit the Playwright function mock, never
+          // inherit a developer/CI Supabase project. Cloud projects are unchanged.
+          VITE_SUPABASE_URL: `${E2E_BASE_URL}/__e2e_research__`,
+          VITE_SUPABASE_PUBLISHABLE_KEY: 'e2e-public-placeholder',
           // Pin the proxy so a test run can never fall through to staging.
           // Points at a local FastAPI: if one is up, integration-style specs
           // hit it for real; if not, unmocked calls fail fast with
