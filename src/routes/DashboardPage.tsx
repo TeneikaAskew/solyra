@@ -33,6 +33,7 @@ import {
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
 import { WidgetState, errorMessage } from '@/components/shared/WidgetState';
 import { useAuthBlocked } from '@/lib/authGate';
+import { selectEvidence, validSourceDate } from '@/components/dashboard/evidenceLabels';
 import { MovementRead } from '@/components/dashboard/MovementRead';
 import { SetupCardDetails, type SetupHorizon } from '@/components/playbook/SetupCardDetails';
 import { PriceAreaChart, type PricePoint } from '@/components/charts/PriceAreaChart';
@@ -350,7 +351,7 @@ export default function DashboardPage() {
   // Catalysts: "upcoming" is relative to the as-of day in review mode, not today.
   const catalystFrom = isReview && reviewDate ? reviewDate : todayISO();
   const catalystTo = isReview && reviewDate ? isoPlusDaysFrom(reviewDate, 7) : isoPlusDays(7);
-  const { data: catalysts } = useFetch<CatalystsResponse>(
+  const catalystsQ = useFetch<CatalystsResponse>(
     ['catalysts-overview', catalystFrom],
     `/api/catalysts/events?date_from=${catalystFrom}&date_to=${catalystTo}`,
   );
@@ -487,28 +488,13 @@ export default function DashboardPage() {
     [signalsResp],
   );
 
-  // Full flattened event list (all dates, unsliced) — the news filter below
-  // must scan the whole set, not just the top-5 catalystFeed slice, because
-  // news is backward-dated and would otherwise get crowded out by forward
-  // (upcoming) catalyst events sorted first.
-  const allEvents = useMemo(() => {
-    const byDate = catalysts?.events_by_date ?? {};
-    return Object.keys(byDate)
-      .sort()
-      .flatMap((d) => byDate[d].map((e) => ({ ...e, date: e.date || d })));
-  }, [catalysts]);
-
-  // Catalyst feed — flatten upcoming events, soonest first, top 5.
-  const catalystFeed = useMemo(() => allEvents.slice(0, 5), [allEvents]);
-
-  // News = catalyst events sourced from AlphaVantage NEWS_SENTIMENT (the
-  // `source` field the backend already stamps on these rows). Built from
-  // the full event list so backward-dated news isn't crowded out by the
-  // forward catalystFeed slice.
-  const newsFeed = useMemo(
-    () => allEvents.filter((e) => e.source === 'AV news').slice(0, 4),
-    [allEvents],
-  );
+  // A refused refetch cannot certify retained rows as a successful fresh read.
+  const catalysts = dataUnlessError(catalystsQ.data, catalystsQ.isError);
+  const eventEvidence = useMemo(() => selectEvidence(
+    Object.values(catalysts?.events_by_date ?? {}).flat(), catalystFrom,
+  ), [catalysts, catalystFrom]);
+  const catalystFeed = eventEvidence.forward;
+  const newsFeed = eventEvidence.news;
 
   const rep = insight?.report;
   // Header date: the review date in review mode, else today. Built in UTC from
@@ -764,9 +750,9 @@ export default function DashboardPage() {
       )}
 
       {/* ── 2. Live signals · Today's catalysts ─────────────────────────── */}
-      <WidgetState query={signalsQ} compact skeletonRows={4}>
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[1.4fr_1fr]">
         {/* Live signals */}
+        <WidgetState query={signalsQ} compact skeletonRows={4}>
         <Card interactive onClick={() => navigate('/signals')} className="min-w-0">
           <CardHeader
             title={<><Bell size={13} className="mr-1.5 inline align-middle" />Live signals</>}
@@ -802,14 +788,17 @@ export default function DashboardPage() {
           )}
         </Card>
 
+        </WidgetState>
         {/* Today's catalysts */}
-        <Card interactive onClick={() => navigate('/catalysts')} className="min-w-0">
+        <Card interactive={!catalystsQ.isError} onClick={catalystsQ.isError ? undefined : () => navigate('/catalysts')} className="min-w-0">
           <CardHeader
             title={<><Calendar size={13} className="mr-1.5 inline align-middle" />Catalysts</>}
-            meta={`${catalystFeed.length} upcoming`}
+            meta={catalystsQ.isError ? 'Unavailable' : `${catalystFeed.length} · today and next seven days`}
           />
+          <WidgetState query={catalystsQ} compact>
+          <p data-testid="catalyst-date-evidence" className="text-[11px] text-[var(--on-surface-muted)]">Calendar dates {catalystFrom} to {catalystTo} · {eventEvidence.unknownDateCount} date unavailable. Publication clocks unavailable.</p>
           {catalystFeed.length === 0 ? (
-            <Unavailable msg="No catalysts in the next 7 days." />
+            <Unavailable msg="No matching dated catalysts in the supplied response." />
           ) : (
             <div className="flex flex-col">
               {catalystFeed.map((c, i) => (
@@ -824,14 +813,14 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
+          </WidgetState>
         </Card>
       </div>
-      </WidgetState>
 
       {/* ── 3. Sector rotation · AI take · News ──────────────────────────── */}
-      <WidgetState query={sectorsQ} compact skeletonRows={4}>
       <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 lg:grid-cols-3">
         {/* Sector rotation, ranked SPDR daily closes, fed by /api/market/sectors */}
+        <WidgetState query={sectorsQ} compact skeletonRows={4}>
         <Card className="min-w-0">
           {/* Card doesn't forward arbitrary props, so data-testid lives on this wrapper. */}
           <div data-testid="sector-rotation-card">
@@ -892,6 +881,7 @@ export default function DashboardPage() {
           </div>
         </Card>
 
+        </WidgetState>
         {/* AI take */}
         <Card interactive onClick={() => navigate('/insights')} className="min-w-0">
           <CardHeader
@@ -912,12 +902,14 @@ export default function DashboardPage() {
         </Card>
 
         {/* News feed (from catalysts carrying sentiment) */}
-        <Card interactive onClick={() => navigate('/catalysts')} className="min-w-0">
-          <CardHeader title={<><Newspaper size={13} className="mr-1.5 inline align-middle" />News</>} meta={`${newsFeed.length} fresh`} />
+        <Card interactive={!catalystsQ.isError} onClick={catalystsQ.isError ? undefined : () => navigate('/catalysts')} className="min-w-0">
+          <CardHeader title={<><Newspaper size={13} className="mr-1.5 inline align-middle" />News</>} meta={catalystsQ.isError ? 'Unavailable' : `${newsFeed.length} articles`} />
           {/* Card doesn't forward arbitrary props, so data-testid lives on this wrapper. */}
           <div data-testid="news-card">
+          <WidgetState query={catalystsQ} compact>
+          <p data-testid="news-date-evidence" className="text-[11px] text-[var(--on-surface-muted)]">Newest supplied news date: {eventEvidence.newestNewsDate ?? 'unavailable'} · {eventEvidence.unknownNewsCount} date unavailable. Date-only; publication clock and historical availability unverified.</p>
           {newsFeed.length === 0 ? (
-            <Unavailable msg="No tagged news right now." />
+            <Unavailable msg="No matching news rows in the supplied response." />
           ) : (
             <div className="flex flex-col">
               {newsFeed.map((n, i) => {
@@ -930,7 +922,7 @@ export default function DashboardPage() {
                       <div className="text-[11px] text-[var(--on-surface-muted)]">
                         {n.ticker}
                         {n.source ? ` · ${n.source}` : ''}
-                        {n.date ? ` · ${relativeDayLabel(n.date)}` : ''}
+                        {validSourceDate(n.date) ? ` · ${n.date} (date only)` : ' · date unavailable'}
                       </div>
                     </div>
                     {n.sentiment_label && <Pill tone={tone}>{n.sentiment_label}</Pill>}
@@ -939,10 +931,10 @@ export default function DashboardPage() {
               })}
             </div>
           )}
+          </WidgetState>
           </div>
         </Card>
       </div>
-      </WidgetState>
     </div>
   );
 }
