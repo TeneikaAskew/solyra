@@ -6,13 +6,13 @@ canvases: []
 done_when:
   - "src/components/dashboard/evidenceLabels.test.ts proves ET/review-date selection excludes past items from the today-and-next-seven-days list, keeps dated news separate and newest-first, and never treats missing or invalid dates as current"
   - "tests/dashboard/dashboard.spec.ts renders past news with truthful article/date labels and excludes those past rows from the forward catalyst card while preserving current and future events"
-  - "src/components/dashboard/evidenceLabels.test.ts and tests/dashboard/dashboard.spec.ts preserve a finite composite strength of 6 without a fabricated five-condition denominator, and render missing or nonfinite scores as unavailable without clamping or recomputing financial values"
-  - "Relevant unit and hermetic browser tests, TypeScript, build, contract check, actual branch/main docs audits and normal commit/PR gates pass, with screenshots and the FEAT-MARKET-001 catalog record identifying the implementation"
+  - "tests/dashboard/dashboard.spec.ts exposes the newest supplied source date, unknown dates and endpoint errors without declaring retained older news fresh, globally absent, complete or point-in-time verified"
+  - "Relevant unit and hermetic browser tests, TypeScript, build, backend-commit-pinned contract check, actual branch/main docs audits and normal commit/PR gates pass, with screenshots and the FEAT-MARKET-001 catalog record identifying the implementation"
 status: approved
 supersedes: null
 ---
 
-# Truthful dashboard event dates and signal strength
+# Truthful dashboard event dates and source availability
 
 ## Authorized functional repair
 
@@ -43,14 +43,24 @@ Catalysts/Gamma Map data, the not-yet-deployed earnings panel and nightly intrad
 coverage are separate issues. This change must not label every feed stale or make a
 same-day brief dependent on the presence of current-day minute bars.
 
-Dashboard's signal row renders conditions_met verbatim, or score followed by /5.
-Stocks' platform/api/routers/signals.py maps historical_signals.signal_strength to
-score. The actual signal producer computes total_score from base score, STRAT and
-agreement bonuses, and a proximity multiplier. The base condition count is at most
-five; the composite strength is not that count. A value of six can be legitimate.
-A configurable risk maximum is not supplied by this API and cannot be invented as
-a frontend denominator. Neither six-to-five clamping nor substitution of a guessed
-maximum is an acceptable repair. Do not change producer math or legacy definitions.
+The source-pinned field handoff is Stocks d78201b0846c1fa1cc2f80b0fe1d106661a2eb2b,
+not proof of deployed-image equivalence. The events route exposes status, source,
+date_range, total and events_by_date, without publication timestamp, fetched/stored
+clock, source-as-of or per-section completeness receipt. For news, date is PostgreSQL
+published_ts::date with no timezone contract in the response; for earnings it is the
+scheduled earnings_date. The echoed date_range does not bound the news section, which
+uses a separate rolling48-hour query. The origin/category label AV news is not an
+original-publisher or immutable-response identity. Do not derive missing clocks from
+HTTP Date, browser cache age or the time of rendering. A status-ok response and zero
+rows are not certification that every source succeeded or that no market news exists.
+
+Score semantics are deliberately separate: the historical_signals corpus mixes
+strategies, including a seven-factor momentum producer whose existing string still
+uses /5 and a different mean-reversion producer. Merely deleting or replacing a
+denominator is not the full acceptance path. The existing STRAT child coordinates
+that versioned backend/API contract and producer-derived fixtures; this date-label
+change does not implement or claim to close it. The source hook's all-date Infinity
+cache defect belongs to the separate DATA/Chart contract, not this specification.
 
 ## Minimal display and selection contract
 
@@ -71,13 +81,20 @@ explicitly date unavailable, after valid dated rows; never coerce it to today. R
 headline, publisher/source and ticker values exactly as supplied. The frontend does
 not infer absence of news from an API error or perform provider backfill/refresh.
 
-The signal column displays the finite server score as composite Strength, without
-an inferred denominator or probability. Preserve zero and values above five exactly
-up to normal existing number formatting. Null, absent, nonnumeric and nonfinite
-scores are unavailable, not zero. Recorded conditions may remain separate descriptive
-evidence when present in the actual supported wire format; they must not be promoted
-to a fabricated normalized score. No division, range normalization, bonus inference,
-threshold change or strategy classification is introduced.
+Expose the newest supplied source date and retain date-unavailable counts. For example,
+Oct25 news shown against an Oct27 reference must visibly remain Oct25; changing fresh
+to articles without retaining source-age evidence is insufficient. Date-only values
+support calendar-day context, not elapsed-hour freshness or availability at an
+intraday review cutoff. Source dates later than a reference and same-day unknown
+publication clocks must not become certified historical-as-of evidence. Preserve
+unknowns explicitly; the backend source owner owns publication-clock qualification.
+
+Retain each independent card's actual query error/refusal state. A failed refetch
+must not silently present retained cache data as a fresh, successful response. Keep
+other successful dashboard data visible. An empty section says no matching rows in
+the supplied response, not proof of global absence or source completeness. Existing
+provider-capable events endpoint calls remain unchanged; no extra polling, diagnostic
+fetch, refresh action or provider fallback is added by this display correction.
 
 ## Owned paths and single writer
 
@@ -90,7 +107,7 @@ ET/calendar/format helpers; this is not a second clock or financial engine.
 
 This is separate from existing earnings PR289, its spec288 and its reserved review
 budget. Those records retain their full history; this dashboard repair is not a
-replacement or recut of that work. No earnings source, shared auth/origin/config,
+replacement or recut of that work. No score producer/API/schema, useMarketData hook, earnings source, shared auth/origin/config,
 collector, backend news/catalyst file, Gamma Map or Options Flow implementation is
 owned here. The options/news owner owns backend news/catalyst source correction;
 this frontend repair does not sanitize backend est-nan titles cosmetically.
@@ -100,10 +117,18 @@ this frontend repair does not sanitize backend est-nan titles cosmetically.
 Use fixed synthetic API fixtures and an explicit ET clock. Include Oct25 past news,
 Oct27 current events and Oct28 future events; assertions must fail on unchanged MAIN.
 Exercise midnight ET, DST and a selected review date, malformed/missing dates, stable
-same-date order, empty responses and retained error/unavailable behavior. Test finite
-strength six, zero, null and nonfinite inputs without changing the source values.
+same-date order, empty responses and retained error/unavailable behavior. Source date, unknown-clock and refusal assertions must remain independent of any
+separately owned score or cache fix.
 Prove actual rendered Dashboard cards and signal cells through the existing mocked
 API routes; screenshots are local fixture evidence, not deployed API proof.
+
+Pin the upstream contract using the existing STOCKS_OPENAPI_REF immutable commit or
+STOCKS_OPENAPI_FILE verified snapshot option; record exact commit/snapshot/generated
+hashes and actual commands. CI currently checks moving stocks-main: local pinned
+success is not a promise of CI or live compatibility. Diagnose any actual drift
+without repeated blind triggers and without workflow/protection changes. After
+release, compare actual deployed API source/image and payload identity with the
+same parent-owned signed-in screen; mocked E2E is not that proof.
 
 Run the affected suites once per materially changed candidate. Preserve ordinary
 Solyra review lineage, max-four aggregate passes/max-two external CODE rounds and
