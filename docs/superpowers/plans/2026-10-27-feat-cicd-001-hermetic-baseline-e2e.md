@@ -2,7 +2,7 @@
 feat_id: FEAT-CICD-001
 spec: docs/superpowers/specs/2026-10-27-feat-cicd-001-hermetic-baseline-e2e.md
 branch: fix/feat-cicd-001-hermetic-browser-baseline
-pr: null
+pr: 295
 status: ready
 ---
 # Hermetic browser baseline implementation plan
