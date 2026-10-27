@@ -33,7 +33,8 @@ Solyra MAIN 1dbea0bb4a681f7d6ee272883240dafd9813ca82 has DashboardPage.tsx:
 allEvents sorts dates ascending; catalystFeed takes the first five without filtering
 against the forward window; newsFeed takes the first four AV news rows and the
 header calls their count fresh. The per-row relativeDayLabel already uses ET and
-truthfully handles date-only publication fields. A request beginning today does not
+compares supplied DATE values with an ET calendar reference; this does not prove
+the original publication timezone. A request beginning today does not
 prove every returned row is future-dated: the existing backend includes backward
 news, so the consumer must qualify its own forward card.
 
@@ -74,11 +75,11 @@ or malformed dates remain unknown and must not acquire an invented day; retain a
 explicit unknown-date count/state rather than silently describing them as current.
 
 News remains a separate AV-news selection across the full returned collection,
-newest valid source date first, with the existing four-row limit. Preserve the
-existing ET day-granularity source labels; do not manufacture minute freshness from
-DATE values. Label the count articles, not fresh. Undated/invalid-date news remains
+newest valid source date first, with the existing four-row limit. Preserve supplied calendar dates and explicit date-only qualification; comparisons
+with an ET reference do not certify the publisher timezone. Do not manufacture minute
+freshness from DATE values. Label the count articles, not fresh. Undated/invalid-date news remains
 explicitly date unavailable, after valid dated rows; never coerce it to today. Retain
-headline, publisher/source and ticker values exactly as supplied. The frontend does
+headline, supplied source/category and ticker values exactly as supplied. The frontend does
 not infer absence of news from an API error or perform provider backfill/refresh.
 
 Expose the newest supplied source date and retain date-unavailable counts. For example,
@@ -119,7 +120,7 @@ Oct27 current events and Oct28 future events; assertions must fail on unchanged 
 Exercise midnight ET, DST and a selected review date, malformed/missing dates, stable
 same-date order, empty responses and retained error/unavailable behavior. Source date, unknown-clock and refusal assertions must remain independent of any
 separately owned score or cache fix.
-Prove actual rendered Dashboard cards and signal cells through the existing mocked
+Prove actual rendered Dashboard cards and date/availability labels through the existing mocked
 API routes; screenshots are local fixture evidence, not deployed API proof.
 
 Pin the upstream contract using the existing STOCKS_OPENAPI_REF immutable commit or
