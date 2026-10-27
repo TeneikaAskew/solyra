@@ -190,7 +190,8 @@ export default function ChartsPage() {
   }, [marketData, replay.active, replay.revealedBars]);
 
   // Reference levels (prev day OHLC)
-  const { data: refLevels } = useReferenceLevels(activeTicker, selectedDate);
+  const referenceQ = useReferenceLevels(activeTicker, selectedDate);
+  const refLevels = referenceQ.isError ? undefined : referenceQ.data;
 
   // selectedDate is YYYYMMDD; several endpoints (gamma, journal) want YYYY-MM-DD.
   const selectedIsoDate = selectedDate
@@ -706,6 +707,14 @@ export default function ChartsPage() {
               </span>
             )}
           </div>
+        )}
+
+        <p data-testid="market-source-qualification" className="text-xs text-[var(--color-text-muted)]">
+          Legacy chart data · source/as-of/price basis unknown · returned bars do not certify session completeness.
+          {!marketQ.isError && marketData && ` Returned bars: ${marketData.count}.`}
+        </p>
+        {referenceQ.isError && (
+          <div data-testid="reference-refusal"><WidgetState query={referenceQ} compact>{null}</WidgetState></div>
         )}
 
         {/* Chart */}
