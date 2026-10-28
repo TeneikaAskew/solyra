@@ -107,7 +107,7 @@ test.describe('Dashboard', () => {
     await page.waitForLoadState('networkidle');
 
     const newsCard = page.getByTestId('news-card');
-    await expect(page.getByText('2 fresh')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('2 articles')).toBeVisible({ timeout: 10_000 });
     await expect(newsCard.getByText('Russell 2000 constituents rally on rate-cut optimism')).toBeVisible();
     await expect(newsCard.getByText('Small-cap earnings season kicks off with mixed guidance')).toBeVisible();
   });
@@ -210,4 +210,63 @@ test.describe('Dashboard', () => {
     await expect(candles).toHaveClass(/active/);
     expect(await stored()).toBe('candle');
   });
+});
+
+
+test('dashboard separates forward calendar rows from dated historical news', async ({ page }, testInfo) => {
+  await page.clock.install({ time: new Date('2026-10-27T15:00:00Z') });
+  await mockDashboard(page); await mockDashboardCards(page);
+  await page.route('**/api/catalysts/events**', r => r.fulfill(M.ok({ events_by_date: {
+    '2026-10-25': [{ date: '2026-10-25', ticker: 'IWM', source: 'AV news', title: 'Older article' }],
+    '2026-10-26': [{ date: '2026-10-26', ticker: 'IWM', source: 'AV news', title: 'Newer article' }],
+    '2026-10-27': [{ date: '2026-10-27', ticker: 'IWM', source: 'calendar', title: 'Current event' }],
+    '2026-10-28': [{ date: '2026-10-28', ticker: 'IWM', source: 'calendar', title: 'Future event' }],
+    'unknown': [{ date: '', ticker: 'IWM', source: 'AV news', title: 'Unknown article date' }],
+  } })));
+  await page.goto('/dashboard');
+  await expect(page.getByTestId('catalyst-date-evidence')).toContainText('2026-10-27 to 2026-11-03');
+  await expect(page.getByTestId('catalyst-date-evidence')).toContainText('1 date unavailable');
+  const forwardCard = page.getByTestId('catalyst-date-evidence').locator('..');
+  await expect(forwardCard.getByText('Current event', { exact: true })).toBeVisible();
+  await expect(forwardCard.getByText('Future event', { exact: true })).toBeVisible();
+  await expect(forwardCard.getByText('Older article', { exact: true })).toHaveCount(0);
+  const news = page.getByTestId('news-card');
+  await expect(news).toContainText('Newest supplied news date: 2026-10-26');
+  await expect(news).toContainText('2026-10-25 (date only)');
+  await expect(news).toContainText('date unavailable');
+  const content = await news.innerText(); expect(content.indexOf('Newer article')).toBeLessThan(content.indexOf('Older article'));
+  await page.getByTestId('news-card').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('date-qualified-dashboard.png') });
+});
+
+test('event endpoint failure is visible without hiding successful dashboard cards', async ({ page }, testInfo) => {
+  await mockDashboard(page); await mockDashboardCards(page);
+  await page.route('**/api/catalysts/events**', r => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'event source unavailable' }) }));
+  await page.goto('/dashboard');
+  await expect(page.getByTestId('news-card')).toContainText('event source unavailable');
+  await expect(page.getByTestId('news-card')).not.toContainText('No matching news');
+  await expect(page.getByTestId('sector-rotation-card')).toBeVisible();
+  await page.getByTestId('news-card').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('event-refusal-independent-cards.png') });
+});
+
+
+test('event error Retry stays on the dashboard and recovers the same query', async ({ page }, testInfo) => {
+  await mockDashboard(page); await mockDashboardCards(page);
+  let reads = 0;
+  let recover = false;
+  await page.route('**/api/catalysts/events**', r => {
+    reads += 1;
+    return recover ? r.fulfill(M.ok(buildDashboardNews())) : r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'event source unavailable' }) });
+  });
+  await page.goto('/dashboard');
+  const news = page.getByTestId('news-card');
+  await expect(news.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+  const before = reads; recover = true;
+  await news.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(news).toContainText('Russell 2000 constituents rally');
+  await expect(page).toHaveURL(/\/dashboard$/);
+  expect(reads).toBe(before + 1);
+  await page.getByTestId('news-card').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('event-retry-stays-dashboard.png') });
 });
