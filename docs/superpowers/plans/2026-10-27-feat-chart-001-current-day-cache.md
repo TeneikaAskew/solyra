@@ -2,7 +2,7 @@
 feat_id: FEAT-CHART-001
 spec: docs/superpowers/specs/2026-10-27-feat-chart-001-current-day-cache.md
 branch: fix/feat-chart-001-current-day-cache
-pr: null
+pr: 293
 status: ready
 ---
 # Current-day cache implementation plan
