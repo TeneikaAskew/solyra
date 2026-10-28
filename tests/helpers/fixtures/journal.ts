@@ -1,3 +1,4 @@
+import { marketDataForRequest } from '@/mocks/live';
 /**
  * Route wiring for the Trade Journal (`/journal`).
  *
@@ -72,7 +73,7 @@ export async function mockJournalApi(page: Page, opts: JournalMockOpts = {}) {
   const dates = opts.dates ?? MOCK_JOURNAL_DATES_EMPTY;
 
   await page.route('**/api/market/dates/IWM', (r) => r.fulfill(M.ok(dates)));
-  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_JOURNAL_MARKET_DATA)));
+  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), MOCK_JOURNAL_MARKET_DATA))));
   await page.route('**/api/config/market-hours', (r) => r.fulfill(M.ok(MOCK_MARKET_HOURS)));
   await page.route('**/api/journal/examples/IWM', (r) => r.fulfill(M.ok(examples)));
   await page.route('**/api/journal/trades/IWM*', (r) => {

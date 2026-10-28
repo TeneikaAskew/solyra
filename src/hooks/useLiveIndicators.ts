@@ -20,19 +20,11 @@ export interface IndicatorsResponse {
  * Server-side indicator + signal computation. The app never recomputes
  * these client-side — lib/indicators.py is the single source of truth.
  *
- * Keyed on the bar count + last bar time + current price so the query
- * invalidates on every live tick without recomputing on every render.
+ * Keyed on the complete request content so corrected interior OHLCV cannot
+ * reuse stale derived results. Equal contents still share the same query.
  */
 export function useLiveIndicators(req: IndicatorsRequest, enabled: boolean) {
-  const lastBar = req.bars.length > 0 ? req.bars[req.bars.length - 1] : null;
-  const key = [
-    'live-indicators',
-    req.bars.length,
-    lastBar?.time ?? null,
-    req.current_price ?? null,
-    req.current_volume ?? null,
-    req.avg_volume_20d ?? null,
-  ];
+  const key = ['live-indicators', req];
   return useQuery<IndicatorsResponse>({
     queryKey: key,
     queryFn: async () => {
@@ -69,17 +61,13 @@ export interface SignalSeriesResponse {
  * gcp/signal_monitor.py fires live alerts from) over the supplied bar
  * series — there is no client-side re-derivation of the voter.
  *
- * Keyed on `keyId` (caller passes `${ticker}:${selectedDate}`) plus bar
- * count + first-bar time + last-bar time so the query only refetches when
- * the underlying series actually changes. keyId is load-bearing: two
- * tickers can share the same bar count and last-bar timestamp (e.g. both
- * loaded to the same review date), which without a ticker-scoped key
- * would serve one ticker's cached fires under the other ticker's chart.
+ * Keyed on ticker/date identity plus complete bar contents. A correction to
+ * any existing OHLCV value gets a separate cache entry even when timestamps
+ * and series length stay unchanged. A late old-input response cannot populate
+ * the corrected-input query, and equal contents remain deduplicated.
  */
 export function useSignalSeries(bars: Bar[], keyId: string, enabled: boolean) {
-  const firstBar = bars.length > 0 ? bars[0] : null;
-  const lastBar = bars.length > 0 ? bars[bars.length - 1] : null;
-  const key = ['live-signal-series', keyId, bars.length, firstBar?.time ?? null, lastBar?.time ?? null];
+  const key = ['live-signal-series', keyId, { bars }];
   return useQuery<SignalSeriesResponse>({
     queryKey: key,
     queryFn: async () => {

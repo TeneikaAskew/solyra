@@ -1,10 +1,11 @@
+import { marketDataForRequest } from '@/mocks/live';
 import { expect, test } from '@playwright/test';
 import { M } from '../helpers/mocks';
 import { MOCK_MARKET_DATA } from '@/mocks/charts';
 import { MOCK_INSIGHT_HISTORY, MOCK_INSIGHT_REPORT_DEGRADED, mockInsightsApi } from '../helpers/fixtures/insights';
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
+  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), MOCK_MARKET_DATA))));
 });
 
 test('leads with the decision bar, chart and context rail', async ({ page }, testInfo) => {
