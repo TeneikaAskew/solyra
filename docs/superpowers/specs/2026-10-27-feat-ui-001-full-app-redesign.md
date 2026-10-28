@@ -19,7 +19,7 @@ done_when:
   - "Public Landing, AuthGate sign-in and /auth/action retain actual waitlist/Firebase behavior and isolate mock-only preview interactions in /design-lab"
   - "Accessibility, responsive layouts, app route/auth and data-state tests pass at desktop/tablet/390px/360px, including null/error/stale/loading/permission tests and no account/ticker leakage"
   - "The implementation's approved PRs meet the spec gate, catalog traceability and current-head review requirements before owner-authorized merges"
-status: draft
+status: approved
 supersedes: null
 ---
 
