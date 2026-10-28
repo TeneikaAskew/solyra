@@ -235,6 +235,7 @@ test('dashboard separates forward calendar rows from dated historical news', asy
   await expect(news).toContainText('2026-10-25 (date only)');
   await expect(news).toContainText('date unavailable');
   const content = await news.innerText(); expect(content.indexOf('Newer article')).toBeLessThan(content.indexOf('Older article'));
+  await page.getByTestId('news-card').scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('date-qualified-dashboard.png') });
 });
 
@@ -245,6 +246,7 @@ test('event endpoint failure is visible without hiding successful dashboard card
   await expect(page.getByTestId('news-card')).toContainText('event source unavailable');
   await expect(page.getByTestId('news-card')).not.toContainText('No matching news');
   await expect(page.getByTestId('sector-rotation-card')).toBeVisible();
+  await page.getByTestId('news-card').scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('event-refusal-independent-cards.png') });
 });
 
@@ -265,5 +267,6 @@ test('event error Retry stays on the dashboard and recovers the same query', asy
   await expect(news).toContainText('Russell 2000 constituents rally');
   await expect(page).toHaveURL(/\/dashboard$/);
   expect(reads).toBe(before + 1);
+  await page.getByTestId('news-card').scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('event-retry-stays-dashboard.png') });
 });

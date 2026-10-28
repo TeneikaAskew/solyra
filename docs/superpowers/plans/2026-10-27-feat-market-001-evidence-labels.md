@@ -2,7 +2,7 @@
 feat_id: FEAT-MARKET-001
 spec: docs/superpowers/specs/2026-10-27-feat-market-001-evidence-labels.md
 branch: fix/feat-market-001-evidence-labels
-pr: null
+pr: 292
 status: ready
 ---
 # Dashboard source-date implementation plan
