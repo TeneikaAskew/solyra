@@ -2,7 +2,7 @@
 feat_id: FEAT-MARKET-001
 spec: docs/superpowers/specs/2026-10-29-feat-market-001-dashboard-chart-window.md
 branch: fix/feat-market-001-dashboard-window
-pr: null
+pr: 299
 status: ready
 ---
 
@@ -25,7 +25,7 @@ Spec: Design4–5 and Risks. Advances done_when[1..3].
 
 ## Task 3: Normal closeout and release
 Spec: Verification and release evidence. Advances done_when[4].
-- [ ] Full relevant unit/browser suites, types/build, contract check and no-new MAIN audit; complete full PR-context gate.
+- [x] Full relevant unit/browser suites, types/build, contract check and no-new MAIN audit; complete full PR-context gate.
 - [x] Current final independent whole-branch review, bounded repair if needed; preserve findings and review counts.
 - [ ] Draft PR, number/catalog closeout, then current CODE/SEC/required checks and ordinary protected merge.
 - [ ] Record source merge separately from website publication. Lovable access and live DevTools remain denied; no alternate inspection/publication route or fabricated live acceptance.
