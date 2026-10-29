@@ -2,7 +2,7 @@
  * Overview — the briefing-first home page (Obsidian Analyst redesign).
  *
  * Ported from the Claude Design prototype's `PageOverview`. Layout:
- *   1. Briefing strip — pre-market brief + hero ticker + Top setup
+ *   1. Briefing strip — market brief + hero ticker + Top setup
  *   2. Live signals · Today's catalysts
  *   3. Sector rotation · AI take · News feed
  *
@@ -34,6 +34,7 @@ import { TickerCombobox } from '@/components/shared/TickerCombobox';
 import { WidgetState, errorMessage } from '@/components/shared/WidgetState';
 import { useAuthBlocked } from '@/lib/authGate';
 import { selectEvidence, validSourceDate } from '@/components/dashboard/evidenceLabels';
+import { selectDashboardWindow } from '@/components/dashboard/dashboardWindow';
 import { MovementRead } from '@/components/dashboard/MovementRead';
 import { SetupCardDetails, type SetupHorizon } from '@/components/playbook/SetupCardDetails';
 import { PriceAreaChart, type PricePoint } from '@/components/charts/PriceAreaChart';
@@ -417,38 +418,18 @@ export default function DashboardPage() {
     return { prevClose, latestClose, changeAbs, changePct: (changeAbs / prevClose) * 100, rsi };
   }, [reference, brief]);
 
-  // Intraday close points — AlphaVantage stores ET bars with UTC-labeled unix
-  // seconds, so UTC getters give the ET wall-clock. Keep the last 2 RTH+pre
-  // sessions (04:00–16:00 ET).
-  const pricePoints = useMemo<PricePoint[]>(() => {
-    const bars = hourly?.candlestick ?? [];
-    if (!bars.length) return [];
-    const dayKey = (t: number) => {
-      const d = new Date(t * 1000);
-      return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
+  // Both renderers share the same available dates and reviewed-time cutoff.
+  const chartWindow = useMemo(() => selectDashboardWindow(
+    hourly?.candlestick ?? [], hourly?.volume ?? [], reviewCutoff,
+  ), [hourly, reviewCutoff]);
+  const pricePoints = useMemo<PricePoint[]>(() => chartWindow.candlestick.map((bar) => {
+    const d = new Date(bar.time * 1000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return {
+      time: bar.time, price: bar.close,
+      label: `${p(d.getUTCMonth() + 1)}/${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`,
     };
-    const inSession = bars.filter((b) => {
-      if (reviewCutoff !== null && b.time > reviewCutoff) return false;  // as-of cutoff
-      const h = new Date(b.time * 1000).getUTCHours();
-      return h >= 4 && h <= 16;
-    });
-    const days: string[] = [];
-    for (let i = inSession.length - 1; i >= 0 && days.length < 2; i--) {
-      const k = dayKey(inSession[i].time);
-      if (!days.includes(k)) days.push(k);
-    }
-    return inSession
-      .filter((b) => days.includes(dayKey(b.time)))
-      .map((b) => {
-        const d = new Date(b.time * 1000);
-        const p = (n: number) => String(n).padStart(2, '0');
-        return {
-          time: b.time,
-          price: b.close,
-          label: `${p(d.getUTCMonth() + 1)}/${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`,
-        };
-      });
-  }, [hourly, reviewCutoff]);
+  }), [chartWindow]);
 
   const sessionBoundary = useMemo(() => {
     if (pricePoints.length < 2) return null;
@@ -557,7 +538,7 @@ export default function DashboardPage() {
             <div className="mb-3 flex flex-wrap items-baseline gap-3">
               <div>
                 <MicroLabel>{isReview ? 'As of' : 'Today'} · {dateLabel}</MicroLabel>
-                <div className="mt-1 text-[19px] font-bold tracking-[-0.02em]">Pre-market brief</div>
+                <div className="mt-1 text-[19px] font-bold tracking-[-0.02em]">Market brief</div>
               </div>
               <Pill tone={marketPill.tone} dot pulse={marketPill.pulse}>{marketPill.label}</Pill>
             </div>
@@ -585,7 +566,7 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <Unavailable msg={brief?.reason || 'Pre-market brief unavailable, Cloud SQL not connected or no brief for today.'} />
+                <Unavailable msg={brief?.reason || 'Market brief unavailable, Cloud SQL not connected or no brief for today.'} />
               )}
             </div>
           </div>
@@ -715,24 +696,24 @@ export default function DashboardPage() {
       {!isReview && <MovementRead ticker={activeTicker} timeframe="15m" />}
 
       {/* ── Intraday price (candlestick default · area toggle) ──────────────── */}
-      {((hourly?.candlestick?.length ?? 0) > 0 || authBlocked || hourlyQ.isLoading || hourlyQ.isError) && (
+      {(hourlyQ.isSuccess || authBlocked || hourlyQ.isLoading || hourlyQ.isError) && (
         <Card>
           <WidgetState query={hourlyQ} compact skeletonRows={5}>
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--on-surface)]">{activeTicker} · intraday</h3>
             <div className="flex items-center gap-3">
-              <span className="hidden text-[11px] text-[var(--on-surface-muted)] sm:inline">60-min bars · last 2 sessions</span>
+              <span className="hidden text-[11px] text-[var(--on-surface-muted)] sm:inline">60-min bars · {chartWindow.sessionCount} available {chartWindow.sessionCount === 1 ? 'session' : 'sessions'}</span>
               <div className="segctrl">
                 <button className={chartStyle === 'candle' ? 'active' : ''} onClick={() => pickChart('candle')}>Candles</button>
                 <button className={chartStyle === 'area' ? 'active' : ''} onClick={() => pickChart('area')}>Area</button>
               </div>
             </div>
           </div>
-          {chartStyle === 'candle' ? (
+          {chartWindow.status !== 'ready' ? <Unavailable msg={chartWindow.reason} /> : chartStyle === 'candle' ? (
             <div data-testid="intraday-chart-slot" className="overflow-hidden" style={{ height: 260 }}>
               <CandlestickChart
-                candlestick={hourly?.candlestick ?? []}
-                volume={(hourly?.volume ?? []).map((v) => ({ ...v, color: 'rgba(139,206,255,0.3)' }))}
+                candlestick={chartWindow.candlestick}
+                volume={chartWindow.volume.map((v) => ({ ...v, color: 'rgba(139,206,255,0.3)' }))}
                 rthOnly={false}
                 showVolume={false}
               />
