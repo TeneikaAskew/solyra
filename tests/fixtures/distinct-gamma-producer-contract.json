@@ -1,0 +1,927 @@
+{
+  "chain_response": {
+    "ticker": "IWM",
+    "date": "2026-10-27",
+    "options": [
+      {
+        "contract_symbol": "SYNTH_0",
+        "expiration": "2026-11-20",
+        "strike": 95.0,
+        "type": "call",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 50.0,
+        "implied_volatility": 0.25,
+        "delta": 0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_1",
+        "expiration": "2026-11-20",
+        "strike": 95.0,
+        "type": "put",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 200.0,
+        "implied_volatility": 0.25,
+        "delta": -0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_2",
+        "expiration": "2026-11-20",
+        "strike": 97.0,
+        "type": "call",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 50.0,
+        "implied_volatility": 0.25,
+        "delta": 0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_3",
+        "expiration": "2026-11-20",
+        "strike": 97.0,
+        "type": "put",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 200.0,
+        "implied_volatility": 0.25,
+        "delta": -0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_4",
+        "expiration": "2026-11-20",
+        "strike": 99.0,
+        "type": "call",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 50.0,
+        "implied_volatility": 0.25,
+        "delta": 0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_5",
+        "expiration": "2026-11-20",
+        "strike": 99.0,
+        "type": "put",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 200.0,
+        "implied_volatility": 0.25,
+        "delta": -0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_6",
+        "expiration": "2026-11-20",
+        "strike": 101.0,
+        "type": "call",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 200.0,
+        "implied_volatility": 0.25,
+        "delta": 0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_7",
+        "expiration": "2026-11-20",
+        "strike": 101.0,
+        "type": "put",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 50.0,
+        "implied_volatility": 0.25,
+        "delta": -0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_8",
+        "expiration": "2026-11-20",
+        "strike": 103.0,
+        "type": "call",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 200.0,
+        "implied_volatility": 0.25,
+        "delta": 0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_9",
+        "expiration": "2026-11-20",
+        "strike": 103.0,
+        "type": "put",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 50.0,
+        "implied_volatility": 0.25,
+        "delta": -0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_10",
+        "expiration": "2026-11-20",
+        "strike": 105.0,
+        "type": "call",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 200.0,
+        "implied_volatility": 0.25,
+        "delta": 0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      },
+      {
+        "contract_symbol": "SYNTH_11",
+        "expiration": "2026-11-20",
+        "strike": 105.0,
+        "type": "put",
+        "bid": 2.0,
+        "ask": 2.2,
+        "mark": 2.1,
+        "last": 2.1,
+        "volume": 10.0,
+        "open_interest": 50.0,
+        "implied_volatility": 0.25,
+        "delta": -0.5,
+        "gamma": 0.04,
+        "theta": null,
+        "vega": 0.1,
+        "rho": null
+      }
+    ],
+    "snapshot_timestamp": "2026-10-27T19:55:00Z",
+    "metadata": {
+      "source": "cloud_sql",
+      "data_source": "alphavantage",
+      "row_count": 12
+    },
+    "cached": false
+  },
+  "greeks": {
+    "aggregated": [
+      {
+        "strike": 95.0,
+        "net_gamma": -6.0,
+        "call_gamma": 2.0,
+        "put_gamma": 8.0,
+        "net_vega": -15.0,
+        "call_vega": 5.0,
+        "put_vega": 20.0,
+        "call_oi": 50.0,
+        "put_oi": 200.0,
+        "call_volume": 10.0,
+        "put_volume": 10.0
+      },
+      {
+        "strike": 97.0,
+        "net_gamma": -6.0,
+        "call_gamma": 2.0,
+        "put_gamma": 8.0,
+        "net_vega": -15.0,
+        "call_vega": 5.0,
+        "put_vega": 20.0,
+        "call_oi": 50.0,
+        "put_oi": 200.0,
+        "call_volume": 10.0,
+        "put_volume": 10.0
+      },
+      {
+        "strike": 99.0,
+        "net_gamma": -6.0,
+        "call_gamma": 2.0,
+        "put_gamma": 8.0,
+        "net_vega": -15.0,
+        "call_vega": 5.0,
+        "put_vega": 20.0,
+        "call_oi": 50.0,
+        "put_oi": 200.0,
+        "call_volume": 10.0,
+        "put_volume": 10.0
+      },
+      {
+        "strike": 101.0,
+        "net_gamma": 6.0,
+        "call_gamma": 8.0,
+        "put_gamma": 2.0,
+        "net_vega": 15.0,
+        "call_vega": 20.0,
+        "put_vega": 5.0,
+        "call_oi": 200.0,
+        "put_oi": 50.0,
+        "call_volume": 10.0,
+        "put_volume": 10.0
+      },
+      {
+        "strike": 103.0,
+        "net_gamma": 6.0,
+        "call_gamma": 8.0,
+        "put_gamma": 2.0,
+        "net_vega": 15.0,
+        "call_vega": 20.0,
+        "put_vega": 5.0,
+        "call_oi": 200.0,
+        "put_oi": 50.0,
+        "call_volume": 10.0,
+        "put_volume": 10.0
+      },
+      {
+        "strike": 105.0,
+        "net_gamma": 6.0,
+        "call_gamma": 8.0,
+        "put_gamma": 2.0,
+        "net_vega": 15.0,
+        "call_vega": 20.0,
+        "put_vega": 5.0,
+        "call_oi": 200.0,
+        "put_oi": 50.0,
+        "call_volume": 10.0,
+        "put_volume": 10.0
+      }
+    ],
+    "gex_by_strike": [
+      {
+        "strike": 95.0,
+        "gex": -600.0,
+        "call_gex": 200.0,
+        "put_gex": -800.0
+      },
+      {
+        "strike": 97.0,
+        "gex": -600.0,
+        "call_gex": 200.0,
+        "put_gex": -800.0
+      },
+      {
+        "strike": 99.0,
+        "gex": -600.0,
+        "call_gex": 200.0,
+        "put_gex": -800.0
+      },
+      {
+        "strike": 101.0,
+        "gex": 600.0,
+        "call_gex": 800.0,
+        "put_gex": -200.0
+      },
+      {
+        "strike": 103.0,
+        "gex": 600.0,
+        "call_gex": 800.0,
+        "put_gex": -200.0
+      },
+      {
+        "strike": 105.0,
+        "gex": 600.0,
+        "call_gex": 800.0,
+        "put_gex": -200.0
+      }
+    ],
+    "metrics": {
+      "total_gex": 0.0,
+      "total_vex": -15000.0,
+      "zero_gamma": 100.0,
+      "max_pain": 99.0,
+      "implied_move": 1.5874507866387546,
+      "put_call_ratio": 1.0
+    },
+    "nodes": {
+      "kingNode": null,
+      "gatekeepers": [],
+      "midpoints": [],
+      "allNodes": []
+    },
+    "config": {
+      "strike_range_pct": 0.15,
+      "atm_tolerance": 0.02,
+      "node_min_gamma": 500.0
+    }
+  },
+  "kind": "SYNTHETIC_ACTUAL_PRODUCER_WITH_DECLARED_SYNTHETIC_RATE_NOT_MARKET_OBSERVATION",
+  "backend_pin": "80e5f367c03f6c28892e07a4d68b9ce6c35db435",
+  "synthetic_rate_and_yield": [
+    0.04,
+    0.01
+  ],
+  "chain": [
+    {
+      "type": "call",
+      "strike": 95.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": 0.5,
+      "open_interest": 50,
+      "volume": 10
+    },
+    {
+      "type": "put",
+      "strike": 95.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": -0.5,
+      "open_interest": 200,
+      "volume": 10
+    },
+    {
+      "type": "call",
+      "strike": 97.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": 0.5,
+      "open_interest": 50,
+      "volume": 10
+    },
+    {
+      "type": "put",
+      "strike": 97.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": -0.5,
+      "open_interest": 200,
+      "volume": 10
+    },
+    {
+      "type": "call",
+      "strike": 99.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": 0.5,
+      "open_interest": 50,
+      "volume": 10
+    },
+    {
+      "type": "put",
+      "strike": 99.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": -0.5,
+      "open_interest": 200,
+      "volume": 10
+    },
+    {
+      "type": "call",
+      "strike": 101.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": 0.5,
+      "open_interest": 200,
+      "volume": 10
+    },
+    {
+      "type": "put",
+      "strike": 101.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": -0.5,
+      "open_interest": 50,
+      "volume": 10
+    },
+    {
+      "type": "call",
+      "strike": 103.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": 0.5,
+      "open_interest": 200,
+      "volume": 10
+    },
+    {
+      "type": "put",
+      "strike": 103.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": -0.5,
+      "open_interest": 50,
+      "volume": 10
+    },
+    {
+      "type": "call",
+      "strike": 105.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": 0.5,
+      "open_interest": 200,
+      "volume": 10
+    },
+    {
+      "type": "put",
+      "strike": 105.0,
+      "expiration": "2026-11-20",
+      "bid": 2.0,
+      "ask": 2.2,
+      "mark": 2.1,
+      "implied_volatility": 0.25,
+      "gamma": 0.04,
+      "vega": 0.1,
+      "delta": -0.5,
+      "open_interest": 50,
+      "volume": 10
+    }
+  ],
+  "source_sha256": {
+    "lib/gamma.py": "b96e797b796461097a925f77f53235de7ab46b09db905995235e671dd1281cd5",
+    "platform/api/routers/options.py": "69105a8aa33031e4ccf9c50376c3e1b4569ff46a3a761ecf18f67f825a76669e",
+    "platform/api/schemas.py": "6d413932cb989d22a191dfe8cfc21da5675e5931f937c62a448c38c36f72f134"
+  },
+  "levels": {
+    "ticker": "IWM",
+    "snapshot_date": "2026-10-27",
+    "spot": {
+      "price": 100.0,
+      "method": "override",
+      "note": "caller-supplied spot"
+    },
+    "gamma_balance": 100.0,
+    "gamma_flip": 99.51864133822694,
+    "regime": "unknown",
+    "total_gex": 0.0,
+    "levels": [
+      {
+        "strike": 95.0,
+        "gex": -600.0,
+        "net_gamma": -6.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "distance_pct": -5.0,
+        "score": 0.8,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      },
+      {
+        "strike": 97.0,
+        "gex": -600.0,
+        "net_gamma": -6.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "distance_pct": -3.0,
+        "score": 0.85,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      },
+      {
+        "strike": 99.0,
+        "gex": -600.0,
+        "net_gamma": -6.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "distance_pct": -1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king",
+          "gamma_balance"
+        ]
+      },
+      {
+        "strike": 101.0,
+        "gex": 600.0,
+        "net_gamma": 6.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "distance_pct": 1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king",
+          "gamma_balance"
+        ]
+      },
+      {
+        "strike": 103.0,
+        "gex": 600.0,
+        "net_gamma": 6.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "distance_pct": 3.0,
+        "score": 0.85,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      },
+      {
+        "strike": 105.0,
+        "gex": 600.0,
+        "net_gamma": 6.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "distance_pct": 5.0,
+        "score": 0.8,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      }
+    ],
+    "kings": [
+      {
+        "strike": 95.0,
+        "gex": -600.0,
+        "net_gamma": -6.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "distance_pct": -5.0,
+        "score": 0.8,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      },
+      {
+        "strike": 97.0,
+        "gex": -600.0,
+        "net_gamma": -6.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "distance_pct": -3.0,
+        "score": 0.85,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      },
+      {
+        "strike": 99.0,
+        "gex": -600.0,
+        "net_gamma": -6.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "distance_pct": -1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king",
+          "gamma_balance"
+        ]
+      },
+      {
+        "strike": 101.0,
+        "gex": 600.0,
+        "net_gamma": 6.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "distance_pct": 1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king",
+          "gamma_balance"
+        ]
+      },
+      {
+        "strike": 103.0,
+        "gex": 600.0,
+        "net_gamma": 6.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "distance_pct": 3.0,
+        "score": 0.85,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      },
+      {
+        "strike": 105.0,
+        "gex": 600.0,
+        "net_gamma": 6.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "distance_pct": 5.0,
+        "score": 0.8,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      }
+    ],
+    "gates": [],
+    "gamma_balance_levels": [
+      {
+        "strike": 99.0,
+        "gex": -600.0,
+        "net_gamma": -6.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "distance_pct": -1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king",
+          "gamma_balance"
+        ]
+      },
+      {
+        "strike": 101.0,
+        "gex": 600.0,
+        "net_gamma": 6.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "distance_pct": 1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king",
+          "gamma_balance"
+        ]
+      }
+    ],
+    "window_pct": 8.0,
+    "warnings": [],
+    "snapshot_timestamp": "2026-10-27T19:55:00Z",
+    "chain_size": 12
+  },
+  "grid": {
+    "ticker": "IWM",
+    "snapshot_date": "2026-10-27",
+    "snapshot_ts": "2026-10-27T19:55:00Z",
+    "data_source": "realtime",
+    "reason": null,
+    "spot": {
+      "price": 100.0,
+      "method": "override",
+      "note": "caller-supplied spot"
+    },
+    "gamma_balance": 100.0,
+    "gamma_flip": 99.51864133822694,
+    "regime": "unknown",
+    "total_gex": 0.0,
+    "total_vex": -15000.0,
+    "cells": [
+      {
+        "strike": 95.0,
+        "expiration": "2026-11-20",
+        "dte": 24,
+        "net_gamma": -6.0,
+        "call_gamma": 2.0,
+        "put_gamma": 8.0,
+        "net_vega": -15.0,
+        "call_vega": 5.0,
+        "put_vega": 20.0,
+        "gex": -600.0,
+        "call_gex": 200.0,
+        "put_gex": -800.0,
+        "vex": -2500.0,
+        "call_vex": -500.0,
+        "put_vex": -2000.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": -5.0
+      },
+      {
+        "strike": 97.0,
+        "expiration": "2026-11-20",
+        "dte": 24,
+        "net_gamma": -6.0,
+        "call_gamma": 2.0,
+        "put_gamma": 8.0,
+        "net_vega": -15.0,
+        "call_vega": 5.0,
+        "put_vega": 20.0,
+        "gex": -600.0,
+        "call_gex": 200.0,
+        "put_gex": -800.0,
+        "vex": -2500.0,
+        "call_vex": -500.0,
+        "put_vex": -2000.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": -3.0
+      },
+      {
+        "strike": 99.0,
+        "expiration": "2026-11-20",
+        "dte": 24,
+        "net_gamma": -6.0,
+        "call_gamma": 2.0,
+        "put_gamma": 8.0,
+        "net_vega": -15.0,
+        "call_vega": 5.0,
+        "put_vega": 20.0,
+        "gex": -600.0,
+        "call_gex": 200.0,
+        "put_gex": -800.0,
+        "vex": -2500.0,
+        "call_vex": -500.0,
+        "put_vex": -2000.0,
+        "call_oi": 50,
+        "put_oi": 200,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": -1.0
+      },
+      {
+        "strike": 101.0,
+        "expiration": "2026-11-20",
+        "dte": 24,
+        "net_gamma": 6.0,
+        "call_gamma": 8.0,
+        "put_gamma": 2.0,
+        "net_vega": 15.0,
+        "call_vega": 20.0,
+        "put_vega": 5.0,
+        "gex": 600.0,
+        "call_gex": 800.0,
+        "put_gex": -200.0,
+        "vex": -2500.0,
+        "call_vex": -2000.0,
+        "put_vex": -500.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": 1.0
+      },
+      {
+        "strike": 103.0,
+        "expiration": "2026-11-20",
+        "dte": 24,
+        "net_gamma": 6.0,
+        "call_gamma": 8.0,
+        "put_gamma": 2.0,
+        "net_vega": 15.0,
+        "call_vega": 20.0,
+        "put_vega": 5.0,
+        "gex": 600.0,
+        "call_gex": 800.0,
+        "put_gex": -200.0,
+        "vex": -2500.0,
+        "call_vex": -2000.0,
+        "put_vex": -500.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": 3.0
+      },
+      {
+        "strike": 105.0,
+        "expiration": "2026-11-20",
+        "dte": 24,
+        "net_gamma": 6.0,
+        "call_gamma": 8.0,
+        "put_gamma": 2.0,
+        "net_vega": 15.0,
+        "call_vega": 20.0,
+        "put_vega": 5.0,
+        "gex": 600.0,
+        "call_gex": 800.0,
+        "put_gex": -200.0,
+        "vex": -2500.0,
+        "call_vex": -2000.0,
+        "put_vex": -500.0,
+        "call_oi": 200,
+        "put_oi": 50,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": 5.0
+      }
+    ],
+    "expirations": [
+      "2026-11-20"
+    ],
+    "strikes": [
+      95.0,
+      97.0,
+      99.0,
+      101.0,
+      103.0,
+      105.0
+    ],
+    "window_pct": 8.0,
+    "warnings": []
+  }
+}

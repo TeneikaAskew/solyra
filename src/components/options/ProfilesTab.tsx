@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { parseApiError } from '@/lib/apiError';
-import { useQuery } from '@tanstack/react-query';
+import { useOptionsChain } from '@/hooks/useOptionsChain';
+export type { OptionsResponse } from '@/hooks/useOptionsChain';
 import { useAllOptionsDates } from '@/hooks/useOptionsDates';
 import { MetricCard } from '@/components/shared/MetricCard';
 import {
   useOptionsGreeks,
   EMPTY_GREEKS,
-  type ChainOptionRecord,
   type OptionRecord,
   type GEXByStrike,
   type NodeResult,
@@ -20,45 +19,12 @@ import {
 import type { Ticker } from '@/types';
 import * as d3 from 'd3';
 import { estimateSpotStrikeFromDeltas } from './swingGridUtils';
-import { isoToEtDisplay } from '@/lib/time';
+import { batchSnapshotLabel, gammaPrices } from './gammaPresentation';
 import { ChevronLeft, ChevronRight, AlertTriangle, Info, RefreshCw } from 'lucide-react';
 import { WidgetSkeleton } from '@/components/shared/WidgetState';
 
 type Metric = 'gex' | 'vex';
 type Filter = 'net' | 'calls' | 'puts';
-
-export interface OptionsResponse {
-  ticker: string;
-  date: string;
-  options: ChainOptionRecord[];
-  snapshot_timestamp: string;
-  metadata: { source: string; data_source: string; row_count: number };
-  cached: boolean;
-}
-
-
-function useOptionsData(ticker: string, date: string, enabled: boolean) {
-  return useQuery<OptionsResponse>({
-    queryKey: ['options', ticker, date],
-    queryFn: async () => {
-      // Cloud SQL EOD path first — populated by the 9 PM ET fetcher.
-      const r = await fetch(`/api/options/${ticker}/${date}`);
-      if (r.ok) return r.json();
-
-      // 404 → fall back to the live AlphaVantage proxy (replaces the old
-      // Cloudflare Worker). Anything else propagates as an error.
-      if (r.status === 404) {
-        const live = await fetch(`/api/options/live/${ticker}/${date}`);
-        if (live.ok) return live.json();
-        throw new Error(await parseApiError(live, 'Failed to fetch live options data'));
-      }
-      throw new Error(await parseApiError(r, 'Failed to fetch options data'));
-    },
-    enabled: enabled && !!ticker && !!date,
-    staleTime: 3_600_000, // 1 hour
-    retry: false,
-  });
-}
 
 // ── D3 Heatmap ────────────────────────────────────────────────────────────
 interface HeatmapProps {
@@ -284,7 +250,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     isError,
     error: optionsErrorObj,
     refetch: refetchOptions,
-  } = useOptionsData(activeTicker, selectedDate, dates.length > 0);
+  } = useOptionsChain(activeTicker, selectedDate, dates.length > 0);
 
   const options: OptionRecord[] = optionsData?.options ?? [];
 
@@ -304,7 +270,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     enabled: dates.length > 0 && !!selectedDate,
   });
   const gammaLevels = levelsQuery.data;
-  const flip = gammaLevels?.gamma_balance ?? null;
+  const { flip, balance } = gammaPrices(gammaLevels);
   const regime = asGammaRegime(gammaLevels?.regime ?? 'unknown');
   const spotMethod = gammaLevels?.spot.method;
   const serverSpot = gammaLevels?.spot.price;
@@ -323,7 +289,8 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
   // All Greek/node math is server-side. See lib/indicators.py discipline —
   // we never duplicate financial math in the app.
   const greeksQuery = useOptionsGreeks(options, greeksSpot);
-  const greeks = greeksQuery.data ?? EMPTY_GREEKS;
+  const availableGreeks = optionsData && !greeksQuery.isError ? greeksQuery.data : undefined;
+  const greeks = availableGreeks ?? EMPTY_GREEKS;
   const gexData = greeks.gex_by_strike;
   const metrics = greeks.metrics;
   const nodes = greeks.nodes;
@@ -500,19 +467,19 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         </div>
       )}
 
+      {levelsQuery.isError && <div role="alert" className="text-sm text-[var(--warn)]">Gamma levels unavailable: {levelsQuery.error.message}</div>}
+      {optionsData && greeksQuery.isError && <div role="alert" className="text-sm text-[var(--warn)]">Chain analytics unavailable: {greeksQuery.error.message}</div>}
+      {gammaLevels && <div role="note" aria-label="Levels source" className="text-xs text-[var(--color-text-muted)]">
+        Levels: {gammaLevels.ticker} · {gammaLevels.snapshot_date} · Batch snapshot {batchSnapshotLabel(gammaLevels.snapshot_timestamp)}
+      </div>}
       {/* Metrics bar */}
-      {finalSpot > 0 && (
+      {availableGreeks && finalSpot > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <MetricCard
             label={`Total ${metric.toUpperCase()}`}
             value={formatGEX(displayMetricGex)}
             change={displayMetricGex >= 0 ? 1 : -1}
             changeLabel={displayMetricGex >= 0 ? 'Positive' : 'Negative'}
-          />
-          <MetricCard
-            label="Gamma Flip"
-            value={flip ? `$${flip.toFixed(2)}` : (metrics.zero_gamma ? `$${metrics.zero_gamma.toFixed(2)}` : '--')}
-            changeLabel={flip ? regimeLabel(regime).description : undefined}
           />
           <MetricCard
             label="Max Pain"
@@ -527,7 +494,11 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         </div>
       )}
 
-      {/* Regime + Levels taxonomy (King/Gate/Spot/Flip) */}
+      <div className="grid grid-cols-2 gap-2" aria-label="Backend gamma prices">
+        <MetricCard label="Gamma Flip" value={flip != null ? `$${flip.toFixed(2)}` : '--'} subtitle="True zero-gamma level · backend price" />
+        <MetricCard label="Gamma Balance" value={balance != null ? `$${balance.toFixed(2)}` : '--'} subtitle="Absolute net-gamma median · not the flip" />
+      </div>
+      {/* Regime + Levels taxonomy (balance levels are not zero-gamma flips) */}
       {gammaLevels && finalSpot > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {regime !== 'unknown' && (
@@ -567,11 +538,11 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
           ))}
           {gammaLevels.gamma_balance_levels.map(f => (
             <span
-              key={`flip-${f.strike}`}
+              key={`balance-${f.strike}`}
               className="rounded border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-violet-400"
-              title={`Adjacent to flip @ ${flip?.toFixed(2) ?? '--'}`}
+              title={`Adjacent to gamma balance @ ${balance?.toFixed(2) ?? '--'}`}
             >
-              ⇅ Flip ${f.strike.toFixed(2)}
+              ⇅ Balance level ${f.strike.toFixed(2)}
             </span>
           ))}
         </div>
@@ -631,16 +602,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
       {/* Source footer */}
       {optionsData && options.length > 0 && (
         <div className="text-right text-[10px] text-[var(--color-text-muted)]">
-          Source: {optionsData.metadata?.source === 'alphavantage_live'
-            ? 'AlphaVantage Live'
-            : 'AlphaVantage EOD · Cloud SQL'} · {options.length} contracts · snapshot {optionsData.snapshot_timestamp
-            ? (optionsData.metadata?.source === 'alphavantage_live'
-                // Live snapshots arrive as offset-bearing UTC — convert to ET
-                // and label it; truncating the offset displayed 20:00 UTC as
-                // a bare "20:00" beside the app's ET times.
-                ? isoToEtDisplay(optionsData.snapshot_timestamp)
-                : optionsData.snapshot_timestamp.slice(0, 10))
-            : 'time unavailable'}
+          Source: {optionsData.metadata?.source ?? 'unknown'} · {optionsData.metadata?.data_source ?? 'provider unknown'} · {optionsData.ticker} · {optionsData.date} · {options.length} contracts · Batch snapshot {batchSnapshotLabel(optionsData.snapshot_timestamp)} · quote freshness unverified
         </div>
       )}
     </div>
