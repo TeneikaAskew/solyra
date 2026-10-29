@@ -1,3 +1,4 @@
+import { marketDataForRequest } from '@/mocks/live';
 /**
  * E2E: Live Market ("/live") — live quote, intraday bars, indicators.
  *
@@ -193,7 +194,7 @@ test.describe('Live Market', () => {
     await page.route('**/api/market/data/IWM/*', (r) => {
       const url = new URL(r.request().url());
       requested.push(url.pathname + url.search);
-      return r.fulfill(M.ok(MOCK_MARKET_DATA));
+      return r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), MOCK_MARKET_DATA)));
     });
     await page.route('**/api/market/reference/IWM/*', (r) => {
       requested.push(new URL(r.request().url()).pathname);
