@@ -3,7 +3,7 @@ import { MOCK_SIGNALS } from '@/mocks/signals';
 import { expect, test } from '@playwright/test';
 import { M } from '../helpers/mocks';
 import { MOCK_MARKET_DATA, MOCK_MARKET_DATES, MOCK_SIMILAR_SETUPS } from '@/mocks/charts';
-import { MOCK_INSIGHT_HISTORY, MOCK_INSIGHT_REPORT_DEGRADED, mockInsightsApi } from '../helpers/fixtures/insights';
+import { MOCK_INSIGHT_HISTORY, MOCK_INSIGHT_REPORT, MOCK_INSIGHT_REPORT_DEGRADED, mockInsightsApi } from '../helpers/fixtures/insights';
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/signals/IWM/similar?*', r => r.fulfill(M.ok(MOCK_SIMILAR_SETUPS)));
@@ -88,3 +88,50 @@ for (const width of [390, 411, 768, 1440]) {
     }
   });
 }
+
+test('Briefing retains complete dossier and accessible chart references', async ({ page }) => {
+  await mockInsightsApi(page);
+  await page.goto('/ai-insights-lovable');
+  await expect(page.getByRole('button', { name: 'Active ticker', exact: true })).toHaveCount(1);
+  for (const name of ['Key levels', 'Thesis', 'Bull vs bear', 'Plan by trader style', 'Catalysts', 'Risk flags', 'STRAT and FTFC', 'Report provenance']) {
+    await expect(page.getByRole('region', { name, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole('region', { name: 'STRAT and FTFC' })).toContainText('212_bull_reversal');
+  await expect(page.getByRole('region', { name: 'Report provenance' })).toContainText('vertex:gemini-2.0-flash');
+  const chart = page.getByRole('region', { name: 'Price chart' });
+  await expect(chart.locator('canvas').first()).toBeVisible();
+  await expect(chart.getByRole('list', { name: 'Price references' })).toContainText('Live');
+  await expect(chart.getByRole('list', { name: 'Price references' })).toContainText('Prior close');
+  await expect(chart.getByRole('list', { name: 'Price references' })).toContainText('Entry low: 220');
+  await expect(chart.getByRole('list', { name: 'Price references' })).toContainText('Stop: 218');
+  await expect(chart.getByRole('button', { name: 'Volume', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await chart.getByRole('button', { name: 'Volume', exact: true }).click();
+  await expect(chart.getByRole('button', { name: 'Volume', exact: true })).toHaveAttribute('aria-pressed', 'false');
+});
+
+
+test('History restores the selected report ID and exact artifact before returning to latest', async ({ page }) => {
+  await mockInsightsApi(page, { history: MOCK_INSIGHT_HISTORY });
+  const older = MOCK_INSIGHT_HISTORY.reports[1];
+  const requested: string[] = [];
+  await page.route('**/api/insights/reports/*', r => {
+    requested.push(new URL(r.request().url()).pathname.split('/').pop()!);
+    return r.fulfill(M.ok({ ...MOCK_INSIGHT_REPORT, as_of: older.as_of, report: { ...MOCK_INSIGHT_REPORT.report, direction: 'flat', thesis: older.thesis } }));
+  });
+  await page.goto('/ai-insights-lovable');
+  await page.getByRole('tab', { name: /^History/ }).click();
+  await page.getByRole('button').filter({ hasText: older.thesis }).click();
+  await expect(page.getByRole('region', { name: 'Thesis', exact: true })).toContainText(older.thesis);
+  expect(requested).toEqual([older.id]);
+  await page.getByRole('button', { name: 'Back to latest' }).click();
+  await expect(page.getByRole('region', { name: 'Thesis', exact: true })).toContainText(MOCK_INSIGHT_REPORT.report.thesis);
+});
+
+test('Briefing names conflicting house views and missing report sections', async ({ page }) => {
+  await mockInsightsApi(page, { report: { ...MOCK_INSIGHT_REPORT_DEGRADED, report: { ...MOCK_INSIGHT_REPORT_DEGRADED.report, direction: 'long' } } });
+  await page.route('**/api/dashboard/brief/IWM', r => r.fulfill(M.ok({ source: 'database', bias: 'bearish', daily_indicators: { ftfc_direction: 'bearish' } })));
+  await page.goto('/ai-insights-lovable');
+  await expect(page.getByText('House Views, Houses DIVERGE', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /sections ok/ }).click();
+  await expect(page.getByRole('note').filter({ hasText: 'upstream model returned a 429' })).toBeVisible();
+});

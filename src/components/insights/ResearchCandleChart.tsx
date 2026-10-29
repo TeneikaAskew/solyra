@@ -144,6 +144,9 @@ export function ResearchCandleChart({
           </button>
         </div>
       </div>
+      <ul aria-label="Price references" className="sr-only">
+        {priceLines.map((line, index) => <li key={`${line.title}-${index}`}>{line.title}: {line.price}</li>)}
+      </ul>
       <div className="mt-2">
         {datesQ.isLoading || market.isLoading ? (
           <div className="h-[320px] animate-pulse rounded-md bg-[var(--surface-1)]" />

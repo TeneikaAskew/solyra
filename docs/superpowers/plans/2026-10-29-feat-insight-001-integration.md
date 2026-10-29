@@ -8,7 +8,7 @@ status: ready
 
 # Complete AI Insights workspace integration implementation plan
 
-> For agentic workers: use superpowers:executing-plans. Parent authorized local author preparation and deterministic validation; judgment review and remote publication remain pending lineage adjudication.
+> For agentic workers: use superpowers:executing-plans. Parent authorized local author preparation and deterministic validation; root records review reservations and exclusively owns remote publication.
 
 **Goal:** Integrate the existing five-tab workspace with current main, preserving both feature behavior and newer fixes.
 
@@ -24,7 +24,7 @@ status: ready
 - Preserve stocks financial evidence ownership and existing research-session persistence contract.
 - No provider calls, production writes, review triggers, remote publication, or allowance reset during local preparation.
 - Original feature and main histories remain intact. Parent owns publication.
-- Existing ledger expenditure remains unknown; deterministic checks do not establish review approval.
+- Legacy expenditure remains recorded as unknown. Owner approval at 2026-10-29 13:06:56 UTC authorizes the parent-requested forward allowance of three aggregate passes and two hosted code rounds plus required security review; it does not reset history. This worker runs only author implementation and deterministic checks.
 
 ## Review focus
 
@@ -48,14 +48,14 @@ Files: tests/ai-insights-lovable/ai-insights-lovable.spec.ts, existing report/re
 Interfaces: mockInsightsApi provides report/history/watchlist endpoints; mocked research function returns saved sessions and cited NDJSON answers.
 - [x] Exercise chart, five tabs, report restoration, watchlist navigation, and authenticated research with recorded responses and screenshots (workspace-integration.spec.ts).
 - [x] Verify responsive widths 390/411/768/1440 and 29 decision/history/chart unit tests.
-- [ ] For any introduced behavioral defect, capture failing test before source repair, then rerun that test.
+- [x] Capture saved-context and failed/Stop-source preservation RED cases; repair together and rerun GREEN. Expanded spec coverage adds STRAT/provenance, exact history restoration, fresh watchlist research, and session-context unit cases.
 
 ## Task 3: Prepare publication evidence
 
 Spec: Delivery paths and catalog acceptance; advances done_when[10].
-- [x] Run docs audit against main and integration; 31 main / 29 integration findings, zero new findings.
+- [ ] Final-source docs audit disposition: parent classifies unchanged CLAUDE 73/30 count claims as existing baseline findings (main measurements 101/34; integration 102/35). Earlier zero-delta result included a numeric cleanup reverted in 7d98081; do not reuse it as final-source proof.
 - [ ] Run deterministic spec gate and preserve exact output.
 - [ ] Supply local patch, source identities, validation counts and unresolved acceptance to parent.
-- [ ] Parent reconciles inherited review ledger before judgment or publication; no numerical allowance assumed.
+- [x] Parent records explicit forward allowance approval before reserving any judgment or publication; historical usage is preserved.
 - [ ] Parent assigns real PR identity and updates catalog/PR traceability before final review.
 - [ ] Commit and publish only after parent authorizes the publication step under reconciled policy.

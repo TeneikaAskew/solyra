@@ -11,7 +11,7 @@ import {
   useRefreshInsight,
   useRunStatus,
 } from '@/hooks/useInsights';
-import { BriefVsInsightsCard, SimilarTradesCard } from '@/components/insights/ReportCards';
+import { BriefVsInsightsCard, SimilarTradesCard, StratCard } from '@/components/insights/ReportCards';
 import { MarketSignals } from '@/components/insights/redesign/MarketSignals';
 import { AgentsPanel } from '@/components/insights/AgentsPanel';
 import { WatchlistPanel } from '@/components/insights/WatchlistPanel';
@@ -175,6 +175,7 @@ export default function AiInsightsLovablePage() {
                 <ResearchCandleChart ticker={activeTicker} mode={asOf ? 'replay' : 'live'} replayCutoff={asOf || null} planLines={planLines} />
                 <Section title="Key levels"><KeyLevelChips levels={report.key_levels} /></Section>
                 <Section title="Thesis"><ThesisBlock thesis={report.thesis} /></Section>
+                <Section title="STRAT and FTFC">{report.strat_status ? <StratCard strat={report.strat_status} /> : <p role="note">STRAT and FTFC unavailable for this report.</p>}</Section>
                 <Section title="Bull vs bear"><BullBear bull={report.bull_case} bear={report.bear_case} /></Section>
                 <Section title="Plan by trader style"><PersonaTabs plans={report.persona_plans} /></Section>
               </div>
@@ -187,6 +188,11 @@ export default function AiInsightsLovablePage() {
                 <SimilarTradesCard trades={report.similar_past_trades ?? []} />
               </aside>
             </div>
+
+            <Section title="Report provenance">
+              <p className="text-xs text-[var(--on-surface-muted)]">As of {envelope?.as_of ?? report.as_of ?? 'unavailable'}</p>
+              {Object.entries(report.model_versions ?? {}).length > 0 ? <ul className="mt-2 space-y-1 text-xs">{Object.entries(report.model_versions).map(([role, model]) => <li key={role}>{role}: {model}</li>)}</ul> : <p role="note" className="text-xs">Model provenance unavailable.</p>}
+            </Section>
 
             <button type="button" onClick={() => askResearch(`What would invalidate the ${report.direction} call on ${activeTicker}?`)} className="flex w-full items-center justify-between rounded-xl border border-[var(--outline-variant)] px-4 py-3 text-left text-sm text-[var(--on-surface-variant)] hover:border-[var(--brand)]"><span>Pressure-test this call with cited research</span><MessageSquare size={15} /></button>
           </div>
@@ -243,8 +249,8 @@ export default function AiInsightsLovablePage() {
           <WatchlistPanel
             refreshing={busy}
             refreshingTicker={refreshingTicker}
-            onSelectTicker={async (t) => { setTicker(t); setHistoricalId(null); setTab('briefing'); await refreshFor(t, ''); }}
-            onAskResearch={(t) => { setTicker(t); askResearch(`What catalysts and risks matter most for ${t} right now?`); }}
+            onSelectTicker={async (t) => { setTicker(t); setAsOf(''); setHistoricalId(null); setTab('briefing'); await refreshFor(t, ''); }}
+            onAskResearch={(t) => { research.startNew(); setAsOf(''); setTicker(t); askResearch(`What catalysts and risks matter most for ${t} right now?`); }}
           />
         </section>
       )}

@@ -34,6 +34,27 @@ async function request(body: unknown, signal?: AbortSignal): Promise<Response> {
   return response;
 }
 
+/** Saved research owns its immutable context; global controls only configure new work. */
+export function researchContext(session: ResearchSessionSummary | null, ticker: string, mode: ResearchMode, replayCutoff: string | null) {
+  return session
+    ? { ticker: session.ticker, mode: session.mode, replayCutoff: session.replay_cutoff }
+    : { ticker, mode, replayCutoff: mode === 'replay' ? replayCutoff : null };
+}
+
+/** Restore an answer and its own evidence without mixing a later failed attempt. */
+export function savedResearchArtifact(payload: ResearchSessionDetail) {
+  const latest = payload.messages[payload.messages.length - 1] ?? null;
+  const completed = [...payload.messages].reverse().find(message => message.answer !== null);
+  const failed = latest?.run_state === 'failed' || latest?.run_state === 'cancelled';
+  return {
+    answer: completed?.answer ?? null,
+    question: completed?.question ?? latest?.question ?? payload.session.title,
+    sources: payload.sources.filter(source => !completed || source.message_id === completed.id),
+    stage: (completed ? 'completed' : failed ? latest.run_state : 'idle') as ResearchStage,
+    error: failed ? `“${latest.question ?? payload.session.title}” did not finish: ${latest.error_message ?? 'no answer was saved.'} Ask it again to retry.` : null,
+  };
+}
+
 export function useInsightsLovable() {
   const [sessions, setSessions] = useState<ResearchSessionSummary[]>([]);
   const [detail, setDetail] = useState<ResearchSessionDetail | null>(null);
@@ -56,15 +77,12 @@ export function useInsightsLovable() {
       const response = await request({ action: 'read', sessionId });
       const payload: ResearchSessionDetail = await response.json();
       setDetail(payload);
-      const latest = payload.messages[payload.messages.length - 1] ?? null;
-      const completed = [...payload.messages].reverse().find((message) => message.answer !== null);
-      setAnswer(completed?.answer ?? null);
-      setQuestion(completed?.question ?? latest?.question ?? payload.session.title);
-      setSources(payload.sources.filter((source) => !completed || source.message_id === completed.id));
-      setStage(completed ? 'completed' : latest?.run_state === 'failed' ? 'failed' : 'idle');
-      setError(!completed && latest
-        ? `“${latest.question ?? payload.session.title}” did not finish: ${latest.error_message ?? 'no answer was saved.'} Ask it again to retry.`
-        : null);
+      const artifact = savedResearchArtifact(payload);
+      setAnswer(artifact.answer);
+      setQuestion(artifact.question);
+      setSources(artifact.sources);
+      setStage(artifact.stage);
+      setError(artifact.error);
     } catch (cause) {
       setError(cause instanceof Error ? `Could not open this research: ${cause.message}` : 'Could not open this research.');
     }
@@ -74,15 +92,20 @@ export function useInsightsLovable() {
     controller.current?.abort();
     const nextController = new AbortController();
     controller.current = nextController;
-    setStage('gathering'); setStageLabel('Gathering approved evidence'); setStreamText(''); setSources([]); setError(null); setQuestion(input.question);
+    setStage('gathering'); setStageLabel('Gathering approved evidence'); setStreamText(''); setError(null);
+    // Keep the completed question, answer and evidence together while a new
+    // attempt is pending. A failed or stopped attempt must not relabel it.
+    let pendingSources: ResearchSource[] = [];
     try {
       const response = await request({ action: 'research', ...input }, nextController.signal);
+      if (controller.current !== nextController) return;
       if (!response.body) throw new Error('Research stream was unavailable.');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       while (true) {
         const { done, value } = await reader.read();
+        if (controller.current !== nextController) return;
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -92,17 +115,25 @@ export function useInsightsLovable() {
           const event = JSON.parse(line) as ResearchStreamEvent;
           if (event.type === 'session') setDetail((previous) => previous ? previous : { session: { id: event.sessionId, ticker: input.ticker, mode: input.mode, replay_cutoff: input.replayCutoff, title: input.question.slice(0, 90), status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, messages: [], sources: [] });
           if (event.type === 'status') { setStage(event.stage); setStageLabel(event.label); }
-          if (event.type === 'sources') setSources(event.sources);
+          if (event.type === 'sources') pendingSources = event.sources;
           if (event.type === 'delta') setStreamText((text) => text + event.delta);
-          if (event.type === 'done') { setAnswer(event.answer); setStage('completed'); setStreamText(''); await loadSessions(); await openSession(event.sessionId); }
+          if (event.type === 'done') { setQuestion(input.question); setSources(pendingSources); setAnswer(event.answer); setStage('completed'); setStreamText(''); await loadSessions(); await openSession(event.sessionId); }
           if (event.type === 'error') { setError(event.message); setStage(event.code === 'cancelled' ? 'cancelled' : 'failed'); }
         }
       }
     } catch (caught) {
+      if (controller.current !== nextController) return;
       if (nextController.signal.aborted) { setStage('cancelled'); setError('Research stopped. Your last completed answer is still available.'); }
       else { setStage('failed'); setError(caught instanceof Error ? caught.message : 'Research failed.'); }
     } finally { if (controller.current === nextController) controller.current = null; }
   }, [loadSessions, openSession]);
 
-  return { sessions, detail, question, stage, stageLabel, streamText, sources, answer, error, loadSessions, openSession, research, stop: () => controller.current?.abort() };
+  const startNew = useCallback(() => {
+    controller.current?.abort();
+    controller.current = null;
+    setDetail(null); setQuestion(null); setAnswer(null); setSources([]);
+    setError(null); setStage('idle'); setStageLabel(''); setStreamText('');
+  }, []);
+
+  return { sessions, detail, question, stage, stageLabel, streamText, sources, answer, error, loadSessions, openSession, research, startNew, stop: () => controller.current?.abort() };
 }
