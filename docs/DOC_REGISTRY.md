@@ -1,6 +1,6 @@
 # Documentation registry
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-18 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-10-12 · **Owner:** TBD
 
 Which documents this repo maintains, who owns each one, and what code each one
 describes. `scripts/docs-audit.mjs` reads the tables below; the prose around
@@ -174,7 +174,7 @@ different thing.
 | FRONTEND.md | The (\d+) routes \( | grep-count src/App.tsx path: ' |
 | FRONTEND.md | \((\d+) pages plus the | grep-count src/App.tsx = lazy\(\(\) => import\('@/routes/ |
 | FRONTEND.md | \((\d+) of them, one the | grep-count src/components/layout/navConfig.ts \{ path: ' |
-| FRONTEND.md | The (\d+) data-fetching hook modules | grep-files src/hooks from '@tanstack/react-query' |
+| FRONTEND.md | The (\d+) modules with TanStack Query imports | grep-files src/hooks from '@tanstack/react-query' |
 | FRONTEND.md | (\d+) stores in | grep-files src/stores ^export const use[A-Za-z]+Store = create |
 | FRONTEND.md | (\d+) of the \d+ modules | grep-files src/lib from 'vitest' |
 | FRONTEND.md | \d+ of the (\d+) modules | grep-files src/lib ^export[[:space:]] |

@@ -32,6 +32,15 @@ describe('addDaysToISO', () => {
 });
 
 describe('snapshotAgeLabel', () => {
+  it('keeps October 27 as the market day at 02:20Z and preserves the server age', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-28T02:20:00Z'));
+    expect(todayET()).toBe('2026-10-27');
+    expect(snapshotAgeLabel('2026-10-27', 0)).toBe('as of Oct 27, 2026 (same day)');
+    // The client must not hide a server-side age error by overriding its value.
+    expect(snapshotAgeLabel('2026-10-27', 1)).toBe('as of Oct 27, 2026 (1d old)');
+  });
+
   it('renders the server date and age', () => {
     expect(snapshotAgeLabel('2026-06-13', 85)).toBe('as of Jun 13, 2026 (85d old)');
     // Zero age is relative to the date shown (review mode judges against

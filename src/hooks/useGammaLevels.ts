@@ -1,3 +1,4 @@
+import { dataUnlessError } from '@/lib/queryData';
 import { useQuery } from '@tanstack/react-query';
 
 // ── Shapes returned by GET /api/options/{ticker}/{date}/levels ──────────────
@@ -42,7 +43,7 @@ export interface GammaLevelsResponse {
   ticker: string;
   snapshot_date: string;
   spot: SpotEstimate;
-  // Cumulative-net-gamma balance price (formerly mislabeled `flip`).
+  // Absolute net-gamma median balance price; not the true zero-gamma flip.
   // Optional per schema: absent and null both mean "no balance level".
   gamma_balance?: number | null;
   // True Black-Scholes-recurved zero-gamma level (the real regime divider).
@@ -77,7 +78,7 @@ export function useGammaLevels(
   opts?: { windowPct?: number; spotOverride?: number; enabled?: boolean },
 ) {
   const { windowPct, spotOverride, enabled = true } = opts ?? {};
-  return useQuery<GammaLevelsResponse>({
+  const query = useQuery<GammaLevelsResponse>({
     queryKey: ['gamma-levels', ticker, date, windowPct ?? null, spotOverride ?? null],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -95,6 +96,7 @@ export function useGammaLevels(
     staleTime: 3_600_000, // 1 hour, EOD snapshots are immutable once written
     retry: false,
   });
+  return { ...query, data: dataUnlessError(query.data, query.isError) };
 }
 
 // Friendly label for the spot estimation method, surfaced as a chip in the UI.

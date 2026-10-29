@@ -73,3 +73,24 @@ Canvas refresh pending: none
       CLAUDE.md Rule 2.5 says
 - [ ] CI green on the current head
 - [ ] No merge conflict
+
+- [ ] Review ledger links the original lineage, all predecessor/replacement/split PRs,
+      immutable heads and reviewer/run receipts, stable findings with original severities,
+      spent/reserved aggregate passes and external rounds, and owner decisions. Pre-push
+      judgment counts; cancelled reservations are not refunded. No fresh replacement budget.
+- [ ] AGENTS.md blocking precedence applied: mandatory acceptance, security, data integrity,
+      capacity, no-fallback and required review/checks block regardless of badge; P0/P1 block.
+      Other P2/P3 findings have a reply, linked issue for a real defect and thread resolution.
+      Missing/conflicting/unmapped severity, disputed classification or acceptance, and unknown
+      required-check status remain pending owner adjudication, never silent downgrading.
+- [ ] Exclusive writer and expected-head/output-hash checks protect shared evidence; hashes
+      alone are not atomic exclusion. Generated evidence retains exact committed input/output
+      identities under the existing trusted renderer protocol.
+- [ ] Any budget extension records reason, scope and exact numerical additional aggregate
+      passes, and separately exact additional external rounds (unspecified external increase
+      is zero). Merge authorization is separate; no auto-pass of unresolved blockers.
+
+- [ ] Authenticated current-head Codex CODE row is Completed with its own time after the
+      latest trigger; a security row, author reply or missing review object cannot substitute.
+      First code/security review receipts are recorded separately, and no first run remains
+      Running. Missing required proof stays blocked; request/push only within reserved allowance.

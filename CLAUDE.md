@@ -7,11 +7,16 @@ Any edit, fix, refactor, or feature, however small: invoke the `product-delivery
 It classifies the work (TRIVIAL / SPIKE / CHANGE), requires a FEAT-ID from docs/product/02-FEATURE-CATALOG.md,
 and runs the Superpowers brainstorming -> writing-plans -> subagent-driven-development chain.
 Commits and PRs that skip it are rejected by `scripts/gate/spec_gate.py` (pre-commit hook and CI).
-Review cap on every PR: two rounds, then split, re-cut, or discard. Never a third round, never a stacked follow-up.
+Review cap: follow AGENTS.md “Review budget and finding identity”: four coordinated judgment
+passes per lineage, at most two external code-review rounds, with all prior effort retained.
+Use its blocking/disposition precedence; no automatic merge, forced cosmetic re-cut or reset.
 Gate files (`scripts/gate/`, `.githooks/pre-commit`, `.github/workflows/spec-gate.yml`, `registry-check.yml`, their suites)
-get a red-team pass before every push: one reviewer per attack surface (shell, YAML/Actions, exporter and policy docs),
-each bypass proven by running the gate against a concrete snippet, everything found fixed in one batch, repeated until a
-pass comes back empty, then one push. Never push a gate change one finding at a time.
+get a red-team pass before every push: one reviewer per attack surface (shell, YAML/Actions,
+exporter and policy docs), each bypass proven by running the gate against a concrete snippet.
+Declare the cohort and reserve the pass first; fix confirmed blockers in one batch and verify
+within the remaining allowance. Every repeated pre-push judgment pass counts. If clean required
+review cannot be obtained within that allowance, stop and escalate to the owner under AGENTS.md;
+never waive the red-team prerequisite or push a gate change one finding at a time.
 The two gate workflows and the hook are pinned byte for byte to copies under `scripts/gate/pinned/`, read from main:
 change the copy in one PR, then make the file equal to it in the next. One PR changing both is refused.
 
@@ -122,7 +127,9 @@ that window.** Before any merge:
 1. Read the review comments — **before** checking CI, not after. An empty
    result 60 seconds after opening the PR means nothing; wait and re-check.
 2. Every thread either resolved, or replied to with why it isn't being
-   actioned. Zero unresolved threads is the bar.
+   actioned. Zero unresolved threads is the bar. A finding that does not block
+   the merge (AGENTS.md `## Review guidelines`) may get a reply instead of a
+   fix, linking an issue when it is real; its thread is then resolved.
 3. Only then CI, then merge.
 
 A PR is done when CI is green **and** there are no unresolved review threads
@@ -136,8 +143,26 @@ landed in a different PR, say which one.
 
 **Verify the claim before fixing it.** Reviewers are usually right, but a fix
 built on a misread finding is worse than no fix. For each finding: confirm it
-against the code, write the failing test first, then fix, then show the same
-test passing.
+against the code by read-only reproduction/triage. Apply AGENTS.md blocking/disposition
+and reserve remaining judgment allowance before any fix. Nonblocking findings do not force
+fixes; at exhaustion stop for owner adjudication. Within allowance, write the failing test,
+fix, and show the same test passing.
+
+#### Current-head review and bounded publication
+
+Require an authenticated `chatgpt-codex-connector[bot]` CODE review on the current head.
+The Code Review summary row must read Completed for that SHA, with its own completion time
+after the latest push/ready/manual-review trigger; a security row, author reply or missing
+review object is not a substitute. A clean code run can have no review object: authenticate
+the bot's Code Review row instead. Wait for any review type's first run still Running;
+record each completed type's first SHA and finding count before another run replaces its row.
+Missing, failed, stale or unknown required evidence blocks; report a stalled/missing run to
+the owner after an hour rather than bypassing it. Re-page findings after completion.
+
+Before pushing or requesting another run, reserve sufficient AGENTS.md lineage allowance,
+including provider-triggered work. Never repeat a dropped request blindly. At exhaustion,
+stop autonomous fixes/pushes/review requests and present exact history for owner adjudication;
+replacement PRs do not reset effort. Merge additionally requires owner authorization.
 
 #### Reviewing a pull request
 
@@ -167,6 +192,10 @@ it covered is the one Codex's review-summary comment shows for that review
 type when that row first reads Completed, and the author records that SHA in
 a PR comment then, since the next run replaces the row:
 `First Codex code review: Completed on <sha>, no findings.`
+Use `N findings` when applicable, and separately record
+`First Codex security review: Completed on <sha>, no findings.` (or `N findings`).
+Preserve every original type/account/PR receipt alongside the stable lineage finding ID;
+line movement or replacement does not erase the original defect's provenance.
 
 ### 3. Commit Guidelines
 
@@ -488,7 +517,7 @@ so every gated call would 401.
 `src/lib/authedFetch.ts` monkeypatches `window.fetch` to (1) re-point `/api/*`
 at an absolute origin when one is configured (using `apiTargets.ts`) and
 (2) attach the Firebase ID token. It's a global wrapper because the app makes
-~73 bare relative `fetch('/api/...')` calls across ~30 files with no central
+~102 bare relative `fetch('/api/...')` calls across ~35 files with no central
 client.
 
 `OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`) must stay in

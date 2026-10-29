@@ -39,6 +39,8 @@ with the frontmatter in `references/spec-template.md`. `done_when` is the contra
 
 Present the spec in sections. Stop after each section for feedback. Do not proceed until the user says approved. Then set `status: approved` and commit the spec alone (branch `docs/spec-<feat-id-lowercase>`, kebab-case like every delivery branch; the gate validates the spec's frontmatter and nothing else there), and merge it before the implementation branch opens: the gate reads the catalog row and the approved spec from the merge base (HEAD for a local commit), so a change that adds or edits its own spec, or its own catalog row, is refused.
 
+If review changes an approved spec on its open PR, present the changed sections to the user again and get their approval before that PR merges. A fix that changes no decision and no `done_when` item (wording, a citation, a line number) needs no new approval.
+
 ## Phase 3: plan
 
 Invoke `superpowers:writing-plans`. Write:
@@ -59,9 +61,9 @@ PR rules:
 - Title: `<FEAT-ID>: <what changed>`, starting with the branch's FEAT-ID. CI rejects any other title.
 - Body: link the spec and the plan by their exact paths, paste each `done_when` item as a `- [ ]` line that starts with the item's text, then the Capacity section: in stocks the three numbers and cost CLAUDE.md rule 0 requires; in solyra, which runs no workload, `n/a: <why>`. CI reads the body as it renders (HTML comments and fenced code removed), refuses a ticked item whose line defers the work (`follow-up`, `non-blocking`, `future-work`, `TODO`, and the like), and when the PR touches `gcp/` or `.github/workflows/` it requires the Capacity section's Volume, Velocity, Wall-clock and cost to be filled, or an `n/a: <why>`.
 - Open the PR as a draft, then set the plan's `pr` to its number in the next commit. A draft may still say `null`; a number that is not this PR fails the gate, and once the PR is marked ready for review CI requires the number and the Phase 5 records.
-- Review cap: TWO rounds. After the second round of review comments, do not keep fixing in place. Invoke `superpowers:finishing-a-development-branch` and present: split into smaller PRs, re-cut from the spec, or discard. A PR that is not mergeable after two rounds is a spec problem, not a code problem.
+- Review cap and disposition: follow AGENTS.md “What blocks the merge” and “Review budget and finding identity”. Four coordinated judgment passes per lineage include pre-push reviews; at most two external code-review rounds. Preserve all predecessor/split/replacement history and stable findings. At exhaustion stop autonomous fixes, pushes and review requests and obtain owner adjudication; never force a P2/P3-only re-cut or auto-pass a blocker. Disposition does not authorize merging.
 - Never open a follow-up PR from an unmerged PR. Never stack.
-- A change to a gate file (`scripts/gate/`, `.githooks/pre-commit`, the two gate workflows, their suites) is pushed only after a red-team pass on the head: three parallel reviewers, one each for shell semantics, YAML/Actions structure, and the exporter and policy documents, each required to prove a bypass by executing the gate against a concrete snippet. Fix every confirmed finding in one batch, run the pass again, and push once when it comes back empty. Fixing findings one push at a time draws a fresh review per push and never converges.
+- A change to a gate file (`scripts/gate/`, `.githooks/pre-commit`, the two gate workflows, their suites) requires a pre-push red-team cohort: three parallel reviewers for shell semantics, YAML/Actions, and exporter/policy documents, each proving a bypass against a concrete snippet. Reserve the cohort under AGENTS.md before starting. Fix confirmed blockers in one batch and verify within the remaining allowance; repeated judgment passes count. If required clean review cannot be obtained, escalate rather than loop, waive the prerequisite or push findings one at a time.
 - Before every commit, run `python3 scripts/gate/spec_gate.py --commit`. The hook runs it anyway; running it first avoids surprises. A commit from a detached HEAD that stages code is blocked; name its branch with `SPEC_GATE_BRANCH=<branch> git commit`.
 
 ## Phase 5: close (this is what "done" means)
@@ -82,3 +84,5 @@ In the SAME PR, before requesting final review:
 - Never mark a `done_when` item "future-work", "non-blocking", or "follow-up". Either finish it or remove it from the spec with the user's explicit consent, and say so in the PR.
 - Never edit `docs/product/` from a feature branch except the one FEAT row or record and the traceability entry this PR owns, the `07-MODEL-REGISTRY.md` rows for models this spec changes, and the `generated/model-registry.json` that step 4 regenerates.
 - Never let a second agent (Codex, Lovable, a webhook-triggered session) push to a branch this plan owns. One plan, one author.
+
+Shared evidence follows AGENTS.md “Generated evidence and one writer”: exclusive publisher, private reviewer outputs, expected-head/hash refusal, non-force push and owner-acknowledged quiescent handoff. Hashes alone are not atomic exclusion. Use applicable existing local controls; Solyra does not gain stocks-only renderer capabilities or allowances.

@@ -818,15 +818,12 @@ In order:
 2. Confirm the current head SHA **has been reviewed**, which is not the same as
    "a review object exists for it". A clean run posts no review at all, only a
    reaction, so requiring a review object would deadlock every PR that has
-   nothing wrong with it. Either of these satisfies this step:
-   - a review **authored by the review bot**, not `CHANGES_REQUESTED`, whose
-     `commit_id` is the head SHA (listings return oldest first, so it is on the
-     last page); or
-   - the review summary comment showing **Completed** against the head SHA,
-     **and authored by the review bot**. Anyone who can comment on the PR can
-     post a comment that says Completed and names the head; the author check
-     below is about review objects and does not reach this path, so without
-     this clause the cheaper of the two conditions is the forgeable one.
+   nothing wrong with it. Require the authenticated Code Review summary row showing
+   **Completed** against the current head SHA, with its own completion time after the
+   latest push/ready/manual-review trigger. A review object alone does not establish
+   the review type or timing; security rows and author replies cannot substitute.
+   Authenticate the summary's bot author too: an arbitrary comment naming the head
+   and saying Completed is not review evidence.
 
    **Check the author, not just the SHA.** Every reply you post on a thread is
    itself recorded as a review on the current head, so a SHA-only test lets
@@ -836,7 +833,11 @@ In order:
 
    What fails the step: a summary showing Running, or naming an older commit
    with all threads outdated, or a head whose only reviews are yours. That head
-   is unreviewed — comment `@codex review` and wait.
+   is unreviewed. Wait for a running run; otherwise request `@codex review` only within
+   reserved AGENTS.md allowance and without duplicating an existing/dropped request. Missing
+   evidence is not a waiver; at exhaustion stop for owner adjudication. Wait for any review
+   type's first run and record each completed code/security first SHA and finding count as
+   CLAUDE.md Rule 2.5 requires before a push can replace the row.
 3. **Re-page `get_review_comments` now**, after step 2 established the review
    is Completed — do not reuse step 1's snapshot. Step 1 runs deliberately
    before CI and can therefore run while the current head's review is still
@@ -844,27 +845,33 @@ In order:
    a review WITH findings satisfies step 2 perfectly well, since the bar there
    is "not `CHANGES_REQUESTED`" — nothing else catches this.
 
-   Read and triage here; **fix at step 4, and zero-unresolved is enforced at
+   Read and triage here; **step 4 applies disposition and allowance before fixes; zero-unresolved is enforced at
    step 5.** Demanding it here would deadlock: a finding would have to be
    resolved before step 4 has said to reproduce and fix it, and the only way
    out is resolving a thread you never validated.
-4. Verify each finding against the code before fixing it: reproduce, write the
-   failing test, fix, show it pass.
-   **If this produced a commit for a finding from the PR's first review round,
-   go back to step 1 on the new head.** A fix commit moves the head past the
-   review that approved it, so merging from here lets the review-fix itself
-   merge unreviewed — the same stale-head condition, arriving by a different
-   route. Push, let the review re-run on the new SHA, re-check: that run is
-   the PR's second review round.
-   **Two review rounds, then split, re-cut or discard** (CLAUDE.md, "Review
-   cap"; the product-delivery skill, Phase 4). A finding from the second
-   round is classified (CLAUDE.md Rule 2.5) and the PR split, re-cut or
-   discarded, with no in-place fix and no third review: present that choice
-   (`superpowers:finishing-a-development-branch`) and stop.
-   **A completed review with no findings posts no review at all**, only a 👍
-   reaction, so an absent review for a SHA means either "clean" or "not yet
-   run". Read the review summary comment's status table alongside the review
-   list to tell them apart.
+4. **Verify and classify before any fix.** Read-only reproduction/triage comes first.
+   Apply AGENTS.md blocking precedence: mandatory acceptance/security/integrity/capacity/
+   no-fallback/current-head evidence block regardless of badge; P0/P1 always block. Other
+   P2/P3 findings receive a reply, linked issue for a real defect and resolution, without
+   a forced fix or second-round re-cut. Missing/unmapped/conflicting severity, disputed
+   acceptance/classification or unknown check status remains pending owner adjudication.
+
+   Before editing/pushing/requesting review, reserve sufficient allowance under AGENTS.md
+   “Review budget and finding identity”. Four coordinated judgment passes per lineage
+   include pre-push work; at most two external code rounds. Declared same-head cohorts
+   record each run; cancelled reservations and repeated/new-head judgment consume effort.
+   Replacements/splits inherit spent effort and stable findings, never fresh budgets.
+   At exhaustion stop autonomous fixes, pushes and reviews. Owner extensions require reason,
+   scope, exact additional aggregate passes and separately exact additional external rounds;
+   unspecified external increase is zero. Otherwise rescope through approved specs or stop.
+
+   Within allowance, write the failing test, fix confirmed blockers in one batch and verify.
+   Wait for first code/security runs to finish and record their receipts, then re-page
+   findings before publication. A fix push or merge of main changes the head: return to
+   step 1 and obtain authentic current-head CODE review and checks; never merge a stale
+   review. No automatic merge or required-check waiver follows a clean second round.
+   A clean review may have no review object; use the authenticated Code Review row, not
+   silence, an author reply or a security row, to prove its completion.
 5. **Now zero unresolved**, across every page: each thread fixed-and-resolved
    naming what changed and the covering test and commit, or replied to with
    why not. A thread holding a finding that a reviewer posted after its own
@@ -872,10 +879,9 @@ In order:
    location: uncounted, missed (with the SHA of the commit that first review
    covered) or new (with the SHA of the later commit), as CLAUDE.md Rule 2.5
    says. Then CI green on the current head, and no merge conflict.
-6. **Merge it, bound to the SHA that passed.** Steps 1-5 are the gate, not
-   the destination; stopping here leaves the fix on a branch while Phase 9
-   describes the issue as landed. Merge once every step above passes, and
-   record the merge commit in the status comment.
+6. **When authorized, merge bound to the SHA that passed.** Require all steps above
+   and owner merge authorization. Otherwise report the actual draft/ready state, not a
+   landed fix. Record the merge commit only after the authorized operation succeeds.
 
    **Pass the reviewed head SHA to the merge.** The steps above established
    that a review and a green CI run exist for one specific commit; a push
@@ -883,7 +889,8 @@ In order:
    unqualified merge takes whatever is there. Re-read the PR immediately
    before merging and give `merge_pull_request` its `expectedHeadSha`, so a
    moved head is a rejected merge rather than an unreviewed one. If it has
-   moved, go back and re-run the gate against the new head.
+   moved, re-evaluate the new head within recorded allowance, or stop for owner adjudication.
+   A replacement or split is not permission to reset the allowance.
 
    Stop instead of merging, saying which: the PR is one this session did not
    open and was not asked to drive; or the user wants to merge it themselves.

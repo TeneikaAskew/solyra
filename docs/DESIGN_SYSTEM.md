@@ -1,6 +1,6 @@
 # Design System Document
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-10-12 · **Owner:** TBD
 
 ## 1. Overview & Creative North Star: "The Obsidian Analyst"
 

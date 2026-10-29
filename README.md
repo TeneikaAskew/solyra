@@ -1,6 +1,6 @@
 # Solyra
 
-**Last reviewed:** unknown · **Last scanned:** 2026-09-16 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-10-12 · **Owner:** TBD
 
 The frontend for the trading platform — a React + TypeScript single-page app
 covering the market dashboard, live quotes, charts, options/gamma analysis,
@@ -12,7 +12,7 @@ as the `solyra-api-staging` Cloud Run service, the only API service since
 `solyra-api-prod` was retired on 2026-10-10 (TeneikaAskew/stocks#1366).
 Solyra's dev server proxies `/api/*` to that backend, so the browser still
 sees same-origin requests and no call site needs to know where the API
-actually is: `src/` holds ~101 bare `fetch('/api/...')` literals, its colocated
+actually is: `src/` holds ~102 bare `fetch('/api/...')` literals, its colocated
 tests included.
 
 Built with [Lovable](https://lovable.dev).
