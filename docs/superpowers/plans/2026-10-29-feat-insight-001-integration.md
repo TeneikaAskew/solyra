@@ -2,7 +2,7 @@
 feat_id: FEAT-INSIGHT-001
 spec: docs/superpowers/specs/2026-10-12-feat-insight-001-complete-ai-insights-workspace.md
 branch: feature/feat-insight-001-integration
-pr: null
+pr: 302
 status: ready
 ---
 
@@ -53,9 +53,13 @@ Interfaces: mockInsightsApi provides report/history/watchlist endpoints; mocked 
 ## Task 3: Prepare publication evidence
 
 Spec: Delivery paths and catalog acceptance; advances done_when[10].
-- [ ] Final-source docs audit disposition: parent classifies unchanged CLAUDE 73/30 count claims as existing baseline findings (main measurements 101/34; integration 102/35). Earlier zero-delta result included a numeric cleanup reverted in 7d98081; do not reuse it as final-source proof.
-- [ ] Run deterministic spec gate and preserve exact output.
-- [ ] Supply local patch, source identities, validation counts and unresolved acceptance to parent.
+- [x] Final-source docs audit disposition: parent classifies unchanged CLAUDE 73/30 count claims as existing baseline findings (main measurements 101/34; integration 102/35). Earlier zero-delta result included a numeric cleanup reverted in 7d98081; do not reuse it as final-source proof.
+- [x] Run deterministic spec gate and preserve exact output.
+- [x] Supply local patch, source identities, validation counts and unresolved acceptance to parent.
 - [x] Parent records explicit forward allowance approval before reserving any judgment or publication; historical usage is preserved.
-- [ ] Parent assigns real PR identity and updates catalog/PR traceability before final review.
-- [ ] Commit and publish only after parent authorizes the publication step under reconciled policy.
+- [x] Parent assigns real PR identity and updates catalog/PR traceability before final review.
+- [x] Commit and publish only after parent authorizes the publication step under reconciled policy.
+
+## Final author evidence
+
+Integration head f93818d repairs all ten LOCAL1 findings; 1,276 unit tests, 48 browser tests, build and full PR gate pass. Final docs audit matches prior validated 31 baseline findings exactly. PR #302 retains the original feature history. Forward LOCAL1 consumed; first hosted CODE/current security cohort reserved under the October 29 explicit extension. No live deployment is claimed. Backend R:R is unavailable and displayed as such, with no new financial calculation or API field. Actual research-function deployment remains a release closeout requirement.
