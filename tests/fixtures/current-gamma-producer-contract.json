@@ -336,5 +336,28 @@
     ],
     "window_pct": 8.0,
     "warnings": []
+  },
+  "missing_gamma_levels": {
+    "ticker": "IWM",
+    "snapshot_date": "2026-10-27",
+    "spot": {
+      "price": 100.0,
+      "method": "override",
+      "note": "caller-supplied spot"
+    },
+    "gamma_balance": null,
+    "gamma_flip": null,
+    "regime": "unknown",
+    "total_gex": 0.0,
+    "levels": [],
+    "kings": [],
+    "gates": [],
+    "gamma_balance_levels": [],
+    "window_pct": 8.0,
+    "warnings": [
+      "Vendor gamma missing on ALL 12 contracts \u2014 GEX unavailable for this snapshot (feed outage?), not zero."
+    ],
+    "snapshot_timestamp": "2026-10-27T19:55:00Z",
+    "chain_size": 12
   }
 }

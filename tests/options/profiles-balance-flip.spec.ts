@@ -84,3 +84,28 @@ test('Profiles failed analytics cannot display cached or placeholder zero totals
  await expect(page.getByText('Gamma Balance',{exact:true})).toBeVisible();
  await page.screenshot({path:info.outputPath('profiles-analytics-unavailable.png'),fullPage:true});
 });
+
+
+test('Gamma Map empty producer levels never borrow another response flip or balance',async({page},info)=>{
+ await setup(page,{...distinct,levels:base.missing_gamma_levels});
+ await expect(page.locator('.hs-legend .chip.flip .val')).toHaveText('—');
+ await expect(page.locator('.hs-legend .chip.balance .val')).toHaveText('—');
+ await expect(page.locator('.hs-nodes .node.flip')).toHaveCount(0);
+ await expect(page.locator('.hs-grid-card .flip-row')).toHaveCount(0);
+ // Keep the genuinely populated grid overlay, not empty-level placeholder totals/taxonomy.
+ await expect(page.locator('.hs-legend .chip.hedge')).toHaveCount(0);
+ expect(await page.locator('.hs-grid-card .hs-cell').count()).toBeGreaterThan(0);
+ await page.screenshot({path:info.outputPath('gamma-empty-levels-no-borrow.png'),fullPage:true});
+});
+for(const [clock,label] of [
+ ['2026-10-26T19:55:00Z','2026-10-26 15:55 ET'],
+ ['2026-10-26','2026-10-26 (time unavailable)'],
+ ['', 'time unavailable'],
+] as const){
+ test(`Gamma Map qualifies independent grid batch clock ${clock||'missing'}`,async({page},info)=>{
+  await setup(page,{...distinct,grid:{...distinct.grid,date:'2026-10-26',snapshot_ts:clock}});
+  await expect(page.locator('.hs-pill.realtime')).toContainText(`Batch snapshot ${label}`);
+  await expect(page.getByText(/Levels: IWM/)).toContainText('2026-10-27');
+  await page.screenshot({path:info.outputPath(`grid-clock-${clock ? clock.length : 'missing'}.png`),fullPage:true});
+ });
+}

@@ -168,16 +168,6 @@ function fmtStrike(s: number): string {
   return s % 1 !== 0 ? s.toFixed(2) : String(s);
 }
 
-function fmtTime(iso: string): string {
-  if (!/(?:Z|[+-]\d{2}:\d{2})$/.test(iso) || !Number.isFinite(Date.parse(iso))) return 'snapshot time unavailable';
-  // Every other time on these surfaces is ET — render the snapshot in ET
-  // with an explicit label, not the viewer's local zone unlabeled.
-  return `${new Date(iso).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/New_York',
-  })} ET`;
-}
 
 // Aggregated real-data overlay derived from useGammaLevels. Any field that the
 // backend can supply replaces the mock; everything else falls back to HS.
@@ -231,11 +221,9 @@ function SourcePill({ source, asOf }: { source: string; asOf: string }) {
       {/* the pulse animation is the live-streaming affordance, only LIVE gets it */}
       <span className="dot" />
       <span>{meta.label}</span>
-      {asOf ? (
-        <span style={{ opacity: 0.7, fontWeight: 500, letterSpacing: 0, textTransform: 'none' }}>
-          {fmtTime(asOf)}
-        </span>
-      ) : null}
+      <span style={{ opacity: 0.7, fontWeight: 500, letterSpacing: 0, textTransform: 'none' }}>
+        Batch snapshot {batchSnapshotLabel(asOf)}
+      </span>
     </span>
   );
 }
@@ -886,8 +874,10 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         kingGex,
         gateAbove: undefined,
         gateBelow: undefined,
-        flipStrike: gammaPrices(grid).flip,
-        balanceStrike: gammaPrices(grid).balance,
+        // A present empty levels response still owns its nullable prices;
+        // the populated grid retains its own exposure/taxonomy below.
+        flipStrike: gammaPrices(levels ?? grid).flip,
+        balanceStrike: gammaPrices(levels ?? grid).balance,
         // The grid path has no per-level flip GEX (only the flip strike from
         // gamma_flip); null renders "—" rather than a fabricated $0.
         flipGex: null,
