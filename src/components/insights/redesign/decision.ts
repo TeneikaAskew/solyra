@@ -1,5 +1,4 @@
 import type { InsightReport, InsightHistoryRow, Catalyst, RiskFlag } from '@/types/insights';
-import { riskReward } from '@/lib/risk';
 import { fmtPrice } from '@/lib/format';
 
 /** Number guard: JSONB reports can carry missing/non-numeric fields. Never coerce to 0. */
@@ -38,7 +37,6 @@ export function groupKeyLevels(levels: Record<string, number> | null | undefined
 export interface PlanSummary {
   entryLow: number | null;
   entryHigh: number | null;
-  entryMid: number | null;
   stop: number | null;
   targets: number[];
   rr: number | null;
@@ -47,10 +45,11 @@ export interface PlanSummary {
 export function planSummary(report: InsightReport): PlanSummary {
   const entryLow = num(report.entry_zone?.low);
   const entryHigh = num(report.entry_zone?.high);
-  const entryMid = entryLow != null && entryHigh != null ? (entryLow + entryHigh) / 2 : entryLow ?? entryHigh;
   const stop = num(report.stop);
   const targets = Array.isArray(report.targets) ? report.targets.filter((t): t is number => num(t) != null) : [];
-  return { entryLow, entryHigh, entryMid, stop, targets, rr: riskReward(entryMid, targets[0] ?? null, stop) };
+  // The current report contract supplies no reward-to-risk value. Do not
+  // synthesize financial evidence in the presentation layer.
+  return { entryLow, entryHigh, stop, targets, rr: null };
 }
 
 /** Known report sections; failed ones come from the backend's failed_sections list. */
@@ -120,7 +119,7 @@ export function ageLabel(iso: string | null | undefined, now = Date.now()): stri
 
 /** One timeline row: a structured report run or a saved research question. Never merged into one shape. */
 export type HistoryItem =
-  | { kind: 'report'; id: string; at: string | null; label: 'Report run'; row: InsightHistoryRow }
+  | { kind: 'report'; id: string; at: string | null; label: 'Report run'; row: InsightHistoryRow; previous: string | null }
   | { kind: 'research'; id: string; at: string | null; label: 'Research question'; session: { id: string; ticker: string; mode: string; title: string; status: string; updated_at: string; replay_cutoff: string | null } };
 
 export type HistoryFilter = 'all' | 'reports' | 'research';
@@ -132,7 +131,7 @@ export function unifiedHistory(
   filter: HistoryFilter = 'all',
 ): HistoryItem[] {
   const items: HistoryItem[] = [];
-  if (filter !== 'research') for (const row of reports) items.push({ kind: 'report', id: row.id, at: row.as_of ?? null, label: 'Report run', row });
+  if (filter !== 'research') for (const row of withDirectionChange(reports)) items.push({ kind: 'report', id: row.id, at: row.as_of ?? null, label: 'Report run', row, previous: row.previous });
   if (filter !== 'reports') for (const s of sessions) items.push({ kind: 'research', id: s.id, at: s.updated_at ?? null, label: 'Research question', session: s });
   const t = (iso: string | null) => { const v = iso ? Date.parse(iso) : NaN; return Number.isFinite(v) ? v : null; };
   return items.sort((a, b) => {

@@ -50,8 +50,8 @@ describe('resolveChartDate', () => {
     expect(resolveChartDate(dates, '20261010')).toBe('20261009');
   });
 
-  it('falls back to the oldest available date when the target predates the list', () => {
-    expect(resolveChartDate(dates, '20261001')).toBe('20261007');
+  it('reports unavailable when the target predates every available session', () => {
+    expect(resolveChartDate(dates, '20261001')).toBe('');
   });
 
   it('uses the target when the dates list is empty so the error surfaces', () => {

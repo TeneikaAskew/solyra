@@ -78,7 +78,7 @@ export function DecisionBar({ ticker, report, asOf, onOpenAgents, historical }: 
         <Metric label="Stop" value={fmtPrice(p.stop)} tone="bear" />
         <Metric label="Target 1" value={fmtPrice(p.targets[0] ?? null)} tone="bull" />
         <Metric label="Target 2" value={fmtPrice(p.targets[1] ?? null)} tone="bull" />
-        <Metric label="Reward : risk" value={p.rr != null ? `${p.rr.toFixed(2)}x` : NA} />
+        <Metric label="Reward : risk" value={p.rr != null ? `${p.rr.toFixed(2)}x` : 'Unavailable'} />
       </div>
 
       {report.invalidation && (

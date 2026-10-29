@@ -63,7 +63,7 @@ export function resolveChartDate(
 ): string {
   if (!availableDates) return '';
   if (availableDates.length === 0) return targetCompact;
-  return availableDates.find((d) => d <= targetCompact) ?? availableDates[availableDates.length - 1];
+  return availableDates.find((d) => d <= targetCompact) ?? '';
 }
 
 /**
@@ -150,6 +150,8 @@ export function ResearchCandleChart({
       <div className="mt-2">
         {datesQ.isLoading || market.isLoading ? (
           <div className="h-[320px] animate-pulse rounded-md bg-[var(--surface-1)]" />
+        ) : datesQ.data && !date ? (
+          <p role="note">Chart unavailable: no trading session exists on or before this cutoff.</p>
         ) : market.isError ? (
           <p role="note" className="rounded-md border border-[var(--warn)]/40 bg-[var(--surface-1)] px-4 py-3 text-xs text-[var(--warn)]">
             Chart data unavailable for {ticker} on {displayDate(date)}. {market.error instanceof Error ? market.error.message : ''}

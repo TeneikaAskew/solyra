@@ -66,16 +66,25 @@ export function useInsightsLovable() {
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
+  const selection = useRef(0);
+  const readController = useRef<AbortController | null>(null);
 
   const loadSessions = useCallback(async () => {
+    const generation = selection.current;
     const response = await request({ action: 'list', sessionId: null });
     const payload = await response.json();
-    setSessions(payload.sessions ?? []);
+    if (generation === selection.current) setSessions(payload.sessions ?? []);
   }, []);
-  const openSession = useCallback(async (sessionId: string) => {
+  const openSession = useCallback(async (sessionId: string, expectedGeneration?: number) => {
+    if (expectedGeneration !== undefined && expectedGeneration !== selection.current) return;
+    const generation = expectedGeneration ?? ++selection.current;
+    if (expectedGeneration === undefined) { controller.current?.abort(); controller.current = null; }
+    readController.current?.abort();
+    const read = new AbortController(); readController.current = read;
     try {
-      const response = await request({ action: 'read', sessionId });
+      const response = await request({ action: 'read', sessionId }, read.signal);
       const payload: ResearchSessionDetail = await response.json();
+      if (generation !== selection.current || read.signal.aborted) return;
       setDetail(payload);
       const artifact = savedResearchArtifact(payload);
       setAnswer(artifact.answer);
@@ -84,11 +93,14 @@ export function useInsightsLovable() {
       setStage(artifact.stage);
       setError(artifact.error);
     } catch (cause) {
+      if (generation !== selection.current || read.signal.aborted) return;
       setError(cause instanceof Error ? `Could not open this research: ${cause.message}` : 'Could not open this research.');
     }
   }, []);
 
   const research = useCallback(async (input: { ticker: string; question: string; mode: ResearchMode; replayCutoff: string | null; sessionId: string | null }) => {
+    const generation = ++selection.current;
+    readController.current?.abort();
     controller.current?.abort();
     const nextController = new AbortController();
     controller.current = nextController;
@@ -117,18 +129,19 @@ export function useInsightsLovable() {
           if (event.type === 'status') { setStage(event.stage); setStageLabel(event.label); }
           if (event.type === 'sources') pendingSources = event.sources;
           if (event.type === 'delta') setStreamText((text) => text + event.delta);
-          if (event.type === 'done') { setQuestion(input.question); setSources(pendingSources); setAnswer(event.answer); setStage('completed'); setStreamText(''); await loadSessions(); await openSession(event.sessionId); }
-          if (event.type === 'error') { setError(event.message); setStage(event.code === 'cancelled' ? 'cancelled' : 'failed'); }
+          if (event.type === 'done') { setQuestion(input.question); setSources(pendingSources); setAnswer(event.answer); setStage('completed'); setStreamText(''); await loadSessions(); if (generation === selection.current) await openSession(event.sessionId, generation); }
+          if (event.type === 'error') { setError(event.message); setStage(event.code === 'cancelled' ? 'cancelled' : 'failed'); await loadSessions(); }
         }
       }
     } catch (caught) {
       if (controller.current !== nextController) return;
       if (nextController.signal.aborted) { setStage('cancelled'); setError('Research stopped. Your last completed answer is still available.'); }
       else { setStage('failed'); setError(caught instanceof Error ? caught.message : 'Research failed.'); }
-    } finally { if (controller.current === nextController) controller.current = null; }
+    } finally { if (controller.current === nextController) { try { await loadSessions(); } catch (cause) { if (generation === selection.current) setError(previous => `${previous ? previous + ' ' : ''}History refresh failed: ${cause instanceof Error ? cause.message : 'unavailable'}`); } controller.current = null; } }
   }, [loadSessions, openSession]);
 
   const startNew = useCallback(() => {
+    ++selection.current; readController.current?.abort();
     controller.current?.abort();
     controller.current = null;
     setDetail(null); setQuestion(null); setAnswer(null); setSources([]);

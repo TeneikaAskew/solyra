@@ -40,7 +40,7 @@ test('exposes all five tabs with one ticker selector', async ({ page }, testInfo
   for (const name of ['Briefing', 'Agents', 'History', 'Watchlist', 'Chat']) {
     await page.getByRole('tab', { name: new RegExp(name) }).click();
     await expect(page.getByRole('tab', { name: new RegExp(name) })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('tabpanel', { name }).or(page.getByRole('region', { name: 'Decision' }))).toBeVisible();
+    await expect(page.getByRole('tabpanel', { name })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`tab-${name.toLowerCase()}.png`) });
   }
   await expect(page.getByPlaceholder(/Ask about IWM/)).toBeVisible();

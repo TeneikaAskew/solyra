@@ -43,10 +43,11 @@ describe('groupKeyLevels', () => {
 });
 
 describe('planSummary', () => {
-  it('computes R:R from the entry midpoint, first target and stop', () => {
+  it('preserves supplied entry bounds and leaves unsupplied reward-to-risk unavailable', () => {
     const p = planSummary(base);
-    expect(p.entryMid).toBe(101);
-    expect(p.rr).toBeCloseTo(5 / 3);
+    expect(p.entryLow).toBe(100);
+    expect(p.entryHigh).toBe(102);
+    expect(p.rr).toBeNull();
   });
   it('keeps missing stop as null and never fabricates R:R', () => {
     const p = planSummary({ ...base, stop: null } as unknown as InsightReport);

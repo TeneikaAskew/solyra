@@ -66,7 +66,7 @@ export default function AiInsightsLovablePage() {
     research.loadSessions().then(() => setSessionsError(null), (e: unknown) => setSessionsError(e instanceof Error ? e.message : 'Could not load saved research.'));
   }, [researchAllowed, research.loadSessions]);
   const timeline = useMemo(() => unifiedHistory(historyQuery.data?.reports ?? [], research.sessions, historyFilter), [historyQuery.data, research.sessions, historyFilter]);
-  const askResearch = (text: string) => { setPrefill({ text, nonce: Date.now() }); setTab('chat'); };
+  const askResearch = (text: string) => { research.startNew(); setPrefill({ text, nonce: Date.now() }); setTab('chat'); };
   useEffect(() => {
     const s = runStatus.data?.status;
     if (s === 'done' || s === 'failed') {
@@ -128,17 +128,22 @@ export default function AiInsightsLovablePage() {
         {runStatus.data?.status === 'failed' && <span className="text-xs text-[var(--bear)]" role="alert">Run failed. Try again.</span>}
       </div>
 
-      <nav role="tablist" aria-label="AI Insights sections" className="-mx-1 flex gap-1 overflow-x-auto border-b border-[var(--outline-variant)] px-1">
+      <nav role="tablist" aria-label="AI Insights sections" onKeyDown={(event) => {
+        const index = TABS.findIndex(item => item.id === tab);
+        const next = event.key === 'ArrowRight' ? (index + 1) % TABS.length : event.key === 'ArrowLeft' ? (index + TABS.length - 1) % TABS.length : event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length - 1 : null;
+        if (next === null) return;
+        event.preventDefault(); setTab(TABS[next].id); document.getElementById(`insights-tab-${TABS[next].id}`)?.focus();
+      }} className="-mx-1 flex gap-1 overflow-x-auto border-b border-[var(--outline-variant)] px-1">
         {TABS.map(({ id, label, icon: Icon }) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+          <button key={id} type="button" role="tab" id={`insights-tab-${id}`} aria-controls={`insights-panel-${id}`} tabIndex={tab === id ? 0 : -1} aria-selected={tab === id} onClick={() => setTab(id)}
             className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-semibold transition-colors ${tab === id ? 'border-[var(--brand)] text-[var(--on-surface)]' : 'border-transparent text-[var(--on-surface-muted)] hover:text-[var(--on-surface)]'}`}>
-            <Icon size={14} />{label}
+            <Icon size={14} /><span id={`insights-label-${id}`}>{label}</span>
             {id === 'history' && <span className="text-[10px] font-normal text-[var(--on-surface-muted)]">{timeline.length || ''}</span>}
           </button>
         ))}
       </nav>
 
-      {tab === 'briefing' && <DataGate>
+      {tab === 'briefing' && <section role="tabpanel" id="insights-panel-briefing" aria-labelledby="insights-label-briefing"><DataGate>
         {active.isLoading ? (
           <div className="space-y-4" aria-busy="true">
             <div className="h-40 animate-pulse rounded-xl bg-[var(--surface-1)]" />
@@ -184,7 +189,7 @@ export default function AiInsightsLovablePage() {
                 <BriefVsInsightsCard ticker={activeTicker} brief={briefQuery.data ?? null} briefError={briefQuery.isError} insightDirection={report.direction} />
                 <Section title="Catalysts"><CatalystRail report={report} /></Section>
                 <Section title="Risk flags"><RiskRail report={report} /></Section>
-                <MarketSignals ticker={activeTicker} replayCutoff={asOf || null} reportSignals={report.supporting_signals ?? []} />
+                <MarketSignals ticker={activeTicker} replayCutoff={asOf || null} historical={Boolean(historicalId)} reportSignals={report.supporting_signals ?? []} />
                 <SimilarTradesCard trades={report.similar_past_trades ?? []} />
               </aside>
             </div>
@@ -197,10 +202,10 @@ export default function AiInsightsLovablePage() {
             <button type="button" onClick={() => askResearch(`What would invalidate the ${report.direction} call on ${activeTicker}?`)} className="flex w-full items-center justify-between rounded-xl border border-[var(--outline-variant)] px-4 py-3 text-left text-sm text-[var(--on-surface-variant)] hover:border-[var(--brand)]"><span>Pressure-test this call with cited research</span><MessageSquare size={15} /></button>
           </div>
         )}
-      </DataGate>}
+      </DataGate></section>}
 
       {tab === 'agents' && (
-        <section role="tabpanel" aria-label="Agents" className="space-y-4">
+        <section role="tabpanel" id="insights-panel-agents" aria-labelledby="insights-label-agents" aria-label="Agents" className="space-y-4">
           {active.error ? <p role="alert" className="text-sm text-[var(--bear)]">Agent provenance unavailable: {(active.error as Error).message}</p>
             : <AgentsPanel envelope={envelope} ticker={activeTicker} />}
           {report && <button type="button" onClick={() => setTab('briefing')} className="text-xs font-semibold text-[var(--brand)]">Back to the decision this run produced</button>}
@@ -208,7 +213,7 @@ export default function AiInsightsLovablePage() {
       )}
 
       {tab === 'history' && (
-        <section role="tabpanel" aria-label="History" className="space-y-3">
+        <section role="tabpanel" id="insights-panel-history" aria-labelledby="insights-label-history" aria-label="History" className="space-y-3">
           <div className="flex gap-1" role="group" aria-label="Filter history">
             {(['all', 'reports', 'research'] as HistoryFilter[]).map((f) => (
               <button key={f} type="button" aria-pressed={historyFilter === f} onClick={() => setHistoryFilter(f)}
@@ -232,6 +237,8 @@ export default function AiInsightsLovablePage() {
                     <span className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--on-surface-muted)]">
                       <span className={item.kind === 'report' ? 'text-[var(--brand)]' : 'text-[var(--warn)]'}>{item.label}</span>
                       {item.kind === 'research' && <span>{item.session.ticker} · {item.session.mode}{item.session.status !== 'active' ? ` · ${item.session.status}` : ''}</span>}
+                      {item.kind === 'report' && item.previous && item.previous !== item.row.direction && <span>changed from {item.previous === 'flat' ? 'Neutral' : item.previous}</span>}
+                      {item.kind === 'report' && item.row.cost_usd != null && <span>${item.row.cost_usd.toFixed(4)}</span>}
                       {item.kind === 'report' && item.row.direction && <span className={dirClass(item.row.direction)}>{item.row.direction}{item.row.conviction ? ` · ${item.row.conviction}` : ''}</span>}
                       <span className="ml-auto normal-case">{item.at ? new Date(item.at).toLocaleString() : 'time unavailable'}</span>
                     </span>
@@ -245,7 +252,7 @@ export default function AiInsightsLovablePage() {
       )}
 
       {tab === 'watchlist' && (
-        <section role="tabpanel" aria-label="Watchlist">
+        <section role="tabpanel" id="insights-panel-watchlist" aria-labelledby="insights-label-watchlist" aria-label="Watchlist">
           <WatchlistPanel
             refreshing={busy}
             refreshingTicker={refreshingTicker}
@@ -255,8 +262,8 @@ export default function AiInsightsLovablePage() {
         </section>
       )}
 
-      {tab === 'chat' && (
-        <section role="tabpanel" aria-label="Chat">
+      {(
+        <section role="tabpanel" hidden={tab !== 'chat'} id="insights-panel-chat" aria-labelledby="insights-label-chat" aria-label="Chat">
           <ResearchWorkspace research={research} embedded sharedCutoff={asOf} prefill={prefill} sessionsError={sessionsError} onOpenSession={(s) => setAsOf(s.replay_cutoff ? s.replay_cutoff.slice(0, 16) : '')} />
         </section>
       )}

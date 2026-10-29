@@ -8,9 +8,9 @@ import { SimilarSetupsCard } from '@/components/charts/SimilarSetupsCard';
 import type { SignalRef } from '@/types/insights';
 import { latestSignal, type SignalFeedRow } from './decision';
 
-interface Props { ticker: string; replayCutoff: string | null; reportSignals: SignalRef[] }
+interface Props { ticker: string; replayCutoff: string | null; reportSignals: SignalRef[]; historical?: boolean }
 
-function useSignalFeed(ticker: string, cutoff: string | null) {
+function useSignalFeed(ticker: string, cutoff: string | null, enabled: boolean) {
   return useQuery<{ signals: SignalFeedRow[] }>({
     queryKey: ['ai-lab-signals', ticker, cutoff ?? 'live'],
     queryFn: async () => {
@@ -21,20 +21,21 @@ function useSignalFeed(ticker: string, cutoff: string | null) {
       return r.json();
     },
     staleTime: 60_000,
+    enabled,
   });
 }
 
-export function MarketSignals({ ticker, replayCutoff, reportSignals }: Props) {
-  const feed = useSignalFeed(ticker, replayCutoff);
-  const rows = feed.data?.signals ?? [];
+export function MarketSignals({ ticker, replayCutoff, reportSignals, historical = false }: Props) {
+  const feed = useSignalFeed(ticker, replayCutoff, !historical);
+  const rows = historical ? [] : feed.data?.signals ?? [];
   const latest = latestSignal(rows);
   return (
     <>
       <div className="rounded-xl bg-[var(--surface-2)] p-6">
         <h3 className="label-micro mb-3">Supporting Signals</h3>
-        {feed.isLoading ? (
+        {!historical && feed.isLoading ? (
           <p className="flex items-center gap-2 text-xs text-[var(--on-surface-muted)]"><Loader2 size={12} className="animate-spin" />Loading signal feed…</p>
-        ) : feed.isError ? (
+        ) : !historical && feed.isError ? (
           <p role="alert" className="text-xs text-[var(--bear)]">Signal feed unavailable: {(feed.error as Error).message}</p>
         ) : rows.length === 0 && reportSignals.length === 0 ? (
           <p className="text-xs text-[var(--on-surface-muted)]">No signal alerts recorded for {ticker}.</p>
@@ -52,7 +53,7 @@ export function MarketSignals({ ticker, replayCutoff, reportSignals }: Props) {
           </ul>
         )}
       </div>
-      <SimilarSetupsCard ticker={ticker} direction={latest?.direction ?? null} rsi={latest?.rsi ?? null} score={latest?.score ?? null} />
+      {replayCutoff || historical ? <p role="note" className="text-xs text-[var(--on-surface-muted)]">Similar setups unavailable for historical evidence: this source has no point-in-time aggregate contract.</p> : <SimilarSetupsCard ticker={ticker} direction={latest?.direction ?? null} rsi={latest?.rsi ?? null} score={latest?.score ?? null} />}
     </>
   );
 }

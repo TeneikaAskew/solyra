@@ -130,7 +130,7 @@ function summarize(payload: unknown, type: string): string {
   const stats = p.stats && typeof p.stats === 'object' ? p.stats as Record<string, unknown> : null;
   if (stats && num(stats.count) !== null) {
     const win = num(stats.pct_profitable); const r20 = num(stats.avg_return_20min);
-    parts.push(`${stats.count} similar ${str(p.direction) ?? ''} setups since ${str(stats.earliest)?.slice(0, 10) ?? 'unknown'}${win !== null ? `, ${(win * 100).toFixed(1)}% profitable` : ''}${r20 !== null ? `, avg 20-min return ${(r20 * 100).toFixed(3)}%` : ''}.`);
+    parts.push(`${stats.count} similar ${str(p.direction) ?? ''} setups since ${str(stats.earliest)?.slice(0, 10) ?? 'unknown'}${win !== null ? `, ${(win * 100).toFixed(1)}% profitable` : ''}${r20 !== null ? `, avg 20-min return ${r20.toFixed(3)}%` : ''}.`);
   }
   if (!parts.length) parts.push(`${type} data available; see the full report on its page.`);
   return parts.join(' ').slice(0, 480);
@@ -142,7 +142,14 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
     const raw = await response.text();
     if (!raw.trim()) throw new Error('Solyra API returned an empty response');
     let payload: unknown = JSON.parse(raw);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid response: expected a source object');
     if (cutoff) payload = clipReplay(payload, cutoff);
+    const listKey = ({ signals: 'signals', catalysts: 'events', playbook: 'cards', price_history: 'bars' } as Record<string, string>)[type];
+    if (listKey) {
+      const rows = (payload as Record<string, unknown>)[listKey];
+      if (!Array.isArray(rows)) throw new Error(`Invalid response: missing ${listKey} list`);
+      if (rows.length === 0) throw new Error('No matching data for the requested evidence boundary');
+    }
     let serialized = JSON.stringify(payload);
     for (const keep of [120, 60, 30, 15, 8]) {
       if (serialized.length <= 45_000) break;
@@ -150,9 +157,10 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
       serialized = JSON.stringify(payload);
     }
     if (serialized.length > 45_000) throw new Error('Response too large to use as evidence');
-    const asOf = valueAsOf(payload);
+    const rawAsOf = valueAsOf(payload);
+    const asOf = rawAsOf && Number.isFinite(Date.parse(rawAsOf)) ? rawAsOf : null;
     const age = asOf ? Date.now() - new Date(asOf).getTime() : null;
-    return { id: `S${index}`, type, label, path, asOf, freshness: age !== null && age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: summarize(payload, type), payload, hash: await digest(serialized) };
+    return { id: `S${index}`, type, label, path, asOf, freshness: age === null || !Number.isFinite(age) ? 'unavailable' : age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: age === null || !Number.isFinite(age) ? `Source timestamp unavailable; freshness cannot be established. ${summarize(payload, type)}` : summarize(payload, type), payload, hash: await digest(serialized) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unavailable';
     return { id: `S${index}`, type, label, path, asOf: null, freshness: 'unavailable', excerpt: reason, payload: null, hash: await digest(reason) };
@@ -181,7 +189,9 @@ async function gather(ticker: string, auth: string, mode: 'live' | 'replay', cut
     .filter((r) => (r.direction === 'CALL' || r.direction === 'PUT') && typeof r.rsi === 'number' && typeof r.score === 'number')
     .sort((a, b) => String(b.time).localeCompare(String(a.time)));
   const idx = evidence.length + 1;
-  if (rows[0]) {
+  if (mode === 'replay') {
+    evidence.push({ id: `S${idx}`, type: 'similar_setups', label: 'Similar historical setups (win rates)', path: `/api/signals/${ticker}/similar`, asOf: null, freshness: 'unavailable', excerpt: 'Withheld in Replay: this source has no point-in-time aggregate contract.', payload: null, hash: await digest('replay-unbounded-similarity') });
+  } else if (rows[0]) {
     const qs = new URLSearchParams({ direction: String(rows[0].direction), rsi: String(rows[0].rsi), score: String(rows[0].score), rsi_band: '5', limit: '10' });
     evidence.push(await getEvidence(`/api/signals/${ticker}/similar?${qs}`, 'Similar historical setups (win rates)', 'similar_setups', auth, cutoff, idx));
   } else {
@@ -239,8 +249,13 @@ Deno.serve(async (req) => {
   const db = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
   if (body.action === 'list') {
-    const { data, error } = await db.from('insight_research_sessions').select('id,ticker,mode,replay_cutoff,title,status,created_at,updated_at').eq('owner_uid', user.uid).order('updated_at', { ascending: false }).limit(30);
-    return error ? json({ error: 'Could not load research history.' }, 500) : json({ sessions: data });
+    const { data, error } = await db.from('insight_research_sessions')
+      .select('id,ticker,mode,replay_cutoff,title,status,created_at,updated_at,insight_research_messages(run_state,created_at)')
+      .eq('owner_uid', user.uid).eq('insight_research_messages.owner_uid', user.uid)
+      .order('updated_at', { ascending: false }).limit(30)
+      .order('created_at', { referencedTable: 'insight_research_messages', ascending: false })
+      .limit(1, { referencedTable: 'insight_research_messages' });
+    return error ? json({ error: 'Could not load research history.' }, 500) : json({ sessions: data?.map(({ insight_research_messages: messages, ...session }) => ({ ...session, status: session.status === 'archived' ? session.status : messages[0]?.run_state ?? session.status })) });
   }
   if (body.action === 'read') {
     if (!body.sessionId) return json({ error: 'Session is required.' }, 400);
@@ -283,13 +298,19 @@ Deno.serve(async (req) => {
       await emit({ type: 'status', stage: 'gathering', label: 'Gathering approved evidence' });
       let evidence: Evidence[];
       if (body.sessionId) {
+        const { data: snapshot, error: snapshotError } = await db.from('insight_research_sources').select('message_id').eq('session_id', body.sessionId).eq('owner_uid', user.uid).order('created_at').limit(1).maybeSingle();
+        if (snapshotError) throw new Error('Could not locate frozen research evidence.');
+        if (!snapshot) {
+          // A source-less failed attempt has no frozen snapshot to reuse.
+          evidence = await gather(body.ticker, user.authorization, body.mode, body.replayCutoff);
+        } else {
         const { data: frozen, error: frozenError } = await db
           .from('insight_research_sources')
           .select('citation_id,source_type,source_label,source_url,source_as_of,freshness,excerpt,payload_hash,metadata')
           .eq('session_id', body.sessionId)
           .eq('owner_uid', user.uid)
-          .order('created_at')
-          .limit(10);
+          .eq('message_id', snapshot.message_id)
+          .order('created_at');
         if (frozenError || !frozen || frozen.length === 0) throw new Error('The frozen evidence snapshot for this session is unavailable.');
         evidence = frozen.map((source) => ({
           id: source.citation_id,
@@ -302,6 +323,8 @@ Deno.serve(async (req) => {
           payload: (source.metadata as { payload?: unknown } | null)?.payload ?? null,
           hash: source.payload_hash,
         }));
+        if (new Set(evidence.map(source => source.id)).size !== evidence.length) throw new Error('Frozen evidence contains duplicate citation identities.');
+        }
       } else {
         evidence = await gather(body.ticker, user.authorization, body.mode, body.replayCutoff);
       }
@@ -333,6 +356,7 @@ Deno.serve(async (req) => {
       const message = error instanceof Error ? error.message : 'Research failed.';
       if (messageId) await db.from('insight_research_messages').update({ run_state: aborted ? 'cancelled' : 'failed', error_code: code, error_message: message }).eq('id', messageId).eq('owner_uid', user.uid);
       if (runId) await db.from('insight_research_runs').update({ status: aborted ? 'cancelled' : 'failed', failure_class: code, finished_at: new Date().toISOString() }).eq('id', runId).eq('owner_uid', user.uid);
+      if (sessionId) await db.from('insight_research_sessions').update({ updated_at: new Date().toISOString() }).eq('id', sessionId).eq('owner_uid', user.uid);
       await emit({ type: 'error', code, message, status });
     } finally { await writer.close(); }
   })();
