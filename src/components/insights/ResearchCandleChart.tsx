@@ -4,6 +4,7 @@ import { CandlestickChart } from '@/components/charts/CandlestickChart';
 import { useAvailableDates, useMarketData, type CandlestickBar, type VolumeBar } from '@/hooks/useMarketData';
 import { useLiveQuote } from '@/hooks/useLiveQuote';
 import { chartTheme } from '@/lib/chartTheme';
+import { toETDateTimeString } from '@/lib/dates';
 import type { Timeframe } from '@/types';
 import type { ResearchMode } from '@/types/insightsLovable';
 
@@ -54,12 +55,8 @@ function marketCutoff(cutoff: string): { date: string; time: string | null } {
   }
   const instant = new Date(cutoff);
   if (!Number.isFinite(instant.getTime())) return { date: '', time: null };
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(instant);
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)!.value;
-  return { date: `${part('year')}${part('month')}${part('day')}`, time: `${part('hour')}:${part('minute')}` };
+  const marketTime = toETDateTimeString(instant);
+  return { date: marketTime.slice(0, 10).replace(/-/g, ''), time: marketTime.slice(11, 16) };
 }
 
 function displayDate(compact: string): string {

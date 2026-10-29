@@ -13,6 +13,15 @@ export function toETDateString(d: Date): string {
   return ET_FMT.format(d); // en-CA locale yields YYYY-MM-DD
 }
 
+/** Eastern wall clock for a datetime-local control or market-data boundary.
+ * Keep the original absolute timestamp in state; this is a display/API view. */
+export function toETDateTimeString(d: Date): string {
+  const time = d.toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
+  });
+  return `${toETDateString(d)}T${time}`;
+}
+
 /** Today's date (YYYY-MM-DD) on the US market calendar. */
 export function todayET(): string {
   return toETDateString(new Date());

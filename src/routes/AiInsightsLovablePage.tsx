@@ -17,6 +17,7 @@ import { AgentsPanel } from '@/components/insights/AgentsPanel';
 import { WatchlistPanel } from '@/components/insights/WatchlistPanel';
 import { ResearchCandleChart, type PriceLine } from '@/components/insights/ResearchCandleChart';
 import { chartTheme } from '@/lib/chartTheme';
+import { toETDateTimeString } from '@/lib/dates';
 import { ResearchWorkspace } from '@/routes/InsightsLovablePage';
 import { useInsightsLovable } from '@/hooks/useInsightsLovable';
 import { useUser } from '@/hooks/useUser';
@@ -24,6 +25,14 @@ import {
   BullBear, CatalystRail, DecisionBar, KeyLevelChips, PersonaTabs, RiskRail, Section, ThesisBlock, dirClass,
 } from '@/components/insights/redesign/Panels';
 import { planSummary, unifiedHistory, type HistoryFilter } from '@/components/insights/redesign/decision';
+
+/** Present a saved instant without changing the value used for requests. */
+export function replayCutoffInputValue(cutoff: string): string {
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(cutoff)) return cutoff;
+  const instant = new Date(cutoff);
+  // Preserve malformed source evidence; never fabricate a replacement instant.
+  return Number.isFinite(instant.getTime()) ? toETDateTimeString(instant) : cutoff;
+}
 
 type Tab = 'briefing' | 'agents' | 'history' | 'watchlist' | 'chat';
 const TABS: { id: Tab; label: string; icon: typeof Bot }[] = [
@@ -43,6 +52,9 @@ export default function AiInsightsLovablePage() {
   const { activeTicker, setTicker } = useTickerStore();
   const [historicalId, setHistoricalId] = useState<string | null>(null);
   const [asOf, setAsOf] = useState('');
+  // Retain saved offsets/seconds for replay requests. Only controls and APIs
+  // that require a market wall clock receive the Eastern display value.
+  const asOfInput = replayCutoffInputValue(asOf);
   const [runId, setRunId] = useState<string | null>(null);
   const [refreshingTicker, setRefreshingTicker] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('briefing');
@@ -117,7 +129,7 @@ export default function AiInsightsLovablePage() {
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5 rounded-lg border border-[var(--outline-variant)] px-2 py-1 text-xs text-[var(--on-surface-muted)]">
           Replay as of
-          <input type="datetime-local" value={asOf} onChange={(e) => setAsOf(e.target.value)} max={new Date().toISOString().slice(0, 16)} aria-label="Point-in-time cutoff" className="bg-transparent text-xs text-[var(--on-surface)]" />
+          <input type="datetime-local" value={asOfInput} onChange={(e) => setAsOf(e.target.value)} max={new Date().toISOString().slice(0, 16)} aria-label="Point-in-time cutoff" className="bg-transparent text-xs text-[var(--on-surface)]" />
           {asOf && <button type="button" onClick={() => setAsOf('')} aria-label="Clear cutoff" className="px-1 hover:text-[var(--on-surface)]">x</button>}
         </label>
         <button type="button" onClick={() => refreshFor(activeTicker, asOf)} disabled={busy} className="flex items-center gap-1.5 rounded-lg bg-[var(--brand-container)] px-3 py-1.5 text-xs font-semibold text-[var(--on-brand)] hover:brightness-110 active:scale-[0.98] disabled:opacity-50">
@@ -189,7 +201,7 @@ export default function AiInsightsLovablePage() {
                 <BriefVsInsightsCard ticker={activeTicker} brief={briefQuery.data ?? null} briefError={briefQuery.isError} insightDirection={report.direction} />
                 <Section title="Catalysts"><CatalystRail report={report} /></Section>
                 <Section title="Risk flags"><RiskRail report={report} /></Section>
-                <MarketSignals ticker={activeTicker} replayCutoff={asOf || null} historical={Boolean(historicalId)} reportSignals={report.supporting_signals ?? []} />
+                <MarketSignals ticker={activeTicker} replayCutoff={asOfInput || null} historical={Boolean(historicalId)} reportSignals={report.supporting_signals ?? []} />
                 <SimilarTradesCard trades={report.similar_past_trades ?? []} />
               </aside>
             </div>
@@ -232,7 +244,7 @@ export default function AiInsightsLovablePage() {
                   <button type="button" className="flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-[var(--surface-1)]"
                     onClick={() => {
                       if (item.kind === 'report') { setHistoricalId(item.id); setTab('briefing'); }
-                      else { setAsOf(item.session.replay_cutoff ? item.session.replay_cutoff.slice(0, 16) : ''); void research.openSession(item.id); setTab('chat'); }
+                      else { setAsOf(item.session.replay_cutoff ?? ''); void research.openSession(item.id); setTab('chat'); }
                     }}>
                     <span className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--on-surface-muted)]">
                       <span className={item.kind === 'report' ? 'text-[var(--brand)]' : 'text-[var(--warn)]'}>{item.label}</span>
@@ -264,7 +276,7 @@ export default function AiInsightsLovablePage() {
 
       {(
         <section role="tabpanel" hidden={tab !== 'chat'} id="insights-panel-chat" aria-labelledby="insights-label-chat" aria-label="Chat">
-          <ResearchWorkspace research={research} embedded sharedCutoff={asOf} prefill={prefill} sessionsError={sessionsError} onOpenSession={(s) => setAsOf(s.replay_cutoff ? s.replay_cutoff.slice(0, 16) : '')} />
+          <ResearchWorkspace research={research} embedded sharedCutoff={asOf} prefill={prefill} sessionsError={sessionsError} onOpenSession={(s) => setAsOf(s.replay_cutoff ?? '')} />
         </section>
       )}
     </div>

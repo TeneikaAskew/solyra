@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDaysToISO, snapshotAgeLabel, todayET, toETDateString } from './dates';
+import { addDaysToISO, snapshotAgeLabel, todayET, toETDateString, toETDateTimeString } from './dates';
 
 afterEach(() => vi.useRealTimers());
 
@@ -58,5 +58,21 @@ describe('snapshotAgeLabel', () => {
     expect(snapshotAgeLabel(null, 3)).toBeNull();
     expect(snapshotAgeLabel('', 3)).toBeNull();
     expect(snapshotAgeLabel('13/06/2026', 3)).toBeNull();
+  });
+});
+
+
+describe('toETDateTimeString', () => {
+  it.each([
+    ['2026-10-09T15:30:45Z', '2026-10-09T11:30'],
+    ['2026-01-09T15:30:45Z', '2026-01-09T10:30'],
+    ['2026-10-10T03:30:45+02:00', '2026-10-09T21:30'],
+    ['2026-03-08T06:30:00Z', '2026-03-08T01:30'],
+    ['2026-03-08T07:30:00Z', '2026-03-08T03:30'],
+    ['2026-11-01T05:30:00Z', '2026-11-01T01:30'],
+    ['2026-11-01T06:30:00Z', '2026-11-01T01:30'],
+    ['2026-10-09T04:00:00Z', '2026-10-09T00:00'],
+  ])('formats %s as %s without using the viewer timezone', (instant, expected) => {
+    expect(toETDateTimeString(new Date(instant))).toBe(expected);
   });
 });

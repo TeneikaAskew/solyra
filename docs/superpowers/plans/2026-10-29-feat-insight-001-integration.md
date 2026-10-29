@@ -63,3 +63,11 @@ Spec: Delivery paths and catalog acceptance; advances done_when[10].
 ## Final author evidence
 
 Integration head f93818d repairs all ten LOCAL1 findings; 1,276 unit tests, 48 browser tests, build and full PR gate pass. Final docs audit matches prior validated 31 baseline findings exactly. PR #302 retains the original feature history. Forward LOCAL1 consumed; first hosted CODE/current security cohort reserved under the October 29 explicit extension. No live deployment is claimed. Backend R:R is unavailable and displayed as such, with no new financial calculation or API field. Actual research-function deployment remains a release closeout requirement.
+
+## Approved timezone repair extension
+
+The user approved one additional aggregate pass / hosted CODE3 with current SEC at 2026-10-29T23:47:35Z (Sentinel_ae3b9c79eafc8191b72cf2c196a75ac4, replying to Sentinel_8014fb24c71c8191bed32749caa4ae23). Forward aggregate4 follows LOCAL1, CODE1 and CODE2; no earlier history is reset. Scope is the two saved-session callbacks in finding4413573431, shared Eastern-time formatting, and saved-research-to-Briefing regressions.
+
+Both callbacks preserve the exact saved offset and seconds. Chart and datetime input share the existing Eastern date formatter through a datetime adapter; the signal API receives its required Eastern wall clock while research/report requests retain the absolute timestamp. Malformed saved text is not converted into an invented cutoff. Existing separate ResearchWorkspace malformed-input behavior is unchanged.
+
+Author validation: ten transition cases failed on unchanged2805666 and pass after repair, covering both paths, UTC/explicit offsets, date rollover and DST seasons. Two newly introduced formatter error cases failed before the guard and pass after it. Full1301unit/58browser passed before the final guard; final affected58unit/11browser and build passed after it. Source/test hashes and complete logs are preserved in the writer's code2-repair receipt. No new independent LOCAL cohort was consumed. Hosted CODE3/current SEC and required hosted E2E remain required before merge; publication/live verification remain subsequent closeout.
