@@ -517,7 +517,7 @@ so every gated call would 401.
 `src/lib/authedFetch.ts` monkeypatches `window.fetch` to (1) re-point `/api/*`
 at an absolute origin when one is configured (using `apiTargets.ts`) and
 (2) attach the Firebase ID token. It's a global wrapper because the app makes
-~102 bare relative `fetch('/api/...')` calls across ~35 files with no central
+~73 bare relative `fetch('/api/...')` calls across ~30 files with no central
 client.
 
 `OPEN_PREFIXES` (`/api/health`, `/api/me`, `/api/config/firebase`) must stay in
