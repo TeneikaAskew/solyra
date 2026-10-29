@@ -46,6 +46,22 @@ function localDateCompact(d: Date): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Absolute saved cutoffs must use the market API's Eastern wall clock.
+ * Briefing's timezone-less input already represents that market wall clock. */
+function marketCutoff(cutoff: string): { date: string; time: string | null } {
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(cutoff)) {
+    return { date: cutoff.slice(0, 10).replace(/-/g, ''), time: cutoff.slice(11, 16) };
+  }
+  const instant = new Date(cutoff);
+  if (!Number.isFinite(instant.getTime())) return { date: '', time: null };
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(instant);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)!.value;
+  return { date: `${part('year')}${part('month')}${part('day')}`, time: `${part('hour')}:${part('minute')}` };
+}
+
 function displayDate(compact: string): string {
   return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
 }
@@ -88,12 +104,13 @@ export function ResearchCandleChart({
   const [showVolume, setShowVolume] = useState(true);
   const [rthOnly, setRthOnly] = useState(false);
   const isReplay = mode === 'replay' && Boolean(replayCutoff);
-  const targetCompact = isReplay && replayCutoff
-    ? replayCutoff.slice(0, 10).replace(/-/g, '')
-    : localDateCompact(new Date());
-  const endTime = isReplay && replayCutoff ? replayCutoff.slice(11, 16) : null;
+  const cutoff = isReplay && replayCutoff ? marketCutoff(replayCutoff) : null;
+  const targetCompact = cutoff ? cutoff.date : localDateCompact(new Date());
   const datesQ = useAvailableDates(ticker);
   const date = datesQ.isError ? targetCompact : resolveChartDate(datesQ.data?.dates, targetCompact);
+  // Every bar of an earlier session precedes the boundary; only the target
+  // session needs the intraday time filter (weekends, holidays, missing files).
+  const endTime = cutoff && date === targetCompact ? cutoff.time : null;
   const market = useMarketData(ticker, date, timeframe, endTime);
   const quote = useLiveQuote(ticker);
   const bars = useMemo(() => toChartBars(market.data), [market.data]);

@@ -78,7 +78,13 @@ export function useInsightsLovable() {
   const openSession = useCallback(async (sessionId: string, expectedGeneration?: number) => {
     if (expectedGeneration !== undefined && expectedGeneration !== selection.current) return;
     const generation = expectedGeneration ?? ++selection.current;
-    if (expectedGeneration === undefined) { controller.current?.abort(); controller.current = null; }
+    if (expectedGeneration === undefined) {
+      controller.current?.abort(); controller.current = null;
+      // Selection owns cancellation even if its read fails: the old run can
+      // no longer settle state after losing controller ownership.
+      setStage(previous => previous === 'gathering' || previous === 'synthesizing' ? 'cancelled' : previous);
+      setStageLabel(''); setStreamText('');
+    }
     readController.current?.abort();
     const read = new AbortController(); readController.current = read;
     try {
@@ -137,7 +143,14 @@ export function useInsightsLovable() {
       if (controller.current !== nextController) return;
       if (nextController.signal.aborted) { setStage('cancelled'); setError('Research stopped. Your last completed answer is still available.'); }
       else { setStage('failed'); setError(caught instanceof Error ? caught.message : 'Research failed.'); }
-    } finally { if (controller.current === nextController) { try { await loadSessions(); } catch (cause) { if (generation === selection.current) setError(previous => `${previous ? previous + ' ' : ''}History refresh failed: ${cause instanceof Error ? cause.message : 'unavailable'}`); } controller.current = null; } }
+    } finally {
+      if (controller.current === nextController) {
+        try { await loadSessions(); }
+        catch (cause) { if (generation === selection.current) setError(previous => `${previous ? previous + ' ' : ''}History refresh failed: ${cause instanceof Error ? cause.message : 'unavailable'}`); }
+        // A new run can start while terminal history is loading.
+        if (controller.current === nextController) controller.current = null;
+      }
+    }
   }, [loadSessions, openSession]);
 
   const startNew = useCallback(() => {
