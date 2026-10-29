@@ -11,10 +11,12 @@
 import { test, expect } from '@playwright/test';
 import { perfBudgetMs } from '../helpers/perfBudget';
 import { M } from '../helpers/mocks';
+import { MOCK_INSIGHT_REPORT } from '@/mocks/insights';
 import {
   mockDashboard,
   mockDashboardCards,
   MOCK_DASHBOARD_BRIEF,
+  MOCK_PLAYBOOK,
   MOCK_PLAYBOOK_FRESH,
   MOCK_PLAYBOOK_STALE_DETAIL,
   MOCK_SECTORS,
@@ -27,13 +29,13 @@ test.describe('Dashboard', () => {
     await mockDashboardCards(page);
   });
 
-  test('renders Overview heading + pre-market brief for the active ticker', async ({ page }) => {
+  test('renders Overview heading + market brief for the active ticker', async ({ page }) => {
     await page.goto('/dashboard');
     await page.waitForLoadState('networkidle');
     // Redesigned Overview: "Overview" H1, the active ticker in the header
-    // micro-label + hero, and the pre-market brief panel.
+    // micro-label + hero, and the market brief panel.
     await expect(page.locator('h1', { hasText: 'Overview' }).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/pre-market brief/i).first()).toBeVisible();
+    await expect(page.getByText(/market brief/i).first()).toBeVisible();
     await expect(page.getByText('IWM').first()).toBeVisible();
   });
 
@@ -270,3 +272,90 @@ test('event error Retry stays on the dashboard and recovers the same query', asy
   await page.getByTestId('news-card').scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('event-retry-stays-dashboard.png') });
 });
+
+// Local hermetic browser only: inspect the actual React chart inputs, not a
+// second selector or a canvas-presence proxy. No live-site/network inspection.
+async function dashboardChartTimes(page: import('@playwright/test').Page, component: 'CandlestickChart' | 'PriceAreaChart') {
+  return page.evaluate((name) => {
+    for (const node of document.querySelectorAll('div, svg')) {
+      const key = Object.keys(node).find(k => k.startsWith('__reactFiber$'));
+      if (!key) continue;
+      let fiber = (node as unknown as Record<string, unknown>)[key] as {
+        type?: { name?: string }; memoizedProps?: Record<string, unknown>; return?: unknown;
+      } | undefined;
+      while (fiber) {
+        if (fiber.type?.name === name) {
+          const rows = fiber.memoizedProps?.[name === 'CandlestickChart' ? 'candlestick' : 'data'] as { time: number }[] | undefined;
+          if (rows) return rows.map(row => row.time);
+        }
+        fiber = fiber.return as typeof fiber;
+      }
+    }
+    return null;
+  }, component);
+}
+
+for (const review of [false, true]) {
+  test(`dashboard chart inputs share two-session window and cutoff (${review ? 'review' : 'live'})`, async ({ page }, testInfo) => {
+    await page.clock.install({ time: new Date('2026-10-28T22:00:00Z') });
+    await mockDashboard(page); await mockDashboardCards(page);
+    await page.route('**/api/dashboard/brief/IWM*', r => r.fulfill(M.ok({ ...MOCK_DASHBOARD_BRIEF,
+      daily_indicators: { ...MOCK_DASHBOARD_BRIEF.daily_indicators, date: '2026-10-28' } })));
+    await page.route('**/api/playbook/IWM?*', r => r.fulfill(M.ok(MOCK_PLAYBOOK)));
+    await page.route('**/api/insights/report/IWM?*', r => r.fulfill(M.ok(MOCK_INSIGHT_REPORT)));
+    const times = ['2026-10-06T04:00Z', '2026-10-26T10:00Z', '2026-10-27T04:00Z',
+      '2026-10-27T15:00Z', '2026-10-28T04:00Z', '2026-10-28T14:00Z', '2026-10-28T15:00Z']
+      .map(s => Date.parse(s) / 1000);
+    const candles = times.map((time, i) => ({ time, open: 100 + i, high: 102 + i, low: 99 + i, close: 101 + i }));
+    await page.route('**/api/market/data/IWM/**', r => r.fulfill(M.ok({ ticker: 'IWM', date: '202610', timeframe: 60,
+      count: candles.length, candlestick: candles, volume: times.map(time => ({ time, value: 10 })) })));
+    await page.goto('/dashboard');
+    await expect(page.getByTestId('intraday-chart-slot')).toBeVisible();
+    if (review) {
+      await page.getByTestId('replay-toggle').click();
+      await page.getByRole('button', { name: 'Latest session close' }).click();
+      await page.getByRole('spinbutton', { name: /hour/i }).fill('2');
+      await page.getByTestId('replay-apply').click();
+      await expect(page.getByTestId('replay-toggle')).toContainText('Replay ·');
+    }
+    const expected = times.slice(2, review ? -1 : undefined);
+    await expect(page.getByText('60-min bars · 2 available sessions', { exact: true })).toBeVisible();
+    await expect.poll(() => dashboardChartTimes(page, 'CandlestickChart')).toEqual(expected);
+    await page.getByTestId('intraday-chart-slot').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`window-${review ? 'review' : 'live'}-candles.png`) });
+    await page.getByRole('button', { name: 'Area', exact: true }).click();
+    await expect.poll(() => dashboardChartTimes(page, 'PriceAreaChart')).toEqual(expected);
+    await expect(page.getByText('Market brief', { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`window-${review ? 'review' : 'live'}-area.png`) });
+  });
+}
+
+for (const session of ['closed', 'pre-market']) {
+  test(`dashboard brief title preserves ${session} session evidence`, async ({ page }, testInfo) => {
+    await mockDashboard(page); await mockDashboardCards(page);
+    await page.route('**/api/live/status', r => r.fulfill(M.ok({ is_open: false, session, current_time_et: '2026-10-28T08:00:00-04:00' })));
+    await page.goto('/dashboard');
+    await expect(page.getByText('Market brief', { exact: true })).toBeVisible();
+    await expect(page.getByText('Pre-market brief', { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`brief-${session}.png`) });
+  });
+}
+
+for (const state of ['one', 'empty', 'invalid', 'null-volume'] as const) {
+  test(`dashboard chart handles ${state} available session data explicitly`, async ({ page }, testInfo) => {
+    await mockDashboard(page); await mockDashboardCards(page);
+    const time = Date.parse('2026-10-28T10:00Z') / 1000;
+    const candles = state === 'empty' ? [] : [{ ...(state === 'invalid' ? {} : { time }), open: 100, high: 102, low: 99, close: 101 }];
+    await page.route('**/api/market/data/IWM/**', r => r.fulfill(M.ok({ ticker: 'IWM', date: '202610', timeframe: 60, count: candles.length, candlestick: candles, volume: state === 'null-volume' ? [null] : [] })));
+    await page.goto('/dashboard');
+    if (state === 'one') {
+      await expect(page.getByText('60-min bars · 1 available session', { exact: true })).toBeVisible();
+      await expect.poll(() => dashboardChartTimes(page, 'CandlestickChart')).toEqual([time]);
+    } else {
+      await expect(page.getByText(/Intraday window unavailable:/)).toBeVisible();
+      await expect(page.getByTestId('intraday-chart-slot')).toHaveCount(0);
+    }
+    await page.getByText('IWM · intraday', { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`window-${state}.png`) });
+  });
+}
