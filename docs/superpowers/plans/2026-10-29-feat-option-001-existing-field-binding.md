@@ -2,7 +2,7 @@
 feat_id: FEAT-OPTION-001
 spec: docs/superpowers/specs/2026-10-29-feat-option-001-existing-field-binding.md
 branch: fix/feat-option-001-existing-field-binding
-pr: null
+pr: 301
 status: ready
 ---
 
@@ -31,9 +31,9 @@ Spec: Design and owned paths, Verification and risks; advances all five done_whe
 - [x] Preserve the14 paths listed in the approved specification; no unrelated source enters this branch.
 - [x] Verify source identity against /workspace/options-source-identity.json. Existing60focused/1247fullunit/12browser/build/contract receipts apply only to the exact unchanged runtime source; rerun affected checks if new base semantics or source changes invalidate them.
 - [x] Carry producer-specific counterexamples: distinct actual flip/balance, absent flip with present balance, observed numeric zero, HTTP401/403/429/500/503 retained-cache refusal/recovery, unavailable envelope, initial failure, normal in-flight refresh, stored404-only fallback, aware/date-only/missing batch clocks and explicit demos. Reuse preserved RED/GREEN receipts; do not recreate an independent implementation.
-- [ ] Update only FEAT-OPTION-001 catalog closeout and this plan's PR after draft creation. Run no-new branch/MAIN docs audit and context-accurate gates.
+- [x] Update only FEAT-OPTION-001 catalog closeout and this plan's PR after draft creation. Run no-new branch/MAIN docs audit and context-accurate gates.
 - [x] Reserve and execute one final independent runtime LOCAL review on the complete immutable head through the prescribed review package. Preserve all findings; do not add an unapproved repeat cohort.
-- [ ] Open the runtime PR as draft only after specification admission, then prepare the final numbered head. Use one ready event for the remaining hostedCODE round and one currentSEC request; preserve their IDs and exact head.
+- [x] Open the runtime PR as draft only after specification admission, then prepare the final numbered head. Use one ready event for the remaining hostedCODE round and one currentSEC request; preserve their IDs and exact head.
 - [ ] Normal protected merge only after required checks/current reviews/conversations are satisfied. Parent owns qualified MAIN website publication and actual rendered acceptance; source tests alone do not prove live data.
 
 ## Review focus
