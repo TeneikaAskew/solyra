@@ -47,4 +47,15 @@ describe('shared dashboard source window', () => {
     expect(selectDashboardWindow([...bars, bars[0]], volume, null).status).toBe('invalid');
     expect(selectDashboardWindow(bars, [...volume, volume[0]], null).status).toBe('invalid');
   });
+  it.each([null, undefined, 3, 'bad'])('rejects malformed source row %s without crashing the dashboard', row => {
+    const malformed = [row] as unknown as typeof bars;
+    expect(selectDashboardWindow(malformed, volume, null).status).toBe('invalid');
+    expect(selectDashboardWindow(bars, malformed, null).status).toBe('invalid');
+  });
+  it('rejects malformed series containers without throwing', () => {
+    const malformed = {} as typeof bars;
+    expect(selectDashboardWindow(malformed, volume, null).status).toBe('invalid');
+    expect(selectDashboardWindow(bars, malformed, null).status).toBe('invalid');
+  });
+
 });

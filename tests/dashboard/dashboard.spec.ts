@@ -321,6 +321,7 @@ for (const review of [false, true]) {
     const expected = times.slice(2, review ? -1 : undefined);
     await expect(page.getByText('60-min bars · 2 available sessions', { exact: true })).toBeVisible();
     await expect.poll(() => dashboardChartTimes(page, 'CandlestickChart')).toEqual(expected);
+    await page.getByTestId('intraday-chart-slot').scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`window-${review ? 'review' : 'live'}-candles.png`) });
     await page.getByRole('button', { name: 'Area', exact: true }).click();
     await expect.poll(() => dashboardChartTimes(page, 'PriceAreaChart')).toEqual(expected);
@@ -340,12 +341,12 @@ for (const session of ['closed', 'pre-market']) {
   });
 }
 
-for (const state of ['one', 'empty', 'invalid'] as const) {
+for (const state of ['one', 'empty', 'invalid', 'null-volume'] as const) {
   test(`dashboard chart handles ${state} available session data explicitly`, async ({ page }, testInfo) => {
     await mockDashboard(page); await mockDashboardCards(page);
     const time = Date.parse('2026-10-28T10:00Z') / 1000;
     const candles = state === 'empty' ? [] : [{ ...(state === 'invalid' ? {} : { time }), open: 100, high: 102, low: 99, close: 101 }];
-    await page.route('**/api/market/data/IWM/**', r => r.fulfill(M.ok({ ticker: 'IWM', date: '202610', timeframe: 60, count: candles.length, candlestick: candles, volume: [] })));
+    await page.route('**/api/market/data/IWM/**', r => r.fulfill(M.ok({ ticker: 'IWM', date: '202610', timeframe: 60, count: candles.length, candlestick: candles, volume: state === 'null-volume' ? [null] : [] })));
     await page.goto('/dashboard');
     if (state === 'one') {
       await expect(page.getByText('60-min bars · 1 available session', { exact: true })).toBeVisible();
@@ -354,6 +355,7 @@ for (const state of ['one', 'empty', 'invalid'] as const) {
       await expect(page.getByText(/Intraday window unavailable:/)).toBeVisible();
       await expect(page.getByTestId('intraday-chart-slot')).toHaveCount(0);
     }
+    await page.getByText('IWM · intraday', { exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`window-${state}.png`) });
   });
 }

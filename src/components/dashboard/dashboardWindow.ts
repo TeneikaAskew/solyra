@@ -3,7 +3,8 @@ export function selectDashboardWindow<C extends { time: number }, V extends { ti
   candles: readonly C[], volumes: readonly V[], cutoff: number | null,
 ): { status: 'ready' | 'empty' | 'invalid'; reason: string; sessionCount: number; candlestick: C[]; volume: V[] } {
   const validTime = (time: number) => Number.isInteger(time) && Number.isFinite(new Date(time * 1000).getTime());
-  const validSeries = (rows: readonly { time: number }[]) => rows.every(row => validTime(row.time))
+  const validSeries = (rows: readonly { time: number }[]) => Array.isArray(rows)
+    && rows.every(row => row !== null && typeof row === 'object' && validTime(row.time))
     && new Set(rows.map(row => row.time)).size === rows.length;
   if ((cutoff !== null && !validTime(cutoff)) || !validSeries(candles) || !validSeries(volumes)) {
     return { status: 'invalid', reason: 'Intraday window unavailable: invalid or duplicate source timestamps.', sessionCount: 0, candlestick: [], volume: [] };
