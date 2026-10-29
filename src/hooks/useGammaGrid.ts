@@ -1,3 +1,4 @@
+import { dataUnlessError } from '@/lib/queryData';
 import { useQuery } from '@tanstack/react-query';
 import type { SpotEstimate } from './useGammaLevels';
 
@@ -97,7 +98,7 @@ export function useGammaGrid(
   },
 ) {
   const { windowPct, live = true, enabled = true } = opts ?? {};
-  return useQuery<GammaGridSummary>({
+  const query = useQuery<GammaGridSummary>({
     queryKey: ['gamma-grid', ticker, date, windowPct ?? null, live],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -119,4 +120,7 @@ export function useGammaGrid(
     refetchInterval: live ? 60_000 : false,
     retry: false,
   });
+  const visible = dataUnlessError(query.data, query.isError);
+  const unavailableData = visible?.data_source === 'unavailable' ? visible : undefined;
+  return { ...query, data: unavailableData ? undefined : visible, unavailableData };
 }

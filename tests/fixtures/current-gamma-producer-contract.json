@@ -1,0 +1,340 @@
+{
+  "kind": "SYNTHETIC_ACTUAL_LIB_GAMMA_AND_LEVELS_ROUTER_NOT_LIVE_GRID_LOADER",
+  "backend_pin": "80e5f367c03f6c28892e07a4d68b9ce6c35db435",
+  "source_sha256": {
+    "lib/gamma.py": "b96e797b796461097a925f77f53235de7ab46b09db905995235e671dd1281cd5",
+    "platform/api/routers/options.py": "69105a8aa33031e4ccf9c50376c3e1b4569ff46a3a761ecf18f67f825a76669e",
+    "platform/api/schemas.py": "6d413932cb989d22a191dfe8cfc21da5675e5931f937c62a448c38c36f72f134",
+    "platform/api/routers/grid.py": "c482b0f00e6623ceeab7efec74431f7b40d7ae5abc2e15929e89b7a0956dc322"
+  },
+  "levels": {
+    "ticker": "IWM",
+    "snapshot_date": "2026-10-27",
+    "spot": {
+      "price": 100.0,
+      "method": "override",
+      "note": "caller-supplied spot"
+    },
+    "gamma_balance": 100.0,
+    "gamma_flip": null,
+    "regime": "positive_gamma",
+    "total_gex": 239.99999999999994,
+    "levels": [
+      {
+        "strike": 99.0,
+        "gex": 79.99999999999999,
+        "net_gamma": 0.7999999999999998,
+        "call_oi": 100,
+        "put_oi": 80,
+        "distance_pct": -1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      },
+      {
+        "strike": 100.0,
+        "gex": 79.99999999999999,
+        "net_gamma": 0.7999999999999998,
+        "call_oi": 100,
+        "put_oi": 80,
+        "distance_pct": 0.0,
+        "score": 1.0,
+        "kind": "king",
+        "tags": [
+          "king",
+          "spot",
+          "gamma_balance"
+        ]
+      },
+      {
+        "strike": 101.0,
+        "gex": 79.99999999999999,
+        "net_gamma": 0.7999999999999998,
+        "call_oi": 100,
+        "put_oi": 80,
+        "distance_pct": 1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      }
+    ],
+    "kings": [
+      {
+        "strike": 99.0,
+        "gex": 79.99999999999999,
+        "net_gamma": 0.7999999999999998,
+        "call_oi": 100,
+        "put_oi": 80,
+        "distance_pct": -1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      },
+      {
+        "strike": 100.0,
+        "gex": 79.99999999999999,
+        "net_gamma": 0.7999999999999998,
+        "call_oi": 100,
+        "put_oi": 80,
+        "distance_pct": 0.0,
+        "score": 1.0,
+        "kind": "king",
+        "tags": [
+          "king",
+          "spot",
+          "gamma_balance"
+        ]
+      },
+      {
+        "strike": 101.0,
+        "gex": 79.99999999999999,
+        "net_gamma": 0.7999999999999998,
+        "call_oi": 100,
+        "put_oi": 80,
+        "distance_pct": 1.0,
+        "score": 0.9333333333333333,
+        "kind": "king",
+        "tags": [
+          "king"
+        ]
+      }
+    ],
+    "gates": [],
+    "gamma_balance_levels": [
+      {
+        "strike": 100.0,
+        "gex": 79.99999999999999,
+        "net_gamma": 0.7999999999999998,
+        "call_oi": 100,
+        "put_oi": 80,
+        "distance_pct": 0.0,
+        "score": 1.0,
+        "kind": "king",
+        "tags": [
+          "king",
+          "spot",
+          "gamma_balance"
+        ]
+      }
+    ],
+    "window_pct": 8.0,
+    "warnings": [],
+    "snapshot_timestamp": "2026-10-27T19:55:00Z",
+    "chain_size": 6
+  },
+  "grid": {
+    "ticker": "IWM",
+    "snapshot_date": "2026-10-27",
+    "snapshot_ts": "2026-10-27T19:55:00Z",
+    "data_source": "realtime",
+    "reason": null,
+    "spot": {
+      "price": 100.0,
+      "method": "override",
+      "note": "caller-supplied spot"
+    },
+    "gamma_balance": 100.0,
+    "gamma_flip": null,
+    "regime": "positive_gamma",
+    "total_gex": 239.99999999999994,
+    "total_vex": -5400.0,
+    "cells": [
+      {
+        "strike": 99.0,
+        "expiration": "2026-10-30",
+        "dte": 3,
+        "net_gamma": 0.7999999999999998,
+        "call_gamma": 4.0,
+        "put_gamma": 3.2,
+        "net_vega": 2.0,
+        "call_vega": 10.0,
+        "put_vega": 8.0,
+        "gex": 79.99999999999999,
+        "call_gex": 400.0,
+        "put_gex": -320.0,
+        "vex": -1800.0,
+        "call_vex": -1000.0,
+        "put_vex": -800.0,
+        "call_oi": 100,
+        "put_oi": 80,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": -1.0
+      },
+      {
+        "strike": 100.0,
+        "expiration": "2026-10-30",
+        "dte": 3,
+        "net_gamma": 0.7999999999999998,
+        "call_gamma": 4.0,
+        "put_gamma": 3.2,
+        "net_vega": 2.0,
+        "call_vega": 10.0,
+        "put_vega": 8.0,
+        "gex": 79.99999999999999,
+        "call_gex": 400.0,
+        "put_gex": -320.0,
+        "vex": -1800.0,
+        "call_vex": -1000.0,
+        "put_vex": -800.0,
+        "call_oi": 100,
+        "put_oi": 80,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": 0.0
+      },
+      {
+        "strike": 101.0,
+        "expiration": "2026-10-30",
+        "dte": 3,
+        "net_gamma": 0.7999999999999998,
+        "call_gamma": 4.0,
+        "put_gamma": 3.2,
+        "net_vega": 2.0,
+        "call_vega": 10.0,
+        "put_vega": 8.0,
+        "gex": 79.99999999999999,
+        "call_gex": 400.0,
+        "put_gex": -320.0,
+        "vex": -1800.0,
+        "call_vex": -1000.0,
+        "put_vex": -800.0,
+        "call_oi": 100,
+        "put_oi": 80,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": 1.0
+      }
+    ],
+    "expirations": [
+      "2026-10-30"
+    ],
+    "strikes": [
+      99.0,
+      100.0,
+      101.0
+    ],
+    "window_pct": 8.0,
+    "warnings": []
+  },
+  "unavailable_grid": {
+    "ticker": "IWM",
+    "snapshot_date": null,
+    "snapshot_ts": null,
+    "data_source": "unavailable",
+    "reason": "SYNTHETIC snapshot unavailable",
+    "spot": null,
+    "gamma_balance": null,
+    "gamma_flip": null,
+    "regime": "unknown",
+    "total_gex": 0.0,
+    "total_vex": 0.0,
+    "cells": [],
+    "expirations": [],
+    "strikes": [],
+    "window_pct": 0.0,
+    "warnings": [
+      "SYNTHETIC snapshot unavailable"
+    ]
+  },
+  "observed_zero_grid": {
+    "ticker": "IWM",
+    "snapshot_date": "2026-10-27",
+    "snapshot_ts": "2026-10-27T19:55:00Z",
+    "data_source": "realtime",
+    "spot": {
+      "price": 100.0,
+      "method": "override",
+      "note": "caller-supplied spot"
+    },
+    "gamma_balance": null,
+    "gamma_flip": null,
+    "regime": "unknown",
+    "total_gex": 0.0,
+    "total_vex": -4800.0,
+    "cells": [
+      {
+        "strike": 99.0,
+        "expiration": "2026-10-30",
+        "dte": 3,
+        "net_gamma": 0.0,
+        "call_gamma": 3.2,
+        "put_gamma": 3.2,
+        "net_vega": 0.0,
+        "call_vega": 8.0,
+        "put_vega": 8.0,
+        "gex": 0.0,
+        "call_gex": 320.0,
+        "put_gex": -320.0,
+        "vex": -1600.0,
+        "call_vex": -800.0,
+        "put_vex": -800.0,
+        "call_oi": 80,
+        "put_oi": 80,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": -1.0
+      },
+      {
+        "strike": 100.0,
+        "expiration": "2026-10-30",
+        "dte": 3,
+        "net_gamma": 0.0,
+        "call_gamma": 3.2,
+        "put_gamma": 3.2,
+        "net_vega": 0.0,
+        "call_vega": 8.0,
+        "put_vega": 8.0,
+        "gex": 0.0,
+        "call_gex": 320.0,
+        "put_gex": -320.0,
+        "vex": -1600.0,
+        "call_vex": -800.0,
+        "put_vex": -800.0,
+        "call_oi": 80,
+        "put_oi": 80,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": 0.0
+      },
+      {
+        "strike": 101.0,
+        "expiration": "2026-10-30",
+        "dte": 3,
+        "net_gamma": 0.0,
+        "call_gamma": 3.2,
+        "put_gamma": 3.2,
+        "net_vega": 0.0,
+        "call_vega": 8.0,
+        "put_vega": 8.0,
+        "gex": 0.0,
+        "call_gex": 320.0,
+        "put_gex": -320.0,
+        "vex": -1600.0,
+        "call_vex": -800.0,
+        "put_vex": -800.0,
+        "call_oi": 80,
+        "put_oi": 80,
+        "call_volume": 10,
+        "put_volume": 10,
+        "distance_pct": 1.0
+      }
+    ],
+    "expirations": [
+      "2026-10-30"
+    ],
+    "strikes": [
+      99.0,
+      100.0,
+      101.0
+    ],
+    "window_pct": 8.0,
+    "warnings": []
+  }
+}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { gammaPrices, batchSnapshotLabel } from './gammaPresentation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLatestOptionsDate } from '@/hooks/useOptionsDates';
 import { useNavigate } from 'react-router-dom';
@@ -168,6 +169,7 @@ function fmtStrike(s: number): string {
 }
 
 function fmtTime(iso: string): string {
+  if (!/(?:Z|[+-]\d{2}:\d{2})$/.test(iso) || !Number.isFinite(Date.parse(iso))) return 'snapshot time unavailable';
   // Every other time on these surfaces is ET — render the snapshot in ET
   // with an explicit label, not the viewer's local zone unlabeled.
   return `${new Date(iso).toLocaleTimeString('en-US', {
@@ -200,6 +202,7 @@ interface RealOverlay {
   gateBelow?: { strike: number; gex: number };
   /** null when no zero-gamma level was identified — same discipline. */
   flipStrike: number | null;
+  balanceStrike?: number | null;
   flipGex: number | null;
   regime: string;
   totalGex: number;
@@ -211,8 +214,8 @@ interface RealOverlay {
 // Rule 6) — `DataSource` names today's known values, the lookup handles
 // the rest.
 const SOURCE_PILL_META: Record<string, { cls: string; label: string; hint: string }> = {
-  realtime: { cls: 'realtime', label: 'LIVE', hint: 'Realtime · 5-min snapshot' },
-  eod_fallback: { cls: 'eod-fallback', label: 'EOD', hint: 'Realtime missed · using yesterday close' },
+  realtime: { cls: 'realtime', label: 'REALTIME ORIGIN', hint: 'Realtime-origin snapshot; freshness is not certified' },
+  eod_fallback: { cls: 'eod-fallback', label: 'EOD', hint: 'End-of-day origin; see supplied snapshot time' },
   stale_fallback: { cls: 'stale', label: 'STALE', hint: 'EOD > 2 sessions behind' },
   unavailable: { cls: 'stale', label: 'UNAVAILABLE', hint: 'No snapshot available' },
 } satisfies Record<DataSource, unknown>;
@@ -226,7 +229,7 @@ function SourcePill({ source, asOf }: { source: string; asOf: string }) {
   return (
     <span className={`hs-pill ${meta.cls}`} title={meta.hint}>
       {/* the pulse animation is the live-streaming affordance, only LIVE gets it */}
-      <span className={meta.cls === 'realtime' ? 'dot pulse' : 'dot'} />
+      <span className="dot" />
       <span>{meta.label}</span>
       {asOf ? (
         <span style={{ opacity: 0.7, fontWeight: 500, letterSpacing: 0, textTransform: 'none' }}>
@@ -402,6 +405,9 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
           </div>
           <div className="val">{overlay.flipStrike != null ? overlay.flipStrike.toFixed(2) : '—'}</div>
         </div>
+      </span>
+      <span className="chip balance" title="Absolute net-gamma median; not the true zero-gamma flip">
+        <div><div className="label">Gamma Balance</div><div className="val">{overlay.balanceStrike != null ? overlay.balanceStrike.toFixed(2) : '—'}</div></div>
       </span>
       {overlay.isLevels && (
         <span className="chip hedge">
@@ -579,6 +585,7 @@ function RealHeatmapGrid({
   summary,
   loading,
   isError,
+  unavailableReason,
   metric,
   ticker,
   kingStrike,
@@ -587,6 +594,7 @@ function RealHeatmapGrid({
   summary?: GammaGridSummary;
   loading: boolean;
   isError: boolean;
+  unavailableReason?: string | null;
   metric: Metric;
   ticker: string;
   kingStrike?: number;
@@ -614,7 +622,7 @@ function RealHeatmapGrid({
     );
   }
   if (isError || !summary || summary.data_source === 'unavailable' || !built || built.columns.length === 0) {
-    const reason = summary?.reason ?? summary?.warnings?.[0] ?? 'No options grid available for this symbol.';
+    const reason = unavailableReason ?? summary?.reason ?? summary?.warnings?.[0] ?? 'No options grid available for this symbol.';
     return (
       <div className="card-i hs-grid-card">
         {Header}
@@ -828,7 +836,7 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
       const below = spotPrice != null
         ? levels.gates.filter((g) => g.strike < spotPrice).sort((a, b) => b.strike - a.strike)[0]
         : undefined;
-      const flipLvl = levels.gamma_balance_levels?.[0];
+      const prices = gammaPrices(levels);
       return {
         isReal: true,
         isLevels: true,
@@ -840,8 +848,9 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         kingGex: king?.gex ?? null,
         gateAbove: above ? { strike: above.strike, gex: above.gex } : undefined,
         gateBelow: below ? { strike: below.strike, gex: below.gex } : undefined,
-        flipStrike: levels.gamma_balance ?? grid?.gamma_flip ?? null,
-        flipGex: flipLvl?.gex ?? null,
+        flipStrike: prices.flip,
+        balanceStrike: prices.balance,
+        flipGex: null, // balance-neighbor GEX is not GEX at the true flip
         regime: levels.regime,
         totalGex: levels.total_gex,
         totalVex: grid?.total_vex ?? null,
@@ -877,7 +886,8 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         kingGex,
         gateAbove: undefined,
         gateBelow: undefined,
-        flipStrike: grid.gamma_flip ?? null,
+        flipStrike: gammaPrices(grid).flip,
+        balanceStrike: gammaPrices(grid).balance,
         // The grid path has no per-level flip GEX (only the flip strike from
         // gamma_flip); null renders "—" rather than a fabricated $0.
         flipGex: null,
@@ -918,7 +928,7 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
               Heatmap grid &amp; pivot rail show{' '}
               <strong>
                 {grid.data_source === 'realtime'
-                  ? `live ${sym} dealer exposure`
+                  ? `${sym} gamma snapshot (realtime origin; freshness unverified)`
                   : grid.data_source === 'eod_fallback'
                     ? `${sym} dealer exposure (end-of-day close)`
                     : `${sym} dealer exposure (delayed snapshot)`}
@@ -943,6 +953,14 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         source={grid?.data_source ?? 'unavailable'}
         asOf={grid?.snapshot_ts ?? ''}
       />
+      {levels && <div role="note" aria-label="Levels source" className="text-xs">
+        Levels: {levels.ticker} · {levels.snapshot_date} · Batch snapshot {batchSnapshotLabel(levels.snapshot_timestamp)}
+      </div>}
+      {((grid?.warnings.length ?? 0) > 0 || gridQuery.unavailableData) && (
+        <div role="note" aria-label="Gamma source warnings" className="text-xs">
+          Source warnings: {(grid?.warnings ?? gridQuery.unavailableData?.warnings ?? []).join('; ') || gridQuery.unavailableData?.reason}
+        </div>
+      )}
       {overlay.isReal && <Legend overlay={overlay} />}
 
       <div className="hs-stage">
@@ -953,6 +971,7 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
           summary={grid}
           loading={gridQuery.isLoading}
           isError={gridQuery.isError}
+          unavailableReason={gridQuery.unavailableData?.reason}
           metric={metric}
           ticker={sym}
           kingStrike={overlay.isReal && overlay.kingStrike != null ? overlay.kingStrike : undefined}
