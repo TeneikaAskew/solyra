@@ -99,6 +99,7 @@ for (const timezoneId of ['America/New_York', 'Asia/Tokyo']) {
   test.describe(`source integrity in ${timezoneId}`, () => {
     test.use({ timezoneId });
     test('calendar dates and source availability survive streamed answer and saved restoration', async ({ page }, testInfo) => {
+      await page.route('**/api/live/quote/IWM', r => r.fulfill(M.ok({ ...MOCK_LIVE_QUOTE, last_updated: '2026-10-29' })));
       let releaseRead!: () => void;
       const readReady = new Promise<void>(resolve => { releaseRead = resolve; });
       const messageId = '22222222-2222-4222-8222-222222222222';
@@ -127,6 +128,7 @@ for (const timezoneId of ['America/New_York', 'Asia/Tokyo']) {
       const evidence = page.locator('#evidence-S1').filter({ visible: true });
       await expect(evidence).toContainText('Oct 29, 2026');
       await expect(evidence).toContainText('calendar date; time unavailable');
+      await expect(page.getByRole('region', { name: 'Live quote', exact: true })).toContainText('As of 2026-10-29 ·');
       await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Freshness unknown: Calendar brief, Signals');
       await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Evidence unavailable: Catalysts');
       await expect(page.getByText('Could not reach:', { exact: false })).toHaveCount(0);
@@ -135,8 +137,10 @@ for (const timezoneId of ['America/New_York', 'Asia/Tokyo']) {
       await expect(page.getByRole('button', { name: 'Start new research', exact: true })).toBeVisible();
       await expect(evidence).toContainText('Oct 29, 2026');
       await expect(evidence).not.toContainText('Oct 28');
+      await expect(page.getByRole('region', { name: 'Live quote', exact: true })).toContainText('As of 2026-10-29 ·');
       await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Freshness unknown: Calendar brief, Signals');
       await page.screenshot({ path: testInfo.outputPath('restored-date-and-availability.png') });
+      await page.getByRole('region', { name: 'Live quote', exact: true }).screenshot({ path: testInfo.outputPath('quote-calendar-date.png') });
     });
   });
 }
