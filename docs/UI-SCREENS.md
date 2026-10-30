@@ -5242,11 +5242,7 @@ for the strings they carry and miss the string the server sends. Te stays untick
 which mounts `SwingMode` (`src/components/options/SwingMode.tsx:791-968`) for the page's active
 ticker (`focusSymbol`, a leading `^` stripped, `SwingMode.tsx:799`). From top to bottom:
 
-- A banner (`.hs-demo-banner`, `SwingMode.tsx:913-934`). With a grid whose source is not
-  `unavailable` it reads `Heatmap grid & pivot rail show live <SYM> dealer exposure. Tactical read is illustrative.` for `realtime`, `... <SYM> dealer exposure (end-of-day close) ...` for
-  `eod_fallback` and `... <SYM> dealer exposure (delayed snapshot) ...` for every other source,
-  `stale_fallback` and an unrecognized one alike. With no grid, or an `unavailable` one, it reads
-  `Live <SYM> grid unavailable, tactical read is illustrative.`
+- A source banner reports the selected symbol's grid origin and dated source evidence; realtime origin is not certified quote freshness. Failed/unavailable grid remains explicit. Tactical is unavailable rather than illustrative production data.
 - A toolbar (`SwingMode.tsx:241-319`): `Live` and `Historical` (live asks for `GET/api/options/{sym}/grid`, historical for `GET /api/options/{sym}/{latestDate}/grid`), `GEX` and
   `VEX` (which per-cell value the heatmap prints), the five expiry chips `All`, `0DTE`, `Weekly`,
   `Monthly` and `Quarterly` (`SwingMode.tsx:47,285-293`; they change only their own highlight,
@@ -5255,8 +5251,7 @@ ticker (`focusSymbol`, a leading `^` stripped, `SwingMode.tsx:799`). From top to
   `/help`, `SwingMode.tsx:307-315`).
 - A legend strip (`Legend`, `SwingMode.tsx:322-447`), drawn only when the overlay is real
   (`SwingMode.tsx:946`): Spot (the price or `—`), Spot method (`parity`, `delta`, ...), King, Gate
-  above and Gate below (each only when the server classified one), Flip, Hedge (only with the
-  levels taxonomy), Regime (`POSITIVE`, `NEGATIVE` or `UNCLEAR`), Total GEX and Total VEX
+  above and Gate below (each only when the server classified one), distinct Flip and Balance, Regime (`POSITIVE`, `NEGATIVE` or `UNCLEAR`), Total GEX and Total VEX
   (`fmtBigGex`, `—` for a null).
 - A three-column stage (`SwingMode.tsx:948-965`): the Tactical read card on the left, the `Strike × Expiration heatmap` in the centre and, on the right, `Nodes & pivots` (drawn only when the overlay
   is real, `SwingMode.tsx:510-570,962`) above `Pivot build · ranked` (`SwingMode.tsx:753-784`: the
@@ -5272,13 +5267,9 @@ else the grid's largest |net GEX| strike, and the Spot and Flip rows are tagged
 `pct_change` (`lib/gamma.py:138-175`, and the vendored OpenAPI `GammaGridCell`; the hook says so,
 `src/hooks/useGammaGrid.ts:10-16`).
 
-Which pieces are measured and which are not. The grid, the pivot rail, and (with `/levels`) the
-legend and the node list come from the API. Three things on the view are the Gamma Map design
-mock (`src/data/gammaMapMock.ts`) whatever the ticker: the Tactical read card
-(`SwingMode.tsx:450-499`: heading `Tactical read · SPY` from `HS.ticker`, text about a 593.42 spot, a
-588.50 flip and a 600 anchor, and `Confidence 72%`), the legend's Hedge chip
-(`HS.nodes.hedge[0]`, `SwingMode.tsx:415`) and the node list's Midpoint and Hedge rows
-(`SwingMode.tsx:524-533`). Executed 2026-10-01 (hermetic render of IWM with the populated fixtures):
+Current production-field-truth source: the grid/pivot rail and available levels taxonomy come from their actual API responses. No HS financial values, static Hedge/Midpoint rows or Tactical scenarios render. Tactical explicitly reports unavailable for the selected symbol. Missing values are not borrowed from another response or ticker. Flip and Balance remain distinct nullable backend values.
+
+Historical mock-value finding (preserved provenance, corrected by the production-field-truth repair): Executed 2026-10-01 (hermetic render of IWM with the populated fixtures):
 the heading read `Tactical read · SPY`, the legend `HEDGE 580` and the list `591 MIDPOINT +$273.0M`
 and `580 HEDGE FOMC 2026-06-12` beside the real `220 KING +$1.9M`. The banner says only that the
 tactical read is illustrative; nothing marks the Hedge chip or the two node rows (matrix Gaps).
@@ -5633,7 +5624,7 @@ this branch asserts the toggle and the contract id and no figure, so Te stays un
 (`src/components/options/ProfilesTab.tsx:255-646`) for the page's active ticker. Top to bottom:
 
 - A toolbar (`ProfilesTab.tsx:350-425`): `GEX` and `VEX` (which Greek the first metric card shows and
-  the heatmap's header names; the bars stay GEX, below), `Net`, `Calls` and `Puts` (which side of each
+  the chart mode selects; only GEX has supplied per-strike bars, while VEX profile availability is explicit), `Net`, `Calls` and `Puts` (which side of each
   strike the heatmap draws), the date
   stepper (OPTIONS-08) and a `Spot:` number input. The input shows the typed override, else the
   resolved spot to two decimals, with a chip naming the estimation method (`parity`, `delta`,
@@ -5645,19 +5636,19 @@ this branch asserts the toggle and the contract id and no figure, so Te stays un
 - A metrics bar of four cards, drawn whenever a spot is known (`finalSpot > 0`,
   `ProfilesTab.tsx:503-528`): `Total GEX` or `Total VEX` (the Greeks answer's
   `metrics.total_gex` or `total_vex` through `formatGEX`, with `Positive` or `Negative`), `Gamma Flip`
-  (`$<level>` from `/levels`'s `gamma_balance`, else the Greeks `zero_gamma`, else `--`, with the
+  (`$<level>` from `/levels`'s nullable `gamma_flip`, else unavailable, independently of the gamma-balance price, with the
   regime's description under it), `Max Pain` (`$<strike>` or `--`) and `Put/Call OI` (two decimals,
   `Bearish skew` above 1, else `Bullish skew`).
 - A levels row (`ProfilesTab.tsx:530-578`), drawn once `/levels` answered and a spot is known: the
   regime chip (`Positive gamma`, `Negative gamma`, hidden when `unknown`), one `★ King $<strike> (<distance>%)` per entry of `kings` (three on the real IWM answer below), one `◆ Gate $<strike>` per
-  gate and one `⇅ Flip $<strike>` per strike bracketing the gamma balance. Before `/levels` has answered, a fallback row shows the Greeks answer's King,
+  gate and one `⇅ Balance $<strike>` per strike bracketing the gamma balance. Before `/levels` has answered, a fallback row shows the Greeks answer's King,
   gatekeepers and midpoints (`ProfilesTab.tsx:580-597`).
 - The heatmap (`GEXHeatmap`, `ProfilesTab.tsx:72-235,599-620`): a D3 SVG of one horizontal bar per
   strike inside the Greeks answer's range of the spot (`strike_range_pct`, fifteen percent), positive
   green and negative purple, strike labels amber near the spot, a value label where a bar passes five
   percent of the largest, a dashed zero line, a red spot line labelled `$<spot>`, and per strike a
   `★` (the King), a `◆` (a gatekeeper) or a `●` (inside a midpoint band) from the Greeks `nodes`
-  (`ProfilesTab.tsx:126-131,173-184`). Its header reads `<GEX|VEX> by Strike, <Net|Calls Only|Puts Only>: ±15% range (<n> strikes)`.
+  (`ProfilesTab.tsx:126-131,173-184`). In GEX mode its header reads `GEX by Strike, <Net|Calls Only|Puts Only>: ±15% range (<n> strikes)`. VEX mode retains the actual total and renders `Per-strike VEX unavailable` without a GEX chart.
 - A footer (`ProfilesTab.tsx:631-645`): `Source: AlphaVantage EOD · Cloud SQL · <n> contracts · snapshot <date>` for a Cloud SQL chain and `Source: AlphaVantage Live · <n> contracts · snapshot <date> <time> ET` for the live proxy, or `time unavailable` with no timestamp (OPTIONS-12).
 
 Executed 2026-10-01 (hermetic render, the populated fixtures): the date `2026-04-24`, `Spot: parity`
@@ -5665,7 +5656,7 @@ with `220.00`, the cards `TOTAL GEX -23K Negative`, `GAMMA FLIP $219.50 Above ga
 its bracketing strikes (matrix Gaps, and the Flip paragraph of OPTIONS-01); the fixture's
 `gamma_flip` of 219.75 appears nowhere on the view.
 
-The `VEX` button changes the first card (`TOTAL VEX -506K Negative`) and the header (`VEX by Strike,...`) and not the bars: `GEXHeatmap` is given no metric (`ProfilesTab.tsx:612-618`), and the Greeks
+Historical 2026-10-01 VEX finding, preserved as #93 provenance and corrected by production-field-truth: the `VEX` button changed the first card (`TOTAL VEX -506K Negative`) and the header (`VEX by Strike,...`) and not the bars: `GEXHeatmap` is given no metric (`ProfilesTab.tsx:612-618`), and the Greeks
 answer's `gex_by_strike` rows hold `gex`, `call_gex` and `put_gex` only (executed 2026-10-01: the bars
 and their labels were identical in the two modes, on the fixtures and on the real answer below;
 matrix Gaps).

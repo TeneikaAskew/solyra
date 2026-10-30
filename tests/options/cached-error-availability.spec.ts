@@ -28,7 +28,7 @@ test('failed cached grid refetch removes LIVE and its overlay, then recovers', a
   await expect(pill).toContainText('UNAVAILABLE');
   await expect(pill).not.toContainText('REALTIME ORIGIN');
   await expect(page.locator('.hs-legend')).toHaveCount(0);
-  await expect(page.getByText(/Live IWM grid unavailable/)).toBeVisible();
+  await expect(page.getByText(/IWM gamma grid unavailable/)).toBeVisible();
   await expect(page.getByText(/Data unavailable:/)).toBeVisible();
   await page.screenshot({ path: info.outputPath('failed-refetch-unavailable.png'), fullPage: true });
   failed = false;
@@ -36,7 +36,8 @@ test('failed cached grid refetch removes LIVE and its overlay, then recovers', a
   await expect(pill).toContainText('REALTIME ORIGIN');
   await expect(page.locator('.hs-legend')).toHaveCount(1);
   expect(requests).toBe(3); // no hidden retries
-  await expect(page.locator('.hs-demo-banner')).toContainText(/tactical read is illustrative/i);
+  await expect(page.getByText('Tactical analysis unavailable', { exact: true })).toBeVisible();
+  await expect(page.getByText('Tactical read · SPY')).toHaveCount(0);
 });
 
 test('HTTP200 unavailable never renders zero exposure or realtime freshness', async ({ page }) => {
