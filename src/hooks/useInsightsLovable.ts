@@ -3,15 +3,18 @@ import { getIdToken } from '@/lib/firebase';
 import { getAuthMode } from '@/lib/runtimeConfig';
 import type { ResearchMode, ResearchSessionDetail, ResearchSessionSummary, ResearchSource, ResearchStage, ResearchStreamEvent, ResearchAnswer } from '@/types/insightsLovable';
 
-// Resolved per request so a slow-to-load env never crashes the page at import
-// time. Falls back to the project ID when the full URL wasn't baked into the
-// bundle (stale preview builds), so the research service stays reachable.
+// .env is git-ignored, so bundles built from the GitHub repo carry no VITE_SUPABASE_*
+// values. These are public (publishable) identifiers, safe to ship as defaults.
+const RESEARCH_PROJECT_ID = 'hajmcfkqmtgidstpggrh';
+const RESEARCH_PUBLISHABLE_KEY = 'sb_publishable_FIw2-fs3KHbJjIDVmKlxtA_1dmC4B4F';
+
 function functionUrl(): string {
-  const base = import.meta.env.VITE_SUPABASE_URL
-    || (import.meta.env.VITE_SUPABASE_PROJECT_ID ? `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co` : '');
-  if (!base) throw new Error('Research service is still loading. Try again in a moment.');
+  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || RESEARCH_PROJECT_ID;
+  const base = import.meta.env.VITE_SUPABASE_URL || `https://${projectId}.supabase.co`;
   return `${base}/functions/v1/insights-research`;
 }
+
+const publishableKey = (): string => import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || RESEARCH_PUBLISHABLE_KEY;
 
 async function request(body: unknown, signal?: AbortSignal): Promise<Response> {
   const token = await getIdToken();
