@@ -2,7 +2,7 @@
 feat_id: FEAT-INSIGHT-001
 spec: docs/superpowers/specs/2026-10-12-feat-insight-001-complete-ai-insights-workspace.md
 branch: fix/feat-insight-001-quote-date
-pr: null
+pr: 308
 status: ready
 ---
 
@@ -31,7 +31,7 @@ The parent recorded the user's standing current-chat authorization for code chan
 
 This is a reservation, not a completed review. The parent records immutable review head, trigger/run/completion IDs, findings, and final disposition in the inherited ledger before publication or readiness. This author has triggered no independent judgment cohort or hosted review. No further cycle is granted here.
 
-Source implementation and test evidence are pinned to `741c4269cf0bd4cb051b108a1abd0b8f44dfc086`; admission documentation changes preserve those source bytes. The new draft's number does not yet exist: keep `pr: null`, then add the actual number here and in the owning catalog row's PRs cell after draft creation. Solyra has no separate `12-PR-ISSUE-TRACEABILITY.md` file.
+Source implementation and test evidence are pinned to `741c4269cf0bd4cb051b108a1abd0b8f44dfc086`; admission documentation changes preserve those source bytes. The parent created draft [#308](https://github.com/TeneikaAskew/solyra/pull/308) from admission head `7a021553284ff1650507087703b94f8c750e0d66`; its actual number is recorded here and in the owning catalog row's PRs cell. Solyra has no separate `12-PR-ISSUE-TRACEABILITY.md` file.
 
 ### Local admission evidence
 
@@ -67,7 +67,7 @@ Spec: Done when and existing-route regression; closes done_when[8], [10].
 - [x] Obtain relevant hermetic browser proof for the changed quote label; full release-scope acceptance remains parent-owned.
 - [ ] Obtain normal current-head reviews under the existing allowance.
 - [x] Update only the owning catalog row's status and retain the actual 2026-10-30 verification date.
-- [ ] Add the actual draft PR number to this plan and the catalog PRs cell after draft creation; do not invent a number or link.
+- [x] Record parent-created draft #308 in this plan and the owning catalog PRs cell.
 - [x] Compare local docs audits against main and separately validate the committed-main API contract as specified above; no new documentation findings.
 - [ ] Pass the commit and draft-PR gates on the final admission commit; the parent retains any remaining network-backed CI and readiness checks.
 - [ ] Preserve owner-controlled deployed verification; do not claim it happened locally.
