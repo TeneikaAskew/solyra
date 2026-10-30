@@ -85,6 +85,34 @@ describe('recorded historical score presentation', () => {
     expect(view.reasons).toContain('legacy_score_contract_missing');
   });
 
+  const invalidClocks = ['2026-02-30T05:06:00Z', '2026-10-30Z', '2026-10-30T24:00:00Z'];
+  for (const clock of ['generated_at', 'inserted_at'] as const) {
+    it.each(invalidClocks)(`rejects malformed ${clock} %s instead of qualifying a breakdown`, value => {
+      const e = explanation();
+      e.provenance[clock] = value;
+      const view = presentSignalScore(withExplanation(e));
+      expect(view.status).toBe('unavailable');
+      expect(view.base).toBeNull();
+      expect(view.strength).toBe('6');
+      expect(view.provenance[clock]).toBe('Unavailable');
+      expect(view.eventTime).toBe(momentum.time);
+    });
+    it.each(['2024-02-29T05:06:00.1Z', '2026-10-30T05:06:00.123456+00:00', '2026-10-30T05:06:00.123456789-04:00'])(
+      `retains valid fractional ${clock} %s exactly`, value => {
+        const e = explanation();
+        e.provenance[clock] = value;
+        const view = presentSignalScore(withExplanation(e));
+        expect(view.status).toBe('recorded');
+        expect(view.provenance[clock]).toBe(value);
+        expect(view.eventTime).toBe(momentum.time);
+      });
+  }
+  it.each(invalidClocks)('does not display malformed top-level legacy insertion %s as available', inserted_at => {
+    const view = presentSignalScore({ score: 6, inserted_at, time: 'supplied market event text' });
+    expect(view.provenance.inserted_at).toBe('Unavailable');
+    expect(view.eventTime).toBe('supplied market event text');
+  });
+
   it('rejects a conflicting row direction or strategy', () => {
     expect(presentSignalScore({ ...momentum, direction: 'PUT' }).status).toBe('unavailable');
     expect(presentSignalScore({ ...momentum, strategy: 'mean_reversion' }).status).toBe('unavailable');

@@ -8,7 +8,25 @@ import { test, expect } from '@playwright/test';
 import type { SignalsResponse } from '@/routes/SignalsPage';
 import { perfBudgetMs } from '../helpers/perfBudget';
 import { M } from '../helpers/mocks';
-import { MOCK_SIGNALS, MOCK_SIGNALS_EMPTY, mockSignalsApi, SCORE_SCENARIOS, scoreScenarioResponse } from '../helpers/fixtures/signals';
+import { MOCK_SIGNALS, MOCK_SIGNALS_EMPTY, mockSignalsApi, SCORE_SCENARIOS, INVALID_SCORE_CLOCK_SCENARIOS, scoreScenarioResponse } from '../helpers/fixtures/signals';
+
+for (const scenario of INVALID_SCORE_CLOCK_SCENARIOS) {
+  test('signals malformed score clock: ' + scenario.name, async ({ page }, testInfo) => {
+    await mockSignalsApi(page);
+    await page.route('**/api/signals/IWM*', r => r.fulfill(M.ok({ ticker: 'IWM', count: 1, returned: 1, source: 'cloud_sql', signals: [scenario.row] })));
+    await page.goto('/signals');
+    const score = page.getByTestId('score-explanation');
+    await expect(score.getByTestId('signal-strength')).toHaveText('6');
+    await expect(score).toContainText('Breakdown unavailable');
+    await expect(score).not.toContainText('Base conditions:');
+    await score.locator('summary').click();
+    await expect(score).toContainText(`${scenario.label}: Unavailable`);
+    await expect(score).toContainText(`Event time: ${scenario.row.time}`);
+    await expect(page).toHaveURL(/\/signals$/);
+    await score.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath('signals-clock-' + scenario.name + '.png'), fullPage: true });
+  });
+}
 
 for (const scenario of SCORE_SCENARIOS) {
   test(`signals recorded score explanation: ${scenario.name}`, async ({ page }, testInfo) => {

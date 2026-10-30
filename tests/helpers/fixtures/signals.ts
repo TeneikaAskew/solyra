@@ -85,3 +85,16 @@ export const SCORE_SCENARIOS = [
 export function scoreScenarioResponse(scenario: typeof SCORE_SCENARIOS[number]) {
   return { ticker: 'IWM', count: 1, returned: 1, source: 'cloud_sql', signals: [scenario.row] };
 }
+
+/** Deliberately corrupt transport clocks; the actual native producer row is
+ * otherwise unchanged. Neither response parsing nor display may normalize them. */
+export const INVALID_SCORE_CLOCKS = ['2026-02-30T05:06:00Z', '2026-10-30Z', '2026-10-30T24:00:00Z'];
+export const INVALID_SCORE_CLOCK_SCENARIOS = INVALID_SCORE_CLOCKS.flatMap((value, index) => [
+  ...(['generated_at', 'inserted_at'] as const).map(clock => ({
+    name: `${clock}-${index}`, label: clock === 'generated_at' ? 'Generated at' : 'Inserted at',
+    row: { ...nativeScores.cases[0], score_explanation: { ...nativeScores.cases[0].score_explanation,
+      provenance: { ...nativeScores.cases[0].score_explanation.provenance, [clock]: value } } },
+  })),
+  { name: `legacy-inserted_at-${index}`, label: 'Inserted at',
+    row: { ...nativeScores.cases[0], score_explanation: null, inserted_at: value } },
+]);

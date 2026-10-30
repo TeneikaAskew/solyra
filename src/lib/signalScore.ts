@@ -1,4 +1,5 @@
 import type { components } from '@/types/stocksOpenApi.gen';
+import { resolveReplayBoundary } from '@/lib/dates';
 
 type Explanation = components['schemas']['HistoricalScoreExplanation'];
 type Provenance = components['schemas']['ScoreProvenance'];
@@ -23,7 +24,14 @@ const integer = (v: unknown): v is number => finite(v) && Number.isSafeInteger(v
 const text = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(text);
 const hash = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
-const timestamp = (v: unknown) => text(v) && /(?:Z|[+-]\d{2}:\d{2})$/.test(v) && Number.isFinite(Date.parse(v));
+const timestamp = (v: unknown) => {
+  if (!text(v) || !/^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(v)) return false;
+  // Reuse the calendar roundtrip validator only with an explicit zone, never
+  // its Eastern wall-clock conversion. Sub-millisecond digits do not affect
+  // calendar validity; normalize a validation copy, preserving the API value.
+  const validationValue = v.replace(/(\.\d{3})\d+(?=Z|[+-]\d{2}:\d{2}$)/, '$1');
+  return resolveReplayBoundary(validationValue).iso !== null;
+};
 
 export interface SignalScorePresentation {
   status: 'recorded' | 'unavailable';
