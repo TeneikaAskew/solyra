@@ -1,4 +1,4 @@
-import { replayCutoffInputValue, resolveReplayBoundary } from '@/lib/dates';
+import { replayCutoffInputValue, resolveReplayBoundary, snapshotAgeLabel } from '@/lib/dates';
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Button } from '@heroui/react';
@@ -18,6 +18,16 @@ const PROMPTS = [
   'At this replay cutoff, what evidence supported or challenged the trade?',
 ];
 
+function sourceTimeLabel(value: string | null | undefined): string {
+  if (!value) return 'Timestamp unavailable';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+      ? `${snapshotAgeLabel(value, null)} (calendar date; time unavailable)` : 'Timestamp unavailable';
+  }
+  const instant = Date.parse(value);
+  return Number.isFinite(instant) ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'long' }).format(instant) : 'Timestamp unavailable';
+}
 function sourceId(source: ResearchSource) { return source.id ?? source.citation_id ?? '?'; }
 function SourceTag({ id, sources, onOpen }: { id: string; sources: ResearchSource[]; onOpen?: (id: string) => void }) {
   const source = sources.find((item) => sourceId(item) === id);
@@ -30,12 +40,13 @@ function Fold({ title, count, defaultOpen = false, children }: { title: string; 
 function AnswerPanel({ answer, sources, onOpenSource, onFollowUp }: { answer: ResearchAnswer; sources: ResearchSource[]; onOpenSource: (id: string) => void; onFollowUp: (q: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const long = answer.answer.length > 260;
-  const unavailable = sources.filter((s) => s.freshness === 'unavailable');
+  const unavailable = sources.filter((s) => s.available === false);
+  const unknown = sources.filter(s => s.available !== false && s.freshness === 'unavailable');
   const stale = sources.filter((s) => s.freshness === 'stale');
   const tags = (ids: string[]) => <span className="ml-1 inline-flex gap-1">{ids.map((id) => <SourceTag key={id} id={id} sources={sources} onOpen={onOpenSource} />)}</span>;
   return (
     <article aria-label="Research answer" className="min-w-0 space-y-5">
-      {(unavailable.length > 0 || stale.length > 0) && <div role="note" className="flex items-start gap-2 rounded-md border border-[var(--warn)]/40 bg-[var(--surface-1)] px-3 py-2.5 text-xs leading-5 text-[var(--warn)]"><AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{unavailable.length > 0 && <>Could not reach: {unavailable.map((s) => s.label ?? s.source_label).join(', ')}. </>}{stale.length > 0 && <>Older than a week: {stale.map((s) => s.label ?? s.source_label).join(', ')}. </>}This answer may be incomplete.</span></div>}
+      {(unavailable.length > 0 || stale.length > 0 || unknown.length > 0) && <div role="note" className="flex items-start gap-2 rounded-md border border-[var(--warn)]/40 bg-[var(--surface-1)] px-3 py-2.5 text-xs leading-5 text-[var(--warn)]"><AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{unavailable.length > 0 && <>Evidence unavailable: {unavailable.map((s) => s.label ?? s.source_label).join(', ')}. </>}{unknown.length > 0 && <>Freshness unknown: {unknown.map(s => s.label ?? s.source_label).join(', ')}. </>}{stale.length > 0 && <>Older than a week: {stale.map((s) => s.label ?? s.source_label).join(', ')}. </>}This answer may be incomplete.</span></div>}
       <header className="space-y-3">
         {answer.verdict && <div className="flex flex-wrap items-center gap-2"><p className="text-[19px] font-bold leading-7 text-[var(--on-surface)] sm:text-[22px]">{answer.verdict}</p>{answer.confidence && <Pill tone={answer.confidence === 'high' ? 'bull' : answer.confidence === 'medium' ? 'warn' : 'bear'}>{answer.confidence} confidence</Pill>}</div>}
         {answer.keyLevels && answer.keyLevels.length > 0 && <div aria-label="Key levels" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">{answer.keyLevels.map((level, i) => <div key={`${level.label}-${i}`} className="shrink-0 rounded-md border border-[var(--outline-variant)] bg-[var(--surface-1)] px-3 py-2"><div className="text-[10px] uppercase tracking-wide text-[var(--on-surface-muted)]">{level.label}</div><div className="mt-0.5 flex items-center gap-1.5 text-sm font-bold tabular-nums text-[var(--on-surface)]">{level.value}{level.citations.slice(0, 1).map((id) => <SourceTag key={id} id={id} sources={sources} onOpen={onOpenSource} />)}</div></div>)}</div>}
@@ -58,7 +69,7 @@ function AnswerPanel({ answer, sources, onOpenSource, onFollowUp }: { answer: Re
 }
 function EvidencePanel({ sources, onClose, focusId }: { sources: ResearchSource[]; onClose?: () => void; focusId?: string | null }) {
   useEffect(() => { if (focusId) document.getElementById(`evidence-${focusId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [focusId]);
-  return <aside aria-label="Evidence used" className="space-y-1"><div className="mb-3 flex items-center justify-between"><MicroLabel>Evidence used</MicroLabel>{onClose && <Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close evidence"><X size={16} /></Button>}</div>{sources.map((source) => { const id = sourceId(source); const label = source.label ?? source.source_label ?? 'Source'; const asOf = source.asOf ?? source.source_as_of; return <div id={`evidence-${id}`} key={`${id}-${label}`} className={`border-b border-[var(--outline-variant)] px-2 py-3 ${focusId === id ? 'rounded-md bg-[var(--surface-2)] ring-1 ring-[var(--brand)]' : ''}`}><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><SourceTag id={id} sources={sources} /><span className="truncate text-xs font-semibold text-[var(--on-surface)]">{label}</span></div><Pill tone={source.freshness === 'current' ? 'bull' : source.freshness === 'stale' ? 'warn' : 'bear'}>{source.freshness}</Pill></div><div className="mt-2 flex items-center gap-1 text-[10px] text-[var(--on-surface-muted)]"><Clock3 size={11} />{asOf ? new Date(asOf).toLocaleString() : 'Timestamp unavailable'}</div>{source.excerpt && <p className={`mt-2 text-[11px] leading-5 text-[var(--on-surface-variant)] ${focusId === id ? '' : 'line-clamp-3'}`}>{source.excerpt}</p>}</div>; })}</aside>;
+  return <aside aria-label="Evidence used" className="space-y-1"><div className="mb-3 flex items-center justify-between"><MicroLabel>Evidence used</MicroLabel>{onClose && <Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close evidence"><X size={16} /></Button>}</div>{sources.map((source) => { const id = sourceId(source); const label = source.label ?? source.source_label ?? 'Source'; const asOf = source.asOf ?? source.source_as_of; return <div id={`evidence-${id}`} key={`${id}-${label}`} className={`border-b border-[var(--outline-variant)] px-2 py-3 ${focusId === id ? 'rounded-md bg-[var(--surface-2)] ring-1 ring-[var(--brand)]' : ''}`}><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><SourceTag id={id} sources={sources} /><span className="truncate text-xs font-semibold text-[var(--on-surface)]">{label}</span></div><Pill tone={source.freshness === 'current' ? 'bull' : source.freshness === 'stale' ? 'warn' : 'bear'}>{source.available !== false && source.freshness === 'unavailable' ? 'freshness unknown' : source.freshness}</Pill></div><div className="mt-2 flex items-center gap-1 text-[10px] text-[var(--on-surface-muted)]"><Clock3 size={11} />{sourceTimeLabel(asOf)}</div>{source.excerpt && <p className={`mt-2 text-[11px] leading-5 text-[var(--on-surface-variant)] ${focusId === id ? '' : 'line-clamp-3'}`}>{source.excerpt}</p>}</div>; })}</aside>;
 }
 
 export type ResearchController = ReturnType<typeof useInsightsLovable>;

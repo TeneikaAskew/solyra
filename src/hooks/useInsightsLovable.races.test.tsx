@@ -17,6 +17,7 @@ function Harness() { current = useInsightsLovable(); return null; }
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.stubEnv('VITE_SUPABASE_URL', 'https://fixture.invalid');
+  vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'fixture-public-key');
   vi.stubGlobal('fetch', fetchMock); fetchMock.mockReset();
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   await act(async () => root.render(createElement(Harness)));

@@ -1,32 +1,21 @@
 import { useCallback, useRef, useState } from 'react';
 import { getIdToken } from '@/lib/firebase';
 import { getAuthMode } from '@/lib/runtimeConfig';
+import { researchServiceConfig } from '@/lib/researchServiceConfig';
 import type { ResearchMode, ResearchSessionDetail, ResearchSessionSummary, ResearchSource, ResearchStage, ResearchStreamEvent, ResearchAnswer } from '@/types/insightsLovable';
 
-// .env is git-ignored, so bundles built from the GitHub repo carry no VITE_SUPABASE_*
-// values. These are public (publishable) identifiers, safe to ship as defaults.
-const RESEARCH_PROJECT_ID = 'hajmcfkqmtgidstpggrh';
-const RESEARCH_PUBLISHABLE_KEY = 'sb_publishable_FIw2-fs3KHbJjIDVmKlxtA_1dmC4B4F';
-
-function functionUrl(): string {
-  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || RESEARCH_PROJECT_ID;
-  const base = import.meta.env.VITE_SUPABASE_URL || `https://${projectId}.supabase.co`;
-  return `${base}/functions/v1/insights-research`;
-}
-
-const publishableKey = (): string => import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || RESEARCH_PUBLISHABLE_KEY;
-
 async function request(body: unknown, signal?: AbortSignal): Promise<Response> {
+  const config = researchServiceConfig(import.meta.env);
   const token = await getIdToken();
   if (!token && !(import.meta.env.DEV && getAuthMode() === 'open')) {
     throw new Error('Sign in to use the research workspace.');
   }
-  const response = await fetch(functionUrl(), {
+  const response = await fetch(config.functionUrl, {
     method: 'POST', signal,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      apikey: publishableKey(),
+      apikey: config.publishableKey,
     },
     body: JSON.stringify(body),
   });
