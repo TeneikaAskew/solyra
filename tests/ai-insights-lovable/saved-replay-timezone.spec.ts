@@ -44,6 +44,8 @@ for (const path of ['History', 'Previous questions'] as const) {
       const date = `${fixture.date.slice(0, 4)}-${fixture.date.slice(4, 6)}-${fixture.date.slice(6, 8)}`;
       await expect(page.getByLabel('Point-in-time cutoff')).toHaveValue(`${date}T${fixture.time}`);
       await expect.poll(() => signals.map(raw => { const url = new URL(raw); return `${url.searchParams.get('end_date')} ${url.searchParams.get('end_time')}`; })).toContain(`${date} ${fixture.time}:00`);
+      await page.screenshot({ path: info.outputPath('saved-cutoff-restored-briefing.png'), fullPage: true, animations: 'disabled' });
+      await page.getByRole('region', { name: 'Price chart', exact: true }).screenshot({ path: info.outputPath('restored-briefing-chart.png'), animations: 'disabled' });
       await page.getByRole('button', { name: 'Run replay', exact: true }).click();
       await expect.poll(() => refreshes.length).toBe(1);
       expect(new URL(refreshes[0]).searchParams.get('as_of')).toBe(fixture.cutoff);

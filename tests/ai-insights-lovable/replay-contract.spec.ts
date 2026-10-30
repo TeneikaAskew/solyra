@@ -38,8 +38,9 @@ for (const path of ['standalone', 'embedded'] as const) {
     ['2026-10-09T11:30', '2026-10-09T15:30:00.000Z'],
     ['2026-01-09T11:30', '2026-01-09T16:30:00.000Z'],
     ['2026-10-09T23:30', '2026-10-10T03:30:00.000Z'],
-  ]) test(`4419167002 ${path} manual ET ${wall} submits the exact instant`, async ({ page }) => {
+  ]) test(`4419167002 ${path} manual ET ${wall} submits the exact instant`, async ({ page }, info) => {
     const requests = await setup(page, path); await enter(page, path, wall);
+    await page.screenshot({ path: info.outputPath('manual-eastern-cutoff.png'), fullPage: true, animations: 'disabled' });
     await page.getByRole('button', { name: 'Research', exact: true }).click();
     await expect.poll(() => requests.find(r => r.action === 'research')?.replayCutoff, { timeout: 2000 }).toBe(instant);
   });
@@ -47,7 +48,7 @@ for (const path of ['standalone', 'embedded'] as const) {
     ['2026-10-09T15:30:45Z', '2026-10-09T11:30'],
     ['2026-10-10T03:30:45+02:00', '2026-10-09T21:30'],
     ['2025-11-02T01:30:00-05:00', '2025-11-02T01:30'],
-  ]) test(`4419167012 ${path} saved ${cutoff} stays visible and transports unchanged`, async ({ page }) => {
+  ]) test(`4419167012 ${path} saved ${cutoff} stays visible and transports unchanged`, async ({ page }, info) => {
     const requests = await setup(page, path, cutoff);
     if (path === 'standalone') {
       await page.getByRole('button', { name: 'History', exact: true }).click();
@@ -61,22 +62,25 @@ for (const path of ['standalone', 'embedded'] as const) {
       await expect(page.getByLabel('Point-in-time cutoff')).toHaveValue(display);
     }
     await expect(page.getByText(answer.answer, { exact: true })).toBeVisible();
+    await page.screenshot({ path: info.outputPath('restored-saved-cutoff-and-answer.png'), fullPage: true, animations: 'disabled' });
+    await page.locator('#research-answer').screenshot({ path: info.outputPath('restored-answer.png'), animations: 'disabled' });
     await page.getByRole('textbox', { name: 'Question', exact: true }).fill('What evidence would invalidate this?');
     await page.getByRole('button', { name: 'Research', exact: true }).click();
     await expect.poll(() => requests.find(r => r.action === 'research')?.replayCutoff).toBe(cutoff);
   });
   for (const [wall, reason] of [['2026-03-08T02:30', 'does not exist'], ['2025-11-02T01:30', 'ambiguous']]) {
-    test(`4419167002 ${path} refuses ${reason} ET wall clock`, async ({ page }) => {
+    test(`4419167002 ${path} refuses ${reason} ET wall clock`, async ({ page }, info) => {
       const requests = await setup(page, path); await enter(page, path, wall);
       await expect(page.getByRole('alert')).toContainText(reason, { timeout: 2000 });
       await expect(page.getByRole('button', { name: 'Research', exact: true })).toBeDisabled();
       await page.getByRole('textbox', { name: 'Question', exact: true }).press('Control+Enter');
       expect(requests.filter(r => r.action === 'research')).toHaveLength(0);
+      await page.screenshot({ path: info.outputPath('dst-refusal-and-disabled-submit.png'), fullPage: true, animations: 'disabled' });
     });
   }
 }
 
-test('standalone new research after a saved session keeps a market-local editable cutoff', async ({ page }) => {
+test('standalone new research after a saved session keeps a market-local editable cutoff', async ({ page }, info) => {
   const requests = await setup(page, 'standalone', '2026-10-09T15:30:45Z');
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await page.getByRole('button').filter({ hasText: title }).click();
@@ -85,6 +89,7 @@ test('standalone new research after a saved session keeps a market-local editabl
   await expect(page.getByLabel('Evidence cutoff', { exact: true })).toHaveValue('2026-10-09T11:30');
   await expect(page.getByLabel('Evidence cutoff', { exact: true })).toBeEnabled();
   await page.getByRole('textbox', { name: 'Question', exact: true }).fill('What was knowable at this new boundary?');
+  await page.screenshot({ path: info.outputPath('new-research-editable-eastern-cutoff.png'), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: 'Research', exact: true }).click();
   await expect.poll(() => requests.find(r => r.action === 'research')?.replayCutoff).toBe('2026-10-09T15:30:00.000Z');
 });
