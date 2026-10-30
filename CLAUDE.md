@@ -390,7 +390,7 @@ silently. Keep it that way — never loosen a type to make a fixture compile.
 | `npm run test:watch` | Vitest watch mode |
 | `npm run e2e` | Playwright E2E (boots its own Vite on :5199) |
 | `npm run e2e:cloud:auth` | Interactive **Firebase** sign-in against the deployed frontend; saves state incl. IndexedDB (not IAP — that left this path at #957) |
-| `npm run e2e:cloud` | Headless run against the deployed frontend. **No specs yet** — matches `*.cloud.spec.ts`, none exist, so it exits `No tests found` |
+| `npm run e2e:cloud` | Headless run against the deployed frontend. `tests/signals/score-explanation.cloud.spec.ts` supplies two owner-run Dashboard/Signals closeout cases; deployed execution remains owner work. |
 
 ### Unit — Vitest
 
@@ -461,8 +461,9 @@ stocks.
    `## Review guidelines`). When it depends on a stocks API change, it also
    needs a `*.cloud.spec.ts` written for that change that the owner runs with
    `npm run e2e:cloud` against the deployed site once staging has deployed it
-   and posts on the PR as a close-out step. The Testing table above says no
-   cloud spec exists yet: this is what the first one is for.
+   and posts on the PR as a close-out step. The owner-run Dashboard/Signals artifact is
+   `tests/signals/score-explanation.cloud.spec.ts`; artifact presence does not
+   establish deployed acceptance.
 
 ---
 

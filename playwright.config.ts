@@ -161,9 +161,9 @@ export default defineConfig({
     // Headless tests against the DEPLOYED frontend, reusing the signed-in state
     // captured by `iap-setup`. Run via `npm run e2e:cloud`.
     //
-    // testMatch is `*.cloud.spec.ts`, and no such file exists yet, so this
-    // project currently finds no tests and Playwright exits non-zero. That is
-    // deliberate and better than what it did before, which was
+    // testMatch is `*.cloud.spec.ts`; the owner-run score-explanation spec
+    // covers Dashboard and Signals with actual responses. This differs from
+    // the previous configuration, which was
     // `testIgnore: /\.setup\.ts$/` — i.e. run all 29 hermetic specs against the
     // deployment.
     //
@@ -176,8 +176,8 @@ export default defineConfig({
     // (Codex, solyra#44).
     //
     // Deployment specs have to be written deliberately: no `mockCommon`, real
-    // responses, assertions that tolerate live data. Until they exist, failing
-    // loudly is the honest state.
+    // responses, assertions that tolerate live data. Missing qualifying data
+    // must fail rather than masquerade as deployment acceptance.
     {
       name: 'cloud',
       testMatch: /\.cloud\.spec\.ts$/,
