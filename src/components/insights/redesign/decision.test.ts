@@ -1,17 +1,53 @@
 import { describe, expect, it } from 'vitest';
 import type { InsightReport } from '@/types/insights';
-import { dataHealth, planSummary, sortCatalysts, sortRisks, withDirectionChange } from './decision';
+import { dataHealth, groupKeyLevels, planSummary, sortCatalysts, sortRisks, withDirectionChange, unifiedHistory } from './decision';
 
 const base = {
   entry_zone: { low: 100, high: 102 }, stop: 98, targets: [106, 110],
   failed_sections: [], failed_section_reasons: {},
 } as unknown as InsightReport;
 
+describe('groupKeyLevels', () => {
+  it.each(['High', 'Low'])('orders previous %s levels Day through Year regardless of price', (type) => {
+    const groups = groupKeyLevels({
+      [`Prev Year ${type}`]: 258.20,
+      [`Prev Quarter ${type}`]: 305.18,
+      [`Prev Month ${type}`]: 296.18,
+      [`Prev Week ${type}`]: 283.56,
+      [`Prev Day ${type}`]: 277.83,
+    });
+    expect(groups[type === 'High' ? 0 : 1].rows.map(([key]) => key)).toEqual(
+      ['Day', 'Week', 'Month', 'Quarter', 'Year'].map((period) => `Prev ${period} ${type}`),
+    );
+  });
+  it.each(['Effective', 'Gamma'])('orders timeframe-based %s levels Day through Year', (prefix) => {
+    const groups = groupKeyLevels({ [`${prefix} Year`]: 500, [`${prefix} Day`]: 100, [`${prefix} Month`]: 300, [`${prefix} Week`]: 200, [`${prefix} Quarter`]: 400 });
+    expect(groups[prefix === 'Effective' ? 2 : 3].rows.map(([key]) => key)).toEqual(
+      ['Day', 'Week', 'Month', 'Quarter', 'Year'].map((period) => `${prefix} ${period}`),
+    );
+  });
+  it('puts display-label previous highs and lows into the first two groups', () => {
+    const groups = groupKeyLevels({ 'Prev Quarter High': 305.18, 'Prev Month Low': 277.41 });
+    expect(groups[0].rows).toEqual([['Prev Quarter High', 305.18]]);
+    expect(groups[1].rows).toEqual([['Prev Month Low', 277.41]]);
+    expect(groups[3].rows).toEqual([]);
+  });
+  it('groups averages and effective levels separately from gamma', () => {
+    const groups = groupKeyLevels({ 'EMA 20': 283.05, 'Effective PDH': 277.83, 'Gamma Balance': 274.4 });
+    expect(groups[2].rows).toEqual([['EMA 20', 283.05], ['Effective PDH', 277.83]]);
+    expect(groups[3].rows).toEqual([['Gamma Balance', 274.4]]);
+  });
+  it('still accepts snake_case keys without changing their values', () => {
+    expect(groupKeyLevels({ prev_day_high: 277.83 })[0].rows).toEqual([['prev_day_high', 277.83]]);
+  });
+});
+
 describe('planSummary', () => {
-  it('computes R:R from the entry midpoint, first target and stop', () => {
+  it('preserves supplied entry bounds and leaves unsupplied reward-to-risk unavailable', () => {
     const p = planSummary(base);
-    expect(p.entryMid).toBe(101);
-    expect(p.rr).toBeCloseTo(5 / 3);
+    expect(p.entryLow).toBe(100);
+    expect(p.entryHigh).toBe(102);
+    expect(p.rr).toBeNull();
   });
   it('keeps missing stop as null and never fabricates R:R', () => {
     const p = planSummary({ ...base, stop: null } as unknown as InsightReport);
@@ -47,5 +83,35 @@ describe('ordering', () => {
   });
   it('pairs each history row with the previous call', () => {
     expect(withDirectionChange([{ id: '2', direction: 'long' }, { id: '1', direction: 'flat' }])[0].previous).toBe('flat');
+  });
+});
+
+describe('unifiedHistory', () => {
+  const reports = [{ id: 'r1', as_of: '2026-10-10T10:00:00Z', direction: 'long' }, { id: 'r2', as_of: null }];
+  const sessions = [{ id: 's1', ticker: 'IWM', mode: 'live', title: 'Catalysts?', status: 'active', updated_at: '2026-10-11T10:00:00Z', replay_cutoff: null }];
+  it('orders newest first and puts undated rows last', () => {
+    expect(unifiedHistory(reports, sessions).map((i) => i.id)).toEqual(['s1', 'r1', 'r2']);
+  });
+  it('labels each artifact by its source', () => {
+    const items = unifiedHistory(reports, sessions);
+    expect(items.find((i) => i.id === 's1')?.label).toBe('Research question');
+    expect(items.find((i) => i.id === 'r1')?.label).toBe('Report run');
+  });
+  it('filters by artifact type', () => {
+    expect(unifiedHistory(reports, sessions, 'reports').map((i) => i.id)).toEqual(['r1', 'r2']);
+    expect(unifiedHistory(reports, sessions, 'research').map((i) => i.id)).toEqual(['s1']);
+  });
+});
+
+import { latestSignal } from './decision';
+describe('latestSignal', () => {
+  it('picks the newest complete signal', () => {
+    expect(latestSignal([
+      { time: '2026-04-24 17:00:00', direction: 'PUT', score: 3, rsi: 38 },
+      { time: '2026-04-24 18:00:00', direction: 'CALL', score: 4.5, rsi: null },
+    ])).toEqual({ direction: 'PUT', rsi: 38, score: 3 });
+  });
+  it('returns null when no signal is usable', () => {
+    expect(latestSignal([])).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import type React from 'react';
 import { AlertTriangle, ArrowRight, Check, Copy, Network, ShieldAlert, TrendingDown, TrendingUp, X } from 'lucide-react';
 import type { InsightReport, InsightHistoryRow, PersonaPlan } from '@/types/insights';
 import { fmtPrice, NA } from '@/lib/format';
-import { ageLabel, dataHealth, planSummary, planText, sortCatalysts, sortRisks, withDirectionChange } from './decision';
+import { ageLabel, dataHealth, groupKeyLevels, planSummary, planText, sortCatalysts, sortRisks, withDirectionChange } from './decision';
 
 const DIR_TONE: Record<string, string> = {
   long: 'text-[var(--bull)] border-[var(--bull)]/50 bg-[var(--bull)]/10',
@@ -78,7 +78,7 @@ export function DecisionBar({ ticker, report, asOf, onOpenAgents, historical }: 
         <Metric label="Stop" value={fmtPrice(p.stop)} tone="bear" />
         <Metric label="Target 1" value={fmtPrice(p.targets[0] ?? null)} tone="bull" />
         <Metric label="Target 2" value={fmtPrice(p.targets[1] ?? null)} tone="bull" />
-        <Metric label="Reward : risk" value={p.rr != null ? `${p.rr.toFixed(2)}x` : NA} />
+        <Metric label="Reward : risk" value={p.rr != null ? `${p.rr.toFixed(2)}x` : 'Unavailable'} />
       </div>
 
       {report.invalidation && (
@@ -163,12 +163,36 @@ export function PersonaTabs({ plans }: { plans: PersonaPlan[] }) {
           </button>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Entry" value={p.entry_zone ? `${fmtPrice(p.entry_zone.low)} - ${fmtPrice(p.entry_zone.high)}` : NA} />
-        <Metric label="Stop" value={fmtPrice(p.stop)} tone="bear" />
-        <Metric label="Targets" value={Array.isArray(p.targets) && p.targets.length ? p.targets.map((t) => fmtPrice(t)).join(' / ') : NA} tone="bull" />
-        <Metric label="Size" value={typeof p.position_size_pct === 'number' ? `${p.position_size_pct}%` : NA} />
-      </div>
+      <dl className="mt-3 max-w-md space-y-1.5 text-sm tabular-nums">
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="shrink-0 text-[var(--on-surface-muted)]">Entry</dt>
+          <dd className="text-right font-mono font-semibold text-[var(--on-surface)]">
+            {p.entry_zone ? `${fmtPrice(p.entry_zone.low)} – ${fmtPrice(p.entry_zone.high)}` : NA}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="shrink-0 text-[var(--on-surface-muted)]">Stop</dt>
+          <dd className="text-right font-mono font-semibold text-[var(--bear)]">{fmtPrice(p.stop)}</dd>
+        </div>
+        {(Array.isArray(p.targets) ? p.targets : []).map((t, i) => (
+          <div key={i} className="flex items-baseline justify-between gap-4">
+            <dt className="shrink-0 text-[var(--on-surface-muted)]">Target {i + 1}</dt>
+            <dd className="text-right font-mono font-semibold text-[var(--bull)]">{fmtPrice(t)}</dd>
+          </div>
+        ))}
+        {(!Array.isArray(p.targets) || p.targets.length === 0) && (
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="shrink-0 text-[var(--on-surface-muted)]">Targets</dt>
+            <dd className="text-right font-mono text-[var(--on-surface-muted)]">{NA}</dd>
+          </div>
+        )}
+        <div className="flex items-baseline justify-between gap-4 border-t border-[var(--outline-variant)] pt-1.5">
+          <dt className="shrink-0 text-[var(--on-surface-muted)]">Size</dt>
+          <dd className="text-right font-mono font-semibold text-[var(--on-surface)]">
+            {typeof p.position_size_pct === 'number' ? `${p.position_size_pct}%` : NA}
+          </dd>
+        </div>
+      </dl>
       {p.rationale && <p className="mt-3 text-sm leading-6 text-[var(--on-surface-variant)]">{p.rationale}</p>}
     </div>
   );
@@ -208,15 +232,26 @@ export function RiskRail({ report }: { report: InsightReport }) {
 }
 
 export function KeyLevelChips({ levels }: { levels: Record<string, number> | null | undefined }) {
-  const entries = Object.entries(levels ?? {}).filter(([, v]) => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => b[1] - a[1]);
-  if (entries.length === 0) return <p className="text-xs text-[var(--on-surface-muted)]">No key levels in this report.</p>;
+  const columns = groupKeyLevels(levels);
+  if (columns.every((column) => column.rows.length === 0)) return <p className="text-xs text-[var(--on-surface-muted)]">No key levels in this report.</p>;
   return (
-    <div className="flex flex-wrap gap-2">
-      {entries.map(([k, v]) => (
-        <span key={k} className="rounded-lg border border-[var(--outline-variant)] px-2.5 py-1 text-xs">
-          <span className="text-[var(--on-surface-muted)]">{k.replace(/_/g, ' ')}</span>{' '}
-          <b className="font-mono tabular-nums text-[var(--on-surface)]">{fmtPrice(v)}</b>
-        </span>
+    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 md:grid-cols-4">
+      {columns.map((col) => (
+        <div key={col.title} className="min-w-0">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--on-surface-muted)]">{col.title}</p>
+          {col.rows.length === 0 ? (
+            <p className="text-xs text-[var(--on-surface-muted)]">—</p>
+          ) : (
+            <ul className="space-y-1">
+              {col.rows.map(([k, v]) => (
+                <li key={k} className="flex items-baseline justify-between gap-3 text-xs">
+                  <span className="min-w-0 break-words text-[var(--on-surface-muted)]">{k.replace(/_/g, ' ')}</span>
+                  <b className="shrink-0 font-mono tabular-nums text-[var(--on-surface)]">{fmtPrice(v)}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       ))}
     </div>
   );

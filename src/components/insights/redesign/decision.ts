@@ -1,5 +1,4 @@
 import type { InsightReport, InsightHistoryRow, Catalyst, RiskFlag } from '@/types/insights';
-import { riskReward } from '@/lib/risk';
 import { fmtPrice } from '@/lib/format';
 
 /** Number guard: JSONB reports can carry missing/non-numeric fields. Never coerce to 0. */
@@ -7,10 +6,37 @@ export function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
+/** API reports use both display labels and snake_case keys. Group without changing prices. */
+export function groupKeyLevels(levels: Record<string, number> | null | undefined) {
+  const normalize = (key: string) => key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const timeframeOrder = ['day', 'week', 'month', 'quarter', 'year'];
+  const definitions = [
+    { title: 'Prev highs', match: (key: string) => key.startsWith('prev_') && key.endsWith('_high') },
+    { title: 'Prev lows', match: (key: string) => key.startsWith('prev_') && key.endsWith('_low') },
+    { title: 'Averages & effective', match: (key: string) => /^(ema|sma|effective)_/.test(key) },
+    { title: 'Gamma & other', match: () => true },
+  ];
+  const entries = Object.entries(levels ?? {}).filter(([, value]) => num(value) != null);
+  return definitions.map((column, index) => ({
+    title: column.title,
+    rows: entries.filter(([key]) => definitions.findIndex((definition) => definition.match(normalize(key))) === index)
+      .sort((a, b) => {
+        {
+          const rank = (key: string) => {
+            const position = timeframeOrder.findIndex((timeframe) => normalize(key).split('_').includes(timeframe));
+            return position < 0 ? timeframeOrder.length : position;
+          };
+          const difference = rank(a[0]) - rank(b[0]);
+          if (difference !== 0) return difference;
+        }
+        return b[1] - a[1];
+      }),
+  }));
+}
+
 export interface PlanSummary {
   entryLow: number | null;
   entryHigh: number | null;
-  entryMid: number | null;
   stop: number | null;
   targets: number[];
   rr: number | null;
@@ -19,10 +45,11 @@ export interface PlanSummary {
 export function planSummary(report: InsightReport): PlanSummary {
   const entryLow = num(report.entry_zone?.low);
   const entryHigh = num(report.entry_zone?.high);
-  const entryMid = entryLow != null && entryHigh != null ? (entryLow + entryHigh) / 2 : entryLow ?? entryHigh;
   const stop = num(report.stop);
   const targets = Array.isArray(report.targets) ? report.targets.filter((t): t is number => num(t) != null) : [];
-  return { entryLow, entryHigh, entryMid, stop, targets, rr: riskReward(entryMid, targets[0] ?? null, stop) };
+  // The current report contract supplies no reward-to-risk value. Do not
+  // synthesize financial evidence in the presentation layer.
+  return { entryLow, entryHigh, stop, targets, rr: null };
 }
 
 /** Known report sections; failed ones come from the backend's failed_sections list. */
@@ -88,4 +115,44 @@ export function ageLabel(iso: string | null | undefined, now = Date.now()): stri
   const hrs = Math.round(mins / 60);
   if (hrs < 48) return `${hrs}h old`;
   return `${Math.round(hrs / 24)}d old`;
+}
+
+/** One timeline row: a structured report run or a saved research question. Never merged into one shape. */
+export type HistoryItem =
+  | { kind: 'report'; id: string; at: string | null; label: 'Report run'; row: InsightHistoryRow; previous: string | null }
+  | { kind: 'research'; id: string; at: string | null; label: 'Research question'; session: { id: string; ticker: string; mode: string; title: string; status: string; updated_at: string; replay_cutoff: string | null } };
+
+export type HistoryFilter = 'all' | 'reports' | 'research';
+
+/** Newest first; rows without a timestamp sort last rather than being given a fabricated date. */
+export function unifiedHistory(
+  reports: InsightHistoryRow[],
+  sessions: { id: string; ticker: string; mode: string; title: string; status: string; updated_at: string; replay_cutoff: string | null }[],
+  filter: HistoryFilter = 'all',
+): HistoryItem[] {
+  const items: HistoryItem[] = [];
+  if (filter !== 'research') for (const row of withDirectionChange(reports)) items.push({ kind: 'report', id: row.id, at: row.as_of ?? null, label: 'Report run', row, previous: row.previous });
+  if (filter !== 'reports') for (const s of sessions) items.push({ kind: 'research', id: s.id, at: s.updated_at ?? null, label: 'Research question', session: s });
+  const t = (iso: string | null) => { const v = iso ? Date.parse(iso) : NaN; return Number.isFinite(v) ? v : null; };
+  return items.sort((a, b) => {
+    const ta = t(a.at); const tb = t(b.at);
+    if (ta == null && tb == null) return 0;
+    if (ta == null) return 1;
+    if (tb == null) return -1;
+    return tb - ta;
+  });
+}
+
+/** One row of GET /api/signals/{ticker}. */
+export interface SignalFeedRow { time: string; direction: string; score: number | null; rsi?: number | null }
+
+/** Newest signal usable as a similar-setups bucket; null when none has direction, RSI and score. */
+export function latestSignal(rows: SignalFeedRow[]): { direction: 'CALL' | 'PUT'; rsi: number; score: number } | null {
+  const sorted = [...rows].sort((a, b) => String(b.time).localeCompare(String(a.time)));
+  for (const r of sorted) {
+    if ((r.direction === 'CALL' || r.direction === 'PUT') && typeof r.rsi === 'number' && typeof r.score === 'number') {
+      return { direction: r.direction, rsi: r.rsi, score: r.score };
+    }
+  }
+  return null;
 }
