@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDaysToISO, snapshotAgeLabel, todayET, toETDateString, toETDateTimeString } from './dates';
+import { addDaysToISO, snapshotAgeLabel, todayET, toETDateString, toETDateTimeString, resolveReplayBoundary } from './dates';
 
 afterEach(() => vi.useRealTimers());
 
@@ -74,5 +74,29 @@ describe('toETDateTimeString', () => {
     ['2026-10-09T04:00:00Z', '2026-10-09T00:00'],
   ])('formats %s as %s without using the viewer timezone', (instant, expected) => {
     expect(toETDateTimeString(new Date(instant))).toBe(expected);
+  });
+});
+
+describe('CODE3 market replay transport', () => {
+  it.each([
+    ['2026-10-09T11:30', '2026-10-09T15:30:00.000Z'],
+    ['2026-01-09T11:30', '2026-01-09T16:30:00.000Z'],
+    ['2026-10-09T23:30', '2026-10-10T03:30:00.000Z'],
+    ['2026-03-08T01:59:59.123', '2026-03-08T06:59:59.123Z'],
+    ['2026-03-08T03:00', '2026-03-08T07:00:00.000Z'],
+    ['2025-11-02T00:30', '2025-11-02T04:30:00.000Z'],
+    ['2025-11-02T02:30', '2025-11-02T07:30:00.000Z'],
+  ])('resolves Eastern %s to %s', (wall, iso) => {
+    expect(resolveReplayBoundary(wall)).toEqual({ iso, error: null });
+  });
+  it.each(['2025-11-02T01:30:00-04:00', '2025-11-02T01:30:00-05:00', '2026-10-10T03:30:45+02:00', '2026-10-09T15:30:45.123Z'])('retains the explicit saved instant %s exactly', iso => {
+    expect(resolveReplayBoundary(iso)).toEqual({ iso, error: null });
+  });
+  it.each([['2026-03-08T02:30', 'does not exist'], ['2025-11-02T01:30', 'ambiguous']])('refuses %s instead of guessing', (wall, reason) => {
+    expect(resolveReplayBoundary(wall).iso).toBeNull();
+    expect(resolveReplayBoundary(wall).error).toContain(reason);
+  });
+  it.each(['not-a-dateZ', '2026-02-30T11:30', '2026-13-01T00:00', '2026-10-09T25:00', '2026-10-09T12:61', '2026-10-09T11:30:00+25:00'])('rejects invalid cutoff %s', cutoff => {
+    expect(resolveReplayBoundary(cutoff)).toEqual({ iso: null, error: 'Enter a valid Eastern date and time.' });
   });
 });

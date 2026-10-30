@@ -12,7 +12,7 @@ const ResearchSchema = z.object({
   ticker: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9.]{0,9}$/),
   question: z.string().trim().min(8).max(1200),
   mode: z.enum(['live', 'replay']),
-  replayCutoff: z.string().datetime().nullable(),
+  replayCutoff: z.string().datetime({ offset: true }).nullable(),
   sessionId: z.string().uuid().nullable(),
 });
 const ReadSchema = z.object({ action: z.enum(['list', 'read']), sessionId: z.string().uuid().nullable() });
@@ -83,7 +83,7 @@ async function digest(value: string) {
 function valueAsOf(value: unknown): string | null {
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
-  for (const key of ['as_of', 'analysis_date', 'snapshot_ts', 'date', 'time']) {
+  for (const key of ['as_of', 'last_updated', 'analysis_date', 'snapshot_ts', 'date', 'time']) {
     if (typeof row[key] === 'string') return row[key] as string;
   }
   return null;
@@ -143,6 +143,15 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
     if (!raw.trim()) throw new Error('Solyra API returned an empty response');
     let payload: unknown = JSON.parse(raw);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid response: expected a source object');
+    if (cutoff && type === 'signals') {
+      const rows = (payload as Record<string, unknown>).signals;
+      if (Array.isArray(rows) && rows.some(row => {
+        const time = row && typeof row === 'object' ? (row as Record<string, unknown>).time : null;
+        // SQL may serialize an aware instant with a space separator. Missing,
+        // naive and date-only rows do not establish an intraday boundary.
+        return typeof time !== 'string' || !z.string().datetime({ offset: true }).safeParse(time.replace(' ', 'T')).success;
+      })) throw new Error('Replay signals unavailable: every signal needs a valid timezone-qualified timestamp to establish cutoff eligibility.');
+    }
     if (cutoff) payload = clipReplay(payload, cutoff);
     const listKey = ({ signals: 'signals', catalysts: 'events', playbook: 'cards', price_history: 'bars' } as Record<string, string>)[type];
     if (listKey) {
@@ -172,7 +181,17 @@ async function gather(ticker: string, auth: string, mode: 'live' | 'replay', cut
   const to = new Date(anchor.getTime() + 60 * 86_400_000).toISOString().slice(0, 10);
   const asOf = mode === 'replay' && cutoff ? `?as_of=${encodeURIComponent(cutoff)}` : '';
   const signalQs = new URLSearchParams({ limit: '250' });
-  if (mode === 'replay' && cutoff) { signalQs.set('end_date', cutoff.slice(0, 10)); signalQs.set('end_time', cutoff.slice(11, 19)); }
+  if (mode === 'replay' && cutoff) {
+    // The signals request contract uses ET HH:MM; response timestamps remain
+    // absolute instants and are qualified separately before replay clipping.
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(anchor);
+    const part = (name: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === name)!.value;
+    signalQs.set('end_date', `${part('year')}-${part('month')}-${part('day')}`);
+    signalQs.set('end_time', `${part('hour')}:${part('minute')}`);
+  }
   const entries: Array<[string, string, string]> = [
     [`/api/insights/report/${ticker}${asOf}`, 'Structured insight report', 'insight_report'],
     [`/api/dashboard/brief/${ticker}`, 'House market brief', 'market_brief'],

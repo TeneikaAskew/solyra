@@ -114,6 +114,12 @@ export function useInsightsLovable() {
     // Keep the completed question, answer and evidence together while a new
     // attempt is pending. A failed or stopped attempt must not relabel it.
     let pendingSources: ResearchSource[] = [];
+    const refreshHistory = async () => {
+      try { await loadSessions(); }
+      catch (cause) {
+        if (generation === selection.current) setError(previous => `${previous ? previous + ' ' : ''}History refresh failed: ${cause instanceof Error ? cause.message : 'unavailable'}`);
+      }
+    };
     try {
       const response = await request({ action: 'research', ...input }, nextController.signal);
       if (controller.current !== nextController) return;
@@ -135,8 +141,8 @@ export function useInsightsLovable() {
           if (event.type === 'status') { setStage(event.stage); setStageLabel(event.label); }
           if (event.type === 'sources') pendingSources = event.sources;
           if (event.type === 'delta') setStreamText((text) => text + event.delta);
-          if (event.type === 'done') { setQuestion(input.question); setSources(pendingSources); setAnswer(event.answer); setStage('completed'); setStreamText(''); await loadSessions(); if (generation === selection.current) await openSession(event.sessionId, generation); }
-          if (event.type === 'error') { setError(event.message); setStage(event.code === 'cancelled' ? 'cancelled' : 'failed'); await loadSessions(); }
+          if (event.type === 'done') { setQuestion(input.question); setSources(pendingSources); setAnswer(event.answer); setStage('completed'); setStreamText(''); await refreshHistory(); if (generation === selection.current) await openSession(event.sessionId, generation); }
+          if (event.type === 'error') { setError(event.message); setStage(event.code === 'cancelled' ? 'cancelled' : 'failed'); await refreshHistory(); }
         }
       }
     } catch (caught) {
@@ -145,8 +151,7 @@ export function useInsightsLovable() {
       else { setStage('failed'); setError(caught instanceof Error ? caught.message : 'Research failed.'); }
     } finally {
       if (controller.current === nextController) {
-        try { await loadSessions(); }
-        catch (cause) { if (generation === selection.current) setError(previous => `${previous ? previous + ' ' : ''}History refresh failed: ${cause instanceof Error ? cause.message : 'unavailable'}`); }
+        await refreshHistory();
         // A new run can start while terminal history is loading.
         if (controller.current === nextController) controller.current = null;
       }

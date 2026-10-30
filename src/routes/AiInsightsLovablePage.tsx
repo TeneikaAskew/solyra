@@ -17,7 +17,8 @@ import { AgentsPanel } from '@/components/insights/AgentsPanel';
 import { WatchlistPanel } from '@/components/insights/WatchlistPanel';
 import { ResearchCandleChart, type PriceLine } from '@/components/insights/ResearchCandleChart';
 import { chartTheme } from '@/lib/chartTheme';
-import { toETDateTimeString } from '@/lib/dates';
+import { replayCutoffInputValue } from '@/lib/dates';
+export { replayCutoffInputValue } from '@/lib/dates';
 import { ResearchWorkspace } from '@/routes/InsightsLovablePage';
 import { useInsightsLovable } from '@/hooks/useInsightsLovable';
 import { useUser } from '@/hooks/useUser';
@@ -25,14 +26,6 @@ import {
   BullBear, CatalystRail, DecisionBar, KeyLevelChips, PersonaTabs, RiskRail, Section, ThesisBlock, dirClass,
 } from '@/components/insights/redesign/Panels';
 import { planSummary, unifiedHistory, type HistoryFilter } from '@/components/insights/redesign/decision';
-
-/** Present a saved instant without changing the value used for requests. */
-export function replayCutoffInputValue(cutoff: string): string {
-  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(cutoff)) return cutoff;
-  const instant = new Date(cutoff);
-  // Preserve malformed source evidence; never fabricate a replacement instant.
-  return Number.isFinite(instant.getTime()) ? toETDateTimeString(instant) : cutoff;
-}
 
 type Tab = 'briefing' | 'agents' | 'history' | 'watchlist' | 'chat';
 const TABS: { id: Tab; label: string; icon: typeof Bot }[] = [

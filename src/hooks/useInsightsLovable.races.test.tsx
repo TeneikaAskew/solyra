@@ -77,3 +77,23 @@ describe('CODE1 4413406708 saved selection abort independently settles active ru
     expect(current.stage).toBe('cancelled');
   });
 });
+
+describe('CODE3 4419167026 preserves the primary research failure', () => {
+  it.each(['success', 'failure'] as const)('retains credits error when event history fails and final refresh is %s', async (finalRefresh) => {
+    let lists = 0;
+    fetchMock.mockImplementation((_url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.action === 'research') return Promise.resolve(new Response(JSON.stringify({ type: 'error', code: 'credits', message: 'Research credits exhausted' }) + '\n'));
+      if (body.action === 'list') {
+        lists++;
+        return Promise.resolve(lists === 1 || finalRefresh === 'failure' ? json({ error: 'History service unavailable' }, 503) : json({ sessions: [] }));
+      }
+      throw new Error('Unexpected fixture action');
+    });
+    await act(async () => { await current.research(input); });
+    expect(current.stage).toBe('failed');
+    expect(current.error).toContain('Research credits exhausted');
+    expect(current.error).toContain('History');
+    expect(lists).toBe(2);
+  });
+});
