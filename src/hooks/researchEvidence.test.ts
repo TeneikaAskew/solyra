@@ -27,7 +27,8 @@ it('INS-FINAL-009 keeps exactly one source message across repeated follow-ups', 
   } };
   const begin = source.indexOf('        const { data: snapshot, error: snapshotError }');
   const end = source.indexOf('      } else {\n        evidence = await gather', begin);
-  const ctx = createContext({ db, body: { sessionId: 's' }, user: { uid: 'u' }, Set });
+  const ctx = createContext({ z, db, body: { sessionId: 's' }, user: { uid: 'u' }, Set });
+  runInContext(transpile(source.slice(source.indexOf('function sourceClock'), source.indexOf('// Keeps the most recent'))), ctx);
   runInContext(transpile('async function inspect(){let evidence;'+source.slice(begin, end)+'return evidence;}'), ctx);
   const evidence = await ctx.inspect();
   expect(evidence).toHaveLength(8);

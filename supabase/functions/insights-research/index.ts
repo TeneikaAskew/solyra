@@ -24,6 +24,7 @@ type Evidence = {
   label: string;
   path: string;
   asOf: string | null;
+  available: boolean;
   freshness: 'current' | 'stale' | 'unavailable';
   excerpt: string | null;
   payload: unknown;
@@ -83,18 +84,57 @@ async function digest(value: string) {
 function valueAsOf(value: unknown): string | null {
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
-  for (const key of ['as_of', 'last_updated', 'analysis_date', 'snapshot_ts', 'date', 'time']) {
+  for (const key of ['as_of', 'last_updated', 'generated_at', 'analysis_date', 'snapshot_ts', 'date', 'time']) {
     if (typeof row[key] === 'string') return row[key] as string;
   }
   return null;
 }
+function sourceClock(value: string | null): { value: string | null; kind: 'date' | 'instant' | 'unknown' } {
+  if (value && z.string().date().safeParse(value).success) return { value, kind: 'date' };
+  if (value && z.string().datetime({ offset: true }).safeParse(value.replace(' ', 'T')).success) return { value, kind: 'instant' };
+  return { value: null, kind: 'unknown' };
+}
+function cutoffDate(cutoff: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(cutoff));
+  const part = (type: string) => parts.find(p => p.type === type)!.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
 function clipReplay(value: unknown, cutoff: string): unknown {
   if (Array.isArray(value)) return value.filter((item) => {
-    const when = valueAsOf(item);
-    return !when || new Date(when).getTime() <= new Date(cutoff).getTime();
+    const when = sourceClock(valueAsOf(item));
+    return when.kind === 'date' ? when.value! <= cutoffDate(cutoff)
+      : when.kind === 'instant' ? Date.parse(when.value!) <= Date.parse(cutoff) : true;
   }).map((item) => clipReplay(item, cutoff));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, clipReplay(v, cutoff)]));
+}
+function catalystPayload(value: Record<string, unknown>, cutoff: string | null): Record<string, unknown> {
+  const groups = value.events_by_date;
+  const range = value.date_range as Record<string, unknown> | null;
+  if (value.status !== 'ok' || typeof value.source !== 'string' || !range || typeof range !== 'object'
+    || !z.string().date().safeParse(range.from).success || !z.string().date().safeParse(range.to).success
+    || typeof value.total !== 'number' || !Number.isInteger(value.total) || value.total < 0
+    || !groups || typeof groups !== 'object' || Array.isArray(groups)) throw new Error('Invalid response: malformed events_by_date contract');
+  let count = 0;
+  const entries = Object.entries(groups as Record<string, unknown>).map(([date, rows]) => {
+    if (!z.string().date().safeParse(date).success || !Array.isArray(rows)) throw new Error('Invalid response: malformed catalyst date group');
+    for (const row of rows) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Invalid response: malformed catalyst event');
+      for (const key of ['date', 'ticker', 'source', 'catalyst_type', 'title', 'event']) {
+        if (row[key] !== undefined && row[key] !== null && typeof row[key] !== 'string') throw new Error('Invalid response: malformed catalyst event field');
+      }
+      if (row.date && row.date !== date) throw new Error('Invalid response: catalyst date conflicts with group');
+    }
+    count += rows.length;
+    return [date, rows] as const;
+  });
+  if (count !== value.total) throw new Error('Invalid response: catalyst total conflicts with groups');
+  const selected = entries.filter(([date]) => !cutoff || date <= cutoffDate(cutoff));
+  return { ...value, events_by_date: Object.fromEntries(selected), total: selected.reduce((sum, [, rows]) => sum + rows.length, 0) };
+}
+function storedSourceClock(source: { source_as_of: string | null; metadata?: { asOf?: string | null } | null }) {
+  // New rows keep the exact date/instant in JSON; legacy rows retain their recorded instant.
+  return sourceClock(source.metadata && 'asOf' in source.metadata ? source.metadata.asOf ?? null : source.source_as_of).value;
 }
 // Keeps the most recent rows of long lists so large payloads stay valid JSON instead of being cut mid-string.
 function trimLists(value: unknown, keep: number): unknown {
@@ -122,9 +162,10 @@ function summarize(payload: unknown, type: string): string {
     const names = p.cards.slice(0, 3).map((c) => str((c as Record<string, unknown>).name)).filter(Boolean);
     if (names.length) parts.push(`Playbook setups: ${names.join('; ')}.`);
   }
-  if (Array.isArray(p.events) && p.events.length) {
-    const names = p.events.slice(0, 3).map((e) => str((e as Record<string, unknown>).title) ?? str((e as Record<string, unknown>).name)).filter(Boolean);
-    if (names.length) parts.push(`Upcoming events: ${names.join('; ')}.`);
+  if (type === 'catalysts' && p.events_by_date && typeof p.events_by_date === 'object') {
+    const events = Object.values(p.events_by_date).flat() as Record<string, unknown>[];
+    const names = events.slice(0, 3).map(e => str(e.title) ?? str(e.event)).filter(Boolean);
+    parts.push(`${events.length} calendar events in the supplied window.${names.length ? ` ${names.join('; ')}.` : ''}`);
   }
   if (Array.isArray(p.signals) && p.signals.length) parts.push(`${p.signals.length} recent signals on record.`);
   const stats = p.stats && typeof p.stats === 'object' ? p.stats as Record<string, unknown> : null;
@@ -152,8 +193,9 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
         return typeof time !== 'string' || !z.string().datetime({ offset: true }).safeParse(time.replace(' ', 'T')).success;
       })) throw new Error('Replay signals unavailable: every signal needs a valid timezone-qualified timestamp to establish cutoff eligibility.');
     }
-    if (cutoff) payload = clipReplay(payload, cutoff);
-    const listKey = ({ signals: 'signals', catalysts: 'events', playbook: 'cards', price_history: 'bars' } as Record<string, string>)[type];
+    if (type === 'catalysts') payload = catalystPayload(payload as Record<string, unknown>, cutoff);
+    else if (cutoff) payload = clipReplay(payload, cutoff);
+    const listKey = ({ signals: 'signals', playbook: 'cards', price_history: 'bars' } as Record<string, string>)[type];
     if (listKey) {
       const rows = (payload as Record<string, unknown>)[listKey];
       if (!Array.isArray(rows)) throw new Error(`Invalid response: missing ${listKey} list`);
@@ -167,12 +209,13 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
     }
     if (serialized.length > 45_000) throw new Error('Response too large to use as evidence');
     const rawAsOf = valueAsOf(payload);
-    const asOf = rawAsOf && Number.isFinite(Date.parse(rawAsOf)) ? rawAsOf : null;
-    const age = asOf ? Date.now() - new Date(asOf).getTime() : null;
-    return { id: `S${index}`, type, label, path, asOf, freshness: age === null || !Number.isFinite(age) ? 'unavailable' : age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: age === null || !Number.isFinite(age) ? `Source timestamp unavailable; freshness cannot be established. ${summarize(payload, type)}` : summarize(payload, type), payload, hash: await digest(serialized) };
+    const clock = sourceClock(rawAsOf);
+    const asOf = clock.value;
+    const age = clock.kind === 'instant' ? Date.now() - Date.parse(asOf!) : null;
+    return { id: `S${index}`, type, label, path, asOf, available: true, freshness: age === null || !Number.isFinite(age) ? 'unavailable' : age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: age === null || !Number.isFinite(age) ? `Source time-of-day unavailable; freshness cannot be established. ${summarize(payload, type)}` : summarize(payload, type), payload, hash: await digest(serialized) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unavailable';
-    return { id: `S${index}`, type, label, path, asOf: null, freshness: 'unavailable', excerpt: reason, payload: null, hash: await digest(reason) };
+    return { id: `S${index}`, type, label, path, asOf: null, available: false, freshness: 'unavailable', excerpt: reason, payload: null, hash: await digest(reason) };
   }
 }
 async function gather(ticker: string, auth: string, mode: 'live' | 'replay', cutoff: string | null) {
@@ -209,12 +252,12 @@ async function gather(ticker: string, auth: string, mode: 'live' | 'replay', cut
     .sort((a, b) => String(b.time).localeCompare(String(a.time)));
   const idx = evidence.length + 1;
   if (mode === 'replay') {
-    evidence.push({ id: `S${idx}`, type: 'similar_setups', label: 'Similar historical setups (win rates)', path: `/api/signals/${ticker}/similar`, asOf: null, freshness: 'unavailable', excerpt: 'Withheld in Replay: this source has no point-in-time aggregate contract.', payload: null, hash: await digest('replay-unbounded-similarity') });
+    evidence.push({ id: `S${idx}`, type: 'similar_setups', label: 'Similar historical setups (win rates)', path: `/api/signals/${ticker}/similar`, asOf: null, available: false, freshness: 'unavailable', excerpt: 'Withheld in Replay: this source has no point-in-time aggregate contract.', payload: null, hash: await digest('replay-unbounded-similarity') });
   } else if (rows[0]) {
     const qs = new URLSearchParams({ direction: String(rows[0].direction), rsi: String(rows[0].rsi), score: String(rows[0].score), rsi_band: '5', limit: '10' });
     evidence.push(await getEvidence(`/api/signals/${ticker}/similar?${qs}`, 'Similar historical setups (win rates)', 'similar_setups', auth, cutoff, idx));
   } else {
-    evidence.push({ id: `S${idx}`, type: 'similar_setups', label: 'Similar historical setups (win rates)', path: `/api/signals/${ticker}/similar`, asOf: null, freshness: 'unavailable', excerpt: 'No recent signal with direction, RSI and score to match against.', payload: null, hash: await digest('no-signal') });
+    evidence.push({ id: `S${idx}`, type: 'similar_setups', label: 'Similar historical setups (win rates)', path: `/api/signals/${ticker}/similar`, asOf: null, available: false, freshness: 'unavailable', excerpt: 'No recent signal with direction, RSI and score to match against.', payload: null, hash: await digest('no-signal') });
   }
   return evidence;
 }
@@ -282,7 +325,7 @@ Deno.serve(async (req) => {
     if (!session) return json({ error: 'Research session not found.' }, 404);
     const [{ data: messages }, { data: sources }] = await Promise.all([
       db.from('insight_research_messages').select('*').eq('session_id', session.id).eq('owner_uid', user.uid).order('created_at'),
-      db.from('insight_research_sources').select('message_id,citation_id,source_type,source_label,source_url,source_as_of,freshness,excerpt').eq('session_id', session.id).eq('owner_uid', user.uid).order('created_at'),
+      db.from('insight_research_sources').select('message_id,citation_id,source_type,source_label,source_url,source_as_of,freshness,excerpt,available:metadata->available,asOf:metadata->>asOf').eq('session_id', session.id).eq('owner_uid', user.uid).order('created_at'),
     ]);
     return json({ session, messages: messages ?? [], sources: sources ?? [] });
   }
@@ -336,7 +379,8 @@ Deno.serve(async (req) => {
           type: source.source_type,
           label: source.source_label,
           path: source.source_url,
-          asOf: source.source_as_of,
+          asOf: storedSourceClock(source),
+          available: (source.metadata as { payload?: unknown } | null)?.payload != null,
           freshness: source.freshness as Evidence['freshness'],
           excerpt: source.excerpt,
           payload: (source.metadata as { payload?: unknown } | null)?.payload ?? null,
@@ -347,7 +391,7 @@ Deno.serve(async (req) => {
       } else {
         evidence = await gather(body.ticker, user.authorization, body.mode, body.replayCutoff);
       }
-      await db.from('insight_research_sources').insert(evidence.map((source) => ({ session_id: sessionId, message_id: messageId, owner_uid: user.uid, citation_id: source.id, source_type: source.type, source_label: source.label, source_url: source.path, source_as_of: source.asOf, freshness: source.freshness, excerpt: source.excerpt, payload_hash: source.hash, metadata: { available: source.payload !== null, payload: source.payload } })));
+      await db.from('insight_research_sources').insert(evidence.map((source) => ({ session_id: sessionId, message_id: messageId, owner_uid: user.uid, citation_id: source.id, source_type: source.type, source_label: source.label, source_url: source.path, source_as_of: sourceClock(source.asOf).kind === 'instant' ? source.asOf : null, freshness: source.freshness, excerpt: source.excerpt, payload_hash: source.hash, metadata: { available: source.available, asOf: source.asOf, payload: source.payload } })));
       await emit({ type: 'sources', sources: evidence.map(({ payload: _payload, hash: _hash, ...source }) => source) });
       await db.from('insight_research_messages').update({ run_state: 'synthesizing' }).eq('id', messageId).eq('owner_uid', user.uid);
       if (runId) await db.from('insight_research_runs').update({ status: 'synthesizing', evidence_count: evidence.length }).eq('id', runId).eq('owner_uid', user.uid);

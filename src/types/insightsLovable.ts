@@ -11,6 +11,8 @@ export interface ResearchSource {
   path?: string;
   source_url?: string;
   asOf?: string | null;
+  /** Missing on legacy snapshots; never infer reachability from freshness alone. */
+  available?: boolean | null;
   source_as_of?: string | null;
   freshness: 'current' | 'stale' | 'unavailable';
   excerpt: string | null;

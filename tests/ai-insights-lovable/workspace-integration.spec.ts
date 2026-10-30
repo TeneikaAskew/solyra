@@ -118,7 +118,7 @@ async function savedResearch(page: Page, mode: 'live' | 'replay' = 'live') {
       messages: [{ id: messageId, session_id: sessionId, question, answer: { ...answer, followUps: ['What would change this conclusion?'] }, run_state: 'completed', error_code: null, error_message: null, created_at: session.updated_at }],
       sources: [
         { message_id: messageId, citation_id: 'S1', source_type: 'catalysts', source_label: 'Catalyst calendar', source_url: '/api/catalysts/events', source_as_of: session.created_at, freshness: 'stale', excerpt: 'CPI release' },
-        { message_id: messageId, citation_id: 'S2', source_type: 'options', source_label: 'Options positioning', source_as_of: null, freshness: 'unavailable', excerpt: 'Provider unavailable' },
+        { message_id: messageId, citation_id: 'S2', source_type: 'options', source_label: 'Options positioning', source_as_of: null, available: false, freshness: 'unavailable', excerpt: 'Provider unavailable' },
       ],
     }));
     return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Research provider unavailable' }) });
@@ -134,7 +134,7 @@ test('saved research shows stale and unavailable evidence explicitly', async ({ 
   await savedResearch(page);
   const notice = page.getByRole('article', { name: 'Research answer' }).getByRole('note');
   await expect(notice).toContainText('Older than a week: Catalyst calendar');
-  await expect(notice).toContainText('Could not reach: Options positioning');
+  await expect(notice).toContainText('Evidence unavailable: Options positioning');
   await expect(notice).toContainText('This answer may be incomplete');
   await page.screenshot({ path: testInfo.outputPath('stale-partial-saved-answer.png') });
 });

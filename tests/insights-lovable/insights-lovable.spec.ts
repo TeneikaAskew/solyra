@@ -94,3 +94,49 @@ test('replay mode requires and preserves a cutoff with no mobile overflow', asyn
   expect(await page.locator('body').evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('mobile-replay.png') });
 });
+
+for (const timezoneId of ['America/New_York', 'Asia/Tokyo']) {
+  test.describe(`source integrity in ${timezoneId}`, () => {
+    test.use({ timezoneId });
+    test('calendar dates and source availability survive streamed answer and saved restoration', async ({ page }, testInfo) => {
+      let releaseRead!: () => void;
+      const readReady = new Promise<void>(resolve => { releaseRead = resolve; });
+      const messageId = '22222222-2222-4222-8222-222222222222';
+      const sources = [
+        { id: 'S1', type: 'market_brief', label: 'Calendar brief', asOf: '2026-10-29', available: true, freshness: 'unavailable', excerpt: 'Prior-close brief; intraday freshness unknown.' },
+        { id: 'S2', type: 'signals', label: 'Signals', asOf: null, available: true, freshness: 'unavailable', excerpt: 'Signal data available; time-of-day unavailable.' },
+        { id: 'S3', type: 'catalysts', label: 'Catalysts', asOf: null, available: false, freshness: 'unavailable', excerpt: 'Solyra API returned 503' },
+      ];
+      await page.route('**/functions/v1/insights-research', async route => {
+        const body = route.request().postDataJSON();
+        if (body.action === 'list') return route.fulfill(M.ok({ sessions: [] }));
+        if (body.action === 'read') {
+          await readReady;
+          return route.fulfill(M.ok({
+            session: { id: body.sessionId, ticker: 'IWM', mode: 'live', replay_cutoff: null, title: 'Check dated source evidence', created_at: '2026-10-30T00:01:00Z', updated_at: '2026-10-30T00:01:00Z' },
+            messages: [{ id: messageId, question: 'Check dated source evidence', answer, run_state: 'completed' }],
+            sources: sources.map(s => ({ message_id: messageId, citation_id: s.id, source_type: s.type, source_label: s.label, source_as_of: null, asOf: s.asOf, available: s.available, freshness: s.freshness, excerpt: s.excerpt })),
+          }));
+        }
+        const events = [{ type: 'sources', sources }, { type: 'done', sessionId: '11111111-1111-4111-8111-111111111111', messageId, answer }];
+        return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: events.map(e => JSON.stringify(e)).join('\n') + '\n' });
+      });
+      await page.goto('/insights-lovable');
+      await page.getByPlaceholder(/Ask about IWM/).fill('Check dated source evidence');
+      await page.getByRole('button', { name: 'Research', exact: true }).click();
+      const evidence = page.locator('#evidence-S1').filter({ visible: true });
+      await expect(evidence).toContainText('Oct 29, 2026');
+      await expect(evidence).toContainText('calendar date; time unavailable');
+      await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Freshness unknown: Calendar brief, Signals');
+      await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Evidence unavailable: Catalysts');
+      await expect(page.getByText('Could not reach:', { exact: false })).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath('streamed-date-and-availability.png') });
+      releaseRead();
+      await expect(page.getByRole('button', { name: 'Start new research', exact: true })).toBeVisible();
+      await expect(evidence).toContainText('Oct 29, 2026');
+      await expect(evidence).not.toContainText('Oct 28');
+      await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Freshness unknown: Calendar brief, Signals');
+      await page.screenshot({ path: testInfo.outputPath('restored-date-and-availability.png') });
+    });
+  });
+}
