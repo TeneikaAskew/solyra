@@ -96,7 +96,9 @@ test.describe('Mock mode ON (preference seeded)', () => {
     await expect(toggle).toBeVisible();
     await expect(toggle).toContainText('ON');
 
+    const exitedWorldLoaded = page.waitForEvent('load');
     await toggle.click(); // persists 'off' + reloads
+    await exitedWorldLoaded;
     await expect(page.getByTestId('mock-mode-banner')).not.toBeVisible();
     const pref = await page.evaluate((k) => window.localStorage.getItem(k), PREF_KEY);
     expect(pref).toBe('off');
@@ -105,7 +107,9 @@ test.describe('Mock mode ON (preference seeded)', () => {
   test('the banner Exit button leaves the mode even without the menu', async ({ page }) => {
     await mockPostExitWorld(page);
     await page.goto('/dashboard');
+    const exitedWorldLoaded = page.waitForEvent('load');
     await page.getByTestId('mock-mode-exit').click();
+    await exitedWorldLoaded;
     await expect(page.getByTestId('mock-mode-banner')).not.toBeVisible();
     const pref = await page.evaluate((k) => window.localStorage.getItem(k), PREF_KEY);
     expect(pref).toBe('off');
@@ -151,8 +155,11 @@ test.describe('Mock mode OFF (real world, mocked via page.route)', () => {
       }),
     );
 
+    let loadedDocuments = 0;
+    const mockedWorldLoaded = page.waitForEvent('load', { predicate: () => ++loadedDocuments === 2 });
     await page.goto('/dashboard');
     // AppShell's effect sets the preference and reloads into the mode.
+    await mockedWorldLoaded;
     await expect(page.getByTestId('mock-mode-banner')).toBeVisible();
     const pref = await page.evaluate((k) => window.localStorage.getItem(k), PREF_KEY);
     expect(pref).toBe('on');

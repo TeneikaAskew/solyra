@@ -15,7 +15,9 @@ test.beforeEach(async ({ page }) => {
 
 test('leads with the decision bar, chart and context rail', async ({ page }, testInfo) => {
   await mockInsightsApi(page, { history: MOCK_INSIGHT_HISTORY });
+  const reportReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/insights/report/IWM' && response.status() === 200);
   await page.goto('/ai-insights-lovable');
+  await reportReady;
   const decision = page.getByRole('region', { name: 'Decision' });
   await expect(decision).toBeVisible();
   await expect(decision.getByText('Reward : risk')).toBeVisible();
@@ -66,7 +68,9 @@ test('empty state offers one generate action', async ({ page }, testInfo) => {
 test('mobile layout has no horizontal overflow', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockInsightsApi(page);
+  const reportReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/insights/report/IWM' && response.status() === 200);
   await page.goto('/ai-insights-lovable');
+  await reportReady;
   await expect(page.getByRole('region', { name: 'Decision' })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
@@ -78,7 +82,9 @@ for (const width of [390, 411, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await mockInsightsApi(page, { history: MOCK_INSIGHT_HISTORY });
     await page.route('**/functions/v1/insights-research', r => r.fulfill(M.ok({ sessions: [] })));
+    const reportReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/insights/report/IWM' && response.status() === 200);
     await page.goto('/ai-insights-lovable');
+    await reportReady;
     await expect(page.getByRole('region', { name: 'Decision' })).toBeVisible();
     for (const name of ['Briefing', 'Agents', 'History', 'Watchlist', 'Chat']) {
       await page.getByRole('tab', { name: new RegExp(`^${name}`) }).click();

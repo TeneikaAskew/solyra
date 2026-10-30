@@ -28,7 +28,9 @@ for (const path of ['History', 'Previous questions'] as const) {
       await page.route('**/api/market/dates/*', r => r.fulfill(M.ok({ ticker: 'IWM', dates: [fixture.date], months: [fixture.date.slice(0, 6)], source: 'fixture' })));
       await page.route('**/api/market/data/*/*', r => { charts.push(r.request().url()); return r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), MOCK_MARKET_DATA))); });
       await page.route('**/functions/v1/insights-research', r => r.fulfill(M.ok(r.request().postDataJSON().action === 'list' ? { sessions: [saved] } : { session: saved, messages: [{ id: 'm', question: saved.title, answer, run_state: 'completed' }], sources: [] })));
+      const reportReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/insights/report/IWM' && response.status() === 200);
       await page.goto('/ai-insights-lovable');
+      await reportReady;
       await expect(page.getByRole('region', { name: 'Decision' })).toBeVisible();
       if (path === 'History') {
         await page.getByRole('tab', { name: /^History/ }).click();

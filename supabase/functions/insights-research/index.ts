@@ -26,6 +26,8 @@ type Evidence = {
   asOf: string | null;
   available: boolean;
   freshness: 'current' | 'stale' | 'unavailable';
+  clock?: { field: string | null; kind: string } | null;
+  freshnessReason?: string | null;
   excerpt: string | null;
   payload: unknown;
   hash: string;
@@ -93,6 +95,15 @@ function sourceClock(value: string | null): { value: string | null; kind: 'date'
   if (value && z.string().date().safeParse(value).success) return { value, kind: 'date' };
   if (value && z.string().datetime({ offset: true }).safeParse(value.replace(' ', 'T')).success) return { value, kind: 'instant' };
   return { value: null, kind: 'unknown' };
+}
+function sourceClockMeaning(value: unknown, type: string): { field: string | null; kind: string } {
+  const row = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const field = ['as_of', 'last_updated', 'generated_at', 'analysis_date', 'snapshot_ts', 'date', 'time'].find(key => typeof row[key] === 'string') ?? null;
+  const precision = sourceClock(field ? row[field] as string : null).kind;
+  if (precision === 'unknown') return { field, kind: 'unknown' };
+  if (precision === 'date') return { field, kind: type === 'live_quote' && field === 'last_updated' ? 'trading_date' : 'calendar_date' };
+  const kinds: Record<string, string> = { generated_at: 'generation', last_updated: 'source_update', snapshot_ts: 'snapshot', as_of: 'as_of', time: 'source_time' };
+  return { field, kind: field ? kinds[field] ?? 'as_of' : 'unknown' };
 }
 function cutoffDate(cutoff: string): string {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(cutoff));
@@ -216,7 +227,13 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
     const clock = sourceClock(rawAsOf);
     const asOf = clock.value;
     const age = clock.kind === 'instant' ? Date.now() - Date.parse(asOf!) : null;
-    return { id: `S${index}`, type, label, path, asOf, available: true, freshness: age === null || !Number.isFinite(age) ? 'unavailable' : age > 7 * 86_400_000 ? 'stale' : 'current', excerpt: age === null || !Number.isFinite(age) ? `Source time-of-day unavailable; freshness cannot be established. ${summarize(payload, type)}` : summarize(payload, type), payload, hash: await digest(serialized) };
+    const future = age !== null && Number.isFinite(age) && age < 0;
+    const unknown = age === null || !Number.isFinite(age) || future;
+    // Keep the storage-compatible seven-day age bucket. It is not a source SLA,
+    // market-session qualification, or evidence of current provider observation.
+    const freshnessReason = future ? 'future_source_timestamp' : unknown ? 'source_instant_unknown' : 'source_age_only';
+    const warning = future ? 'Source timestamp is in the future; freshness cannot be established. ' : unknown ? 'Source time-of-day unavailable; freshness cannot be established. ' : '';
+    return { id: `S${index}`, type, label, path, asOf, available: true, clock: sourceClockMeaning(payload, type), freshnessReason, freshness: unknown ? 'unavailable' : age! > 7 * 86_400_000 ? 'stale' : 'current', excerpt: `${warning}${summarize(payload, type)}`, payload, hash: await digest(serialized) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unavailable';
     return { id: `S${index}`, type, label, path, asOf: null, available: false, freshness: 'unavailable', excerpt: reason, payload: null, hash: await digest(reason) };
@@ -329,7 +346,7 @@ Deno.serve(async (req) => {
     if (!session) return json({ error: 'Research session not found.' }, 404);
     const [{ data: messages }, { data: sources }] = await Promise.all([
       db.from('insight_research_messages').select('*').eq('session_id', session.id).eq('owner_uid', user.uid).order('created_at'),
-      db.from('insight_research_sources').select('message_id,citation_id,source_type,source_label,source_url,source_as_of,freshness,excerpt,available:metadata->available,asOf:metadata->>asOf').eq('session_id', session.id).eq('owner_uid', user.uid).order('created_at'),
+      db.from('insight_research_sources').select('message_id,citation_id,source_type,source_label,source_url,source_as_of,freshness,excerpt,available:metadata->available,asOf:metadata->>asOf,clock:metadata->clock,freshnessReason:metadata->>freshnessReason').eq('session_id', session.id).eq('owner_uid', user.uid).order('created_at'),
     ]);
     return json({ session, messages: messages ?? [], sources: sources ?? [] });
   }
@@ -384,6 +401,8 @@ Deno.serve(async (req) => {
           label: source.source_label,
           path: source.source_url,
           asOf: storedSourceClock(source),
+          clock: source.metadata?.clock ?? null,
+          freshnessReason: source.metadata?.freshnessReason ?? null,
           available: (source.metadata as { payload?: unknown } | null)?.payload != null,
           freshness: source.freshness as Evidence['freshness'],
           excerpt: source.excerpt,
@@ -395,7 +414,7 @@ Deno.serve(async (req) => {
       } else {
         evidence = await gather(body.ticker, user.authorization, body.mode, body.replayCutoff);
       }
-      await db.from('insight_research_sources').insert(evidence.map((source) => ({ session_id: sessionId, message_id: messageId, owner_uid: user.uid, citation_id: source.id, source_type: source.type, source_label: source.label, source_url: source.path, source_as_of: sourceClock(source.asOf).kind === 'instant' ? source.asOf : null, freshness: source.freshness, excerpt: source.excerpt, payload_hash: source.hash, metadata: { available: source.available, asOf: source.asOf, payload: source.payload } })));
+      await db.from('insight_research_sources').insert(evidence.map((source) => ({ session_id: sessionId, message_id: messageId, owner_uid: user.uid, citation_id: source.id, source_type: source.type, source_label: source.label, source_url: source.path, source_as_of: sourceClock(source.asOf).kind === 'instant' ? source.asOf : null, freshness: source.freshness, excerpt: source.excerpt, payload_hash: source.hash, metadata: { available: source.available, asOf: source.asOf, clock: source.clock ?? null, freshnessReason: source.freshnessReason ?? null, payload: source.payload } })));
       await emit({ type: 'sources', sources: evidence.map(({ payload: _payload, hash: _hash, ...source }) => source) });
       await db.from('insight_research_messages').update({ run_state: 'synthesizing' }).eq('id', messageId).eq('owner_uid', user.uid);
       if (runId) await db.from('insight_research_runs').update({ status: 'synthesizing', evidence_count: evidence.length }).eq('id', runId).eq('owner_uid', user.uid);
@@ -403,7 +422,7 @@ Deno.serve(async (req) => {
       const prior = await db.from('insight_research_messages').select('question,answer').eq('session_id', sessionId).eq('owner_uid', user.uid).eq('run_state', 'completed').order('created_at').limit(8);
       const availableCitationIds = evidence.filter((source) => source.payload !== null).map((source) => source.id);
       const unavailableCitationIds = evidence.filter((source) => source.payload === null).map((source) => source.id);
-      const input = [{ role: 'system', content: [{ type: 'input_text', text: 'You are Solyra Research. Answer only from the supplied evidence. Distinguish sourced facts from interpretation. Never invent a price, metric, event, timestamp, or citation. Use citations only from availableCitationIds; unavailableCitationIds must never appear in a citation array. Put missing evidence in unknowns instead. When evidence is missing, stale, or contradictory, say so. If a live_quote source is available, treat its price and prev_close as the authoritative current price and prior close; label any other price figures as snapshot values from their source. Keep answer to at most 3 short sentences. verdict is one plain-English line under 15 words. keyLevels lists up to 5 sourced prices or levels (support, resistance, last price, targets) with short value strings. followUps lists 3 short next questions a trader would ask. Keep facts to at most 5 and bull/bear cases to 2 sentences each. This is research, not financial advice.' }] }, { role: 'user', content: [{ type: 'input_text', text: JSON.stringify({ ticker: body.ticker, mode: body.mode, replayCutoff: body.replayCutoff, question: body.question, priorTurns: prior.data ?? [], availableCitationIds, unavailableCitationIds, evidence }) }] }];
+      const input = [{ role: 'system', content: [{ type: 'input_text', text: 'You are Solyra Research. Answer only from the supplied evidence. Distinguish sourced facts from interpretation. Never invent a price, metric, event, timestamp, or citation. Use citations only from availableCitationIds; unavailableCitationIds must never appear in a citation array. Put missing evidence in unknowns instead. When evidence is missing, stale, or contradictory, say so. An available live_quote supplies a reported reference price and prior close, not proof of an intraday-current observation. Label other price figures as snapshot values from their source. Calendar dates, generation times, source update times, and retrieval times are distinct; never substitute one for another. The legacy current freshness bucket is an age classification recorded when evidence was captured, not verified live freshness. Frozen follow-ups retain that original classification; do not interpret it as freshness at the new question time. Catalyst timeline entries are selected highlights, not complete calendar coverage; a calendar date does not establish release time, publication status or an actual result. Keep answer to at most 3 short sentences. verdict is one plain-English line under 15 words. keyLevels lists up to 5 sourced prices or levels (support, resistance, last price, targets) with short value strings. followUps lists 3 short next questions a trader would ask. Keep facts to at most 5 and bull/bear cases to 2 sentences each. This is research, not financial advice.' }] }, { role: 'user', content: [{ type: 'input_text', text: JSON.stringify({ ticker: body.ticker, mode: body.mode, replayCutoff: body.replayCutoff, question: body.question, priorTurns: prior.data ?? [], availableCitationIds, unavailableCitationIds, evidence }) }] }];
       const ai = await fetch(GATEWAY, { method: 'POST', signal: req.signal, headers: { 'Content-Type': 'application/json', 'Lovable-API-Key': apiKey, 'X-Lovable-AIG-SDK': 'fetch' }, body: JSON.stringify({ model: MODEL, input, stream: true, store: false, reasoning: { effort: 'medium', summary: 'auto' }, include: ['reasoning.encrypted_content'], text: { format: { type: 'json_schema', name: 'research_answer', strict: true, schema: researchAnswerSchema(availableCitationIds) } } }) });
       const gatewayRunId = ai.headers.get('X-Lovable-AIG-Run-ID');
       if (!ai.ok) { const raw = await ai.text(); throw Object.assign(new Error(safeMessage(ai.status, raw)), { status: ai.status }); }
