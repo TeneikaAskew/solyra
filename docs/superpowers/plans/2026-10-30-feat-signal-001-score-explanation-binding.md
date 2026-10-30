@@ -2,7 +2,7 @@
 feat_id: FEAT-SIGNAL-001
 spec: docs/superpowers/specs/2026-10-27-feat-signal-001-score-explanation-binding.md
 branch: feature/feat-signal-001-score-explanation-binding
-pr: null
+pr: 307
 status: ready
 ---
 
