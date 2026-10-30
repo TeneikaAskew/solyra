@@ -1,6 +1,6 @@
 import { DataGate } from '@/components/shared/SignInEmptyState';
 import { errorMessage } from '@/components/shared/WidgetState';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { todayET, snapshotAgeLabel } from '@/lib/dates';
 import { responseErrorMessage } from '@/lib/format';
@@ -12,6 +12,8 @@ import { useLiveHistory, useAvgVolume } from '@/hooks/useLiveHistory';
 import { useLiveIndicators } from '@/hooks/useLiveIndicators';
 import {
   buildSnapshot,
+  qualifiedOpening,
+  OPENING_MAX_AGE_MS,
   type MarketSnapshot,
   type EvalResult,
 } from '@/lib/playbookEvaluator';
@@ -265,10 +267,35 @@ export default function PlaybookPage() {
   const { activeTicker } = useTickerStore();
 
   const { data, isLoading, isError, error } = usePlaybook(activeTicker);
-  const { data: status } = useLiveStatus();
+  const statusQuery = useLiveStatus();
+  const status = statusQuery.data;
+  const isOpeningMarketOpen = !statusQuery.isError && status?.is_open === true && status.session === 'regular';
   const isMarketOpenish = !!status?.is_open || status?.session === 'pre-market' || status?.session === 'after-hours';
 
-  const { data: history } = useLiveHistory(activeTicker, isMarketOpenish);
+  // Ordinary compact bars remain the inputs to unrelated indicators and conditions.
+  const historyQuery = useLiveHistory(activeTicker, isMarketOpenish);
+  const openingQuery = useLiveHistory(activeTicker, isMarketOpenish, true);
+  const openingHistory = dataUnlessError(openingQuery.data, openingQuery.isError);
+  const [openingClock, advanceOpeningClock] = useState(0);
+  // A retained query object cannot stop the freshness clock. One local timer
+  // invalidates the projection at the first millisecond beyond its allowance;
+  // focus/visibility also recheck after background timer throttling. No fetch.
+  useEffect(() => {
+    if (!isOpeningMarketOpen) return;
+    const projection = qualifiedOpening(openingHistory?.opening, activeTicker);
+    if (!projection) return;
+    const recheck = () => advanceOpeningClock(value => value + 1);
+    const expiresAt = Date.parse(projection.comparison_as_of!) + OPENING_MAX_AGE_MS + 1;
+    const timer = window.setTimeout(recheck, Math.max(0, Math.min(OPENING_MAX_AGE_MS + 1, expiresAt - Date.now())));
+    window.addEventListener('focus', recheck);
+    document.addEventListener('visibilitychange', recheck);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('focus', recheck);
+      document.removeEventListener('visibilitychange', recheck);
+    };
+  }, [openingHistory?.opening, activeTicker, isOpeningMarketOpen]);
+  const history = dataUnlessError(historyQuery.data, historyQuery.isError);
   const { data: quote } = useLiveQuote(activeTicker, isMarketOpenish);
   const { data: avgVol } = useAvgVolume(activeTicker);
   const { data: reference } = useReference(activeTicker);
@@ -287,12 +314,14 @@ export default function PlaybookPage() {
     () =>
       buildSnapshot({
         bars: history?.bars,
+        ticker: activeTicker,
+        opening: isOpeningMarketOpen ? openingHistory?.opening : null,
         quote,
         avgVolume20d: avgVol?.avg_volume_20d ?? null,
         reference: reference ?? undefined,
         indicators: indicatorsQuery.data?.indicators,
       }),
-    [history, quote, avgVol, reference, indicatorsQuery.data],
+    [history, openingHistory, isOpeningMarketOpen, openingClock, quote, avgVol, reference, indicatorsQuery.data, activeTicker],
   );
 
   // A refused refetch (stale-cards 503) leaves the last good payload cached
@@ -334,6 +363,11 @@ export default function PlaybookPage() {
         )}
       </div>
 
+      <p className="text-xs text-[var(--color-text-muted)]" data-testid="orb-status">
+        {openingQuery.isError ? 'Opening range unavailable: request failed' : snapshot?.orbOpening
+          ? `30-minute opening range · comparison as of ${snapshot.orbOpening.comparison_as_of}`
+          : `Opening range unavailable: ${openingHistory?.opening?.reason ?? (openingQuery.isLoading ? 'loading' : 'not qualified')}`}
+      </p>
       <DataGate>
       {isError && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]">

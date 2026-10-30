@@ -174,6 +174,10 @@ test.describe('Playbook', () => {
       r.fulfill(M.ok({ is_open: true, session: 'regular', next_open: null, current_time_et: '13:29:00' })),
     );
     await page.route('**/api/live/history/IWM', (r) => r.fulfill(M.ok(MOCK_LIVE_HISTORY)));
+    await page.route('**/api/live/history/IWM?include_opening=true', (r) => r.fulfill(M.ok({
+      ticker: 'IWM', interval: '1min', count: 0, bars: [],
+      opening: { status: 'unavailable', ticker: 'IWM', reason: 'fixture_unavailable', fetched_at: '2026-10-29T15:00:00Z' },
+    })));
     await page.route('**/api/live/quote/IWM', (r) => r.fulfill(M.ok(MOCK_LIVE_QUOTE)));
     await page.route('**/api/market/reference/IWM/*', (r) => r.fulfill(M.ok(MOCK_REFERENCE_LEVELS)));
     await page.route('**/api/live/indicators', (r) => r.fulfill(M.ok(MOCK_LIVE_INDICATORS)));
