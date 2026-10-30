@@ -2,7 +2,7 @@
 feat_id: FEAT-OPTION-001
 spec: docs/superpowers/specs/2026-10-30-feat-option-001-production-field-truth.md
 branch: fix/feat-option-001-production-field-truth
-pr: null
+pr: 304
 status: ready
 ---
 
@@ -27,7 +27,7 @@ Spec: Design and scope; advances done_when[1]. Port the Profiles conditional cha
 Spec: Validation and capacity; advances done_when[3]. Reconcile own FEAT-OPTION catalog status/date/PR after draft creation. Correct directly affected current-behavior claims in docs/options_flow_data_contract.md and docs/UI-SCREENS.md while preserving dated historical findings. Existing provenance: #87 and #93. Run current-main comparisons, affected and required CI/hermetic browser checks, full docs audit and spec gate; include screenshots and exact patch identities. Reserve complete spec/runtime independent hosted CODE with current SEC within the new original-change ledger; no additional local judgment cohort required by this plan. Root alone publishes with normal non-force updates. Source merge and verified website publication are separate receipts. After merge, mark plan done through the normal docs closure.
 
 - [x] Current MAIN source contract and TypeScript/build pass.
-- [ ] Complete final docs/gate/readiness metadata with actual runtime PR identity.
+- [x] Complete final docs/gate/readiness metadata with actual runtime PR identity #304.
 - [ ] Root reserves and completes final current-head CODE/security/checks before normal merge.
 - [ ] Owner verifies actual published source and live UI after release.
 
