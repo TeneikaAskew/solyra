@@ -568,7 +568,7 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
       )}
 
       {/* Heatmap */}
-      {focusedGex.length > 0 && finalSpot > 0 && (
+      {metric === 'gex' && focusedGex.length > 0 && finalSpot > 0 && (
         <div className="rounded-xl bg-[var(--surface-2)] p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs text-[var(--color-text-muted)]">
@@ -587,6 +587,13 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
             nodes={nodes}
             atmTolerance={greeks.config.atm_tolerance}
           />
+        </div>
+      )}
+
+      {metric === 'vex' && availableGreeks && finalSpot > 0 && (
+        <div role="status" className="rounded-xl bg-[var(--surface-2)] p-3">
+          <h3>Per-strike VEX unavailable</h3>
+          <p>The current chain analytics provide a VEX total, but no per-strike VEX profile.</p>
         </div>
       )}
 
