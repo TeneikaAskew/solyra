@@ -4,6 +4,7 @@ import { PriceAreaChart, type PricePoint } from '@/components/charts/PriceAreaCh
 import { useLiveQuote } from '@/hooks/useLiveQuote';
 import { useLiveHistory } from '@/hooks/useLiveHistory';
 import { fmtCompact, fmtPct, fmtPrice, fmtSignedMoney } from '@/lib/format';
+import { isoToEtDisplay } from '@/lib/time';
 
 function sessionPill(session?: string, open?: boolean) {
   if (open) return <Pill tone="bull">Market open</Pill>;
@@ -29,7 +30,7 @@ export function LiveQuoteBox({ ticker }: { ticker: string }) {
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
         {[['Prior close', fmtPrice(q.prev_close)], ['Open', fmtPrice(q.open)], ['Range', `${fmtPrice(q.low)} – ${fmtPrice(q.high)}`], ['Volume', fmtCompact(q.volume)]].map(([k, v]) => <div key={k}><dt className="text-[var(--on-surface-muted)]">{k}</dt><dd className="font-semibold tabular-nums text-[var(--on-surface)]">{v}</dd></div>)}
       </dl>
-      <p className="mt-2 text-[10px] text-[var(--on-surface-muted)]">As of {q.last_updated ? new Date(q.last_updated).toLocaleString() : '—'} · Use this as the reference price; evidence snapshots may be older.</p>
+      <p className="mt-2 text-[10px] text-[var(--on-surface-muted)]">As of {q.last_updated ? isoToEtDisplay(q.last_updated) : '—'} · Use this as the reference price; evidence snapshots may be older.</p>
     </section>
   );
 }
