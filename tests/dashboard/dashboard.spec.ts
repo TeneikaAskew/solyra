@@ -28,7 +28,9 @@ for (const scenario of INVALID_SCORE_CLOCK_SCENARIOS) {
   test('dashboard malformed score clock: ' + scenario.name, async ({ page }, testInfo) => {
     await mockDashboard(page); await mockDashboardCards(page);
     await page.route('**/api/signals/IWM*', r => r.fulfill(M.ok({ ticker: 'IWM', count: 1, returned: 1, source: 'cloud_sql', signals: [scenario.row] })));
+    const ready = page.waitForResponse(r => new URL(r.url()).pathname === '/api/signals/IWM' && r.status() === 200);
     await page.goto('/dashboard');
+    await ready;
     const score = page.getByTestId('score-explanation');
     await expect(score.getByTestId('signal-strength')).toHaveText('6');
     await expect(score).toContainText('Breakdown unavailable');
