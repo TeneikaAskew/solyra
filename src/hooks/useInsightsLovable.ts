@@ -26,7 +26,7 @@ async function request(body: unknown, signal?: AbortSignal): Promise<Response> {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      apikey: publishableKey(),
     },
     body: JSON.stringify(body),
   });
