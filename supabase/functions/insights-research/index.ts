@@ -102,6 +102,8 @@ function cutoffDate(cutoff: string): string {
 function clipReplay(value: unknown, cutoff: string): unknown {
   if (Array.isArray(value)) return value.filter((item) => {
     const when = sourceClock(valueAsOf(item));
+    const hasClock = item && typeof item === 'object' && ['as_of', 'last_updated', 'generated_at', 'analysis_date', 'snapshot_ts', 'date', 'time'].some(key => (item as Record<string, unknown>)[key] != null);
+    if (hasClock && when.kind === 'unknown') throw new Error('Replay evidence unavailable: invalid or unqualified source timestamp.');
     return when.kind === 'date' ? when.value! <= cutoffDate(cutoff)
       : when.kind === 'instant' ? Date.parse(when.value!) <= Date.parse(cutoff) : true;
   }).map((item) => clipReplay(item, cutoff));
@@ -178,20 +180,21 @@ function summarize(payload: unknown, type: string): string {
 }
 async function getEvidence(path: string, label: string, type: string, auth: string, cutoff: string | null, index: number): Promise<Evidence> {
   try {
+    if (cutoff && type === 'catalysts') throw new Error('Withheld in Replay: catalysts have no point-in-time publication/version contract.');
     const response = await fetch(`${STOCKS_API}${path}`, { headers: { Authorization: auth } });
     if (!response.ok) throw new Error(`Solyra API returned ${response.status}`);
     const raw = await response.text();
     if (!raw.trim()) throw new Error('Solyra API returned an empty response');
     let payload: unknown = JSON.parse(raw);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid response: expected a source object');
-    if (cutoff && type === 'signals') {
-      const rows = (payload as Record<string, unknown>).signals;
+    if (cutoff && (type === 'signals' || type === 'price_history')) {
+      const rows = (payload as Record<string, unknown>)[type === 'signals' ? 'signals' : 'bars'];
       if (Array.isArray(rows) && rows.some(row => {
         const time = row && typeof row === 'object' ? (row as Record<string, unknown>).time : null;
         // SQL may serialize an aware instant with a space separator. Missing,
         // naive and date-only rows do not establish an intraday boundary.
         return typeof time !== 'string' || !z.string().datetime({ offset: true }).safeParse(time.replace(' ', 'T')).success;
-      })) throw new Error('Replay signals unavailable: every signal needs a valid timezone-qualified timestamp to establish cutoff eligibility.');
+      })) throw new Error(`Replay ${type} unavailable: every row needs a valid timezone-qualified timestamp to establish cutoff eligibility.`);
     }
     if (type === 'catalysts') payload = catalystPayload(payload as Record<string, unknown>, cutoff);
     else if (cutoff) payload = clipReplay(payload, cutoff);
@@ -202,6 +205,7 @@ async function getEvidence(path: string, label: string, type: string, auth: stri
       if (rows.length === 0) throw new Error('No matching data for the requested evidence boundary');
     }
     let serialized = JSON.stringify(payload);
+    if (type === 'catalysts' && serialized.length > 45_000) throw new Error('Catalyst response too large to use as complete evidence.');
     for (const keep of [120, 60, 30, 15, 8]) {
       if (serialized.length <= 45_000) break;
       payload = trimLists(payload, keep);

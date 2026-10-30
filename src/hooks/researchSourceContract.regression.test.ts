@@ -71,10 +71,27 @@ it('CATALYST malformed groups, identities/count mismatches and non-ok states sta
   expect(await adapter(payload).getEvidence('/events','Events','catalysts','fixture',null,5)).toMatchObject({available:false,payload:null});
  }
 });
-it('CATALYST replay compares calendar groups with Eastern cutoff day without midnight coercion',async()=>{
- const payload={...catalyst,total:2,events_by_date:{...catalyst.events_by_date,'2026-10-30':[{date:'2026-10-30',title:'Later'}]}};
- const r=await adapter(payload).getEvidence('/events','Events','catalysts','fixture','2026-10-30T00:01:00Z',5);
- expect(r.payload.total).toBe(1);expect(Object.keys(r.payload.events_by_date)).toEqual(['2026-10-29']);
+it.each(['2026-10-29T12:00:00Z', '2026-10-30T12:00:00Z'])('REVIEW Replay catalysts lack publication provenance at %s',async cutoff=>{
+ const payload={...catalyst,events_by_date:{'2026-10-29':[{date:'2026-10-29',ticker:'MACRO',catalyst_type:'ECONOMIC',source:'FRED/Calendar',title:'8:30 economic release',actual:'3.0',forecast:'2.0'}]}};
+ const r=await adapter(payload).getEvidence('/events','Events','catalysts','fixture',cutoff,5);
+ expect(r).toMatchObject({available:false,payload:null});expect(r.excerpt).toContain('point-in-time');
+});
+it.each(['2026-10-30 15:59:00','2026-02-30T12:00:00Z','2026-10-29',null])('REVIEW Replay bars require qualified real instants: %s',async time=>{
+ const r=await adapter({bars:[{time,close:204}]}).getEvidence('/history','History','price_history','fixture','2026-10-29T15:30:00Z',1);
+ expect(r).toMatchObject({available:false,payload:null});expect(r.excerpt).toContain('timezone-qualified');
+});
+it('REVIEW Replay retains qualified eligible bars and rejects invalid dates in other arrays',async()=>{
+ const r=await adapter({bars:[{time:'2026-10-29T15:29:00Z',close:203},{time:'2026-10-30T15:59:00Z',close:204}]}).getEvidence('/history','History','price_history','fixture','2026-10-29T15:30:00Z',1);
+ expect(r.available).toBe(true);expect(r.payload.bars).toHaveLength(1);expect(r.payload.bars[0].close).toBe(203);
+ for(const time of ['invalid','2026-02-30',123]) {
+  const r=await adapter({events:[{time,value:1}]}).getEvidence('/brief','Brief','market_brief','fixture','2026-10-29T15:30:00Z',1);
+  expect(r).toMatchObject({available:false,payload:null});
+ }
+});
+it('REVIEW oversized grouped catalysts cannot silently lose rows or contradict total',async()=>{
+ const rows=Array.from({length:150},(_,i)=>({date:'2026-10-29',ticker:'IWM',catalyst_type:'NEWS',source:'fixture',title:'Headline '+i+' '+'x'.repeat(300)}));
+ const r=await adapter({...catalyst,total:150,events_by_date:{'2026-10-29':rows}}).getEvidence('/events','Events','catalysts','fixture',null,5);
+ expect(r).toMatchObject({available:false,payload:null});expect(r.excerpt).toContain('too large');
 });
 it('AVAILABLE unknown freshness and actual failure remain separate in saved-source UI',()=>{
  const html=panel('AnswerPanel',{sources:[{citation_id:'S4',source_label:'Signals',available:true,freshness:'unavailable'},{citation_id:'S5',source_label:'Calendar',available:false,freshness:'unavailable'}],answer:{answer:'Sources',facts:[],bullCase:'',bearCase:'',invalidation:'',unknowns:[],catalystTimeline:[],replayContext:null}});
