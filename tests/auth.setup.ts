@@ -23,10 +23,10 @@
  * with `authMode: 'open'` — which makes <AuthGate> inert and discards this
  * session entirely (Codex, solyra#44).
  *
- * `cloud` is now scoped to `*.cloud.spec.ts`, and none exist, so `e2e:cloud`
- * fails with "No tests found" instead of passing vacuously. Writing those specs
- * (no `mockCommon`, live responses, assertions that tolerate real data) is the
- * remaining work. This file is no longer the blocker; the missing suite is.
+ * `cloud` is now scoped to `*.cloud.spec.ts`. The score-explanation closeout
+ * spec covers Dashboard and Signals with real responses and no mockCommon.
+ * Its presence is not deployed acceptance: the owner must run it with an
+ * authorized saved session after deployment.
  */
 import { test as setup } from '@playwright/test';
 import * as fs from 'node:fs';

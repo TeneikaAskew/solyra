@@ -3,7 +3,7 @@
  *
  * Ported from the Claude Design prototype's `PageOverview`. Layout:
  *   1. Briefing strip — market brief + hero ticker + Top setup
- *   2. Live signals · Today's catalysts
+ *   2. Historical analytical signals · Today's catalysts
  *   3. Sector rotation · AI take · News feed
  *
  * Everything is keyed to the active ticker (the app's existing per-ticker
@@ -41,6 +41,8 @@ import { PriceAreaChart, type PricePoint } from '@/components/charts/PriceAreaCh
 import { CandlestickChart } from '@/components/charts/CandlestickChart';
 import { fmtPrice, fmtPct, fmtNum, NA, responseErrorMessage } from '@/lib/format';
 import type { Tone } from '@/components/primitives';
+import { ScoreExplanation } from '@/components/signals/ScoreExplanation';
+import type { components } from '@/types/stocksOpenApi.gen';
 
 // ── Response shapes (mirror the existing API contracts) ──────────────────────
 // DashboardBriefResponse per the schema (#56): every field is
@@ -85,10 +87,7 @@ export interface PlaybookResponse {
   max_age_days?: number | null;
   as_of?: string | null;
 }
-interface SignalEntry {
-  time: string; direction: string; score: number;
-  conditions_met: string; return_pct: number;
-}
+type SignalEntry = components['schemas']['SignalRow'];
 interface SignalsResponse {
   ticker: string; count: number; returned: number; source: string; file?: string;
   signals: SignalEntry[];
@@ -730,13 +729,13 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* ── 2. Live signals · Today's catalysts ─────────────────────────── */}
+      {/* ── 2. Historical analytical signals · Today's catalysts ────────── */}
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[1.4fr_1fr]">
-        {/* Live signals */}
+        {/* Historical analytical signals */}
         <WidgetState query={signalsQ} compact skeletonRows={4}>
         <Card interactive onClick={() => navigate('/signals')} className="min-w-0">
           <CardHeader
-            title={<><Bell size={13} className="mr-1.5 inline align-middle" />Live signals</>}
+            title={<><Bell size={13} className="mr-1.5 inline align-middle" />Historical analytical signals</>}
             meta={`${activeTicker} · ${signalsResp?.count != null ? signalsResp.count.toLocaleString() : '—'}`}
           />
           {recentSignals.length === 0 ? (
@@ -748,18 +747,18 @@ export default function DashboardPage() {
                 <tr className="text-left text-[10px] uppercase tracking-wider text-[var(--on-surface-label)]">
                   <th className="pb-1 font-semibold">Time</th>
                   <th className="pb-1 font-semibold">Dir</th>
-                  <th className="pb-1 text-right font-semibold">Score</th>
+                  <th className="pb-1 font-semibold">Score</th>
                   <th className="pb-1 text-right font-semibold">Return</th>
                 </tr>
               </thead>
               <tbody>
                 {recentSignals.map((s, i) => (
-                  <tr key={i} className="border-t border-[var(--outline-variant)]">
+                  <tr key={i} className="border-t border-[var(--outline-variant)] align-top">
                     <td className="py-1.5 tabular-nums text-[var(--on-surface-muted)]">{s.time?.slice(5, 16)}</td>
                     <td className="py-1.5"><DirTag dir={s.direction} /></td>
-                    <td className="py-1.5 text-right tabular-nums text-[var(--on-surface-variant)]">{s.conditions_met ?? `${s.score}/5`}</td>
-                    <td className={`py-1.5 text-right tabular-nums font-semibold ${s.return_pct >= 0 ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}`}>
-                      {fmtPct(s.return_pct * 100)}
+                    <td className="py-1.5"><ScoreExplanation row={s} source={signalsResp?.source} /></td>
+                    <td className={`py-1.5 text-right tabular-nums font-semibold ${s.return_pct == null ? 'text-[var(--on-surface-muted)]' : s.return_pct >= 0 ? 'text-[var(--bull)]' : 'text-[var(--bear)]'}`}>
+                      {fmtPct(s.return_pct == null ? null : s.return_pct * 100)}
                     </td>
                   </tr>
                 ))}

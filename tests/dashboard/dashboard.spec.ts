@@ -12,6 +12,7 @@ import { test, expect } from '@playwright/test';
 import { perfBudgetMs } from '../helpers/perfBudget';
 import { M } from '../helpers/mocks';
 import { MOCK_INSIGHT_REPORT } from '@/mocks/insights';
+import { SCORE_SCENARIOS, INVALID_SCORE_CLOCK_SCENARIOS, scoreScenarioResponse } from '../helpers/fixtures/signals';
 import {
   mockDashboard,
   mockDashboardCards,
@@ -22,6 +23,79 @@ import {
   MOCK_SECTORS,
   buildDashboardNews,
 } from '../helpers/fixtures/dashboard';
+
+for (const scenario of INVALID_SCORE_CLOCK_SCENARIOS) {
+  test('dashboard malformed score clock: ' + scenario.name, async ({ page }, testInfo) => {
+    await mockDashboard(page); await mockDashboardCards(page);
+    await page.route('**/api/signals/IWM*', r => r.fulfill(M.ok({ ticker: 'IWM', count: 1, returned: 1, source: 'cloud_sql', signals: [scenario.row] })));
+    await page.goto('/dashboard');
+    const score = page.getByTestId('score-explanation');
+    await expect(score.getByTestId('signal-strength')).toHaveText('6');
+    await expect(score).toContainText('Breakdown unavailable');
+    await expect(score).not.toContainText('Base conditions:');
+    await score.locator('summary').click();
+    await expect(score).toContainText(`${scenario.label}: Unavailable`);
+    await expect(score).toContainText(`Event time: ${scenario.row.time}`);
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await score.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath('dashboard-clock-' + scenario.name + '.png'), fullPage: true });
+  });
+}
+
+for (const scenario of SCORE_SCENARIOS) {
+  test(`dashboard recorded score explanation: ${scenario.name}`, async ({ page }, testInfo) => {
+    await mockDashboard(page); await mockDashboardCards(page);
+    await page.route('**/api/signals/IWM*', r => r.fulfill(M.ok(scoreScenarioResponse(scenario))));
+    await page.goto('/dashboard');
+    await expect(page.getByText('Historical analytical signals', { exact: true })).toBeVisible();
+    const score = page.getByTestId('score-explanation');
+    await expect(score.getByTestId('signal-strength')).toHaveText(scenario.strength);
+    await expect(score).toContainText(scenario.strategy);
+    if (scenario.base) await expect(score).toContainText(`Base conditions: ${scenario.base}`);
+    else await expect(score).toContainText('Breakdown unavailable');
+    await score.locator('summary').click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(score).toContainText('historical_signals');
+    await expect(score).toContainText('Event time');
+    await expect(score).toContainText('Generated at');
+    await expect(score).toContainText('Inserted at');
+    if (scenario.base) {
+      await expect(score).toContainText('cloud_sql');
+      await expect(score).toContainText('backfill');
+      await expect(score).toContainText('historical-default');
+      await expect(score).toContainText(`Composite strength: ${scenario.base}`);
+      await expect(score).toContainText('Bonus total: 0');
+    }
+    if (scenario.name === 'legacy') {
+      await expect(score).toContainText('Raw conditions (unvalidated): 6/5');
+      await expect(score).not.toContainText('Base conditions: 6/5');
+      await expect(score).toContainText('legacy_score_contract_missing');
+      await expect(score).toContainText('Input identity: Unavailable');
+    }
+    await score.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`dashboard-score-${scenario.name}.png`), fullPage: true });
+  });
+}
+
+test('dashboard signal loading, empty and failure never fabricate score explanations', async ({ page }, testInfo) => {
+  await mockDashboard(page); await mockDashboardCards(page);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/signals/IWM*', async r => {
+    await pending;
+    await r.fulfill(M.ok({ ticker: 'IWM', count: 0, returned: 0, source: 'cloud_sql', signals: [] }));
+  });
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('status', { name: 'Loading' }).first()).toBeVisible();
+  await expect(page.getByTestId('score-explanation')).toHaveCount(0);
+  release();
+  await expect(page.getByText('No signals yet for this ticker.')).toBeVisible();
+  await page.route('**/api/signals/IWM*', r => r.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"signals unavailable"}' }));
+  await page.reload();
+  await expect(page.getByText("Couldn't load this data").first()).toBeVisible();
+  await expect(page.getByTestId('score-explanation')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('dashboard-score-unavailable.png') });
+});
 
 test.describe('Dashboard', () => {
   test.beforeEach(async ({ page }) => {
