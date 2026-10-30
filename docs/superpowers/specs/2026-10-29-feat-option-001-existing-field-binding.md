@@ -9,7 +9,7 @@ done_when:
   - "tests/options/cached-error-availability.spec.ts and tests/options/profiles-balance-flip.spec.ts exercise both actual views with producer-derived distinct-price, cached-refusal, empty/unavailable and recovery fixtures; retained or failed analytics cannot become displayed zero exposure."
   - "tests/options/profiles-balance-flip.spec.ts and tests/options/demo-banners.spec.ts verify dated batch-source evidence and explicit unknown quote freshness while preserving existing Flow Demo and illustrative Tactical disclosures, data endpoints, query identity and financial functions."
   - "Required unit/browser, types/build, source-contract and no-new branch/MAIN audit checks pass, with screenshots of the changed states and the FEAT-OPTION-001 record distinguishing source merge from verified website publication."
-status: approved
+status: superseded
 supersedes: null
 ---
 
