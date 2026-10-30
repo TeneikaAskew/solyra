@@ -62,17 +62,17 @@ Consumes Task1 helper/component and generated types. Produces actual Dashboard/S
 
 Spec: §Acceptance and release evidence; advances done_when[3] and delivery records.
 - [x] Update only own FEAT-SIGNAL-001 catalog status/date; root adds actual PR link after draft creation.
-- [ ] Run current branch/current-MAIN docs audits, normal commit/PR gates and retain exact commands/results. Draft PR remains null until root publishes.
-- [ ] Commit local author batch only after required local gates; hand root source/output hashes, evidence, unresolved validation and review ledger. Root owns fresh-context final review, hosted CODE/SEC and publication.
+- [x] Run current branch/current-MAIN docs audits, normal commit/PR gates and retain exact commands/results. Draft PR remains null until root publishes.
+- [x] Commit local author batch only after required local gates; hand root source/output hashes, evidence, unresolved validation and review ledger. Root owns fresh-context final review, hosted CODE/SEC and publication.
 - [ ] Integrated deployed API and both screen acceptance remain pending dedicated authorized website QA; health200 alone is not authenticated acceptance.
 
 Capacity: n/a: presentation of existing bounded responses, no new requests or workloads.
 
-## Author validation receipts (partial)
+## Initial author validation receipts
 
 - Supported local-file generator produced snapshot SHA-256 `93fb2df72154afeebd4d399342921f978a57d632ff14001e3e0e16c49abb6823` and generated types `cc7f255049cdcceabad7c3e356f1a32a2e753d3aeb44b18330b71932600bf707`; `--check` independently rendered and matched both outputs.
 - `tests/fixtures/signal-score-native.json` SHA-256 `a2999e7556f4fc59cddd2c9493e2ff88e724ce42b5827532e78203a2b6d995a5`: actual native producers on pinned synthetic enriched inputs yielded momentum6/7, momentum7/7 and MR5/5. Its source map records exact SHA-256 values for the producer/config/input files, checked against the pinned Git revision before generation. Storage/run/insertion context is synthetic, explicitly not deployed evidence.
-- First helper run failed because the helper was absent; first component run failed because the component was absent and the new legacy insertion-time assertion failed. `nice -n 10 npm test -- src/components/signals/ScoreExplanation.test.tsx src/lib/signalScore.test.ts` then passed 33 tests across two files in 529ms. Browser route RED and bindings, full unit/build/audits/gates remain pending CPU coordination.
+- First helper run failed because the helper was absent; first component run failed because the component was absent and the new legacy insertion-time assertion failed. `nice -n 10 npm test -- src/components/signals/ScoreExplanation.test.tsx src/lib/signalScore.test.ts` then passed 33 tests across two files in 529ms. At that checkpoint, browser route RED and bindings, full unit/build/audits/gates were pending CPU coordination; completed results follow below.
 
 ## Final author validation
 
@@ -89,3 +89,11 @@ Ordinary `git merge --ff-only origin/main` reconciled current MAIN `018bd409c8a6
 Root reserved aggregate2 for the single complete final local review on the completed author head, with aggregate3/CODE2+SEC intended for hosted review. No additional judgment pass was initiated by this author.
 
 All browser evidence above is local/hermetic. Authenticated deployed API acceptance and both deployed screens remain unexecuted; source/health/Ready receipts do not substitute for that closeout.
+
+## Delivery validation and handoff
+
+Runtime author commit `7a4a491c4ac815b1025ded03f16bcfea59f5f5cb` passed the commit gate (14 changed files) and draft PR gate against current MAIN. The final documentation correction updates the two `FRONTEND.md` helper/test counts to24/15 and replaces its now-obsolete assertion that no component is rendered by unit tests. It changes no runtime or browser test source.
+
+Offline docs audit: `nice -n 10 node scripts/docs-audit.mjs --issues-snapshot /tmp/insights-issues-final.json --no-contract-check --json` on branch and exact current MAIN `018bd409c8a6ec447b8f14e390885838fdf7ea1e` reports33 findings each, zero introduced findings after those count corrections. Input is the cached issue snapshot captured2026-10-30T03:37:35.867Z, not a current remote issue check. Contract validation was performed independently with the exact pinned source. Reports: `/tmp/solyra-signals-audit-head.json` and `/tmp/solyra-signals-audit-main.json`.
+
+The private plan workspace retains the51-case browser run before the alignment-only change, the final15-case render run,14 PNG hashes, and hashes of the final rendering inputs. Source hashes match the final browser evidence. The root publisher must obtain the reserved complete local review and hosted CODE/SEC, publish the actual PR link and complete authorized deployed acceptance; this local handoff claims none of those outcomes.
