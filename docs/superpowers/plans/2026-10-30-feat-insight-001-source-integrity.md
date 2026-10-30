@@ -2,7 +2,7 @@
 feat_id: FEAT-INSIGHT-001
 spec: docs/superpowers/specs/2026-10-12-feat-insight-001-complete-ai-insights-workspace.md
 branch: fix/feat-insight-001-source-integrity
-pr: null
+pr: 306
 status: ready
 ---
 # Research source integrity repair
