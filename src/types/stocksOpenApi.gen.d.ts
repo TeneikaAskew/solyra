@@ -3585,6 +3585,44 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * HistoricalScoreExplanation
+         * @description Additive explanation; null components mean unsupported, not zero.
+         */
+        HistoricalScoreExplanation: {
+            /** Base Count */
+            base_count: number | null;
+            /** Base Max */
+            base_max: number | null;
+            /** Bonus Total */
+            bonus_total: number | null;
+            /** Bonuses */
+            bonuses: components["schemas"]["ScoreBonus"][] | null;
+            /** Composite Max */
+            composite_max: number | null;
+            /** Composite Strength */
+            composite_strength: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "condition_count" | "base_plus_bonus" | "unknown";
+            /** Matched Conditions */
+            matched_conditions: string[] | null;
+            provenance: components["schemas"]["ScoreProvenance"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "recorded" | "legacy_unavailable" | "invalid_record";
+            /** Unavailable Reasons */
+            unavailable_reasons: string[];
+            /**
+             * Version
+             * @constant
+             */
+            version: "historical-score-v1";
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -5020,6 +5058,46 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ScoreBonus */
+        ScoreBonus: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: number;
+        };
+        /**
+         * ScoreProvenance
+         * @description Recorded computation identity, never a claim of historical availability.
+         */
+        ScoreProvenance: {
+            /** Code Sha256 */
+            code_sha256: string | null;
+            /** Config Sha256 */
+            config_sha256: string | null;
+            /**
+             * Corpus
+             * @constant
+             */
+            corpus: "historical_signals";
+            /** Direction */
+            direction: ("call" | "put") | null;
+            /** Generated At */
+            generated_at: string | null;
+            /** Input Sha256 */
+            input_sha256: string | null;
+            /** Inserted At */
+            inserted_at: string | null;
+            /** Producer Definition */
+            producer_definition: string | null;
+            /** Profile */
+            profile: string | null;
+            /** Run Kind */
+            run_kind: string | null;
+            /** Storage Source */
+            storage_source: ("cloud_sql" | "gcs_parquet") | null;
+            /** Strategy */
+            strategy: string | null;
+        };
         /** SectorRow */
         SectorRow: {
             /** Chg 1D Pct */
@@ -5139,6 +5217,8 @@ export interface components {
             ema9?: number | null;
             /** Ema20 */
             ema20?: number | null;
+            /** Inserted At */
+            inserted_at?: string | null;
             /** Return Pct */
             return_pct?: number | null;
             /** Rsi */
@@ -5147,6 +5227,9 @@ export interface components {
             run_kind?: string | null;
             /** Score */
             score?: number | null;
+            score_explanation?: components["schemas"]["HistoricalScoreExplanation"] | null;
+            /** Strategy */
+            strategy?: string | null;
             /** Ticker */
             ticker: string;
             /** Time */
