@@ -65,6 +65,25 @@ export async function getIdToken(forceRefresh = false): Promise<string | null> {
   return user ? user.getIdToken(forceRefresh) : null;
 }
 
+/**
+ * The ID token of `uid`, the account whose screen composed a write. Rejects
+ * with code 'account-changed' when the SDK holds any other account (or none).
+ * The SDK switches currentUser before it tells listeners, and React renders
+ * the new account after that, so a write composed on the previous account's
+ * screen can be sent while the SDK already holds the next one. The check and
+ * the token read use the same user object, so no switch lands between them.
+ */
+export async function getIdTokenFor(uid: string, forceRefresh = false): Promise<string> {
+  const user = _auth?.currentUser ?? null;
+  if (!user || user.uid !== uid) {
+    throw Object.assign(
+      new Error('Your account changed before this was sent. Nothing was saved.'),
+      { code: 'account-changed' },
+    );
+  }
+  return user.getIdToken(forceRefresh);
+}
+
 /** The signed-in user's uid, or null when signed out. Synchronous read of the
  *  SDK's current auth state — used to detect a cross-tab account switch. */
 export function currentUid(): string | null {

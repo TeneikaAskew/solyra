@@ -18,11 +18,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 const getIdToken = vi.fn();
+const getIdTokenFor = vi.fn();
 const getCurrentUid = vi.fn();
 const getAuthMode = vi.fn();
 
 vi.mock('./firebase', () => ({
   getIdToken: (forceRefresh?: boolean) => getIdToken(forceRefresh),
+  getIdTokenFor: (uid: string, forceRefresh?: boolean) => getIdTokenFor(uid, forceRefresh),
   getCurrentUid: () => getCurrentUid(),
 }));
 vi.mock('./runtimeConfig', () => ({ getAuthMode: () => getAuthMode() }));
@@ -58,6 +60,7 @@ function sentAuthHeader(native: Mock): string | null {
 afterEach(() => {
   vi.unstubAllGlobals();
   getIdToken.mockReset();
+  getIdTokenFor.mockReset();
   getCurrentUid.mockReset();
   getAuthMode.mockReset();
 });
@@ -183,6 +186,103 @@ describe('installAuthFetch — firebase mode', () => {
     await fetch('/api/admin/routes');
 
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+});
+
+// FEAT-AUTH-001 done_when item 7 (send): a profile or preferences write goes
+// out only as the account whose screen composed it.
+describe('installAuthFetch — writes bound to the account whose screen composed them', () => {
+  const put = (): RequestInit => ({ method: 'PUT', body: '{"display_name":"Alice Edited"}' });
+  const changed = () =>
+    Object.assign(new Error('Your account changed before this was sent. Nothing was saved.'), { code: 'account-changed' });
+
+  it('sends nothing, and never reads B\'s token, for a write bound to A while the SDK holds B', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-b');
+    getIdToken.mockResolvedValue('tok-b');
+    getIdTokenFor.mockRejectedValue(changed());
+    const { native, fetch } = await install();
+    const { boundToAccount } = await import('./authedFetch');
+
+    await expect(fetch('/api/me/profile', boundToAccount(put(), 'uid-a'))).rejects.toMatchObject({
+      code: 'account-changed',
+      message: expect.stringContaining('Nothing was saved'),
+    });
+    expect(native).not.toHaveBeenCalled();
+    expect(getIdTokenFor).toHaveBeenCalledTimes(1);
+    expect(getIdTokenFor).toHaveBeenCalledWith('uid-a', undefined);
+    expect(getIdToken).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing for a write bound to A while the SDK holds nobody', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue(null);
+    getIdTokenFor.mockRejectedValue(changed());
+    const { native, fetch } = await install();
+    const { boundToAccount } = await import('./authedFetch');
+
+    await expect(fetch('/api/me/preferences', boundToAccount(put(), 'uid-a'))).rejects.toMatchObject({ code: 'account-changed' });
+    expect(native).not.toHaveBeenCalled();
+    expect(getIdToken).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing for a bound write composed with no account', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-b');
+    getIdToken.mockResolvedValue('tok-b');
+    const { native, fetch } = await install();
+    const { boundToAccount } = await import('./authedFetch');
+
+    await expect(fetch('/api/me/profile', boundToAccount(put(), null))).rejects.toMatchObject({
+      code: 'account-changed',
+      message: expect.stringContaining('Nothing was saved'),
+    });
+    expect(native).not.toHaveBeenCalled();
+    expect(getIdToken).not.toHaveBeenCalled();
+    expect(getIdTokenFor).not.toHaveBeenCalled();
+  });
+
+  it('sends a write bound to A with A\'s token, and one bound to B with B\'s', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-a');
+    getIdTokenFor.mockImplementation(async (uid: string) => `tok-${uid.slice(-1)}`);
+    const { native, fetch } = await install();
+    const { boundToAccount } = await import('./authedFetch');
+
+    await fetch('/api/me/preferences', boundToAccount(put(), 'uid-a'));
+    await fetch('/api/me/preferences', boundToAccount(put(), 'uid-b'));
+    const headers = native.mock.calls.map((c) => new Headers((c[1] as RequestInit).headers).get('Authorization'));
+    expect(headers).toEqual(['Bearer tok-a', 'Bearer tok-b']);
+    expect(getIdToken).not.toHaveBeenCalled();
+  });
+
+  it('retries a 401 on a bound write only with its own account\'s fresh token', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-a');
+    getIdTokenFor.mockImplementation(async (_uid: string, force?: boolean) => {
+      if (force) throw changed();
+      return 'tok-a';
+    });
+    getIdToken.mockResolvedValue('tok-b');
+    const { native, fetch } = await install();
+    native.mockResolvedValueOnce(new Response('{}', { status: 401 }));
+    const { boundToAccount } = await import('./authedFetch');
+
+    const resp = await fetch('/api/me/profile', boundToAccount(put(), 'uid-a'));
+    expect(resp.status).toBe(401);
+    expect(native).toHaveBeenCalledTimes(1);
+    expect(getIdTokenFor).toHaveBeenCalledWith('uid-a', true);
+    expect(getIdToken).not.toHaveBeenCalledWith(true);
+  });
+
+  it('ignores the mark outside firebase mode', async () => {
+    getAuthMode.mockReturnValue('open');
+    const { native, fetch } = await install();
+    const { boundToAccount } = await import('./authedFetch');
+
+    await fetch('/api/me/profile', boundToAccount(put(), null));
+    expect(native).toHaveBeenCalledTimes(1);
+    expect(getIdTokenFor).not.toHaveBeenCalled();
   });
 });
 

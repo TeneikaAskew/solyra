@@ -22,6 +22,7 @@ import { create } from 'zustand';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserPreferences, UserPreferencesUpdate } from '@/types/preferences';
 import { getSignedInAccount, onAccountChange } from '@/lib/authGate';
+import { boundToAccount } from '@/lib/authedFetch';
 import { useThemeStore, type Theme } from '@/stores/themeStore';
 import {
   useSettingsStore, ACCENTS, type Accent, type Density, type NavPattern,
@@ -98,12 +99,15 @@ async function fetchPreferences(): Promise<UserPreferences | null> {
   return sanitizePreferences(await res.json());
 }
 
-async function savePreferences(update: UserPreferencesUpdate): Promise<UserPreferences> {
-  const res = await fetch(ENDPOINT, {
+async function savePreferences(
+  { update, uid }: { update: UserPreferencesUpdate; uid: string | null },
+): Promise<UserPreferences> {
+  // Sent only as the account the syncer rendered for (see boundToAccount).
+  const res = await fetch(ENDPOINT, boundToAccount({
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(update),
-  });
+  }, uid));
   if (!res.ok) throw new Error(`Could not save preferences (HTTP ${res.status})`);
   return sanitizePreferences(await res.json());
 }
@@ -157,12 +161,11 @@ export function usePreferencesSync(uid: string | null) {
 
   const mutation = useMutation({
     mutationFn: savePreferences,
-    // The account this syncer rendered for when the save started. Its answer
-    // is cached only while that account is still the current one: after a
-    // switch the cache entry is the next account's, and this answer is not.
-    onMutate: () => ({ owner: uid }),
-    onSuccess: (saved, _update, ctx) => {
-      if (ctx.owner === getSignedInAccount()) queryClient.setQueryData(QUERY_KEY, saved);
+    // `owner` is the account this syncer rendered for when the save started.
+    // Its answer is cached only while that account is still the current one:
+    // after a switch the cache entry is the next account's, and this is not.
+    onSuccess: (saved, { uid: owner }) => {
+      if (owner === getSignedInAccount()) queryClient.setQueryData(QUERY_KEY, saved);
     },
   });
 
@@ -232,7 +235,7 @@ export function usePreferencesSync(uid: string | null) {
       return;
     }
     lastSent.current = serialized;
-    mutation.mutate(payload);
+    mutation.mutate({ update: payload, uid });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, theme, navPattern, density, accent, query.isPending]);
 

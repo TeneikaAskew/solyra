@@ -10,6 +10,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSignedInAccount } from '@/lib/authGate';
+import { boundToAccount } from '@/lib/authedFetch';
 import {
   EMPTY_PROFILE,
   type DateFormat,
@@ -81,18 +82,20 @@ async function fetchProfile(): Promise<UserProfile | null> {
   return sanitizeProfile(await res.json());
 }
 
-async function saveProfile(update: UserProfileUpdate): Promise<UserProfile> {
-  const res = await fetch(ENDPOINT, {
+async function saveProfile({ update, uid }: { update: UserProfileUpdate; uid: string | null }): Promise<UserProfile> {
+  // Sent only as the account the form rendered for (see boundToAccount).
+  const res = await fetch(ENDPOINT, boundToAccount({
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(update),
-  });
+  }, uid));
   if (!res.ok) throw new Error(`Could not save your profile (HTTP ${res.status})`);
   return sanitizeProfile(await res.json());
 }
 
 /** `uid` is the account the caller renders for (useUser's uid; null outside
- *  firebase mode, where no account is ever reported). */
+ *  firebase mode, where no account is ever reported). A save is sent only as
+ *  that account. */
 export function useProfile(uid: string | null) {
   const queryClient = useQueryClient();
 
@@ -107,9 +110,8 @@ export function useProfile(uid: string | null) {
     mutationFn: saveProfile,
     // Cache the answer only while the account that started the save is still
     // current (FEAT-AUTH-001): after a switch the entry is the next account's.
-    onMutate: () => ({ owner: uid }),
-    onSuccess: (saved, _update, ctx) => {
-      if (ctx.owner === getSignedInAccount()) queryClient.setQueryData(QUERY_KEY, saved);
+    onSuccess: (saved, { uid: owner }) => {
+      if (owner === getSignedInAccount()) queryClient.setQueryData(QUERY_KEY, saved);
     },
   });
 
@@ -124,7 +126,7 @@ export function useProfile(uid: string | null) {
     saving: mutation.isPending,
     saveError: mutation.error instanceof Error ? mutation.error : null,
     saved: mutation.isSuccess,
-    save: mutation.mutate,
+    save: (update: UserProfileUpdate) => mutation.mutate({ update, uid }),
     reset: mutation.reset,
   };
 }
