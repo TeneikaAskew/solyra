@@ -46,6 +46,52 @@ export function useAuthBlocked(): boolean {
   return useSyncExternalStore(subscribeAuthGate, isAuthBlocked, () => false);
 }
 
+// ── The signed-in account (FEAT-AUTH-001 account transitions) ──────────────
+//
+// One record of the account this page's Firebase listener last reported,
+// kept outside AuthGate so code that runs between renders (stores, the query
+// cache, the fetch layer) can react to a switch. initFirebase feeds it from
+// onAuthStateChanged. The first report after load is not a change, and
+// neither is a repeat of the same uid; on a change the auth-blocked flag is
+// cleared first (the previous account's 401 says nothing about this one),
+// then the listeners run.
+
+type AccountState = { reported: false } | { reported: true; uid: string | null };
+
+let account: AccountState = { reported: false };
+const accountListeners = new Set<(next: string | null, prev: string | null) => void>();
+
+/** Called with each auth report this page's Firebase listener receives. */
+export function noteSignedInAccount(uid: string | null): void {
+  if (!account.reported) {
+    account = { reported: true, uid };
+    return;
+  }
+  const prev = account.uid;
+  if (prev === uid) return;
+  account = { reported: true, uid };
+  clearAuthBlocked();
+  for (const l of accountListeners) l(uid, prev);
+}
+
+/** The last reported account; null before the first report or while signed out. */
+export function getSignedInAccount(): string | null {
+  return account.reported ? account.uid : null;
+}
+
+/** True once this page's listener has reported at least once. */
+export function hasAccountReport(): boolean {
+  return account.reported;
+}
+
+/** Run `cb` on every later account change this page observes. */
+export function onAccountChange(cb: (next: string | null, prev: string | null) => void): () => void {
+  accountListeners.add(cb);
+  return () => {
+    accountListeners.delete(cb);
+  };
+}
+
 // ── Verification required (the API's 403) ──────────────────────────────────
 //
 // Since stocks#1360 the API answers every gated call from an account whose

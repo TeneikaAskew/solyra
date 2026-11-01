@@ -35,7 +35,7 @@ import {
   type User,
 } from 'firebase/auth';
 import type { FirebaseWebConfig } from './runtimeConfig';
-import { recordVerificationEmail } from './authGate';
+import { noteSignedInAccount, recordVerificationEmail } from './authGate';
 
 let _auth: Auth | null = null;
 
@@ -43,6 +43,9 @@ export function initFirebase(cfg: FirebaseWebConfig): Auth {
   if (_auth) return _auth;
   const app: FirebaseApp = initializeApp(cfg);
   _auth = getAuth(app);
+  // The account record (authGate.ts) hears every report, and hears it first:
+  // this listener is attached before any component subscribes.
+  onAuthStateChanged(_auth, (u) => noteSignedInAccount(u?.uid ?? null));
   // Persist the session across reloads and browser restarts, and say so
   // explicitly rather than relying on the SDK default: a signed-in user
   // should not have to sign in again on every visit. IndexedDB first,
