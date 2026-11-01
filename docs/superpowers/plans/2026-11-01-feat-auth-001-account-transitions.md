@@ -2,7 +2,7 @@
 feat_id: FEAT-AUTH-001
 spec: docs/superpowers/specs/2026-11-01-feat-auth-001-account-transitions.md
 branch: fix/feat-auth-001-account-transitions
-pr: null
+pr: 314
 status: ready
 ---
 
