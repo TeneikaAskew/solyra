@@ -6,9 +6,9 @@ canvases: []
 done_when:
   - "src/lib/authGate.test.ts asserts that noteSignedInAccount reports no account change for the first report after load or for a repeated report of the same uid, reports A to signed-out, signed-out to B and A to B, and clears the auth-blocked flag on a change but keeps it for a repeated report of the same uid"
   - "src/lib/authGate.test.ts asserts, in per-owner mode, that an account-scoped write made while this page's account is uid A is stored under '<key>@uid:uid-a' and changes no other key; that a read while the account is uid B returns B's own value or nothing, never uid A's value, another owner's value or the un-namespaced value; that while storage is pending nothing account-scoped is read or written; that while this page has no account (before its first report, or signed out) an account-scoped write stores nothing; and that with localStorage unavailable reads return nothing and writes are dropped without an error"
-  - "src/lib/authGate.test.ts runs A signed in, A writes, signed out, B signed in, B writes, A signed in again, with un-namespaced legacy values present from the start, and asserts that no localStorage key present at any step is missing or changed at the end except the keys the current owner wrote; and a unit test that scans the source files under src/ (tests excluded) asserts that the only localStorage removeItem or clear calls are those in src/integrations/supabase/previewAuthStorage.ts, which touch only that module's own keys"
-  - "src/lib/authGate.test.ts asserts that in shared mode (the boot settled without initFirebase) and when no ConfigGate has marked storage pending, every account-scoped read and write uses the un-namespaced key exactly as on main, with recentTickers kept inside 'ticker-store', so dev, open, local and IAP behaviour is unchanged"
-  - "store unit tests assert that themeStore, settingsStore (navPattern, density, accent) and tickerStore's recentTickers, in per-owner mode, apply the product defaults when the mode is set and then load the account's own values, or keep the product defaults when it has none, on the first report and on every later account change this page observes; that in shared mode they load and apply the un-namespaced values when the boot settles; that a store module evaluated while storage is pending reads no account-scoped key and leaves data-theme and the body classes unchanged; that tickerStore's activeTicker stays a per-browser value in 'ticker-store' as on main; that a write of activeTicker keeps any recentTickers already held in 'ticker-store' byte-identical; and src/components/dashboard/MovementRead.test.tsx asserts that SizeCalculator shows the current account's own em.account and em.riskPct, or main's defaults (an empty account size and Risk % 1) when the account has none, and writes its changes only under that account"
+  - "src/lib/authGate.test.ts runs A signed in, A writes, signed out, B signed in, B writes, A signed in again, with un-namespaced legacy values present from the start, and asserts that no localStorage key present at any step is missing or changed at the end except the keys the current owner wrote; and a unit test that scans the source files under src/ (tests excluded, comments stripped) asserts that no file other than src/integrations/supabase/previewAuthStorage.ts calls localStorage.removeItem or localStorage.clear, calls a zustand persist clearStorage, or deletes a localStorage property"
+  - "src/lib/authGate.test.ts asserts that in shared mode (the boot settled without initFirebase) and when no ConfigGate has marked storage pending, every account-scoped read and write uses the un-namespaced key exactly as on main, with recentTickers kept inside 'ticker-store', so dev, open, local and IAP behaviour is unchanged; and a new src/components/auth/ConfigGate.test.tsx asserts that the boot marks storage pending before the first ConfigGate's preload starts, settles the mode itself, and that a second ConfigGate mounted after the boot started, a StrictMode re-run of its effects, or a ConfigGate unmounted during its spinner leaves the mode and every stored value unchanged, and that a failed boot leaves storage pending"
+  - "store unit tests assert that themeStore, settingsStore (navPattern, density, accent) and tickerStore's recentTickers, in per-owner mode, apply the product defaults when the mode is set and then load the account's own values, or keep the product defaults when it has none, on the first report and on every later account change this page observes; that a store module evaluated after the mode settled, both before and after the first report, holds the same values as one evaluated earlier; that in shared mode they load and apply the un-namespaced values when the boot settles; that a store module evaluated while storage is pending reads no account-scoped key and leaves data-theme and the body classes unchanged; that tickerStore's activeTicker stays a per-browser value in 'ticker-store' as on main; that a write of activeTicker keeps any recentTickers already held in 'ticker-store' byte-identical; and src/components/dashboard/MovementRead.test.tsx asserts that SizeCalculator shows the current account's own em.account and em.riskPct, or main's defaults (an empty account size and Risk % 1) when the account has none, and writes its changes only under that account"
   - "src/lib/authGate.test.ts asserts that resetAccountQueries for uid B removes every query keyed under 'me' except ['me', B], empties an account-blind query, discards an account-blind answer that arrives after the call, and after a sign-out leaves no query holding data"
   - "src/lib/authGate.test.ts asserts that the email-confirmed record marked for uid B and then for uid A reads confirmed for both, that marking uid A never clears uid B, and that a record marked for uid A still reads not confirmed for uid B and for no uid"
   - "hook unit tests assert that preferences write-through is suspended from an account change until the new account's stored preferences have hydrated, and that the profile and preferences save write their answer to the cache only while the account that rendered them is still signed in"
@@ -59,8 +59,9 @@ not counted as observing the later step.
   switch only. `AuthGate` and `useUser`, the only identity listener, are unmounted on public
   routes.
 - **Appearance (#234 item 2).** `platform-theme` and `platform-shell-settings` have no owner. B
-  with no stored preferences starts from A's appearance after a same-tab sign-out. After another
-  tab switched to B, B's first change PUT A's light, comfy and violet to B's row. In the same-tab
+  with no stored preferences starts from A's theme (`data-theme` light) after a same-tab sign-out;
+  density and accent were not asserted there. After another tab switched to B, this tab kept A's
+  light, comfy and violet, and B's first change PUT them to B's row. In the same-tab
   case the test stops at the earlier `data-theme` assertion, so B's first PUT there was not
   observed.
 - **Late profile read (#234 item 3).** A profile read that A started and that answers after B is
@@ -69,7 +70,8 @@ not counted as observing the later step.
   direct switch, so B keeps A's appearance. That earlier failure is why the late preferences save
   below could not be isolated on main.
 - **Expired-session flag (#270).** The flag (`src/lib/authGate.ts:14`) survives the switch, so B
-  sees "Session expired" until B's first gated success.
+  sees "Session expired" with every gated B request held. That it clears at B's first gated
+  success is read from source (`authedFetch.ts:188,294`), not observed.
 - **Confirmed record (#270), 2 of 2 runs.** It holds one uid (`emailConfirmedFor`,
   `authGate.ts:103-113`). A's I've confirmed check that answers after the switch, and after B
   confirmed, replaces B's record, and B's banner returns. The source trace: `refreshEmailVerified`
@@ -104,6 +106,10 @@ not counted as observing the later step.
   effect, and the shell unmounts.
 - A's request carrying B's token. `authedFetch.ts:226-241` reads the token at send time and
   refuses another account's forced-refresh token.
+- Not reproduced, and no control targets it: a write-through sent in the moment after this tab's SDK
+  has switched to B and before its listener reports B. It would carry B's token with A's values. The
+  first draft's ablation removed a pre-send account check with no control failing, which shows only
+  that no test reached this window. Item 16 would catch it only if the timing lands in it.
 
 **Not yet tested anywhere.** These are acceptance controls this spec adds:
 
@@ -135,8 +141,9 @@ not counted as observing the later step.
 - **Server and configuration.** No server, session, revocation, role, Firebase configuration or
   `/api/me` change. This excludes stocks #1317, #1319, #1315 and #1323, `ADMIN_EMAIL`, and solyra
   #266.
-- **Other auth modes.** No change to dev, open, local or IAP behaviour. Outside firebase mode every
-  value keeps its key, its default and its behaviour from main.
+- **Other auth modes.** No change to dev, open, local or IAP behaviour, apart from the spinner and
+  config-error screen shown before the boot settles (Design). Outside firebase mode every value
+  keeps its key, its default and its behaviour from main.
 - **The landing route.** No change to `/`. The account record is fed only after ConfigGate has
   initialised the SDK.
 - **Uid-keyed queries.** None of the account-blind query keys gain a uid. They are reset or removed
@@ -199,34 +206,52 @@ from `src/stores`; the stores import it.
 
 ### When account-scoped storage is read
 
-Storage has three modes, and the stores follow them:
-- **Pending.** ConfigGate marks storage pending before it starts its preload or the config fetch.
-  A store module evaluated while storage is pending reads no account-scoped key and changes nothing
-  on the document. Nothing renders from the stores then: ConfigGate shows only its spinner or its
-  config-error screen.
-- **Shared** (the boot settled without `initFirebase`: open, IAP, the dev stub, or a firebase
-  config with no web config). Before ConfigGate renders its children, the stores read the
-  un-namespaced keys and apply them, as main's module evaluation does. Writes use the un-namespaced
-  keys as on main.
-- **Per-owner** (`initFirebase` ran). When the mode is set, before the SDK listener is attached,
-  the stores apply the product defaults. The first report then loads that account's own values, or
-  keeps the defaults when it reports no account. Every later change loads them the same way.
+**One boot owns the mode.** `bootOnce` in ConfigGate runs once per page load. When it starts it
+marks storage pending, and ConfigGate starts it before it starts its preload, so no store module
+can evaluate first. The boot settles the mode itself, not through a ConfigGate instance:
+- **Shared** when it resolves without calling `initFirebase`: open, IAP, the dev stub, or a
+  firebase config with no web config.
+- **Per-owner** when `initFirebase` runs, set before the SDK listener is attached.
+- **Failed boot.** Storage stays pending for that page load. Only the config-error screen renders.
+
+Nothing else changes the mark or the mode: not a ConfigGate that mounts after the boot started (a
+second route's ConfigGate, a client-side return from `/`, a move from `/auth/action` into the app),
+not a StrictMode re-run of its effects, and not a ConfigGate that unmounts during its spinner.
+
+**A store loads the current state.** At module evaluation, and again at each storage event (the
+mode settling, the first report, a later account change), a store loads the values for the current
+mode and account:
+- **Pending.** Nothing is read and the document is left unchanged. The store holds the product
+  defaults in memory, and nothing renders from it.
+- **Shared.** The un-namespaced values, applied as main's module evaluation does.
+- **Per-owner, before the first report or with no account.** The product defaults, applied.
+- **Per-owner with a reported account.** That account's own values, or the defaults when it has
+  none.
+
+A store that evaluates late, after the mode settled or after the first report, therefore holds what
+it would hold had it evaluated earlier.
+
+**Writes use the current state too.** While pending, and in per-owner mode with no account, a write
+changes the in-memory value and stores nothing. In shared mode it uses the un-namespaced key as on
+main. In per-owner mode with an account it uses that account's key.
 
 With no ConfigGate (a unit test that imports a store directly), storage is shared, as on main. In
 the browser every route that loads a store sits under ConfigGate, and `/` loads none.
 
-The only observable change outside firebase mode is on ConfigGate's spinner and config-error
-screen, which show the base appearance until the config arrives. On main they show the stored
-appearance only when the shell chunk happens to evaluate before the config answer, so they already
-vary with download timing. Every screen ConfigGate renders after the boot is unchanged.
+**Screens outside the app that change.**
+- Outside firebase mode, ConfigGate's spinner shows the base appearance until the config arrives.
+  On main it showed the stored appearance only when the shell chunk evaluated before the config
+  answer.
+- In every mode, the config-error screen keeps the base appearance. On main the preloaded chunk
+  applied the stored appearance to it whenever the chunk evaluated.
+- Outside firebase mode, every screen rendered after the boot settles is unchanged.
 
 ### Per-owner storage
 
 In per-owner mode:
 - **Writes.** An account-scoped value is written to `<key>@uid:<uid>`, where the uid is this page's
   own last reported account.
-- **No account.** Before the first report, and while signed out, an account-scoped write changes
-  the in-memory value and stores nothing.
+- **No account.** Before the first report, and while signed out, a write stores nothing (above).
 - **Reads.** A read returns only the current account's key.
 - **No deletion.** Nothing removes an `@uid:` key or an un-namespaced key.
 
@@ -239,7 +264,9 @@ The account-scoped values are:
 | Sizing inputs | `em.account`, `em.riskPct` | `em.account@uid:<uid>`, `em.riskPct@uid:<uid>` |
 | Recent tickers | `recentTickers` inside `ticker-store` | `ticker-recents@uid:<uid>` |
 
-The active ticker stays in `ticker-store` per browser in both modes.
+The active ticker stays in `ticker-store` per browser in every mode and loads at evaluation as on
+main, including while storage is pending. Recent tickers held inside `ticker-store` are applied only
+in shared mode.
 
 **Legacy values.** Un-namespaced values written before this ships stay where they are, byte for
 byte. In per-owner mode they are never read, rendered or applied, including before the first
@@ -248,7 +275,7 @@ keeps any `recentTickers` already in `ticker-store`.
 
 **Owners of each value.** `themeStore`, `settingsStore` and `tickerStore` keep their values and
 load them as above. `SizeCalculator` in `MovementRead.tsx` keeps owning the sizing inputs. It reads
-them through the account-scoped storage when it mounts and writes through it, and the shell
+them through the account-scoped storage for the current state when it mounts and writes through it, and the shell
 remount on every account change makes it read them again. No new store is added.
 
 ### On every account change
@@ -303,12 +330,22 @@ visible queries.
 
 ## Evidence status
 
-Every row is local, on `spike/identity-transitions`, which has not been pushed.
+Every run below is local and hermetic. Nothing on `spike/identity-transitions` has been pushed.
 
-| Area | Status |
-|---|---|
-| Controls on main and on the earlier prototype | Exist for the sign-out, switch, appearance, late-answer, journal, mounted-form, 401, confirmed-record, sizing and active-ticker items. Where each was observed is stated in Problem. |
-| Stale-tab control | Exists only in a shared-tag form that polls a tag the per-owner design does not write. It has to be rewritten for item 16. |
-| Not written | The `/auth/action` switch, the restore after B's own values, legacy isolation including before the first report, recents asserted separately, and the storage-mode unit tests. |
-| Preferences write-back guard, reset on every change, per-uid confirmed record | Evidence-only variants. They pass their controls. |
-| The per-owner storage design | Not built. None of its items has run. |
+**Executed:**
+
+| Run | Result | Log |
+|---|---|---|
+| The spike's e2e file (22 cases) on main `fab3a52c`, 2026-11-01 18:04:08Z to 18:06:59Z | 16 fail, 6 pass. Where each fails is in Problem. | `main-fab3a52c-r3-full.log` |
+| Existing store, `MovementRead` and `authGate` unit tests on main, 18:29:14Z | 5 files, 40 tests pass | `main-fab3a52c-unit-baseline.log` |
+| The first prototype and its ablations | As in Problem | spike logs |
+| Evidence-only variants: preferences write-back guard, reset on every change, per-uid confirmed record | They pass their controls | spike logs |
+
+**Planned, not written or not run:**
+- The `/auth/action` switch, the restore after B's own values, legacy isolation including on the
+  spinner and before the first report, recents asserted separately.
+- A stale-tab control ordered by the other tab's signed-in state. The existing one polls a tag the
+  per-owner design does not write.
+- The storage-mode unit tests, including late store evaluation, and the new `ConfigGate.test.tsx`.
+- The source scan for removal calls.
+- The per-owner storage design itself. It is not built, and none of its items has run.
