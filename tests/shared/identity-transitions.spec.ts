@@ -291,12 +291,16 @@ async function pickQuick(page: Page, sym: string) {
   await expect(trigger).toContainText(sym);
 }
 
-/** The recent chips the combobox shows (quick picks excluded). */
+/** The recent chips the combobox shows (quick picks excluded). The section is
+ *  found by its own label: its text starts with the icon's whitespace, so a
+ *  /^Recent/ text filter never matched it. The quick-picks label anchors the
+ *  panel, so an empty answer means no Recent section, not a missed locator. */
 async function recentsShown(page: Page): Promise<string[]> {
   await page.getByTestId('ticker-combobox').first().click();
   const panel = page.getByTestId('ticker-combobox-panel');
   await expect(panel).toBeVisible();
-  const recent = panel.locator('div.mb-2').filter({ hasText: /^Recent/ });
+  await expect(panel.getByText('Quick picks', { exact: true })).toBeVisible();
+  const recent = panel.locator('div.mb-2').filter({ has: page.getByText('Recent', { exact: true }) });
   const out = (await recent.count()) ? await recent.locator('button').allInnerTexts() : [];
   await page.keyboard.press('Escape');
   return out.map((t) => t.trim());
