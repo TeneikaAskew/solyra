@@ -292,7 +292,11 @@ async function addProbe(page: Page) {
       const a = w.__onReport;
       if (!a || u?.uid !== a.uid) return;
       w.__onReport = null;
-      const fire = () => { a.snap = snapshot(); a.tClick = performance.now(); a.target.click(); };
+      const fire = () => {
+        a.snap = { ...snapshot(), targetConnected: a.target.isConnected };
+        a.tClick = performance.now();
+        a.target.click();
+      };
       (window as unknown as { __placed: typeof a }).__placed = a;
       if (a.mode === 'sync') fire();
       else { const ch = new MessageChannel(); ch.port1.onmessage = fire; ch.port2.postMessage(0); }
@@ -463,6 +467,30 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
     }, path);
   }
 
+  // Q-3 (#313) posted-task oracle. Once this page reacts to the B report, the
+  // store reload and the query reset (account-change handling the spec
+  // requires) render B in the same tick, before any task posted at the report
+  // runs. So a posted-task click can no longer reach A's screen: the oracle
+  // asserts that explicitly (B committed first, the captured A target already
+  // detached) and that nothing was sent and nothing refused, so no save was
+  // created. On main the same click landed on A's screen before B's commit and
+  // sent with B's token, so main fails this oracle.
+  async function expectPostedTaskFoundBOnScreen(page: Page, b: Awaited<ReturnType<typeof boundary>>) {
+    expect(b.placed).not.toBeNull();
+    expect(b.tCommitWithUidB).not.toBeNull();
+    expect(b.clickBeforeCommitB).toBe(false);
+    expect(b.placed!.tClick).toBeGreaterThan(b.tCommitWithUidB!);
+    expect((b.placed!.snap as { bCommitted: boolean }).bCommitted).toBe(true);
+    expect((b.placed!.snap as { targetConnected: boolean }).targetConnected).toBe(false);
+    // No request of any token after the click, and no refusal recorded: a
+    // bound write is either sent or refused (and a refusal after the switch is
+    // always shown), so seeing neither means no save was created.
+    expect(b.sent).toEqual([]);
+    expect(b.nothingSavedShown).toBe(false);
+    expect(b.savedShown).toBe(false);
+    await expect(page.getByTestId('account-change-refusal')).toHaveCount(0);
+  }
+
   for (const mode of ['sync', 'task'] as const) {
     test(`case 2 (${mode}): profile Save placed at the B report on A's screen`, async ({ context, page }) => {
       const { w, other } = await twoTabs(context, page);
@@ -481,14 +509,19 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
       await expect(other.getByTestId('auth-status')).toContainText(ACCOUNTS.B.email);
       await expect.poll(async () => other.getByLabel('Display name').inputValue()).not.toBe('');
       note(`case2-${mode}-profile B fresh readback`, await other.getByLabel('Display name').inputValue());
+      expect(w.profile.B).toEqual({ display_name: ACCOUNTS.B.name });
+      await expect(other.getByLabel('Display name')).toHaveValue(ACCOUNTS.B.name);
+      if (mode === 'task') {
+        await expectPostedTaskFoundBOnScreen(page, b);
+        return;
+      }
       expect(b.placed).not.toBeNull();
       // Q-3 (#313): discriminating, not conditional. The click must have landed
       // on A's screen before React's first commit holding B.
       expect(b.clickBeforeCommitB).toBe(true);
       expect((b.placed!.snap as { authStatus: string }).authStatus).toContain(ACCOUNTS.A.email);
-      expect(b.sent.filter((x) => x.auth === `Bearer ${ACCOUNTS.B.token}`)).toEqual([]);
-      expect(w.profile.B).toEqual({ display_name: ACCOUNTS.B.name });
-      await expect(other.getByLabel('Display name')).toHaveValue(ACCOUNTS.B.name);
+      expect((b.placed!.snap as { targetConnected: boolean }).targetConnected).toBe(true);
+      expect(b.sent).toEqual([]);
       // The refusal was shown, and "Saved." never was.
       expect(b.savedShown).toBe(false);
       expect(b.nothingSavedShown).toBe(true);
@@ -507,17 +540,21 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
       const b = await boundary(page, '/api/me/preferences');
       note(`case2-${mode}-prefs boundary`, JSON.stringify(b));
       note(`case2-${mode}-prefs B row`, JSON.stringify(w.prefs.B));
+      expect(w.prefs.B).toBeNull();
+      if (mode === 'task') {
+        await expectPostedTaskFoundBOnScreen(page, b);
+        return;
+      }
       expect(b.placed).not.toBeNull();
       expect(b.clickBeforeCommitB).toBe(true);
+      expect((b.placed!.snap as { targetConnected: boolean }).targetConnected).toBe(true);
       expect(b.sent.filter((x) => x.auth === `Bearer ${ACCOUNTS.B.token}`)).toEqual([]);
-      expect(w.prefs.B).toBeNull();
       // Q-2 limit: whether this placed change sends anything at all was never
       // traced. Recorded, not asserted, and not claimed as a refusal.
       note(`case2-${mode}-prefs requests after the click`, String(b.sent.length));
     });
   }
 
-  // ── Case 3: settled B, valid success ────────────────────────────────────
   // The sync placement's refusal settles after AuthGate has replaced A's
   // screen, so it is shown by AuthGate to the account now on screen. It must
   // carry nothing of A's, never read as saved, and clear on the next account
@@ -563,6 +600,7 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
     expect(w.profile.B).toEqual({ display_name: ACCOUNTS.B.name });
   });
 
+  // ── Case 3: settled B, valid success ────────────────────────────────────
   test('case 3: a fresh B screen saves its own profile and appearance with B token', async ({ context, page }) => {
     const { w, other } = await twoTabs(context, page);
     await switchDirectly(other, 'B');
