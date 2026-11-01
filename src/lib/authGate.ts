@@ -264,19 +264,21 @@ export function useVerificationRequired(uid: string | null): boolean {
   return useSyncExternalStore(subscribeVerificationRequired, read, () => false);
 }
 
-// The account an I've confirmed check last found verified. Firebase fires no
+// The accounts an I've confirmed check found verified. Firebase fires no
 // auth event when a reload/token refresh flips emailVerified, so useUser's
 // value stays stale; every surface reads this instead of keeping its own.
-let emailConfirmedFor: string | null = null;
+// One entry per uid (FEAT-AUTH-001, #270): A's check answering after a switch
+// to B adds A and never replaces B's confirmation.
+const emailConfirmedFor = new Set<string>();
 
 export function markEmailConfirmed(uid: string): void {
-  if (emailConfirmedFor === uid) return;
-  emailConfirmedFor = uid;
+  if (emailConfirmedFor.has(uid)) return;
+  emailConfirmedFor.add(uid);
   emitVerificationRequired();
 }
 
 export function isEmailConfirmed(uid: string | null): boolean {
-  return uid !== null && emailConfirmedFor === uid;
+  return uid !== null && emailConfirmedFor.has(uid);
 }
 
 /** React hook: true once an I've confirmed check found this account verified. */

@@ -82,6 +82,26 @@ describe('email-confirmed record', () => {
     expect(gate.isEmailConfirmed('uid-b')).toBe(false);
     expect(gate.isEmailConfirmed(null)).toBe(false);
   });
+
+  // FEAT-AUTH-001 done_when item 6 (#270): A's late I've confirmed answer
+  // must not replace B's record.
+  it('holds confirmations for B and then A, and marking A never clears B', async () => {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.markEmailConfirmed('uid-b');
+    gate.markEmailConfirmed('uid-a');
+    expect(gate.isEmailConfirmed('uid-b')).toBe(true);
+    expect(gate.isEmailConfirmed('uid-a')).toBe(true);
+  });
+
+  it('a record marked for A alone still reads not confirmed for B and for no uid', async () => {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.markEmailConfirmed('uid-a');
+    gate.markEmailConfirmed('uid-a');
+    expect(gate.isEmailConfirmed('uid-b')).toBe(false);
+    expect(gate.isEmailConfirmed(null)).toBe(false);
+  });
 });
 
 // FEAT-AUTH-001 account transitions, done_when item 1: the account record.
