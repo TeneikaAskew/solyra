@@ -30,7 +30,7 @@ done_when:
   - "The PR diff does not touch tests/shared/auth-gate.spec.ts or tests/shared/mock-mode.spec.ts, and its body does not close solyra#234"
   - "docs/UI-SCREENS.md no longer states that the previous account's cached answers or appearance survive a sign-out or a switch (AUTH-09 at line 1266, SHELL-11 at 1881, the Settings purpose and status at 12745 and 12747, the SETTINGS-08 row at 12784 and its body, flow 4 at 12799, and line 13494), and every statement in it that names where platform-theme, platform-shell-settings, em.account, em.riskPct or recentTickers are persisted says that in firebase mode they are kept per account and in the other modes under the same keys as before, including per-account recent tickers"
   - "02-FEATURE-CATALOG FEAT-AUTH-001 row shows a Status, this PR's date and number, and a paired stocks docs PR updates the 03-SITE-TRACEABILITY.md Gaps entry at line 1221"
-status: draft
+status: approved
 supersedes: null
 ---
 
