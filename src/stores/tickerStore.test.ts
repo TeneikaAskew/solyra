@@ -81,3 +81,109 @@ describe('persist partialize', () => {
     expect(persisted).not.toHaveProperty('quickPicks');
   });
 });
+
+// FEAT-AUTH-001 account transitions, done_when item 5: recent tickers follow
+// the account-scoped storage state; the active ticker stays per browser.
+describe('account-scoped recent tickers', () => {
+  const STORE = 'ticker-store';
+  const LEGACY = JSON.stringify({ state: { activeTicker: 'QQQ', recentTickers: ['NVDA'] }, version: 0 });
+  async function fresh() {
+    vi.resetModules();
+    backing.clear();
+    return await import('@/lib/authGate');
+  }
+
+  it('per-owner: no recents when the mode is set, then each account its own recents or none', async () => {
+    const gate = await fresh();
+    backing.set(STORE, LEGACY);
+    backing.set('ticker-recents@uid:uid-a', JSON.stringify(['AAPL']));
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    gate.settleStorageMode('perOwner');
+    expect(s.getState().recentTickers).toEqual([]);
+    gate.noteSignedInAccount('uid-a');
+    expect(s.getState().recentTickers).toEqual(['AAPL']);
+    gate.noteSignedInAccount('uid-b');
+    expect(s.getState().recentTickers).toEqual([]);
+    gate.noteSignedInAccount('uid-a');
+    expect(s.getState().recentTickers).toEqual(['AAPL']);
+  });
+
+  it('a store evaluated after the mode settled, before or after the first report, holds what an earlier one holds', async () => {
+    let gate = await fresh();
+    backing.set(STORE, LEGACY);
+    backing.set('ticker-recents@uid:uid-a', JSON.stringify(['AAPL']));
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    let store = await import('./tickerStore');
+    expect(store.useTickerStore.getState().recentTickers).toEqual([]);
+    gate.noteSignedInAccount('uid-a');
+    expect(store.useTickerStore.getState().recentTickers).toEqual(['AAPL']);
+    vi.resetModules();
+    gate = await import('@/lib/authGate');
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    store = await import('./tickerStore');
+    expect(store.useTickerStore.getState().recentTickers).toEqual(['AAPL']);
+    expect(store.useTickerStore.getState().activeTicker).toBe('QQQ');
+  });
+
+  it("shared: loads the recents held in 'ticker-store' when the boot settles", async () => {
+    const gate = await fresh();
+    backing.set(STORE, LEGACY);
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    expect(s.getState().recentTickers).toEqual([]);
+    gate.settleStorageMode('shared');
+    expect(s.getState().recentTickers).toEqual(['NVDA']);
+  });
+
+  it("evaluated while pending: reads only 'ticker-store', takes the active ticker but none of its recentTickers", async () => {
+    const gate = await fresh();
+    backing.set(STORE, LEGACY);
+    backing.set('ticker-recents@uid:uid-a', JSON.stringify(['AAPL']));
+    gate.markStoragePending();
+    const keys: string[] = [];
+    const orig = localStorageStub.getItem;
+    localStorageStub.getItem = (k: string) => { keys.push(k); return orig(k); };
+    try {
+      const { useTickerStore: s } = await import('./tickerStore');
+      expect([...new Set(keys)]).toEqual([STORE]);
+      expect(s.getState().activeTicker).toBe('QQQ');
+      expect(s.getState().recentTickers).toEqual([]);
+    } finally {
+      localStorageStub.getItem = orig;
+    }
+  });
+
+  it("per-owner: the active ticker stays per browser in 'ticker-store', and its write keeps the recentTickers there byte-identical", async () => {
+    const gate = await fresh();
+    backing.set(STORE, LEGACY);
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    s.getState().setTicker('spy');
+    s.getState().pushRecent('MSFT');
+    const stored = JSON.parse(backing.get(STORE)!);
+    expect(stored.state.activeTicker).toBe('SPY');
+    expect(JSON.stringify(stored.state.recentTickers)).toBe(JSON.stringify(['NVDA']));
+    expect(backing.get(STORE)).toContain('"recentTickers":["NVDA"]');
+    expect(JSON.parse(backing.get('ticker-recents@uid:uid-a')!)).toEqual(['MSFT']);
+    gate.noteSignedInAccount('uid-b');
+    expect(s.getState().activeTicker).toBe('SPY');
+    expect(s.getState().recentTickers).toEqual([]);
+  });
+
+  it("per-owner: with no recentTickers in 'ticker-store', an active-ticker write adds none", async () => {
+    const gate = await fresh();
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    s.getState().pushRecent('AAPL');
+    s.getState().setTicker('AAPL');
+    expect(JSON.parse(backing.get(STORE)!).state).toEqual({ activeTicker: 'AAPL' });
+  });
+});

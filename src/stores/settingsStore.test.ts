@@ -90,3 +90,90 @@ describe('shell setters', () => {
     expect(useSettingsStore.getState().navPattern).toBe('sidebar');
   });
 });
+
+// FEAT-AUTH-001 account transitions, done_when item 5: navPattern, density
+// and accent follow the account-scoped storage state (authGate.ts).
+describe('account-scoped shell settings', () => {
+  async function freshGate() {
+    vi.resetModules();
+    return await import('@/lib/authGate');
+  }
+  const A = { navPattern: 'sidebar', density: 'comfy', accent: 'violet' };
+  const cls = () => document.body.className;
+  const pick = (s: { navPattern: string; density: string; accent: string }) => [s.navPattern, s.density, s.accent];
+
+  it('per-owner: applies the defaults when the mode is set, then each account its own values or the defaults', async () => {
+    localStorage.setItem(KEY, JSON.stringify(A));
+    localStorage.setItem(`${KEY}@uid:uid-a`, JSON.stringify(A));
+    const gate = await freshGate();
+    gate.markStoragePending();
+    const { useSettingsStore } = await import('./settingsStore');
+    gate.settleStorageMode('perOwner');
+    expect(pick(useSettingsStore.getState())).toEqual(['top-tabs', 'dense', 'dawn']);
+    expect(cls()).toBe('density-dense accent-dawn');
+    gate.noteSignedInAccount('uid-a');
+    expect(pick(useSettingsStore.getState())).toEqual(['sidebar', 'comfy', 'violet']);
+    expect(cls()).toBe('density-comfy accent-violet');
+    gate.noteSignedInAccount('uid-b');
+    expect(pick(useSettingsStore.getState())).toEqual(['top-tabs', 'dense', 'dawn']);
+    expect(cls()).toBe('density-dense accent-dawn');
+  });
+
+  it('a store evaluated after the mode settled, before or after the first report, holds what an earlier one holds', async () => {
+    localStorage.setItem(`${KEY}@uid:uid-a`, JSON.stringify(A));
+    let gate = await freshGate();
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    let store = await import('./settingsStore');
+    expect(pick(store.useSettingsStore.getState())).toEqual(['top-tabs', 'dense', 'dawn']);
+    gate.noteSignedInAccount('uid-a');
+    expect(pick(store.useSettingsStore.getState())).toEqual(['sidebar', 'comfy', 'violet']);
+    document.body.className = '';
+    gate = await freshGate();
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    store = await import('./settingsStore');
+    expect(pick(store.useSettingsStore.getState())).toEqual(['sidebar', 'comfy', 'violet']);
+    expect(cls()).toBe('density-comfy accent-violet');
+  });
+
+  it('shared: loads and applies the un-namespaced values when the boot settles', async () => {
+    localStorage.setItem(KEY, JSON.stringify(A));
+    const gate = await freshGate();
+    gate.markStoragePending();
+    const { useSettingsStore } = await import('./settingsStore');
+    expect(cls()).toBe('');
+    gate.settleStorageMode('shared');
+    expect(pick(useSettingsStore.getState())).toEqual(['sidebar', 'comfy', 'violet']);
+    expect(cls()).toBe('density-comfy accent-violet');
+  });
+
+  it('evaluated while storage is pending: reads no settings key and leaves the body classes unchanged', async () => {
+    localStorage.setItem(KEY, JSON.stringify(A));
+    document.body.className = 'keep-me';
+    const gate = await freshGate();
+    gate.markStoragePending();
+    const read = vi.spyOn(Storage.prototype, 'getItem');
+    try {
+      const { useSettingsStore } = await import('./settingsStore');
+      expect(read.mock.calls.map(([k]) => k).filter((k) => String(k).startsWith(KEY))).toEqual([]);
+      expect(cls()).toBe('keep-me');
+      expect(pick(useSettingsStore.getState())).toEqual(['top-tabs', 'dense', 'dawn']);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it("per-owner: a change is stored under the current account's key only", async () => {
+    localStorage.setItem(KEY, JSON.stringify(A));
+    const gate = await freshGate();
+    gate.markStoragePending();
+    const { useSettingsStore } = await import('./settingsStore');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-b');
+    useSettingsStore.getState().setAccent('teal');
+    expect(JSON.parse(localStorage.getItem(`${KEY}@uid:uid-b`)!)).toEqual({ navPattern: 'top-tabs', density: 'dense', accent: 'teal' });
+    expect(localStorage.getItem(KEY)).toBe(JSON.stringify(A));
+  });
+});
