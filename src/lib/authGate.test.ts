@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+// @vitest-environment jsdom
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
   clearVerificationRequired,
@@ -153,11 +154,180 @@ describe('account record', () => {
 // done_when item 21: authGate.ts stays safe to import from the entry chunk.
 describe('authGate imports', () => {
   it('imports @tanstack/react-query for types only and nothing from src/stores', () => {
-    const src = readFileSync(fileURLToPath(new URL('./authGate.ts', import.meta.url)), 'utf8');
+    const src = readFileSync(join(process.cwd(), 'src', 'lib', 'authGate.ts'), 'utf8');
     const imports = src.split('\n').filter((l) => /^\s*import\b/.test(l) || /^\s*export\s.*\bfrom\s/.test(l));
     for (const line of imports.filter((l) => l.includes('@tanstack/react-query'))) {
       expect(line).toMatch(/^\s*import\s+type\b/);
     }
     expect(imports.filter((l) => /['"](@\/stores|\.\.\/stores|src\/stores)/.test(l))).toEqual([]);
+  });
+});
+
+// done_when items 2, 3 and 4 (shared half): account-scoped storage.
+describe('account-scoped storage', () => {
+  async function fresh() {
+    vi.resetModules();
+    localStorage.clear();
+    return import('./authGate');
+  }
+  const snapshot = () => Object.fromEntries(Object.keys(localStorage).sort().map((k) => [k, localStorage.getItem(k)]));
+
+  it('per-owner: a write while uid A is the account goes to <key>@uid:uid-a and changes no other key', async () => {
+    const gate = await fresh();
+    localStorage.setItem('platform-theme', 'light');
+    localStorage.setItem('platform-theme@uid:uid-b', 'dark');
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    const before = snapshot();
+    gate.writeScoped('platform-theme', 'dark');
+    expect(snapshot()).toEqual({ ...before, 'platform-theme@uid:uid-a': 'dark' });
+  });
+
+  it("per-owner: a read while uid B is the account returns B's own value or nothing, never A's, another owner's or the un-namespaced value", async () => {
+    const gate = await fresh();
+    localStorage.setItem('platform-theme', 'light');
+    localStorage.setItem('platform-theme@uid:uid-a', 'light');
+    localStorage.setItem('platform-theme@uid:uid-c', 'light');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.readScoped('platform-theme')).toBeNull();
+    localStorage.setItem('platform-theme@uid:uid-b', 'dark');
+    expect(gate.readScoped('platform-theme')).toBe('dark');
+  });
+
+  it('pending: nothing account-scoped is read or written', async () => {
+    const gate = await fresh();
+    localStorage.setItem('platform-theme', 'light');
+    localStorage.setItem('platform-theme@uid:uid-a', 'light');
+    gate.markStoragePending();
+    gate.noteSignedInAccount('uid-a');
+    const before = snapshot();
+    expect(gate.readScoped('platform-theme')).toBeNull();
+    gate.writeScoped('platform-theme', 'dark');
+    expect(snapshot()).toEqual(before);
+  });
+
+  it('per-owner with no account (before the first report, or signed out): a write stores nothing', async () => {
+    const gate = await fresh();
+    gate.settleStorageMode('perOwner');
+    gate.writeScoped('em.account', '1000');
+    expect(snapshot()).toEqual({});
+    gate.noteSignedInAccount(null);
+    gate.writeScoped('em.account', '1000');
+    expect(gate.readScoped('em.account')).toBeNull();
+    expect(snapshot()).toEqual({});
+  });
+
+  it('with localStorage unavailable, reads return nothing and writes are dropped without an error', async () => {
+    const gate = await fresh();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('SecurityError'); });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError'); });
+    try {
+      expect(gate.readScoped('platform-theme')).toBeNull();
+      expect(() => gate.writeScoped('platform-theme', 'dark')).not.toThrow();
+      gate.settleStorageMode('shared');
+      expect(gate.readScoped('platform-theme')).toBeNull();
+      expect(() => gate.writeScoped('platform-theme', 'dark')).not.toThrow();
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it('A, signed out, B, A again: every key present at any step is unchanged at the end except the keys the current owner wrote', async () => {
+    const gate = await fresh();
+    const legacy = {
+      'platform-theme': 'light',
+      'platform-shell-settings': JSON.stringify({ navPattern: 'sidebar', density: 'comfy', accent: 'violet' }),
+      'em.account': '88888',
+      'em.riskPct': '4.5',
+      'ticker-store': JSON.stringify({ state: { activeTicker: 'IWM', recentTickers: ['NVDA'] }, version: 0 }),
+    };
+    for (const [k, v] of Object.entries(legacy)) localStorage.setItem(k, v);
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    const seen: Record<string, string | null>[] = [snapshot()];
+    gate.noteSignedInAccount('uid-a');
+    gate.writeScoped('platform-theme', 'light');
+    gate.writeScoped('em.account', '1000');
+    seen.push(snapshot());
+    gate.noteSignedInAccount(null);
+    gate.writeScoped('platform-theme', 'dark');
+    seen.push(snapshot());
+    gate.noteSignedInAccount('uid-b');
+    gate.writeScoped('platform-theme', 'dark');
+    gate.writeScoped('em.account', '2000');
+    seen.push(snapshot());
+    gate.noteSignedInAccount('uid-a');
+    gate.writeScoped('em.account', '1500');
+    const end = snapshot();
+    const writtenByCurrentOwner = new Set(['em.account@uid:uid-a']);
+    for (const step of seen) {
+      for (const [k, v] of Object.entries(step)) {
+        if (writtenByCurrentOwner.has(k)) continue;
+        expect(end[k], k).toBe(v);
+      }
+    }
+    expect(end['em.account@uid:uid-a']).toBe('1500');
+    for (const [k, v] of Object.entries(legacy)) expect(end[k]).toBe(v);
+  });
+
+  it('shared mode, or no ConfigGate at all: reads and writes use the un-namespaced key exactly as on main', async () => {
+    const gate = await fresh();
+    // No ConfigGate has marked storage pending: shared, as on main.
+    expect(gate.getStorageMode()).toBe('shared');
+    localStorage.setItem('platform-theme', 'light');
+    expect(gate.readScoped('platform-theme')).toBe('light');
+    gate.writeScoped('em.account', '1000');
+    expect(localStorage.getItem('em.account')).toBe('1000');
+    // A boot that settles without initFirebase: shared, whatever is reported.
+    const g2 = await fresh();
+    g2.markStoragePending();
+    g2.settleStorageMode('shared');
+    g2.noteSignedInAccount('uid-a');
+    g2.writeScoped('platform-theme', 'dark');
+    expect(snapshot()).toEqual({ 'platform-theme': 'dark' });
+  });
+
+  it('notifies storage listeners when the mode settles, at the first report, and at each account change', async () => {
+    const gate = await fresh();
+    const events: string[] = [];
+    gate.onStorageChange(() => events.push(`${gate.getStorageMode()}:${gate.getSignedInAccount()}`));
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(events).toEqual(['pending:null', 'perOwner:null', 'perOwner:uid-a', 'perOwner:uid-b']);
+  });
+});
+
+// done_when item 3, second half: nothing removes stored values.
+describe('no deletion of stored values', () => {
+  function sources(dir: string): string[] {
+    return readdirSync(dir).flatMap((name) => {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) return sources(p);
+      return /\.(ts|tsx)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name) ? [p] : [];
+    });
+  }
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+
+  it('no file under src/ other than previewAuthStorage.ts removes a localStorage key, clears it, or clears a zustand persist store', () => {
+    const root = join(process.cwd(), 'src') + '/';
+    const allowed = join(root, 'integrations', 'supabase', 'previewAuthStorage.ts');
+    const offenders: string[] = [];
+    for (const file of sources(root)) {
+      if (file === allowed) continue;
+      const code = stripComments(readFileSync(file, 'utf8'));
+      if (/localStorage\s*\.\s*(removeItem|clear)\s*\(|\bclearStorage\s*\(|\bdelete\s+(window\.)?localStorage\b/.test(code)) {
+        offenders.push(file.slice(root.length));
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

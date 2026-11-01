@@ -65,12 +65,14 @@ const accountListeners = new Set<(next: string | null, prev: string | null) => v
 export function noteSignedInAccount(uid: string | null): void {
   if (!account.reported) {
     account = { reported: true, uid };
+    emitStorageChange();
     return;
   }
   const prev = account.uid;
   if (prev === uid) return;
   account = { reported: true, uid };
   clearAuthBlocked();
+  emitStorageChange();
   for (const l of accountListeners) l(uid, prev);
 }
 
@@ -90,6 +92,99 @@ export function onAccountChange(cb: (next: string | null, prev: string | null) =
   return () => {
     accountListeners.delete(cb);
   };
+}
+
+// ── Account-scoped storage ──────────────────────────────────────────────────
+//
+// Appearance, sizing inputs and recent tickers are per-browser presentation
+// preferences. In firebase mode they are kept per account: each value lives
+// under `<key>@uid:<uid>` for this page's own last reported account, and a
+// read returns only the current account's key. Nothing here ever removes a
+// key, so legacy un-namespaced values and other accounts' values stay byte for
+// byte. Outside firebase mode (open, IAP, the dev stub) the un-namespaced keys
+// are used exactly as before.
+//
+// The mode:
+//  - 'shared' by default, so a store imported with no ConfigGate (a unit test)
+//    behaves as on main;
+//  - 'pending' from the moment ConfigGate's one boot starts until it settles:
+//    nothing account-scoped is read or written, and a failed boot stays here;
+//  - settled by that boot to 'shared' (no initFirebase) or 'perOwner'.
+
+export type StorageMode = 'pending' | 'shared' | 'perOwner';
+
+let storageMode: StorageMode = 'shared';
+const storageListeners = new Set<() => void>();
+
+function emitStorageChange(): void {
+  for (const l of storageListeners) l();
+}
+
+/** ConfigGate's boot, when it starts. */
+export function markStoragePending(): void {
+  if (storageMode === 'pending') return;
+  storageMode = 'pending';
+  emitStorageChange();
+}
+
+/** ConfigGate's boot, once it knows whether initFirebase runs. */
+export function settleStorageMode(mode: Exclude<StorageMode, 'pending'>): void {
+  if (storageMode === mode) return;
+  storageMode = mode;
+  emitStorageChange();
+}
+
+export function getStorageMode(): StorageMode {
+  return storageMode;
+}
+
+/**
+ * Run `cb` whenever what account-scoped storage resolves to may have changed:
+ * the mode settling, this page's first account report, and each later account
+ * change. Stores reload their values here.
+ */
+export function onStorageChange(cb: () => void): () => void {
+  storageListeners.add(cb);
+  return () => {
+    storageListeners.delete(cb);
+  };
+}
+
+/** The key a read or write uses now, or null when nothing may be read or written. */
+function scopedKey(key: string): string | null {
+  if (storageMode === 'shared') return key;
+  if (storageMode === 'pending') return null;
+  const uid = getSignedInAccount();
+  return uid === null ? null : `${key}@uid:${uid}`;
+}
+
+/** The current account's stored value for `key`, or null when it has none,
+ *  when storage is pending, with no account, or with localStorage unavailable. */
+export function readScoped(key: string): string | null {
+  const k = scopedKey(key);
+  if (k === null) return null;
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    // Unavailable storage (private mode, blocked site data) means this
+    // per-browser preference was never stored: the caller shows the product
+    // default, which is what an empty store shows anyway. No data value is
+    // fabricated: these keys hold display preferences, not market data.
+    return null;
+  }
+}
+
+/** Store `value` for the current account. Stores nothing while pending, with
+ *  no account, or with localStorage unavailable (the in-memory value stands). */
+export function writeScoped(key: string, value: string): void {
+  const k = scopedKey(key);
+  if (k === null) return;
+  try {
+    localStorage.setItem(k, value);
+  } catch {
+    // Quota or blocked storage: the preference applies for this page only,
+    // as the stores already behave on main.
+  }
 }
 
 // ── Verification required (the API's 403) ──────────────────────────────────
