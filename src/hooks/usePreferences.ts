@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserPreferences, UserPreferencesUpdate } from '@/types/preferences';
+import { onAccountChange } from '@/lib/authGate';
 import { useThemeStore, type Theme } from '@/stores/themeStore';
 import {
   useSettingsStore, ACCENTS, type Accent, type Density, type NavPattern,
@@ -164,6 +165,23 @@ export function usePreferencesSync() {
   // closure still holds the PRE-hydration store values — publishing those
   // would overwrite the server with stale local state. Skip exactly one pass.
   const skipNextWrite = useRef(false);
+  // An account change pauses write-through until the new account's stored
+  // preferences have hydrated (FEAT-AUTH-001). The stores reload right after
+  // this listener runs, and those reloaded values are not the new account's
+  // choice, so nothing is sent until the next hydration sets a new baseline.
+  // The state bump re-renders this owner so its query observer moves onto the
+  // new account's query.
+  const [, setAccountEpoch] = useState(0);
+  useEffect(
+    () =>
+      onAccountChange(() => {
+        hydrated.current = false;
+        lastSent.current = null;
+        skipNextWrite.current = false;
+        setAccountEpoch((n) => n + 1);
+      }),
+    [],
+  );
   useEffect(() => {
     if (!isOwner || hydrated.current || query.isPending) return;
     hydrated.current = true;

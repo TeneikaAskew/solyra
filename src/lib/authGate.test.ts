@@ -139,6 +139,18 @@ describe('account record', () => {
     expect(blockedSeenByListener).toBe(false);
   });
 
+  it('runs the account listeners before the stores reload', async () => {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    const seen: string[] = [];
+    gate.onAccountChange(() => seen.push('account'));
+    gate.onStorageChange(() => seen.push('storage'));
+    gate.noteSignedInAccount('uid-b');
+    expect(seen).toEqual(['account', 'storage']);
+  });
+
   it('stops notifying a listener once it unsubscribes', async () => {
     const gate = await fresh();
     const seen: (string | null)[] = [];
@@ -329,5 +341,65 @@ describe('no deletion of stored values', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+// done_when item 6: resetAccountQueries.
+describe('resetAccountQueries', () => {
+  async function setup() {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    const { QueryClient } = await import('@tanstack/react-query');
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return { gate, qc };
+  }
+
+  it("removes every query keyed under 'me' except ['me', B]", async () => {
+    const { gate, qc } = await setup();
+    for (const key of [['me', 'uid-a'], ['me', 'uid-b'], ['me', 'preferences'], ['me', 'profile']]) qc.setQueryData(key, { k: key.join('/') });
+    gate.resetAccountQueries(qc, 'uid-b');
+    expect(qc.getQueryCache().getAll().filter((q) => q.queryKey[0] === 'me').map((q) => q.queryKey)).toEqual([['me', 'uid-b']]);
+    expect(qc.getQueryData(['me', 'uid-b'])).toEqual({ k: 'me/uid-b' });
+  });
+
+  it("discards the previous account's own answer still in flight", async () => {
+    const { gate, qc } = await setup();
+    let release!: (v: string) => void;
+    const late = qc.fetchQuery({ queryKey: ['me', 'profile'], queryFn: () => new Promise<string>((r) => { release = r; }) });
+    gate.resetAccountQueries(qc, 'uid-b');
+    release('A profile');
+    await expect(late).rejects.toBeTruthy();
+    expect(qc.getQueryData(['me', 'profile'])).toBeUndefined();
+  });
+
+  it('empties an account-blind query, and discards its answer that arrives after the call', async () => {
+    const { gate, qc } = await setup();
+    qc.setQueryData(['journal', 'trades', 'IWM'], ['A trade']);
+    let release!: (v: string[]) => void;
+    const late = qc.fetchQuery({ queryKey: ['signals', 'IWM'], queryFn: () => new Promise<string[]>((r) => { release = r; }) });
+    gate.resetAccountQueries(qc, 'uid-b');
+    expect(qc.getQueryData(['journal', 'trades', 'IWM'])).toBeUndefined();
+    release(['A signal']);
+    await late.catch(() => undefined);
+    await Promise.resolve();
+    expect(qc.getQueryData(['signals', 'IWM'])).toBeUndefined();
+  });
+
+  it('after a sign-out leaves no query holding data, without clear()', async () => {
+    const { gate, qc } = await setup();
+    qc.setQueryData(['me', 'uid-a'], { email: 'a' });
+    qc.setQueryData(['journal', 'trades', 'IWM'], ['A trade']);
+    const clear = vi.spyOn(qc, 'clear');
+    gate.resetAccountQueries(qc, null);
+    expect(qc.getQueryCache().getAll().filter((q) => q.state.data !== undefined)).toEqual([]);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it('never calls clear() on a switch either', async () => {
+    const { gate, qc } = await setup();
+    qc.setQueryData(['me', 'uid-a'], { email: 'a' });
+    const clear = vi.spyOn(qc, 'clear');
+    gate.resetAccountQueries(qc, 'uid-b');
+    expect(clear).not.toHaveBeenCalled();
   });
 });

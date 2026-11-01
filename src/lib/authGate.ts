@@ -10,6 +10,7 @@
  * simply states why there is none.
  */
 import { useSyncExternalStore } from 'react';
+import type { Query, QueryClient } from '@tanstack/react-query';
 
 let blocked = false;
 const listeners = new Set<() => void>();
@@ -54,7 +55,9 @@ export function useAuthBlocked(): boolean {
 // onAuthStateChanged. The first report after load is not a change, and
 // neither is a repeat of the same uid; on a change the auth-blocked flag is
 // cleared first (the previous account's 401 says nothing about this one),
-// then the listeners run.
+// then the account listeners run (the query reset and the write-through
+// pause), and only then do the stores reload, so no reloaded value can be
+// written through as the new account's choice.
 
 type AccountState = { reported: false } | { reported: true; uid: string | null };
 
@@ -72,8 +75,8 @@ export function noteSignedInAccount(uid: string | null): void {
   if (prev === uid) return;
   account = { reported: true, uid };
   clearAuthBlocked();
-  emitStorageChange();
   for (const l of accountListeners) l(uid, prev);
+  emitStorageChange();
 }
 
 /** The last reported account; null before the first report or while signed out. */
@@ -92,6 +95,29 @@ export function onAccountChange(cb: (next: string | null, prev: string | null) =
   return () => {
     accountListeners.delete(cb);
   };
+}
+
+/**
+ * Clear what the previous account's queries hold, on an account change.
+ * Every query keyed under 'me' except `['me', next]` is removed (those keys
+ * are the account's own: profile, preferences, the previous uid). Every
+ * other query is account-blind (its key omits the uid), so it is reset:
+ * its data goes and an answer still in flight is discarded, and an active
+ * query refetches as the new account. After a sign-out every query is
+ * removed. `clear()` is never used: it would also drop mutations and
+ * observers' cache entries the next screen relies on.
+ */
+export function resetAccountQueries(queryClient: QueryClient, next: string | null): void {
+  if (next === null) {
+    void queryClient.cancelQueries();
+    queryClient.removeQueries();
+    return;
+  }
+  const previousOwn = (q: Query) => q.queryKey[0] === 'me' && !(q.queryKey.length === 2 && q.queryKey[1] === next);
+  // Removing a query also cancels its fetch (Query.destroy), so an answer
+  // the previous account was still waiting for is discarded.
+  queryClient.removeQueries({ predicate: previousOwn });
+  void queryClient.resetQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
 }
 
 // ── Account-scoped storage ──────────────────────────────────────────────────
