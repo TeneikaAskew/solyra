@@ -22,6 +22,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { setRuntimeConfig, type RuntimeConfig } from '@/lib/runtimeConfig';
 import { isStaticFrontendHost } from '@/lib/apiTargets';
+import { markStoragePending, settleStorageMode } from '@/lib/authGate';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
 async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
@@ -69,11 +70,21 @@ export function describeBootFailure(err: Error): string {
  * times StrictMode re-runs the effect: the promise is module-level, so the
  * config fetch and (in firebase mode) the awaited SDK init happen exactly
  * once, and every gate instance settles on the same outcome.
+ *
+ * The boot also owns the account-scoped storage mode (authGate.ts,
+ * FEAT-AUTH-001): it marks storage pending when it starts, before any gate
+ * starts its preload, so no store module can read a value first; it settles
+ * per-owner just before initFirebase attaches the SDK listener, or shared
+ * when the boot resolves without it. A failed boot leaves storage pending.
+ * Nothing a gate instance does (a second gate, a StrictMode re-run, an
+ * unmount during the spinner) touches the mode.
  */
 let bootPromise: Promise<void> | null = null;
 
 function bootOnce(): Promise<void> {
-  bootPromise ??= (async () => {
+  if (bootPromise) return bootPromise;
+  markStoragePending();
+  bootPromise = (async () => {
     const config = await fetchRuntimeConfig();
     setRuntimeConfig(config);
     if (config.authMode === 'firebase' && config.firebase) {
@@ -84,7 +95,10 @@ function bootOnce(): Promise<void> {
       // chunk, and only in firebase mode; the await matters because
       // AuthGate must not render until auth state can be observed.
       const { initFirebase } = await import('@/lib/firebase');
+      settleStorageMode('perOwner');
       await initFirebase(config.firebase);
+    } else {
+      settleStorageMode('shared');
     }
   })();
   return bootPromise;
@@ -139,13 +153,6 @@ export function ConfigGate({
   >({ phase: 'loading' });
 
   useEffect(() => {
-    // Swallowing a preload failure is safe only because React.lazy re-runs
-    // the SAME import when the child renders — the error then surfaces
-    // through the route error boundary, once, instead of twice.
-    void preload?.().catch(() => {});
-  }, [preload]);
-
-  useEffect(() => {
     let cancelled = false;
     bootOnce().then(
       () => {
@@ -163,6 +170,16 @@ export function ConfigGate({
       cancelled = true;
     };
   }, []);
+
+  // Declared after the boot effect on purpose: effects run in declaration
+  // order, so the boot has marked storage pending before the preloaded chunk
+  // (and the stores it imports) can evaluate.
+  useEffect(() => {
+    // Swallowing a preload failure is safe only because React.lazy re-runs
+    // the SAME import when the child renders — the error then surfaces
+    // through the route error boundary, once, instead of twice.
+    void preload?.().catch(() => {});
+  }, [preload]);
 
   if (state.phase === 'error') return <ConfigErrorScreen message={state.message} />;
   if (state.phase === 'loading') {
