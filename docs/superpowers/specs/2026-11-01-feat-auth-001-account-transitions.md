@@ -8,10 +8,10 @@ done_when:
   - "src/lib/authGate.test.ts asserts, in per-owner mode, that an account-scoped write made while this page's account is uid A is stored under '<key>@uid:uid-a' and changes no other key; that a read while the account is uid B returns B's own value or nothing, never uid A's value, another owner's value or the un-namespaced value; that while storage is pending nothing account-scoped is read or written; that while this page has no account (before its first report, or signed out) an account-scoped write stores nothing; and that with localStorage unavailable reads return nothing and writes are dropped without an error"
   - "src/lib/authGate.test.ts runs A signed in, A writes, signed out, B signed in, B writes, A signed in again, with un-namespaced legacy values present from the start, and asserts that no localStorage key present at any step is missing or changed at the end except the keys the current owner wrote; and a unit test that scans the source files under src/ (tests excluded, comments stripped) asserts that no file other than src/integrations/supabase/previewAuthStorage.ts calls localStorage.removeItem or localStorage.clear, calls a zustand persist clearStorage, or deletes a localStorage property"
   - "src/lib/authGate.test.ts asserts that in shared mode (the boot settled without initFirebase) and when no ConfigGate has marked storage pending, every account-scoped read and write uses the un-namespaced key exactly as on main, with recentTickers kept inside 'ticker-store', so dev, open, local and IAP behaviour is unchanged; and a new src/components/auth/ConfigGate.test.tsx asserts that the boot marks storage pending before the first ConfigGate's preload starts, settles the mode itself, and that a second ConfigGate mounted after the boot started, a StrictMode re-run of its effects, or a ConfigGate unmounted during its spinner leaves the mode and every stored value unchanged, and that a failed boot leaves storage pending"
-  - "store unit tests assert that themeStore, settingsStore (navPattern, density, accent) and tickerStore's recentTickers, in per-owner mode, apply the product defaults when the mode is set and then load the account's own values, or keep the product defaults when it has none, on the first report and on every later account change this page observes; that a store module evaluated after the mode settled, both before and after the first report, holds the same values as one evaluated earlier; that in shared mode they load and apply the un-namespaced values when the boot settles; that a store module evaluated while storage is pending reads no account-scoped key and leaves data-theme and the body classes unchanged; that tickerStore's activeTicker stays a per-browser value in 'ticker-store' as on main; that a write of activeTicker keeps any recentTickers already held in 'ticker-store' byte-identical; and src/components/dashboard/MovementRead.test.tsx asserts that SizeCalculator shows the current account's own em.account and em.riskPct, or main's defaults (an empty account size and Risk % 1) when the account has none, and writes its changes only under that account"
+  - "store unit tests assert that themeStore, settingsStore (navPattern, density, accent) and tickerStore's recentTickers, in per-owner mode, apply the product defaults when the mode is set and then load the account's own values, or keep the product defaults when it has none, on the first report and on every later account change this page observes; that a store module evaluated after the mode settled, both before and after the first report, holds the same values as one evaluated earlier; that in shared mode they load and apply the un-namespaced values when the boot settles; that a store module evaluated while storage is pending reads no account-scoped key other than 'ticker-store', takes none of that record's recentTickers, and leaves data-theme and the body classes unchanged; that tickerStore's activeTicker stays a per-browser value in 'ticker-store' as on main; that a write of activeTicker keeps any recentTickers already held in 'ticker-store' byte-identical; and src/components/dashboard/MovementRead.test.tsx asserts that SizeCalculator shows the current account's own em.account and em.riskPct, or main's defaults (an empty account size and Risk % 1) when the account has none, and writes its changes only under that account"
   - "src/lib/authGate.test.ts asserts that resetAccountQueries for uid B removes every query keyed under 'me' except ['me', B], empties an account-blind query, discards an account-blind answer that arrives after the call, and after a sign-out leaves no query holding data"
   - "src/lib/authGate.test.ts asserts that the email-confirmed record marked for uid B and then for uid A reads confirmed for both, that marking uid A never clears uid B, and that a record marked for uid A still reads not confirmed for uid B and for no uid"
-  - "hook unit tests assert that preferences write-through is suspended from an account change until the new account's stored preferences have hydrated, and that the profile and preferences save write their answer to the cache only while the account that rendered them is still signed in"
+  - "hook unit tests assert that preferences write-through is suspended from an account change until the new account's stored preferences have hydrated, and that the profile and preferences save write their answer to the cache only while the account that rendered them is still signed in; and src/lib/authedFetch.test.ts and a new src/lib/firebaseImpl.test.ts assert that, with the SDK's uid already B while this page's last reported account is still A, neither the preferences write-through nor the profile save sends a request and the token read never reads B's token, and that with the SDK and the report both on A they send with A's token"
   - "tests/shared/identity-transitions.spec.ts signs account A in, signs out through each of the four controls (Settings Account tab, header, account menu at 390 px, /auth/action Sign in after a password reset), signs account B in and asserts that once B's profile has answered Settings shows B's display name and does not contain A's, and that B's profile was requested with B's token"
   - "tests/shared/identity-transitions.spec.ts asserts the same for a switch from A to B with no sign-out: in this tab, from another tab of the same browser context, while this tab is on the public / route, and while it is on /auth/action, each with a client-side return to /settings"
   - "tests/shared/identity-transitions.spec.ts asserts that account B with no stored preferences (404), after account A stored light, comfy and violet, renders data-theme dark and that B's first appearance change sends a PUT carrying none of A's values, both when A signed out in this tab and when another tab switched to B"
@@ -19,7 +19,7 @@ done_when:
   - "tests/shared/identity-transitions.spec.ts asserts that after a direct switch from A to B, B's stored theme and accent apply with no preferences PUT for either account, and that while B's profile request is held the Display name field does not show A's name and Save changes is disabled"
   - "tests/shared/identity-transitions.spec.ts asserts that after a direct switch from A to B on the journal's My journal view, A's trade text is gone and B's trades are requested with B's token"
   - "tests/shared/identity-transitions.spec.ts asserts that after A's gated request answers 401 and the account switches to B, with every gated API request B makes held unanswered, the auth status reads signed-in and the expired-session strip is absent"
-  - "tests/shared/identity-transitions.spec.ts asserts that when a tab still showing A changes the theme after another tab signed B in, while this tab's own last account report is still A, B's next fresh load renders B's own appearance or the defaults, and A's next sign-in on that browser renders A's changed theme; the test orders that write by the other tab's signed-in state, not by a storage tag"
+  - "tests/shared/identity-transitions.spec.ts asserts that when a tab still showing A changes the theme after another tab signed B in, while this tab's own last account report is still A, B's next fresh load renders B's own appearance or the defaults, and A's next sign-in on that browser renders A's changed theme; the test orders that write by the other tab's signed-in state, not by a storage tag; and a test that delays only this tab's IndexedDB success event for B's record, so this tab's SDK holds B while its listener has reported only A, asserts that neither a preferences change nor a profile save made on A's screen sends a request, and that with no switch both go out with A's token"
   - "tests/shared/identity-transitions.spec.ts asserts that after B signed in on the same browser and set its own appearance, sizing inputs and recent tickers, each different from A's, A's appearance, sizing inputs and recent tickers are shown again when A signs back in, with none of B's values"
   - "tests/shared/identity-transitions.spec.ts starts from a browser holding un-namespaced platform-theme, platform-shell-settings, em.account, em.riskPct and ticker-store recentTickers, signs in an account with no stored preferences, and asserts that the product defaults render, the account-size input is empty and Risk % shows 1 as on main, no recent ticker is shown, none of those legacy values is shown on ConfigGate's spinner or before the account's first report, and every one of those un-namespaced values is byte-identical afterwards"
   - "tests/shared/identity-transitions.spec.ts asserts that sizing inputs and recent tickers A entered are not shown to B, that no request carries the sizing inputs, and that the active ticker stays per browser, with B's requests for it carrying B's token"
@@ -83,6 +83,21 @@ not counted as observing the later step.
   asserted separately; it is persisted in the same `ticker-store` record (`tickerStore.ts`
   `partialize`).
 
+**Observed on main `fab3a52c` only with a harness-widened window (I-1):**
+
+- **A write sent after this tab's SDK switched to B and before its listener reported B.** The SDK
+  (`@firebase/auth` 1.13.5) sets `currentUser` to B, awaits its own IndexedDB write of B, and only
+  then notifies auth listeners. `authedFetch.ts:221-229` reads the uid and token at send time, so a
+  write sent in that interval carries B's token. The harness delays only the delivery of this tab's
+  IndexedDB success event for B's record; the put itself runs and nothing is reordered. With A's
+  screen still rendered and this tab's last report still A (a listener on the same SDK instance),
+  an Appearance change sent `PUT /api/me/preferences` with B's token and A's values
+  (`{"theme":"light","nav_pattern":"sidebar","density":"comfy","accent":"violet"}`), which became
+  B's stored row, and a profile Save sent A's edit (`{"display_name":"Alice Edited"}`) to B's
+  profile and showed "Saved." Without the delay, the interval from that IndexedDB write to this
+  tab's listener measured 0.8 to 1.8 ms in 10 runs, so a user's click inside it was not reproduced.
+  This is a harness result, not a user or production reproduction.
+
 **Isolated only on the local prototype `2b9d04a`, or on its evidence variants:**
 
 - **Late profile save (#234 item 3).** On main B already shows A's profile before the held save is
@@ -104,12 +119,9 @@ not counted as observing the later step.
 
 - A stale A callback that starts after B is selected. Every mutate runs synchronously in an
   effect, and the shell unmounts.
-- A's request carrying B's token. `authedFetch.ts:226-241` reads the token at send time and
-  refuses another account's forced-refresh token.
-- Not reproduced, and no control targets it: a write-through sent in the moment after this tab's SDK
-  has switched to B and before its listener reports B. It would carry B's token with A's values. The
-  first draft's ablation removed a pre-send account check with no control failing, which shows only
-  that no test reached this window. Item 16 would catch it only if the timing lands in it.
+- A's request carrying B's token when the request starts while this tab's SDK still holds A.
+  `authedFetch.ts:226-241` reads the token at send time and refuses another account's
+  forced-refresh token. A request that starts after the SDK switched is the I-1 case above.
 
 **Not yet tested anywhere.** These are acceptance controls this spec adds:
 
@@ -118,6 +130,9 @@ not counted as observing the later step.
 - Isolation of legacy un-namespaced values, including before the first report.
 - Recent tickers asserted separately from the active ticker.
 - A stale-tab control that does not depend on a storage tag.
+- A write sent after this tab's listener reported B and before the shell re-rendered A's screen.
+  The send check below does not cover it, because the report has already moved; nothing has tested
+  whether such a write can be composed.
 - The proposed per-owner storage design. It is not built, and none of its controls has run.
 
 **Coverage.** No approved contract covers this.
@@ -221,8 +236,9 @@ not a StrictMode re-run of its effects, and not a ConfigGate that unmounts durin
 **A store loads the current state.** At module evaluation, and again at each storage event (the
 mode settling, the first report, a later account change), a store loads the values for the current
 mode and account:
-- **Pending.** Nothing is read and the document is left unchanged. The store holds the product
-  defaults in memory, and nothing renders from it.
+- **Pending.** No account-scoped value is read or applied, and the document is left unchanged.
+  The store holds the product defaults in memory, and nothing renders from it. The per-browser
+  active ticker still loads (below).
 - **Shared.** The un-namespaced values, applied as main's module evaluation does.
 - **Per-owner, before the first report or with no account.** The product defaults, applied.
 - **Per-owner with a reported account.** That account's own values, or the defaults when it has
@@ -292,6 +308,11 @@ remount on every account change makes it read them again. No new store is added.
 
 - **Write-backs.** `useProfile` and `usePreferencesSync` write a save's answer to the cache only
   while the account that rendered them is current.
+- **Sends.** The preferences write-through and the profile save are sent only while the SDK's
+  signed-in account is the one this page was last told about. The check and the token read use the
+  same SDK user object. A write composed after the SDK switched and before this page's report is not
+  sent, its error is shown (a profile save says nothing was saved), and the pause above then
+  applies. No other request changes.
 - **Confirmed record.** `emailConfirmedFor` becomes a per-uid set. Nothing else about verification
   changes.
 - **Sign-out controls.** Unchanged (approach 6). Settings' Sign out is fixed by the account change,
@@ -336,8 +357,10 @@ Every run below is local and hermetic. Nothing on `spike/identity-transitions` h
 
 | Run | Result | Log |
 |---|---|---|
-| The spike's e2e file (22 cases) on main `fab3a52c`, 2026-11-01 18:04:08Z to 18:06:59Z | 16 fail, 6 pass. Where each fails is in Problem. | `main-fab3a52c-r3-full.log` |
+| The spike's e2e file (21 cases, plus the warmup project) on main `fab3a52c`, 2026-11-01 18:04:08Z to 18:06:59Z | 16 fail; 5 pass (the header, account-menu and `/auth/action` sign-outs, and two characterisations that only log values); the warmup passes. Where each fails is in Problem. | `main-fab3a52c-r3-full.log` |
 | Existing store, `MovementRead` and `authGate` unit tests on main, 18:29:14Z | 5 files, 40 tests pass | `main-fab3a52c-unit-baseline.log` |
+| I-1 harness on main `fab3a52c` (8 cases plus warmup), 2026-11-01 | Held window: both writes sent with B's token and A's values (2 fail); natural window 0.8 to 1.8 ms (5 runs); same-account control passes | `i1-evidence/main-fab3a52c-run2.log` |
+| The same file on the local send-check prototype `34eb9bb` | 9 pass: no write sent in the held window, the profile save shows its error, same-account writes go out with A's token. Its unit tests pass. | `i1-evidence/guard-34eb9bb-run1.log` |
 | The first prototype and its ablations | As in Problem | spike logs |
 | Evidence-only variants: preferences write-back guard, reset on every change, per-uid confirmed record | They pass their controls | spike logs |
 
