@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserPreferences, UserPreferencesUpdate } from '@/types/preferences';
-import { onAccountChange } from '@/lib/authGate';
+import { getSignedInAccount, onAccountChange } from '@/lib/authGate';
 import { useThemeStore, type Theme } from '@/stores/themeStore';
 import {
   useSettingsStore, ACCENTS, type Accent, type Density, type NavPattern,
@@ -112,12 +112,15 @@ async function savePreferences(update: UserPreferencesUpdate): Promise<UserPrefe
  * Hydrate the appearance stores from the server once, then write through on
  * every subsequent change.
  *
+ * `uid` is the account the caller renders for (useUser's uid; null outside
+ * firebase mode, where no account is ever reported).
+ *
  * Mount EXACTLY once (AppShell does it). A second live instance would treat
  * the first one's hydration as a local edit and echo it straight back as a
  * redundant PUT, so the module-level guard makes extra mounts inert and they
  * read status from the shared store instead.
  */
-export function usePreferencesSync() {
+export function usePreferencesSync(uid: string | null) {
   const queryClient = useQueryClient();
   const { theme, setTheme } = useThemeStore();
   const { navPattern, density, accent, setNavPattern, setDensity, setAccent } =
@@ -154,7 +157,13 @@ export function usePreferencesSync() {
 
   const mutation = useMutation({
     mutationFn: savePreferences,
-    onSuccess: (saved) => queryClient.setQueryData(QUERY_KEY, saved),
+    // The account this syncer rendered for when the save started. Its answer
+    // is cached only while that account is still the current one: after a
+    // switch the cache entry is the next account's, and this answer is not.
+    onMutate: () => ({ owner: uid }),
+    onSuccess: (saved, _update, ctx) => {
+      if (ctx.owner === getSignedInAccount()) queryClient.setQueryData(QUERY_KEY, saved);
+    },
   });
 
   // Apply the server's stored values exactly once per session. After that the

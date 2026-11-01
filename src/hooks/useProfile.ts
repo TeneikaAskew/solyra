@@ -9,6 +9,7 @@
  * other failure throws and is rendered by the caller. Nothing is defaulted.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getSignedInAccount } from '@/lib/authGate';
 import {
   EMPTY_PROFILE,
   type DateFormat,
@@ -90,7 +91,9 @@ async function saveProfile(update: UserProfileUpdate): Promise<UserProfile> {
   return sanitizeProfile(await res.json());
 }
 
-export function useProfile() {
+/** `uid` is the account the caller renders for (useUser's uid; null outside
+ *  firebase mode, where no account is ever reported). */
+export function useProfile(uid: string | null) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -102,7 +105,12 @@ export function useProfile() {
 
   const mutation = useMutation({
     mutationFn: saveProfile,
-    onSuccess: (saved) => queryClient.setQueryData(QUERY_KEY, saved),
+    // Cache the answer only while the account that started the save is still
+    // current (FEAT-AUTH-001): after a switch the entry is the next account's.
+    onMutate: () => ({ owner: uid }),
+    onSuccess: (saved, _update, ctx) => {
+      if (ctx.owner === getSignedInAccount()) queryClient.setQueryData(QUERY_KEY, saved);
+    },
   });
 
   return {

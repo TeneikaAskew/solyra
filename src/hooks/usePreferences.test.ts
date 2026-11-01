@@ -73,10 +73,13 @@ describe('usePreferencesSync across an account change', () => {
     let account = 'uid-a';
     const gets: Record<string, { resolve: (r: Response) => void }[]> = {};
     const puts: { account: string; body: unknown }[] = [];
+    const heldPuts: { body: unknown; resolve: (r: Response) => void }[] = [];
+    let holdPuts = false;
     vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => {
       if (init?.method === 'PUT') {
         const body = JSON.parse(String(init.body));
         puts.push({ account, body });
+        if (holdPuts) return new Promise<Response>((resolve) => { heldPuts.push({ body, resolve }); });
         return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
       }
       return new Promise<Response>((resolve) => { (gets[account] ??= []).push({ resolve }); });
@@ -85,13 +88,16 @@ describe('usePreferencesSync across an account change', () => {
     // TanStack Query notifies observers on a timer, so each step lets it run.
     const step = (fn: () => void) => act(async () => { fn(); await new Promise((r) => setTimeout(r, 20)); });
 
-    function Syncer() { prefs.usePreferencesSync(); return null; }
+    function Syncer({ uid }: { uid: string | null }) { prefs.usePreferencesSync(uid); return null; }
     const root = createRoot(document.createElement('div'));
     roots.push(root);
-    await act(async () => root.render(createElement(QueryClientProvider, { client: qc }, createElement(Syncer))));
+    const render = (uid: string | null) => root.render(createElement(QueryClientProvider, { client: qc }, createElement(Syncer, { uid })));
+    await act(async () => render('uid-a'));
     return {
-      gate, puts, gets, answer, step, useThemeStore,
-      switchTo: (uid: string) => step(() => { account = uid; gate.noteSignedInAccount(uid); }),
+      gate, qc, puts, gets, heldPuts, answer, step, useThemeStore,
+      holdPuts: () => { holdPuts = true; },
+      // The app re-renders the syncer with the new uid as useUser hears the switch.
+      switchTo: (uid: string) => step(() => { account = uid; gate.noteSignedInAccount(uid); render(uid); }),
     };
   }
 
@@ -113,4 +119,31 @@ describe('usePreferencesSync across an account change', () => {
     expect(t.puts).toHaveLength(1);
     expect(t.puts[0]).toMatchObject({ account: 'uid-b', body: { theme: 'light', density: 'dense' } });
   });
+
+  // done_when item 7 (cache): a save's answer reaches the cache only while
+  // the account that rendered the syncer is still current.
+  it("keeps A's save answer, arriving after the switch, out of B's cache and B's appearance", async () => {
+    const t = await setup();
+    await t.step(() => t.gets['uid-a'][0].resolve(t.answer({ theme: 'dark', nav_pattern: null, density: null, accent: null })));
+    t.holdPuts();
+    await t.step(() => t.useThemeStore.getState().setTheme('light'));
+    expect(t.heldPuts).toHaveLength(1);
+
+    await t.switchTo('uid-b');
+    expect(t.gets['uid-b']).toHaveLength(1);
+    await t.step(() => t.heldPuts[0].resolve(t.answer(t.heldPuts[0].body)));
+    expect(t.qc.getQueryData(['me', 'preferences'])).toBeUndefined();
+    expect(t.useThemeStore.getState().theme).toBe('dark');
+
+    await t.step(() => t.gets['uid-b'][0].resolve(t.answer({ theme: null, nav_pattern: null, density: null, accent: null })));
+    expect(t.useThemeStore.getState().theme).toBe('dark');
+  });
+
+  it('writes the save answer to the cache when the account has not changed', async () => {
+    const t = await setup();
+    await t.step(() => t.gets['uid-a'][0].resolve(t.answer({ theme: 'dark', nav_pattern: null, density: null, accent: null })));
+    await t.step(() => t.useThemeStore.getState().setTheme('light'));
+    expect(t.qc.getQueryData(['me', 'preferences'])).toMatchObject({ theme: 'light' });
+  });
 });
+
