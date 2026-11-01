@@ -32,7 +32,9 @@
  */
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
-import { markAuthBlocked, clearAuthBlocked, markVerificationRequired, clearVerificationRequired } from './authGate';
+import {
+  markAuthBlocked, clearAuthBlocked, markVerificationRequired, clearVerificationRequired, noteRefusedWrite,
+} from './authGate';
 import { isMockModeActive } from './mockMode';
 
 // Paths the backend answers WITHOUT auth, so the sign-in screen, shell, and
@@ -262,7 +264,10 @@ export function installAuthFetch(): void {
       token = await getIdToken();
     } catch (err) {
       // The account moved under a bound write: never retry it as anyone else.
-      if ((err as { code?: unknown }).code === 'account-changed') throw err;
+      if ((err as { code?: unknown }).code === 'account-changed') {
+        noteRefusedWrite(boundUid);
+        throw err;
+      }
       try {
         token = await getIdToken(true);
       } catch (err) {

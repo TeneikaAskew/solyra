@@ -75,6 +75,7 @@ export function noteSignedInAccount(uid: string | null): void {
   if (prev === uid) return;
   account = { reported: true, uid };
   clearAuthBlocked();
+  clearRefusedWriteNotice();
   for (const l of accountListeners) l(uid, prev);
   emitStorageChange();
 }
@@ -118,6 +119,60 @@ export function resetAccountQueries(queryClient: QueryClient, next: string | nul
   // the previous account was still waiting for is discarded.
   queryClient.removeQueries({ predicate: previousOwn });
   void queryClient.resetQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
+}
+
+// ── A write refused across an account change ───────────────────────────────
+//
+// A profile save or preferences write is bound to the account its screen was
+// rendered for (authedFetch.boundToAccount) and refused when the SDK holds
+// another account. If this page still reports the composing account, that
+// screen is still shown and its own form renders the error. If this page
+// already reports another account, the composing screen is being replaced
+// (AuthGate remounts the shell) before the refusal settles, so the refusal is
+// recorded here and AuthGate shows it to the account now on screen. The record
+// holds no value, field or identity of the composing account, only that a
+// change was not sent; the next account change or a dismiss clears it.
+
+let refusedNoticeFor: { shownTo: string | null } | null = null;
+const refusedListeners = new Set<() => void>();
+
+function emitRefused(): void {
+  for (const l of refusedListeners) l();
+}
+
+function clearRefusedWriteNotice(): void {
+  if (refusedNoticeFor === null) return;
+  refusedNoticeFor = null;
+  emitRefused();
+}
+
+/** Called by the fetch layer when a write bound to `composedFor` is refused. */
+export function noteRefusedWrite(composedFor: string | null): void {
+  const shownTo = getSignedInAccount();
+  if (composedFor === shownTo) return;
+  refusedNoticeFor = { shownTo };
+  emitRefused();
+}
+
+/** True while a refusal is recorded for the account this page now reports. */
+export function isRefusedWriteNoticeShown(): boolean {
+  return refusedNoticeFor !== null && refusedNoticeFor.shownTo === getSignedInAccount();
+}
+
+export function dismissRefusedWriteNotice(): void {
+  clearRefusedWriteNotice();
+}
+
+export function subscribeRefusedWriteNotice(cb: () => void): () => void {
+  refusedListeners.add(cb);
+  return () => {
+    refusedListeners.delete(cb);
+  };
+}
+
+/** React hook: true while the refused-write notice is shown. */
+export function useRefusedWriteNotice(): boolean {
+  return useSyncExternalStore(subscribeRefusedWriteNotice, isRefusedWriteNoticeShown, () => false);
 }
 
 // ── Account-scoped storage ──────────────────────────────────────────────────

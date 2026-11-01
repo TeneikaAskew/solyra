@@ -423,3 +423,70 @@ describe('resetAccountQueries', () => {
     expect(clear).not.toHaveBeenCalled();
   });
 });
+
+// FEAT-AUTH-001 § Design "Sends": a write composed on A's screen and refused
+// after this page already reports another account has no form left to show
+// its error in (the shell remounts as B). The refusal is recorded for the
+// account now shown, without any of A's values, and cleared on the next
+// account change or a dismiss.
+describe('refused-write notice', () => {
+  async function fresh() {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.settleStorageMode('perOwner');
+    return gate;
+  }
+
+  it('is recorded for the account now shown when the write was composed for another', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    gate.noteRefusedWrite('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('is not recorded while the composing account is still the one reported (its own form shows the error)', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRefusedWrite('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
+  it('is cleared by the next account change, and a later transition starts clean', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    gate.noteRefusedWrite('uid-a');
+    gate.noteSignedInAccount('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteSignedInAccount(null);
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
+  it('is cleared by a dismiss, and a repeated refusal shows it again', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    gate.noteRefusedWrite('uid-a');
+    gate.dismissRefusedWriteNotice();
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteRefusedWrite('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('notifies subscribers on record, dismiss and the clearing account change', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    const seen: boolean[] = [];
+    gate.subscribeRefusedWriteNotice(() => seen.push(gate.isRefusedWriteNoticeShown()));
+    gate.noteRefusedWrite('uid-a');
+    gate.dismissRefusedWriteNotice();
+    gate.noteRefusedWrite('uid-a');
+    gate.noteSignedInAccount('uid-c');
+    expect(seen).toEqual([true, false, true, false]);
+  });
+});

@@ -518,6 +518,51 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
   }
 
   // ── Case 3: settled B, valid success ────────────────────────────────────
+  // The sync placement's refusal settles after AuthGate has replaced A's
+  // screen, so it is shown by AuthGate to the account now on screen. It must
+  // carry nothing of A's, never read as saved, and clear on the next account
+  // change and on dismiss, across repeated transitions.
+  test("case 2 (sync): the refusal notice stays with the account now on screen and clears on the next change", async ({ context, page }) => {
+    const { w, other } = await twoTabs(context, page);
+    const notice = page.getByTestId('account-change-refusal');
+    const cycle = async (to: Acct, label: string) => {
+      await page.getByLabel('Display name').fill(`Edited before ${label}`);
+      await placeOnReport(page.getByRole('button', { name: 'Save changes' }), 'sync');
+      await page.evaluate((uid) => { (window as unknown as { __onReport: { uid: string } }).__onReport.uid = uid; }, ACCOUNTS[to].uid);
+      await switchDirectly(other, to);
+      await expect.poll(() => lastReport(page)).toBe(ACCOUNTS[to].uid);
+      await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS[to].email);
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText('Nothing was saved');
+      await shot(page, `notice-${label}`);
+      const text = (await notice.textContent()) ?? '';
+      for (const a of Object.values(ACCOUNTS)) {
+        expect(text).not.toContain(a.email);
+        expect(text).not.toContain(a.name);
+      }
+      expect(text).not.toContain(`Edited before ${label}`);
+      expect(await page.evaluate(() => (window as unknown as { __bnd: { tSaved: number | null } }).__bnd.tSaved)).toBeNull();
+    };
+    await cycle('B', 'b1');
+    expect(puts(w, 'tab1', '/api/me/profile')).toEqual([]);
+    // The next change clears it, and the account now shown starts clean.
+    await switchDirectly(other, 'A');
+    await expect.poll(() => lastReport(page)).toBe(ACCOUNTS.A.uid);
+    await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.A.email);
+    await expect(notice).toHaveCount(0);
+    await shot(page, 'notice-cleared-on-change');
+    // A second refusal shows it again; a dismiss clears it.
+    await expect(section(page, 'Your account')).toContainText(ACCOUNTS.A.name);
+    await page.evaluate(() => { const w = window as unknown as { __bnd: { tSaved: number | null; tCommitUid: number | null } }; w.__bnd.tSaved = null; w.__bnd.tCommitUid = null; });
+    await cycle('B', 'b2');
+    await notice.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(notice).toHaveCount(0);
+    await shot(page, 'notice-dismissed');
+    expect(puts(w, 'tab1', '/api/me/profile')).toEqual([]);
+    expect(w.profile.A).toEqual({ display_name: ACCOUNTS.A.name });
+    expect(w.profile.B).toEqual({ display_name: ACCOUNTS.B.name });
+  });
+
   test('case 3: a fresh B screen saves its own profile and appearance with B token', async ({ context, page }) => {
     const { w, other } = await twoTabs(context, page);
     await switchDirectly(other, 'B');

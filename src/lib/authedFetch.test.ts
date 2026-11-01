@@ -275,6 +275,34 @@ describe('installAuthFetch — writes bound to the account whose screen composed
     expect(getIdToken).not.toHaveBeenCalledWith(true);
   });
 
+  it("records the refusal notice when a write bound to A is refused after this page reports B", async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-b');
+    getIdTokenFor.mockRejectedValue(changed());
+    const { native, fetch } = await install();
+    const gate = await import('./authGate');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    const { boundToAccount } = await import('./authedFetch');
+
+    await expect(fetch('/api/me/profile', boundToAccount(put(), 'uid-a'))).rejects.toMatchObject({ code: 'account-changed' });
+    expect(native).not.toHaveBeenCalled();
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('records no notice for a refusal while this page still reports A (the held window)', async () => {
+    getAuthMode.mockReturnValue('firebase');
+    getCurrentUid.mockResolvedValue('uid-b');
+    getIdTokenFor.mockRejectedValue(changed());
+    const { fetch } = await install();
+    const gate = await import('./authGate');
+    gate.noteSignedInAccount('uid-a');
+    const { boundToAccount } = await import('./authedFetch');
+
+    await expect(fetch('/api/me/profile', boundToAccount(put(), 'uid-a'))).rejects.toMatchObject({ code: 'account-changed' });
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
   it('ignores the mark outside firebase mode', async () => {
     getAuthMode.mockReturnValue('open');
     const { native, fetch } = await install();
