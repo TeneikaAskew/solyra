@@ -93,8 +93,10 @@ function memberSpan(text: string, open: number, key: string): [number, number] |
 
 /** 'ticker-store' with only its active ticker changed: every other byte of
  *  the record stays, so its recentTickers and any field persist does not
- *  know are kept exactly. Null when the record holds no `state` object. */
-function withActiveTicker(raw: string, activeTicker: string): string | null {
+ *  know are kept exactly. The active ticker is written as persist holds it,
+ *  a string or not (IMPL-314-3 C-1). Null when the record holds no `state`
+ *  object. */
+function withActiveTicker(raw: string, activeTicker: unknown): string | null {
   const parsed = parse(raw) as { state?: unknown } | null;
   const held = parsed?.state;
   if (typeof held !== 'object' || held === null || Array.isArray(held)) return null;
@@ -130,7 +132,7 @@ const tickerStorage: StateStorage = {
     const next = parse(value);
     const activeTicker = next?.state?.activeTicker;
     const raw = rawGet(name);
-    const kept = raw !== null && typeof activeTicker === 'string' ? withActiveTicker(raw, activeTicker) : null;
+    const kept = raw !== null && activeTicker !== undefined ? withActiveTicker(raw, activeTicker) : null;
     if (kept !== null) return rawSet(name, kept);
     rawSet(name, JSON.stringify({ ...next, state: { activeTicker } }));
   },

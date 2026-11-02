@@ -285,3 +285,36 @@ describe("loading never rewrites 'ticker-store' (IMPL-314-1 R-6)", () => {
     expect(JSON.parse(backing.get(STORE)!).state.recentTickers).toEqual(['A"B', 'NVDA']);
   });
 });
+
+// IMPL-314-3 C-1 (done_when item 5, which names no record shape): a write of
+// the active ticker keeps any recentTickers already in 'ticker-store' byte
+// for byte, and the active ticker behaves as on main, for the two record
+// shapes C-1 measured.
+describe("C-1: an active-ticker write on the two shapes IMPL-314-3 measured", () => {
+  const STORE = 'ticker-store';
+  async function evaluate(mode: 'perOwner' | 'shared') {
+    vi.resetModules();
+    const gate = await import('@/lib/authGate');
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    gate.settleStorageMode(mode);
+    if (mode === 'perOwner') {
+      gate.noteSignedInAccount('uid-a');
+      gate.noteRenderedAccount('uid-a');
+    }
+    return s;
+  }
+
+  it.each([
+    ['null', '{ "version": 0, "state": { "recentTickers": [ "NVDA" ], "activeTicker": null, "extra": 1 } }'],
+    ['a number', '{"state":{"activeTicker":5,"recentTickers":["NVDA","A\\"B"],"x":{"y":"}"}},"version":0}'],
+  ])('per-owner: with the active ticker held as %s, a recents write keeps every byte of the record', async (_label, record) => {
+    backing.clear();
+    backing.set(STORE, record);
+    const s = await evaluate('perOwner');
+    expect(typeof s.getState().activeTicker).not.toBe('string');
+    s.getState().pushRecent('aapl');
+    expect(backing.get(STORE)).toBe(record);
+    expect(JSON.parse(backing.get('ticker-recents@uid:uid-a')!)).toEqual(['AAPL']);
+  });
+});
