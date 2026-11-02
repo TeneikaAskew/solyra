@@ -258,14 +258,30 @@ describe("loading never rewrites 'ticker-store' (IMPL-314-1 R-6)", () => {
     expect(backing.get(STORE)).toBe(otherTab);
   });
 
-  it('control: a real active-ticker pick still writes it, keeping its recentTickers and other fields', async () => {
+  it('control: a real active-ticker pick still writes it, and every other byte of the record stays', async () => {
     const { gate, s } = await fresh();
     gate.settleStorageMode('perOwner');
     gate.noteSignedInAccount('uid-a');
     gate.noteRenderedAccount('uid-a');
     s.getState().setTicker('spy');
-    const stored = JSON.parse(backing.get(STORE)!);
-    expect(stored.state).toEqual({ recentTickers: ['NVDA'], activeTicker: 'SPY', extra: 1 });
-    expect(stored.version).toBe(0);
+    expect(backing.get(STORE)).toBe(ODD.replace('"activeTicker": "QQQ"', '"activeTicker": "SPY"'));
+    s.getState().setTicker('qqq');
+    expect(backing.get(STORE)).toBe(ODD);
+  });
+
+  it('per-owner: a pick on a record whose state has no active ticker adds it and keeps the rest byte for byte', async () => {
+    vi.resetModules();
+    backing.clear();
+    const noActive = '{"state":{ "recentTickers":["A\\"B", "NVDA"] , "x":{"y":[1,"}"]} },"version":0}';
+    backing.set(STORE, noActive);
+    const gate = await import('@/lib/authGate');
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    s.getState().setTicker('spy');
+    expect(backing.get(STORE)).toBe(noActive.replace('{"state":{', '{"state":{"activeTicker":"SPY",'));
+    expect(JSON.parse(backing.get(STORE)!).state.recentTickers).toEqual(['A"B', 'NVDA']);
   });
 });

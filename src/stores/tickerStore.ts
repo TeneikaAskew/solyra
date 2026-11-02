@@ -43,6 +43,70 @@ function rawSet(key: string, value: string): void {
   }
 }
 
+// Set while a store loads the values for the current mode and account. That
+// is a read: persist's wrapped setState must not turn it into a write of
+// 'ticker-store' (IMPL-314-1 R-6), which would reserialize a legacy record
+// and put this tab's in-memory active ticker over another tab's newer pick.
+let loading = false;
+
+/** The end of the JSON string whose opening quote is at `i`. */
+function stringEnd(text: string, i: number): number {
+  let j = i + 1;
+  while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+  return j + 1;
+}
+
+/** The end of the JSON value that starts at `i`. */
+function valueEnd(text: string, i: number): number {
+  if (text[i] === '"') return stringEnd(text, i);
+  if (text[i] !== '{' && text[i] !== '[') {
+    let j = i;
+    while (j < text.length && !/[\s,}\]]/.test(text[j])) j++;
+    return j;
+  }
+  let depth = 0;
+  for (let j = i; j < text.length; j++) {
+    if (text[j] === '"') j = stringEnd(text, j) - 1;
+    else if (text[j] === '{' || text[j] === '[') depth++;
+    else if ((text[j] === '}' || text[j] === ']') && --depth === 0) return j + 1;
+  }
+  return text.length;
+}
+
+/** Where `key`'s value sits in the object starting at `open`: its last
+ *  occurrence (the one JSON.parse keeps), or null. */
+function memberSpan(text: string, open: number, key: string): [number, number] | null {
+  let found: [number, number] | null = null;
+  let j = open + 1;
+  for (;;) {
+    while (/\s|,/.test(text[j] ?? '')) j++;
+    if (text[j] !== '"') return found;
+    const keyEnd = valueEnd(text, j);
+    const name = JSON.parse(text.slice(j, keyEnd)) as string;
+    j = keyEnd;
+    while (/\s|:/.test(text[j] ?? '')) j++;
+    const end = valueEnd(text, j);
+    if (name === key) found = [j, end];
+    j = end;
+  }
+}
+
+/** 'ticker-store' with only its active ticker changed: every other byte of
+ *  the record stays, so its recentTickers and any field persist does not
+ *  know are kept exactly. Null when the record holds no `state` object. */
+function withActiveTicker(raw: string, activeTicker: string): string | null {
+  const parsed = parse(raw) as { state?: unknown } | null;
+  const held = parsed?.state;
+  if (typeof held !== 'object' || held === null || Array.isArray(held)) return null;
+  const state = memberSpan(raw, raw.indexOf('{'), 'state');
+  if (!state) return null;
+  const value = JSON.stringify(activeTicker);
+  const current = memberSpan(raw, state[0], 'activeTicker');
+  if (current) return raw.slice(0, current[0]) + value + raw.slice(current[1]);
+  const sep = Object.keys(held).length > 0 ? ',' : '';
+  return `${raw.slice(0, state[0] + 1)}"activeTicker":${value}${sep}${raw.slice(state[0] + 1)}`;
+}
+
 /**
  * 'ticker-store' holds the active ticker per browser in every mode, as on
  * main. The recent tickers it may also hold are account-scoped: they are read
@@ -50,12 +114,6 @@ function rawSet(key: string, value: string): void {
  * and a write keeps whatever recentTickers the record already holds, byte for
  * byte; the per-owner recents live under `ticker-recents@uid:<uid>`.
  */
-// Set while a store loads the values for the current mode and account. That
-// is a read: persist's wrapped setState must not turn it into a write of
-// 'ticker-store' (IMPL-314-1 R-6), which would reserialize a legacy record
-// and put this tab's in-memory active ticker over another tab's newer pick.
-let loading = false;
-
 const tickerStorage: StateStorage = {
   getItem: (name) => {
     const raw = rawGet(name);
@@ -70,10 +128,11 @@ const tickerStorage: StateStorage = {
     if (loading) return;
     if (getStorageMode() === 'shared') return rawSet(name, value);
     const next = parse(value);
-    // Everything the record already holds besides the active ticker stays,
-    // recentTickers included.
-    const state: Persisted['state'] = { ...parse(rawGet(name))?.state, activeTicker: next?.state?.activeTicker };
-    rawSet(name, JSON.stringify({ ...next, state }));
+    const activeTicker = next?.state?.activeTicker;
+    const raw = rawGet(name);
+    const kept = raw !== null && typeof activeTicker === 'string' ? withActiveTicker(raw, activeTicker) : null;
+    if (kept !== null) return rawSet(name, kept);
+    rawSet(name, JSON.stringify({ ...next, state: { activeTicker } }));
   },
   removeItem: () => {
     // Never removes stored values (FEAT-AUTH-001: no deletion).
