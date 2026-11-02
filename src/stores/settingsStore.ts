@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Timeframe } from '@/types';
-import { getStorageMode, onStorageChange, readScoped, writeScoped } from '@/lib/authGate';
+import { acceptsScreenWrite, getStorageMode, onStorageChange, readScoped, writeScoped } from '@/lib/authGate';
 
 export type NavPattern = 'top-tabs' | 'sidebar';
 export type Density = 'comfy' | 'default' | 'dense';
@@ -114,17 +114,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   toggleSound: () => set((s) => ({ soundEnabled: !s.soundEnabled })),
 
   setNavPattern: (navPattern) => {
+    if (!acceptsScreenWrite()) return;
     const { density, accent } = get();
     persist({ navPattern, density, accent });
     set({ navPattern });
   },
   setDensity: (density) => {
+    if (!acceptsScreenWrite()) return;
     const { navPattern, accent } = get();
     applyShellClasses(density, accent);
     persist({ navPattern, density, accent });
     set({ density });
   },
   setAccent: (accent) => {
+    if (!acceptsScreenWrite()) return;
     const { navPattern, density } = get();
     applyShellClasses(density, accent);
     persist({ navPattern, density, accent });

@@ -490,3 +490,113 @@ describe('refused-write notice', () => {
     expect(seen).toEqual([true, false, true, false]);
   });
 });
+
+// IMPL-314-1 R-1: a refusal settled while this page still reports the
+// composing account is shown by that account's own form, which the change to
+// the account the SDK moved to then removes (AuthGate remounts the shell). The
+// refusal is carried to that next account as the generic notice.
+describe('refused-write notice: carried past the composing screen (IMPL-314-1 R-1)', () => {
+  async function fresh() {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.settleStorageMode('perOwner');
+    return gate;
+  }
+
+  it('a refusal shown on the composing screen is shown to the next account once this page reports it', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRefusedWrite('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('is carried to a sign-out the same way', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRefusedWrite('uid-a');
+    gate.noteSignedInAccount(null);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('is carried once: the change after that clears it, and a change with no refusal raises nothing', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteRefusedWrite('uid-b');
+    gate.noteSignedInAccount('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
+  it('notifies subscribers when the carried notice is raised', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    const seen: boolean[] = [];
+    gate.subscribeRefusedWriteNotice(() => seen.push(gate.isRefusedWriteNoticeShown()));
+    gate.noteRefusedWrite('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(seen).toEqual([true]);
+  });
+});
+
+// IMPL-314-1 R-2: between this page's report of B and React's commit of B,
+// A's screen still takes input while the stores already hold B's values. An
+// account-scoped setter asks acceptsScreenWrite() first.
+describe('the account the screen was rendered for (IMPL-314-1 R-2)', () => {
+  async function fresh(mode: 'perOwner' | 'shared' = 'perOwner') {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.settleStorageMode(mode);
+    return gate;
+  }
+
+  it('accepts while the rendered account is the reported one', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
+  it('refuses from a screen rendered for A once this page reports B, and records the notice for B', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.acceptsScreenWrite()).toBe(false);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+    gate.noteRenderedAccount('uid-b');
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('refuses from a screen rendered for A after a sign-out report', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    gate.noteSignedInAccount(null);
+    expect(gate.acceptsScreenWrite()).toBe(false);
+  });
+
+  it('does not fence before the first report, without a rendered record, after AuthGate unmounts, or in shared mode', async () => {
+    let gate = await fresh();
+    gate.noteRenderedAccount(null);
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    gate.noteRenderedAccount('uid-a');
+    gate.noteRenderedAccount(undefined);
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    gate = await fresh('shared');
+    gate.noteSignedInAccount(null);
+    gate.noteRenderedAccount('uid-a');
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+});

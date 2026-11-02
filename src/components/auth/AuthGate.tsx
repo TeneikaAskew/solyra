@@ -1,8 +1,13 @@
-import type { ReactNode } from 'react';
+import { useLayoutEffect, type ReactNode } from 'react';
 import { useUser } from '@/hooks/useUser';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { SignInScreen } from './SignInScreen';
-import { dismissRefusedWriteNotice, useRefusedWriteNotice } from '@/lib/authGate';
+import {
+  dismissRefusedWriteNotice,
+  noteRenderedAccount,
+  useRefusedWriteNotice,
+  useSignedInAccount,
+} from '@/lib/authGate';
 
 /**
  * A change composed on the previous account's screen and refused after this
@@ -46,6 +51,14 @@ function RefusedWriteNotice() {
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   const { authMode, isSignedIn, isLoading } = useUser();
+  // The account this commit renders for (authGate.ts, "The account the screen
+  // was rendered for"): recorded at the commit, so a setter running on the
+  // previous account's screen after this page reported another one is refused.
+  const shownAccount = useSignedInAccount();
+  useLayoutEffect(() => {
+    noteRenderedAccount(shownAccount);
+    return () => noteRenderedAccount(undefined);
+  }, [shownAccount]);
 
   if (authMode !== 'firebase') return <>{children}</>;
 

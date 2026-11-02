@@ -24,7 +24,7 @@
 import { AlertTriangle, Activity } from 'lucide-react';
 import { Card, CardHeader } from '@/components/primitives';
 import { useState } from 'react';
-import { readScoped, writeScoped } from '@/lib/authGate';
+import { acceptsScreenWrite, readScoped, writeScoped } from '@/lib/authGate';
 import { useMovementStatement } from '@/hooks/useMovementStatement';
 import {
   sizeLight,
@@ -341,10 +341,12 @@ export function SizeCalculator({ em }: { em: MovementExpectedMove }) {
   const [account, setAccount] = useState<string>(() => readScoped('em.account') || '');
   const [riskPct, setRiskPct] = useState<string>(() => readScoped('em.riskPct') || '1');
   const setAcc = (v: string) => {
+    if (!acceptsScreenWrite()) return;
     setAccount(v);
     writeScoped('em.account', v);
   };
   const setRisk = (v: string) => {
+    if (!acceptsScreenWrite()) return;
     setRiskPct(v);
     writeScoped('em.riskPct', v);
   };

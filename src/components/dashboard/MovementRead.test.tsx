@@ -243,4 +243,23 @@ describe('SizeCalculator account-scoped inputs', () => {
     expect(localStorage.getItem('em.account')).toBe('88888');
     expect(localStorage.getItem('em.riskPct')).toBeNull();
   });
+
+  // IMPL-314-1 R-2: input on A's calculator after this page reported B, before
+  // React rendered B, is refused: nothing is written under B, A's keys stay.
+  it("refuses input on the previous account's calculator once this page reports another", async () => {
+    localStorage.clear();
+    localStorage.setItem('em.account@uid:uid-a', '73137');
+    const a = await render('uid-a');
+    const gate = await import('@/lib/authGate');
+    gate.noteRenderedAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    await a.type('calc-account', '25000');
+    await a.type('calc-risk', '1.5');
+    expect([a.input('calc-account').value, a.input('calc-risk').value]).toEqual(['73137', '1']);
+    expect(localStorage.getItem('em.account@uid:uid-b')).toBeNull();
+    expect(localStorage.getItem('em.riskPct@uid:uid-b')).toBeNull();
+    expect(localStorage.getItem('em.account@uid:uid-a')).toBe('73137');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+    await a.done();
+  });
 });

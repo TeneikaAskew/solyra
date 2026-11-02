@@ -271,6 +271,9 @@ export function installAuthFetch(): void {
       try {
         token = await getIdToken(true);
       } catch (err) {
+        // The forced read of a bound write found the account moved: the same
+        // refusal as above, recorded so it is shown once its screen is gone.
+        if ((err as { code?: unknown }).code === 'account-changed') noteRefusedWrite(boundUid);
         if (isIdentityPath(path) || isGatedApiPath(path)) throw err;
         token = null;
       }
@@ -308,7 +311,10 @@ export function installAuthFetch(): void {
       let fresh: string | null = null;
       try {
         fresh = await getIdToken(true);
-      } catch {
+      } catch (err) {
+        // A bound write whose retry found the account moved was not saved
+        // (the 401 stands): record it like the refusals above.
+        if ((err as { code?: unknown }).code === 'account-changed') noteRefusedWrite(boundUid);
         fresh = null;
       }
       if (fresh && fresh !== token && (await getCurrentUid()) === uidAtStart) {

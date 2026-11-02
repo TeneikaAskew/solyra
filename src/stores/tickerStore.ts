@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
-import { getStorageMode, onStorageChange, readScoped, writeScoped } from '@/lib/authGate';
+import { acceptsScreenWrite, getStorageMode, onStorageChange, readScoped, writeScoped } from '@/lib/authGate';
 
 interface TickerState {
   activeTicker: string;
@@ -99,7 +99,8 @@ export const useTickerStore = create<TickerState>()(
       quickPicks: ['IWM', 'SPY', 'QQQ'],
       recentTickers: [],
       setTicker: (ticker) => set({ activeTicker: ticker.toUpperCase() }),
-      pushRecent: (ticker) =>
+      pushRecent: (ticker) => {
+        if (!acceptsScreenWrite()) return;
         set((s) => {
           const recentTickers = [
             ticker.toUpperCase(),
@@ -109,7 +110,8 @@ export const useTickerStore = create<TickerState>()(
           // shared mode keeps them inside 'ticker-store' through persist.
           if (getStorageMode() === 'perOwner') writeScoped(RECENTS_KEY, JSON.stringify(recentTickers));
           return { recentTickers };
-        }),
+        });
+      },
     }),
     {
       name: STORE_KEY,

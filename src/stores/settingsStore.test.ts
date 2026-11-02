@@ -177,3 +177,39 @@ describe('account-scoped shell settings', () => {
     expect(localStorage.getItem(KEY)).toBe(JSON.stringify(A));
   });
 });
+
+// IMPL-314-1 R-2: a change made on A's screen after this page reported B,
+// before React rendered B, changes nothing for B, in memory or in storage, and
+// is refused visibly (the AuthGate notice for B).
+describe('a change from the previous account\'s screen (IMPL-314-1 R-2)', () => {
+  const A = { navPattern: 'top-tabs', density: 'comfy', accent: 'violet' };
+  for (const [name, call] of [
+    ['setNavPattern', (s: { setNavPattern: (p: 'sidebar') => void }) => s.setNavPattern('sidebar')],
+    ['setDensity', (s: { setDensity: (d: 'default') => void }) => s.setDensity('default')],
+    ['setAccent', (s: { setAccent: (a: 'blue') => void }) => s.setAccent('blue')],
+  ] as const) {
+    it(`${name} is refused, and B keeps its own values and keys`, async () => {
+      localStorage.clear();
+      localStorage.setItem(`${KEY}@uid:uid-a`, JSON.stringify(A));
+      vi.resetModules();
+      const gate = await import('@/lib/authGate');
+      gate.markStoragePending();
+      const { useSettingsStore } = await import('./settingsStore');
+      gate.settleStorageMode('perOwner');
+      gate.noteSignedInAccount('uid-a');
+      gate.noteRenderedAccount('uid-a');
+      gate.noteSignedInAccount('uid-b');
+      (call as (s: unknown) => void)(useSettingsStore.getState());
+      const st = useSettingsStore.getState();
+      expect([st.navPattern, st.density, st.accent]).toEqual(['top-tabs', 'dense', 'dawn']);
+      expect(document.body.className).toBe('density-dense accent-dawn');
+      expect(localStorage.getItem(`${KEY}@uid:uid-b`)).toBeNull();
+      expect(localStorage.getItem(`${KEY}@uid:uid-a`)).toBe(JSON.stringify(A));
+      expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+      // Once B is rendered, B's own change applies and is stored for B.
+      gate.noteRenderedAccount('uid-b');
+      (call as (s: unknown) => void)(useSettingsStore.getState());
+      expect(localStorage.getItem(`${KEY}@uid:uid-b`)).not.toBeNull();
+    });
+  }
+});

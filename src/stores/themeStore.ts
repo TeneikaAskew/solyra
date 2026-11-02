@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getStorageMode, onStorageChange, readScoped, writeScoped } from '@/lib/authGate';
+import { acceptsScreenWrite, getStorageMode, onStorageChange, readScoped, writeScoped } from '@/lib/authGate';
 
 export type Theme = 'dark' | 'light';
 
@@ -39,11 +39,13 @@ const initial: Theme = loaded ?? DEFAULT_THEME;
 export const useThemeStore = create<ThemeState>((set) => ({
   theme: initial,
   setTheme: (theme) => {
+    if (!acceptsScreenWrite()) return;
     writeScoped(STORAGE_KEY, theme);
     applyThemeToDocument(theme);
     set({ theme });
   },
   toggleTheme: () => {
+    if (!acceptsScreenWrite()) return;
     set((state) => {
       const next: Theme = state.theme === 'dark' ? 'light' : 'dark';
       writeScoped(STORAGE_KEY, next);

@@ -483,8 +483,11 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
     expect((b.placed!.snap as { bCommitted: boolean }).bCommitted).toBe(true);
     expect((b.placed!.snap as { targetConnected: boolean }).targetConnected).toBe(false);
     // No request of any token after the click, and no refusal recorded: a
-    // bound write is either sent or refused (and a refusal after the switch is
-    // always shown), so seeing neither means no save was created.
+    // bound write is either sent or refused, and a refused one is shown (the
+    // IMPL-314-1 R-1 controls below), so seeing neither means no save was
+    // created. This oracle describes scheduling only: the captured target is
+    // detached, so the send guard is not exercised here. The sync placement,
+    // the held window and the R-2 controls exercise it.
     expect(b.sent).toEqual([]);
     expect(b.nothingSavedShown).toBe(false);
     expect(b.savedShown).toBe(false);
@@ -625,4 +628,105 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
     expect(pref.every((c) => c.acct === 'B')).toBe(true);
     expect(w.profile.A?.display_name).toBe(ACCOUNTS.A.name);
   });
+
+  // ── IMPL-314-1 R-1: a held-window refusal outlives the composing screen ──
+  // The save is refused while this page still reports A, so A's own form
+  // shows the error. Releasing the window lets the listener report B and the
+  // shell remount: the refusal must still be visible, as the generic notice,
+  // to the account now on screen, carrying nothing of A's.
+  for (const kind of ['profile save', 'Appearance change'] as const) {
+    test(`IMPL-314-1 R-1: a held-window ${kind} refusal is still shown after the B report`, async ({ context, page }) => {
+      const { w, other } = await twoTabs(context, page);
+      if (kind === 'profile save') await page.getByLabel('Display name').fill('Alice Edited');
+      else await page.getByRole('tab', { name: 'Appearance' }).click();
+      await armAndSwitch(page, other);
+      expect(await lastReport(page)).toBe(ACCOUNTS.A.uid);
+      const path = kind === 'profile save' ? '/api/me/profile' : '/api/me/preferences';
+      const before = puts(w, 'tab1', path).length;
+      if (kind === 'profile save') {
+        await page.getByRole('button', { name: 'Save changes' }).click();
+        await expect(page.getByText(/Nothing was saved/)).toBeVisible();
+      } else {
+        await toggleNav(page);
+        await expect(page.getByText(/Appearance not synced/)).toBeVisible();
+      }
+      await shot(page, `r1-${kind === 'profile save' ? 'profile' : 'prefs'}-held`);
+      await release(page);
+      await expect.poll(() => lastReport(page)).toBe(ACCOUNTS.B.uid);
+      await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.B.email, { timeout: 15_000 });
+      const notice = page.getByTestId('account-change-refusal');
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText('Nothing was saved');
+      await shot(page, `r1-${kind === 'profile save' ? 'profile' : 'prefs'}-after-release`);
+      const text = (await notice.textContent()) ?? '';
+      for (const a of Object.values(ACCOUNTS)) {
+        expect(text).not.toContain(a.email);
+        expect(text).not.toContain(a.name);
+      }
+      expect(text).not.toContain('Alice Edited');
+      expect(puts(w, 'tab1', path).slice(before)).toEqual([]);
+      expect(w.profile.A).toEqual({ display_name: ACCOUNTS.A.name });
+      expect(w.profile.B).toEqual({ display_name: ACCOUNTS.B.name });
+      expect(w.prefs.B).toBeNull();
+      expect(await page.evaluate(() => (window as unknown as { __bnd: { tSaved: number | null } }).__bnd.tSaved)).toBeNull();
+    });
+  }
+
+  // ── IMPL-314-1 R-2: account-scoped setters at the B report ──────────────
+  // The click lands on A's still-rendered screen after this page reported B
+  // (sync placement), when the stores already hold B's values. Each setter of
+  // the class must change nothing for B (no per-owner key, no value B later
+  // sends), and the refusal must be visible to B. The sizing inputs and the
+  // recents use the same fence; their controls are unit tests.
+  const r2Targets = [
+    { slug: 'nav', pick: (p: Page) => section(p, 'Navigation').getByRole('radio', { name: /sidebar/i }) },
+    { slug: 'density', pick: (p: Page) => section(p, 'Density').getByRole('radio', { name: /^default$/i }) },
+    { slug: 'accent', pick: (p: Page) => section(p, 'Accent').getByRole('button', { name: 'blue', exact: true }) },
+    { slug: 'theme', pick: (p: Page) => section(p, 'Theme').getByRole('radio', { name: /dark/i }) },
+    { slug: 'header-theme', pick: (p: Page) => p.locator('button[aria-label^="Switch to"]').first() },
+  ] as const;
+  const scoped = (page: Page) => page.evaluate(() => Object.fromEntries(Object.keys(localStorage)
+    .filter((k) => k.includes('@uid:')).sort().map((k) => [k, localStorage.getItem(k)])));
+  for (const t of r2Targets) {
+    test(`IMPL-314-1 R-2: ${t.slug} change at the B report on A's screen writes nothing for B and is shown refused`, async ({ context, page }) => {
+      const { w, other } = await twoTabs(context, page);
+      await page.getByRole('tab', { name: 'Appearance' }).click();
+      const aBefore = Object.fromEntries(Object.entries(await scoped(page)).filter(([k]) => k.endsWith('@uid:uid-a')));
+      await placeOnReport(t.pick(page), 'sync');
+      await switchDirectly(other, 'B');
+      await expect.poll(() => lastReport(page)).toBe(ACCOUNTS.B.uid);
+      await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.B.email, { timeout: 15_000 });
+      await page.waitForTimeout(1500);
+      const b = await boundary(page, '/api/me/preferences');
+      const after = await scoped(page);
+      note(`r2-${t.slug} boundary`, JSON.stringify(b));
+      note(`r2-${t.slug} per-owner keys`, JSON.stringify(after));
+      // The placement is causal: the click reached A's screen before B's commit.
+      expect(b.placed).not.toBeNull();
+      expect(b.clickBeforeCommitB).toBe(true);
+      expect((b.placed!.snap as { authStatus: string }).authStatus).toContain(ACCOUNTS.A.email);
+      expect((b.placed!.snap as { targetConnected: boolean }).targetConnected).toBe(true);
+      // Nothing written for B, A's own keys unchanged.
+      expect(Object.keys(after).filter((k) => k.endsWith('@uid:uid-b'))).toEqual([]);
+      expect(Object.fromEntries(Object.entries(after).filter(([k]) => k.endsWith('@uid:uid-a')))).toEqual(aBefore);
+      // B renders its own (default) appearance, and the refusal is visible.
+      expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe('dark');
+      const cls = await page.evaluate(() => document.body.className);
+      expect(cls).toContain('density-dense');
+      expect(cls).toContain('accent-dawn');
+      const notice = page.getByTestId('account-change-refusal');
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText('Nothing was saved');
+      await shot(page, `r2-${t.slug}-b-view`);
+      expect(b.sent.filter((x) => x.auth === `Bearer ${ACCOUNTS.B.token}`)).toEqual([]);
+      // B's own first change carries only B's values.
+      const before = puts(w, 'tab1', '/api/me/preferences').length;
+      await page.locator('button[aria-label^="Switch to"]').first().click();
+      await expect.poll(() => puts(w, 'tab1', '/api/me/preferences').length, { timeout: 10_000 }).toBeGreaterThan(before);
+      const bPut = puts(w, 'tab1', '/api/me/preferences').slice(before);
+      note(`r2-${t.slug} B first PUT`, JSON.stringify(bPut.map((c) => ({ acct: c.acct, body: c.body }))));
+      expect(bPut.map((c) => [c.acct, c.body])).toEqual([['B', { theme: 'light', nav_pattern: 'top-tabs', density: 'dense', accent: 'dawn' }]]);
+      expect(w.prefs.B).toEqual({ theme: 'light', nav_pattern: 'top-tabs', density: 'dense', accent: 'dawn' });
+    });
+  }
 });

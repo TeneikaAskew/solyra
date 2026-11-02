@@ -143,3 +143,32 @@ describe('account-scoped theme', () => {
     expect(localStorage.getItem(KEY)).toBe('dark');
   });
 });
+
+// IMPL-314-1 R-2: see settingsStore.test.ts.
+describe('a change from the previous account\'s screen (IMPL-314-1 R-2)', () => {
+  for (const [name, call] of [
+    ['setTheme', (s: { setTheme: (t: 'light') => void }) => s.setTheme('light')],
+    ['toggleTheme', (s: { toggleTheme: () => void }) => s.toggleTheme()],
+  ] as const) {
+    it(`${name} is refused, and B keeps its own theme and key`, async () => {
+      localStorage.clear();
+      localStorage.setItem(`${KEY}@uid:uid-a`, 'light');
+      vi.resetModules();
+      const gate = await import('@/lib/authGate');
+      gate.markStoragePending();
+      const { useThemeStore } = await import('./themeStore');
+      gate.settleStorageMode('perOwner');
+      gate.noteSignedInAccount('uid-a');
+      gate.noteRenderedAccount('uid-a');
+      gate.noteSignedInAccount('uid-b');
+      (call as (s: unknown) => void)(useThemeStore.getState());
+      expect([useThemeStore.getState().theme, document.documentElement.getAttribute('data-theme')]).toEqual(['dark', 'dark']);
+      expect(localStorage.getItem(`${KEY}@uid:uid-b`)).toBeNull();
+      expect(localStorage.getItem(`${KEY}@uid:uid-a`)).toBe('light');
+      expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+      gate.noteRenderedAccount('uid-b');
+      (call as (s: unknown) => void)(useThemeStore.getState());
+      expect(localStorage.getItem(`${KEY}@uid:uid-b`)).toBe('light');
+    });
+  }
+});

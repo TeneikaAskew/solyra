@@ -75,7 +75,7 @@ export function noteSignedInAccount(uid: string | null): void {
   if (prev === uid) return;
   account = { reported: true, uid };
   clearAuthBlocked();
-  clearRefusedWriteNotice();
+  carryRefusedWriteNotice(uid);
   for (const l of accountListeners) l(uid, prev);
   emitStorageChange();
 }
@@ -126,14 +126,19 @@ export function resetAccountQueries(queryClient: QueryClient, next: string | nul
 // A profile save or preferences write is bound to the account its screen was
 // rendered for (authedFetch.boundToAccount) and refused when the SDK holds
 // another account. If this page still reports the composing account, that
-// screen is still shown and its own form renders the error. If this page
-// already reports another account, the composing screen is being replaced
-// (AuthGate remounts the shell) before the refusal settles, so the refusal is
-// recorded here and AuthGate shows it to the account now on screen. The record
-// holds no value, field or identity of the composing account, only that a
-// change was not sent; the next account change or a dismiss clears it.
+// screen is still shown and its own form renders the error, but only until
+// this page's listener reports the account the SDK moved to: that report
+// replaces the screen (AuthGate remounts the shell), so the refusal is kept
+// and carried to the next account at that change. If this page already
+// reports another account, the composing screen is being replaced before the
+// refusal settles, so it is recorded at once. Either way AuthGate shows it to
+// the account now on screen. The record holds no value, field or identity of
+// the composing account, only that a change was not sent; a dismiss, or a
+// further account change with no new refusal, clears it.
 
 let refusedNoticeFor: { shownTo: string | null } | null = null;
+// A refusal its own (still shown) form is rendering, to carry to the next account.
+let refusedOnComposingScreen = false;
 const refusedListeners = new Set<() => void>();
 
 function emitRefused(): void {
@@ -146,12 +151,67 @@ function clearRefusedWriteNotice(): void {
   emitRefused();
 }
 
-/** Called by the fetch layer when a write bound to `composedFor` is refused. */
+/** At an account change: the notice is for the new account only if a refusal
+ *  was still shown on the replaced screen; otherwise any notice is cleared. */
+function carryRefusedWriteNotice(next: string | null): void {
+  const carry = refusedOnComposingScreen;
+  refusedOnComposingScreen = false;
+  if (!carry) {
+    clearRefusedWriteNotice();
+    return;
+  }
+  refusedNoticeFor = { shownTo: next };
+  emitRefused();
+}
+
+/** Called when a write composed for `composedFor` is refused (the fetch
+ *  layer's bound writes, and the account-scoped setters below). */
 export function noteRefusedWrite(composedFor: string | null): void {
   const shownTo = getSignedInAccount();
-  if (composedFor === shownTo) return;
+  if (composedFor === shownTo) {
+    refusedOnComposingScreen = true;
+    return;
+  }
   refusedNoticeFor = { shownTo };
   emitRefused();
+}
+
+// ── The account the screen was rendered for ────────────────────────────────
+//
+// This page reports a new account before React renders it: between the report
+// and the commit, the previous account's screen is still on display and still
+// takes input, while the stores already hold, and write to, the new account's
+// values. AuthGate records the account of each committed render here (a
+// layout effect, so the record moves at the commit itself). A setter for an
+// account-scoped value (appearance, recents, sizing inputs) asks first and,
+// when the screen was rendered for another account than this page reports,
+// changes nothing, in memory or in storage, and records the refusal so AuthGate
+// shows it to the account that replaces that screen. Only per-owner mode is
+// fenced; before AuthGate's first render (unit tests, or no gate) nothing is.
+
+let renderedFor: { uid: string | null } | null = null;
+
+/** AuthGate, at each commit: the account this page's screen now shows; null
+ *  when AuthGate unmounts (a screen outside it is not fenced). */
+export function noteRenderedAccount(uid: string | null | undefined): void {
+  renderedFor = uid === undefined ? null : { uid };
+}
+
+/**
+ * True when a change made on the screen now shown may be applied for the
+ * account this page reports. False (and the refusal recorded) when that screen
+ * was rendered for another account and is about to be replaced.
+ */
+export function acceptsScreenWrite(): boolean {
+  if (storageMode !== 'perOwner' || !account.reported || renderedFor === null) return true;
+  if (renderedFor.uid === account.uid) return true;
+  noteRefusedWrite(renderedFor.uid);
+  return false;
+}
+
+/** React hook: the account this page last reported (null before the first report). */
+export function useSignedInAccount(): string | null {
+  return useSyncExternalStore(onStorageChange, getSignedInAccount, () => null);
 }
 
 /** True while a refusal is recorded for the account this page now reports. */

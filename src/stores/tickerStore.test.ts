@@ -187,3 +187,27 @@ describe('account-scoped recent tickers', () => {
     expect(JSON.parse(backing.get(STORE)!).state).toEqual({ activeTicker: 'AAPL' });
   });
 });
+
+// IMPL-314-1 R-2: see settingsStore.test.ts.
+describe('a change from the previous account\'s screen (IMPL-314-1 R-2)', () => {
+  it('pushRecent is refused, and B keeps its own recents and key', async () => {
+    vi.resetModules();
+    backing.clear();
+    backing.set('ticker-recents@uid:uid-a', JSON.stringify(['AAPL']));
+    const gate = await import('@/lib/authGate');
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    s.getState().pushRecent('TSLA');
+    expect(s.getState().recentTickers).toEqual([]);
+    expect(backing.get('ticker-recents@uid:uid-b')).toBeUndefined();
+    expect(backing.get('ticker-recents@uid:uid-a')).toBe(JSON.stringify(['AAPL']));
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+    gate.noteRenderedAccount('uid-b');
+    s.getState().pushRecent('TSLA');
+    expect(backing.get('ticker-recents@uid:uid-b')).toBe(JSON.stringify(['TSLA']));
+  });
+});
