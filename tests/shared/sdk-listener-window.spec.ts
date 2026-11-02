@@ -423,11 +423,13 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
     await page.getByLabel('Display name').fill('Alice Edited');
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Saved.')).toBeVisible();
+    await shot(page, 'same-account-profile-saved');
     const prof = puts(w, 'tab1', '/api/me/profile').slice(pBefore);
     const before = puts(w, 'tab1', '/api/me/preferences').length;
     await toggleNav(page);
     await expect.poll(() => puts(w, 'tab1', '/api/me/preferences').length).toBeGreaterThan(before);
     const pref = puts(w, 'tab1', '/api/me/preferences').slice(before);
+    await shot(page, 'same-account-prefs-sent');
     note('same-account PUTs', JSON.stringify({ profile: prof.map((c) => c.acct), prefs: pref.map((c) => c.acct) }));
     expect(prof.map((c) => c.acct)).toEqual(['A']);
     expect(pref.every((c) => c.acct === 'A')).toBe(true);
@@ -615,6 +617,7 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
     await other.getByLabel('Display name').fill('Bea Edited');
     await other.getByRole('button', { name: 'Save changes' }).click();
     await expect(other.getByText('Saved.')).toBeVisible();
+    await shot(other, 'case3-b-profile-saved');
     const prof = puts(w, 'tab2', '/api/me/profile').slice(before);
     const pBefore = puts(w, 'tab2', '/api/me/preferences').length;
     await toggleNav(other);
@@ -623,6 +626,7 @@ test.describe('Send boundary: SDK switched to B on a tab still showing A (item 1
     note('case3 PUTs', JSON.stringify({ profile: prof.map((c) => ({ acct: c.acct, body: c.body })), prefs: pref.map((c) => ({ acct: c.acct, body: c.body })) }));
     await other.reload({ waitUntil: 'domcontentloaded' });
     await expect(other.getByLabel('Display name')).toHaveValue('Bea Edited');
+    await shot(other, 'case3-b-readback');
     note('case3 readback', JSON.stringify({ profileB: w.profile.B, prefsB: w.prefs.B, profileA: w.profile.A }));
     expect(prof.map((c) => [c.acct, c.body])).toEqual([['B', { display_name: 'Bea Edited' }]]);
     expect(pref.every((c) => c.acct === 'B')).toBe(true);
