@@ -781,8 +781,14 @@ test.describe('Account transitions: legacy values in any serialization, and a fa
     await page.waitForTimeout(300);
     await shot(page, 'r6-odd-ticker-store-after-switch');
     const afterA = await page.evaluate(() => localStorage.getItem('ticker-store'));
+    // A real pick changes only the active ticker (done_when item 5).
+    await pickQuick(page, 'SPY');
+    await page.waitForTimeout(300);
+    await shot(page, 'r6-odd-ticker-store-after-pick');
+    const afterPick = await page.evaluate(() => localStorage.getItem('ticker-store'));
     expect(afterB).toBe(ODD_TICKER_STORE);
     expect(afterA).toBe(ODD_TICKER_STORE);
+    expect(afterPick).toBe(ODD_TICKER_STORE.replace('"activeTicker": "IWM"', '"activeTicker": "SPY"'));
   });
 
   test('a failure loading the SDK chunk is a failed boot: the config-error screen, storage pending, nothing stored changed', async ({ context, page }) => {
