@@ -356,3 +356,79 @@ describe("C-1: an active-ticker write on the two shapes IMPL-314-3 measured", ()
     }
   });
 });
+
+// The version domain and the records nobody picked on (IMPL-314-3 C-1
+// closure). Persist reads `version` with JSON.parse and discards a record
+// whose version is a number other than its own 0; any other version, or none,
+// it accepts. A pick sets only a discarded record's version, to 0, as main's
+// whole-record write does; nothing but a pick writes the record.
+describe('C-1: the persist version domain, and records nobody picked on', () => {
+  const STORE = 'ticker-store';
+  async function evaluate() {
+    vi.resetModules();
+    const gate = await import('@/lib/authGate');
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    return { s, gate };
+  }
+  const record = (v: string) =>
+    `{ "version": ${v}, "state": { "recentTickers": [ "NVDA" ], "activeTicker": "QQQ", "x": [1,"}"] }, "top": {"k":"]"} }`;
+  const picked = (v: string) => record(v).replace('"activeTicker": "QQQ"', '"activeTicker": "SPY"');
+
+  it.each(['1', '-1', '2.5', '1e0', '1E2', '-1.0e-3', '1e400'])(
+    'version %s: loads the default as on main; a pick sets only the active ticker and version 0, and survives a reload',
+    async (v) => {
+      backing.clear();
+      backing.set(STORE, record(v));
+      const { s } = await evaluate();
+      expect(s.getState().activeTicker).toBe('IWM');
+      s.getState().setTicker('spy');
+      expect(backing.get(STORE)).toBe(picked(v).replace(`"version": ${v}`, '"version": 0'));
+      const { s: reloaded } = await evaluate();
+      expect(reloaded.getState().activeTicker).toBe('SPY');
+    },
+  );
+
+  it.each(['0', '-0', '0.0', '0e5', '-0.0E+1', '"1"', 'null', 'true', '[1]', '{"v":1}'])(
+    'version %s: loads the stored ticker as on main; a pick changes only the active ticker',
+    async (v) => {
+      backing.clear();
+      backing.set(STORE, record(v));
+      const { s } = await evaluate();
+      expect(s.getState().activeTicker).toBe('QQQ');
+      s.getState().setTicker('spy');
+      expect(backing.get(STORE)).toBe(picked(v));
+      const { s: reloaded } = await evaluate();
+      expect(reloaded.getState().activeTicker).toBe('SPY');
+    },
+  );
+
+  it('duplicate version members: only the one JSON.parse keeps is set', async () => {
+    const raw = '{"version":1,"state":{"activeTicker":"QQQ","recentTickers":["NVDA"]},"version":2}';
+    backing.clear();
+    backing.set(STORE, raw);
+    const { s } = await evaluate();
+    s.getState().setTicker('spy');
+    expect(backing.get(STORE)).toBe('{"version":1,"state":{"activeTicker":"SPY","recentTickers":["NVDA"]},"version":0}');
+  });
+
+  it.each(['1', '0'])(
+    'version %s, never picked: reports, account changes and a recents push leave the record byte-identical',
+    async (v) => {
+      backing.clear();
+      backing.set(STORE, record(v));
+      const { s, gate } = await evaluate();
+      s.getState().pushRecent('aapl');
+      gate.noteSignedInAccount(null);
+      gate.noteSignedInAccount('uid-b');
+      gate.noteRenderedAccount('uid-b');
+      s.getState().pushRecent('msft');
+      expect(backing.get(STORE)).toBe(record(v));
+      expect(JSON.parse(backing.get('ticker-recents@uid:uid-a')!)).toEqual(['AAPL']);
+      expect(JSON.parse(backing.get('ticker-recents@uid:uid-b')!)).toEqual(['MSFT']);
+    },
+  );
+});

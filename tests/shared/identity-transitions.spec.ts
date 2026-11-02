@@ -810,13 +810,16 @@ test.describe('Account transitions: legacy values in any serialization, and a fa
       for (const [k, v] of Object.entries(legacy)) localStorage.setItem(k, v);
     }, odd);
     await blockOtherTickers(page);
-    await setup(context, page);
+    const w = await setup(context, page);
+    // B's stored preferences apply on sign-in, so themeStore and settingsStore write too.
+    w.prefs.B = { theme: 'dark', nav_pattern: 'top-tabs', density: 'dense', accent: 'teal' };
     await mockTickerSearch(page);
     await mockCalculator(page);
     const read = () => page.evaluate((keys) => Object.fromEntries(keys.map((k) => [k, localStorage.getItem(k)])), Object.keys(odd));
     await page.goto('/dashboard');
     await signInForm(page, 'B');
     await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.B.email);
+    await expect(page.locator('body')).toHaveClass(/accent-teal/);
     await page.getByRole('button', { name: /Switch to (light|dark) theme/ }).first().click();
     await setCalculator(page, '25000', '1.5');
     await page.waitForTimeout(300);

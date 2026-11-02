@@ -49,6 +49,12 @@ function rawSet(key: string, value: string): void {
 // and put this tab's in-memory active ticker over another tab's newer pick.
 let loading = false;
 
+// Set while setTicker runs. In a mode other than shared, only an explicit pick
+// writes 'ticker-store': a recents push keeps the recents under the account's
+// own key and leaves the record as it is, so a record nobody picked on is
+// never rewritten (IMPL-314-3 C-1).
+let picking = false;
+
 /** The end of the JSON string whose opening quote is at `i`. */
 function stringEnd(text: string, i: number): number {
   let j = i + 1;
@@ -137,11 +143,15 @@ const tickerStorage: StateStorage = {
     if (!parsed?.state) return raw;
     const { recentTickers: _hidden, ...state } = parsed.state;
     void _hidden;
-    return JSON.stringify({ ...parsed, state });
+    // A version JSON cannot write back (1e400 parses to Infinity) must still
+    // differ from persist's, so persist discards the record as main does.
+    const version = typeof parsed.version === 'number' && !Number.isFinite(parsed.version) ? Number.MAX_VALUE : parsed.version;
+    return JSON.stringify({ ...parsed, state, version });
   },
   setItem: (name, value) => {
     if (loading) return;
     if (getStorageMode() === 'shared') return rawSet(name, value);
+    if (!picking) return;
     const next = parse(value);
     const activeTicker = next?.state?.activeTicker;
     const raw = rawGet(name);
@@ -179,7 +189,14 @@ export const useTickerStore = create<TickerState>()(
       activeTicker: 'IWM',
       quickPicks: ['IWM', 'SPY', 'QQQ'],
       recentTickers: [],
-      setTicker: (ticker) => set({ activeTicker: ticker.toUpperCase() }),
+      setTicker: (ticker) => {
+        picking = true;
+        try {
+          set({ activeTicker: ticker.toUpperCase() });
+        } finally {
+          picking = false;
+        }
+      },
       pushRecent: (ticker) => {
         if (!acceptsScreenWrite()) return;
         set((s) => {
