@@ -94,9 +94,11 @@ function bootOnce(): Promise<void> {
       // caught exactly that. The facade in turn lazy-loads the real SDK
       // chunk, and only in firebase mode; the await matters because
       // AuthGate must not render until auth state can be observed.
+      // Per-owner is settled by initFirebase itself, just before it attaches
+      // the SDK listener: a failure before that point (the SDK chunk, or
+      // initializeApp) is a failed boot and leaves storage pending.
       const { initFirebase } = await import('@/lib/firebase');
-      settleStorageMode('perOwner');
-      await initFirebase(config.firebase);
+      await initFirebase(config.firebase, () => settleStorageMode('perOwner'));
     } else {
       settleStorageMode('shared');
     }

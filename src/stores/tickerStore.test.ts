@@ -211,3 +211,61 @@ describe('a change from the previous account\'s screen (IMPL-314-1 R-2)', () => 
     expect(backing.get('ticker-recents@uid:uid-b')).toBe(JSON.stringify(['TSLA']));
   });
 });
+
+// IMPL-314-1 R-6 (done_when items 4 and 18): loading values for the current
+// mode and account is a read. It never writes 'ticker-store', so a legacy
+// record in any serialization stays byte for byte, and an account change in
+// one tab never writes its in-memory active ticker over another tab's pick.
+describe("loading never rewrites 'ticker-store' (IMPL-314-1 R-6)", () => {
+  const STORE = 'ticker-store';
+  // Not persist's own serialization: other key order, whitespace, an extra field.
+  const ODD = '{ "version": 0, "state": { "recentTickers": [ "NVDA" ], "activeTicker": "QQQ", "extra": 1 } }';
+  async function fresh() {
+    vi.resetModules();
+    backing.clear();
+    backing.set(STORE, ODD);
+    const gate = await import('@/lib/authGate');
+    gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    return { gate, s };
+  }
+
+  it('per-owner: the mode settling, the first report and later account changes leave it byte-identical', async () => {
+    const { gate, s } = await fresh();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount(null);
+    gate.noteSignedInAccount('uid-b');
+    expect(backing.get(STORE)).toBe(ODD);
+    expect(s.getState().activeTicker).toBe('QQQ');
+    expect(s.getState().recentTickers).toEqual([]);
+  });
+
+  it('shared: the boot settling leaves it byte-identical and applies its recents, as on main', async () => {
+    const { gate, s } = await fresh();
+    gate.settleStorageMode('shared');
+    expect(backing.get(STORE)).toBe(ODD);
+    expect(s.getState().recentTickers).toEqual(['NVDA']);
+  });
+
+  it("an account change does not write this tab's active ticker over a newer pick another tab stored", async () => {
+    const { gate } = await fresh();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    const otherTab = JSON.stringify({ state: { activeTicker: 'TSLA', recentTickers: ['NVDA'] }, version: 0 });
+    backing.set(STORE, otherTab);
+    gate.noteSignedInAccount('uid-b');
+    expect(backing.get(STORE)).toBe(otherTab);
+  });
+
+  it('control: a real active-ticker pick still writes it, keeping its recentTickers and other fields', async () => {
+    const { gate, s } = await fresh();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    s.getState().setTicker('spy');
+    const stored = JSON.parse(backing.get(STORE)!);
+    expect(stored.state).toEqual({ recentTickers: ['NVDA'], activeTicker: 'SPY', extra: 1 });
+    expect(stored.version).toBe(0);
+  });
+});

@@ -61,3 +61,29 @@ describe('getIdTokenFor', () => {
     expect(a.getIdToken).toHaveBeenCalledWith(true);
   });
 });
+
+// IMPL-314-1 R-5: ConfigGate's boot settles the storage mode through
+// beforeListen, so it must run after the app and auth exist and before the
+// listener is attached, and not at all when initialization throws first.
+describe('initFirebase beforeListen', () => {
+  it('runs once, after getAuth and before onAuthStateChanged', async () => {
+    vi.resetModules();
+    const order: string[] = [];
+    const sdk = await import('firebase/auth');
+    vi.mocked(sdk.getAuth).mockImplementationOnce(() => { order.push('getAuth'); return auth as never; });
+    vi.mocked(sdk.onAuthStateChanged).mockImplementationOnce(() => { order.push('listen'); return () => {}; });
+    const impl = await import('./firebaseImpl');
+    impl.initFirebase({ apiKey: 'k', authDomain: 'd', projectId: 'p', appId: 'a' }, () => order.push('beforeListen'));
+    expect(order).toEqual(['getAuth', 'beforeListen', 'listen']);
+  });
+
+  it('does not run when initializeApp throws', async () => {
+    vi.resetModules();
+    const app = await import('firebase/app');
+    vi.mocked(app.initializeApp).mockImplementationOnce(() => { throw new Error('invalid-api-key'); });
+    const impl = await import('./firebaseImpl');
+    const beforeListen = vi.fn();
+    expect(() => impl.initFirebase({ apiKey: 'k', authDomain: 'd', projectId: 'p', appId: 'a' }, beforeListen)).toThrow('invalid-api-key');
+    expect(beforeListen).not.toHaveBeenCalled();
+  });
+});

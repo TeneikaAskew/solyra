@@ -50,6 +50,12 @@ function rawSet(key: string, value: string): void {
  * and a write keeps whatever recentTickers the record already holds, byte for
  * byte; the per-owner recents live under `ticker-recents@uid:<uid>`.
  */
+// Set while a store loads the values for the current mode and account. That
+// is a read: persist's wrapped setState must not turn it into a write of
+// 'ticker-store' (IMPL-314-1 R-6), which would reserialize a legacy record
+// and put this tab's in-memory active ticker over another tab's newer pick.
+let loading = false;
+
 const tickerStorage: StateStorage = {
   getItem: (name) => {
     const raw = rawGet(name);
@@ -61,11 +67,12 @@ const tickerStorage: StateStorage = {
     return JSON.stringify({ ...parsed, state });
   },
   setItem: (name, value) => {
+    if (loading) return;
     if (getStorageMode() === 'shared') return rawSet(name, value);
     const next = parse(value);
-    const kept = parse(rawGet(name))?.state?.recentTickers;
-    const state: Persisted['state'] = { activeTicker: next?.state?.activeTicker };
-    if (kept !== undefined) state.recentTickers = kept;
+    // Everything the record already holds besides the active ticker stays,
+    // recentTickers included.
+    const state: Persisted['state'] = { ...parse(rawGet(name))?.state, activeTicker: next?.state?.activeTicker };
     rawSet(name, JSON.stringify({ ...next, state }));
   },
   removeItem: () => {
@@ -124,14 +131,24 @@ export const useTickerStore = create<TickerState>()(
 // A store evaluated after the mode settled holds what an earlier one holds:
 // in per-owner mode the recents come from the account's own key, not from
 // the rehydrated 'ticker-store' record (shared mode already got them there).
+function applyLoaded(recentTickers: string[]): void {
+  loading = true;
+  try {
+    useTickerStore.setState({ recentTickers });
+  } finally {
+    loading = false;
+  }
+}
+
 if (getStorageMode() === 'perOwner') {
   const atLoad = loadRecents();
-  if (atLoad) useTickerStore.setState({ recentTickers: atLoad });
+  if (atLoad) applyLoaded(atLoad);
 }
 
 // Reload the recents on every storage event: the mode settling, the first
-// account report and each later account change. The active ticker stays.
+// account report and each later account change. The active ticker stays, and
+// nothing is written.
 onStorageChange(() => {
   const recentTickers = loadRecents();
-  if (recentTickers) useTickerStore.setState({ recentTickers });
+  if (recentTickers) applyLoaded(recentTickers);
 });

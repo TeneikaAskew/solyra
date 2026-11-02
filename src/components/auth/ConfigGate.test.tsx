@@ -7,11 +7,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Gate = typeof import('@/lib/authGate');
 
-const initCalls: { modeAtInit: string }[] = [];
+// The mode each stage of initFirebase sees: on entry, and where the real one
+// attaches the SDK listener (just after it calls beforeListen). initFailure
+// makes it reject before that point, as a failed SDK chunk load or a throwing
+// initializeApp does.
+const initCalls: { modeAtInit: string; modeAtListen?: string }[] = [];
+let initFailure: Error | null = null;
 let gateRef: Gate | null = null;
 vi.mock('@/lib/firebase', () => ({
-  initFirebase: vi.fn(async () => {
-    initCalls.push({ modeAtInit: gateRef?.getStorageMode() ?? 'unknown' });
+  initFirebase: vi.fn(async (_cfg: unknown, beforeListen?: () => void) => {
+    const call: { modeAtInit: string; modeAtListen?: string } = { modeAtInit: gateRef?.getStorageMode() ?? 'unknown' };
+    initCalls.push(call);
+    if (initFailure) throw initFailure;
+    beforeListen?.();
+    call.modeAtListen = gateRef?.getStorageMode() ?? 'unknown';
   }),
 }));
 
@@ -53,6 +62,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
   initCalls.length = 0;
+  initFailure = null;
   localStorage.clear();
   localStorage.setItem('platform-theme', 'light');
   localStorage.setItem('platform-theme@uid:uid-a', 'dark');
@@ -84,7 +94,7 @@ describe('ConfigGate boot and the storage mode', () => {
     fetchMock.mockResolvedValue(answer(FIREBASE));
     const { el } = await mount(createElement(ConfigGate, { children: 'app' }));
     expect(gate.getStorageMode()).toBe('perOwner');
-    expect(initCalls).toEqual([{ modeAtInit: 'perOwner' }]);
+    expect(initCalls).toEqual([{ modeAtInit: 'pending', modeAtListen: 'perOwner' }]);
     expect(el.textContent).toBe('app');
   });
 
@@ -145,5 +155,30 @@ describe('ConfigGate boot and the storage mode', () => {
     expect(gate.getStorageMode()).toBe('pending');
     expect(el.querySelector('[data-testid="config-error"]')).not.toBeNull();
     expect(el.textContent).not.toContain('CHILD-CONTENT');
+  });
+
+  // IMPL-314-1 R-5: a failure inside initFirebase, before it attaches the
+  // listener, is a failed boot too.
+  it('a failure inside initFirebase leaves storage pending, the document and stored values unchanged', async () => {
+    const { gate, ConfigGate } = await load();
+    const config = deferred<Response>();
+    fetchMock.mockReturnValue(config.promise);
+    initFailure = new Error('Failed to fetch dynamically imported module: /src/lib/firebaseImpl.ts');
+    const before = snapshot();
+    const themeBefore = document.documentElement.getAttribute('data-theme');
+    // A store evaluated by the preload while storage is pending, as a lazy
+    // route's chunk is in the app, so it hears the mode if the boot settles it.
+    let preloaded!: () => void;
+    const storeLoaded = new Promise<void>((r) => { preloaded = r; });
+    const preload = async () => { await import('@/stores/themeStore'); preloaded(); };
+    const { el } = await mount(createElement(ConfigGate, { preload, children: 'CHILD-CONTENT' }));
+    await storeLoaded;
+    await act(async () => config.resolve(answer(FIREBASE)));
+    expect(el.querySelector('[data-testid="config-error"]')).not.toBeNull();
+    expect(el.textContent).not.toContain('CHILD-CONTENT');
+    expect(gate.getStorageMode()).toBe('pending');
+    expect(document.documentElement.getAttribute('data-theme')).toBe(themeBefore);
+    expect(snapshot()).toEqual(before);
+    expect(initCalls).toEqual([{ modeAtInit: 'pending' }]);
   });
 });

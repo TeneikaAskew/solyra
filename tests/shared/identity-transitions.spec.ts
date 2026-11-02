@@ -756,6 +756,58 @@ test.describe('Account transitions: legacy un-namespaced values stay inert (item
   });
 });
 
+// ── IMPL-314-1 R-6 and R-5 (done_when items 18 and 4) ───────────────────────
+// A legacy 'ticker-store' that is not in persist's own serialization: other
+// key order, whitespace and an extra field.
+const ODD_TICKER_STORE = '{ "version": 0, "state": { "recentTickers": [ "NVDA" ], "activeTicker": "IWM", "extra": 1 } }';
+
+test.describe('Account transitions: legacy values in any serialization, and a failed SDK init (IMPL-314-1 R-6, R-5)', () => {
+  test("a legacy 'ticker-store' in another serialization stays byte-identical through sign-in and an account change", async ({ context, page }) => {
+    await page.addInitScript((odd) => {
+      if (sessionStorage.getItem('__legacy_seeded')) return;
+      sessionStorage.setItem('__legacy_seeded', '1');
+      localStorage.setItem('ticker-store', odd);
+    }, ODD_TICKER_STORE);
+    await blockOtherTickers(page);
+    await setup(context, page);
+    await mockTickerSearch(page);
+    await page.goto('/dashboard');
+    await signInForm(page, 'B');
+    await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.B.email);
+    await page.waitForTimeout(300);
+    const afterB = await page.evaluate(() => localStorage.getItem('ticker-store'));
+    await switchDirectly(page, 'A');
+    await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.A.email);
+    await page.waitForTimeout(300);
+    await shot(page, 'r6-odd-ticker-store-after-switch');
+    const afterA = await page.evaluate(() => localStorage.getItem('ticker-store'));
+    expect(afterB).toBe(ODD_TICKER_STORE);
+    expect(afterA).toBe(ODD_TICKER_STORE);
+  });
+
+  test('a failure loading the SDK chunk is a failed boot: the config-error screen, storage pending, nothing stored changed', async ({ context, page }) => {
+    await page.addInitScript((odd) => {
+      if (sessionStorage.getItem('__legacy_seeded')) return;
+      sessionStorage.setItem('__legacy_seeded', '1');
+      localStorage.setItem('platform-theme', 'light');
+      localStorage.setItem('ticker-store', odd);
+    }, ODD_TICKER_STORE);
+    await setup(context, page);
+    await page.route(/\/src\/lib\/firebaseImpl\.ts/, (r) => r.abort());
+    await page.goto('/dashboard');
+    await expect(page.getByTestId('config-error')).toBeVisible();
+    await page.waitForTimeout(300);
+    await shot(page, 'r5-sdk-chunk-failed');
+    const mode = await page.evaluate(async () => {
+      const g = (await import('/src/lib/authGate.ts' as string)) as { getStorageMode: () => string };
+      return g.getStorageMode();
+    });
+    const stored = await page.evaluate(() => ({ theme: localStorage.getItem('platform-theme'), ticker: localStorage.getItem('ticker-store') }));
+    expect(mode).toBe('pending');
+    expect(stored).toEqual({ theme: 'light', ticker: ODD_TICKER_STORE });
+  });
+});
+
 // ── done_when item 19 ────────────────────────────────────────────────────────
 test.describe('Account transitions: sizing inputs, recents and the active ticker (item 19)', () => {
   test("A's sizing inputs and recents are not shown to B, no request carries them, and the active ticker stays per browser with B's token", async ({ context, page }) => {

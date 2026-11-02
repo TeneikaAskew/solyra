@@ -39,10 +39,13 @@ import { noteSignedInAccount, recordVerificationEmail } from './authGate';
 
 let _auth: Auth | null = null;
 
-export function initFirebase(cfg: FirebaseWebConfig): Auth {
+export function initFirebase(cfg: FirebaseWebConfig, beforeListen?: () => void): Auth {
   if (_auth) return _auth;
   const app: FirebaseApp = initializeApp(cfg);
   _auth = getAuth(app);
+  // ConfigGate's boot settles the storage mode here, so that a failure above
+  // leaves it pending (FEAT-AUTH-001, failed boot).
+  beforeListen?.();
   // The account record (authGate.ts) hears every report, and hears it first:
   // this listener is attached before any component subscribes.
   onAuthStateChanged(_auth, (u) => noteSignedInAccount(u?.uid ?? null));
