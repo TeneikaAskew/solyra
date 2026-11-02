@@ -14,6 +14,7 @@ import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 import { mockAllPages } from '../helpers/fixtures/all';
 import { M } from '../helpers/mocks';
 import { MOCK_JOURNAL_EMPTY, MOCK_JOURNAL_TRADES } from '@/mocks/journal';
+import { MOCK_FIREBASE_CONFIG_OPEN } from '@/mocks/common';
 
 const FAKE_FIREBASE = {
   apiKey: 'AIzaSyFAKE-key-for-tests-000000000000000',
@@ -842,6 +843,56 @@ test.describe('Account transitions: legacy values in any serialization, and a fa
     const picked = { ...odd, 'ticker-store': odd['ticker-store'].replace('"activeTicker": "QQQ"', '"activeTicker": "AAPL"').replace('"version": 1', '"version": 0') };
     expect(afterPick).toEqual(picked);
     expect(afterReload).toEqual(picked);
+  });
+
+  // IMPL-314-4 F-1 (done_when items 4 and 5): open mode, with the store
+  // module evaluated while the boot still holds storage pending. Main's
+  // persist discards a 'ticker-store' record of another version, so it shows
+  // none of that record's recents and a pick stores only the pick. The config
+  // answer is held until the test has seen storage pending in the app's own
+  // module and has evaluated the store module there, then released.
+  test("open mode, the store evaluated while storage is pending: a version-1 'ticker-store' gives no recents, as on main", async ({ page }) => {
+    const v1 = '{ "version": 1, "state": { "recentTickers": [ "NVDA", "TSLA" ], "activeTicker": "QQQ" } }';
+    await page.addInitScript((rec) => {
+      if (sessionStorage.getItem('__f1_seeded')) return;
+      sessionStorage.setItem('__f1_seeded', '1');
+      localStorage.setItem('ticker-store', rec);
+    }, v1);
+    await page.route(/\/api\/.*(AAPL|MSFT|SPY|NVDA|TSLA)/, (r) => r.fulfill(M.notFound()));
+    await mockAllPages(page);
+    await mockTickerSearch(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route('**/api/config/firebase', async (r) => {
+      await held;
+      return r.fulfill(M.ok(MOCK_FIREBASE_CONFIG_OPEN));
+    });
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+    // Precondition: the app's own storage module is pending. A module the test
+    // loaded on its own would start in shared mode.
+    const storageMode = () =>
+      page.evaluate(async (url) => ((await import(/* @vite-ignore */ url)) as { getStorageMode: () => string }).getStorageMode(), '/src/lib/authGate.ts');
+    await expect.poll(storageMode).toBe('pending');
+    const whilePending = await page.evaluate(async (url) => {
+      const mod = (await import(/* @vite-ignore */ url)) as { useTickerStore: { getState: () => { recentTickers: unknown } } };
+      return mod.useTickerStore.getState().recentTickers;
+    }, '/src/stores/tickerStore.ts');
+    release();
+    await expect(page.getByTestId('ticker-combobox').first()).toBeVisible();
+    expect(await storageMode()).toBe('shared');
+    const shownAtLoad = await recentsShown(page);
+    const storedAtLoad = await page.evaluate(() => localStorage.getItem('ticker-store'));
+    await shot(page, 'f1-open-pending-v1-at-load');
+    await pickBySearch(page, 'aa', 'AAPL');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('ticker-store'))).not.toBe(v1);
+    const storedAfterPick = await page.evaluate(() => localStorage.getItem('ticker-store'));
+    const shownAfterPick = await recentsShown(page);
+    await shot(page, 'f1-open-pending-v1-after-pick');
+    expect(whilePending).toEqual([]);
+    expect(shownAtLoad).toEqual([]);
+    expect(storedAtLoad).toBe(v1);
+    expect(JSON.parse(storedAfterPick!)).toEqual({ state: { activeTicker: 'AAPL', recentTickers: ['AAPL'] }, version: 0 });
+    expect(shownAfterPick).toEqual(['AAPL']);
   });
 
   test('a failure loading the SDK chunk is a failed boot: the config-error screen, storage pending, nothing stored changed', async ({ context, page }) => {

@@ -164,23 +164,43 @@ const tickerStorage: StateStorage = {
   },
 };
 
+/** Persist's version for this store: its default, as on main. */
+const PERSIST_VERSION = 0;
+
+/**
+ * The recents persist's own load applies from 'ticker-store', as on main:
+ * none from a record of another numeric version, which persist discards, and
+ * otherwise the record's recentTickers exactly as stored. Shared mode reads
+ * them here when the store evaluated while storage was pending, or on a later
+ * storage event, so it shows what a store evaluated in shared mode shows
+ * (IMPL-314-4 F-1).
+ */
+function sharedRecents(): string[] {
+  const parsed = parse(rawGet(STORE_KEY)) as { state?: unknown; version?: unknown } | null;
+  if (typeof parsed?.version === 'number' && parsed.version !== PERSIST_VERSION) return [];
+  const state = parsed?.state;
+  if (typeof state !== 'object' || state === null || Array.isArray(state) || !Object.hasOwn(state, 'recentTickers')) return [];
+  return (state as { recentTickers: string[] }).recentTickers;
+}
+
+/** The account's own recents, from its per-owner key. */
+function ownRecents(): string[] {
+  const raw = readScoped(RECENTS_KEY);
+  if (!raw) return [];
+  let list: unknown;
+  try {
+    list = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  return Array.isArray(list) ? list.filter((t): t is string => typeof t === 'string') : [];
+}
+
 /** The recents for the current storage state: null while pending. */
-function loadRecents(): string[] | null {
+function loadRecents(): { recentTickers: string[] } | null {
   const mode = getStorageMode();
   if (mode === 'pending') return null;
-  const list =
-    mode === 'shared'
-      ? parse(rawGet(STORE_KEY))?.state?.recentTickers
-      : (() => {
-          const raw = readScoped(RECENTS_KEY);
-          if (!raw) return undefined;
-          try {
-            return JSON.parse(raw) as unknown;
-          } catch {
-            return undefined;
-          }
-        })();
-  return Array.isArray(list) ? list.filter((t): t is string => typeof t === 'string') : [];
+  return { recentTickers: mode === 'shared' ? sharedRecents() : ownRecents() };
 }
 
 export const useTickerStore = create<TickerState>()(
@@ -233,13 +253,13 @@ function applyLoaded(recentTickers: string[]): void {
 
 if (getStorageMode() === 'perOwner') {
   const atLoad = loadRecents();
-  if (atLoad) applyLoaded(atLoad);
+  if (atLoad) applyLoaded(atLoad.recentTickers);
 }
 
 // Reload the recents on every storage event: the mode settling, the first
 // account report and each later account change. The active ticker stays, and
 // nothing is written.
 onStorageChange(() => {
-  const recentTickers = loadRecents();
-  if (recentTickers) applyLoaded(recentTickers);
+  const loaded = loadRecents();
+  if (loaded) applyLoaded(loaded.recentTickers);
 });

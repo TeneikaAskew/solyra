@@ -432,3 +432,63 @@ describe('C-1: the persist version domain, and records nobody picked on', () => 
     },
   );
 });
+
+// IMPL-314-4 F-1 (done_when items 4 and 5): in shared mode (dev, open, local,
+// IAP) the recents are what persist's own load applies, as on main, whatever
+// order the store module and the boot run in. Persist discards a record of
+// another numeric version, and otherwise applies the record's recentTickers as
+// stored. The same records, in per-owner mode, show none of them.
+describe('F-1: the recents a ticker-store record gives, in every mode and evaluation order', () => {
+  const STORE = 'ticker-store';
+  type Order = 'initial shared' | 'initial shared, then a storage event' | 'pending, then shared' | 'per-owner';
+  async function evaluate(order: Order) {
+    vi.resetModules();
+    const gate = await import('@/lib/authGate');
+    if (order !== 'initial shared' && order !== 'initial shared, then a storage event') gate.markStoragePending();
+    const { useTickerStore: s } = await import('./tickerStore');
+    if (order === 'pending, then shared') gate.settleStorageMode('shared');
+    if (order === 'initial shared, then a storage event') gate.noteSignedInAccount('uid-a');
+    if (order === 'per-owner') {
+      gate.settleStorageMode('perOwner');
+      gate.noteSignedInAccount('uid-a');
+    }
+    return s;
+  }
+  const record = (v: string, recents = '[ "NVDA", "TSLA" ]') =>
+    `{ "version": ${v}, "state": { "recentTickers": ${recents}, "activeTicker": "QQQ" } }`;
+  const orders: Order[] = ['initial shared', 'initial shared, then a storage event', 'pending, then shared', 'per-owner'];
+  const shared = (o: Order) => o !== 'per-owner';
+
+  // [name, stored record, active ticker main loads, recents main loads]
+  const cases: [string, string, string, unknown][] = [
+    ...['1', '-1', '2.5', '1e0', '1E2', '-1.0e-3', '1e400', '-1e400'].map(
+      (v): [string, string, string, unknown] => [`version ${v}`, record(v), 'IWM', []],
+    ),
+    ...['0', '-0', '0.0', '0e5', '-0.0E+1', '1e-400', '"1"', 'null', 'true', '[1]', '{"v":1}'].map(
+      (v): [string, string, string, unknown] => [`version ${v}`, record(v), 'QQQ', ['NVDA', 'TSLA']],
+    ),
+    ['no version', '{"state":{"recentTickers":["NVDA"],"activeTicker":"QQQ"}}', 'QQQ', ['NVDA']],
+    ['duplicate versions, the kept one 0', '{"version":1,"state":{"recentTickers":["NVDA"],"activeTicker":"QQQ"},"version":0}', 'QQQ', ['NVDA']],
+    ['duplicate versions, the kept one 1', '{"version":0,"state":{"recentTickers":["NVDA"],"activeTicker":"QQQ"},"version":1}', 'IWM', []],
+    ['non-string recents', record('0', '[1, "NVDA", null]'), 'QQQ', [1, 'NVDA', null]],
+    ['empty recents', record('0', '[]'), 'QQQ', []],
+    ['no recents member', '{"version":0,"state":{"activeTicker":"QQQ"}}', 'QQQ', []],
+    ['state null', '{"version":0,"state":null}', 'IWM', []],
+    ['state an array', '{"version":0,"state":["NVDA"]}', 'IWM', []],
+    ['unparseable', '{"version":0,"state":{', 'IWM', []],
+  ];
+
+  for (const order of orders) {
+    it.each(cases)(`${order}: %s`, async (_name, raw, active, recents) => {
+      backing.clear();
+      backing.set(STORE, raw);
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const s = await evaluate(order);
+      errors.mockRestore();
+      expect(s.getState().activeTicker).toBe(active);
+      expect(s.getState().recentTickers).toEqual(shared(order) ? recents : []);
+      // Loading never writes the record, in any mode.
+      expect(backing.get(STORE)).toBe(raw);
+    });
+  }
+});
