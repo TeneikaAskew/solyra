@@ -109,6 +109,19 @@ function withActiveTicker(raw: string, activeTicker: unknown): string | null {
   return `${raw.slice(0, state[0] + 1)}"activeTicker":${value}${sep}${raw.slice(state[0] + 1)}`;
 }
 
+/** The record with its numeric persist `version` set to the one persist
+ *  writes, its only other change. Persist discards a record of another
+ *  version when it loads, so without this a pick on such a record would not
+ *  survive a reload, where main's whole-record write keeps it (IMPL-314-3
+ *  C-1). A record of persist's version, or with no numeric version, is
+ *  returned unchanged. */
+function withPersistVersion(raw: string, version: unknown): string {
+  const held = (parse(raw) as { version?: unknown } | null)?.version;
+  if (typeof held !== 'number' || typeof version !== 'number' || held === version) return raw;
+  const span = memberSpan(raw, raw.indexOf('{'), 'version');
+  return span ? raw.slice(0, span[0]) + JSON.stringify(version) + raw.slice(span[1]) : raw;
+}
+
 /**
  * 'ticker-store' holds the active ticker per browser in every mode, as on
  * main. The recent tickers it may also hold are account-scoped: they are read
@@ -133,7 +146,7 @@ const tickerStorage: StateStorage = {
     const activeTicker = next?.state?.activeTicker;
     const raw = rawGet(name);
     const kept = raw !== null && activeTicker !== undefined ? withActiveTicker(raw, activeTicker) : null;
-    if (kept !== null) return rawSet(name, kept);
+    if (kept !== null) return rawSet(name, withPersistVersion(kept, next?.version));
     rawSet(name, JSON.stringify({ ...next, state: { activeTicker } }));
   },
   removeItem: () => {

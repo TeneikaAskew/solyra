@@ -317,4 +317,42 @@ describe("C-1: an active-ticker write on the two shapes IMPL-314-3 measured", ()
     expect(backing.get(STORE)).toBe(record);
     expect(JSON.parse(backing.get('ticker-recents@uid:uid-a')!)).toEqual(['AAPL']);
   });
+
+  const V1 = '{ "version": 1, "state": { "recentTickers": [ "NVDA" ], "activeTicker": "QQQ", "extra": 1 } }';
+
+  it('per-owner: a pick on a record with a non-zero persist version survives a reload, as on main, and changes only the active ticker and that version', async () => {
+    backing.clear();
+    backing.set(STORE, V1);
+    const s = await evaluate('perOwner');
+    // Loads as on main: persist discards a record of another version.
+    expect(s.getState().activeTicker).toBe('IWM');
+    s.getState().setTicker('spy');
+    expect(backing.get(STORE)).toBe(V1.replace('"activeTicker": "QQQ"', '"activeTicker": "SPY"').replace('"version": 1', '"version": 0'));
+    const reloaded = await evaluate('perOwner');
+    expect(reloaded.getState().activeTicker).toBe('SPY');
+    expect(JSON.parse(backing.get(STORE)!).state.recentTickers).toEqual(['NVDA']);
+  });
+
+  it('control, shared: the same pick survives a reload, as on main', async () => {
+    backing.clear();
+    backing.set(STORE, V1);
+    const s = await evaluate('shared');
+    expect(s.getState().activeTicker).toBe('IWM');
+    s.getState().setTicker('spy');
+    const reloaded = await evaluate('shared');
+    expect(reloaded.getState().activeTicker).toBe('SPY');
+  });
+
+  it('control, per-owner: a record of version 0, or with no version, keeps its version bytes on a pick', async () => {
+    for (const record of [
+      '{ "version": 0, "state": { "recentTickers": [ "NVDA" ], "activeTicker": "QQQ" } }',
+      '{"state":{"activeTicker":"QQQ","recentTickers":["NVDA"]}}',
+    ]) {
+      backing.clear();
+      backing.set(STORE, record);
+      const s = await evaluate('perOwner');
+      s.getState().setTicker('spy');
+      expect(backing.get(STORE)).toBe(record.replace(/"activeTicker": ?"QQQ"/, (m) => m.replace('QQQ', 'SPY')));
+    }
+  });
 });

@@ -791,6 +791,56 @@ test.describe('Account transitions: legacy values in any serialization, and a fa
     expect(afterPick).toBe(ODD_TICKER_STORE.replace('"activeTicker": "IWM"', '"activeTicker": "SPY"'));
   });
 
+  // IMPL-314-3 C-1 and the same class over all five legacy keys: each in
+  // another serialization with fields the app does not know, 'ticker-store'
+  // at a persist version other than 0. Nothing an account does writes any of
+  // them, except a pick, which changes only the active ticker and that
+  // version, and survives a reload as on main (done_when items 5 and 18).
+  test('all five legacy keys with unknown fields stay byte-identical; a pick changes only the active ticker and the version, and survives a reload', async ({ context, page }) => {
+    const odd: Record<string, string> = {
+      'platform-theme': 'light',
+      'platform-shell-settings': '{ "density": "comfy", "accent": "violet", "navPattern": "sidebar", "unknown": [ 1, "}" ] }',
+      'em.account': '88888.00',
+      'em.riskPct': '4.50',
+      'ticker-store': '{ "version": 1, "state": { "recentTickers": [ "NVDA" ], "activeTicker": "QQQ", "extra": { "k": "]" } } }',
+    };
+    await page.addInitScript((legacy) => {
+      if (sessionStorage.getItem('__legacy_seeded')) return;
+      sessionStorage.setItem('__legacy_seeded', '1');
+      for (const [k, v] of Object.entries(legacy)) localStorage.setItem(k, v);
+    }, odd);
+    await blockOtherTickers(page);
+    await setup(context, page);
+    await mockTickerSearch(page);
+    await mockCalculator(page);
+    const read = () => page.evaluate((keys) => Object.fromEntries(keys.map((k) => [k, localStorage.getItem(k)])), Object.keys(odd));
+    await page.goto('/dashboard');
+    await signInForm(page, 'B');
+    await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.B.email);
+    await page.getByRole('button', { name: /Switch to (light|dark) theme/ }).first().click();
+    await setCalculator(page, '25000', '1.5');
+    await page.waitForTimeout(300);
+    const afterB = await read();
+    await switchDirectly(page, 'A');
+    await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.A.email);
+    await page.waitForTimeout(300);
+    const afterA = await read();
+    await pickBySearch(page, 'aa', 'AAPL');
+    await page.waitForTimeout(300);
+    await shot(page, 'c1-five-keys-after-pick');
+    const afterPick = await read();
+    await page.reload();
+    await expect(page.getByTestId('auth-status')).toContainText(ACCOUNTS.A.email);
+    await expect(page.getByTestId('ticker-combobox').first()).toContainText('AAPL');
+    await shot(page, 'c1-five-keys-after-reload');
+    const afterReload = await read();
+    expect(afterB).toEqual(odd);
+    expect(afterA).toEqual(odd);
+    const picked = { ...odd, 'ticker-store': odd['ticker-store'].replace('"activeTicker": "QQQ"', '"activeTicker": "AAPL"').replace('"version": 1', '"version": 0') };
+    expect(afterPick).toEqual(picked);
+    expect(afterReload).toEqual(picked);
+  });
+
   test('a failure loading the SDK chunk is a failed boot: the config-error screen, storage pending, nothing stored changed', async ({ context, page }) => {
     await page.addInitScript((odd) => {
       if (sessionStorage.getItem('__legacy_seeded')) return;
