@@ -111,6 +111,11 @@ export const MOCK_MARKET_HOURS = {
   pre_market: { open: '04:00', close: '09:30' },
   after_hours: { open: '16:00', close: '20:00' },
   holidays_2026: ['2026-01-01', '2026-07-03', '2026-12-25'],
+  holidays: ['2026-01-01', '2026-06-19', '2026-07-03', '2026-12-25', '2027-01-01'],
+  early_closes: [
+    { date: '2026-11-27', close: '13:00' },
+    { date: '2026-12-24', close: '13:00' },
+  ],
 } satisfies MarketHours;
 
 export const commonRoutes: MockRoute[] = [

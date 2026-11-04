@@ -578,7 +578,14 @@ export interface paths {
         };
         /**
          * Get Market Hours
-         * @description Return US equity market session windows + 2026 holidays.
+         * @description Return US equity market session windows, holidays and early closes.
+         *
+         *     ``holidays`` and ``early_closes`` cover the current and next year by the
+         *     Eastern date, so the window rolls at 00:00 ET on 1 January. Half days
+         *     are sessions, so they are in ``early_closes`` and never in ``holidays``.
+         *     ``holidays_2026`` is kept, filled from the same calendar, for solyra's
+         *     replay picker until Spec C moves it to ``holidays`` and removes it.
+         *     A calendar failure raises (CLAUDE.md 3.7); nothing is filled in.
          */
         get: operations["get_market_hours_api_config_market_hours_get"];
         put?: never;
@@ -3185,6 +3192,18 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * EarlyClose
+         * @description A half-day session: its date and its Eastern close, ``HH:MM``.
+         */
+        EarlyClose: {
+            /** Close */
+            close: string;
+            /** Date */
+            date: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** EmaConfig */
         EmaConfig: {
             /** Periods */
@@ -3292,6 +3311,8 @@ export interface components {
         };
         /** FreshnessRow */
         FreshnessRow: {
+            /** Detail */
+            detail?: string | null;
             /** Expected Latest */
             expected_latest: string;
             /** Expected Max Hours */
@@ -4167,9 +4188,18 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** MarketHoursResponse */
+        /**
+         * MarketHoursResponse
+         * @description ``holidays`` and ``early_closes`` cover the current and next Eastern
+         *     year. ``holidays_2026`` is kept for solyra's replay picker until Spec C
+         *     moves it to ``holidays`` and removes it.
+         */
         MarketHoursResponse: {
             after_hours: components["schemas"]["MarketHoursWindow"];
+            /** Early Closes */
+            early_closes: components["schemas"]["EarlyClose"][];
+            /** Holidays */
+            holidays: string[];
             /** Holidays 2026 */
             holidays_2026: string[];
             pre_market: components["schemas"]["MarketHoursWindow"];
