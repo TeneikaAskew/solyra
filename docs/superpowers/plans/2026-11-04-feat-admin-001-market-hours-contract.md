@@ -2,7 +2,7 @@
 feat_id: FEAT-ADMIN-001
 spec: docs/superpowers/specs/2026-11-04-feat-admin-001-market-hours-contract.md
 branch: fix/feat-admin-001-market-hours-contract
-pr: TBD
+pr: 317
 status: ready
 ---
 
