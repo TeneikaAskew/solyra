@@ -673,7 +673,9 @@ async function signInUnverified(page: Page): Promise<{ markVerified: () => void 
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('login-email').fill('trader@example.test');
   await page.getByTestId('login-password').fill('correct-horse-9');
+  const dashboardReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/dashboard/brief/IWM' && response.status() === 403);
   await page.getByTestId('login-submit').click();
+  await dashboardReady;
   return { markVerified: () => (verified = true) };
 }
 
