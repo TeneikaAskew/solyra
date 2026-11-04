@@ -24,6 +24,7 @@
 | Layer | What it proves | Tooling | Where | Run command |
 |---|---|---|---|---|
 | **Frontend E2E** | Every route renders, the redesigned surfaces show the right data, no console errors, responsive | Playwright (chromium) + network mocks | `tests/<page>/*.spec.ts` | `npm run e2e` |
+| **Frontend E2E (live)** | Owner-run current-session Playbook ORB server-projection/API/UI parity; execution pending | Playwright (`cloud` project) | `tests/playbook/orb-parity.cloud.spec.ts` — no mocks; skipped in local chromium | `npm run e2e:cloud:auth` (interactive Firebase sign-in) then `npm run e2e:cloud` |
 | **Frontend E2E (live)** | Owner-run Dashboard/Signals score parity artifact implemented; deployed execution unexecuted | Playwright (`cloud` project), real responses | `tests/signals/score-explanation.cloud.spec.ts` | `npm run e2e:cloud:auth` (interactive Firebase sign-in) then `npm run e2e:cloud` |
 | **Backend unit** | `lib/` math (indicators, strat, gamma, backtest), API contracts | pytest | `tests/test_*.py` | `make test` |
 | **Backend E2E / scripts** | Pipeline scripts, fetchers, signal monitor | pytest | stocks repo: `tests/test_e2e.py`, `tests/test_scripts_*.py` | `make test-e2e` · `make test-scripts` |
@@ -36,7 +37,8 @@
 **Config:** `playwright.config.ts` — `testDir: ./tests`, 4 projects:
 - **`warmup`**: not run directly — a dependency of `chromium` only. Warms the 14 routes in `tests/routes.warmup.ts`'s `ROUTES` against the freshly-booted Vite so the specs' wall-clock budgets measure a warm server, not a cold transform. One lazy page is outside that list: `/auth/action` (`AuthActionPage`, lazy at `src/App.tsx:28`, is not in `ROUTES`). `tests/shared/auth-gate.spec.ts` is the only spec that opens it, so its first `/auth/action` case pays for that page's cold transform and the later ones get Vite's cached result. `/welcome` is left out on purpose: it is a `<Navigate>` to `/` (`src/App.tsx:57`), not a lazy page.
 - **`chromium`** (default): boots its **own** Vite on the dedicated E2E port (`:5199`, never your `:5173` dev server), all `/api/**` a test asserts on **mocked** per-spec (with `page.route`, or inside the page by mock-data mode in the mock-mode spec) → no backend needed, fast. Not fully network-isolated: `src/index.css:1` loads Montserrat from `fonts.googleapis.com`. `mockCommon` (`tests/helpers/mocks.ts:47-58`) fulfils both font hosts with empty bodies, and every spec reaches it before navigating, directly or through a fixture helper such as `mockDashboard` or `mockAllPages`, with two exceptions. The `Mock mode ON` block in `tests/shared/mock-mode.spec.ts` stubs both font hosts in its own `beforeEach` (`:45-50`) and registers no `/api` route there, because mock-data mode answers `/api` inside the page (two of its tests add a catch-all `**/api/**` route for after they leave the mode). `tests/landing/landing.spec.ts`'s `beforeEach` (`:19-23`) routes only `/api/config/firebase`, so its font request goes to the real CDN. `playwright.config.ts:143` sets `ignoreHTTPSErrors: true` for this project, which lets that request complete despite the headless shell's missing root CAs when the CDN is reachable; the landing spec asserts nothing about console errors either way. A few requests can also escape interception during teardown (`docs/TEST_COVERAGE_AUDIT.md` §10.7 counted 25 on 2026-09-07, as accepted `ECONNREFUSED` noise against Vite's dead proxy, not a fixture gap).
-- **`iap-setup`** / **`cloud`**: run against the deployed FRONTEND (`solyra-stocks.lovable.app`, which now redirects to `stocks.insightscollective.org`), not a Cloud Run URL, and **not** behind IAP — the SPA is published separately since #957 and its API is gated per request by a Firebase ID token. `iap-setup` captures a real signed-in session interactively (including Firebase's IndexedDB persistence). `cloud` matches `*.cloud.spec.ts`. `tests/signals/score-explanation.cloud.spec.ts` supplies two owner-run Dashboard/Signals cases with real responses, saved-session authorization, provenance assertions and screenshots. The artifact has passed offline types/collection only; deployed execution remains unexecuted. The cloud project and interactive setup are not selected by the default command; the owner-only cases skip locally before navigation.
+- **`iap-setup`** / **`cloud`**: run against the deployed FRONTEND (`solyra-stocks.lovable.app`, which now redirects to `stocks.insightscollective.org`), not a Cloud Run URL, and **not** behind IAP — the SPA is published separately since #957 and its API is gated per request by a Firebase ID token. `iap-setup` captures a real signed-in session interactively (including Firebase's IndexedDB persistence). `cloud` matches `*.cloud.spec.ts`; `tests/playbook/orb-parity.cloud.spec.ts` now checks the returned opening projection against the posted snapshot and rendered comparison timestamp. It requires a regular session after the opening window, a qualified response and separate owner execution authorization. No cloud execution was performed during local ORB preparation. The cloud test skips before navigation under the default local project.
+- `tests/signals/score-explanation.cloud.spec.ts` additionally supplies two owner-run Dashboard/Signals cases with real responses, saved-session authorization, provenance assertions and screenshots. Deployed execution remains unexecuted; these cases also skip locally before navigation.
 
 **Mock strategy:** `tests/helpers/mocks.ts` `mockCommon(page)` stubs the cross-cutting endpoints (`/api/health`, `/api/live/status`, brief, watchlist); each spec adds its own `page.route('**/api/<endpoint>', …)` with realistic fixtures. **Fixtures must match the production response shape** (CLAUDE.md Rule 0.3) — e.g. the dashboard brief mock carries `daily_indicators.close`, the signals mock carries `analytics/summary`.
 
@@ -150,9 +152,7 @@ records it exiting 1 on `main` with 32 errors when it was written, 27 of them on
 a pattern this codebase uses on purpose), and `make test` is gone, since it
 exercised the Python backend, which no longer lives in this repo.
 
-- **Owner deployed closeout:** the `cloud` project has the Dashboard/Signals
-  score artifact (§1). It has not been executed against the deployed frontend
-  and is not an automated CI gate. Authorized owner execution remains pending.
+- **Owner deployed closeout:** the `cloud` project includes the ORB parity and Dashboard/Signals score artifacts (§1). Neither is an automated CI gate; separately authorized owner execution after deployment remains pending.
 
 ---
 
@@ -185,6 +185,11 @@ Why it stopped working, on three counts (corrected 2026-09-05):
 session, including the IndexedDB persistence the SDK uses, and the `cloud`
 project restores it against `https://solyra-stocks.lovable.app`.
 
+**What remains pending:** owner-authorized execution of the new ORB cloud parity spec after deployment. Its existence is not deployed acceptance. The old project previously ran the
+29 hermetic specs, which is worse than nothing: each reaches `mockCommon`, which
+intercepts `/api/*` and fulfils `/api/config/firebase` with `authMode: 'open'`,
+making the auth gate inert and discarding the restored session. A green run
+measured the mocks, not the deployment.
 **Current owner artifact:** `tests/signals/score-explanation.cloud.spec.ts`
 checks Dashboard and Signals against real typed historical-score responses,
 including stored strength, recorded or unavailable breakdown and provenance.

@@ -2536,6 +2536,7 @@ export interface components {
             orbHigh?: number | null;
             /** Orblow */
             orbLow?: number | null;
+            orbOpening?: components["schemas"]["OpeningProjection"] | null;
             /** Prevclose */
             prevClose?: number | null;
             /** Prevhigh */
@@ -2546,6 +2547,8 @@ export interface components {
             price?: number | null;
             /** Stochkprev */
             stochKPrev?: number | null;
+            /** Ticker */
+            ticker?: string | null;
             /** Volumetoday */
             volumeToday?: number | null;
         };
@@ -4039,6 +4042,7 @@ export interface components {
             market_open: boolean;
             /** Market Session */
             market_session: string;
+            opening?: components["schemas"]["OpeningProjection"] | null;
             /** Ticker */
             ticker: string;
         } & {
@@ -4413,6 +4417,47 @@ export interface components {
             kingNode?: components["schemas"]["StrikeNode"] | null;
             /** Midpoints */
             midpoints: components["schemas"]["StrikeNode"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** OpeningProjection */
+        OpeningProjection: {
+            /** Body Sha256 */
+            body_sha256?: string | null;
+            /** Calendar Version */
+            calendar_version?: string | null;
+            /** Comparison Age Seconds */
+            comparison_age_seconds?: number | null;
+            /** Comparison As Of */
+            comparison_as_of?: string | null;
+            /** Comparison Price */
+            comparison_price?: number | null;
+            /** Fetched At */
+            fetched_at: string;
+            /** High */
+            high?: number | null;
+            /** Low */
+            low?: number | null;
+            /** Price Basis */
+            price_basis?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Session */
+            session?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Source Last Refreshed */
+            source_last_refreshed?: string | null;
+            /** Status */
+            status: string;
+            /** Ticker */
+            ticker: string;
+            /** Window End */
+            window_end?: string | null;
+            /** Window Minutes */
+            window_minutes?: number | null;
+            /** Window Start */
+            window_start?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -7584,7 +7629,9 @@ export interface operations {
     };
     get_live_history_api_live_history__ticker__get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_opening?: boolean;
+            };
             header?: never;
             path: {
                 ticker: string;
