@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+// @vitest-environment jsdom
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, it, expect, vi } from 'vitest';
 import {
   clearVerificationRequired,
   getVerificationEmailState,
@@ -78,5 +81,522 @@ describe('email-confirmed record', () => {
     expect(gate.isEmailConfirmed('uid-a')).toBe(true);
     expect(gate.isEmailConfirmed('uid-b')).toBe(false);
     expect(gate.isEmailConfirmed(null)).toBe(false);
+  });
+
+  // FEAT-AUTH-001 done_when item 6 (#270): A's late I've confirmed answer
+  // must not replace B's record.
+  it('holds confirmations for B and then A, and marking A never clears B', async () => {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.markEmailConfirmed('uid-b');
+    gate.markEmailConfirmed('uid-a');
+    expect(gate.isEmailConfirmed('uid-b')).toBe(true);
+    expect(gate.isEmailConfirmed('uid-a')).toBe(true);
+  });
+
+  it('a record marked for A alone still reads not confirmed for B and for no uid', async () => {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.markEmailConfirmed('uid-a');
+    gate.markEmailConfirmed('uid-a');
+    expect(gate.isEmailConfirmed('uid-b')).toBe(false);
+    expect(gate.isEmailConfirmed(null)).toBe(false);
+  });
+});
+
+// FEAT-AUTH-001 account transitions, done_when item 1: the account record.
+describe('account record', () => {
+  async function fresh() {
+    vi.resetModules();
+    return import('./authGate');
+  }
+
+  it('reports no change for the first report after load, whether signed in or signed out', async () => {
+    for (const first of ['uid-a', null]) {
+      const gate = await fresh();
+      const seen: (string | null)[] = [];
+      gate.onAccountChange((next) => seen.push(next));
+      gate.noteSignedInAccount(first);
+      expect(seen).toEqual([]);
+      expect(gate.getSignedInAccount()).toBe(first);
+    }
+  });
+
+  it('reports no change for a repeated report of the same uid', async () => {
+    const gate = await fresh();
+    const seen: (string | null)[] = [];
+    gate.onAccountChange((next) => seen.push(next));
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount(null);
+    gate.noteSignedInAccount(null);
+    expect(seen).toEqual([null]);
+  });
+
+  it('reports A to signed-out, signed-out to B, and A to B', async () => {
+    const gate = await fresh();
+    const seen: (string | null)[] = [];
+    gate.onAccountChange((next) => seen.push(next));
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount(null);
+    gate.noteSignedInAccount('uid-b');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(seen).toEqual([null, 'uid-b', 'uid-a', 'uid-b']);
+    expect(gate.getSignedInAccount()).toBe('uid-b');
+  });
+
+  it('clears the auth-blocked flag on a change, before the listeners run, and keeps it for a repeat', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.markAuthBlocked();
+    gate.noteSignedInAccount('uid-a');
+    expect(gate.isAuthBlocked()).toBe(true);
+    let blockedSeenByListener: boolean | null = null;
+    gate.onAccountChange(() => { blockedSeenByListener = gate.isAuthBlocked(); });
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isAuthBlocked()).toBe(false);
+    expect(blockedSeenByListener).toBe(false);
+  });
+
+  it('runs the account listeners before the stores reload', async () => {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    const seen: string[] = [];
+    gate.onAccountChange(() => seen.push('account'));
+    gate.onStorageChange(() => seen.push('storage'));
+    gate.noteSignedInAccount('uid-b');
+    expect(seen).toEqual(['account', 'storage']);
+  });
+
+  it('stops notifying a listener once it unsubscribes', async () => {
+    const gate = await fresh();
+    const seen: (string | null)[] = [];
+    const off = gate.onAccountChange((next) => seen.push(next));
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    off();
+    gate.noteSignedInAccount('uid-a');
+    expect(seen).toEqual(['uid-b']);
+  });
+});
+
+// done_when item 21: authGate.ts stays safe to import from the entry chunk.
+describe('authGate imports', () => {
+  it('imports @tanstack/react-query for types only and nothing from src/stores', () => {
+    const src = readFileSync(join(process.cwd(), 'src', 'lib', 'authGate.ts'), 'utf8');
+    const imports = src.split('\n').filter((l) => /^\s*import\b/.test(l) || /^\s*export\s.*\bfrom\s/.test(l));
+    for (const line of imports.filter((l) => l.includes('@tanstack/react-query'))) {
+      expect(line).toMatch(/^\s*import\s+type\b/);
+    }
+    expect(imports.filter((l) => /['"](@\/stores|\.\.\/stores|src\/stores)/.test(l))).toEqual([]);
+  });
+});
+
+// done_when items 2, 3 and 4 (shared half): account-scoped storage.
+describe('account-scoped storage', () => {
+  async function fresh() {
+    vi.resetModules();
+    localStorage.clear();
+    return import('./authGate');
+  }
+  const snapshot = () => Object.fromEntries(Object.keys(localStorage).sort().map((k) => [k, localStorage.getItem(k)]));
+
+  it('per-owner: a write while uid A is the account goes to <key>@uid:uid-a and changes no other key', async () => {
+    const gate = await fresh();
+    localStorage.setItem('platform-theme', 'light');
+    localStorage.setItem('platform-theme@uid:uid-b', 'dark');
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    const before = snapshot();
+    gate.writeScoped('platform-theme', 'dark');
+    expect(snapshot()).toEqual({ ...before, 'platform-theme@uid:uid-a': 'dark' });
+  });
+
+  it("per-owner: a read while uid B is the account returns B's own value or nothing, never A's, another owner's or the un-namespaced value", async () => {
+    const gate = await fresh();
+    localStorage.setItem('platform-theme', 'light');
+    localStorage.setItem('platform-theme@uid:uid-a', 'light');
+    localStorage.setItem('platform-theme@uid:uid-c', 'light');
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.readScoped('platform-theme')).toBeNull();
+    localStorage.setItem('platform-theme@uid:uid-b', 'dark');
+    expect(gate.readScoped('platform-theme')).toBe('dark');
+  });
+
+  it('pending: nothing account-scoped is read or written', async () => {
+    const gate = await fresh();
+    localStorage.setItem('platform-theme', 'light');
+    localStorage.setItem('platform-theme@uid:uid-a', 'light');
+    gate.markStoragePending();
+    gate.noteSignedInAccount('uid-a');
+    const before = snapshot();
+    expect(gate.readScoped('platform-theme')).toBeNull();
+    gate.writeScoped('platform-theme', 'dark');
+    expect(snapshot()).toEqual(before);
+  });
+
+  it('per-owner with no account (before the first report, or signed out): a write stores nothing', async () => {
+    const gate = await fresh();
+    gate.settleStorageMode('perOwner');
+    gate.writeScoped('em.account', '1000');
+    expect(snapshot()).toEqual({});
+    gate.noteSignedInAccount(null);
+    gate.writeScoped('em.account', '1000');
+    expect(gate.readScoped('em.account')).toBeNull();
+    expect(snapshot()).toEqual({});
+  });
+
+  it('with localStorage unavailable, reads return nothing and writes are dropped without an error', async () => {
+    const gate = await fresh();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('SecurityError'); });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError'); });
+    try {
+      expect(gate.readScoped('platform-theme')).toBeNull();
+      expect(() => gate.writeScoped('platform-theme', 'dark')).not.toThrow();
+      gate.settleStorageMode('shared');
+      expect(gate.readScoped('platform-theme')).toBeNull();
+      expect(() => gate.writeScoped('platform-theme', 'dark')).not.toThrow();
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it('A, signed out, B, A again: every key present at any step is unchanged at the end except the keys the current owner wrote', async () => {
+    const gate = await fresh();
+    const legacy = {
+      'platform-theme': 'light',
+      'platform-shell-settings': JSON.stringify({ navPattern: 'sidebar', density: 'comfy', accent: 'violet' }),
+      'em.account': '88888',
+      'em.riskPct': '4.5',
+      'ticker-store': JSON.stringify({ state: { activeTicker: 'IWM', recentTickers: ['NVDA'] }, version: 0 }),
+    };
+    for (const [k, v] of Object.entries(legacy)) localStorage.setItem(k, v);
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    const seen: Record<string, string | null>[] = [snapshot()];
+    gate.noteSignedInAccount('uid-a');
+    gate.writeScoped('platform-theme', 'light');
+    gate.writeScoped('em.account', '1000');
+    seen.push(snapshot());
+    gate.noteSignedInAccount(null);
+    gate.writeScoped('platform-theme', 'dark');
+    seen.push(snapshot());
+    gate.noteSignedInAccount('uid-b');
+    gate.writeScoped('platform-theme', 'dark');
+    gate.writeScoped('em.account', '2000');
+    seen.push(snapshot());
+    gate.noteSignedInAccount('uid-a');
+    gate.writeScoped('em.account', '1500');
+    const end = snapshot();
+    const writtenByCurrentOwner = new Set(['em.account@uid:uid-a']);
+    for (const step of seen) {
+      for (const [k, v] of Object.entries(step)) {
+        if (writtenByCurrentOwner.has(k)) continue;
+        expect(end[k], k).toBe(v);
+      }
+    }
+    expect(end['em.account@uid:uid-a']).toBe('1500');
+    for (const [k, v] of Object.entries(legacy)) expect(end[k]).toBe(v);
+  });
+
+  it('shared mode, or no ConfigGate at all: reads and writes use the un-namespaced key exactly as on main', async () => {
+    const gate = await fresh();
+    // No ConfigGate has marked storage pending: shared, as on main.
+    expect(gate.getStorageMode()).toBe('shared');
+    localStorage.setItem('platform-theme', 'light');
+    expect(gate.readScoped('platform-theme')).toBe('light');
+    gate.writeScoped('em.account', '1000');
+    expect(localStorage.getItem('em.account')).toBe('1000');
+    // A boot that settles without initFirebase: shared, whatever is reported.
+    const g2 = await fresh();
+    g2.markStoragePending();
+    g2.settleStorageMode('shared');
+    g2.noteSignedInAccount('uid-a');
+    g2.writeScoped('platform-theme', 'dark');
+    expect(snapshot()).toEqual({ 'platform-theme': 'dark' });
+  });
+
+  it('notifies storage listeners when the mode settles, at the first report, and at each account change', async () => {
+    const gate = await fresh();
+    const events: string[] = [];
+    gate.onStorageChange(() => events.push(`${gate.getStorageMode()}:${gate.getSignedInAccount()}`));
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(events).toEqual(['pending:null', 'perOwner:null', 'perOwner:uid-a', 'perOwner:uid-b']);
+  });
+});
+
+// done_when item 3, second half: nothing removes stored values.
+describe('no deletion of stored values', () => {
+  function sources(dir: string): string[] {
+    return readdirSync(dir).flatMap((name) => {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) return sources(p);
+      return /\.(ts|tsx)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name) ? [p] : [];
+    });
+  }
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+
+  it('no file under src/ other than previewAuthStorage.ts removes a localStorage key, clears it, or clears a zustand persist store', () => {
+    const root = join(process.cwd(), 'src') + '/';
+    const allowed = join(root, 'integrations', 'supabase', 'previewAuthStorage.ts');
+    const offenders: string[] = [];
+    for (const file of sources(root)) {
+      if (file === allowed) continue;
+      const code = stripComments(readFileSync(file, 'utf8'));
+      if (/localStorage\s*\.\s*(removeItem|clear)\s*\(|\bclearStorage\s*\(|\bdelete\s+(window\.)?localStorage\b/.test(code)) {
+        offenders.push(file.slice(root.length));
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+// done_when item 6: resetAccountQueries.
+describe('resetAccountQueries', () => {
+  async function setup() {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    const { QueryClient } = await import('@tanstack/react-query');
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return { gate, qc };
+  }
+
+  it("removes every query keyed under 'me' except ['me', B]", async () => {
+    const { gate, qc } = await setup();
+    for (const key of [['me', 'uid-a'], ['me', 'uid-b'], ['me', 'preferences'], ['me', 'profile']]) qc.setQueryData(key, { k: key.join('/') });
+    gate.resetAccountQueries(qc, 'uid-b');
+    expect(qc.getQueryCache().getAll().filter((q) => q.queryKey[0] === 'me').map((q) => q.queryKey)).toEqual([['me', 'uid-b']]);
+    expect(qc.getQueryData(['me', 'uid-b'])).toEqual({ k: 'me/uid-b' });
+  });
+
+  it("discards the previous account's own answer still in flight", async () => {
+    const { gate, qc } = await setup();
+    let release!: (v: string) => void;
+    const late = qc.fetchQuery({ queryKey: ['me', 'profile'], queryFn: () => new Promise<string>((r) => { release = r; }) });
+    gate.resetAccountQueries(qc, 'uid-b');
+    release('A profile');
+    await expect(late).rejects.toBeTruthy();
+    expect(qc.getQueryData(['me', 'profile'])).toBeUndefined();
+  });
+
+  it('empties an account-blind query, and discards its answer that arrives after the call', async () => {
+    const { gate, qc } = await setup();
+    qc.setQueryData(['journal', 'trades', 'IWM'], ['A trade']);
+    let release!: (v: string[]) => void;
+    const late = qc.fetchQuery({ queryKey: ['signals', 'IWM'], queryFn: () => new Promise<string[]>((r) => { release = r; }) });
+    gate.resetAccountQueries(qc, 'uid-b');
+    expect(qc.getQueryData(['journal', 'trades', 'IWM'])).toBeUndefined();
+    release(['A signal']);
+    await late.catch(() => undefined);
+    await Promise.resolve();
+    expect(qc.getQueryData(['signals', 'IWM'])).toBeUndefined();
+  });
+
+  it('after a sign-out leaves no query holding data, without clear()', async () => {
+    const { gate, qc } = await setup();
+    qc.setQueryData(['me', 'uid-a'], { email: 'a' });
+    qc.setQueryData(['journal', 'trades', 'IWM'], ['A trade']);
+    const clear = vi.spyOn(qc, 'clear');
+    gate.resetAccountQueries(qc, null);
+    expect(qc.getQueryCache().getAll().filter((q) => q.state.data !== undefined)).toEqual([]);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it('never calls clear() on a switch either', async () => {
+    const { gate, qc } = await setup();
+    qc.setQueryData(['me', 'uid-a'], { email: 'a' });
+    const clear = vi.spyOn(qc, 'clear');
+    gate.resetAccountQueries(qc, 'uid-b');
+    expect(clear).not.toHaveBeenCalled();
+  });
+});
+
+// FEAT-AUTH-001 § Design "Sends": a write composed on A's screen and refused
+// after this page already reports another account has no form left to show
+// its error in (the shell remounts as B). The refusal is recorded for the
+// account now shown, without any of A's values, and cleared on the next
+// account change or a dismiss.
+describe('refused-write notice', () => {
+  async function fresh() {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.settleStorageMode('perOwner');
+    return gate;
+  }
+
+  it('is recorded for the account now shown when the write was composed for another', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    gate.noteRefusedWrite('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('is not recorded while the composing account is still the one reported (its own form shows the error)', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRefusedWrite('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
+  it('is cleared by the next account change, and a later transition starts clean', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    gate.noteRefusedWrite('uid-a');
+    gate.noteSignedInAccount('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteSignedInAccount(null);
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
+  it('is cleared by a dismiss, and a repeated refusal shows it again', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    gate.noteRefusedWrite('uid-a');
+    gate.dismissRefusedWriteNotice();
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteRefusedWrite('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('notifies subscribers on record, dismiss and the clearing account change', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    const seen: boolean[] = [];
+    gate.subscribeRefusedWriteNotice(() => seen.push(gate.isRefusedWriteNoticeShown()));
+    gate.noteRefusedWrite('uid-a');
+    gate.dismissRefusedWriteNotice();
+    gate.noteRefusedWrite('uid-a');
+    gate.noteSignedInAccount('uid-c');
+    expect(seen).toEqual([true, false, true, false]);
+  });
+});
+
+// IMPL-314-1 R-1: a refusal settled while this page still reports the
+// composing account is shown by that account's own form, which the change to
+// the account the SDK moved to then removes (AuthGate remounts the shell). The
+// refusal is carried to that next account as the generic notice.
+describe('refused-write notice: carried past the composing screen (IMPL-314-1 R-1)', () => {
+  async function fresh() {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.settleStorageMode('perOwner');
+    return gate;
+  }
+
+  it('a refusal shown on the composing screen is shown to the next account once this page reports it', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRefusedWrite('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('is carried to a sign-out the same way', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRefusedWrite('uid-a');
+    gate.noteSignedInAccount(null);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('is carried once: the change after that clears it, and a change with no refusal raises nothing', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+    gate.noteRefusedWrite('uid-b');
+    gate.noteSignedInAccount('uid-a');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
+  it('notifies subscribers when the carried notice is raised', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    const seen: boolean[] = [];
+    gate.subscribeRefusedWriteNotice(() => seen.push(gate.isRefusedWriteNoticeShown()));
+    gate.noteRefusedWrite('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(seen).toEqual([true]);
+  });
+});
+
+// IMPL-314-1 R-2: between this page's report of B and React's commit of B,
+// A's screen still takes input while the stores already hold B's values. An
+// account-scoped setter asks acceptsScreenWrite() first.
+describe('the account the screen was rendered for (IMPL-314-1 R-2)', () => {
+  async function fresh(mode: 'perOwner' | 'shared' = 'perOwner') {
+    vi.resetModules();
+    const gate = await import('./authGate');
+    gate.settleStorageMode(mode);
+    return gate;
+  }
+
+  it('accepts while the rendered account is the reported one', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
+  });
+
+  it('refuses from a screen rendered for A once this page reports B, and records the notice for B', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.acceptsScreenWrite()).toBe(false);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+    gate.noteRenderedAccount('uid-b');
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+  });
+
+  it('refuses from a screen rendered for A after a sign-out report', async () => {
+    const gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteRenderedAccount('uid-a');
+    gate.noteSignedInAccount(null);
+    expect(gate.acceptsScreenWrite()).toBe(false);
+  });
+
+  it('does not fence before the first report, without a rendered record, after AuthGate unmounts, or in shared mode', async () => {
+    let gate = await fresh();
+    gate.noteRenderedAccount(null);
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    gate = await fresh();
+    gate.noteSignedInAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    gate.noteRenderedAccount('uid-a');
+    gate.noteRenderedAccount(undefined);
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    gate = await fresh('shared');
+    gate.noteSignedInAccount(null);
+    gate.noteRenderedAccount('uid-a');
+    expect(gate.acceptsScreenWrite()).toBe(true);
+    expect(gate.isRefusedWriteNoticeShown()).toBe(false);
   });
 });

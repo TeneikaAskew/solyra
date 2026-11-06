@@ -35,14 +35,20 @@ import {
   type User,
 } from 'firebase/auth';
 import type { FirebaseWebConfig } from './runtimeConfig';
-import { recordVerificationEmail } from './authGate';
+import { noteSignedInAccount, recordVerificationEmail } from './authGate';
 
 let _auth: Auth | null = null;
 
-export function initFirebase(cfg: FirebaseWebConfig): Auth {
+export function initFirebase(cfg: FirebaseWebConfig, beforeListen?: () => void): Auth {
   if (_auth) return _auth;
   const app: FirebaseApp = initializeApp(cfg);
   _auth = getAuth(app);
+  // ConfigGate's boot settles the storage mode here, so that a failure above
+  // leaves it pending (FEAT-AUTH-001, failed boot).
+  beforeListen?.();
+  // The account record (authGate.ts) hears every report, and hears it first:
+  // this listener is attached before any component subscribes.
+  onAuthStateChanged(_auth, (u) => noteSignedInAccount(u?.uid ?? null));
   // Persist the session across reloads and browser restarts, and say so
   // explicitly rather than relying on the SDK default: a signed-in user
   // should not have to sign in again on every visit. IndexedDB first,
@@ -60,6 +66,25 @@ export function initFirebase(cfg: FirebaseWebConfig): Auth {
 export async function getIdToken(forceRefresh = false): Promise<string | null> {
   const user = _auth?.currentUser;
   return user ? user.getIdToken(forceRefresh) : null;
+}
+
+/**
+ * The ID token of `uid`, the account whose screen composed a write. Rejects
+ * with code 'account-changed' when the SDK holds any other account (or none).
+ * The SDK switches currentUser before it tells listeners, and React renders
+ * the new account after that, so a write composed on the previous account's
+ * screen can be sent while the SDK already holds the next one. The check and
+ * the token read use the same user object, so no switch lands between them.
+ */
+export async function getIdTokenFor(uid: string, forceRefresh = false): Promise<string> {
+  const user = _auth?.currentUser ?? null;
+  if (!user || user.uid !== uid) {
+    throw Object.assign(
+      new Error('Your account changed before this was sent. Nothing was saved.'),
+      { code: 'account-changed' },
+    );
+  }
+  return user.getIdToken(forceRefresh);
 }
 
 /** The signed-in user's uid, or null when signed out. Synchronous read of the

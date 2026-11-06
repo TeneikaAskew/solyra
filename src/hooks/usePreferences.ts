@@ -21,6 +21,8 @@ import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserPreferences, UserPreferencesUpdate } from '@/types/preferences';
+import { getSignedInAccount, onAccountChange } from '@/lib/authGate';
+import { boundToAccount } from '@/lib/authedFetch';
 import { useThemeStore, type Theme } from '@/stores/themeStore';
 import {
   useSettingsStore, ACCENTS, type Accent, type Density, type NavPattern,
@@ -97,12 +99,15 @@ async function fetchPreferences(): Promise<UserPreferences | null> {
   return sanitizePreferences(await res.json());
 }
 
-async function savePreferences(update: UserPreferencesUpdate): Promise<UserPreferences> {
-  const res = await fetch(ENDPOINT, {
+async function savePreferences(
+  { update, uid }: { update: UserPreferencesUpdate; uid: string | null },
+): Promise<UserPreferences> {
+  // Sent only as the account the syncer rendered for (see boundToAccount).
+  const res = await fetch(ENDPOINT, boundToAccount({
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(update),
-  });
+  }, uid));
   if (!res.ok) throw new Error(`Could not save preferences (HTTP ${res.status})`);
   return sanitizePreferences(await res.json());
 }
@@ -111,12 +116,15 @@ async function savePreferences(update: UserPreferencesUpdate): Promise<UserPrefe
  * Hydrate the appearance stores from the server once, then write through on
  * every subsequent change.
  *
+ * `uid` is the account the caller renders for (useUser's uid; null outside
+ * firebase mode, where no account is ever reported).
+ *
  * Mount EXACTLY once (AppShell does it). A second live instance would treat
  * the first one's hydration as a local edit and echo it straight back as a
  * redundant PUT, so the module-level guard makes extra mounts inert and they
  * read status from the shared store instead.
  */
-export function usePreferencesSync() {
+export function usePreferencesSync(uid: string | null) {
   const queryClient = useQueryClient();
   const { theme, setTheme } = useThemeStore();
   const { navPattern, density, accent, setNavPattern, setDensity, setAccent } =
@@ -153,7 +161,12 @@ export function usePreferencesSync() {
 
   const mutation = useMutation({
     mutationFn: savePreferences,
-    onSuccess: (saved) => queryClient.setQueryData(QUERY_KEY, saved),
+    // `owner` is the account this syncer rendered for when the save started.
+    // Its answer is cached only while that account is still the current one:
+    // after a switch the cache entry is the next account's, and this is not.
+    onSuccess: (saved, { uid: owner }) => {
+      if (owner === getSignedInAccount()) queryClient.setQueryData(QUERY_KEY, saved);
+    },
   });
 
   // Apply the server's stored values exactly once per session. After that the
@@ -164,6 +177,23 @@ export function usePreferencesSync() {
   // closure still holds the PRE-hydration store values — publishing those
   // would overwrite the server with stale local state. Skip exactly one pass.
   const skipNextWrite = useRef(false);
+  // An account change pauses write-through until the new account's stored
+  // preferences have hydrated (FEAT-AUTH-001). The stores reload right after
+  // this listener runs, and those reloaded values are not the new account's
+  // choice, so nothing is sent until the next hydration sets a new baseline.
+  // The state bump re-renders this owner so its query observer moves onto the
+  // new account's query.
+  const [, setAccountEpoch] = useState(0);
+  useEffect(
+    () =>
+      onAccountChange(() => {
+        hydrated.current = false;
+        lastSent.current = null;
+        skipNextWrite.current = false;
+        setAccountEpoch((n) => n + 1);
+      }),
+    [],
+  );
   useEffect(() => {
     if (!isOwner || hydrated.current || query.isPending) return;
     hydrated.current = true;
@@ -205,7 +235,7 @@ export function usePreferencesSync() {
       return;
     }
     lastSent.current = serialized;
-    mutation.mutate(payload);
+    mutation.mutate({ update: payload, uid });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, theme, navPattern, density, accent, query.isPending]);
 

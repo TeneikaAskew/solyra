@@ -125,8 +125,8 @@ export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore();
   const { navPattern, setNavPattern, density, setDensity, accent, setAccent } = useSettingsStore();
   const prefs = usePreferencesStatus();
-  const { email, isAdmin, isSignedIn, authMode } = useUser();
-  const { stored, loading, loadError, saving, saveError, saved, save } = useProfile();
+  const { email, isAdmin, isSignedIn, authMode, uid } = useUser();
+  const { stored, loading, loadError, saving, saveError, saved, save } = useProfile(uid);
 
   // Local draft, seeded from the server answer once it lands.
   const [draft, setDraft] = useState<UserProfile>(EMPTY_PROFILE);
