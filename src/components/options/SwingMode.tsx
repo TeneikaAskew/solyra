@@ -830,13 +830,16 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
     };
   }, [levels, grid, sym]);
 
+  const storedGrid = !!grid && PRESENT_SOURCES.has(grid.data_source);
+
   return (
     <div className="col" style={{ gap: 14 }}>
       {/* Source identity is evidence of the snapshot, not verified quote freshness. */}
       <div className="hs-demo-banner">
-        <span className="dot" />
+        {/* A stored snapshot is not a live feed, so its dot holds still like the source pill's. */}
+        <span className={storedGrid ? 'dot' : 'dot pulse'} />
         <span>
-          {grid && PRESENT_SOURCES.has(grid.data_source) ? (
+          {storedGrid && grid ? (
             <>
               Heatmap grid &amp; pivot rail show {sym}{' '}
               <strong>{STORED_SNAPSHOT_LABEL}</strong>

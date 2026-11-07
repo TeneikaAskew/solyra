@@ -52,6 +52,10 @@ async function expectNoLiveClaim(page: Page) {
   await expect(banner(page)).not.toHaveText(LIVE_CLAIMS);
   await expect(pill(page).locator('.pulse')).toHaveCount(0);
   await expect(pill(page)).not.toHaveClass(/\brealtime\b/);
+  // The banner dot holds still for a stored snapshot: no pulse class and no running animation.
+  await expect(banner(page).locator('.dot')).toHaveCount(1);
+  await expect(banner(page).locator('.dot.pulse')).toHaveCount(0);
+  await expect(banner(page).locator('.dot')).toHaveCSS('animation-name', 'none');
 }
 
 test('prior-session REALTIME grid and levels show the stored label with recorded Eastern time and server age', async ({ page }, info) => {
