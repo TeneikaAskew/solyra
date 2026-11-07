@@ -2,7 +2,7 @@
 feat_id: FEAT-OPTION-001
 spec: docs/superpowers/specs/2026-11-07-feat-option-001-snapshot-labels.md
 branch: fix/feat-option-001-snapshot-labels
-pr: null
+pr: 319
 status: ready
 ---
 
@@ -49,7 +49,7 @@ Spec: § Design: visible consumer, § Scope and limits; advances done_when[1] an
 Spec: § Scope and limits; closes done_when[3].
 - [x] `npx tsc -b`, the full `npx vitest run`, `npm run lint` (no new findings over main) and `npm run build` pass.
 - [x] Correct the current-behaviour rows OPTIONS-09 and OPTIONS-12 in `docs/UI-SCREENS.md`.
-- [ ] FEAT-OPTION-001 catalog row: Status, Last reviewed and PRs list this PR.
+- [x] FEAT-OPTION-001 catalog row: Status, Last reviewed and PRs list this PR.
 - [ ] `node scripts/docs-audit.mjs` on this branch and main, and `python3 scripts/gate/spec_gate.py --pr origin/main`, recorded on the PR.
 
 ## Out of scope
