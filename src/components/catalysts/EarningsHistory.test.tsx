@@ -2,9 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MOCK_EARNINGS_HISTORY, MOCK_EARNINGS_LEAN } from '@/mocks/earnings';
 import { parseEarningsHistory, parseEarningsLean, historicalPercent, closingMetricText } from './earningsContract';
-import { EarningsHistoryResults } from './EarningsHistory';
+import { EarningsHistoryResults, EarningsHttpError } from './EarningsHistory';
 
 describe('earnings wire and presentation contract', () => {
+  it('renders a refused history beside an independent summary instead of replacing the section', () => {
+    const html = renderToStaticMarkup(<EarningsHistoryResults ticker="DEMO"
+      lean={parseEarningsLean(MOCK_EARNINGS_LEAN, 'DEMO')}
+      historyError={new EarningsHttpError(401, 'unauthorized')} />);
+    expect(html).toContain('75%');
+    expect(html).toContain('Sign in to load data');
+    expect(html).not.toContain('explicitly empty stored history');
+  });
+
   it('renders the supplied historical percentages and distinct event columns', () => {
     const html = renderToStaticMarkup(<EarningsHistoryResults ticker="DEMO"
       history={parseEarningsHistory(MOCK_EARNINGS_HISTORY, 'DEMO')}

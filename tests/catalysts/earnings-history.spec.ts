@@ -141,4 +141,63 @@ test.describe('Existing-app earnings history', () => {
     await expect(panel.getByTestId('earnings-events')).toHaveCount(0);
     await expect(panel.getByTestId('earnings-native-percentages')).toHaveCount(0);
   });
+
+  /** Same synthetic shape re-labelled for another ticker; identities move with it so the contract guard accepts them. */
+  function forTicker(ticker: string) {
+    const history = structuredClone(MOCK_EARNINGS_HISTORY);
+    history.ticker = ticker;
+    for (const row of history.rows) {
+      row.ticker = ticker;
+      if (row.daily_path_v1.event_id !== null) row.daily_path_v1.event_id = row.daily_path_v1.event_id.replace('DEMO', ticker);
+    }
+    const lean = structuredClone(MOCK_EARNINGS_LEAN);
+    lean.ticker = ticker;
+    for (const e of lean.daily_path_summary_v1.events) e.event_id = e.event_id.replace('DEMO', ticker);
+    return { history, lean };
+  }
+
+  test('the section offers the shared ticker selector and a quick pick drives both earnings requests', async ({ page }, info) => {
+    const spy = forTicker('SPY');
+    await page.route('**/api/earnings/history/SPY?*', r => r.fulfill(M.ok(spy.history)));
+    await page.route('**/api/earnings/ticker/SPY/lean', r => r.fulfill(M.ok(spy.lean)));
+    const requests: string[] = [];
+    page.on('request', r => { if (r.url().includes('/api/earnings/')) requests.push(r.url()); });
+    await page.goto('/catalysts');
+    const panel = page.getByTestId('earnings-history');
+    await expect(panel.getByRole('heading', { name: 'Earnings history — DEMO' })).toBeVisible();
+    await panel.getByTestId('ticker-combobox').click();
+    await page.getByTestId('ticker-option-SPY').click();
+    await expect(panel.getByRole('heading', { name: 'Earnings history — SPY' })).toBeVisible();
+    await expect(panel.getByTestId('earnings-events').locator('tbody tr')).toHaveCount(4);
+    expect(requests.some(s => s.includes('/history/SPY?limit=20'))).toBe(true);
+    expect(requests.some(s => s.includes('/ticker/SPY/lean'))).toBe(true);
+    await page.screenshot({ path: info.outputPath('earnings-selector-switch.png'), fullPage: true });
+  });
+
+  test('a history 401 released after the visible summary is reported for that endpoint only and does not freeze the next ticker', async ({ page }) => {
+    const spy = forTicker('SPY');
+    let releaseHistory!: () => void;
+    const gate = new Promise<void>(resolve => { releaseHistory = resolve; });
+    await page.route('**/api/earnings/history/DEMO?*', async r => {
+      await gate;
+      await r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'unauthorized' }) });
+    });
+    await page.route('**/api/earnings/history/SPY?*', r => r.fulfill(M.ok(spy.history)));
+    await page.route('**/api/earnings/ticker/SPY/lean', r => r.fulfill(M.ok(spy.lean)));
+    await page.goto('/catalysts');
+    const panel = page.getByTestId('earnings-history');
+    await expect(panel.getByTestId('earnings-native-percentages')).toContainText('75%');
+    // The 401 is released only after the summary has rendered, so it follows the summary's 200 and
+    // sets the app-wide blocked flag after it; this orders these two earnings answers, not every
+    // page-level gated request.
+    releaseHistory();
+    await expect(panel.getByText('Sign in to load data')).toBeVisible();
+    await expect(panel.getByTestId('earnings-native-percentages')).toContainText('75%');
+    await expect(panel.getByTestId('earnings-events')).toHaveCount(0);
+    await panel.getByTestId('ticker-combobox').click();
+    await page.getByTestId('ticker-option-SPY').click();
+    await expect(panel.getByRole('heading', { name: 'Earnings history — SPY' })).toBeVisible();
+    await expect(panel.getByTestId('earnings-events')).toBeVisible();
+    await expect(panel.getByText('Loading stored events…')).toHaveCount(0);
+  });
 });

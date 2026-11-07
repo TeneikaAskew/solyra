@@ -1,14 +1,16 @@
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useUser } from '@/hooks/useUser';
-import { useAuthBlocked, useVerificationRequired } from '@/lib/authGate';
+import { useVerificationRequired } from '@/lib/authGate';
 import { fmtNum, fmtPct, NA, responseErrorMessage } from '@/lib/format';
 import { useTickerStore } from '@/stores/tickerStore';
 import { SignInEmptyState, VerifyEmailEmptyState } from '@/components/shared/SignInEmptyState';
+import { TickerCombobox } from '@/components/shared/TickerCombobox';
 import type { ClosingMetricSummary, EarningsDailySummary, EarningsHistoryResponse,
   EarningsTickerLean } from '@/types/earnings';
 import { closingMetricText, historicalPercent, parseEarningsHistory, parseEarningsLean } from './earningsContract';
 
-class EarningsHttpError extends Error {
+export class EarningsHttpError extends Error {
   readonly status: number;
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
@@ -53,6 +55,8 @@ function HistoricalSummary({ value }: { value: EarningsDailySummary }) {
 
 export interface EarningsHistoryResultsProps {
   ticker: string;
+  /** The shared selected-ticker control, mounted by the container; omitted in static render controls. */
+  selector?: ReactNode;
   history?: EarningsHistoryResponse;
   lean?: EarningsTickerLean;
   historyPending?: boolean;
@@ -62,14 +66,17 @@ export interface EarningsHistoryResultsProps {
 }
 
 /** Presentation of already computed server values; exported for actual render controls. */
-export function EarningsHistoryResults({ ticker, history, lean, historyPending = false,
+export function EarningsHistoryResults({ ticker, selector, history, lean, historyPending = false,
   leanPending = false, historyError, leanError }: EarningsHistoryResultsProps) {
   const summary = lean?.daily_path_summary_v1;
   return <section aria-label={`Earnings history for ${ticker}`} data-testid="earnings-history"
     className="space-y-4 rounded-xl bg-[var(--surface-1)] p-4 ring-1 ring-[var(--outline-variant)]">
-    <div>
-      <h2 className="text-base font-semibold">Earnings history — {ticker}</h2>
-      <p className="mt-1 text-xs text-[var(--on-surface-muted)]">Post-event price-action descriptions from the existing earnings engine. No forecast probability.</p>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 className="text-base font-semibold">Earnings history — {ticker}</h2>
+        <p className="mt-1 text-xs text-[var(--on-surface-muted)]">Post-event price-action descriptions from the existing earnings engine. No forecast probability.</p>
+      </div>
+      {selector}
     </div>
     {leanError ? <QueryError error={leanError} label="Historical summary" />
       : leanPending ? <p role="status">Loading historical summary…</p>
@@ -120,11 +127,15 @@ export function EarningsHistoryResults({ ticker, history, lean, historyPending =
 export function EarningsHistory() {
   const ticker = useTickerStore(s => s.activeTicker).toUpperCase();
   const user = useUser();
-  const blocked = useAuthBlocked();
   const verificationRequired = useVerificationRequired(user.uid);
   const identity = user.authMode === 'open' ? 'open' : user.uid ?? user.email;
   const validTicker = /^[A-Z0-9][A-Z0-9.-]{0,9}$/.test(ticker);
-  const enabled = validTicker && user.isSignedIn && !user.isLoading && !blocked && !verificationRequired && identity !== null;
+  // A gated 401 flips the app-wide auth-blocked flag (authedFetch -> markAuthBlocked) and a
+  // gated 200 clears it, so that flag is not evidence about either request made here. The
+  // page's DataGate decides whether this body is shown at all; inside it each query reports
+  // its own 401 through QueryError, so a refused endpoint never discards its sibling's result
+  // and a later ticker change is never left disabled.
+  const enabled = validTicker && user.isSignedIn && !user.isLoading && !verificationRequired && identity !== null;
   const common = { enabled, retry: false as const, staleTime: 5 * 60_000,
     refetchOnWindowFocus: false, placeholderData: () => undefined };
   const history = useQuery({ ...common,
@@ -144,10 +155,10 @@ export function EarningsHistory() {
     },
   });
   if (user.isLoading) return <p role="status">Loading earnings data access…</p>;
-  if (!user.isSignedIn || blocked || identity === null) return <SignInEmptyState compact />;
+  if (!user.isSignedIn || identity === null) return <SignInEmptyState compact />;
   if (verificationRequired) return <VerifyEmailEmptyState compact />;
-  if (!validTicker) return <p role="status">Select a valid ticker to load earnings history.</p>;
-  return <EarningsHistoryResults ticker={ticker}
+  if (!validTicker) return <div className="space-y-2"><TickerCombobox /><p role="status">Select a valid ticker to load earnings history.</p></div>;
+  return <EarningsHistoryResults ticker={ticker} selector={<TickerCombobox />}
     history={history.data} lean={lean.data}
     historyPending={history.isPending} leanPending={lean.isPending}
     historyError={history.error} leanError={lean.error} />;

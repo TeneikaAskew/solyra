@@ -46,4 +46,10 @@ export async function mockCatalystsApi(page: Page, opts: CatalystsMockOpts = {})
     const ticker = new URL(r.request().url()).pathname.split('/').at(-2);
     return r.fulfill(opts.earningsLean?.ticker === ticker ? M.ok(opts.earningsLean) : M.notFound());
   });
+  // TickerCombobox inside the earnings section: search and coverage answer empty by default, in the
+  // contract shapes (TickerSearchResponse echoes the requested keywords with an empty results array;
+  // CoverageResponse carries an empty per-symbol object, not an array).
+  await page.route('**/api/insights/ticker/search*', (r) => r.fulfill(M.ok({
+    keywords: new URL(r.request().url()).searchParams.get('keywords') ?? '', results: [] })));
+  await page.route('**/api/market/coverage*', (r) => r.fulfill(M.ok({ coverage: {} })));
 }
