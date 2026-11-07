@@ -3083,9 +3083,15 @@ export interface components {
             ema_9?: number | null;
             /** Ema 20 */
             ema_20?: number | null;
-            /** Ftfc Direction */
+            /**
+             * Ftfc Direction
+             * @description TF bias direction: bullish, bearish or mixed from the weighted candle vote.
+             */
             ftfc_direction?: unknown;
-            /** Ftfc Score */
+            /**
+             * Ftfc Score
+             * @description TF bias: weighted vote of candle types across timeframes (2U up, 2D down, 1 and 3 zero), -1 to +1. Not price-versus-open FTFC.
+             */
             ftfc_score?: number | null;
             /** Macd */
             macd?: number | null;
@@ -3126,9 +3132,15 @@ export interface components {
             /** Consecutive Up */
             consecutive_up?: number | null;
             daily_indicators?: components["schemas"]["DailyIndicators"] | null;
-            /** Ftfc Direction */
+            /**
+             * Ftfc Direction
+             * @description TF bias direction: bullish, bearish or mixed from the weighted candle vote.
+             */
             ftfc_direction?: unknown;
-            /** Ftfc Score */
+            /**
+             * Ftfc Score
+             * @description TF bias: weighted vote of candle types across timeframes (2U up, 2D down, 1 and 3 zero), -1 to +1. Not price-versus-open FTFC.
+             */
             ftfc_score?: number | null;
             /** Has Premarket */
             has_premarket?: boolean | null;
@@ -3401,6 +3413,7 @@ export interface components {
             regime: string;
             /** Snapshot Date */
             snapshot_date?: string | null;
+            snapshot_provenance?: components["schemas"]["SnapshotProvenance"] | null;
             /** Snapshot Ts */
             snapshot_ts?: string | null;
             spot?: components["schemas"]["SpotEstimate"] | null;
@@ -3462,6 +3475,7 @@ export interface components {
             regime: string;
             /** Snapshot Date */
             snapshot_date: string;
+            snapshot_provenance?: components["schemas"]["SnapshotProvenance"] | null;
             /** Snapshot Timestamp */
             snapshot_timestamp?: string | null;
             spot: components["schemas"]["SpotEstimate"];
@@ -5383,6 +5397,45 @@ export interface components {
              * @description Fraction 0..1, not a percent
              */
             pct_profitable?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * SnapshotProvenance
+         * @description Provenance of the stored options snapshot a response was built from.
+         *
+         *     Stored clock retained: ``snapshot_ts`` is the selected rows' own instant.
+         *     ``observed_at`` is when this response was assembled (re-stamped per response).
+         *     ``snapshot_age_seconds`` is a display age (observed_at minus snapshot_ts), not a
+         *     provider lag. ``freshness_status`` and ``completeness_status`` are always
+         *     ``unknown``; ``reason`` names the clock validation outcome, not a qualification.
+         */
+        SnapshotProvenance: {
+            /**
+             * Completeness Status
+             * @constant
+             */
+            completeness_status: "unknown";
+            /**
+             * Freshness Status
+             * @constant
+             */
+            freshness_status: "unknown";
+            /** Market Session */
+            market_session?: string | null;
+            /** Observed At */
+            observed_at: string;
+            /** Provider */
+            provider?: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "legacy_snapshot_unqualified" | "timestamp_invalid" | "timestamp_future";
+            /** Snapshot Age Seconds */
+            snapshot_age_seconds?: number | null;
+            /** Snapshot Ts */
+            snapshot_ts?: string | null;
         } & {
             [key: string]: unknown;
         };

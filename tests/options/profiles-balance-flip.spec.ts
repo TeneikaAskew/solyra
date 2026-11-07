@@ -98,13 +98,13 @@ test('Gamma Map empty producer levels never borrow another response flip or bala
  await page.screenshot({path:info.outputPath('gamma-empty-levels-no-borrow.png'),fullPage:true});
 });
 for(const [clock,label] of [
- ['2026-10-26T19:55:00Z','2026-10-26 15:55 ET'],
- ['2026-10-26','2026-10-26 (time unavailable)'],
- ['', 'time unavailable'],
+ ['2026-10-26T19:55:00Z','2026-10-26 15:55 EDT'],
+ ['2026-10-26','unavailable'],
+ ['', 'unavailable'],
 ] as const){
  test(`Gamma Map qualifies independent grid batch clock ${clock||'missing'}`,async({page},info)=>{
   await setup(page,{...distinct,grid:{...distinct.grid,date:'2026-10-26',snapshot_ts:clock}});
-  await expect(page.locator('.hs-pill.realtime')).toContainText(`Batch snapshot ${label}`);
+  await expect(page.locator('.hs-pill.stored')).toContainText(`Recorded snapshot time ${label}`);
   await expect(page.getByText(/Levels: IWM/)).toContainText('2026-10-27');
   await page.screenshot({path:info.outputPath(`grid-clock-${clock ? clock.length : 'missing'}.png`),fullPage:true});
  });

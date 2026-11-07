@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { gammaPrices, batchSnapshotLabel } from './gammaPresentation';
+import { gammaPrices, storedSnapshotClock, storedSnapshotDetail, STORED_SNAPSHOT_LABEL } from './gammaPresentation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLatestOptionsDate } from '@/hooks/useOptionsDates';
 import { useNavigate } from 'react-router-dom';
@@ -190,30 +190,32 @@ interface RealOverlay {
   totalVex: number | null;
 }
 
-// ─── Data source freshness pill ───────────────────────────────
+// ─── Data source pill ─────────────────────────────────────────
 // `source` is a plain string on the wire (GammaGridResponse.data_source,
-// Rule 6) — `DataSource` names today's known values, the lookup handles
-// the rest.
-const SOURCE_PILL_META: Record<string, { cls: string; label: string; hint: string }> = {
-  realtime: { cls: 'realtime', label: 'REALTIME ORIGIN', hint: 'Realtime-origin snapshot; freshness is not certified' },
-  eod_fallback: { cls: 'eod-fallback', label: 'EOD', hint: 'End-of-day origin; see supplied snapshot time' },
-  stale_fallback: { cls: 'stale', label: 'STALE', hint: 'EOD > 2 sessions behind' },
-  unavailable: { cls: 'stale', label: 'UNAVAILABLE', hint: 'No snapshot available' },
-} satisfies Record<DataSource, unknown>;
+// Rule 6). Every PRESENT snapshot gets the same neutral stored/unverified
+// label (stocks FEAT-OPTION-001 snapshot-labels spec): a realtime origin is
+// shown as plain text, never as LIVE, a pulse or a green live colour. The
+// recognised values gate the label; an unrecognised one stays unavailable
+// rather than defaulting to a reassuring state (Rule 4).
+const PRESENT_SOURCES: ReadonlySet<string> = new Set<DataSource>(['realtime', 'eod_fallback', 'stale_fallback']);
 
-function SourcePill({ source, asOf }: { source: string; asOf: string }) {
-  // Rule 4: an UNRECOGNIZED source must not default to the most
-  // reassuring state — a renamed enum member would otherwise render a
-  // green LIVE pill.
-  const meta =
-    SOURCE_PILL_META[source] ?? { cls: 'stale', label: 'UNAVAILABLE', hint: 'Unrecognized data source' };
+function SourcePill({ source, asOf, provenance }: { source: string; asOf: string; provenance: unknown }) {
+  if (!PRESENT_SOURCES.has(source)) {
+    const hint = source === 'unavailable' ? 'No snapshot available' : 'Unrecognized data source';
+    return (
+      <span className="hs-pill stale" title={hint}>
+        <span className="dot" />
+        <span>UNAVAILABLE</span>
+      </span>
+    );
+  }
+  const clock = storedSnapshotClock(provenance, asOf, source);
   return (
-    <span className={`hs-pill ${meta.cls}`} title={meta.hint}>
-      {/* the pulse animation is the live-streaming affordance, only LIVE gets it */}
+    <span className="hs-pill stored" title={clock.age ?? 'Snapshot age unavailable'}>
       <span className="dot" />
-      <span>{meta.label}</span>
-      <span style={{ opacity: 0.7, fontWeight: 500, letterSpacing: 0, textTransform: 'none' }}>
-        Batch snapshot {batchSnapshotLabel(asOf)}
+      <span>{STORED_SNAPSHOT_LABEL}</span>
+      <span style={{ opacity: 0.7, fontWeight: 500 }}>
+        {storedSnapshotDetail({ ...clock, age: null })}
       </span>
     </span>
   );
@@ -229,6 +231,7 @@ function Toolbar({
   setExpiryFilter,
   source,
   asOf,
+  provenance,
 }: {
   metric: Metric;
   setMetric: (m: Metric) => void;
@@ -239,6 +242,8 @@ function Toolbar({
   /** GammaGridResponse.data_source — plain string per schema (Rule 6). */
   source: string;
   asOf: string;
+  /** GammaGridResponse.snapshot_provenance, absent on an older payload. */
+  provenance: unknown;
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -276,7 +281,7 @@ function Toolbar({
         </div>
       </div>
       <div className="right">
-        <SourcePill source={source} asOf={asOf} />
+        <SourcePill source={source} asOf={asOf} provenance={provenance} />
         <button
           className="icon-btn"
           title="Refresh"
@@ -529,7 +534,7 @@ function RealHeatmapGrid({
       <div className="card-i hs-grid-card">
         {Header}
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--on-surface-muted)', fontSize: 12 }}>
-          Loading live grid…
+          Loading gamma grid…
         </div>
       </div>
     );
@@ -831,17 +836,12 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
       <div className="hs-demo-banner">
         <span className="dot" />
         <span>
-          {grid && grid.data_source !== 'unavailable' ? (
+          {grid && PRESENT_SOURCES.has(grid.data_source) ? (
             <>
-              Heatmap grid &amp; pivot rail show{' '}
-              <strong>
-                {grid.data_source === 'realtime'
-                  ? `${sym} gamma snapshot (realtime origin; freshness unverified)`
-                  : grid.data_source === 'eod_fallback'
-                    ? `${sym} dealer exposure (end-of-day close)`
-                    : `${sym} dealer exposure (delayed snapshot)`}
-              </strong>
-              .
+              Heatmap grid &amp; pivot rail show {sym}{' '}
+              <strong>{STORED_SNAPSHOT_LABEL}</strong>
+              {'. '}
+              {storedSnapshotDetail(storedSnapshotClock(grid.snapshot_provenance, grid.snapshot_ts, grid.data_source))}.
             </>
           ) : (
             <>
@@ -860,9 +860,10 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         setExpiryFilter={setExpiryFilter}
         source={grid?.data_source ?? 'unavailable'}
         asOf={grid?.snapshot_ts ?? ''}
+        provenance={grid?.snapshot_provenance}
       />
       {levels && <div role="note" aria-label="Levels source" className="text-xs">
-        Levels: {levels.ticker} · {levels.snapshot_date} · Batch snapshot {batchSnapshotLabel(levels.snapshot_timestamp)}
+        Levels: {levels.ticker} · {levels.snapshot_date} · {STORED_SNAPSHOT_LABEL} · {storedSnapshotDetail(storedSnapshotClock(levels.snapshot_provenance, levels.snapshot_timestamp))}
       </div>}
       {((grid?.warnings.length ?? 0) > 0 || gridQuery.unavailableData) && (
         <div role="note" aria-label="Gamma source warnings" className="text-xs">
