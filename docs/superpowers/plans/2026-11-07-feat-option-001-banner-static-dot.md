@@ -2,7 +2,7 @@
 feat_id: FEAT-OPTION-001
 spec: docs/superpowers/specs/2026-11-07-feat-option-001-snapshot-labels.md
 branch: fix/feat-option-001-banner-static-dot
-pr: null
+pr: 320
 status: ready
 ---
 
