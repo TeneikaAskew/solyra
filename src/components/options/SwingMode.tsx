@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { gammaPrices, storedSnapshotClock, storedSnapshotDetail, STORED_SNAPSHOT_LABEL } from './gammaPresentation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLatestOptionsDate } from '@/hooks/useOptionsDates';
 import { useNavigate } from 'react-router-dom';
@@ -7,16 +8,12 @@ import {
   Calendar,
   RefreshCw,
   HelpCircle,
-  TrendingUp,
-  TrendingDown,
-  X,
 } from 'lucide-react';
 import { useGammaLevels } from '@/hooks/useGammaLevels';
 import { useGammaGrid, type GammaGridSummary } from '@/hooks/useGammaGrid';
 import { buildGrid, selectValue, expHeader } from '@/components/options/swingGridUtils';
 import { formatGex, formatPctChange } from '@/lib/formatGex';
 import {
-  HS,
   glossary,
   type NodeRole,
   type DataSource,
@@ -38,8 +35,8 @@ import {
 //     intraday Δ badge shows on the realtime path.
 //   - The Pivot rail is REAL — ranked |net GEX| aggregated per strike from the
 //     same grid. The Legend chips + NodeList are REAL via useGammaLevels.
-//   - The Tactical read card is still illustrative (no narrative backend yet) —
-//     flagged in the banner.
+//   - No backend Tactical narrative or Hedge/Midpoint taxonomy is available.
+//     Those fields remain unavailable rather than borrowing demo values.
 
 type Metric = 'gex' | 'vex';
 type Mode = 'live' | 'historical';
@@ -167,24 +164,10 @@ function fmtStrike(s: number): string {
   return s % 1 !== 0 ? s.toFixed(2) : String(s);
 }
 
-function fmtTime(iso: string): string {
-  // Every other time on these surfaces is ET — render the snapshot in ET
-  // with an explicit label, not the viewer's local zone unlabeled.
-  return `${new Date(iso).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/New_York',
-  })} ET`;
-}
 
-// Aggregated real-data overlay derived from useGammaLevels. Any field that the
-// backend can supply replaces the mock; everything else falls back to HS.
+// Source-specific real-data overlay. Missing fields remain unavailable.
 interface RealOverlay {
   isReal: boolean;
-  /** True only when the King/Gate taxonomy came from the real /levels endpoint.
-   *  Midpoint/Hedge nodes have no other source, so they render only when true —
-   *  never as mock next to a real grid. */
-  isLevels: boolean;
   ticker: string;
   /** null when neither /levels nor the grid carries a usable spot — rendered
    *  as "—", and no Spot node/row is drawn (Rule 4: never a $0 quote). */
@@ -200,39 +183,40 @@ interface RealOverlay {
   gateBelow?: { strike: number; gex: number };
   /** null when no zero-gamma level was identified — same discipline. */
   flipStrike: number | null;
+  balanceStrike?: number | null;
   flipGex: number | null;
   regime: string;
-  totalGex: number;
+  totalGex: number | null;
   totalVex: number | null;
 }
 
-// ─── Data source freshness pill ───────────────────────────────
+// ─── Data source pill ─────────────────────────────────────────
 // `source` is a plain string on the wire (GammaGridResponse.data_source,
-// Rule 6) — `DataSource` names today's known values, the lookup handles
-// the rest.
-const SOURCE_PILL_META: Record<string, { cls: string; label: string; hint: string }> = {
-  realtime: { cls: 'realtime', label: 'LIVE', hint: 'Realtime · 5-min snapshot' },
-  eod_fallback: { cls: 'eod-fallback', label: 'EOD', hint: 'Realtime missed · using yesterday close' },
-  stale_fallback: { cls: 'stale', label: 'STALE', hint: 'EOD > 2 sessions behind' },
-  unavailable: { cls: 'stale', label: 'UNAVAILABLE', hint: 'No snapshot available' },
-} satisfies Record<DataSource, unknown>;
+// Rule 6). Every PRESENT snapshot gets the same neutral stored/unverified
+// label (stocks FEAT-OPTION-001 snapshot-labels spec): a realtime origin is
+// shown as plain text, never as LIVE, a pulse or a green live colour. The
+// recognised values gate the label; an unrecognised one stays unavailable
+// rather than defaulting to a reassuring state (Rule 4).
+const PRESENT_SOURCES: ReadonlySet<string> = new Set<DataSource>(['realtime', 'eod_fallback', 'stale_fallback']);
 
-function SourcePill({ source, asOf }: { source: string; asOf: string }) {
-  // Rule 4: an UNRECOGNIZED source must not default to the most
-  // reassuring state — a renamed enum member would otherwise render a
-  // green LIVE pill.
-  const meta =
-    SOURCE_PILL_META[source] ?? { cls: 'stale', label: 'UNAVAILABLE', hint: 'Unrecognized data source' };
+function SourcePill({ source, asOf, provenance }: { source: string; asOf: string; provenance: unknown }) {
+  if (!PRESENT_SOURCES.has(source)) {
+    const hint = source === 'unavailable' ? 'No snapshot available' : 'Unrecognized data source';
+    return (
+      <span className="hs-pill stale" title={hint}>
+        <span className="dot" />
+        <span>UNAVAILABLE</span>
+      </span>
+    );
+  }
+  const clock = storedSnapshotClock(provenance, asOf, source);
   return (
-    <span className={`hs-pill ${meta.cls}`} title={meta.hint}>
-      {/* the pulse animation is the live-streaming affordance, only LIVE gets it */}
-      <span className={meta.cls === 'realtime' ? 'dot pulse' : 'dot'} />
-      <span>{meta.label}</span>
-      {asOf ? (
-        <span style={{ opacity: 0.7, fontWeight: 500, letterSpacing: 0, textTransform: 'none' }}>
-          {fmtTime(asOf)}
-        </span>
-      ) : null}
+    <span className="hs-pill stored" title={clock.age ?? 'Snapshot age unavailable'}>
+      <span className="dot" />
+      <span>{STORED_SNAPSHOT_LABEL}</span>
+      <span style={{ opacity: 0.7, fontWeight: 500 }}>
+        {storedSnapshotDetail({ ...clock, age: null })}
+      </span>
     </span>
   );
 }
@@ -247,6 +231,7 @@ function Toolbar({
   setExpiryFilter,
   source,
   asOf,
+  provenance,
 }: {
   metric: Metric;
   setMetric: (m: Metric) => void;
@@ -257,6 +242,8 @@ function Toolbar({
   /** GammaGridResponse.data_source — plain string per schema (Rule 6). */
   source: string;
   asOf: string;
+  /** GammaGridResponse.snapshot_provenance, absent on an older payload. */
+  provenance: unknown;
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -294,7 +281,7 @@ function Toolbar({
         </div>
       </div>
       <div className="right">
-        <SourcePill source={source} asOf={asOf} />
+        <SourcePill source={source} asOf={asOf} provenance={provenance} />
         <button
           className="icon-btn"
           title="Refresh"
@@ -403,19 +390,9 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
           <div className="val">{overlay.flipStrike != null ? overlay.flipStrike.toFixed(2) : '—'}</div>
         </div>
       </span>
-      {overlay.isLevels && (
-        <span className="chip hedge">
-          <span className="icon">
-            <HSIcons.hedge />
-          </span>
-          <div>
-            <div className="label">
-              <Term k="hedge">Hedge</Term>
-            </div>
-            <div className="val">{HS.nodes.hedge[0]?.strike}</div>
-          </div>
-        </span>
-      )}
+      <span className="chip balance" title="Absolute net-gamma median; not the true zero-gamma flip">
+        <div><div className="label">Gamma Balance</div><div className="val">{overlay.balanceStrike != null ? overlay.balanceStrike.toFixed(2) : '—'}</div></div>
+      </span>
       <span className="chip">
         <div>
           <div className="label">Regime</div>
@@ -446,58 +423,15 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
   );
 }
 
-// ─── Tactical summary card ─────────────────────────────────────
-function TacticalCard() {
-  const t = HS.tactical;
+// No source supplies a symbol-specific Tactical narrative yet.
+function TacticalUnavailable({ ticker }: { ticker: string }) {
   return (
     <div className="hs-tactical">
-      <h3>Tactical read · {HS.ticker}</h3>
-      <div style={{ fontSize: 12.5, color: 'var(--on-surface-variant)', lineHeight: 1.55, marginBottom: 14 }}>
-        {t.currentState}
-      </div>
-      <div className="scenario long">
-        <div className="lbl">
-          <TrendingUp size={11} />
-          Long setup
-        </div>
-        <div>{t.longSetup}</div>
-      </div>
-      <div className="scenario short">
-        <div className="lbl">
-          <TrendingDown size={11} />
-          Short setup
-        </div>
-        <div>{t.shortSetup}</div>
-      </div>
-      <div className="scenario invl">
-        <div className="lbl">
-          <X size={11} />
-          Invalidation
-        </div>
-        <div>{t.invalidation}</div>
-      </div>
-      <div className="scenario vex">
-        <div className="lbl">
-          <HSIcons.flip size={11} />
-          <Term k="vex">VEX</Term> note
-        </div>
-        <div>{t.vexNote}</div>
-      </div>
-      <div
-        className="row between"
-        style={{ paddingTop: 10, marginTop: 8, borderTop: '1px solid var(--outline-variant)' }}
-      >
-        <div className="lbl-micro">Confidence</div>
-        <div className="row" style={{ gap: 8, alignItems: 'baseline' }}>
-          <div className="metric brand" style={{ fontSize: 16 }}>
-            {t.confidence}%
-          </div>
-        </div>
-      </div>
+      <h3>Tactical analysis unavailable</h3>
+      <p>No tactical analysis is available for {ticker || 'the selected symbol'}.</p>
     </div>
   );
 }
-
 
 // ─── Node list panel ───────────────────────────────────────────
 interface NodeItem {
@@ -521,16 +455,6 @@ function NodeList({ overlay }: { overlay: RealOverlay }) {
     items.push({ role: 'spot', strike: overlay.spotPrice, extra: 'current', name: 'Spot' });
   if (overlay.flipStrike != null)
     items.push({ role: 'flip', strike: overlay.flipStrike, extra: 'zero-gamma', name: 'Flip' });
-  // Midpoint / Hedge nodes have no backend source — show them only alongside the
-  // real /levels taxonomy, never as mock next to a grid-derived overlay.
-  if (overlay.isLevels) {
-    HS.nodes.midpoints.forEach((m) =>
-      items.push({ role: 'midpoint', strike: m.strike, extra: fmtBigGex(m.gex), name: 'Midpoint' }),
-    );
-    HS.nodes.hedge.forEach((h) =>
-      items.push({ role: 'hedge', strike: h.strike, extra: h.linkedEvent, name: 'Hedge' }),
-    );
-  }
 
   return (
     <div className="card-i hs-nodes">
@@ -579,6 +503,7 @@ function RealHeatmapGrid({
   summary,
   loading,
   isError,
+  unavailableReason,
   metric,
   ticker,
   kingStrike,
@@ -587,6 +512,7 @@ function RealHeatmapGrid({
   summary?: GammaGridSummary;
   loading: boolean;
   isError: boolean;
+  unavailableReason?: string | null;
   metric: Metric;
   ticker: string;
   kingStrike?: number;
@@ -608,13 +534,13 @@ function RealHeatmapGrid({
       <div className="card-i hs-grid-card">
         {Header}
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--on-surface-muted)', fontSize: 12 }}>
-          Loading live grid…
+          Loading gamma grid…
         </div>
       </div>
     );
   }
   if (isError || !summary || summary.data_source === 'unavailable' || !built || built.columns.length === 0) {
-    const reason = summary?.reason ?? summary?.warnings?.[0] ?? 'No options grid available for this symbol.';
+    const reason = unavailableReason ?? summary?.reason ?? summary?.warnings?.[0] ?? 'No options grid available for this symbol.';
     return (
       <div className="card-i hs-grid-card">
         {Header}
@@ -796,7 +722,7 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
   // Real data: latest snapshot date → gamma levels + the 2-D strike×expiration
   // grid for the focus symbol. The grid is the centerpiece (real /grid); levels
   // drive the legend chips, node list, and King/Spot/Flip markers.
-  const sym = (focusSymbol || HS.ticker).replace(/^\^/, '');
+  const sym = focusSymbol.replace(/^\^/, '');
   const datesQuery = useLatestOptionsDate(sym);
   const latestDate = datesQuery.data?.dates?.[0] ?? '';
   const levelsQuery = useGammaLevels(sym, latestDate, { enabled: !!latestDate });
@@ -808,9 +734,7 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
   });
   const grid = gridQuery.data;
 
-  // Build the overlay. Priority: real /levels taxonomy → real grid-derived →
-  // mock (only when neither is available, and then the panels are hidden).
-  // No mock value is ever shown next to a real grid for the focus symbol.
+  // Build the overlay from levels or the grid, with unavailable fields left null.
   const overlay: RealOverlay = useMemo(() => {
     // 1. Real /levels — full King/Gate taxonomy (lib.gamma is the source of math).
     if (levels && levels.levels.length > 0) {
@@ -828,10 +752,9 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
       const below = spotPrice != null
         ? levels.gates.filter((g) => g.strike < spotPrice).sort((a, b) => b.strike - a.strike)[0]
         : undefined;
-      const flipLvl = levels.gamma_balance_levels?.[0];
+      const prices = gammaPrices(levels);
       return {
         isReal: true,
-        isLevels: true,
         ticker: sym,
         spotPrice,
         spotMethod: levels.spot.method,
@@ -840,8 +763,9 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         kingGex: king?.gex ?? null,
         gateAbove: above ? { strike: above.strike, gex: above.gex } : undefined,
         gateBelow: below ? { strike: below.strike, gex: below.gex } : undefined,
-        flipStrike: levels.gamma_balance ?? grid?.gamma_flip ?? null,
-        flipGex: flipLvl?.gex ?? null,
+        flipStrike: prices.flip,
+        balanceStrike: prices.balance,
+        flipGex: null, // balance-neighbor GEX is not GEX at the true flip
         regime: levels.regime,
         totalGex: levels.total_gex,
         totalVex: grid?.total_vex ?? null,
@@ -868,7 +792,6 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
       }
       return {
         isReal: true,
-        isLevels: false,
         ticker: grid.ticker,
         spotPrice: grid.spot.price > 0 ? grid.spot.price : null,
         spotMethod: grid.spot.method,
@@ -877,7 +800,10 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         kingGex,
         gateAbove: undefined,
         gateBelow: undefined,
-        flipStrike: grid.gamma_flip ?? null,
+        // A present empty levels response still owns its nullable prices;
+        // the populated grid retains its own exposure/taxonomy below.
+        flipStrike: gammaPrices(levels ?? grid).flip,
+        balanceStrike: gammaPrices(levels ?? grid).balance,
         // The grid path has no per-level flip GEX (only the flip strike from
         // gamma_flip); null renders "—" rather than a fabricated $0.
         flipGex: null,
@@ -886,48 +812,40 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         totalVex: grid.total_vex,
       };
     }
-    // 3. Nothing real — mock placeholder (the Legend / NodeList are hidden in
-    //    this state; see the render guard on overlay.isReal).
+    // No source: keep the real-data panels hidden and never seed demo values.
     return {
       isReal: false,
-      isLevels: false,
-      ticker: HS.ticker,
-      spotPrice: HS.spot.price,
-      spotMethod: HS.spot.method,
-      spotNote: HS.spot.note,
-      kingStrike: HS.nodes.king.strike,
-      kingGex: HS.nodes.king.gex,
-      gateAbove: { strike: HS.nodes.gates[0].strike, gex: HS.nodes.gates[0].gex },
-      gateBelow: { strike: HS.nodes.gates[1].strike, gex: HS.nodes.gates[1].gex },
-      flipStrike: HS.nodes.flip.strike,
-      flipGex: HS.nodes.flip.gex,
-      regime: HS.regime,
-      totalGex: HS.totalGex,
-      totalVex: HS.totalVex,
+      ticker: sym,
+      spotPrice: null,
+      spotMethod: 'none',
+      spotNote: 'Spot unavailable',
+      kingStrike: null,
+      kingGex: null,
+      flipStrike: null,
+      balanceStrike: null,
+      flipGex: null,
+      regime: 'unknown',
+      totalGex: null,
+      totalVex: null,
     };
   }, [levels, grid, sym]);
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      {/* The heatmap grid + pivot rail are LIVE; the tactical read is illustrative. */}
+      {/* Source identity is evidence of the snapshot, not verified quote freshness. */}
       <div className="hs-demo-banner">
         <span className="dot" />
         <span>
-          {grid && grid.data_source !== 'unavailable' ? (
+          {grid && PRESENT_SOURCES.has(grid.data_source) ? (
             <>
-              Heatmap grid &amp; pivot rail show{' '}
-              <strong>
-                {grid.data_source === 'realtime'
-                  ? `live ${sym} dealer exposure`
-                  : grid.data_source === 'eod_fallback'
-                    ? `${sym} dealer exposure (end-of-day close)`
-                    : `${sym} dealer exposure (delayed snapshot)`}
-              </strong>
-              . Tactical read is illustrative.
+              Heatmap grid &amp; pivot rail show {sym}{' '}
+              <strong>{STORED_SNAPSHOT_LABEL}</strong>
+              {'. '}
+              {storedSnapshotDetail(storedSnapshotClock(grid.snapshot_provenance, grid.snapshot_ts, grid.data_source))}.
             </>
           ) : (
             <>
-              Live {sym} grid unavailable, <strong>tactical read is illustrative.</strong>
+              {sym} gamma grid unavailable.
             </>
           )}
         </span>
@@ -942,17 +860,27 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
         setExpiryFilter={setExpiryFilter}
         source={grid?.data_source ?? 'unavailable'}
         asOf={grid?.snapshot_ts ?? ''}
+        provenance={grid?.snapshot_provenance}
       />
+      {levels && <div role="note" aria-label="Levels source" className="text-xs">
+        Levels: {levels.ticker} · {levels.snapshot_date} · {STORED_SNAPSHOT_LABEL} · {storedSnapshotDetail(storedSnapshotClock(levels.snapshot_provenance, levels.snapshot_timestamp))}
+      </div>}
+      {((grid?.warnings.length ?? 0) > 0 || gridQuery.unavailableData) && (
+        <div role="note" aria-label="Gamma source warnings" className="text-xs">
+          Source warnings: {(grid?.warnings ?? gridQuery.unavailableData?.warnings ?? []).join('; ') || gridQuery.unavailableData?.reason}
+        </div>
+      )}
       {overlay.isReal && <Legend overlay={overlay} />}
 
       <div className="hs-stage">
         <div>
-          <TacticalCard />
+          <TacticalUnavailable ticker={sym} />
         </div>
         <RealHeatmapGrid
           summary={grid}
           loading={gridQuery.isLoading}
           isError={gridQuery.isError}
+          unavailableReason={gridQuery.unavailableData?.reason}
           metric={metric}
           ticker={sym}
           kingStrike={overlay.isReal && overlay.kingStrike != null ? overlay.kingStrike : undefined}

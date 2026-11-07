@@ -1,3 +1,4 @@
+import { marketDataForRequest } from '@/mocks/live';
 /**
  * E2E: Journal one-stop cockpit (Task 5 of the journal one-stop-shop program).
  *
@@ -38,7 +39,7 @@ function buildUpRunCandlestick(n = 30, base = 220, step = 0.05) {
 }
 
 const CALL_BARS = buildUpRunCandlestick(30);
-const VOLUME = CALL_BARS.map((c) => ({ time: c.time, value: 100_000 }));
+const VOLUME = CALL_BARS.map((c) => ({ time: c.time, value: 100_000, color: '#089981' }));
 
 const MOCK_MARKET_DATA = {
   ticker: 'IWM',
@@ -178,7 +179,7 @@ async function mockJournalOneStop(
   // This spec's chart card needs REAL candles on the session date, not the
   // shared fixture's empty default. Registered after mockJournalApi so it
   // wins - Playwright matches newest-first.
-  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
+  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), MOCK_MARKET_DATA))));
 }
 
 test.describe('Journal one-stop cockpit — Examples default', () => {

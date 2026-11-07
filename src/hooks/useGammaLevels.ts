@@ -1,3 +1,4 @@
+import { dataUnlessError } from '@/lib/queryData';
 import { useQuery } from '@tanstack/react-query';
 
 // ── Shapes returned by GET /api/options/{ticker}/{date}/levels ──────────────
@@ -13,6 +14,25 @@ export interface SpotEstimate {
    *  today; plain string per schema. */
   method: string;
   note: string;
+}
+
+/** SnapshotProvenance (stocks FEAT-OPTION-001, PR 1724): what the stored
+ *  options snapshot behind a grid or levels response is, and what it is not.
+ *  `snapshot_ts` is the selected rows' own stored clock (aware UTC, or null
+ *  when the group's clocks are missing, naive or disagree). `observed_at` is
+ *  when the server assembled this response; `snapshot_age_seconds` is the
+ *  display age between the two, never a provider lag. Freshness and
+ *  completeness are always `unknown` on this path: nothing here certifies a
+ *  live or complete chain. */
+export interface SnapshotProvenance {
+  provider?: string | null;
+  market_session?: string | null;
+  snapshot_ts?: string | null;
+  observed_at: string;
+  snapshot_age_seconds?: number | null;
+  freshness_status: 'unknown';
+  completeness_status: 'unknown';
+  reason: 'legacy_snapshot_unqualified' | 'timestamp_invalid' | 'timestamp_future';
 }
 
 export interface GammaLevel {
@@ -42,7 +62,7 @@ export interface GammaLevelsResponse {
   ticker: string;
   snapshot_date: string;
   spot: SpotEstimate;
-  // Cumulative-net-gamma balance price (formerly mislabeled `flip`).
+  // Absolute net-gamma median balance price; not the true zero-gamma flip.
   // Optional per schema: absent and null both mean "no balance level".
   gamma_balance?: number | null;
   // True Black-Scholes-recurved zero-gamma level (the real regime divider).
@@ -59,6 +79,8 @@ export interface GammaLevelsResponse {
   warnings: string[];
   snapshot_timestamp?: string | null;
   chain_size: number;
+  /** Additive and nullable: absent on an older server or an old cached body. */
+  snapshot_provenance?: SnapshotProvenance | null;
 }
 
 async function parseError(r: Response, fallback: string): Promise<string> {
@@ -77,7 +99,7 @@ export function useGammaLevels(
   opts?: { windowPct?: number; spotOverride?: number; enabled?: boolean },
 ) {
   const { windowPct, spotOverride, enabled = true } = opts ?? {};
-  return useQuery<GammaLevelsResponse>({
+  const query = useQuery<GammaLevelsResponse>({
     queryKey: ['gamma-levels', ticker, date, windowPct ?? null, spotOverride ?? null],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -95,6 +117,7 @@ export function useGammaLevels(
     staleTime: 3_600_000, // 1 hour, EOD snapshots are immutable once written
     retry: false,
   });
+  return { ...query, data: dataUnlessError(query.data, query.isError) };
 }
 
 // Friendly label for the spot estimation method, surfaced as a chip in the UI.

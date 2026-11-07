@@ -7,6 +7,16 @@ Skylit's product model. Three views are **real-data backed today**; two are
 built against **labeled demo mocks** because no backend endpoint exists yet.
 This doc specifies the endpoints needed to make the mocked views real.
 
+## Current Gamma and Profiles binding (2026-10-30 source)
+
+Gamma renders actual independently dated grid and levels responses. Static SPY Hedge/Midpoint values and Tactical scenarios are removed; Tactical is explicitly unavailable for the selected symbol because no backend narrative is supplied. No guessed replacement node or price is inserted. Flow's separately labelled Demo feed/drilldown remains unchanged.
+
+Both views bind Flip to the nullable backend `gamma_flip`, independently of `gamma_balance`; actual zero, source dates and request/error recovery remain distinct. Profiles renders a GEX strike chart only in GEX mode. VEX uses the supplied `total_vex` (including zero), but explicitly says per-strike VEX is unavailable because the response provides no VEX strike profile. It does not relabel `gex_by_strike` or compute replacement financial values. These source changes require separate deployment verification.
+
+## Historical findings — preserved 2026-10-11 observation
+
+The following findings describe the earlier observed source, not the current binding. #301 corrected flip/error/freshness binding; the production-field-truth successor addresses #87/#93 without rewriting this provenance.
+
 **Corrected 2026-10-11: Swing was misclassified as mock.** `SwingMode.tsx`'s
 heatmap grid and pivot rail are real. `useGammaGrid` reads
 `/api/options/{ticker}/grid` (or `/api/options/{ticker}/{date}/grid`) and
@@ -60,11 +70,13 @@ expiration; `/surface` is not in the vendored OpenAPI snapshot,
 `tests/fixtures/stocks-openapi.json`), so (A) is superseded. It stays below for
 the record; do not build it.
 
+## Current view sources
+
 | View | Tab · Mode | Data today | Real source needed |
 |------|-----------|-----------|--------------------|
-| GEX/VEX profile | Profiles | **Real** — `/api/options/dates/{t}` (date list, `useAllOptionsDates`), `/api/options/{t}/{date}` with `/api/options/live/{t}/{date}` as the 404 fallback (chain, via `ProfilesTab.tsx`'s local `useOptionsData`), `/api/options/{t}/{date}/levels` (`useGammaLevels`) + `POST /api/options/greeks`. The Gamma Flip card shows the balance price and the ⇅ Flip chips the strikes beside it (see the note above) | Read `gamma_flip` for the Flip, a solyra fix (TeneikaAskew/solyra#89) |
+| GEX/VEX profile | Profiles | **Real** chain via `useOptionsChain`, existing `/levels` and `POST /api/options/greeks`; distinct nullable flip/balance. GEX strike chart; actual VEX total with explicit unavailable per-strike profile. | No per-strike VEX contract exists; do not derive or relabel one. |
 | Trinity 3-panel | Gamma Map · Trinity | **Real** — `/api/options/dates/{t}?limit=1` (`useLatestOptionsDate`, which gates the query) + `useGammaLevels` for SPX/SPY/QQQ | — |
-| Swing 2D heatmap | Gamma Map · Swing | **Real** — live mode (the default) reads the date-less `/api/options/{t}/grid` and does not wait on a date (`useGammaGrid`, `SwingMode.tsx:804-807`); historical mode reads `/api/options/{t}/{date}/grid` once the `?limit=1` date resolves; `useGammaLevels` waits on that date in both modes. Illustrative only, from `src/data/gammaMapMock.ts`: the tactical-read card, the Legend's Hedge chip and the node list's Midpoint/Hedge rows (see the note above). The Flip chip, the node list's Flip row and the dashed flip row show the balance price whenever `/levels` returns one (see the note above) | Hedge and Midpoint nodes for Swing, and a source for the tactical read (see the note above); read `gamma_flip` for the Flip, a solyra fix (TeneikaAskew/solyra#89) |
+| Swing 2D heatmap | Gamma Map · Swing | **Real** existing live/historical grid and independently dated levels. No mock Hedge/Midpoint values or Tactical scenarios. | Tactical remains explicitly unavailable; no backend narrative is supplied. |
 | Live flow tape | Flow · Live Feed | Mock `src/data/optionsFlowMock.ts` | **(B)** options-flow feed |
 | Contract drilldown | Flow · Drilldown | Mock `src/data/contractDrilldownMock.ts` | **(C)** per-contract tape |
 
@@ -123,5 +135,4 @@ GET /api/flow/contract/{occ_symbol}?window=
 
 When (B) or (C) lands, swap the matching `src/data/*Mock.ts` import for a
 TanStack Query hook and remove the "Demo data" banner in that view. Swing's
-banner stays: it still has to disclose the tactical read, and ought to cover
-the Hedge and Midpoint nodes too (see the note at the top).
+banner reports actual source availability; Tactical is unavailable and mock Hedge/Midpoint values are removed. The historical disclosure gap above remains a dated receipt.

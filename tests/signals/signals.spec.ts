@@ -8,7 +8,75 @@ import { test, expect } from '@playwright/test';
 import type { SignalsResponse } from '@/routes/SignalsPage';
 import { perfBudgetMs } from '../helpers/perfBudget';
 import { M } from '../helpers/mocks';
-import { MOCK_SIGNALS, MOCK_SIGNALS_EMPTY, mockSignalsApi } from '../helpers/fixtures/signals';
+import { MOCK_SIGNALS, MOCK_SIGNALS_EMPTY, mockSignalsApi, SCORE_SCENARIOS, INVALID_SCORE_CLOCK_SCENARIOS, scoreScenarioResponse } from '../helpers/fixtures/signals';
+
+for (const scenario of INVALID_SCORE_CLOCK_SCENARIOS) {
+  test('signals malformed score clock: ' + scenario.name, async ({ page }, testInfo) => {
+    await mockSignalsApi(page);
+    await page.route('**/api/signals/IWM*', r => r.fulfill(M.ok({ ticker: 'IWM', count: 1, returned: 1, source: 'cloud_sql', signals: [scenario.row] })));
+    await page.goto('/signals');
+    const score = page.getByTestId('score-explanation');
+    await expect(score.getByTestId('signal-strength')).toHaveText('6');
+    await expect(score).toContainText('Breakdown unavailable');
+    await expect(score).not.toContainText('Base conditions:');
+    await score.locator('summary').click();
+    await expect(score).toContainText(`${scenario.label}: Unavailable`);
+    await expect(score).toContainText(`Event time: ${scenario.row.time}`);
+    await expect(page).toHaveURL(/\/signals$/);
+    await score.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath('signals-clock-' + scenario.name + '.png'), fullPage: true });
+  });
+}
+
+for (const scenario of SCORE_SCENARIOS) {
+  test(`signals recorded score explanation: ${scenario.name}`, async ({ page }, testInfo) => {
+    await mockSignalsApi(page);
+    await page.route('**/api/signals/IWM*', r => r.fulfill(M.ok(scoreScenarioResponse(scenario))));
+    await page.goto('/signals');
+    await expect(page.getByText('Historical analytical signals', { exact: true })).toBeVisible();
+    const score = page.getByTestId('score-explanation');
+    await expect(score.getByTestId('signal-strength')).toHaveText(scenario.strength);
+    await expect(score).toContainText(scenario.strategy);
+    if (scenario.base) await expect(score).toContainText(`Base conditions: ${scenario.base}`);
+    else await expect(score).toContainText('Breakdown unavailable');
+    await score.locator('summary').click();
+    await expect(score).toContainText('historical_signals');
+    await expect(score).toContainText('Event time');
+    await expect(score).toContainText('Generated at');
+    await expect(score).toContainText('Inserted at');
+    if (scenario.base) {
+      await expect(score).toContainText('cloud_sql');
+      await expect(score).toContainText('backfill');
+      await expect(score).toContainText('historical-default');
+      await expect(score).toContainText(`Composite strength: ${scenario.base}`);
+    }
+    if (scenario.name === 'legacy') {
+      await expect(score).toContainText('Raw conditions (unvalidated): 6/5');
+      await expect(score).not.toContainText('Base conditions: 6/5');
+      await expect(score).toContainText('legacy_score_contract_missing');
+      await expect(score).toContainText('Input identity: Unavailable');
+    }
+    await score.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`signals-score-${scenario.name}.png`), fullPage: true });
+  });
+}
+
+test('signals loading and failure never fabricate score explanations', async ({ page }, testInfo) => {
+  await mockSignalsApi(page);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/signals/IWM*', async r => {
+    await pending;
+    await r.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"signals unavailable"}' });
+  });
+  await page.goto('/signals', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Loading signals…')).toBeVisible();
+  await expect(page.getByTestId('score-explanation')).toHaveCount(0);
+  release();
+  await expect(page.getByText(/Signal data not found for IWM/)).toBeVisible();
+  await expect(page.getByTestId('score-explanation')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('signals-score-unavailable.png') });
+});
 
 test.describe('Signal Explorer', () => {
   test.beforeEach(async ({ page }) => {
@@ -88,7 +156,7 @@ test.describe('Signal Explorer: filter, sort, Clear and review mode', () => {
   // The table's own cells, read column by column: Time is the first, Dir the
   // second and Score the third.
   const cells = (page: import('@playwright/test').Page, n: number) =>
-    page.locator(`tbody tr td:nth-child(${n})`);
+    n === 3 ? page.getByTestId('signal-strength') : page.locator(`tbody tr td:nth-child(${n})`);
 
   test('the direction buttons, Min score, the date range and the column headers act on the fetched rows', async ({ page }) => {
     await page.goto('/signals');
@@ -110,9 +178,9 @@ test.describe('Signal Explorer: filter, sort, Clear and review mode', () => {
     // Min score keeps rows at or above the chosen score: 6+ is 7 and 6, 7+ is 7, 8+ is none.
     const minScore = page.locator('select');
     await minScore.selectOption('6');
-    await expect(cells(page, 3)).toHaveText(['7.0', '6.0']);
+    await expect(cells(page, 3)).toHaveText(['7', '6']);
     await minScore.selectOption('7');
-    await expect(cells(page, 3)).toHaveText(['7.0']);
+    await expect(cells(page, 3)).toHaveText(['7']);
     await minScore.selectOption('8');
     await expect(rows).toHaveCount(0);
     await expect(page.getByText('No signals match your filters')).toBeVisible();
@@ -132,13 +200,13 @@ test.describe('Signal Explorer: filter, sort, Clear and review mode', () => {
 
     // Sort: a first click on Score is descending, a second ascending.
     await page.getByRole('columnheader', { name: 'Score' }).click();
-    await expect(cells(page, 3)).toHaveText(['7.0', '6.0', '5.0']);
+    await expect(cells(page, 3)).toHaveText(['7', '6', '5']);
     await page.getByRole('columnheader', { name: 'Score' }).click();
-    await expect(cells(page, 3)).toHaveText(['5.0', '6.0', '7.0']);
+    await expect(cells(page, 3)).toHaveText(['5', '6', '7']);
     // Sort and filter compose: CALL only, still in the ascending order of Score.
     await page.getByRole('button', { name: 'CALL', exact: true }).click();
     await expect(cells(page, 2)).toHaveText(['CALL', 'CALL']);
-    await expect(cells(page, 3)).toHaveText(['6.0', '7.0']);
+    await expect(cells(page, 3)).toHaveText(['6', '7']);
   });
 
   test('Clear shows only while a filter is set and resets the direction, Min score and both dates', async ({ page }) => {
@@ -167,7 +235,7 @@ test.describe('Signal Explorer: filter, sort, Clear and review mode', () => {
     await expect(page.locator('h1 + div')).toHaveText('IWM · 3 signals');
     await expect(page.getByRole('button', { name: 'ALL', exact: true })).toHaveClass(/bg-\[var\(--color-accent-blue\)\]/);
     await expect(page.getByRole('button', { name: 'CALL', exact: true })).not.toHaveClass(/bg-\[var\(--color-accent-blue\)\]/);
-    await expect(page.locator('tbody tr td:nth-child(3)')).toHaveText(['7.0', '6.0', '5.0']);
+    await expect(page.getByTestId('signal-strength')).toHaveText(['7', '6', '5']);
   });
 
   test('review mode asks the API for the cutoff, locks the To date under a global tag and gives it back', async ({ page }) => {

@@ -1,5 +1,6 @@
+import { dataUnlessError } from '@/lib/queryData';
 import { useQuery } from '@tanstack/react-query';
-import type { SpotEstimate } from './useGammaLevels';
+import type { SnapshotProvenance, SpotEstimate } from './useGammaLevels';
 
 // ── Shapes returned by GET /api/options/{ticker}/grid (and /{date}/grid) ─────
 //
@@ -73,6 +74,9 @@ export interface GammaGridSummary {
   window_pct: number;
   warnings: string[];
   reason?: string | null; // present on the unavailable envelope
+  /** Additive and nullable: null on the unavailable envelope, absent on an
+   *  older server or an old cached body. */
+  snapshot_provenance?: SnapshotProvenance | null;
 }
 
 async function parseError(r: Response, fallback: string): Promise<string> {
@@ -97,7 +101,7 @@ export function useGammaGrid(
   },
 ) {
   const { windowPct, live = true, enabled = true } = opts ?? {};
-  return useQuery<GammaGridSummary>({
+  const query = useQuery<GammaGridSummary>({
     queryKey: ['gamma-grid', ticker, date, windowPct ?? null, live],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -119,4 +123,7 @@ export function useGammaGrid(
     refetchInterval: live ? 60_000 : false,
     retry: false,
   });
+  const visible = dataUnlessError(query.data, query.isError);
+  const unavailableData = visible?.data_source === 'unavailable' ? visible : undefined;
+  return { ...query, data: unavailableData ? undefined : visible, unavailableData };
 }

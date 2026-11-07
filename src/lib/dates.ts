@@ -13,6 +13,67 @@ export function toETDateString(d: Date): string {
   return ET_FMT.format(d); // en-CA locale yields YYYY-MM-DD
 }
 
+/** Eastern wall clock for a datetime-local control or market-data boundary.
+ * Keep the original absolute timestamp in state; this is a display/API view. */
+export function toETDateTimeString(d: Date): string {
+  const time = d.toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
+  });
+  return `${toETDateString(d)}T${time}`;
+}
+
+/** Present an absolute saved cutoff without changing its transport value. */
+export function replayCutoffInputValue(cutoff: string): string {
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(cutoff)) return cutoff;
+  const instant = new Date(cutoff);
+  return Number.isFinite(instant.getTime()) ? toETDateTimeString(instant) : cutoff;
+}
+
+export interface ReplayBoundary { iso: string | null; error: string | null }
+
+/** A market wall clock is not a browser-local Date. Resolve it against the
+ * exchange timezone, refusing DST gaps/folds instead of guessing an instant.
+ * Explicitly zoned saved timestamps already identify an instant: retain them. */
+export function resolveReplayBoundary(cutoff: string): ReplayBoundary {
+  if (!cutoff) return { iso: null, error: null };
+  const invalid = { iso: null, error: 'Enter a valid Eastern date and time.' };
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})?$/.exec(cutoff);
+  if (!match) return invalid;
+  const [, year, month, day, hour, minute, second = '0', fraction = '', zone] = match;
+  const fields = [Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second)];
+  const wall = new Date(0);
+  wall.setUTCFullYear(fields[0], fields[1] - 1, fields[2]);
+  wall.setUTCHours(fields[3], fields[4], fields[5], Number(fraction.padEnd(3, '0')));
+  if ([wall.getUTCFullYear(), wall.getUTCMonth() + 1, wall.getUTCDate(), wall.getUTCHours(), wall.getUTCMinutes(), wall.getUTCSeconds()].some((value, i) => value !== fields[i])) return invalid;
+  if (zone) return Number.isFinite(Date.parse(cutoff)) ? { iso: cutoff, error: null } : invalid;
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  });
+  const asWallMillis = (instant: number) => {
+    const parts = formatter.formatToParts(new Date(instant));
+    const value = (name: Intl.DateTimeFormatPartTypes) => Number(parts.find(part => part.type === name)!.value);
+    const date = new Date(0);
+    date.setUTCFullYear(value('year'), value('month') - 1, value('day'));
+    date.setUTCHours(value('hour'), value('minute'), value('second'), 0);
+    return date.getTime();
+  };
+  const wallMillis = wall.getTime();
+  const wholeSecond = Math.floor(wallMillis / 1000) * 1000;
+  // Sample both sides of a possible offset transition. Candidate instants
+  // must roundtrip to the exact requested wall clock, including seconds.
+  const offsets = new Set([-1, 0, 1].map(days => {
+    const sample = wholeSecond + days * 86_400_000;
+    return asWallMillis(sample) - sample;
+  }));
+  const candidates = [...offsets].map(offset => wallMillis - offset)
+    .filter(instant => asWallMillis(instant) === wholeSecond);
+  if (candidates.length === 0) return { iso: null, error: 'This Eastern time does not exist because clocks move forward. Choose another time.' };
+  if (candidates.length !== 1) return { iso: null, error: 'This Eastern time is ambiguous because clocks move back. Choose an unambiguous time.' };
+  return { iso: new Date(candidates[0]).toISOString(), error: null };
+}
+
 /** Today's date (YYYY-MM-DD) on the US market calendar. */
 export function todayET(): string {
   return toETDateString(new Date());

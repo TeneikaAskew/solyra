@@ -280,6 +280,13 @@ export const MOCK_LIVE_INDICATORS = {
  * `mockLiveApi` (tests/helpers/fixtures/live.ts), scoped to IWM like the
  * fixture. Patterns match the pathname only; queries pass through.
  */
+/** Synthetic market bars with the identity of the requested slice. */
+export function marketDataForRequest(url: URL, data: Pick<MarketDataResponse, 'ticker' | 'count' | 'candlestick' | 'volume'> & Partial<Pick<MarketDataResponse, 'date' | 'timeframe'>> = MOCK_MARKET_DATA): MarketDataResponse {
+  const parts = url.pathname.split('/');
+  return { ...data, ticker: parts.at(-2)!, date: parts.at(-1)!,
+    timeframe: Number(url.searchParams.get('timeframe') ?? data.timeframe ?? 1) };
+}
+
 export const liveRoutes: MockRoute[] = [
   // Closed variants: the canonical world is Friday after the close, so the
   // session flags here must agree with MOCK_LIVE_STATUS (is_open: false) —
@@ -294,7 +301,7 @@ export const liveRoutes: MockRoute[] = [
   },
   {
     pattern: /^\/api\/market\/data\/IWM\/([^/]+)$/,
-    reply: () => ({ body: MOCK_MARKET_DATA }),
+    reply: ({ url }) => ({ body: marketDataForRequest(url) }),
   },
   // /api/market/reference is owned by ./dashboard (its payload carries the
   // populated `week` block); MOCK_REFERENCE_LEVELS stays exported for the

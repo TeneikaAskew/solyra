@@ -63,7 +63,12 @@ export async function mockChartsApi(page: Page, opts: ChartsMockOpts = {}) {
   const similar = opts.similar ?? MOCK_SIMILAR_SETUPS;
 
   await page.route('**/api/market/dates/IWM', (r) => r.fulfill(M.ok(MOCK_MARKET_DATES)));
-  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
+  await page.route('**/api/market/data/IWM/*', (r) => {
+    // Each mocked reply must identify the actual requested slice. These are
+    // synthetic chart bars, not evidence of real source/session coverage.
+    const url = new URL(r.request().url());
+    return r.fulfill(M.ok({ ...MOCK_MARKET_DATA, date: url.pathname.split('/').at(-1), timeframe: Number(url.searchParams.get('timeframe')) }));
+  });
   await page.route('**/api/market/reference/IWM/*', (r) => r.fulfill(M.ok(MOCK_REFERENCE_LEVELS)));
   await page.route('**/api/options/IWM/*/levels*', (r) => r.fulfill(M.ok(MOCK_LEVELS_POPULATED)));
   await page.route('**/api/live/indicators', (r) => r.fulfill(M.ok(MOCK_LIVE_INDICATORS)));

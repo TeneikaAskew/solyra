@@ -578,7 +578,14 @@ export interface paths {
         };
         /**
          * Get Market Hours
-         * @description Return US equity market session windows + 2026 holidays.
+         * @description Return US equity market session windows, holidays and early closes.
+         *
+         *     ``holidays`` and ``early_closes`` cover the current and next year by the
+         *     Eastern date, so the window rolls at 00:00 ET on 1 January. Half days
+         *     are sessions, so they are in ``early_closes`` and never in ``holidays``.
+         *     ``holidays_2026`` is kept, filled from the same calendar, for solyra's
+         *     replay picker until Spec C moves it to ``holidays`` and removes it.
+         *     A calendar failure raises (CLAUDE.md 3.7); nothing is filled in.
          */
         get: operations["get_market_hours_api_config_market_hours_get"];
         put?: never;
@@ -3076,9 +3083,15 @@ export interface components {
             ema_9?: number | null;
             /** Ema 20 */
             ema_20?: number | null;
-            /** Ftfc Direction */
+            /**
+             * Ftfc Direction
+             * @description TF bias direction: bullish, bearish or mixed from the weighted candle vote.
+             */
             ftfc_direction?: unknown;
-            /** Ftfc Score */
+            /**
+             * Ftfc Score
+             * @description TF bias: weighted vote of candle types across timeframes (2U up, 2D down, 1 and 3 zero), -1 to +1. Not price-versus-open FTFC.
+             */
             ftfc_score?: number | null;
             /** Macd */
             macd?: number | null;
@@ -3119,9 +3132,15 @@ export interface components {
             /** Consecutive Up */
             consecutive_up?: number | null;
             daily_indicators?: components["schemas"]["DailyIndicators"] | null;
-            /** Ftfc Direction */
+            /**
+             * Ftfc Direction
+             * @description TF bias direction: bullish, bearish or mixed from the weighted candle vote.
+             */
             ftfc_direction?: unknown;
-            /** Ftfc Score */
+            /**
+             * Ftfc Score
+             * @description TF bias: weighted vote of candle types across timeframes (2U up, 2D down, 1 and 3 zero), -1 to +1. Not price-versus-open FTFC.
+             */
             ftfc_score?: number | null;
             /** Has Premarket */
             has_premarket?: boolean | null;
@@ -3182,6 +3201,18 @@ export interface components {
             reason?: string | null;
             /** Status */
             status: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * EarlyClose
+         * @description A half-day session: its date and its Eastern close, ``HH:MM``.
+         */
+        EarlyClose: {
+            /** Close */
+            close: string;
+            /** Date */
+            date: string;
         } & {
             [key: string]: unknown;
         };
@@ -3292,6 +3323,8 @@ export interface components {
         };
         /** FreshnessRow */
         FreshnessRow: {
+            /** Detail */
+            detail?: string | null;
             /** Expected Latest */
             expected_latest: string;
             /** Expected Max Hours */
@@ -3380,6 +3413,7 @@ export interface components {
             regime: string;
             /** Snapshot Date */
             snapshot_date?: string | null;
+            snapshot_provenance?: components["schemas"]["SnapshotProvenance"] | null;
             /** Snapshot Ts */
             snapshot_ts?: string | null;
             spot?: components["schemas"]["SpotEstimate"] | null;
@@ -3441,6 +3475,7 @@ export interface components {
             regime: string;
             /** Snapshot Date */
             snapshot_date: string;
+            snapshot_provenance?: components["schemas"]["SnapshotProvenance"] | null;
             /** Snapshot Timestamp */
             snapshot_timestamp?: string | null;
             spot: components["schemas"]["SpotEstimate"];
@@ -3584,6 +3619,44 @@ export interface components {
             status: string;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * HistoricalScoreExplanation
+         * @description Additive explanation; null components mean unsupported, not zero.
+         */
+        HistoricalScoreExplanation: {
+            /** Base Count */
+            base_count: number | null;
+            /** Base Max */
+            base_max: number | null;
+            /** Bonus Total */
+            bonus_total: number | null;
+            /** Bonuses */
+            bonuses: components["schemas"]["ScoreBonus"][] | null;
+            /** Composite Max */
+            composite_max: number | null;
+            /** Composite Strength */
+            composite_strength: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "condition_count" | "base_plus_bonus" | "unknown";
+            /** Matched Conditions */
+            matched_conditions: string[] | null;
+            provenance: components["schemas"]["ScoreProvenance"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "recorded" | "legacy_unavailable" | "invalid_record";
+            /** Unavailable Reasons */
+            unavailable_reasons: string[];
+            /**
+             * Version
+             * @constant
+             */
+            version: "historical-score-v1";
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4129,9 +4202,18 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** MarketHoursResponse */
+        /**
+         * MarketHoursResponse
+         * @description ``holidays`` and ``early_closes`` cover the current and next Eastern
+         *     year. ``holidays_2026`` is kept for solyra's replay picker until Spec C
+         *     moves it to ``holidays`` and removes it.
+         */
         MarketHoursResponse: {
             after_hours: components["schemas"]["MarketHoursWindow"];
+            /** Early Closes */
+            early_closes: components["schemas"]["EarlyClose"][];
+            /** Holidays */
+            holidays: string[];
             /** Holidays 2026 */
             holidays_2026: string[];
             pre_market: components["schemas"]["MarketHoursWindow"];
@@ -5020,6 +5102,46 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ScoreBonus */
+        ScoreBonus: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: number;
+        };
+        /**
+         * ScoreProvenance
+         * @description Recorded computation identity, never a claim of historical availability.
+         */
+        ScoreProvenance: {
+            /** Code Sha256 */
+            code_sha256: string | null;
+            /** Config Sha256 */
+            config_sha256: string | null;
+            /**
+             * Corpus
+             * @constant
+             */
+            corpus: "historical_signals";
+            /** Direction */
+            direction: ("call" | "put") | null;
+            /** Generated At */
+            generated_at: string | null;
+            /** Input Sha256 */
+            input_sha256: string | null;
+            /** Inserted At */
+            inserted_at: string | null;
+            /** Producer Definition */
+            producer_definition: string | null;
+            /** Profile */
+            profile: string | null;
+            /** Run Kind */
+            run_kind: string | null;
+            /** Storage Source */
+            storage_source: ("cloud_sql" | "gcs_parquet") | null;
+            /** Strategy */
+            strategy: string | null;
+        };
         /** SectorRow */
         SectorRow: {
             /** Chg 1D Pct */
@@ -5139,6 +5261,8 @@ export interface components {
             ema9?: number | null;
             /** Ema20 */
             ema20?: number | null;
+            /** Inserted At */
+            inserted_at?: string | null;
             /** Return Pct */
             return_pct?: number | null;
             /** Rsi */
@@ -5147,6 +5271,9 @@ export interface components {
             run_kind?: string | null;
             /** Score */
             score?: number | null;
+            score_explanation?: components["schemas"]["HistoricalScoreExplanation"] | null;
+            /** Strategy */
+            strategy?: string | null;
             /** Ticker */
             ticker: string;
             /** Time */
@@ -5270,6 +5397,45 @@ export interface components {
              * @description Fraction 0..1, not a percent
              */
             pct_profitable?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * SnapshotProvenance
+         * @description Provenance of the stored options snapshot a response was built from.
+         *
+         *     Stored clock retained: ``snapshot_ts`` is the selected rows' own instant.
+         *     ``observed_at`` is when this response was assembled (re-stamped per response).
+         *     ``snapshot_age_seconds`` is a display age (observed_at minus snapshot_ts), not a
+         *     provider lag. ``freshness_status`` and ``completeness_status`` are always
+         *     ``unknown``; ``reason`` names the clock validation outcome, not a qualification.
+         */
+        SnapshotProvenance: {
+            /**
+             * Completeness Status
+             * @constant
+             */
+            completeness_status: "unknown";
+            /**
+             * Freshness Status
+             * @constant
+             */
+            freshness_status: "unknown";
+            /** Market Session */
+            market_session?: string | null;
+            /** Observed At */
+            observed_at: string;
+            /** Provider */
+            provider?: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "legacy_snapshot_unqualified" | "timestamp_invalid" | "timestamp_future";
+            /** Snapshot Age Seconds */
+            snapshot_age_seconds?: number | null;
+            /** Snapshot Ts */
+            snapshot_ts?: string | null;
         } & {
             [key: string]: unknown;
         };

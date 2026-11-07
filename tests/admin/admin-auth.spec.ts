@@ -229,11 +229,11 @@ test.describe('Sidebar — Admin link visibility', () => {
 
   // Expected counts come from navConfig.ts NAV_GROUPS (the Sidebar renders
   // every group item as a NavLink): TRADING 1 (dashboard) + MARKET 4 (live,
-  // charts, options, signals) + INTELLIGENCE 2 (insights, catalysts) +
+  // charts, options, signals) + INTELLIGENCE 4 (insights, insights-lovable, ai-insights-lovable, catalysts) +
   // LEARN 3 (playbook, reports, journal) + SUPPORT 4 (admin*, settings,
-  // help, /#faq) = 14 links for an admin; the adminOnly /admin link is
-  // filtered out for everyone else (Sidebar.tsx) → 13.
-  test('sidebar nav count is 13 for non-admin (no Admin link)', async ({ page }) => {
+  // help, /#faq) = 16 links for an admin; the adminOnly /admin link is
+  // filtered out for everyone else (Sidebar.tsx) → 15.
+  test('sidebar nav count is 15 for non-admin (no Admin link)', async ({ page }) => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: null, is_admin: false }) }),
     );
@@ -243,10 +243,10 @@ test.describe('Sidebar — Admin link visibility', () => {
     // Wait for nav to fully render before counting
     await expect(page.locator('nav a[href="/help"]')).toBeVisible();
     const nav = page.locator('nav a');
-    await expect(nav).toHaveCount(13);
+    await expect(nav).toHaveCount(15);
   });
 
-  test('sidebar nav count is 14 for admin (includes Admin link)', async ({ page }) => {
+  test('sidebar nav count is 16 for admin (includes Admin link)', async ({ page }) => {
     await page.route('**/api/me', (route) =>
       route.fulfill({ status: 200, body: JSON.stringify({ email: ADMIN_EMAIL, is_admin: true }) }),
     );
@@ -256,6 +256,6 @@ test.describe('Sidebar — Admin link visibility', () => {
     // Wait for admin link to appear before counting
     await expect(page.locator('nav a[href="/admin"]')).toBeVisible();
     const nav = page.locator('nav a');
-    await expect(nav).toHaveCount(14);
+    await expect(nav).toHaveCount(16);
   });
 });

@@ -1,0 +1,150 @@
+{
+  "source": {
+    "revision": "05830d8d535de7f8003c9642417adedc2890ad75",
+    "source_sha256": {
+      "lib/trading_analysis.py": "8a7f45ba12b968e959e91ecac4816f68eb9d040c9fdf9db75fd7deefac35e8e6",
+      "lib/signals.py": "856388604b2610637924d277ebbc6e827b46cda0a4854a58ffc0c4482e88d0a1",
+      "lib/config.py": "c12be971f778ace834ce519981e0ea8d5044da6327512de6ae60f5fbee2cae5d",
+      "scripts/run_historical_signals.py": "a2866e2107e10a9b7e0ef3be22a91559a73e20e43b476871369486c89f15a700",
+      "tests/fixtures/historical_score_native_controls.json": "9a659aa55c85fe66e4c724367e012b34719fb46bd15fa1b3dcf20c4354525174"
+    },
+    "definition": "Actual native producers on synthetic enriched inputs; storage/run/inserted values are synthetic API-projection context, not deployed evidence. Momentum inputs are the pinned native-controls fixture; MR inputs match test_historical_mr_records_actual_base_and_zero_bonus."
+  },
+  "cases": [
+    {
+      "ticker": "IWM",
+      "time": "2024-01-02T09:39:00",
+      "direction": "CALL",
+      "score": 6,
+      "conditions_met": "6/7",
+      "strategy": "momentum",
+      "run_kind": "backfill",
+      "inserted_at": "2026-10-30T05:00:00+00:00",
+      "score_explanation": {
+        "version": "historical-score-v1",
+        "status": "recorded",
+        "kind": "condition_count",
+        "base_count": 6,
+        "base_max": 7,
+        "matched_conditions": [
+          "consecutive_up",
+          "rsi_bullish_zone",
+          "above_vwap",
+          "above_ema9",
+          "rvol_above_recent",
+          "atr_expansion"
+        ],
+        "bonuses": [],
+        "bonus_total": 0,
+        "composite_strength": 6,
+        "composite_max": 7,
+        "unavailable_reasons": [],
+        "provenance": {
+          "corpus": "historical_signals",
+          "strategy": "momentum",
+          "run_kind": "backfill",
+          "storage_source": "cloud_sql",
+          "producer_definition": "historical-momentum-v1",
+          "profile": "historical-default",
+          "direction": "call",
+          "code_sha256": "97431617eb1b9723e4f77f9d180f30a0f45d2901671128085e7b12a56aee9ee5",
+          "config_sha256": "287ca7075678fc2cd1541bd502c60d943fc11689622df0208052a0a4863bc3ae",
+          "input_sha256": "300754698d987af5682e887d4ad21793214732d20f150dc91647793a1ff59e53",
+          "generated_at": "2026-10-30T05:06:01.876698+00:00",
+          "inserted_at": "2026-10-30T05:00:00+00:00"
+        }
+      },
+      "return_pct": 0.01
+    },
+    {
+      "ticker": "IWM",
+      "time": "2024-01-02T09:39:00",
+      "direction": "CALL",
+      "score": 7,
+      "conditions_met": "7/7",
+      "strategy": "momentum",
+      "run_kind": "backfill",
+      "inserted_at": "2026-10-30T05:00:00+00:00",
+      "score_explanation": {
+        "version": "historical-score-v1",
+        "status": "recorded",
+        "kind": "condition_count",
+        "base_count": 7,
+        "base_max": 7,
+        "matched_conditions": [
+          "consecutive_up",
+          "rsi_bullish_zone",
+          "above_vwap",
+          "above_ema9",
+          "rvol_above_recent",
+          "atr_expansion",
+          "rsi_thrust_up"
+        ],
+        "bonuses": [],
+        "bonus_total": 0,
+        "composite_strength": 7,
+        "composite_max": 7,
+        "unavailable_reasons": [],
+        "provenance": {
+          "corpus": "historical_signals",
+          "strategy": "momentum",
+          "run_kind": "backfill",
+          "storage_source": "cloud_sql",
+          "producer_definition": "historical-momentum-v1",
+          "profile": "historical-default",
+          "direction": "call",
+          "code_sha256": "97431617eb1b9723e4f77f9d180f30a0f45d2901671128085e7b12a56aee9ee5",
+          "config_sha256": "287ca7075678fc2cd1541bd502c60d943fc11689622df0208052a0a4863bc3ae",
+          "input_sha256": "579d4196d0d6e44fc87e3703d12705550a8eb85e156dc7cdeebd02a2afae735e",
+          "generated_at": "2026-10-30T05:06:01.915042+00:00",
+          "inserted_at": "2026-10-30T05:00:00+00:00"
+        }
+      },
+      "return_pct": 0.01
+    },
+    {
+      "ticker": "IWM",
+      "time": "2024-01-02T09:33:00",
+      "direction": "CALL",
+      "score": 5,
+      "conditions_met": "[\"consecutive_down\", \"rsi_oversold_zone\", \"below_vwap\", \"stoch_rsi_oversold\", \"level_break_pdh\"]",
+      "strategy": "mean_reversion",
+      "run_kind": "backfill",
+      "inserted_at": "2026-10-30T05:00:00+00:00",
+      "score_explanation": {
+        "version": "historical-score-v1",
+        "status": "recorded",
+        "kind": "base_plus_bonus",
+        "base_count": 5,
+        "base_max": 5,
+        "matched_conditions": [
+          "consecutive_down",
+          "rsi_oversold_zone",
+          "below_vwap",
+          "stoch_rsi_oversold",
+          "level_break_pdh"
+        ],
+        "bonuses": [],
+        "bonus_total": 0,
+        "composite_strength": 5,
+        "composite_max": 5,
+        "unavailable_reasons": [],
+        "provenance": {
+          "corpus": "historical_signals",
+          "strategy": "mean_reversion",
+          "run_kind": "backfill",
+          "storage_source": "cloud_sql",
+          "producer_definition": "historical-mr-v1",
+          "profile": "historical-default",
+          "direction": "call",
+          "code_sha256": "cc6d70be7800193a118728de2da36e610da5b880d5d07ba6654e78cb8332ceb6",
+          "config_sha256": "c345096a75d93a965fa081f6468bc2b627da6ea99991ddfc888504572d61d18c",
+          "input_sha256": "44c8cb048166936907f5f31d7bc725a479fa110c7f2d53e28896300f9080ae9a",
+          "generated_at": "2026-10-30T05:06:01.952129+00:00",
+          "inserted_at": "2026-10-30T05:00:00+00:00"
+        }
+      },
+      "return_pct": 0.01
+    }
+  ]
+}

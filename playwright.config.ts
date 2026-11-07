@@ -102,6 +102,10 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           ...(process.env as Record<string, string>),
+          // Local research requests must hit the Playwright function mock, never
+          // inherit a developer/CI Supabase project. Cloud projects are unchanged.
+          VITE_SUPABASE_URL: `${E2E_BASE_URL}/__e2e_research__`,
+          VITE_SUPABASE_PUBLISHABLE_KEY: 'e2e-public-placeholder',
           // Pin the proxy so a test run can never fall through to staging.
           // Points at a local FastAPI: if one is up, integration-style specs
           // hit it for real; if not, unmocked calls fail fast with
@@ -157,9 +161,9 @@ export default defineConfig({
     // Headless tests against the DEPLOYED frontend, reusing the signed-in state
     // captured by `iap-setup`. Run via `npm run e2e:cloud`.
     //
-    // testMatch is `*.cloud.spec.ts`, and no such file exists yet, so this
-    // project currently finds no tests and Playwright exits non-zero. That is
-    // deliberate and better than what it did before, which was
+    // testMatch is `*.cloud.spec.ts`; the owner-run score-explanation spec
+    // covers Dashboard and Signals with actual responses. This differs from
+    // the previous configuration, which was
     // `testIgnore: /\.setup\.ts$/` — i.e. run all 29 hermetic specs against the
     // deployment.
     //
@@ -172,8 +176,8 @@ export default defineConfig({
     // (Codex, solyra#44).
     //
     // Deployment specs have to be written deliberately: no `mockCommon`, real
-    // responses, assertions that tolerate live data. Until they exist, failing
-    // loudly is the honest state.
+    // responses, assertions that tolerate live data. Missing qualifying data
+    // must fail rather than masquerade as deployment acceptance.
     {
       name: 'cloud',
       testMatch: /\.cloud\.spec\.ts$/,

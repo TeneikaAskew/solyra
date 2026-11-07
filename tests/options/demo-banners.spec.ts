@@ -1,9 +1,8 @@
 /**
  * Regression: demo-data banners on mock options surfaces.
  *
- * Flow (live feed) and SwingMode (heatmap) render data disclaimers
- * to prevent silent drift into illusion of liveness. This suite pins
- * those banners so they can't vanish while the tabs stay mock.
+ * Flow remains an explicitly labelled demo. Gamma exposes real-source status
+ * and marks unavailable narrative data rather than rendering an illustration.
  */
 import { test, expect } from '@playwright/test';
 import { mockCommon, M } from '../helpers/mocks';
@@ -24,10 +23,12 @@ test.describe('Mock data surfaces stay banner-honest', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('Gamma Map Swing Mode shows the demo banner', async ({ page }) => {
+  test('Gamma Map shows source status and unavailable narrative', async ({ page }) => {
     // Gamma Map is the default tab; SwingMode is the default inner mode.
     // The SwingMode component renders <div class="hs-demo-banner">
     await expect(page.locator('.hs-demo-banner').first()).toBeVisible();
+    await expect(page.getByText('Tactical analysis unavailable', { exact: true })).toBeVisible();
+    await expect(page.getByText('Tactical read · SPY')).toHaveCount(0);
   });
 
   test('Flow tab shows the demo banner text', async ({ page }) => {

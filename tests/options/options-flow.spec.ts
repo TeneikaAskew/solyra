@@ -141,7 +141,7 @@ test.describe('Options Flow — live AV fallback', () => {
       })
     );
     await page.route('**/api/options/greeks', (r) => r.fulfill(M.ok(MOCK_GREEKS)));
-    // Live endpoint returns the chain with the live source badge.
+    // Live endpoint returns its native source metadata, not verified quote freshness.
     await page.route('**/api/options/live/IWM/*', (r) =>
       r.fulfill(
         M.ok({
@@ -152,11 +152,18 @@ test.describe('Options Flow — live AV fallback', () => {
     );
   });
 
-  test('falls back to live endpoint and shows AlphaVantage Live badge', async ({ page }) => {
+  test('stored404 falls back once to live endpoint and preserves source evidence without certifying freshness', async ({ page }, info) => {
+    const chainPaths: string[] = [];
+    page.on('request', request => {
+      const path = new URL(request.url()).pathname;
+      if (path === '/api/options/IWM/2026-04-24' || path === '/api/options/live/IWM/2026-04-24') chainPaths.push(path);
+    });
     await page.goto('/options');
     await page.waitForLoadState('networkidle');
     await openProfilesTab(page);
-    await expect(page.getByText(/AlphaVantage Live/).first()).toBeVisible();
+    await expect(page.getByText('Source: alphavantage_live · alphavantage · IWM · 2026-04-24 · 10 contracts · Batch snapshot time unavailable · quote freshness unverified', { exact: true })).toBeVisible();
+    expect(chainPaths).toEqual(['/api/options/IWM/2026-04-24', '/api/options/live/IWM/2026-04-24']);
+    await page.screenshot({ path: info.outputPath('profiles-live-origin-qualified.png'), fullPage: true });
   });
 });
 
@@ -394,11 +401,11 @@ test.describe('Options Flow — view switcher, date stepper and error honesty', 
   // rendering, the chain or the levels missing, the retry not happening) read as
   // the expected failure of a `test.fail` and made the declared defect look
   // reproduced when it was never reached. Here such a failure is a red test.
-  // The footer is the one a Cloud SQL chain gets (ProfilesTab.tsx:631-645) and no
+  // The footer preserves the chain source, symbol/date and unknown batch clock; no
   // other test on main asserts it; the King chip proves /levels answered; two
   // Greeks requests are the first attempt and the app's single retry, so the
   // request has failed for good.
-  test('a failed Greeks request leaves the EOD footer and the King chip on screen and is attempted twice', async ({
+  test('a failed Greeks request preserves independent chain source and King evidence and is attempted twice', async ({
     page,
   }) => {
     let greeksPosts = 0;
@@ -414,20 +421,15 @@ test.describe('Options Flow — view switcher, date stepper and error honesty', 
     await openProfilesTab(page);
 
     await expect(
-      page.getByText('Source: AlphaVantage EOD · Cloud SQL · 10 contracts · snapshot 2026-04-24', { exact: true }),
+      page.getByText('Source: cloud_sql · alphavantage · IWM · 2026-04-24 · 10 contracts · Batch snapshot time unavailable · quote freshness unverified', { exact: true }),
     ).toBeVisible();
     await expect(page.getByText(/★ King \$/)).toBeVisible();
     await expect.poll(() => greeksPosts).toBe(2);
   });
 
-  // solyra#74. ProfilesTab falls back to EMPTY_GREEKS whenever it has no Greeks
-  // answer (src/components/options/ProfilesTab.tsx:326, src/hooks/useOptionsGreeks.ts:145-158),
-  // so with a spot resolved from /levels a FAILED Greeks request reads "Total GEX
-  // +0 Positive" and "Put/Call OI 0.00 Bullish skew", with no error anywhere: a
-  // flat reading that is indistinguishable from a measured one (CLAUDE.md Rule 4).
-  // This test states what the issue asks for, so it fails today; `test.fail`
-  // records that. When #74 is fixed it will start passing, Playwright will then
-  // report "expected to fail, but passed", and this `test.fail` is the line to remove.
+  // Regression for solyra#74: failed analytics must not become measured-zero
+  // exposure. The repaired display now satisfies this positive assertion; do
+  // not retain test.fail, which would reject the corrected behavior.
   //
   // It holds the defect assertion and nothing else. That the page gets as far as
   // the failed state (footer, King chip, two attempts) is the plain test above, so
@@ -435,7 +437,7 @@ test.describe('Options Flow — view switcher, date stepper and error honesty', 
   // checks are retried together until they hold at the same moment: taken one
   // after another, the two negative checks would pass on a page that has not
   // shown its zero cards yet.
-  test.fail('a failed Greeks request is reported as unavailable, not shown as a measured zero (solyra#74)', async ({
+  test('a failed Greeks request is reported as unavailable, not shown as a measured zero (solyra#74)', async ({
     page,
   }) => {
     await page.route('**/api/options/greeks', (r) =>

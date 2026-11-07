@@ -18,24 +18,13 @@ import { useTradeSummary } from '@/hooks/useTradeAnalytics';
 import { KpiTile, MicroLabel } from '@/components/primitives';
 import { TickerCombobox } from '@/components/shared/TickerCombobox';
 import { fmtPct, fmtNum } from '@/lib/format';
+import { ScoreExplanation } from '@/components/signals/ScoreExplanation';
+import type { components } from '@/types/stocksOpenApi.gen';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 // Exported so tests/helpers/fixtures/signals.ts can pin its fixtures to the
 // real contract (see the same note in ReportsPage.tsx).
-export interface SignalRow {
-  // Only `ticker` is required by the schema; every metric is optional+
-  // nullable — render sites em-dash the gaps.
-  time?: string | null;
-  ticker: string;
-  direction?: string | null;
-  score?: number | null;
-  rsi?: number | null;
-  ema9?: number | null;
-  ema20?: number | null;
-  close?: number | null;
-  volume?: number | null;
-  [key: string]: unknown;
-}
+export type SignalRow = components['schemas']['SignalRow'];
 
 export interface SignalsResponse {
   ticker: string;
@@ -66,7 +55,7 @@ function useSignals(ticker: string, endDate: string | null, endTime: string | nu
 // ── Column definitions ─────────────────────────────────────────────────────
 const columnHelper = createColumnHelper<SignalRow>();
 
-const columns = [
+const columns = (source?: string) => [
   columnHelper.accessor('time', {
     header: 'Time',
     cell: i => <span className="font-mono text-[10px] text-[var(--color-text-muted)]">{String(i.getValue()).slice(0, 16)}</span>,
@@ -83,14 +72,7 @@ const columns = [
   }),
   columnHelper.accessor('score', {
     header: 'Score',
-    cell: i => {
-      const v = Number(i.getValue());
-      return (
-        <span className={`font-mono text-xs font-medium ${v >= 7 ? 'text-[var(--bull)]' : v >= 5 ? 'text-[var(--warn)]' : 'text-[var(--color-text-muted)]'}`}>
-          {v.toFixed(1)}
-        </span>
-      );
-    },
+    cell: i => <ScoreExplanation row={i.row.original} source={source} />,
   }),
   columnHelper.accessor('close', {
     header: 'Price',
@@ -155,6 +137,7 @@ export default function SignalsPage() {
     isReview ? reviewTime : null
   );
   const allSignals = data?.signals ?? [];
+  const signalColumns = useMemo(() => columns(data?.source), [data?.source]);
 
   // 90-day backtest P&L summary (server-computed; no duplicate TS math).
   const { data: pnl } = useTradeSummary(activeTicker);
@@ -171,7 +154,7 @@ export default function SignalsPage() {
 
   const table = useReactTable({
     data: filtered,
-    columns,
+    columns: signalColumns,
     state: { sorting, columnFilters },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -193,6 +176,9 @@ export default function SignalsPage() {
             {data ? `${data.count.toLocaleString()} signals` : 'signal explorer'}
             {data && filtered.length !== allSignals.length ? ` · ${filtered.length.toLocaleString()} shown` : ''}
           </MicroLabel>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            <span>Historical analytical signals</span> · Source: {data?.source ?? 'Unavailable'}
+          </p>
         </div>
         <TickerCombobox />
       </div>
@@ -328,7 +314,7 @@ export default function SignalsPage() {
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
               {displayRows.map(row => (
-                <tr key={row.id} className="hover:bg-[var(--color-bg-tertiary)]">
+                <tr key={row.id} className="align-top hover:bg-[var(--color-bg-tertiary)]">
                   {row.getVisibleCells().map(cell => (
                     <td key={cell.id} className="px-3 py-1.5">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

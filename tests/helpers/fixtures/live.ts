@@ -1,3 +1,4 @@
+import { marketDataForRequest } from '@/mocks/live';
 /**
  * Route wiring for the Live Market page (`/live`).
  *
@@ -65,6 +66,6 @@ export async function mockLiveApi(page: Page, opts: LiveMockOpts = {}) {
   await page.route('**/api/live/history/IWM*', (r) => r.fulfill(M.ok(history)));
   await page.route('**/api/live/avg-volume/IWM*', (r) => r.fulfill(M.ok(avgVolume)));
   await page.route('**/api/live/indicators', (r) => r.fulfill(M.ok(indicators)));
-  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(marketData)));
+  await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), marketData))));
   await page.route('**/api/market/reference/IWM/*', (r) => r.fulfill(M.ok(MOCK_REFERENCE_LEVELS)));
 }

@@ -1,3 +1,4 @@
+import { marketDataForRequest, MOCK_LIVE_INDICATORS } from '@/mocks/live';
 /**
  * E2E for the Phase D / Phase 4 / Phase 5 additions on the Charts page:
  *   - Strategy Conditions card (always rendered when ≥14 bars are loaded)
@@ -21,6 +22,39 @@ import {
   mockChartsApi,
 } from '../helpers/fixtures/charts';
 import { MOCK_LEVELS_POPULATED } from '@/mocks/options';
+
+test('corrected interior bars refresh both derived requests after focus', async ({ page }, info) => {
+  await page.clock.install({ time: new Date('2026-10-27T15:00:00Z') });
+  await mockChartsApi(page);
+  const date = '20261027';
+  await page.route('**/api/market/dates/IWM', r => r.fulfill(M.ok({ ticker: 'IWM', source: 'fixture', dates: [date], months: ['202610'] })));
+  let corrected = false;
+  const newHigh = MOCK_MARKET_DATA.candlestick[4].high + 1;
+  await page.route('**/api/market/data/IWM/*', r => {
+    const data = structuredClone(MOCK_MARKET_DATA);
+    if (corrected) data.candlestick[4].high = newHigh;
+    return r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), data)));
+  });
+  const seen = { indicators: [] as number[], series: [] as number[] };
+  await page.route('**/api/live/indicators', r => {
+    seen.indicators.push(r.request().postDataJSON().bars[4].high);
+    return r.fulfill(M.ok(MOCK_LIVE_INDICATORS));
+  });
+  await page.route('**/api/live/signal-series', r => {
+    seen.series.push(r.request().postDataJSON().bars[4].high);
+    return r.fulfill(M.ok({ fires: [] }));
+  });
+  await page.goto('/charts');
+  await expect.poll(() => seen.indicators.length).toBeGreaterThan(0);
+  await expect.poll(() => seen.series.length).toBeGreaterThan(0);
+  corrected = true;
+  await page.clock.fastForward(61_000);
+  await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+  await expect.poll(() => seen.indicators.at(-1)).toBe(newHigh);
+  await expect.poll(() => seen.series.at(-1)).toBe(newHigh);
+  await expect(page.getByTestId('market-source-qualification')).toContainText(`Returned bars: ${MOCK_MARKET_DATA.count}.`);
+  await page.screenshot({ path: info.outputPath('corrected-bars-derived-refresh.png') });
+});
 
 test.describe('Charts page — Phase D/4/5 cards', () => {
   test.beforeEach(async ({ page }) => {
@@ -155,7 +189,7 @@ test.describe('Charts page · toolbar controls and crosshair bar', () => {
     await page.route('**/api/market/data/IWM/*', (r) => {
       const u = new URL(r.request().url());
       dataRequests.push(u.pathname + u.search);
-      return r.fulfill(M.ok(MOCK_MARKET_DATA));
+      return r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), MOCK_MARKET_DATA)));
     });
     await page.goto('/charts');
     await page.waitForLoadState('networkidle');
@@ -289,4 +323,78 @@ test.describe('Charts page · toolbar controls and crosshair bar', () => {
     await expect(field('O')).toHaveCount(0);
     await expect(prev).toHaveCount(0);
   });
+});
+
+
+test('chart labels legacy source qualification without claiming raw/live completeness', async ({ page }, testInfo) => {
+  await mockChartsApi(page);
+  await page.route('**/api/market/data/IWM/*', route => {
+    const url = new URL(route.request().url());
+    return route.fulfill(M.ok({ ...MOCK_MARKET_DATA, date: url.pathname.split('/').at(-1), timeframe: Number(url.searchParams.get('timeframe')) }));
+  });
+  await page.goto('/charts');
+  await expect(page.getByTestId('market-source-qualification')).toContainText('source/as-of/price basis unknown');
+  await expect(page.getByTestId('market-source-qualification')).toContainText('do not certify session completeness');
+  await expect(page.getByTestId('chart-card').locator('canvas').first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('legacy-chart-qualification.png') });
+});
+
+
+for (const [date, ttl] of [['20261027', 61_000], ['20261026', 301_000]] as const) {
+test(`chart revalidates ${date} stored update on focus without polling`, async ({ page }, testInfo) => {
+  await page.clock.install({ time: new Date('2026-10-27T15:00:00Z') });
+  await mockChartsApi(page);
+  await page.route('**/api/market/dates/IWM', r => r.fulfill(M.ok({ ticker: 'IWM', source: 'fixture', dates: [date], months: ['202610'] })));
+  let reads = 0;
+  await page.route('**/api/market/data/IWM/*', route => {
+    const url = new URL(route.request().url()); reads += 1;
+    const bars = [...MOCK_MARKET_DATA.candlestick];
+    if (reads > 1) bars.push({ ...bars[bars.length - 1], time: bars[bars.length - 1].time + 300 });
+    return route.fulfill(M.ok({ ...MOCK_MARKET_DATA, candlestick: bars, count: bars.length, date: url.pathname.split('/').at(-1), timeframe: Number(url.searchParams.get('timeframe')) }));
+  });
+  await page.goto('/charts');
+  const status = page.getByTestId('market-source-qualification');
+  await expect(status).toContainText(`Returned bars: ${MOCK_MARKET_DATA.count}.`);
+  await page.clock.fastForward(ttl);
+  expect(reads).toBe(1); // advancing time alone must not add a polling request
+  await page.evaluate(() => { window.dispatchEvent(new Event('visibilitychange')); });
+  await expect(status).toContainText(`Returned bars: ${MOCK_MARKET_DATA.count + 1}.`);
+  expect(reads).toBe(2);
+  await page.screenshot({ path: testInfo.outputPath('current-day-focus-update.png') });
+});
+
+}
+
+test('reference refusal does not hide an independently valid chart', async ({ page }, testInfo) => {
+  await mockChartsApi(page);
+  await page.route('**/api/market/reference/IWM/*', r => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'reference unavailable' }) }));
+  await page.goto('/charts');
+  await expect(page.getByTestId('reference-refusal')).toContainText('reference unavailable');
+  await expect(page.getByTestId('chart-card').locator('canvas').first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('reference-refusal-independent-chart.png') });
+});
+
+
+test('failed stored-bar revalidation withholds derived strategy inputs and can recover', async ({ page }, testInfo) => {
+  await page.clock.install({ time: new Date('2026-10-27T15:00:00Z') });
+  await mockChartsApi(page);
+  await page.route('**/api/market/dates/IWM', r => r.fulfill(M.ok({ ticker: 'IWM', source: 'fixture', dates: ['20261027'], months: ['202610'] })));
+  let fail = false;
+  await page.route('**/api/market/data/IWM/*', route => {
+    if (fail) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'bars refused' }) });
+    const url = new URL(route.request().url());
+    return route.fulfill(M.ok({ ...MOCK_MARKET_DATA, date: url.pathname.split('/').at(-1), timeframe: Number(url.searchParams.get('timeframe')) }));
+  });
+  await page.goto('/charts');
+  await expect(page.getByText('Live Strategy Conditions', { exact: true })).toBeVisible();
+  fail = true;
+  await page.clock.fastForward(61_000);
+  await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByTestId('chart-card')).toContainText('bars refused');
+  await expect(page.getByText('Live Strategy Conditions', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('market-source-qualification')).not.toContainText('Returned bars:');
+  await page.screenshot({ path: testInfo.outputPath('refused-bars-no-derived-setup.png') });
+  fail = false;
+  await page.getByTestId('chart-card').getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByText('Live Strategy Conditions', { exact: true })).toBeVisible();
 });

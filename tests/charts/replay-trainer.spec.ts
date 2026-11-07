@@ -1,3 +1,4 @@
+import { marketDataForRequest } from '@/mocks/live';
 /**
  * E2E for the bar-replay trainer session mode on /charts (Task 5.2).
  *
@@ -153,7 +154,7 @@ test.describe('Charts page — bar-replay trainer session (Task 5.2)', () => {
     await page.route('**/api/market/dates/IWM', (r) =>
       r.fulfill(M.ok({ ticker: 'IWM', dates: ['20260425'] }))
     );
-    await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
+    await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), MOCK_MARKET_DATA))));
     await page.route('**/api/market/reference/IWM/*', (r) => r.fulfill(M.ok(MOCK_REFERENCE)));
     await page.route('**/api/signals/IWM/similar*', (r) =>
       r.fulfill(M.ok({ ticker: 'IWM', direction: 'CALL', rsi: 35, score: 4, rsi_band: 5, stats: null, matches: [] }))
@@ -351,7 +352,7 @@ test.describe('Charts page — replay session scorecard (Task 5.3)', () => {
     await page.route('**/api/market/dates/IWM', (r) =>
       r.fulfill(M.ok({ ticker: 'IWM', dates: ['20260425'] }))
     );
-    await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(MOCK_MARKET_DATA)));
+    await page.route('**/api/market/data/IWM/*', (r) => r.fulfill(M.ok(marketDataForRequest(new URL(r.request().url()), MOCK_MARKET_DATA))));
     await page.route('**/api/market/reference/IWM/*', (r) => r.fulfill(M.ok(MOCK_REFERENCE)));
     await page.route('**/api/signals/IWM/similar*', (r) =>
       r.fulfill(M.ok({ ticker: 'IWM', direction: 'CALL', rsi: 35, score: 4, rsi_band: 5, stats: null, matches: [] }))

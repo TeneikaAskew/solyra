@@ -1,3 +1,4 @@
+import { useTickerStore } from '@/stores/tickerStore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
@@ -56,13 +57,17 @@ interface Props {
   onSelectTicker: (ticker: string) => Promise<void> | void;
   refreshing: boolean;
   refreshingTicker: string | null;
+  /** Optional: open a ticker-specific research question instead of a report run. */
+  onAskResearch?: (ticker: string) => void;
 }
 
 export function WatchlistPanel({
   onSelectTicker,
+  onAskResearch,
   refreshing,
   refreshingTicker,
 }: Props) {
+  const activeTicker = useTickerStore((st) => st.activeTicker);
   const [activeFilters, setActiveFilters] = useState<Set<CatalystType>>(
     new Set(),
   );
@@ -170,6 +175,14 @@ export function WatchlistPanel({
             catalyst data tables are empty. Once Phase 2 fetchers have
             run a full day, this list will populate.
           </div>
+          {onAskResearch && (
+            <button
+              onClick={() => onAskResearch(activeTicker)}
+              className="mt-2 rounded border border-[var(--color-border)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-primary)] hover:border-[var(--color-accent-blue)]"
+            >
+              Ask research about {activeTicker} instead
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -192,6 +205,7 @@ export function WatchlistPanel({
                 expanded={expanded.has(row.ticker)}
                 onToggleExpand={() => toggleExpand(row.ticker)}
                 onGenerate={() => onSelectTicker(row.ticker)}
+                onAsk={onAskResearch ? () => onAskResearch(row.ticker) : undefined}
                 isGenerating={refreshing && refreshingTicker === row.ticker}
               />
             ))}
@@ -485,12 +499,14 @@ function RankedRow({
   expanded,
   onToggleExpand,
   onGenerate,
+  onAsk,
   isGenerating,
 }: {
   row: RankedTicker;
   expanded: boolean;
   onToggleExpand: () => void;
   onGenerate: () => Promise<void> | void;
+  onAsk?: () => void;
   isGenerating: boolean;
 }) {
   const pct = Math.round(row.pct_of_max * 100);
@@ -532,10 +548,18 @@ function RankedRow({
           ))}
         </div>
 
+        {onAsk && (
+          <button
+            onClick={onAsk}
+            className="ml-auto rounded border border-[var(--color-border)] px-2 py-1 text-[10px] font-medium text-[var(--color-text-primary)] hover:border-[var(--color-accent-blue)]"
+          >
+            Ask research
+          </button>
+        )}
         <button
           onClick={() => void onGenerate()}
           disabled={isGenerating}
-          className="ml-auto flex items-center gap-1 rounded bg-[var(--color-accent-blue)] px-2 py-1 text-[10px] font-medium text-[var(--on-brand)] disabled:opacity-50"
+          className={`${onAsk ? '' : 'ml-auto '} flex items-center gap-1 rounded bg-[var(--color-accent-blue)] px-2 py-1 text-[10px] font-medium text-[var(--on-brand)] disabled:opacity-50`}
         >
           {isGenerating ? (
             <Loader2 size={10} className="animate-spin" />

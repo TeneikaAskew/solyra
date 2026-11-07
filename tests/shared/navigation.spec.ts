@@ -51,9 +51,9 @@ test.describe('Navigation smoke', () => {
       route.fulfill({ status: 200, body: JSON.stringify({ email: null }) })
     );
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
-    // Inline: Dashboard + INTELLIGENCE (2); Market/Learn/Support are dropdowns
+    // Inline: Dashboard + the four INTELLIGENCE routes; three groups are dropdowns
     await expect(page.locator('nav a[href="/catalysts"]')).toBeVisible();
-    await expect(page.locator('nav a')).toHaveCount(3);
+    await expect(page.locator('nav a')).toHaveCount(5);
 
     // Market dropdown: Live, Charts, Options Flow, Signals
     await page.getByTestId('nav-menu-market').click();
@@ -82,7 +82,7 @@ test.describe('Navigation smoke', () => {
     // on: a reset email branded Solyra must not open a page branded anything
     // else.
     await expect(page.getByTestId('brand-wordmark').first()).toHaveText('Solyra');
-    await expect(page).toHaveTitle('Solyra');
+    await expect(page).toHaveTitle('Solyra — Market research and trading intelligence');
   });
 
   test('market session badge is truthful — CLOSED when the market is closed', async ({ page }) => {
