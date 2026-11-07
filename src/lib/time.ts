@@ -33,3 +33,27 @@ export function isoToEtDisplay(iso: string): string {
   }
   return iso.slice(0, 10);
 }
+
+const ET_ZONED = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+  timeZoneName: 'short',
+});
+
+/** Render an aware instant as "YYYY-MM-DD HH:MM EST|EDT": the full Eastern
+ *  date and time with the zone in effect at that instant. Returns null for
+ *  anything that is not an aware instant (missing, naive, unparseable), so
+ *  the caller renders "unavailable" rather than a guessed clock (Rule 4). */
+export function isoToEtZoned(iso: unknown): string | null {
+  if (typeof iso !== 'string' || !/(?:Z|[+-]\d{2}:?\d{2})$/.test(iso)) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    ET_ZONED.formatToParts(d).find((p) => p.type === type)?.value;
+  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')} ${part('timeZoneName')}`;
+}

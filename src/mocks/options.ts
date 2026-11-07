@@ -18,7 +18,7 @@
  * lib/gamma.py) now live in the stocks repo — this repo is frontend-only and
  * proxies /api to the deployed backend.
  */
-import type { GammaLevel, GammaLevelsResponse } from '@/hooks/useGammaLevels';
+import type { GammaLevel, GammaLevelsResponse, SnapshotProvenance } from '@/hooks/useGammaLevels';
 import type { GammaGridCell, GammaGridSummary } from '@/hooks/useGammaGrid';
 import type { ChainOptionRecord, GreeksResponse } from '@/hooks/useOptionsGreeks';
 import type { MockRoute } from './types';
@@ -197,6 +197,20 @@ const level = (
 });
 
 /** Populated taxonomy so the King/Gate/regime UI actually renders. */
+/** SnapshotProvenance as stocks PR 1724 emits it for a legacy EOD chain: the
+ *  selected rows' own stored clock, the response's assembly time, the display
+ *  age between them, and freshness/completeness always unknown. */
+export const MOCK_SNAPSHOT_PROVENANCE_EOD = {
+  provider: 'alphavantage',
+  market_session: 'EOD',
+  snapshot_ts: '2026-04-24T20:00:00+00:00',
+  observed_at: '2026-04-25T13:30:00+00:00',
+  snapshot_age_seconds: 63_000,
+  freshness_status: 'unknown',
+  completeness_status: 'unknown',
+  reason: 'legacy_snapshot_unqualified',
+} satisfies SnapshotProvenance;
+
 export const MOCK_LEVELS_POPULATED = {
   ticker: 'IWM',
   snapshot_date: '2026-04-24',
@@ -219,6 +233,7 @@ export const MOCK_LEVELS_POPULATED = {
   warnings: [],
   snapshot_timestamp: '2026-04-24T20:00:00+00:00',
   chain_size: 10,
+  snapshot_provenance: MOCK_SNAPSHOT_PROVENANCE_EOD,
 } satisfies GammaLevelsResponse;
 
 const gridCell = (
@@ -279,6 +294,7 @@ export const MOCK_GRID_POPULATED = {
   strikes: [218, 219, 220, 221, 222],
   window_pct: 6,
   warnings: [],
+  snapshot_provenance: MOCK_SNAPSHOT_PROVENANCE_EOD,
 } satisfies GammaGridSummary;
 
 /** The `unavailable` envelope — no snapshot for the ticker/date at all.
@@ -303,6 +319,8 @@ export const MOCK_GRID_UNAVAILABLE = {
   window_pct: 0,
   warnings: ['no options snapshot for IWM'],
   reason: 'no snapshot available',
+  // grid.py's unavailable envelope carries an explicit null (PR 1724).
+  snapshot_provenance: null,
 } satisfies GammaGridSummary;
 
 // ── Wide grid (mobile-fit regression cover) ────────────────────────────────
