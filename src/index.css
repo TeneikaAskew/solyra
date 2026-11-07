@@ -617,7 +617,8 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   color: var(--warn);
   font-size: 12px;
 }
-.hs-demo-banner .dot { width: 7px; height: 7px; border-radius: 99px; background: currentColor; animation: hs-pulse 1.4s ease-in-out infinite; }
+.hs-demo-banner .dot { width: 7px; height: 7px; border-radius: 99px; background: currentColor; }
+.hs-demo-banner .dot.pulse { animation: hs-pulse 1.4s ease-in-out infinite; }
 .hs-demo-banner strong { color: var(--on-surface); font-weight: 600; }
 
 /* ── stage layout ── */
