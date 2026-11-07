@@ -16,6 +16,25 @@ export interface SpotEstimate {
   note: string;
 }
 
+/** SnapshotProvenance (stocks FEAT-OPTION-001, PR 1724): what the stored
+ *  options snapshot behind a grid or levels response is, and what it is not.
+ *  `snapshot_ts` is the selected rows' own stored clock (aware UTC, or null
+ *  when the group's clocks are missing, naive or disagree). `observed_at` is
+ *  when the server assembled this response; `snapshot_age_seconds` is the
+ *  display age between the two, never a provider lag. Freshness and
+ *  completeness are always `unknown` on this path: nothing here certifies a
+ *  live or complete chain. */
+export interface SnapshotProvenance {
+  provider?: string | null;
+  market_session?: string | null;
+  snapshot_ts?: string | null;
+  observed_at: string;
+  snapshot_age_seconds?: number | null;
+  freshness_status: 'unknown';
+  completeness_status: 'unknown';
+  reason: 'legacy_snapshot_unqualified' | 'timestamp_invalid' | 'timestamp_future';
+}
+
 export interface GammaLevel {
   strike: number;
   gex: number;
@@ -60,6 +79,8 @@ export interface GammaLevelsResponse {
   warnings: string[];
   snapshot_timestamp?: string | null;
   chain_size: number;
+  /** Additive and nullable: absent on an older server or an old cached body. */
+  snapshot_provenance?: SnapshotProvenance | null;
 }
 
 async function parseError(r: Response, fallback: string): Promise<string> {
