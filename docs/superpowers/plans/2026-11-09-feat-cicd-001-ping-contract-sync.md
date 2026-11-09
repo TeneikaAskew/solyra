@@ -2,7 +2,7 @@
 feat_id: FEAT-CICD-001
 spec: docs/superpowers/specs/2026-11-09-feat-cicd-001-ping-contract-sync.md
 branch: fix/feat-cicd-001-ping-contract-sync
-pr: null
+pr: 323
 status: ready
 ---
 
@@ -38,8 +38,8 @@ Spec: § Design; advances done_when[2].
 ## Task 3: Open and record
 
 Spec: § Design, § Risks; advances done_when[3].
-- [ ] Open the PR as a draft and link it from stocks PR 1384; set this plan's `pr`.
-- [ ] FEAT-CICD-001 catalog row: Last reviewed and PRs list this PR.
+- [x] Open the PR as a draft (#323) and link it from stocks PR 1384; set this plan's `pr`.
+- [x] FEAT-CICD-001 catalog row: Last reviewed and PRs list this PR.
 
 ## Task 4: Close after stocks PR 1384 merges
 
