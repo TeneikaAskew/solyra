@@ -10,6 +10,7 @@
  * simply states why there is none.
  */
 import { useSyncExternalStore } from 'react';
+import type { Query, QueryClient } from '@tanstack/react-query';
 
 let blocked = false;
 const listeners = new Set<() => void>();
@@ -44,6 +45,287 @@ export function subscribeAuthGate(cb: () => void): () => void {
 /** React hook: true while gated API calls are returning 401. */
 export function useAuthBlocked(): boolean {
   return useSyncExternalStore(subscribeAuthGate, isAuthBlocked, () => false);
+}
+
+// ── The signed-in account (FEAT-AUTH-001 account transitions) ──────────────
+//
+// One record of the account this page's Firebase listener last reported,
+// kept outside AuthGate so code that runs between renders (stores, the query
+// cache, the fetch layer) can react to a switch. initFirebase feeds it from
+// onAuthStateChanged. The first report after load is not a change, and
+// neither is a repeat of the same uid; on a change the auth-blocked flag is
+// cleared first (the previous account's 401 says nothing about this one),
+// then the account listeners run (the query reset and the write-through
+// pause), and only then do the stores reload, so no reloaded value can be
+// written through as the new account's choice.
+
+type AccountState = { reported: false } | { reported: true; uid: string | null };
+
+let account: AccountState = { reported: false };
+const accountListeners = new Set<(next: string | null, prev: string | null) => void>();
+
+/** Called with each auth report this page's Firebase listener receives. */
+export function noteSignedInAccount(uid: string | null): void {
+  if (!account.reported) {
+    account = { reported: true, uid };
+    emitStorageChange();
+    return;
+  }
+  const prev = account.uid;
+  if (prev === uid) return;
+  account = { reported: true, uid };
+  clearAuthBlocked();
+  carryRefusedWriteNotice(uid);
+  for (const l of accountListeners) l(uid, prev);
+  emitStorageChange();
+}
+
+/** The last reported account; null before the first report or while signed out. */
+export function getSignedInAccount(): string | null {
+  return account.reported ? account.uid : null;
+}
+
+/** True once this page's listener has reported at least once. */
+export function hasAccountReport(): boolean {
+  return account.reported;
+}
+
+/** Run `cb` on every later account change this page observes. */
+export function onAccountChange(cb: (next: string | null, prev: string | null) => void): () => void {
+  accountListeners.add(cb);
+  return () => {
+    accountListeners.delete(cb);
+  };
+}
+
+/**
+ * Clear what the previous account's queries hold, on an account change.
+ * Every query keyed under 'me' except `['me', next]` is removed (those keys
+ * are the account's own: profile, preferences, the previous uid). Every
+ * other query is account-blind (its key omits the uid), so it is reset:
+ * its data goes and an answer still in flight is discarded, and an active
+ * query refetches as the new account. After a sign-out every query is
+ * removed. `clear()` is never used: it would also drop mutations and
+ * observers' cache entries the next screen relies on.
+ */
+export function resetAccountQueries(queryClient: QueryClient, next: string | null): void {
+  if (next === null) {
+    void queryClient.cancelQueries();
+    queryClient.removeQueries();
+    return;
+  }
+  const previousOwn = (q: Query) => q.queryKey[0] === 'me' && !(q.queryKey.length === 2 && q.queryKey[1] === next);
+  // Removing a query also cancels its fetch (Query.destroy), so an answer
+  // the previous account was still waiting for is discarded.
+  queryClient.removeQueries({ predicate: previousOwn });
+  void queryClient.resetQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
+}
+
+// ── A write refused across an account change ───────────────────────────────
+//
+// A profile save or preferences write is bound to the account its screen was
+// rendered for (authedFetch.boundToAccount) and refused when the SDK holds
+// another account. If this page still reports the composing account, that
+// screen is still shown and its own form renders the error, but only until
+// this page's listener reports the account the SDK moved to: that report
+// replaces the screen (AuthGate remounts the shell), so the refusal is kept
+// and carried to the next account at that change. If this page already
+// reports another account, the composing screen is being replaced before the
+// refusal settles, so it is recorded at once. Either way AuthGate shows it to
+// the account now on screen. The record holds no value, field or identity of
+// the composing account, only that a change was not sent; a dismiss, or a
+// further account change with no new refusal, clears it.
+
+let refusedNoticeFor: { shownTo: string | null } | null = null;
+// A refusal its own (still shown) form is rendering, to carry to the next account.
+let refusedOnComposingScreen = false;
+const refusedListeners = new Set<() => void>();
+
+function emitRefused(): void {
+  for (const l of refusedListeners) l();
+}
+
+function clearRefusedWriteNotice(): void {
+  if (refusedNoticeFor === null) return;
+  refusedNoticeFor = null;
+  emitRefused();
+}
+
+/** At an account change: the notice is for the new account only if a refusal
+ *  was still shown on the replaced screen; otherwise any notice is cleared. */
+function carryRefusedWriteNotice(next: string | null): void {
+  const carry = refusedOnComposingScreen;
+  refusedOnComposingScreen = false;
+  if (!carry) {
+    clearRefusedWriteNotice();
+    return;
+  }
+  refusedNoticeFor = { shownTo: next };
+  emitRefused();
+}
+
+/** Called when a write composed for `composedFor` is refused (the fetch
+ *  layer's bound writes, and the account-scoped setters below). */
+export function noteRefusedWrite(composedFor: string | null): void {
+  const shownTo = getSignedInAccount();
+  if (composedFor === shownTo) {
+    refusedOnComposingScreen = true;
+    return;
+  }
+  refusedNoticeFor = { shownTo };
+  emitRefused();
+}
+
+// ── The account the screen was rendered for ────────────────────────────────
+//
+// This page reports a new account before React renders it: between the report
+// and the commit, the previous account's screen is still on display and still
+// takes input, while the stores already hold, and write to, the new account's
+// values. AuthGate records the account of each committed render here (a
+// layout effect, so the record moves at the commit itself). A setter for an
+// account-scoped value (appearance, recents, sizing inputs) asks first and,
+// when the screen was rendered for another account than this page reports,
+// changes nothing, in memory or in storage, and records the refusal so AuthGate
+// shows it to the account that replaces that screen. Only per-owner mode is
+// fenced; before AuthGate's first render (unit tests, or no gate) nothing is.
+
+let renderedFor: { uid: string | null } | null = null;
+
+/** AuthGate, at each commit: the account this page's screen now shows; null
+ *  when AuthGate unmounts (a screen outside it is not fenced). */
+export function noteRenderedAccount(uid: string | null | undefined): void {
+  renderedFor = uid === undefined ? null : { uid };
+}
+
+/**
+ * True when a change made on the screen now shown may be applied for the
+ * account this page reports. False (and the refusal recorded) when that screen
+ * was rendered for another account and is about to be replaced.
+ */
+export function acceptsScreenWrite(): boolean {
+  if (storageMode !== 'perOwner' || !account.reported || renderedFor === null) return true;
+  if (renderedFor.uid === account.uid) return true;
+  noteRefusedWrite(renderedFor.uid);
+  return false;
+}
+
+/** React hook: the account this page last reported (null before the first report). */
+export function useSignedInAccount(): string | null {
+  return useSyncExternalStore(onStorageChange, getSignedInAccount, () => null);
+}
+
+/** True while a refusal is recorded for the account this page now reports. */
+export function isRefusedWriteNoticeShown(): boolean {
+  return refusedNoticeFor !== null && refusedNoticeFor.shownTo === getSignedInAccount();
+}
+
+export function dismissRefusedWriteNotice(): void {
+  clearRefusedWriteNotice();
+}
+
+export function subscribeRefusedWriteNotice(cb: () => void): () => void {
+  refusedListeners.add(cb);
+  return () => {
+    refusedListeners.delete(cb);
+  };
+}
+
+/** React hook: true while the refused-write notice is shown. */
+export function useRefusedWriteNotice(): boolean {
+  return useSyncExternalStore(subscribeRefusedWriteNotice, isRefusedWriteNoticeShown, () => false);
+}
+
+// ── Account-scoped storage ──────────────────────────────────────────────────
+//
+// Appearance, sizing inputs and recent tickers are per-browser presentation
+// preferences. In firebase mode they are kept per account: each value lives
+// under `<key>@uid:<uid>` for this page's own last reported account, and a
+// read returns only the current account's key. Nothing here ever removes a
+// key, so legacy un-namespaced values and other accounts' values stay byte for
+// byte. Outside firebase mode (open, IAP, the dev stub) the un-namespaced keys
+// are used exactly as before.
+//
+// The mode:
+//  - 'shared' by default, so a store imported with no ConfigGate (a unit test)
+//    behaves as on main;
+//  - 'pending' from the moment ConfigGate's one boot starts until it settles:
+//    nothing account-scoped is read or written, and a failed boot stays here;
+//  - settled by that boot to 'shared' (no initFirebase) or 'perOwner'.
+
+export type StorageMode = 'pending' | 'shared' | 'perOwner';
+
+let storageMode: StorageMode = 'shared';
+const storageListeners = new Set<() => void>();
+
+function emitStorageChange(): void {
+  for (const l of storageListeners) l();
+}
+
+/** ConfigGate's boot, when it starts. */
+export function markStoragePending(): void {
+  if (storageMode === 'pending') return;
+  storageMode = 'pending';
+  emitStorageChange();
+}
+
+/** ConfigGate's boot, once it knows whether initFirebase runs. */
+export function settleStorageMode(mode: Exclude<StorageMode, 'pending'>): void {
+  if (storageMode === mode) return;
+  storageMode = mode;
+  emitStorageChange();
+}
+
+export function getStorageMode(): StorageMode {
+  return storageMode;
+}
+
+/**
+ * Run `cb` whenever what account-scoped storage resolves to may have changed:
+ * the mode settling, this page's first account report, and each later account
+ * change. Stores reload their values here.
+ */
+export function onStorageChange(cb: () => void): () => void {
+  storageListeners.add(cb);
+  return () => {
+    storageListeners.delete(cb);
+  };
+}
+
+/** The key a read or write uses now, or null when nothing may be read or written. */
+function scopedKey(key: string): string | null {
+  if (storageMode === 'shared') return key;
+  if (storageMode === 'pending') return null;
+  const uid = getSignedInAccount();
+  return uid === null ? null : `${key}@uid:${uid}`;
+}
+
+/** The current account's stored value for `key`, or null when it has none,
+ *  when storage is pending, with no account, or with localStorage unavailable. */
+export function readScoped(key: string): string | null {
+  const k = scopedKey(key);
+  if (k === null) return null;
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    // Unavailable storage (private mode, blocked site data) means this
+    // per-browser preference was never stored: the caller shows the product
+    // default, which is what an empty store shows anyway. No data value is
+    // fabricated: these keys hold display preferences, not market data.
+    return null;
+  }
+}
+
+/** Store `value` for the current account. Stores nothing while pending, with
+ *  no account, or with localStorage unavailable (the in-memory value stands). */
+export function writeScoped(key: string, value: string): void {
+  const k = scopedKey(key);
+  if (k === null) return;
+  try {
+    localStorage.setItem(k, value);
+  } catch {
+    // Quota or blocked storage: the preference applies for this page only,
+    // as the stores already behave on main.
+  }
 }
 
 // ── Verification required (the API's 403) ──────────────────────────────────
@@ -97,19 +379,21 @@ export function useVerificationRequired(uid: string | null): boolean {
   return useSyncExternalStore(subscribeVerificationRequired, read, () => false);
 }
 
-// The account an I've confirmed check last found verified. Firebase fires no
+// The accounts an I've confirmed check found verified. Firebase fires no
 // auth event when a reload/token refresh flips emailVerified, so useUser's
 // value stays stale; every surface reads this instead of keeping its own.
-let emailConfirmedFor: string | null = null;
+// One entry per uid (FEAT-AUTH-001, #270): A's check answering after a switch
+// to B adds A and never replaces B's confirmation.
+const emailConfirmedFor = new Set<string>();
 
 export function markEmailConfirmed(uid: string): void {
-  if (emailConfirmedFor === uid) return;
-  emailConfirmedFor = uid;
+  if (emailConfirmedFor.has(uid)) return;
+  emailConfirmedFor.add(uid);
   emitVerificationRequired();
 }
 
 export function isEmailConfirmed(uid: string | null): boolean {
-  return uid !== null && emailConfirmedFor === uid;
+  return uid !== null && emailConfirmedFor.has(uid);
 }
 
 /** React hook: true once an I've confirmed check found this account verified. */

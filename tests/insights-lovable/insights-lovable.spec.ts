@@ -104,9 +104,12 @@ for (const timezoneId of ['America/New_York', 'Asia/Tokyo']) {
       const readReady = new Promise<void>(resolve => { releaseRead = resolve; });
       const messageId = '22222222-2222-4222-8222-222222222222';
       const sources = [
-        { id: 'S1', type: 'market_brief', label: 'Calendar brief', asOf: '2026-10-29', available: true, freshness: 'unavailable', excerpt: 'Prior-close brief; intraday freshness unknown.' },
+        { id: 'S1', type: 'market_brief', label: 'Calendar brief', clock: { field: 'date', kind: 'calendar_date' }, asOf: '2026-10-29', available: true, freshness: 'unavailable', excerpt: 'Prior-close brief; intraday freshness unknown.' },
         { id: 'S2', type: 'signals', label: 'Signals', asOf: null, available: true, freshness: 'unavailable', excerpt: 'Signal data available; time-of-day unavailable.' },
         { id: 'S3', type: 'catalysts', label: 'Catalysts', asOf: null, available: false, freshness: 'unavailable', excerpt: 'Solyra API returned 503' },
+        { id: 'S4', type: 'insight_report', label: 'Generated report', asOf: '2026-10-29T12:46:00Z', clock: { field: 'generated_at', kind: 'generation' }, available: true, freshness: 'current', excerpt: 'Generation time, not market observation.' },
+        { id: 'S5', type: 'signals', label: 'Future source', asOf: '2099-10-30T12:00:00Z', clock: { field: 'as_of', kind: 'as_of' }, freshnessReason: 'future_source_timestamp', available: true, freshness: 'unavailable', excerpt: 'Source timestamp is in the future; freshness cannot be established.' },
+        { id: 'S6', type: 'live_quote', label: 'Dated quote', asOf: '2026-10-29', clock: { field: 'last_updated', kind: 'trading_date' }, available: true, freshness: 'unavailable', excerpt: 'Latest trading day only.' },
       ];
       await page.route('**/functions/v1/insights-research', async route => {
         const body = route.request().postDataJSON();
@@ -116,7 +119,7 @@ for (const timezoneId of ['America/New_York', 'Asia/Tokyo']) {
           return route.fulfill(M.ok({
             session: { id: body.sessionId, ticker: 'IWM', mode: 'live', replay_cutoff: null, title: 'Check dated source evidence', created_at: '2026-10-30T00:01:00Z', updated_at: '2026-10-30T00:01:00Z' },
             messages: [{ id: messageId, question: 'Check dated source evidence', answer, run_state: 'completed' }],
-            sources: sources.map(s => ({ message_id: messageId, citation_id: s.id, source_type: s.type, source_label: s.label, source_as_of: null, asOf: s.asOf, available: s.available, freshness: s.freshness, excerpt: s.excerpt })),
+            sources: sources.map(s => ({ message_id: messageId, citation_id: s.id, source_type: s.type, source_label: s.label, source_as_of: null, asOf: s.asOf, available: s.available, freshness: s.freshness, excerpt: s.excerpt, clock: s.clock, freshnessReason: s.freshnessReason })),
           }));
         }
         const events = [{ type: 'sources', sources }, { type: 'done', sessionId: '11111111-1111-4111-8111-111111111111', messageId, answer }];
@@ -132,6 +135,21 @@ for (const timezoneId of ['America/New_York', 'Asia/Tokyo']) {
       await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Freshness unknown: Calendar brief, Signals');
       await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Evidence unavailable: Catalysts');
       await expect(page.getByText('Could not reach:', { exact: false })).toHaveCount(0);
+      const assertClockMeaning = async () => {
+        await expect(evidence).toContainText('Calendar date:');
+        const generated = page.locator('#evidence-S4').filter({ visible: true });
+        await expect(generated).toContainText('Generated:');
+        await expect(generated).toContainText('recent as-of');
+        await expect(generated).toContainText('not verified live freshness');
+        const future = page.locator('#evidence-S5').filter({ visible: true });
+        await expect(future).toContainText('freshness unknown');
+        await expect(future).toContainText('2099');
+        await expect(future).toContainText('timestamp is in the future');
+        await expect(page.locator('#evidence-S6').filter({ visible: true })).toContainText('Trading date: as of Oct 29, 2026 (calendar date; time unavailable)');
+        await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Selected catalyst highlights');
+        await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('not the complete source calendar');
+      };
+      await assertClockMeaning();
       await page.screenshot({ path: testInfo.outputPath('streamed-date-and-availability.png') });
       releaseRead();
       await expect(page.getByRole('button', { name: 'Start new research', exact: true })).toBeVisible();
@@ -139,6 +157,7 @@ for (const timezoneId of ['America/New_York', 'Asia/Tokyo']) {
       await expect(evidence).not.toContainText('Oct 28');
       await expect(page.getByRole('region', { name: 'Live quote', exact: true })).toContainText('As of 2026-10-29 ·');
       await expect(page.getByRole('article', { name: 'Research answer' })).toContainText('Freshness unknown: Calendar brief, Signals');
+      await assertClockMeaning();
       await page.screenshot({ path: testInfo.outputPath('restored-date-and-availability.png') });
       await page.getByRole('region', { name: 'Live quote', exact: true }).screenshot({ path: testInfo.outputPath('quote-calendar-date.png') });
     });

@@ -8,7 +8,7 @@
 
 # UI Screen Inventory
 
-**Last reviewed:** 2026-08-30 · **Last scanned:** 2026-10-12 · **Owner:** TBD
+**Last reviewed:** 2026-08-30 · **Last scanned:** 2026-11-09 · **Owner:** TBD
 
 **VERIFIED — CODE.** 15 routes declared in `src/App.tsx:44-72`. `/` is public;
 `/welcome` redirects; the other 13 are children of `<AuthGate><AppShell/></AppShell>`.
@@ -1263,7 +1263,7 @@ data tied to the previous identity survives into the next session; `onAuthStateC
 flips `useUser().isSignedIn` to false and `AuthGate` renders `SignInScreen` again. A second,
 independently implemented sign-out control exists for the mobile account menu,
 `AuthStatusIndicator.tsx`'s `account-menu-sign-out` button (`AuthStatusIndicator.tsx:96-103`),
-with the same `firebaseSignOut` + `qc.clear()` body duplicated rather than shared. The Settings page's `Sign out` (SETTINGS-08, `src/routes/SettingsPage.tsx:473-487`) is a third control that calls `firebaseSignOut()` without `qc.clear()`, so on that path the previous identity's cached answers survive until their stale time (matrix area 15 Gaps, line 1221; filed as [solyra#117](https://github.com/TeneikaAskew/solyra/issues/117)).
+with the same `firebaseSignOut` + `qc.clear()` body duplicated rather than shared. The Settings page's `Sign out` (SETTINGS-08, `src/routes/SettingsPage.tsx:473-487`) is a third control that calls `firebaseSignOut()` without `qc.clear()`. The account change a sign-out causes removes every cached query (`resetAccountQueries`, `src/lib/authGate.ts`, subscribed at the `QueryClient` in `src/App.tsx`), so on that path too no cached answer of the previous identity reaches the next sign-in (FEAT-AUTH-001, [solyra#117](https://github.com/TeneikaAskew/solyra/issues/117)).
 
 **Needs:** nothing from our backend; `firebaseSignOut` is `signOut(auth)` against the Firebase SDK
 only.
@@ -1451,7 +1451,7 @@ endpoint, or
 #### Actions
 | ID | Action | What happens |
 |---|---|---|
-| SHELL-10 | Theme toggle | `Header`/`TopTabs` call `toggleTheme`, which flips `themeStore` (persisted to `localStorage` as `platform-theme`) and writes through to `PUT /api/me/preferences` via `usePreferencesSync`. |
+| SHELL-10 | Theme toggle | `Header`/`TopTabs` call `toggleTheme`, which flips `themeStore` (persisted to `localStorage`, in firebase mode per account as `platform-theme@uid:<uid>`, in the other modes as `platform-theme`) and writes through to `PUT /api/me/preferences` via `usePreferencesSync`. |
 | SHELL-11 | Sign out | `SignOutButton` calls `firebaseSignOut`, then clears the React Query cache; renders only in firebase mode for a signed-in user. |
 
 #### States
@@ -1481,7 +1481,7 @@ SUPPORT (Admin/Settings/Help & Glossary/FAQ, dropdown; Admin filtered by `adminO
 (`sm:hidden`/`sm:flex`), grouping the same items plus `AccountMenuSection`.
 
 **Needs:** `navConfig.ts`'s `NAV_GROUPS`/`FLAT_NAV` (client-only, no API); `useSettingsStore().navPattern`
-(persisted `localStorage['platform-shell-settings']`, hydrated from the server by
+(persisted in `localStorage`, in firebase mode per account as `platform-shell-settings@uid:<uid>`, in the other modes as `platform-shell-settings`; hydrated from the server by
 `usePreferencesSync`, SHELL-10); `useUser().isAdmin` to filter the Admin link.
 
 **States:** covered by the general loading/empty/error/stale/permission rows (SHELL-12 to
@@ -1495,7 +1495,7 @@ SHELL-16); the nav itself has no distinct loading state (renders immediately fro
   `tests/shared/navigation.spec.ts`).
 - Given the SUPPORT dropdown for a non-admin (`/api/me` → `is_admin: false`), when it opens,
   then `a[href="/admin"]` has zero count (same test).
-- Given `navPattern: 'sidebar'` is seeded in `localStorage['platform-shell-settings']` before
+- Given open mode and `navPattern: 'sidebar'` seeded in `localStorage['platform-shell-settings']` before
   boot, when AppShell mounts, then `Sidebar` renders and an admin email sees
   `nav a[href="/admin"]` (`admin email sees Admin link in sidebar`, `tests/admin/admin-auth.spec.ts`).
 - Given a click on a top-nav link, when the route changes, then the corresponding group's
@@ -1829,7 +1829,7 @@ accordingly (see Gaps).
 (top-tabs mode, same behavior, two separate elements), `aria-label`/`title` reading "Switch to
 light theme" while dark and vice versa. Calls `useThemeStore().toggleTheme()`, which flips
 `dark`↔`light`, writes `document.documentElement`'s `data-theme` attribute (`src/index.css` keys
-light styles off `[data-theme="light"]`), and persists to `localStorage['platform-theme']`.
+light styles off `[data-theme="light"]`), and persists to `localStorage` (in firebase mode per account as `platform-theme@uid:<uid>`, in the other modes as `platform-theme`).
 `usePreferencesSync` (mounted once in `AppShell.tsx:32`) then writes the new theme through to the
 server on the next render.
 
@@ -1878,7 +1878,7 @@ is about, the way SHELL-02 and SHELL-11 handle a similarly-named near miss.
 Calls `firebaseSignOut()`, then clears the whole React Query cache (`qc.clear()`) so no
 identity-tied data survives the switch. `AccountMenuSection`'s `account-menu-sign-out` is a
 second, independently-implemented control for the mobile hamburger menu, duplicating the same
-`firebaseSignOut()` + `qc.clear()` body rather than sharing it (`AuthStatusIndicator.tsx:96-103`). The Settings page's `Sign out` (SETTINGS-08, `src/routes/SettingsPage.tsx:473-487`) is a third control that calls `firebaseSignOut()` without `qc.clear()`, so on that path the previous identity's cached answers survive until their stale time (matrix area 15 Gaps, line 1221; filed as [solyra#117](https://github.com/TeneikaAskew/solyra/issues/117)).
+`firebaseSignOut()` + `qc.clear()` body rather than sharing it (`AuthStatusIndicator.tsx:96-103`). The Settings page's `Sign out` (SETTINGS-08, `src/routes/SettingsPage.tsx:473-487`) is a third control that calls `firebaseSignOut()` without `qc.clear()`. The account change a sign-out causes removes every cached query (`resetAccountQueries`, `src/lib/authGate.ts`, subscribed at the `QueryClient` in `src/App.tsx`), so on that path too no cached answer of the previous identity reaches the next sign-in (FEAT-AUTH-001, [solyra#117](https://github.com/TeneikaAskew/solyra/issues/117)).
 
 **Needs:** no read API; `firebaseSignOut()` is a Firebase client-SDK call, no backend round trip.
 
@@ -2604,8 +2604,8 @@ sample, or the badge when the rung has no rate; a `Context` block (`context-modi
 expected-move size class and the regime mood; and, when the expected move is `OK`, the size light
 (`size-light-chip`: green at `p_expanded + p_explosive` 0.20 or more, amber from 0.10, else red), the
 ATR label, the line `Direction: not predicted`, a risk hint, an options idea at `p_explosive` 0.10 or
-more and a size calculator (`size-calculator`, inputs kept in `localStorage` `em.account` and
-`em.riskPct`), then the scope statement.
+more and a size calculator (`size-calculator`, inputs kept in `localStorage`: in firebase mode per account as `em.account@uid:<uid>` and
+`em.riskPct@uid:<uid>`, in the other modes as `em.account` and `em.riskPct`), then the scope statement.
 
 **Needs:** `GET /api/movement-statement?ticker=&timeframe=`
 (`platform/api/routers/dashboard.py:530`), off unless `MOVEMENT_STATEMENT_ENABLED` is true (a 404
@@ -2705,8 +2705,8 @@ ticker gets a 400 there (see DASHBOARD-21).
   shows; given a `full` pick, then nothing is posted; given a failed post, then the notice carries the
   status and detail and the ticker is still set (`picking a "new"-badged suggestion auto-adds it to the watchlist with an honest ingest notice`, `picking a "full"-badged suggestion does NOT auto-add to the watchlist`, `watchlist-add failure shows a loud inline error but still sets the active ticker`, and the coverage-error and bare-Enter variants in the same file).
 - Given the store, then the symbol is upper-cased, recents are newest first without duplicates and
-  capped at eight, and only `activeTicker` and `recentTickers` are persisted
-  (`src/stores/tickerStore.test.ts`); the row helpers (badge, merge, dedupe, default highlight,
+  capped at eight, and only `activeTicker` (per browser, in `ticker-store`) and `recentTickers` (inside `ticker-store` in the
+  other modes, per account as `ticker-recents@uid:<uid>` in firebase mode) are persisted (`src/stores/tickerStore.test.ts`); the row helpers (badge, merge, dedupe, default highlight,
   debounce) are pure and tested (`src/components/shared/tickerCombobox.test.ts`).
 - Given the pick, then the ticker-scoped requests are asked again for the new symbol and the
   market-wide ones are not (executed 2026-09-30, scratch run; no committed test asserts the
@@ -3517,7 +3517,7 @@ control, and it ran and passed in [solyra CI run 37586449560](https://github.com
 the symbol is the small heading of the quote card (`src/routes/LiveMarketPage.tsx:310`), which
 exists only while a quote shows, so neither `Fetching live quote…` nor the error box names the
 symbol (executed 2026-09-30). `activeTicker` comes from `useTickerStore` (`:148`, default `IWM`,
-persisted as `ticker-store` together with `recentTickers`, `src/stores/tickerStore.ts:14-34`) and is
+persisted per browser as `ticker-store`, with `recentTickers` beside it in the other modes and per account as `ticker-recents@uid:<uid>` in firebase mode, `src/stores/tickerStore.ts`) and is
 set elsewhere: by `TickerCombobox` on Dashboard, Options Flow, Signals, Insights and Journal, by the
 Catalysts and Insights pages, or by a ticker row of the command palette, which also navigates to
 `/charts` (`src/components/layout/CommandPalette.tsx:44-51`). The page follows whatever the store
@@ -3533,7 +3533,7 @@ holds: with `SPY` persisted it asked for `/api/live/quote/SPY`, `/api/live/histo
 - Given `setTicker('aapl')`, then the active ticker is `AAPL` (`uppercases the active ticker`,
   `src/stores/tickerStore.test.ts`); given `pushRecent`, then the list is newest first, deduplicated
   without regard to case and capped at 8; given persistence, then `activeTicker` and `recentTickers`
-  are stored and `quickPicks` is not (`persist partialize`).
+  are stored (`recentTickers` per account as `ticker-recents@uid:<uid>` in firebase mode) and `quickPicks` is not.
 - Given the default store, when `/live` opens, then it asks for IWM and the quote card reads `IWM`
   (`navigates to /live and renders ticker context`, which asserts only that `IWM` appears in the
   page text).
@@ -5223,10 +5223,10 @@ for the strings they carry and miss the string the server sends. Te stays untick
 #### States
 | ID | State | Present in source | Presentation |
 |---|---|---|---|
-| OPTIONS-09 | loading | present | "Loading live grid…" (`SwingMode`); "Loading {symbol} levels…" (`TrinityTab`); "Loading available dates…" / "Loading options chain…" (`ProfilesTab`). |
+| OPTIONS-09 | loading | present | "Loading gamma grid…" (`SwingMode`); "Loading {symbol} levels…" (`TrinityTab`); "Loading available dates…" / "Loading options chain…" (`ProfilesTab`). |
 | OPTIONS-10 | empty | present | "No options dates available for…" with the server's text and `Retry`, "No options data returned for…" and `Couldn't estimate spot from this chain` (`ProfilesTab`); "No gamma levels available for…" and "Chain too thin to build a ladder for…" (`TrinityTab`); "Data unavailable:…" with the server's reason (`SwingMode`). |
 | OPTIONS-11 | error | present | "Options chain unavailable" with the server's text and `Retry` (`ProfilesTab`); Swing and Trinity reuse their empty copy for a failed request; a failed levels or dates request shows no notice; the Profiles metrics bar falls back to `EMPTY_GREEKS` when the Greeks POST fails (solyra#74). |
-| OPTIONS-12 | stale | present | A `SourcePill` in `SwingMode` labels the snapshot `LIVE`, `EOD`, `STALE` or `UNAVAILABLE` from `realtime`, `eod_fallback`, `stale_fallback` or `unavailable` (`classify_gamma_freshness`), and the banner repeats it; the Profiles source footer labels a Cloud SQL chain `AlphaVantage EOD` with its date and a live-proxy chain `AlphaVantage Live` with its ET time (`isoToEtDisplay`). |
+| OPTIONS-12 | stale | present | A `SourcePill` in `SwingMode` shows one neutral label for every present snapshot (`realtime`, `eod_fallback`, `stale_fallback`): "Stored options snapshot — freshness and completeness unverified", the recorded snapshot time in Eastern time with its zone from `snapshot_provenance.snapshot_ts` (or an older payload's aware `snapshot_ts`), and the origin as plain text; `unavailable` or an unrecognised value shows `UNAVAILABLE`. The banner repeats the label with the server's display age as of its `observed_at`, and the levels note does the same for the levels response (FEAT-OPTION-001 snapshot labels); the Profiles source footer labels a Cloud SQL chain `AlphaVantage EOD` with its date and a live-proxy chain `AlphaVantage Live` with its ET time (`isoToEtDisplay`). |
 | OPTIONS-13 | permission | not tracked (new category); present | `SignInBanner` ("Sign in to load options data") while a gated call answers 401; `DataGate` replaces the views only for a signed-out user. |
 
 #### Journeys
@@ -6430,7 +6430,7 @@ assertion of `Sign in to load`. Te stays unticked.
 | GET /api/live/avg-volume/{ticker} | avg_volume_20d is read; ticker, sample_size, last_date and source are typed and never read here (types: `useLiveHistory.ts` AvgVolume) | market_data_daily (the 20 newest rows with a volume) ← fetch-market-data 23:00 ET Mon-Fri and fetch-earnings-history 19:15 ET Mon-Fri; AlphaVantage TIME_SERIES_DAILY when the table gives under 5 rows or the read fails | one-hour staleTime | `useAvgVolume` → evaluation snapshot, indicators request |
 | POST /api/live/indicators | indicators is read; signals and chart_voter are typed and never read here (types: `useLiveIndicators.ts` IndicatorsResponse) | `lib/indicators.py` through the handler, no table | keyed on bar count, last bar time, price, volume and average volume, 10s staleTime, not time-based | `useLiveIndicators` → evaluation snapshot |
 | POST /api/playbook/evaluate | results_by_key keyed by card id (types: `usePlaybookEvaluation.ts` PlaybookEvaluateResponse, `src/lib/playbookEvaluator.ts` EvalResult) | the router's `_eval_condition`, no table | 30s staleTime; asked again when the snapshot's price, volume, opening range, minutes or indicators change or the card set does | `usePlaybookBatch` (`usePlaybookEvaluation.ts`) → Setup cards condition rows, progress line and border |
-| store: ticker | activeTicker (recentTickers is stored with it) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette) |  | every card |
+| store: ticker | activeTicker (recentTickers is stored with it in the other modes, per account as `ticker-recents@uid:<uid>` in firebase mode) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette) |  | every card |
 
 #### Displayed
 | ID | Element | Component |
@@ -6659,7 +6659,7 @@ and null for a NULL; `test_route_coverage.py` pins the route's 503 against a dea
 
 **Shows or does:** Nothing of its own: the page has no ticker control, and the header has none either (`src/components/layout/Header.tsx:7-13`
 says the ticker lives in a per-page combobox). `activeTicker` comes from `useTickerStore` (`src/routes/PlaybookPage.tsx:265`, default
-`IWM`, persisted as `ticker-store` together with `recentTickers`, `src/stores/tickerStore.ts:14-34`) and is set elsewhere: by
+`IWM`, persisted per browser as `ticker-store`, with `recentTickers` beside it in the other modes and per account as `ticker-recents@uid:<uid>` in firebase mode, `src/stores/tickerStore.ts`) and is set elsewhere: by
 `TickerCombobox`, which is mounted on Dashboard, Options Flow, Signals, Insights and Journal only (`src/routes/DashboardPage.tsx:547`,
 `OptionsFlowPage.tsx:41`, `SignalsPage.tsx:197`, `InsightsPage.tsx:117`, `JournalPage.tsx:363`); by a watchlist row click on Insights
 (`InsightsPage.tsx:94-99`) and a ticker click on Catalysts (`CatalystsPage.tsx:409-414`); or by a ticker row of the command palette,
@@ -6684,7 +6684,7 @@ PLAYBOOK-06 until it answers (read; no previous data is kept as a placeholder).
 **Acceptance criteria:**
 - Given `setTicker('aapl')`, then the active ticker is `AAPL` (`uppercases the active ticker`, `src/stores/tickerStore.test.ts`); given
   `pushRecent`, then the list is newest first, deduplicated without regard to case and capped at 8; given persistence, then `activeTicker`
-  and `recentTickers` are stored and `quickPicks` is not (`persist partialize`).
+  and `recentTickers` are stored (`recentTickers` per account as `ticker-recents@uid:<uid>` in firebase mode) and `quickPicks` is not.
 - Given the default store, when `/playbook` opens, then it asks for IWM and the heading reads `IWM Playbook` (every test in `playbook.spec.ts`,
   which asserts the heading only through a pattern that accepts any ticker).
 - Given `SPY` in the store, when `/playbook` opens, then the heading reads `SPY Playbook`, the card set is SPY's and none of the playbook, average-volume and reference requests names IWM
@@ -7077,7 +7077,7 @@ stays unticked.
 |---|---|---|---|---|
 | GET /api/reports/list/{ticker} | reports[].phase and reports[].filename are read; the answer's ticker and reports[].path (a `gs://` URI) are typed and never read (types: `src/lib/reports.ts` ReportEntry/ReportListResponse) | no job: the `phase*.md` objects under `raw/reports/` of the bucket, written by [`scripts/analysis/phase1_strat_mining.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/analysis/phase1_strat_mining.py) to [`scripts/analysis/phase7_feedback_loop.py`](https://github.com/TeneikaAskew/stocks/blob/main/scripts/analysis/phase7_feedback_loop.py) (`save_report`, into the process's own `reports/` directory) and uploaded outside the repository's code on 2026-04-12 (every object created at 22:41:43 UTC); the daily `phase6-playbook` job saves its three tickers' `phase6_playbook_*.md` in its container only | 24-hour server cache per ticker over a 10-minute listing cache; 60s client staleTime; no age is read or shown (the objects are 172 days old, their text 221) | `useReportList` (inline in `ReportsPage.tsx`) → Picker bar, Report header |
 | GET /api/reports/{ticker}/{phase} | plain-text markdown body (`text/plain`), rendered through `renderReportHtml` (`src/lib/reports.ts`; marked with GFM and no soft breaks, then DOMPurify with its defaults); each text opens with its own `Generated:` line, which the page does not read | the same objects and the same absence of a job | 24-hour server cache per ticker and phase; 5min client staleTime | `useReportContent` (`ReportViewer`, inline in `ReportsPage.tsx`) → Report body |
-| store: ticker | activeTicker (recentTickers is stored with it) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette): this page and the header have no picker of their own | | the label, the list request and the body request |
+| store: ticker | activeTicker (recentTickers is stored with it in the other modes, per account as `ticker-recents@uid:<uid>` in firebase mode) | Zustand, persisted in the browser's localStorage as `ticker-store`; set by other pages (the combobox, a watchlist row, a ticker click, the command palette): this page and the header have no picker of their own | | the label, the list request and the body request |
 
 No table backs either endpoint: both read markdown objects from the GCS bucket `adept-mountain-474619-d4-trading-data` prefix `raw/reports/`, which `solyra-api-staging` reads as `trading-platform-svc@` (`roles/storage.objectViewer`). No code or workflow in the stocks repository writes the prefix (matrix Backend notes), so the Produced by column names the scripts that write such files and the upload they wait for rather than a Cloud Run job.
 
@@ -7595,7 +7595,7 @@ route. Te stays unticked.
 | GET /api/signals/{ticker}?limit=5000 (review mode adds `&end_date=&end_time=`) | count, signals[].time/direction/score/close/rsi/ema9/volume; the response also carries returned, source and signals[].ema20/conditions_met/return_pct/run_kind/ticker, which the page does not read (types: `SignalsPage.tsx` SignalRow/SignalsResponse; fixture: `tests/helpers/fixtures/signals.ts`) | historical-signals-watchlist 01:00 ET Tue-Sat → historical_signals | 5min staleTime; the newest row is the prior session's (the writer runs at 01:00 and not on Sunday or Monday, so up to three days old by Monday evening) | `useSignals` (inline in `SignalsPage`) → Header label, Signals table |
 | GET /api/analytics/summary/{ticker}?days=90 | closedTrades, winCount, lossCount, winRate, totalPnL, avgPnL, profitFactor, callCount, putCount; totalTrades, activeTrades, maxWin and maxLoss are returned and not read (types: `useTradeAnalytics.ts` TradeStats) | signal-monitor 09:25 ET Mon-Fri and signal-monitor-eod-resolver 16:30 ET Mon-Fri → trades (rows with run_kind 'live' only) | 5min staleTime; the 90 days run back from now and do not follow review mode | `useTradeSummary` (`useTradeAnalytics.ts`) → Performance KPIs |
 | GET /api/insights/ticker/search · GET /api/market/coverage · POST /api/insights/watchlist/add | matches[], coverage flags, watchlist add result; the picker reads only the success or failure of the add (types: `useTickerSearch.ts`) | AlphaVantage SYMBOL_SEARCH (search); market_data_daily and market_data_intraday (coverage, ticker presence); the add writes watchlists, owned by the signed-in user's email or by `default` | 60s staleTime on search and coverage | `TickerCombobox` → Header ticker picker |
-| store: ticker, review date | | ticker: Zustand `ticker-store`, persisted in the browser (`activeTicker`, `recentTickers`); review date: Zustand, memory only, set by the shell's Replay control | | the signals and summary requests, the Header label, the To date |
+| store: ticker, review date | | ticker: Zustand `ticker-store`, persisted in the browser (`activeTicker`; `recentTickers` with it in the other modes, per account as `ticker-recents@uid:<uid>` in firebase mode); review date: Zustand, memory only, set by the shell's Replay control | | the signals and summary requests, the Header label, the To date |
 
 #### Displayed
 | ID | Element | Component |
@@ -9331,7 +9331,7 @@ The wrapper's block has no test and no way to appear (above). Te stays unticked:
 | GET /api/insights/watchlist | run_id, as_of, candidate_count, excluded_count, ranked[].ticker/score/pct_of_max/catalyst_types/catalyst_metadata/score_breakdown, weights_used, duration_ms (types: `src/types/watchlist.ts` WatchlistResponse) | the caller's own watchlists rows (the candidates, written by the adds of INSIGHTS-09), tagged and scored from earnings_calendar, sec_filings, insider_transactions, top_movers_daily, economic_events, market_data_daily, etf_options_snapshots, news_sentiment and earnings_history by their fetch jobs; each call also writes a ranker_runs row | 5min staleTime; the newest four `ranker_runs` rows, written in the minutes of the 08:10 ET `auto-refresh-top-n` job's executions, record 10.8 s to 46.1 s for 16 candidates, and the endpoint's own latency was not measured | `useWatchlist` (`useWatchlist.ts`) → Watchlist tab (`WatchlistPanel`) |
 | GET /api/insights/ticker/search · POST /api/insights/watchlist/add | results[].symbol/name/type/region/currency/match_score (search); ticker/added/info/quote/peers/watchlist (add; the page reads `added`, `info` and `quote`) (types: `useTickerSearch.ts` TickerSearchResult/WatchlistAddResult) | AlphaVantage SYMBOL_SEARCH (search), OVERVIEW and GLOBAL_QUOTE and FinViz peers (add) on the request path; the add writes the caller's watchlists row (`source` `ui`) and the ticker_info cache | 60s staleTime (search) | `useTickerSearch` / `useAddToWatchlist` (`useTickerSearch.ts`) → Watchlist tab's `TickerSearchPanel` |
 | POST /api/insights/chat | message, mode, ticker, history (request, the last six turns); streamed plain-text reply, no `response_model` | Vertex AI Gemini `gemini-3.1-flash-lite`, streamed on the request path; no table is read |  | `ChatView` (inline in `InsightsPage.tsx`) → Chat tab |
-| store: ticker |  | Zustand `useTickerStore`, persisted as `ticker-store` in localStorage (`activeTicker`, `recentTickers`) | | every tab |
+| store: ticker |  | Zustand `useTickerStore`, persisted as `ticker-store` in localStorage (`activeTicker`; `recentTickers` with it in the other modes, per account as `ticker-recents@uid:<uid>` in firebase mode) | | every tab |
 
 #### Displayed
 | ID | Element | Component |
@@ -10605,7 +10605,7 @@ gate's 401 and 403 are asserted only in [`tests/lib/test_routers_insights_admin.
 |---|---|---|---|---|
 | GET /api/catalysts/events?date_from&date_to | source and events_by_date[date][].date/ticker/catalyst_type/title/event/impact/expected_impact/source/sentiment_score/sentiment_label are drawn; status, date_range, total and, per event, company_name/confirmed/details/relevance_score/url/items/primary_doc/accession_number/insiders/total_value/country/actual/forecast/previous are typed and never drawn (types: `CatalystsPage.tsx` CatalystEvent/CatalystsResponse; sample payload `buildCatalystEvents` in `src/mocks/catalysts.ts`) | the five reads of `_db_catalyst_events`, with no Benzinga (no key on either service): news_sentiment ← fetch-news-sentiment hourly 08:00-17:00 ET, fetch-news-sentiment-topics hourly at :05 and fetch-news-sentiment-earnings 06:00 ET, Mon-Fri, AlphaVantage NEWS_SENTIMENT; economic_events ← fetch-economic-events 07:00 ET Mon-Fri, ForexFactory and FRED; earnings_calendar ← fetch-earnings-calendar 19:00 ET Mon-Fri and Sun, AlphaVantage, Unusual Whales, Earnings Whispers and Yahoo, kept only to the fetch date plus 7 days; insider_transactions ← fetch-insider-transactions 07:00 ET Mon-Fri, AlphaVantage INSIDER_TRANSACTIONS; sec_filings ← fetch-sec-filings 07:00, 10:00, 13:00 and 17:00 ET Mon-Fri, SEC EDGAR | 5min staleTime, no polling; a range fetched under five minutes ago is served from the cache and only Refresh refetches it; news bounded to the last 48 hours regardless of the requested range; the answer carries no write time for any source | `useCatalystEvents` (inline in `CatalystsPage.tsx`) → Hot Now, Impact tier filter, Type chips, Event timeline |
 | GET /api/catalysts/types | wsh_only_types[].label is drawn; benzinga_types, upgrade_note and each type's color and icon are typed and never drawn (types: `CatalystsPage.tsx` CatalystTypesResponse; `MOCK_CATALYST_TYPES` in `src/mocks/catalysts.ts`, whose `wsh_only_types` is empty) | static: the `BENZINGA_TYPES` and `WSH_ONLY_TYPES` dictionaries and a fixed note in `platform/api/routers/catalysts.py`, no table and no producer | 1hr staleTime | `useCatalystTypes` (inline in `CatalystsPage.tsx`) → WSH upgrade banner only; the type chips are built from the events and `TYPE_CONFIG` |
-| store: ticker, theme | activeTicker (written by Open insight report), theme (the tones of badges and chips) | Zustand, persisted in the browser's localStorage: `ticker-store` (activeTicker and recentTickers) and `platform-theme` |  | Open insight report, Type chip colors |
+| store: ticker, theme | activeTicker (written by Open insight report), theme (the tones of badges and chips) | Zustand, persisted in the browser's localStorage: `ticker-store` (activeTicker; recentTickers with it in the other modes, per account as `ticker-recents@uid:<uid>` in firebase mode) and `platform-theme` (per account as `platform-theme@uid:<uid>` in firebase mode) |  | Open insight report, Type chip colors |
 
 #### Displayed
 | ID | Element | Component |
@@ -12742,9 +12742,9 @@ the unchanged page and fails with the message's text removed (mutation: `>No mat
 
 ### SCREEN-SETTINGS — `/settings`
 
-- **Purpose:** Profile, appearance, trading defaults, notifications and account, on five tabs. Appearance (theme, navigation, density and accent) applies at once on the device and is written through to the account; Profile, Trading and Notifications are one draft saved with Save changes, which sends only the changed fields; Account shows the sign-in email, the auth mode and the role, and the Sign out button. Nothing else in the app reads the saved profile and nothing sends the notification emails, a decimal point typed into the two number boxes is dropped, the Settings Sign out leaves the previous account's cached profile on screen for the next sign-in, a pick made while the stored appearance loads is lost or never stored, and the header can show one failure at a time (matrix Gaps).
+- **Purpose:** Profile, appearance, trading defaults, notifications and account, on five tabs. Appearance (theme, navigation, density and accent) applies at once on the device and is written through to the account; Profile, Trading and Notifications are one draft saved with Save changes, which sends only the changed fields; Account shows the sign-in email, the auth mode and the role, and the Sign out button. Nothing else in the app reads the saved profile and nothing sends the notification emails, a decimal point typed into the two number boxes is dropped, a pick made while the stored appearance loads is lost or never stored, and the header can show one failure at a time (matrix Gaps).
 - **Matrix:** [03 § 15](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/03-SITE-TRACEABILITY.md#15--settings)
-- **Status:** Production but needs remediation · **Blocking issue:** [solyra#117](https://github.com/TeneikaAskew/solyra/issues/117), [solyra#119](https://github.com/TeneikaAskew/solyra/issues/119), [solyra#121](https://github.com/TeneikaAskew/solyra/issues/121) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-10-07
+- **Status:** Production but needs remediation · **Blocking issue:** [solyra#119](https://github.com/TeneikaAskew/solyra/issues/119), [solyra#121](https://github.com/TeneikaAskew/solyra/issues/121) · **Owner:** TBD · **Target phase:** see [13](https://github.com/TeneikaAskew/stocks/blob/main/docs/product/13-ROADMAP.md) · **Last reviewed:** 2026-10-07
 - **Component:** `src/routes/SettingsPage.tsx` (492 lines)
 - **Child components:** none (`Section`, `Field` and `ToggleRow` are defined inside `src/routes/SettingsPage.tsx`)
 - **API calls (from source):** `/api/me/preferences` (GET and PUT, through `usePreferencesSync`, which `src/components/layout/AppShell.tsx` mounts, and `usePreferencesStatus`), `/api/me/profile` (GET and PUT, through `useProfile`), `/api/me` (through `useUser`)
@@ -12763,7 +12763,7 @@ the unchanged page and fails with the message's text removed (mutation: `>No mat
 | PUT /api/me/profile | request: the changed fields only (types: `src/types/profile.ts` UserProfileUpdate); the answer, the full stored row, becomes the cached read | the user (one upsert of the fields sent into `user_profile`; an explicit null clears a field) | none: written when Save changes is pressed | `useProfile` → Save changes or Discard |
 | GET /api/me | email, is_admin, is_dev (types: `src/hooks/useUser.ts` MeResponse) | the verified identity (the Firebase token's email, the IAP header's, none in open mode) and one `user_roles` lookup, where a failed lookup reads as no role; an open path | 30s staleTime, keyed by the Firebase uid, one retry | `useUser` (`src/hooks/useUser.ts`) → Account tab, the identity block of the Profile tab, `Sending to` on the Notifications tab |
 | GET /api/config/firebase (read once at boot) | authMode (types: `src/lib/runtimeConfig.ts` RuntimeConfig) | the service's `AUTH_MODE` setting (`firebase` on staging, the only API service; `iap` on production until its retirement on 2026-10-10); an open path | read once when the app boots | `getAuthMode` (`src/lib/runtimeConfig.ts`) → Account tab (`Auth mode`), Sign out |
-| store: theme, nav pattern, density, accent | | Zustand, mirrored in `localStorage` keys `platform-theme` and `platform-shell-settings`, and never cleared by a sign-out | | `src/stores/themeStore.ts`, `src/stores/settingsStore.ts` → every Appearance control, AppShell nav pattern |
+| store: theme, nav pattern, density, accent | | Zustand, mirrored in `localStorage`: in firebase mode per account as `platform-theme@uid:<uid>` and `platform-shell-settings@uid:<uid>`, in the other modes as `platform-theme` and `platform-shell-settings`; a sign-out deletes none of them and the next account reads only its own | | `src/stores/themeStore.ts`, `src/stores/settingsStore.ts` → every Appearance control, AppShell nav pattern |
 
 Every route above except `GET /api/me` and `GET /api/config/firebase` is gated: on staging each answers 401 without a token and on production (retired 2026-10-10) IAP answered before any handler (V evidence). The page reads and writes `user_preferences` and `user_profile` and reads `user_roles`; no schedule or job feeds any of the three, and no code outside the two routers reads the first two.
 
@@ -12781,7 +12781,7 @@ Every route above except `GET /api/me` and `GET /api/config/firebase` is gated: 
 |---|---|---|
 | SETTINGS-06 | Toggle appearance | Each control calls its store's setter directly; `usePreferencesSync` (mounted once in `src/components/layout/AppShell.tsx`) writes it through via `PUT /api/me/preferences`, always with all four fields, skipping the pass right after hydration and any value the server already holds. A pick made while the stored values load is lost or never stored, and a refused write is not retried and leaves the pick applied on this device while the account keeps the old value, until the next change sends all four values again or the next session applies the stored values over the pick (matrix Gaps). |
 | SETTINGS-07 | Save changes or Discard | `Save changes` sends `profileDiff` (changed fields only) through `useProfile`'s `save`, one draft over the Profile, Trading and Notifications tabs; `Discard` resets the draft to the stored values without persisting anything, and does not clear a failed save's error (matrix Gaps). |
-| SETTINGS-08 | Sign out | Enabled only when signed in with `AUTH_MODE` `firebase`; calls `firebaseSignOut` (`src/lib/firebase.ts`) and, unlike the header's button and the account menu's, does not clear the query cache, so the next account to sign in reads the previous account's cached profile for the stale time (matrix Gaps); otherwise disabled with a note that the session is managed outside the app. |
+| SETTINGS-08 | Sign out | Enabled only when signed in with `AUTH_MODE` `firebase`; calls `firebaseSignOut` (`src/lib/firebase.ts`) and, unlike the header's button and the account menu's, does not call `qc.clear()`; the account change itself removes every cached query (`resetAccountQueries`), so the next account to sign in fetches its own profile; otherwise disabled with a note that the session is managed outside the app. |
 
 #### States
 | ID | State | Present in source | Presentation |
@@ -12796,7 +12796,7 @@ Every route above except `GET /api/me` and `GET /api/config/firebase` is gated: 
 1. Make the app fit the desk: Opens /settings, Appearance (SETTINGS-02) → Switches Tabs to Sidebar (SETTINGS-06) → Sets Density to Dense (SETTINGS-06) → Picks an accent color (SETTINGS-06) → Every change applies instantly and syncs to the account, though the first change stores all four values and a pick made while the stored values still load is lost or never stored (SETTINGS-06; see the matrix Settings Gaps)
 2. Set trading defaults: Opens the Trading tab (SETTINGS-03) → Enters a default ticker and timeframe (SETTINGS-03) → Adds account size and risk per trade, where a decimal point typed key by key is dropped, so 1.5 reads 15 (SETTINGS-03; see the matrix Settings Gaps) → Clicks Save changes (SETTINGS-07) → the values are stored in user_profile; the journal and playbook pre-fill the seed describes is not implemented (see the matrix Settings Gaps)
 3. Abandon an edit: Starts typing an account size (SETTINGS-03) → The save bar reads "Unsaved changes" (SETTINGS-07) → Clicks Discard (SETTINGS-07) → The draft resets to the stored values, nothing half-typed was persisted (SETTINGS-07)
-4. Hand the device to another account: Opens the Account tab (SETTINGS-05) → Clicks Sign out (SETTINGS-08) → The sign-in screen shows at the same URL (SETTINGS-13) → Another account signs in without a reload → The Settings page shows the first account's cached display name, trading values and notification switches until the stale time passes (SETTINGS-08; see the matrix Settings Gaps)
+4. Hand the device to another account: Opens the Account tab (SETTINGS-05) → Clicks Sign out (SETTINGS-08) → The sign-in screen shows at the same URL (SETTINGS-13) → Another account signs in without a reload → The Settings page loads that account's own display name, trading values, notification switches and appearance, and shows none of the first account's (SETTINGS-08)
 5. Use Settings while the API is failing: Opens /settings while the profile read fails (SETTINGS-11) → The header names the failure and the form is empty and editable (SETTINGS-10) → Changes the theme while the preferences write fails (SETTINGS-06) → The header reads Appearance not synced and the theme still applies on this device (SETTINGS-11)
 
 #### Elements
@@ -12897,7 +12897,7 @@ second Tabs click made two writes). The selected state reads the local stores (`
 
 Executed with the server holding `light`, `sidebar`, `comfy` and `teal`: the page loaded with `html[data-theme="light"]`, the body classes
 `density-comfy accent-teal`, `platform-theme` `light` and `platform-shell-settings`
-`{"navPattern":"sidebar","density":"comfy","accent":"teal"}` in `localStorage`, the sidebar shell on screen, and the tab showed `Light`,
+`{"navPattern":"sidebar","density":"comfy","accent":"teal"}` in `localStorage` (a run before FEAT-AUTH-001; in firebase mode these keys now carry `@uid:<uid>`), the sidebar shell on screen, and the tab showed `Light`,
 `Sidebar` and `Comfy` selected, `teal` pressed and `dawn` not.
 
 **Needs:** `GET /api/me/preferences` through `usePreferencesSync`, which `AppShell` mounts once (`src/components/layout/AppShell.tsx:32`,
@@ -12906,7 +12906,7 @@ Executed with the server holding `light`, `sidebar`, `comfy` and `teal`: the pag
 `user_preferences` row, 404 `no preferences stored` when there is none and 503 `preferences temporarily unavailable` for any exception. The
 hook keeps only values it knows: a value outside the lists becomes null (`sanitizePreferences`, `src/hooks/usePreferences.ts:72-80`) and
 hydration skips a null field, so the local value stands (`src/hooks/usePreferences.ts:171-176`). Local state: `src/stores/themeStore.ts`
-(`platform-theme`, `data-theme` on `<html>`) and `src/stores/settingsStore.ts` (`platform-shell-settings`; density and accent also as
+(`platform-theme`, per account as `platform-theme@uid:<uid>` in firebase mode; `data-theme` on `<html>`) and `src/stores/settingsStore.ts` (`platform-shell-settings`, per account as `platform-shell-settings@uid:<uid>` in firebase mode; density and accent also as
 classes on `<body>`, `:58-71`).
 
 `user_preferences` held one row on 2026-10-02, all four columns set, its newest `updated_at` 2026-09-05 23:58:57 UTC (V evidence). The gated
@@ -12921,7 +12921,7 @@ SETTINGS-13.
 **Acceptance criteria:**
 - Given the Appearance tab, when `Light` is chosen, then `html[data-theme]` reads `light` and the write carries `{theme: 'light', nav_pattern: 'top-tabs', density: 'dense', accent: 'dawn'}` (`theme toggle applies data-theme and writes through`,
   `tests/settings/settings.spec.ts`, on main).
-- Given `Sidebar` is chosen, then `platform-shell-settings` holds `navPattern: 'sidebar'` and the write carries `{theme: 'dark', nav_pattern: 'sidebar', density: 'dense', accent: 'dawn'}` (`navigation toggle persists the shell choice and writes through`), and the
+- Given `Sidebar` is chosen (open mode), then `platform-shell-settings` holds `navPattern: 'sidebar'` and the write carries `{theme: 'dark', nav_pattern: 'sidebar', density: 'dense', accent: 'dawn'}` (`navigation toggle persists the shell choice and writes through`), and the
   shell becomes a sidebar at once (executed: an `aside` appears and goes with `Tabs`; the test does not assert the shell).
 - Given `Comfy` and then `violet`, then `<body>` carries `density-comfy` and then `accent-violet` and each write carries all four fields
   (`density and accent picks land on <body> and write through`).
@@ -13141,8 +13141,8 @@ stops matching the one the app generates (`test_committed_openapi_snapshot_match
 ##### SETTINGS-06 · Toggle appearance
 
 **Shows or does:** Each Appearance control calls its store's setter at once (`src/routes/SettingsPage.tsx:308-311,324-327,341-344,361`):
-`setTheme` writes `platform-theme` and sets `data-theme` on `<html>` (`src/stores/themeStore.ts:32-36`), `setNavPattern` persists
-`platform-shell-settings` and the shell swaps at once (executed: an `aside` appears with `Sidebar` and goes with `Tabs`), `setDensity` and
+`setTheme` writes `platform-theme` (per account as `platform-theme@uid:<uid>` in firebase mode) and sets `data-theme` on `<html>` (`src/stores/themeStore.ts:32-36`), `setNavPattern` persists
+`platform-shell-settings` (per account in firebase mode) and the shell swaps at once (executed: an `aside` appears with `Sidebar` and goes with `Tabs`), `setDensity` and
 `setAccent` swap the `density-*` and `accent-*` classes on `<body>` and persist (`src/stores/settingsStore.ts:59-71,108-124`). The header's
 sun and moon button calls `toggleTheme` on the same store (`src/components/layout/Header.tsx:24`, `src/components/layout/TopTabs.tsx:228`;
 SHELL-10), so the write below carries it too.
@@ -13169,8 +13169,8 @@ Executed on the page:
 
 **Needs:** `PUT /api/me/preferences` (`platform/api/routers/preferences.py:149-194`): one `INSERT ... ON CONFLICT (user_email) DO UPDATE` of
 the provided columns returning the row, 422 for a field or value outside the lists, 503 for any exception, 401 in `firebase` mode with no
-identity. The answer replaces the cached read (`onSuccess: setQueryData`, `src/hooks/usePreferences.ts:154-157`). The browser keys
-`platform-theme` and `platform-shell-settings`. `user_preferences` held one row on 2026-10-02 (V evidence); this action is not ticked at V
+identity. The answer replaces the cached read while the account that started the save is still signed in (`onSuccess`, `src/hooks/usePreferences.ts`). The browser keys
+`platform-theme` and `platform-shell-settings` (in firebase mode per account, `<key>@uid:<uid>`). `user_preferences` held one row on 2026-10-02 (V evidence); this action is not ticked at V
 (a write; the route answers 401 without a token on staging).
 
 **States:** Loading: SETTINGS-09. Error: a refused write shows in the header and the pick still applies (SETTINGS-11). Stale: SETTINGS-12.
@@ -13293,17 +13293,15 @@ Gaps). Te is ticked: `Discard` is asserted only by that test, which ran and pass
   `src/lib/firebaseImpl.ts:168-169`). Firebase's auth state flips, `useUser` reports signed out and `AuthGate` renders `SignInScreen` in
   place of the app, on the same URL and with no reload (executed: the page stayed at `/settings`; no request went to `identitytoolkit` or
   `securetoken`).
-- It does not clear the query cache. The header's `SignOutButton` (`src/components/auth/SignOutButton.tsx:18-24`) and the account menu's
-  button (`src/components/shared/AuthStatusIndicator.tsx:96-103`) both call `qc.clear()` after `firebaseSignOut()` so that nothing tied to
-  the previous identity survives; this button does not. Executed with two accounts in `firebase` mode and answers keyed per bearer token:
-  account A opened Settings (display name `Alice A`, account size 250000, risk per trade 2.5, daily digest on, stored theme `light`),
-  pressed this button, and the sign-in screen showed; account B then signed in without a reload. The Settings page showed A's display name
-  beside B's email, A's account size, risk and digest switch on the Trading and Notifications tabs, kept A's theme, and made no `GET/api/me/profile` and no `GET /api/me/preferences` for B, only `GET /api/me`. The same steps through the header's button fetched both reads
-  for B and showed B's `Bob B`. With six minutes between A's sign-out and B's sign-in, past the profile's five-minute stale time and the
-  five minutes for which TanStack Query keeps an unused entry by default (read), B's page fetched its own profile and showed nothing of A's.
-  So the leak lasts as long as the stale time and the cache allow, not until a reload (matrix Gaps).
-- No sign-out clears `platform-theme` or `platform-shell-settings`: after the header's button B's page kept A's `light` theme (executed;
-  matrix Gaps).
+- It does not call `qc.clear()`, unlike the header's `SignOutButton` (`src/components/auth/SignOutButton.tsx:18-24`) and the account
+  menu's button (`src/components/shared/AuthStatusIndicator.tsx:96-103`). Since FEAT-AUTH-001 the account change that any sign-out causes
+  removes every cached query (`resetAccountQueries`, `src/lib/authGate.ts`, subscribed at the `QueryClient` in `src/App.tsx`), so the next
+  account to sign in fetches its own profile and preferences on every path. Before that change (main `e8d1df4c` and earlier) this button
+  left the previous account's answers cached: executed with two accounts in `firebase` mode, B's Settings page showed A's display name,
+  account size, risk and digest switch and kept A's theme until the five-minute stale time passed ([solyra#117](https://github.com/TeneikaAskew/solyra/issues/117)).
+- No sign-out deletes `platform-theme` or `platform-shell-settings`. In firebase mode each account reads and writes only its own
+  `<key>@uid:<uid>` entries, so the next account starts with its own stored appearance or the product defaults, never the previous
+  account's; values stored under the un-namespaced keys before the change stay untouched and are not read in firebase mode.
 
 Not checked: a rejected `signOut`. The promise is discarded, so a rejection would be an unhandled rejection with no message on the page; it
 was not run.
@@ -13319,14 +13317,16 @@ or error presentation.
 - Given `firebase` mode and a signed-in account, then the button is enabled, and a press shows the sign-in screen at the same URL without a
   request to the identity service (executed; no test: the branch's `sign out returns to the sign-in screen` in
   `tests/shared/auth-gate.spec.ts` presses the header's `data-testid="sign-out"` button).
-- Given account A pressed it and account B signs in within the stale time, then B's Settings page shows A's cached profile and fetches
-  nothing for B (executed; a defect, matrix Gaps); given the header's button, then it fetches B's own (executed).
-- Given either path, then the next account on the device starts with the previous account's theme when the server holds none (executed;
-  matrix Gaps).
+- Given account A pressed it and account B signs in, then B's Settings page shows B's own display name and none of A's, and B's profile
+  is requested with B's token (`tests/shared/identity-transitions.spec.ts`, FEAT-AUTH-001); the same holds after the header's button, the
+  account menu's and the `/auth/action` sign-in (same spec).
+- Given either path, then the next account on the device starts with its own stored appearance, or the product defaults when it has none,
+  and its first change sends none of the previous account's values (same spec).
 
-**Tests:** No test asserts this button. A search of `tests/` for `sign-out`, `sign out` and `Sign out` finds the branch's `sign out returns to the sign-in screen` (`tests/shared/auth-gate.spec.ts`, added on this branch, not on main; it presses the header's button) and
-`tests/shared/navigation.spec.ts`, which asserts the account menu's button is absent in `open` mode. The Settings button is mounted by
-`src/routes/SettingsPage.tsx:473-481` and pressed by no spec. Te stays unticked.
+**Tests:** `tests/shared/identity-transitions.spec.ts` (FEAT-AUTH-001) presses this button and asserts the next account's Settings page. The
+branch's `sign out returns to the sign-in screen` (`tests/shared/auth-gate.spec.ts`) presses the header's button, and
+`tests/shared/navigation.spec.ts` asserts the account menu's button is absent in `open` mode. Te stays unticked until the matrix cites a main
+run of the new spec.
 
 **Code:** `src/routes/SettingsPage.tsx:123-129,473-487`, `src/lib/firebase.ts:109-112`, `src/lib/firebaseImpl.ts:168-169`,
 `src/components/auth/SignOutButton.tsx:13-38`, `src/components/shared/AuthStatusIndicator.tsx:96-103`, `src/hooks/useProfile.ts:96-101`,
@@ -13488,10 +13488,10 @@ and no 503, and no check asserts a failure answer. Te is ticked: the two present
   though the column is stored and set by a trigger (`gcp/schema.sql:4900-4952`; V evidence: the one `user_preferences` row was last updated
   2026-09-05 23:58:57 UTC).
 - The stored appearance is applied once per session, at the first answer, and later answers are held and never applied
-  (`src/hooks/usePreferences.ts:159-189`). Executed with the clock moved six minutes and the window refocused after the server's values had
+  (`src/hooks/usePreferences.ts:172-219`). Executed with the clock moved six minutes and the window refocused after the server's values had
   changed to `dark`, `sidebar`, `comfy` and `teal`: both reads were requested again, the page kept `light`, `density-dense` and
-  `accent-dawn`. A newer answer takes effect only on a reload, or when the shell remounts after a sign-out (`AuthGate` unmounts `AppShell`,
-  which owns the syncer), at which point the cached answer is applied again (read; SETTINGS-08).
+  `accent-dawn`. A newer answer takes effect only on a reload, or after an account change, which removes the cached answer and pauses
+  write-through until the next account's stored preferences have hydrated (FEAT-AUTH-001; SETTINGS-08).
 - The profile is held five minutes (`src/hooks/useProfile.ts:99`); after that a mount or a window focus requests it again, and when the
   answer differs, the draft is replaced by it without notice, unsaved edits included (`src/routes/SettingsPage.tsx:133-137`). Executed with
   the same clock move and a server value changed to `Changed On Another Device`: `My unsaved text` in Display name was replaced by it, and

@@ -47,6 +47,8 @@ export interface MarketHours {
   pre_market: { open: string; close: string };
   after_hours: { open: string; close: string };
   holidays_2026: string[];
+  holidays: string[];
+  early_closes: { date: string; close: string }[];
 }
 
 // Static config changes rarely — stale for a day, cached forever in a session.

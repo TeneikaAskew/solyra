@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConfigGate } from '@/components/auth/ConfigGate';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { RouteErrorBoundary } from '@/components/shared/RouteErrorBoundary';
+import { onAccountChange, resetAccountQueries } from '@/lib/authGate';
 
 // The gated shell (AuthGate + AppShell + the stores and layout they pull) is
 // its own chunk, so `/` — the public landing — downloads none of it
@@ -37,6 +38,10 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// FEAT-AUTH-001: a switch to another account (in this tab or another one)
+// never reloads the page, so the previous account's cached answers go here.
+onAccountChange((next) => resetAccountQueries(queryClient, next));
 
 function PageLoader() {
   return (

@@ -578,7 +578,14 @@ export interface paths {
         };
         /**
          * Get Market Hours
-         * @description Return US equity market session windows + 2026 holidays.
+         * @description Return US equity market session windows, holidays and early closes.
+         *
+         *     ``holidays`` and ``early_closes`` cover the current and next year by the
+         *     Eastern date, so the window rolls at 00:00 ET on 1 January. Half days
+         *     are sessions, so they are in ``early_closes`` and never in ``holidays``.
+         *     ``holidays_2026`` is kept, filled from the same calendar, for solyra's
+         *     replay picker until Spec C moves it to ``holidays`` and removes it.
+         *     A calendar failure raises (CLAUDE.md 3.7); nothing is filled in.
          */
         get: operations["get_market_hours_api_config_market_hours_get"];
         put?: never;
@@ -666,9 +673,9 @@ export interface paths {
          * @description Lightweight warm-up probe. NOT called by a scheduler.
          *
          *     The keep-warm Cloud Scheduler was dropped (gcp/deploy.sh, "Platform
-         *     keep-warm — DROPPED"): solyra-api-prod sits behind IAP, so an
-         *     unauthenticated GET is rejected at IAP and never reaches the app. The
-         *     endpoint is kept for manual and in-cluster warm-up.
+         *     keep-warm — DROPPED") while the API sat behind IAP, where an
+         *     unauthenticated GET was rejected at the edge and never reached the app.
+         *     The endpoint is kept for manual and in-cluster warm-up.
          *
          *     Returns 200 + a 1-statement Cloud SQL query so the Cloud SQL
          *     connector (and the FastAPI worker) stay hot during business hours.
@@ -3079,9 +3086,15 @@ export interface components {
             ema_9?: number | null;
             /** Ema 20 */
             ema_20?: number | null;
-            /** Ftfc Direction */
+            /**
+             * Ftfc Direction
+             * @description TF bias direction: bullish, bearish or mixed from the weighted candle vote.
+             */
             ftfc_direction?: unknown;
-            /** Ftfc Score */
+            /**
+             * Ftfc Score
+             * @description TF bias: weighted vote of candle types across timeframes (2U up, 2D down, 1 and 3 zero), -1 to +1. Not price-versus-open FTFC.
+             */
             ftfc_score?: number | null;
             /** Macd */
             macd?: number | null;
@@ -3122,9 +3135,15 @@ export interface components {
             /** Consecutive Up */
             consecutive_up?: number | null;
             daily_indicators?: components["schemas"]["DailyIndicators"] | null;
-            /** Ftfc Direction */
+            /**
+             * Ftfc Direction
+             * @description TF bias direction: bullish, bearish or mixed from the weighted candle vote.
+             */
             ftfc_direction?: unknown;
-            /** Ftfc Score */
+            /**
+             * Ftfc Score
+             * @description TF bias: weighted vote of candle types across timeframes (2U up, 2D down, 1 and 3 zero), -1 to +1. Not price-versus-open FTFC.
+             */
             ftfc_score?: number | null;
             /** Has Premarket */
             has_premarket?: boolean | null;
@@ -3185,6 +3204,18 @@ export interface components {
             reason?: string | null;
             /** Status */
             status: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * EarlyClose
+         * @description A half-day session: its date and its Eastern close, ``HH:MM``.
+         */
+        EarlyClose: {
+            /** Close */
+            close: string;
+            /** Date */
+            date: string;
         } & {
             [key: string]: unknown;
         };
@@ -3295,6 +3326,8 @@ export interface components {
         };
         /** FreshnessRow */
         FreshnessRow: {
+            /** Detail */
+            detail?: string | null;
             /** Expected Latest */
             expected_latest: string;
             /** Expected Max Hours */
@@ -3383,6 +3416,7 @@ export interface components {
             regime: string;
             /** Snapshot Date */
             snapshot_date?: string | null;
+            snapshot_provenance?: components["schemas"]["SnapshotProvenance"] | null;
             /** Snapshot Ts */
             snapshot_ts?: string | null;
             spot?: components["schemas"]["SpotEstimate"] | null;
@@ -3444,6 +3478,7 @@ export interface components {
             regime: string;
             /** Snapshot Date */
             snapshot_date: string;
+            snapshot_provenance?: components["schemas"]["SnapshotProvenance"] | null;
             /** Snapshot Timestamp */
             snapshot_timestamp?: string | null;
             spot: components["schemas"]["SpotEstimate"];
@@ -4171,9 +4206,18 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** MarketHoursResponse */
+        /**
+         * MarketHoursResponse
+         * @description ``holidays`` and ``early_closes`` cover the current and next Eastern
+         *     year. ``holidays_2026`` is kept for solyra's replay picker until Spec C
+         *     moves it to ``holidays`` and removes it.
+         */
         MarketHoursResponse: {
             after_hours: components["schemas"]["MarketHoursWindow"];
+            /** Early Closes */
+            early_closes: components["schemas"]["EarlyClose"][];
+            /** Holidays */
+            holidays: string[];
             /** Holidays 2026 */
             holidays_2026: string[];
             pre_market: components["schemas"]["MarketHoursWindow"];
@@ -5398,6 +5442,45 @@ export interface components {
              * @description Fraction 0..1, not a percent
              */
             pct_profitable?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * SnapshotProvenance
+         * @description Provenance of the stored options snapshot a response was built from.
+         *
+         *     Stored clock retained: ``snapshot_ts`` is the selected rows' own instant.
+         *     ``observed_at`` is when this response was assembled (re-stamped per response).
+         *     ``snapshot_age_seconds`` is a display age (observed_at minus snapshot_ts), not a
+         *     provider lag. ``freshness_status`` and ``completeness_status`` are always
+         *     ``unknown``; ``reason`` names the clock validation outcome, not a qualification.
+         */
+        SnapshotProvenance: {
+            /**
+             * Completeness Status
+             * @constant
+             */
+            completeness_status: "unknown";
+            /**
+             * Freshness Status
+             * @constant
+             */
+            freshness_status: "unknown";
+            /** Market Session */
+            market_session?: string | null;
+            /** Observed At */
+            observed_at: string;
+            /** Provider */
+            provider?: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "legacy_snapshot_unqualified" | "timestamp_invalid" | "timestamp_future";
+            /** Snapshot Age Seconds */
+            snapshot_age_seconds?: number | null;
+            /** Snapshot Ts */
+            snapshot_ts?: string | null;
         } & {
             [key: string]: unknown;
         };

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Timeframe } from '@/types';
+import { acceptsScreenWrite, getStorageMode, onStorageChange, readScoped, writeScoped } from '@/lib/authGate';
 
 export type NavPattern = 'top-tabs' | 'sidebar';
 export type Density = 'comfy' | 'default' | 'dense';
@@ -44,13 +45,21 @@ interface Persisted {
 // can switch to default/comfy in Settings, which persists over this.
 const DEFAULTS: Persisted = { navPattern: 'top-tabs', density: 'dense', accent: 'dawn' };
 
-function loadPersisted(): Persisted {
-  if (typeof window === 'undefined') return DEFAULTS;
+/**
+ * The values for the current account-scoped storage state (authGate.ts,
+ * FEAT-AUTH-001): null while storage is pending (nothing is read or applied),
+ * otherwise the stored values for the current mode and account over the
+ * product defaults.
+ */
+function loadPersisted(): Persisted | null {
+  if (getStorageMode() === 'pending') return null;
+  const raw = readScoped(STORAGE_KEY);
+  if (!raw) return DEFAULTS;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULTS;
     return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Persisted>) };
   } catch {
+    // An unparseable stored preference is a display choice we cannot read,
+    // not data: the product defaults render, as on main.
     return DEFAULTS;
   }
 }
@@ -71,11 +80,9 @@ function applyShellClasses(density: Density, accent: Accent) {
 }
 
 function persist(next: Persisted) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    /* storage unavailable — non-fatal */
-  }
+  // Stores nothing while pending or with no account; storage failures are
+  // non-fatal inside writeScoped.
+  writeScoped(STORAGE_KEY, JSON.stringify(next));
 }
 
 interface SettingsState extends Persisted {
@@ -92,8 +99,9 @@ interface SettingsState extends Persisted {
   setAccent: (a: Accent) => void;
 }
 
-const initial = loadPersisted();
-applyShellClasses(initial.density, initial.accent);
+const loaded = loadPersisted();
+if (loaded) applyShellClasses(loaded.density, loaded.accent);
+const initial: Persisted = loaded ?? DEFAULTS;
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   ...initial,
@@ -106,20 +114,32 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   toggleSound: () => set((s) => ({ soundEnabled: !s.soundEnabled })),
 
   setNavPattern: (navPattern) => {
+    if (!acceptsScreenWrite()) return;
     const { density, accent } = get();
     persist({ navPattern, density, accent });
     set({ navPattern });
   },
   setDensity: (density) => {
+    if (!acceptsScreenWrite()) return;
     const { navPattern, accent } = get();
     applyShellClasses(density, accent);
     persist({ navPattern, density, accent });
     set({ density });
   },
   setAccent: (accent) => {
+    if (!acceptsScreenWrite()) return;
     const { navPattern, density } = get();
     applyShellClasses(density, accent);
     persist({ navPattern, density, accent });
     set({ accent });
   },
 }));
+
+// Reload on every storage event: the mode settling, the first account report
+// and each later account change.
+onStorageChange(() => {
+  const next = loadPersisted();
+  if (!next) return;
+  applyShellClasses(next.density, next.accent);
+  useSettingsStore.setState(next);
+});

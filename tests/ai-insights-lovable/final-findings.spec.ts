@@ -16,7 +16,8 @@ test.beforeEach(async({page})=>{
  await page.route('**/api/signals/*?*',r=>r.fulfill(M.ok({signals:[{time:'2026-10-01 14:00:00',direction:'CALL',rsi:35,score:4}]})));
  await page.route('**/api/signals/*/similar?*',r=>r.fulfill(M.ok({...MOCK_SIMILAR_SETUPS,stats:{...MOCK_SIMILAR_SETUPS.stats,latest:'2026-10-20 14:00:00'},matches:[{...MOCK_SIMILAR_SETUPS.matches[0],time:'2026-10-20 14:00:00'}]})));
  await page.route('**/functions/v1/insights-research',r=>{const b=r.request().postDataJSON();return r.fulfill(M.ok(b.action==='list'?{sessions:[saved]}:{session:saved,messages:[{id:'m',question:saved.title,answer,run_state:'completed'}],sources:[]}));});
- await page.goto('/ai-insights-lovable'); await expect(page.getByRole('region',{name:'Decision'})).toBeVisible();
+ const reportReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/insights/report/IWM' && response.status() === 200);
+ await page.goto('/ai-insights-lovable'); await reportReady; await expect(page.getByRole('region',{name:'Decision'})).toBeVisible();
 });
 test('INS-FINAL-001/002 withholds future charts and unbounded Replay similarities',async({page},info)=>{
  const requests:string[]=[];page.on('request',r=>{if(r.url().includes('/api/market/data')||r.url().includes('/similar?'))requests.push(r.url());});
