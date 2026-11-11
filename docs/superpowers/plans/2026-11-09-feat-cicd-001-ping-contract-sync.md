@@ -3,7 +3,7 @@ feat_id: FEAT-CICD-001
 spec: docs/superpowers/specs/2026-11-09-feat-cicd-001-ping-contract-sync.md
 branch: fix/feat-cicd-001-ping-contract-sync
 pr: 323
-status: ready
+status: done
 ---
 
 # Ping description contract sync implementation plan
