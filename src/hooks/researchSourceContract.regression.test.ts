@@ -21,6 +21,35 @@ function panel(name:string,props:Record<string,unknown>){
  runInContext(transpile(page.slice(page.indexOf('function sourceTimeLabel'), page.indexOf('function sourceId')) + code),createContext(vars));return renderToStaticMarkup(React.createElement(vars[name] as any,props));
 }
 const catalyst={status:'ok',source:'database',date_range:{from:'2026-10-29',to:'2026-10-30'},total:1,events_by_date:{'2026-10-29':[{catalyst_type:'earnings',source:'fixture',date:'2026-10-29',title:'Actual contract event',ticker:'IWM'}]}};
+it('SOURCE CLOCK future generation cannot establish current freshness or erase available payload',async()=>{
+ const generated_at=new Date(Date.now()+60_000).toISOString();
+ const r=await adapter({generated_at,thesis:'Recorded generation'}).getEvidence('/report','Report','insight_report','fixture',null,1);
+ expect(r).toMatchObject({available:true,asOf:generated_at,freshness:'unavailable',freshnessReason:'future_source_timestamp',clock:{field:'generated_at',kind:'generation'}});
+ expect(r.payload).toEqual({generated_at,thesis:'Recorded generation'});
+});
+it('SOURCE CLOCK generation and date precision remain explicit without invented observation clocks',async()=>{
+ const generated_at=new Date(Date.now()-60_000).toISOString();
+ const r=await adapter({generated_at,thesis:'Report'}).getEvidence('/report','Report','insight_report','fixture',null,1);
+ expect(r.clock).toEqual({field:'generated_at',kind:'generation'});
+ expect(r.observedAt).toBeUndefined();expect(r.fetchedAt).toBeUndefined();
+ const html=panel('EvidencePanel',{sources:[r]});
+ expect(html).toContain('Generated');expect(html).toContain('recent as-of');expect(html).not.toContain('>current<');
+});
+it('SOURCE CLOCK legacy current means age-only recency, not verified live freshness',()=>{
+ const html=panel('EvidencePanel',{sources:[{id:'S1',label:'Report',asOf:'2026-10-29T12:46:00Z',available:true,freshness:'current',excerpt:'Report'}]});
+ expect(html).toContain('recent as-of');expect(html).toContain('not verified live freshness');
+});
+it('SOURCE CLOCK quote latest trading day remains dated reference, not observation or ingestion',async()=>{
+ const r=await adapter({price:123,last_updated:'2026-10-29'}).getEvidence('/quote','Quote','live_quote','fixture',null,7);
+ expect(r).toMatchObject({available:true,asOf:'2026-10-29',freshness:'unavailable',clock:{field:'last_updated',kind:'trading_date'}});
+ const html=panel('EvidencePanel',{sources:[r]});
+ expect(html).toContain('Trading date');expect(html).toContain('time unavailable');expect(html).not.toContain('PM');
+});
+it('CATALYST generated timeline explicitly identifies selected highlights, not complete coverage',()=>{
+ const html=panel('AnswerPanel',{sources:[{id:'S5',available:true,freshness:'unavailable',label:'Calendar'}],answer:{answer:'Selected events',facts:[],bullCase:'',bearCase:'',invalidation:'',unknowns:[],catalystTimeline:[{date:'2026-10-30',event:'Release',impact:'Unknown',citations:['S5']}],replayContext:null}});
+ expect(html).toContain('Selected catalyst highlights');expect(html).toContain('not the complete source calendar');
+ expect(html).toContain('2026-10-30');
+});
 it('REAL-CONTRACT grouped catalysts are usable',async()=>{
  const r=await adapter(catalyst).getEvidence('/api/catalysts/events','Catalyst calendar','catalysts','fixture',null,5);
  expect(r.payload).not.toBeNull();expect(r.excerpt).not.toContain('missing events list');
@@ -113,5 +142,19 @@ it('ACTUAL source insert maps dates to JSON only and restores frozen exact evide
  const end=edge.indexOf("      await emit({ type: 'sources'",begin);
  runInContext(transpile('async function persist(){'+edge.slice(begin,end)+'}'),ctx);
  await ctx.persist();expect(saved).toHaveLength(1);expect(saved[0]).toMatchObject({citation_id:'S2',source_as_of:null,metadata:{asOf:'2026-10-29',available:true,payload:{analysis_date:'2026-10-29'}}});
+ expect(saved[0].metadata.clock).toEqual({field:'analysis_date',kind:'calendar_date'});
+ expect(saved[0].metadata.freshnessReason).toBe('source_instant_unknown');
  expect(ctx.storedSourceClock(saved[0])).toBe('2026-10-29');
+ ctx.frozen=saved;
+ const restoreBegin=edge.indexOf('evidence = frozen.map((source) => ({');
+ const restoreEnd=edge.indexOf('}));',restoreBegin)+4;
+ runInContext(transpile(edge.slice(restoreBegin,restoreEnd)),ctx);
+ expect(ctx.evidence[0]).toMatchObject({asOf:'2026-10-29',available:true,clock:{field:'analysis_date',kind:'calendar_date'},freshnessReason:'source_instant_unknown'});
+});
+
+it('SOURCE CLOCK synthesis instructions do not promote available dated references or selected summaries to live/completeness claims',()=>{
+ expect(edge).not.toContain('treat its price and prev_close as the authoritative current price');
+ expect(edge).toContain('not proof of an intraday-current observation');
+ expect(edge).toContain('not complete calendar coverage');
+ expect(edge).toContain('Calendar dates, generation times, source update times, and retrieval times are distinct');
 });
