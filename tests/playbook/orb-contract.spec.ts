@@ -28,15 +28,26 @@ test('server opening projection reaches evaluation without client extrema',async
  expect(snapshot.lastBar).toEqual(MOCK_LIVE_HISTORY.bars.at(-1));
  await page.screenshot({path:testInfo.outputPath('orb-qualified.png'),fullPage:true});
 });
-for(const state of ['missing','wrong-symbol','partial','stale','error'])test(`${state} remains explicitly unqualified`,async({page})=>{
+// A complete, otherwise fresh projection for the previous session (2026-10-28).
+const priorSession={...opening,session:'2026-10-28',window_start:'2026-10-28T13:30:00Z',window_end:'2026-10-28T14:00:00Z'};
+for(const state of ['loading','missing','wrong-symbol','wrong-session','partial','stale','error'])test(`${state} remains explicitly unqualified while unrelated inputs survive`,async({page})=>{
+ let snapshot:Record<string,unknown>|undefined, indicatorBars:unknown;
+ await page.route('**/api/live/indicators',r=>{indicatorBars=r.request().postDataJSON().bars;return r.fulfill(M.ok(MOCK_LIVE_INDICATORS));});
+ await page.route('**/api/playbook/evaluate',r=>{snapshot=r.request().postDataJSON().snapshot;return r.fulfill(M.ok({results_by_key:{},results:[]}));});
  await page.route('**/api/live/history/IWM?include_opening=true',r=>{
+  if(state==='loading')return new Promise<void>(()=>{}); // the opt-in request never answers
   if(state==='error')return r.fulfill({status:503,body:'unavailable'});
-  const o=state==='missing'?undefined:state==='wrong-symbol'?{...opening,ticker:'SPY'}:state==='partial'?{status:'unavailable',ticker:'IWM',reason:'missing_opening_minutes',fetched_at:opening.fetched_at}:{...opening,comparison_as_of:'2026-10-29T14:57:00Z'};
+  const o=state==='missing'?undefined:state==='wrong-symbol'?{...opening,ticker:'SPY'}:state==='wrong-session'?priorSession:state==='partial'?{status:'unavailable',ticker:'IWM',reason:'missing_opening_minutes',fetched_at:opening.fetched_at}:{...opening,comparison_as_of:'2026-10-29T14:57:00Z'};
   return r.fulfill(M.ok({...MOCK_LIVE_HISTORY,opening:o}));
  });
  await page.goto('/playbook');
- await expect(page.getByTestId('orb-status')).toContainText('Opening range unavailable');
+ await expect(page.getByTestId('orb-status')).toContainText(state==='loading'?'Opening range unavailable: loading':'Opening range unavailable');
  await expect(page.getByTestId('orb-status')).not.toContainText('30-minute opening range');
+ await expect(page.getByText('Cards light up as live market conditions are met')).toBeVisible();
+ await expect.poll(()=>indicatorBars).toEqual(MOCK_LIVE_HISTORY.bars);
+ await expect.poll(()=>snapshot?.price).toBe(MOCK_LIVE_QUOTE.price);
+ expect(snapshot?.lastBar).toEqual(MOCK_LIVE_HISTORY.bars.at(-1));
+ expect(snapshot?.orbOpening).toBeNull();expect(snapshot?.orbHigh).toBeNull();expect(snapshot?.orbLow).toBeNull();
 });
 test('failed refresh removes retained successful projection',async({page},testInfo)=>{
  let fail=false;
