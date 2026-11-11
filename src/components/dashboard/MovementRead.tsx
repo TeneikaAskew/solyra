@@ -24,6 +24,7 @@
 import { AlertTriangle, Activity } from 'lucide-react';
 import { Card, CardHeader } from '@/components/primitives';
 import { useState } from 'react';
+import { acceptsScreenWrite, readScoped, writeScoped } from '@/lib/authGate';
 import { useMovementStatement } from '@/hooks/useMovementStatement';
 import {
   sizeLight,
@@ -329,28 +330,25 @@ function SizeLightChip({ pTail }: { pTail: number | null }) {
   );
 }
 
-function SizeCalculator({ em }: { em: MovementExpectedMove }) {
-  const [account, setAccount] = useState<string>(
-    () => (typeof localStorage !== 'undefined' && localStorage.getItem('em.account')) || '',
-  );
-  const [riskPct, setRiskPct] = useState<string>(
-    () => (typeof localStorage !== 'undefined' && localStorage.getItem('em.riskPct')) || '1',
-  );
+/**
+ * Sizing inputs are a per-browser preference kept per account in firebase
+ * mode (FEAT-AUTH-001): read for the current account when this mounts (the
+ * shell remounts on every account change) and written only for it, through
+ * authGate's account-scoped storage. Other modes keep main's un-namespaced
+ * keys. Exported for its unit test.
+ */
+export function SizeCalculator({ em }: { em: MovementExpectedMove }) {
+  const [account, setAccount] = useState<string>(() => readScoped('em.account') || '');
+  const [riskPct, setRiskPct] = useState<string>(() => readScoped('em.riskPct') || '1');
   const setAcc = (v: string) => {
+    if (!acceptsScreenWrite()) return;
     setAccount(v);
-    try {
-      localStorage.setItem('em.account', v);
-    } catch {
-      /* localStorage unavailable — inputs just aren't persisted */
-    }
+    writeScoped('em.account', v);
   };
   const setRisk = (v: string) => {
+    if (!acceptsScreenWrite()) return;
     setRiskPct(v);
-    try {
-      localStorage.setItem('em.riskPct', v);
-    } catch {
-      /* localStorage unavailable — inputs just aren't persisted */
-    }
+    writeScoped('em.riskPct', v);
   };
   const atrMissing = em.atr_20 == null;
   const r = sizeCalc({

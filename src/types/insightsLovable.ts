@@ -15,6 +15,9 @@ export interface ResearchSource {
   available?: boolean | null;
   source_as_of?: string | null;
   freshness: 'current' | 'stale' | 'unavailable';
+  /** Source-field meaning, never a substitute provider observation clock. */
+  clock?: { field: string | null; kind: string } | null;
+  freshnessReason?: string | null;
   excerpt: string | null;
   message_id?: string;
 }

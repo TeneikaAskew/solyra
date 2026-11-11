@@ -29,10 +29,10 @@ export function AppShell() {
   const { navPattern } = useSettingsStore();
   // Hydrate appearance from the server once per session, then write through
   // on every change. Mounted here so it covers every authenticated route.
-  usePreferencesSync();
+  const { isDev, uid } = useUser();
+  usePreferencesSync(uid);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { pathname } = useLocation();
-  const { isDev } = useUser();
 
   // Dev-role accounts auto-enter mock-data mode (server-verified is_dev).
   // Fires only while the stored preference is unset, so an explicit exit

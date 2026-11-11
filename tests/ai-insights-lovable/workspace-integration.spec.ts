@@ -68,7 +68,9 @@ test('authenticated workspace connects chart, report history, watchlist and cite
   expect(researchRequests).toHaveLength(0);
   await page.getByTestId('login-email').fill('trader@example.test');
   await page.getByTestId('login-password').fill('fixture-password-9');
+  const reportReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/insights/report/IWM' && response.status() === 200);
   await page.getByTestId('login-submit').click();
+  await reportReady;
   await expect(page.getByRole('region', { name: 'Decision' })).toBeVisible();
   await expect(page.locator('section[aria-label="Price chart"] canvas').first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('authenticated-briefing.png') });

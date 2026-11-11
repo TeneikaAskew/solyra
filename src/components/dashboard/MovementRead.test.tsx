@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /// <reference types="node" />
 // Vitest unit tests for the Movement Read card (PHASE 3).
 //
@@ -9,7 +10,9 @@
 // Rule 3.7 contract: a null / UNAVAILABLE field becomes "—" (em-dash),
 // never a fabricated number.
 
-import { describe, it, expect } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
@@ -176,5 +179,87 @@ describe('Review-mode mount guard (DashboardPage source)', () => {
       guardedMounts,
       'every <MovementRead> mount must be review-mode-guarded',
     ).toBe(totalMounts);
+  });
+});
+
+// FEAT-AUTH-001 account transitions, done_when item 5 (MovementRead) and
+// item 19 (unit side): the sizing inputs are kept per account.
+describe('SizeCalculator account-scoped inputs', () => {
+  const EM = {
+    status: 'OK', role: 'context', size_class: 'EXPLOSIVE', pred_bucket: 3,
+    probabilities: { p_tight: 0.35, p_normal: 0.2, p_expanded: 0.25, p_explosive: 0.2 },
+    max_proba: 0.35, model_version: 'm', ts: '2026-07-10T19:45:00+00:00', atr_20: 1.85,
+    current_price: 218.4, usage_guidance: 'context only',
+  };
+
+  async function render(uid: string | null) {
+    vi.resetModules();
+    const gate = await import('@/lib/authGate');
+    gate.markStoragePending();
+    gate.settleStorageMode('perOwner');
+    gate.noteSignedInAccount(uid);
+    const { SizeCalculator } = await import('./MovementRead');
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const el = document.createElement('div');
+    document.body.append(el);
+    const root = createRoot(el);
+    await act(async () => root.render(createElement(SizeCalculator, { em: EM as never })));
+    const input = (id: string) => el.querySelector(`[data-testid="${id}"]`) as HTMLInputElement;
+    const type = async (id: string, value: string) => {
+      const node = input(id);
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(node, value);
+      await act(async () => { node.dispatchEvent(new Event('input', { bubbles: true })); });
+    };
+    const done = async () => { await act(async () => root.unmount()); el.remove(); };
+    return { input, type, done };
+  }
+
+  it("shows the current account's own em.account and em.riskPct, never another account's or the legacy values", async () => {
+    localStorage.clear();
+    localStorage.setItem('em.account', '88888');
+    localStorage.setItem('em.riskPct', '4.5');
+    localStorage.setItem('em.account@uid:uid-a', '73137');
+    localStorage.setItem('em.riskPct@uid:uid-a', '3.5');
+    const a = await render('uid-a');
+    expect([a.input('calc-account').value, a.input('calc-risk').value]).toEqual(['73137', '3.5']);
+    await a.done();
+    const b = await render('uid-b');
+    expect([b.input('calc-account').value, b.input('calc-risk').value]).toEqual(['', '1']);
+    await b.done();
+  });
+
+  it('writes its changes only under the current account', async () => {
+    localStorage.clear();
+    localStorage.setItem('em.account', '88888');
+    localStorage.setItem('em.account@uid:uid-a', '73137');
+    const b = await render('uid-b');
+    await b.type('calc-account', '25000');
+    await b.type('calc-risk', '1.5');
+    expect(b.input('calc-account').value).toBe('25000');
+    await b.done();
+    expect(localStorage.getItem('em.account@uid:uid-b')).toBe('25000');
+    expect(localStorage.getItem('em.riskPct@uid:uid-b')).toBe('1.5');
+    expect(localStorage.getItem('em.account@uid:uid-a')).toBe('73137');
+    expect(localStorage.getItem('em.account')).toBe('88888');
+    expect(localStorage.getItem('em.riskPct')).toBeNull();
+  });
+
+  // IMPL-314-1 R-2: input on A's calculator after this page reported B, before
+  // React rendered B, is refused: nothing is written under B, A's keys stay.
+  it("refuses input on the previous account's calculator once this page reports another", async () => {
+    localStorage.clear();
+    localStorage.setItem('em.account@uid:uid-a', '73137');
+    const a = await render('uid-a');
+    const gate = await import('@/lib/authGate');
+    gate.noteRenderedAccount('uid-a');
+    gate.noteSignedInAccount('uid-b');
+    await a.type('calc-account', '25000');
+    await a.type('calc-risk', '1.5');
+    expect([a.input('calc-account').value, a.input('calc-risk').value]).toEqual(['73137', '1']);
+    expect(localStorage.getItem('em.account@uid:uid-b')).toBeNull();
+    expect(localStorage.getItem('em.riskPct@uid:uid-b')).toBeNull();
+    expect(localStorage.getItem('em.account@uid:uid-a')).toBe('73137');
+    expect(gate.isRefusedWriteNoticeShown()).toBe(true);
+    await a.done();
   });
 });

@@ -41,11 +41,12 @@ let _ready: Promise<Impl> | null = null;
  * Load the SDK chunk and initialize the app. Idempotent. This is the single
  * trigger for the network fetch of the Firebase code — call it only when the
  * runtime config says authMode is 'firebase' (main.tsx does, and awaits it
- * before first render).
+ * before first render). `beforeListen` runs once, after the app and auth
+ * instances exist and just before the SDK listener is attached.
  */
-export function initFirebase(cfg: FirebaseWebConfig): Promise<void> {
+export function initFirebase(cfg: FirebaseWebConfig, beforeListen?: () => void): Promise<void> {
   _ready ??= import('./firebaseImpl').then((m) => {
-    m.initFirebase(cfg);
+    m.initFirebase(cfg, beforeListen);
     return m;
   });
   return _ready.then(() => undefined);
@@ -55,6 +56,13 @@ export function initFirebase(cfg: FirebaseWebConfig): Promise<void> {
 export async function getIdToken(forceRefresh = false): Promise<string | null> {
   if (!_ready) return null;
   return (await _ready).getIdToken(forceRefresh);
+}
+
+/** The token of `uid` only while the SDK still holds it; see
+ *  firebaseImpl.getIdTokenFor. Null when firebase never engaged. */
+export async function getIdTokenFor(uid: string, forceRefresh = false): Promise<string | null> {
+  if (!_ready) return null;
+  return (await _ready).getIdTokenFor(uid, forceRefresh);
 }
 
 /** The signed-in user's uid, or null (signed out, or firebase never engaged).

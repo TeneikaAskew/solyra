@@ -32,7 +32,9 @@
  */
 import { getAuthMode } from './runtimeConfig';
 import { STAGING_API, isStaticFrontendHost } from './apiTargets';
-import { markAuthBlocked, clearAuthBlocked, markVerificationRequired, clearVerificationRequired } from './authGate';
+import {
+  markAuthBlocked, clearAuthBlocked, markVerificationRequired, clearVerificationRequired, noteRefusedWrite,
+} from './authGate';
 import { isMockModeActive } from './mockMode';
 
 // Paths the backend answers WITHOUT auth, so the sign-in screen, shell, and
@@ -75,6 +77,24 @@ function resolveApiBase(): string {
 const API_BASE = resolveApiBase();
 
 let _installed = false;
+
+// Writes bound to the account whose screen composed them (firebase mode only,
+// FEAT-AUTH-001). Keyed by the init object, so nothing extra is sent to the
+// server and an unmarked request behaves exactly as before.
+const _boundTo = new WeakMap<RequestInit, string | null>();
+
+/**
+ * Mark a write composed on `uid`'s screen (the uid that screen rendered for).
+ * In firebase mode it goes out only with `uid`'s own token while the SDK still
+ * holds `uid`; otherwise nothing is sent and the fetch rejects with code
+ * 'account-changed'. It is never retried as another account. Other auth modes
+ * ignore the mark.
+ */
+export function boundToAccount(init: RequestInit, uid: string | null): RequestInit {
+  _boundTo.set(init, uid);
+  return init;
+}
+
 let _onUnauthorized: (() => void) | null = null;
 
 /** Register a callback invoked when a gated /api/* call returns 401. */
@@ -218,7 +238,22 @@ export function installAuthFetch(): void {
     // a public `/` visit (issue #26; the landing spec's fence pins it). We
     // only get here in firebase mode, i.e. after ConfigGate loaded the
     // facade anyway, so the import is already resolved.
-    const { getCurrentUid, getIdToken } = await import('./firebase');
+    const firebase = await import('./firebase');
+    const { getCurrentUid } = firebase;
+    const bound = init !== undefined && _boundTo.has(init);
+    const boundUid = bound ? (_boundTo.get(init as RequestInit) ?? null) : null;
+    // A bound write reads only its own account's token (the check and the
+    // read use one SDK user object); an unbound request reads whoever is
+    // signed in, as before.
+    const getIdToken = (force?: boolean): Promise<string | null> => {
+      if (!bound) return firebase.getIdToken(force);
+      if (boundUid === null) {
+        return Promise.reject(
+          Object.assign(new Error('Not signed in. Nothing was saved.'), { code: 'account-changed' }),
+        );
+      }
+      return firebase.getIdTokenFor(boundUid, force);
+    };
     // The uid at request initiation. A forced-refresh retry takes long enough
     // for a cross-tab account switch to land, and getIdToken(true) mints a
     // token for whoever is signed in AT RETRY TIME — without this check, a
@@ -227,10 +262,18 @@ export function installAuthFetch(): void {
     let token: string | null;
     try {
       token = await getIdToken();
-    } catch {
+    } catch (err) {
+      // The account moved under a bound write: never retry it as anyone else.
+      if ((err as { code?: unknown }).code === 'account-changed') {
+        noteRefusedWrite(boundUid);
+        throw err;
+      }
       try {
         token = await getIdToken(true);
       } catch (err) {
+        // The forced read of a bound write found the account moved: the same
+        // refusal as above, recorded so it is shown once its screen is gone.
+        if ((err as { code?: unknown }).code === 'account-changed') noteRefusedWrite(boundUid);
         if (isIdentityPath(path) || isGatedApiPath(path)) throw err;
         token = null;
       }
@@ -268,7 +311,10 @@ export function installAuthFetch(): void {
       let fresh: string | null = null;
       try {
         fresh = await getIdToken(true);
-      } catch {
+      } catch (err) {
+        // A bound write whose retry found the account moved was not saved
+        // (the 401 stands): record it like the refusals above.
+        if ((err as { code?: unknown }).code === 'account-changed') noteRefusedWrite(boundUid);
         fresh = null;
       }
       if (fresh && fresh !== token && (await getCurrentUid()) === uidAtStart) {
@@ -288,7 +334,7 @@ export function installAuthFetch(): void {
       // stale: requests now carry the verified claim, so it must not re-mark.
       // One from an account no longer signed in must not replace the current
       // account's flag either, even when its token cannot be read to compare.
-      const current = await getIdToken().catch(() => null);
+      const current = await firebase.getIdToken().catch(() => null);
       const superseded = sentToken !== null && current !== null && current !== sentToken;
       if (!superseded && sameAccount) markVerificationRequired(uidAtStart);
       if (sameAccount) clearAuthBlocked();
