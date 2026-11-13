@@ -4,7 +4,7 @@ req_ids: [REQ-TENANCY-001, REQ-UX-001, REQ-DATA-001, REQ-AUTH-001]
 issues: [120]
 canvases: []
 done_when:
-  - "supabase/migrations/20261113000000_user_watchlists.sql exists and creates two tables: watched_tickers (ticker text primary key, one row per ticker shared by every user, with the per-ticker snapshot columns name, exchange, asset_type, coverage, snapshot_as_of, created_at) and user_watchlists (owner_uid text not null, owner_email text not null, ticker text not null references watched_tickers(ticker), added_at timestamptz not null default now(), removed_at timestamptz null, source text null, primary key (owner_uid, ticker)), both with row level security enabled and no policy for the anon or authenticated roles, and the owner records on the PR the SQL editor or CLI output of applying it to project hajmcfkqmtgidstpggrh before the PR is marked ready"
+  - "supabase/migrations/20261113000000_user_watchlists.sql exists and creates two tables: watched_tickers (ticker text primary key, one row per ticker shared by every user, with the per-ticker snapshot columns name, exchange, asset_type, coverage, snapshot_as_of, created_at) and user_watchlists (owner_uid text not null, owner_email text not null, ticker text not null references watched_tickers(ticker), added_at timestamptz not null default now(), removed_at timestamptz null, source text null, primary key (owner_uid, ticker)), both with row level security enabled and no policy for the anon or authenticated roles, and the owner records on the PR the SQL editor or CLI output of applying it to project hajmcfkqmtgidstpggrh, with the dashboard's row level security status for both new tables, before the PR is marked ready"
   - "supabase/functions/user-watchlist/index.ts answers GET (list), POST (add) and DELETE (remove) only for a request whose Authorization bearer token the stocks API accepts at GET /api/me, derives owner_uid from that token's sub and owner_email from the /api/me reply, never from the request body, and its deno tests cover: no token answers 401, a token the stocks API rejects answers 401, add then list then remove round trip for one uid, a second uid lists nothing of the first, a duplicate add is idempotent, adding the same ticker for two uids writes one watched_tickers row and two user_watchlists rows and fetches the per-ticker snapshot once, removing it for one uid leaves the watched_tickers row and the other membership, a stocks /api/me failure answers 503 and not an empty list"
   - "src/hooks/useUserWatchlist.ts exposes list, add and remove through the function with the Firebase ID token, invalidates the ranker query on add and remove, and its vitest file covers success, an HTTP error surfaced as error state, and the signed-out state, with no fabricated empty list on failure"
   - "The Watchlist tab renders the default list from GET /api/insights/watchlist/default as a read-only section titled Managed in Discord with the three surface flags and no add or remove control, and the user's own list with add and remove controls; the ranked panel requests GET /api/insights/watchlist with extras set to the user's active tickers; tests/insights/watchlist.spec.ts proves the read-only section, an add, a remove (the control solyra#120 asks for), the signed-out state and the error state, with page.screenshot before and after the add and the remove"
@@ -246,19 +246,30 @@ Writes scale with distinct tickers, not with users: the snapshot fetch runs at m
   the deno tests are the only check of the function's own logic; they run in CI through a
   `deno test` step added to the existing workflow (FEAT-CICD-001 owns that file; the plan names it).
 
-## Open questions for the owner
+## Decisions (owner, 2026-11-13) and what remains open
 
-1. Key the table by Firebase `sub` (immutable) with the email stored beside it, as drafted, or by
-   email as the request says? Email can change on an account; `sub` cannot.
-2. Where is the source of truth for the Supabase schema? The repo holds no migration for the
-   research tables. Should this change also add migrations that capture them, or only the new table?
-3. Are the research tables protected by RLS today? If the anon key can read them, the owner may want
-   that fixed under the same precedent before more per-user data lands.
-4. A web user's ticker gets no nightly data unless an operator adds it in Discord. Is "no data yet"
-   acceptable, or should a stocks job read the distinct set of watched tickers from
-   `watched_tickers` (no owners, one row per ticker) and fetch daily bars and ticker info for each
-   once, so a ticker watched by ten users is fetched once? If yes, that is a stocks spec of its own
-   (the job, its schedule, the ceiling on tickers and the cost), and the default list's brief,
-   insight and signal surfaces would still read only `'default'`.
-5. Which hosts do the CI workflows need for `deno test`, and does the hermetic Playwright run route
-   the function URL (drafted) or should the panel also work with the function unreachable?
+1. **Owner key.** Decided: the account id (Firebase `sub`) keys both the membership and the audit
+   trail, with the verified email stored beside it, because an email can change. As drafted.
+2. **Where the Supabase schema is managed.** Checked on 2026-11-13: the Supabase account connected
+   to this session sees one project only, `siuqvhscuiycvdrtiqsh` ("Insight Collective"), and is
+   refused on `hajmcfkqmtgidstpggrh`, the project `supabase/config.toml` names. So solyra's tables
+   live in a project this session cannot read, created there directly (through the Lovable editor
+   or the dashboard), and the repo holds no migration for them. Decision: the migration file in
+   this spec is the first committed record of a solyra table; the owner applies it in that project
+   and records the output and the row level security status on the PR (done_when item 1). Whether
+   to also commit a baseline migration that captures the four research tables is left to the owner;
+   it is not needed for this change.
+3. **Row level security of the research tables.** Not readable from here for the same reason. The
+   two new tables enable it with no policies, so only the service role reaches them. The owner reads
+   the dashboard's status for the research tables when applying the migration; a table open to the
+   anon key would be its own fix.
+4. **A user's ticker outside the default list.** Decided: show "no data yet" for now; no stocks job
+   fetches data for user tickers (you trade the three). `watched_tickers` is the deduplicated set a
+   job would read if that changes, so a fetch would still run once per ticker.
+5. **The two stocks web write routes.** Decided: blocked now (410, stocks spec), deleted in a later
+   small stocks spec once this change has removed every call to them.
+
+Still open for the implementation plan, not for the spec: which hosts the CI workflow needs for
+`deno test`, and whether the hermetic Playwright run routes the function URL (drafted) or the panel
+must also render with the function unreachable. Both are plan-level choices under FEAT-CICD-001's
+workflow file and this spec's done_when.
