@@ -2,7 +2,7 @@
 feat_id: FEAT-CHART-001
 spec: docs/superpowers/specs/2026-11-13-feat-chart-001-similar-setups-realized-sync.md
 branch: fix/feat-chart-001-similar-setups-realized
-pr: null
+pr: 327
 status: ready
 ---
 
@@ -53,7 +53,7 @@ Spec: § Design, fourth bullet. Advances done_when[4].
 Spec: § Design, § Risks. Advances done_when[5] and done_when[6].
 - [x] `npx tsc -b`, the full `npx vitest run` and `npm run build` pass.
 - [x] CHARTS-06 in `docs/UI-SCREENS.md` describes the tile, with the card's shifted line ranges.
-- [ ] Open the PR as a draft, set this plan's `pr`, and list it on the FEAT-CHART-001 catalog row with Status and Last reviewed.
+- [x] Open the PR as a draft (#327), set this plan's `pr`, and list it on the FEAT-CHART-001 catalog row with Status and Last reviewed.
 - [ ] `node scripts/docs-audit.mjs` on this branch and main, and `python3 scripts/gate/spec_gate.py --pr origin/main`, recorded on the PR.
 - [ ] The browser suite passes in CI on the head.
 
