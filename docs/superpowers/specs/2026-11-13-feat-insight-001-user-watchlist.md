@@ -4,8 +4,8 @@ req_ids: [REQ-TENANCY-001, REQ-UX-001, REQ-DATA-001, REQ-AUTH-001]
 issues: [120]
 canvases: []
 done_when:
-  - "supabase/migrations/20261113000000_user_watchlists.sql exists and creates two tables: watched_tickers (ticker text primary key, one row per ticker shared by every user, with the per-ticker snapshot columns name, exchange, asset_type, coverage, snapshot_as_of, snapshot_claimed_at, created_at) and user_watchlists (owner_uid text not null, owner_email text not null, ticker text not null references watched_tickers(ticker), added_at timestamptz not null default now(), removed_at timestamptz null, source text null, primary key (owner_uid, ticker)), both with row level security enabled and no policy for the anon or authenticated roles, and the owner records on the PR the SQL editor or CLI output of applying it to project hajmcfkqmtgidstpggrh, with the dashboard's row level security status for both new tables, before the PR is marked ready"
-  - "supabase/functions/user-watchlist/index.ts answers GET (list), POST (add) and DELETE (remove) only for a request whose Authorization bearer token the stocks API accepts at GET /api/me, derives owner_uid from that token's sub and owner_email from the /api/me reply, never from the request body, and its deno tests cover: no token answers 401, a token the stocks API rejects answers 401, add then list then remove round trip for one uid, a second uid lists nothing of the first, a duplicate add is idempotent, adding the same ticker for two uids writes one watched_tickers row and two user_watchlists rows and fetches the per-ticker snapshot once, two adds of the same new ticker in flight at the same time (both requests started before either finishes) still fetch the snapshot once because only the request that wins the atomic claim on snapshot_claimed_at fetches, the snapshot requests are GET /api/insights/ticker/{ticker}/info and GET /api/market/coverage?symbols={ticker} and a non-200 reply to either leaves coverage and snapshot_as_of null and clears the claim instead of storing the error body, the completion and the failure cleanup are fenced on the claim they acquired (update ... where ticker = $1 and snapshot_claimed_at = $claimed_at) so a claimant that finishes after its two-minute lease expired and another request took the claim writes nothing and clears nothing (tested with a delayed original claimant completing after a takeover), the two snapshot requests share a 90-second deadline inside the lease, GET refreshes the caller's stale rows under the same claim (a null snapshot, one older than 24 hours, or one reporting no bars taken before the last nightly ingest window) for at most five tickers per call so add then a successful nightly ingest then list without another add returns the refreshed coverage (tested with the coverage mock flipping from no bars to bars between the add and the list, and with eight stale rows refreshing five), removing it for one uid leaves the watched_tickers row and the other membership, a stocks /api/me failure answers 503 and not an empty list"
+  - "supabase/migrations/20261113000000_user_watchlists.sql exists and creates two tables: watched_tickers (ticker text primary key, one row per ticker shared by every user, with the per-ticker snapshot columns name, exchange, asset_type, coverage, snapshot_as_of, snapshot_claimed_at, snapshot_attempted_at, created_at) and user_watchlists (owner_uid text not null, owner_email text not null, ticker text not null references watched_tickers(ticker), added_at timestamptz not null default now(), removed_at timestamptz null, source text null, primary key (owner_uid, ticker)), both with row level security enabled and no policy for the anon or authenticated roles, and the owner records on the PR the SQL editor or CLI output of applying it to project hajmcfkqmtgidstpggrh, with the dashboard's row level security status for both new tables, before the PR is marked ready"
+  - "supabase/functions/user-watchlist/index.ts answers GET (list), POST (add) and DELETE (remove) only for a request whose Authorization bearer token the stocks API accepts at GET /api/me, derives owner_uid from that token's sub and owner_email from the /api/me reply, never from the request body, and its deno tests cover: no token answers 401, a token the stocks API rejects answers 401, add then list then remove round trip for one uid, a second uid lists nothing of the first, a duplicate add is idempotent, adding the same ticker for two uids writes one watched_tickers row and two user_watchlists rows and fetches the per-ticker snapshot once, two adds of the same new ticker in flight at the same time (both requests started before either finishes) still fetch the snapshot once because only the request that wins the atomic claim on snapshot_claimed_at fetches, the snapshot requests are GET /api/insights/ticker/{ticker}/info and GET /api/market/coverage?symbols={ticker} and a non-200 reply to either leaves coverage and snapshot_as_of null and clears the claim instead of storing the error body, the completion and the failure cleanup are fenced on the claim they acquired (update ... where ticker = $1 and snapshot_claimed_at = $claimed_at) so a claimant that finishes after its two-minute lease expired and another request took the claim writes nothing and clears nothing (tested with a delayed original claimant completing after a takeover), the two snapshot requests share a 90-second deadline inside the lease, GET refreshes the caller's stale rows under the same claim, whose predicate carries the staleness rule through a per-row stale-before parameter (a null snapshot, one older than 24 hours, or one whose coverage reports no bars taken before the last nightly ingest window), for at most five tickers per call chosen among rows not attempted in the last ten minutes in snapshot_attempted_at nulls first then added_at order, so add then a successful nightly ingest then list without another add returns the refreshed coverage (tested with the coverage mock flipping from no bars to bars between the add and the list, including a non-null no-bars snapshot younger than 24 hours taken before the ingest window, and with eight stale rows refreshing five) and a second list after the first five refreshes answered non-200 refreshes the next five (every claim stamps snapshot_attempted_at), removing it for one uid leaves the watched_tickers row and the other membership, a stocks /api/me failure answers 503 and not an empty list"
   - "supabase/functions/watched-tickers/index.ts answers GET only, accepts Authorization Bearer WATCHED_TICKERS_READ_SECRET (or WATCHED_TICKERS_READ_SECRET_PREVIOUS during rotation) compared the way _shared/cron-auth.ts compares its secret, answers 401 to a missing or wrong token and 500 to an unset secret without ever returning a list, and on success returns as_of, count, truncated and tickers: the distinct tickers with at least one active user_watchlists row ordered by watched_tickers.created_at, capped at 200 with truncated true beyond that, with no owner, email or membership field; its deno tests cover each of those, and supabase/config.toml sets verify_jwt false for it"
   - "src/hooks/useUserWatchlist.ts exposes list, add and remove through the function with the Firebase ID token, invalidates the ranker query on add and remove, and its vitest file covers success, an HTTP error surfaced as error state, and the signed-out state, with no fabricated empty list on failure"
   - "The Watchlist tab renders the default list from GET /api/insights/watchlist/default as a read-only section titled Managed in Discord with the three surface flags and no add or remove control, and the user's own list with add and remove controls; the ranked panel requests GET /api/insights/watchlist with extras set to the user's active tickers, with the normalized extras list part of useWatchlist's query key so a membership list that resolves after the first ranking triggers a second ranking request (a vitest delays the membership response and asserts both requests); tests/insights/watchlist.spec.ts proves the read-only section, an add, a remove (the control solyra#120 asks for), the signed-out state and the error state, with page.screenshot before and after the add and the remove"
@@ -106,6 +106,7 @@ create table public.watched_tickers (
   coverage        jsonb       null,          -- the stocks coverage reply, verbatim, or null
   snapshot_as_of  timestamptz null,          -- when the snapshot was last fetched; null = never
   snapshot_claimed_at timestamptz null,      -- set by the one request refreshing the snapshot; cleared when it finishes
+  snapshot_attempted_at timestamptz null,    -- stamped by every claim, success or failure; orders retries so failing rows cannot hold the budget
   created_at      timestamptz not null default now()
 );
 
@@ -159,20 +160,31 @@ record of a solyra table; the owner applies it to the project, and the PR record
    from user_watchlists u join watched_tickers w using (ticker)
    where u.owner_uid = uid and u.removed_at is null order by u.added_at`. Before answering, GET
   refreshes the caller's stale rows the same way POST does (the claim, the two stocks requests, the
-  fenced completion below), for at most five tickers per call in `added_at` order, so a list never
-  waits on more than ten stocks requests; the rest refresh on the next list. Stale means
-  `snapshot_as_of` null, older than 24 hours, or, when `coverage` reports no bars, taken before the
-  last nightly ingest window (00:30 ET today, after the stocks `fetch-watched-tickers` run at 23:45
-  ET). Without this a snapshot captured at add time, before the first nightly fetch, would stand for
+  fenced completion below), for at most five tickers per call, chosen among the caller's stale rows
+  not attempted in the last ten minutes, in `snapshot_attempted_at` nulls-first then `added_at`
+  order, so a list never waits on more than ten stocks requests and five rows whose stocks requests
+  keep failing cannot hold the budget: every claim stamps `snapshot_attempted_at = now()`, so the
+  next list moves on to the rows not yet tried and comes back to the failed ones after ten minutes.
+  Stale means `snapshot_as_of` null, older than 24 hours, or, when `coverage` reports no bars
+  (`coverage->'coverage'->ticker->>'daily' = 'false'`, the `CoverageFlags` shape of
+  `src/hooks/useTickerSearch.ts:75-82`), taken before the last nightly ingest window (00:30 ET today,
+  after the stocks `fetch-watched-tickers` run at 23:45 ET). The function turns that rule into one
+  instant per row, `stale_before`, and hands it to the claim, so the selection and the claim agree. Without this a snapshot captured at add time, before the first nightly fetch, would stand for
   ever: POST was the only writer, so a user who added a ticker once would read "no data for this
   symbol" long after stocks had its bars.
 - `POST {ticker}`: first `insert into watched_tickers (ticker) ... on conflict do nothing` (one row
   per ticker, whoever adds it first). Then the refresh, serialized by an atomic claim so two adds in
   flight at once cannot both fetch:
-  `update watched_tickers set snapshot_claimed_at = now() where ticker = $1 and (snapshot_as_of is null
-  or snapshot_as_of < now() - interval '24 hours') and (snapshot_claimed_at is null or
-  snapshot_claimed_at < now() - interval '2 minutes') returning ticker, snapshot_claimed_at`. Only the
-  request that gets a row back fetches `GET /api/insights/ticker/{ticker}/info` and
+  `update watched_tickers set snapshot_claimed_at = now(), snapshot_attempted_at = now() where ticker = $1
+  and (snapshot_as_of is null or snapshot_as_of < $2) and (snapshot_claimed_at is null or
+  snapshot_claimed_at < now() - interval '2 minutes') returning ticker, snapshot_claimed_at`, where
+  `$2` is the row's `stale_before`, computed by the function from the row it has just read: `now()`
+  minus 24 hours for a snapshot whose coverage reports bars, the start of the last nightly ingest
+  window (00:30 ET today) for one whose coverage reports no bars, and `now()` for a row with no
+  snapshot. The predicate carries the same staleness rule as the selection; a predicate that knew only
+  the 24-hour age could never claim, and so never refresh, a no-bars snapshot younger than 24 hours
+  taken before last night's ingest, which is the row this revision exists for. Only the request that
+  gets a row back fetches `GET /api/insights/ticker/{ticker}/info` and
   `GET /api/market/coverage?symbols={ticker}` (the `symbols` parameter is required by the contract,
   `tests/fixtures/stocks-openapi.json`, and is what `useTickerCoverage` sends) with the caller's
   bearer token, both under one 90-second deadline (an `AbortSignal` shared by the two requests), and
@@ -183,8 +195,9 @@ record of a solyra table; the owner applies it to the project, and the PR record
   the row, its update matches no row, and it writes nothing and clears nothing, logging
   `claim_lost`; the deadline inside the lease is what keeps a healthy claimant from ever getting
   there. A non-200 reply or the deadline stores nothing: `coverage` and `snapshot_as_of` stay as they
-  were, the claim is cleared with the same fenced update so the next add or list retries, and the add
-  still succeeds (the membership does not depend on the snapshot). A claim older than two minutes is
+  were, the claim is cleared with the same fenced update so a later add or list retries it, after ten
+  minutes and behind the rows not yet tried (`snapshot_attempted_at`, stamped by the claim), and the
+  add still succeeds (the membership does not depend on the snapshot). A claim older than two minutes is
   treated as abandoned (a crashed claimant) and may be taken again. Then the membership upsert
   `(uid, email, TICKER, source)`, clearing `removed_at` on a re-add. Ten users adding the same
   ticker, in sequence or at once, produce one ticker row, one snapshot fetch per 24 hours, and ten
