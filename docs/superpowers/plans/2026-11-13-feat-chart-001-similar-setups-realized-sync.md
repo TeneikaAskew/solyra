@@ -3,7 +3,7 @@ feat_id: FEAT-CHART-001
 spec: docs/superpowers/specs/2026-11-13-feat-chart-001-similar-setups-realized-sync.md
 branch: fix/feat-chart-001-similar-setups-realized
 pr: 327
-status: ready
+status: done
 ---
 
 # Similar setups realized win share and contract sync implementation plan
