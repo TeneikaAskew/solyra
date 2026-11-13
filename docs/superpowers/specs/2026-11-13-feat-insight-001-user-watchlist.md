@@ -5,7 +5,7 @@ issues: [120]
 canvases: []
 done_when:
   - "supabase/migrations/20261113000000_user_watchlists.sql exists and creates two tables: watched_tickers (ticker text primary key, one row per ticker shared by every user, with the per-ticker snapshot columns name, exchange, asset_type, coverage, snapshot_as_of, snapshot_claimed_at, created_at) and user_watchlists (owner_uid text not null, owner_email text not null, ticker text not null references watched_tickers(ticker), added_at timestamptz not null default now(), removed_at timestamptz null, source text null, primary key (owner_uid, ticker)), both with row level security enabled and no policy for the anon or authenticated roles, and the owner records on the PR the SQL editor or CLI output of applying it to project hajmcfkqmtgidstpggrh, with the dashboard's row level security status for both new tables, before the PR is marked ready"
-  - "supabase/functions/user-watchlist/index.ts answers GET (list), POST (add) and DELETE (remove) only for a request whose Authorization bearer token the stocks API accepts at GET /api/me, derives owner_uid from that token's sub and owner_email from the /api/me reply, never from the request body, and its deno tests cover: no token answers 401, a token the stocks API rejects answers 401, add then list then remove round trip for one uid, a second uid lists nothing of the first, a duplicate add is idempotent, adding the same ticker for two uids writes one watched_tickers row and two user_watchlists rows and fetches the per-ticker snapshot once, two adds of the same new ticker in flight at the same time (both requests started before either finishes) still fetch the snapshot once because only the request that wins the atomic claim on snapshot_claimed_at fetches, the snapshot requests are GET /api/insights/ticker/{ticker}/info and GET /api/market/coverage?symbols={ticker} and a non-200 reply to either leaves coverage and snapshot_as_of null and clears the claim instead of storing the error body, removing it for one uid leaves the watched_tickers row and the other membership, a stocks /api/me failure answers 503 and not an empty list"
+  - "supabase/functions/user-watchlist/index.ts answers GET (list), POST (add) and DELETE (remove) only for a request whose Authorization bearer token the stocks API accepts at GET /api/me, derives owner_uid from that token's sub and owner_email from the /api/me reply, never from the request body, and its deno tests cover: no token answers 401, a token the stocks API rejects answers 401, add then list then remove round trip for one uid, a second uid lists nothing of the first, a duplicate add is idempotent, adding the same ticker for two uids writes one watched_tickers row and two user_watchlists rows and fetches the per-ticker snapshot once, two adds of the same new ticker in flight at the same time (both requests started before either finishes) still fetch the snapshot once because only the request that wins the atomic claim on snapshot_claimed_at fetches, the snapshot requests are GET /api/insights/ticker/{ticker}/info and GET /api/market/coverage?symbols={ticker} and a non-200 reply to either leaves coverage and snapshot_as_of null and clears the claim instead of storing the error body, the completion and the failure cleanup are fenced on the claim they acquired (update ... where ticker = $1 and snapshot_claimed_at = $claimed_at) so a claimant that finishes after its two-minute lease expired and another request took the claim writes nothing and clears nothing (tested with a delayed original claimant completing after a takeover), the two snapshot requests share a 90-second deadline inside the lease, GET refreshes the caller's stale rows under the same claim (a null snapshot, one older than 24 hours, or one reporting no bars taken before the last nightly ingest window) for at most five tickers per call so add then a successful nightly ingest then list without another add returns the refreshed coverage (tested with the coverage mock flipping from no bars to bars between the add and the list, and with eight stale rows refreshing five), removing it for one uid leaves the watched_tickers row and the other membership, a stocks /api/me failure answers 503 and not an empty list"
   - "supabase/functions/watched-tickers/index.ts answers GET only, accepts Authorization Bearer WATCHED_TICKERS_READ_SECRET (or WATCHED_TICKERS_READ_SECRET_PREVIOUS during rotation) compared the way _shared/cron-auth.ts compares its secret, answers 401 to a missing or wrong token and 500 to an unset secret without ever returning a list, and on success returns as_of, count, truncated and tickers: the distinct tickers with at least one active user_watchlists row ordered by watched_tickers.created_at, capped at 200 with truncated true beyond that, with no owner, email or membership field; its deno tests cover each of those, and supabase/config.toml sets verify_jwt false for it"
   - "src/hooks/useUserWatchlist.ts exposes list, add and remove through the function with the Firebase ID token, invalidates the ranker query on add and remove, and its vitest file covers success, an HTTP error surfaced as error state, and the signed-out state, with no fabricated empty list on failure"
   - "The Watchlist tab renders the default list from GET /api/insights/watchlist/default as a read-only section titled Managed in Discord with the three surface flags and no add or remove control, and the user's own list with add and remove controls; the ranked panel requests GET /api/insights/watchlist with extras set to the user's active tickers, with the normalized extras list part of useWatchlist's query key so a membership list that resolves after the first ranking triggers a second ranking request (a vitest delays the membership response and asserts both requests); tests/insights/watchlist.spec.ts proves the read-only section, an add, a remove (the control solyra#120 asks for), the signed-out state and the error state, with page.screenshot before and after the add and the remove"
@@ -132,7 +132,7 @@ What lives where, so nothing is duplicated per user:
 | Data | Where it is stored | How many copies |
 |---|---|---|
 | bars, indicators, insight reports, news, options, signals | stocks Cloud SQL, keyed by ticker (for example `ticker_info`, one row per ticker, `lib/ticker_info.py:66-70` upserts `ON CONFLICT (ticker)`) | one per ticker, shared by every user and by the jobs; solyra writes none of it |
-| the watchlist row's snapshot (name, exchange, asset type, coverage, as-of) | `watched_tickers` | one per ticker, refreshed once per ticker when older than the refresh age (24 hours), whichever user triggers it |
+| the watchlist row's snapshot (name, exchange, asset type, coverage, as-of) | `watched_tickers` | one per ticker, refreshed once per ticker when stale (null, older than 24 hours, or reporting no bars and taken before the last nightly ingest window), whichever user triggers it, on add or on list |
 | who watches what | `user_watchlists` | one per (user, ticker); no data columns |
 
 The number of active watchers of a ticker is counted from `user_watchlists` when needed, never
@@ -157,21 +157,35 @@ record of a solyra table; the owner applies it to the project, and the PR record
 - `GET` lists the caller's active memberships joined to their ticker rows:
   `select u.ticker, u.added_at, u.source, w.name, w.exchange, w.asset_type, w.coverage, w.snapshot_as_of, w.created_at
    from user_watchlists u join watched_tickers w using (ticker)
-   where u.owner_uid = uid and u.removed_at is null order by u.added_at`.
+   where u.owner_uid = uid and u.removed_at is null order by u.added_at`. Before answering, GET
+  refreshes the caller's stale rows the same way POST does (the claim, the two stocks requests, the
+  fenced completion below), for at most five tickers per call in `added_at` order, so a list never
+  waits on more than ten stocks requests; the rest refresh on the next list. Stale means
+  `snapshot_as_of` null, older than 24 hours, or, when `coverage` reports no bars, taken before the
+  last nightly ingest window (00:30 ET today, after the stocks `fetch-watched-tickers` run at 23:45
+  ET). Without this a snapshot captured at add time, before the first nightly fetch, would stand for
+  ever: POST was the only writer, so a user who added a ticker once would read "no data for this
+  symbol" long after stocks had its bars.
 - `POST {ticker}`: first `insert into watched_tickers (ticker) ... on conflict do nothing` (one row
   per ticker, whoever adds it first). Then the refresh, serialized by an atomic claim so two adds in
   flight at once cannot both fetch:
   `update watched_tickers set snapshot_claimed_at = now() where ticker = $1 and (snapshot_as_of is null
   or snapshot_as_of < now() - interval '24 hours') and (snapshot_claimed_at is null or
-  snapshot_claimed_at < now() - interval '2 minutes') returning ticker`. Only the request that gets a
-  row back fetches `GET /api/insights/ticker/{ticker}/info` and
+  snapshot_claimed_at < now() - interval '2 minutes') returning ticker, snapshot_claimed_at`. Only the
+  request that gets a row back fetches `GET /api/insights/ticker/{ticker}/info` and
   `GET /api/market/coverage?symbols={ticker}` (the `symbols` parameter is required by the contract,
   `tests/fixtures/stocks-openapi.json`, and is what `useTickerCoverage` sends) with the caller's
-  bearer token, writes `name`, `exchange`, `asset_type`, `coverage` and `snapshot_as_of = now()` and
-  clears the claim in one update. A non-200 reply from either request stores nothing: `coverage` and
-  `snapshot_as_of` stay as they were, the claim is cleared so the next add retries, and the add still
-  succeeds (the membership does not depend on the snapshot). A claim older than two minutes is treated
-  as abandoned (a crashed claimant) and may be taken again. Then the membership upsert
+  bearer token, both under one 90-second deadline (an `AbortSignal` shared by the two requests), and
+  writes `name`, `exchange`, `asset_type`, `coverage` and `snapshot_as_of = now()` and clears the
+  claim in one update fenced on the claim it holds:
+  `... where ticker = $1 and snapshot_claimed_at = $claimed_at`. The returned `snapshot_claimed_at` is
+  the fence: a claimant that somehow outlives its two-minute lease finds another request's claim in
+  the row, its update matches no row, and it writes nothing and clears nothing, logging
+  `claim_lost`; the deadline inside the lease is what keeps a healthy claimant from ever getting
+  there. A non-200 reply or the deadline stores nothing: `coverage` and `snapshot_as_of` stay as they
+  were, the claim is cleared with the same fenced update so the next add or list retries, and the add
+  still succeeds (the membership does not depend on the snapshot). A claim older than two minutes is
+  treated as abandoned (a crashed claimant) and may be taken again. Then the membership upsert
   `(uid, email, TICKER, source)`, clearing `removed_at` on a re-add. Ten users adding the same
   ticker, in sequence or at once, produce one ticker row, one snapshot fetch per 24 hours, and ten
   membership rows. Answers the active list.
@@ -258,7 +272,7 @@ operations.
 
 | Store | Table | Writers | Readers |
 |---|---|---|---|
-| solyra Supabase `hajmcfkqmtgidstpggrh` | `watched_tickers` (one row per ticker, shared) | `user-watchlist` edge function: the row on first add, the snapshot once per ticker per 24 hours | the same function (GET, joined); the `watched-tickers` function serves the distinct active set, owner-free, to the stocks job `fetch-watched-tickers` (stocks spec 2026-11-13-feat-data-001-watched-ticker-ingest) |
+| solyra Supabase `hajmcfkqmtgidstpggrh` | `watched_tickers` (one row per ticker, shared) | `user-watchlist` edge function: the row on first add, the snapshot once per ticker when stale, on add or on list | the same function (GET, joined); the `watched-tickers` function serves the distinct active set, owner-free, to the stocks job `fetch-watched-tickers` (stocks spec 2026-11-13-feat-data-001-watched-ticker-ingest) |
 | solyra Supabase `hajmcfkqmtgidstpggrh` | `user_watchlists` (membership only, foreign key to `watched_tickers`) | `user-watchlist` edge function, for the signed-in user only | the same function (GET) for the solyra UI; never a stocks job, never the stocks API |
 | solyra Supabase `hajmcfkqmtgidstpggrh` | `watched-tickers` function: GET, `Authorization: Bearer WATCHED_TICKERS_READ_SECRET`, reply `{as_of, count, truncated, tickers}` | nobody; read-only over the two tables | the stocks job `fetch-watched-tickers`, nightly at 23:45 ET |
 | stocks Cloud SQL | `watchlists`, `user_id = 'default'` | Discord `/watchlist`, `backfill-ticker` via `/replay`, operator SQL | every stocks job; `GET /api/insights/watchlist` (ranker, owner always default); `GET /api/insights/watchlist/default` (membership and flags, read-only) |
