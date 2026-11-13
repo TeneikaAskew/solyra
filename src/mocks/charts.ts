@@ -98,7 +98,9 @@ export const MOCK_SIMILAR_SETUPS = {
     p75_mfe_pct: 0.18,
     avg_return_5min: 0.04,
     avg_return_20min: 0.082,
-    pct_profitable: 0.858,
+    pct_profitable: 0.496,
+    realized_count: 236,
+    pct_moved_in_favor: 0.858,
     // str(pd.Timestamp) on the wire: space separator, not "T".
     earliest: '2015-01-15 14:00:00+00:00',
     latest: '2026-04-07 20:00:00+00:00',

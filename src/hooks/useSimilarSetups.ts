@@ -15,7 +15,12 @@ export interface SimilarStats {
   p75_mfe_pct?: number | null;
   avg_return_5min?: number | null;
   avg_return_20min?: number | null;
+  /** Realized win share, 0..1, over realized_count (stocks FEAT-SIGNAL-001). */
   pct_profitable?: number | null;
+  /** Matched rows with a realized result: the pct_profitable denominator. */
+  realized_count?: number | null;
+  /** Share of matched rows whose best close in the window beat the signal close; not a win rate. */
+  pct_moved_in_favor?: number | null;
   earliest?: string | null;
   latest?: string | null;
 }
