@@ -4324,10 +4324,12 @@ fire, and during a replay session (the fires are forced empty, `:799`), it reads
 `CALL · score 4 · RSI ~55.0 (±5)` (the RSI is the last bar's RSI from the indicators answer,
 CHARTS-05; the band is fixed at 5), then `Querying historical signals…` while the first answer is
 pending (`src/components/charts/SimilarSetupsCard.tsx:60-65`), then four tiles, `Matches`,
-`% profitable` (the 0 to 1 fraction times 100, two decimals), `Median MFE` and `IQR (p25–p75)` as
-`+0.012% → +0.180%` (three decimals, `--` for a missing value; `:94-124`), and `Most recent matches`
+`% profitable` (the realized win share, the 0 to 1 fraction times 100 with two decimals, over the
+matches that have a realized result under stocks' fixed exit rule; a second line reads `of 236 realized`,
+or `none realized yet` with `--` when no match has one), `Median MFE` and `IQR (p25–p75)` as
+`+0.012% → +0.180%` (three decimals, `--` for a missing value; `:94-132`), and `Most recent matches`
 as a table of `When` (the first 16 characters of the stored time, `2026-04-07 14:44`), `RSI`, `MFE`,
-`+5 min` and `+20 min` (`:126-180`). An empty bucket reads
+`+5 min` and `+20 min` (`:134-188`). An empty bucket reads
 `No historical matches in this bucket yet. Try widening the RSI band or wait for the backfill to finish for this ticker.`
 (`:69-73`); a failed request shows the error text in red, `similar-setups 503` for example
 (`:83-87`).
@@ -4391,7 +4393,7 @@ The pytest class asserts the route's validation, shaping and failure answers wit
 bar minimum and the epoch-second times that decide the fire. No test asserts the `WHERE` clause, the
 `When` column or the stale rows. Te stays unticked.
 
-**Code:** `src/components/charts/SimilarSetupsCard.tsx:23-180`,
+**Code:** `src/components/charts/SimilarSetupsCard.tsx:23-188`,
 `src/routes/ChartsPage.tsx:392-393,792-816`, `src/hooks/useSimilarSetups.ts:54-82`,
 `platform/api/routers/signals.py:321-442`, `gcp/schema.sql:2137-2177`; no test id.
 

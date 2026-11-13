@@ -17,7 +17,12 @@ it('INS-FINAL-002/003 withholds unbounded Replay stats and formats percentage re
   const rows = await ctx.gather('IWM', 'Bearer fixture', 'replay', '2026-10-01T15:30:00Z');
   expect(rows.find((row: { type: string }) => row.type === 'similar_setups')).toMatchObject({ freshness: 'unavailable', payload: null });
   expect(requests.some(url => url.includes('/similar'))).toBe(false);
-  expect(ctx.summarize({ stats: { count: 240, pct_profitable: .858, avg_return_20min: .082 } }, 'similar_setups')).toContain('85.8% profitable, avg 20-min return 0.082%');
+  const similar = ctx.summarize({ stats: { count: 240, pct_profitable: .496, realized_count: 236, avg_return_20min: .082 } }, 'similar_setups');
+  expect(similar).toContain('49.6% profitable of 236 realized, avg best move 0.082%');
+  expect(similar).not.toContain('20-min return');
+  const noneRealized = ctx.summarize({ stats: { count: 240, pct_profitable: null, realized_count: 0, avg_return_20min: .082 } }, 'similar_setups');
+  expect(noneRealized).not.toContain('profitable');
+  expect(noneRealized).toContain('240 similar');
 });
 it('INS-FINAL-009 keeps exactly one source message across repeated follow-ups', async () => {
   const rows = ['m1', 'm2', 'm3'].flatMap((message_id, n) => Array.from({ length: 8 }, (_, i) => ({ message_id, session_id: 's', owner_uid: 'u', created_at: n, citation_id: `S${i+1}`, metadata: { payload: { message_id } } })));

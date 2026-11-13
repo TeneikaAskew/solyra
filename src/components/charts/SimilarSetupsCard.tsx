@@ -103,14 +103,21 @@ function Stats({ data }: { data: NonNullable<ReturnType<typeof useSimilarSetups>
   return (
     <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
       <Tile label="Matches" value={data.count.toLocaleString()} />
-      <Tile label="% profitable" value={fmtPct(data.pct_profitable)} />
+      <Tile label="% profitable" value={fmtPct(data.pct_profitable)} note={realizedNote(data.realized_count)} />
       <Tile label="Median MFE" value={fmtMFE(data.median_mfe_pct)} />
       <Tile label="IQR (p25–p75)" value={`${fmtMFE(data.p25_mfe_pct)} → ${fmtMFE(data.p75_mfe_pct)}`} />
     </div>
   );
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
+// The realized win share's denominator, so the tile is never read against Matches.
+// No number of minutes here: the exit rule belongs to stocks and may change.
+function realizedNote(n: number | null | undefined): string | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  return n > 0 ? `of ${n.toLocaleString()} realized` : 'none realized yet';
+}
+
+function Tile({ label, value, note }: { label: string; value: string; note?: string | null }) {
   return (
     <div className="rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-2">
       <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">
@@ -119,6 +126,7 @@ function Tile({ label, value }: { label: string; value: string }) {
       <div className="mt-0.5 font-mono text-xs font-semibold text-[var(--color-text-primary)]">
         {value}
       </div>
+      {note && <div className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">{note}</div>}
     </div>
   );
 }

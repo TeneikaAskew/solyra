@@ -5421,9 +5421,15 @@ export interface components {
         SimilarStats: {
             /** Avg Mfe Pct */
             avg_mfe_pct?: number | null;
-            /** Avg Return 5Min */
+            /**
+             * Avg Return 5Min
+             * @description Average best close within 5 bars (a favourable excursion), percent
+             */
             avg_return_5min?: number | null;
-            /** Avg Return 20Min */
+            /**
+             * Avg Return 20Min
+             * @description Average best close within 20 bars (a favourable excursion), percent
+             */
             avg_return_20min?: number | null;
             /** Count */
             count: number;
@@ -5438,10 +5444,20 @@ export interface components {
             /** P75 Mfe Pct */
             p75_mfe_pct?: number | null;
             /**
+             * Pct Moved In Favor
+             * @description Fraction 0..1 of matched rows whose best close within 20 bars was better than the signal close (return_pct > 0); not a win rate
+             */
+            pct_moved_in_favor?: number | null;
+            /**
              * Pct Profitable
-             * @description Fraction 0..1, not a percent
+             * @description Realized win share, fraction 0..1, not a percent: realized_return_pct > 0 (rule next-open-20m-1c-v1) among matched rows with a realized value; null when none has one
              */
             pct_profitable?: number | null;
+            /**
+             * Realized Count
+             * @description Matched rows with a realized value, the pct_profitable denominator
+             */
+            realized_count?: number | null;
         } & {
             [key: string]: unknown;
         };
