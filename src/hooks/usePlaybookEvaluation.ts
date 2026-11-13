@@ -103,6 +103,8 @@ function signatureForSnapshot(s: MarketSnapshot): string {
     s.volumeToday,
     s.orbHigh,
     s.orbLow,
+    s.ticker,
+    JSON.stringify(s.orbOpening ?? null),
     s.minutesSinceOpen,
     ind.ema9,
     ind.ema20,
