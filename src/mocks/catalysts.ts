@@ -16,6 +16,7 @@
  * a function, evaluated per call.
  */
 import type { CatalystsResponse, CatalystTypesResponse } from '@/routes/CatalystsPage';
+import { earningsRoutes } from './earnings';
 import type { MockRoute } from './types';
 import { addDaysToISO, todayET } from '@/lib/dates';
 
@@ -136,6 +137,7 @@ export const MOCK_CATALYST_TYPES = {
  * strings pass through untouched.
  */
 export const catalystsRoutes: MockRoute[] = [
+  ...earningsRoutes,
   { pattern: /^\/api\/catalysts\/events$/, reply: () => ({ body: buildCatalystEvents() }) },
   { pattern: /^\/api\/catalysts\/types$/, reply: () => ({ body: MOCK_CATALYST_TYPES }) },
 ];

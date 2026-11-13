@@ -13,6 +13,7 @@ import { useTickerStore } from '@/stores/tickerStore';
 import type { Ticker } from '@/types';
 import { addDaysToISO, todayET } from '@/lib/dates';
 import { DateRangePicker } from '@/components/shared/DateRangePicker';
+import { EarningsHistory } from '@/components/catalysts/EarningsHistory';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -517,6 +518,7 @@ export default function CatalystsPage() {
 
       {/* Hot Now, high-impact catalysts in today/tomorrow window */}
       <DataGate>
+      <EarningsHistory />
       {hotEvents.length > 0 && (
         <div className="rounded-xl bg-[var(--surface-1)] p-3 ring-1 ring-[var(--warn)]/30">
           <div className="flex items-center gap-2 mb-2">
