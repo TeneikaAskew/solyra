@@ -11,7 +11,7 @@ done_when:
   - "src/hooks/researchEvidence.test.ts: the similar_setups summary reads 49.6% profitable of 236 realized, avg best move 0.082% for that payload, leaves the profitable clause out when pct_profitable is null, and no longer contains 20-min return"
   - "tsc -b, the full vitest run (src/mocks/contract.test.ts included), npm run build and the browser suite pass on the PR head; node scripts/docs-audit.mjs reports nothing on the branch that main does not; python3 scripts/gate/spec_gate.py --pr origin/main is clean"
   - "CHARTS-06 in docs/UI-SCREENS.md describes the % profitable tile as the realized win share with its realized count, and the FEAT-CHART-001 catalog row shows a current Status and Last reviewed and lists the PR"
-status: draft
+status: approved
 supersedes: null
 ---
 
@@ -19,8 +19,8 @@ supersedes: null
 
 ## Authority
 
-The owner asked on 2026-11-13 for this sync and the two label changes. This spec is a draft: it takes
-effect only when the owner approves it, and only the owner moves its `status` to approved.
+The owner asked on 2026-11-13 for this sync and the two label changes. The spec merged as a draft
+(PR 325), and the owner approved it on 2026-11-13; this change records that approval in `status`.
 
 ## Problem
 
