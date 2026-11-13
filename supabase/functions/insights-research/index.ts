@@ -183,8 +183,8 @@ function summarize(payload: unknown, type: string): string {
   if (Array.isArray(p.signals) && p.signals.length) parts.push(`${p.signals.length} recent signals on record.`);
   const stats = p.stats && typeof p.stats === 'object' ? p.stats as Record<string, unknown> : null;
   if (stats && num(stats.count) !== null) {
-    const win = num(stats.pct_profitable); const r20 = num(stats.avg_return_20min);
-    parts.push(`${stats.count} similar ${str(p.direction) ?? ''} setups since ${str(stats.earliest)?.slice(0, 10) ?? 'unknown'}${win !== null ? `, ${(win * 100).toFixed(1)}% profitable` : ''}${r20 !== null ? `, avg 20-min return ${r20.toFixed(3)}%` : ''}.`);
+    const win = num(stats.pct_profitable); const realized = num(stats.realized_count); const best = num(stats.avg_return_20min);
+    parts.push(`${stats.count} similar ${str(p.direction) ?? ''} setups since ${str(stats.earliest)?.slice(0, 10) ?? 'unknown'}${win !== null ? `, ${(win * 100).toFixed(1)}% profitable${realized !== null && realized > 0 ? ` of ${realized} realized` : ''}` : ''}${best !== null ? `, avg best move ${best.toFixed(3)}%` : ''}.`);
   }
   if (!parts.length) parts.push(`${type} data available; see the full report on its page.`);
   return parts.join(' ').slice(0, 480);
