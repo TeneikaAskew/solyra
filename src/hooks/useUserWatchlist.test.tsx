@@ -31,8 +31,16 @@ const results: {
   defaults?: ReturnType<typeof useDefaultWatchlist>;
 } = {};
 
+/** Every value useUserWatchlist returned, one per render, in order. */
+const listRenders: Array<ReturnType<typeof useUserWatchlist>> = [];
+
 const report = <K extends keyof typeof results>(key: K, value: (typeof results)[K]) => { results[key] = value; };
-function ListProbe() { report('list', useUserWatchlist()); return null; }
+function ListProbe() {
+  const list = useUserWatchlist();
+  listRenders.push(list);
+  report('list', list);
+  return null;
+}
 function AddProbe() { report('add', useAddUserTicker()); return null; }
 function RemoveProbe() { report('remove', useRemoveUserTicker()); return null; }
 function DefaultProbe() { report('defaults', useDefaultWatchlist()); return null; }
@@ -57,6 +65,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   for (const key of Object.keys(results)) delete results[key as keyof typeof results];
+  listRenders.length = 0;
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -96,6 +105,26 @@ describe('useUserWatchlist', () => {
     await settle();
     expect(results.list?.query.isError).toBe(true);
     expect(results.list?.query.error?.message).toBe('Watchlist service 502');
+  });
+
+  it('a 422 names each validation message the API returned, not the status', async () => {
+    fetchMock.mockImplementation(() => json({
+      detail: [
+        { loc: ['body', 'ticker'], msg: 'Field required', type: 'missing' },
+        { loc: ['body', 'source'], msg: "Input should be 'ui' or 'combobox-auto-add'", type: 'literal_error' },
+      ],
+    }, 422));
+    await render(ListProbe);
+    await settle();
+    expect(results.list?.query.isError).toBe(true);
+    expect(results.list?.query.error?.message).toBe("Field required; Input should be 'ui' or 'combobox-auto-add'");
+  });
+
+  it('a 422 whose detail array carries no message still names the status', async () => {
+    fetchMock.mockImplementation(() => json({ detail: [{ loc: ['body'] }] }, 422));
+    await render(ListProbe);
+    await settle();
+    expect(results.list?.query.error?.message).toBe('Watchlist service 422');
   });
 
   it('a 401 (token expired after render) is the signed-out state, requested once', async () => {
@@ -151,6 +180,36 @@ describe('useUserWatchlist', () => {
     expect(client.getQueryCache().find({ queryKey: USER_WATCHLIST_KEY, exact: true })?.state.data).toBeUndefined();
   });
 
+  it('another account signing in refetches and never exposes the previous account\'s rows', async () => {
+    fetchMock.mockImplementation(() => json(MOCK_ME_WATCHLIST));
+    await render(ListProbe);
+    await settle();
+    expect(results.list?.activeTickers).toEqual(['NVDA', 'ABCD']);
+
+    let resolveB: (r: Response) => void = () => {};
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { resolveB = resolve; }));
+    const firstRenderAsB = listRenders.length;
+    auth.uid = 'uid-b';
+    await render(ListProbe);
+    await settle();
+    const asB = listRenders.slice(firstRenderAsB);
+    expect(asB.length).toBeGreaterThan(0);
+    for (const seen of asB) {
+      expect(seen.query.data).toBeUndefined();
+      expect(seen.activeTickers).toEqual([]);
+    }
+    expect(calls()).toHaveLength(2);
+
+    const listB = { ...MOCK_ME_WATCHLIST, owner_email: 'b@example.com', tickers: [{ ...MOCK_ME_WATCHLIST.tickers[0], ticker: 'MSFT' }] };
+    await act(async () => { resolveB(new Response(JSON.stringify(listB), { status: 200 })); });
+    await settle();
+    expect(results.list?.activeTickers).toEqual(['MSFT']);
+    for (const seen of listRenders.slice(firstRenderAsB)) {
+      expect(seen.activeTickers).not.toContain('NVDA');
+      expect(seen.activeTickers).not.toContain('ABCD');
+    }
+  });
+
   it('signed out sends no request', async () => {
     auth.isSignedIn = false;
     await render(ListProbe);
@@ -195,14 +254,18 @@ describe('useAddUserTicker', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['watchlist'] });
   });
 
-  it('a non-OK response rejects with the API detail and invalidates nothing', async () => {
-    fetchMock.mockImplementation(() => json({ detail: 'ticker not found' }, 404));
+  // The stocks API commits the write before it reads the list back, and a
+  // 503 from that read does not undo it, so a failed write still refreshes.
+  it('a non-OK response rejects with the API detail and still refreshes both keys', async () => {
+    fetchMock.mockImplementation(() => json({ detail: 'watchlist read-back failed' }, 503));
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     await render(AddProbe);
     await act(async () => {
-      await expect(results.add?.mutateAsync({ ticker: 'ZZZZ', source: 'combobox-auto-add' })).rejects.toThrow('ticker not found');
+      await expect(results.add?.mutateAsync({ ticker: 'ZZZZ', source: 'combobox-auto-add' })).rejects.toThrow('watchlist read-back failed');
     });
-    expect(invalidate).not.toHaveBeenCalled();
+    await settle();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: USER_WATCHLIST_KEY });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['watchlist'] });
   });
 });
 
@@ -213,6 +276,18 @@ describe('useRemoveUserTicker', () => {
     await render(RemoveProbe);
     await act(async () => { await results.remove?.mutateAsync('NVDA'); });
     expect(calls()).toEqual([{ url: '/api/me/watchlist/NVDA', method: 'DELETE' }]);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: USER_WATCHLIST_KEY });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['watchlist'] });
+  });
+
+  it('a failed DELETE rejects with the API detail and still refreshes both keys', async () => {
+    fetchMock.mockImplementation(() => json({ detail: 'watchlist read-back failed' }, 503));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    await render(RemoveProbe);
+    await act(async () => {
+      await expect(results.remove?.mutateAsync('NVDA')).rejects.toThrow('watchlist read-back failed');
+    });
+    await settle();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: USER_WATCHLIST_KEY });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['watchlist'] });
   });
