@@ -20,8 +20,10 @@ import type {
 export const USER_WATCHLIST_KEY = ['me', 'watchlist'] as const;
 
 /**
- * A non-OK answer from a watchlist route, carrying its HTTP status and the
- * identity (uid and emailVerified) the request was made under.
+ * A failed watchlist read, carrying its HTTP status (0 when no response came
+ * back: a network failure or an unreadable body) and the identity (uid and
+ * emailVerified) the request was made under. Every error the list query
+ * throws is one of these, so a cached error always names its owner.
  */
 class WatchlistServiceError extends Error {
   readonly status: number;
@@ -117,9 +119,16 @@ export function useUserWatchlist(): {
     queryKey: USER_WATCHLIST_KEY,
     enabled: isSignedIn && !unauthorizedCached,
     queryFn: async () => {
-      const list = await readWatchlistResponse<MeWatchlistResponse>(await fetch('/api/me/watchlist'), identity);
-      listIdentity.set(list, identity);
-      return list;
+      try {
+        const list = await readWatchlistResponse<MeWatchlistResponse>(await fetch('/api/me/watchlist'), identity);
+        listIdentity.set(list, identity);
+        return list;
+      } catch (err) {
+        // A fetch TypeError or a body that will not parse carries no owner,
+        // so it would outlive an account switch. Own it here, message kept.
+        if (err instanceof WatchlistServiceError) throw err;
+        throw new WatchlistServiceError(err instanceof Error ? err.message : String(err), 0, identity);
+      }
     },
     // Each response object is kept as fetched, so the identity recorded for
     // it above stays attached to what the cache holds.

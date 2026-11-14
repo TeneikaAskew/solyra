@@ -210,6 +210,28 @@ describe('useUserWatchlist', () => {
     }
   });
 
+  it('a network error cached under one account is dropped when another signs in and never shown to it', async () => {
+    fetchMock.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
+    await render(ListProbe);
+    await settle();
+    expect(results.list?.query.error?.message).toBe('Failed to fetch');
+
+    let resolveB: (r: Response) => void = () => {};
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { resolveB = resolve; }));
+    const firstRenderAsB = listRenders.length;
+    auth.uid = 'uid-b';
+    await render(ListProbe);
+    await settle();
+    const asB = listRenders.slice(firstRenderAsB);
+    expect(asB.length).toBeGreaterThan(0);
+    for (const seen of asB) expect(seen.query.error).toBeNull();
+    expect(calls()).toHaveLength(2);
+    await act(async () => { resolveB(new Response(JSON.stringify(MOCK_ME_WATCHLIST), { status: 200 })); });
+    await settle();
+    expect(results.list?.query.error).toBeNull();
+    expect(results.list?.activeTickers).toEqual(['NVDA', 'ABCD']);
+  });
+
   it('signed out sends no request', async () => {
     auth.isSignedIn = false;
     await render(ListProbe);
