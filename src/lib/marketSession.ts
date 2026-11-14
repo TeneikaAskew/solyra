@@ -59,15 +59,30 @@ function etHalfPastMidnight(y: number, m: number, d: number): Date {
 }
 
 /**
- * The most recent elapsed 00:30 America/New_York instant at or before `now`:
- * the start of the nightly ingest window. A ticker added after it has not had
- * a fetch run over it yet.
+ * The most recent elapsed ingest boundary at or before `now`: the 00:30
+ * America/New_York instant that follows a Monday-to-Friday calendar day, so
+ * Tuesday to Saturday 00:30 ET. The stocks fetch runs at 23:45 ET on weekdays
+ * only (`45 23 * * 1-5`), so a ticker added after the boundary has not had a
+ * fetch run over it yet; on a Sunday or a Monday morning the boundary is still
+ * the Saturday 00:30 that followed Friday night's fetch.
+ *
+ * Residual: solyra holds no exchange holiday calendar, so the morning after a
+ * weekday market holiday counts as a boundary although the job skipped that
+ * night and wrote nothing. The clean fix is a per-row fetch timestamp from the
+ * stocks API, which this module cannot supply.
  */
 export function lastIngestWindowStart(now: Date): Date {
   const { y, m, d } = etWallParts(now);
-  const today = etHalfPastMidnight(y, m, d);
-  if (today.getTime() <= now.getTime()) return today;
-  // Date.UTC normalises day 0 to the last day of the previous month.
-  const prev = new Date(Date.UTC(y, m - 1, d - 1));
-  return etHalfPastMidnight(prev.getUTCFullYear(), prev.getUTCMonth() + 1, prev.getUTCDate());
+  // Walk back over Eastern calendar days; a boundary is found within a week.
+  for (let back = 0; back <= 7; back++) {
+    // Date.UTC normalises day 0 and below into the previous month.
+    const day = new Date(Date.UTC(y, m - 1, d - back));
+    // getUTCDay of a calendar date built in UTC is that date's weekday:
+    // Tuesday (2) to Saturday (6) 00:30 follows a Monday-to-Friday night.
+    const weekday = day.getUTCDay();
+    if (weekday < 2) continue;
+    const boundary = etHalfPastMidnight(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate());
+    if (boundary.getTime() <= now.getTime()) return boundary;
+  }
+  throw new Error(`lastIngestWindowStart: no weekday boundary within a week of ${now.toISOString()}`);
 }

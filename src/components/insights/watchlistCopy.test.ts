@@ -3,7 +3,8 @@
 // data is pending, or renders a blank, fails.
 import { describe, expect, it } from 'vitest';
 import type { MeWatchlistResponse, MeWatchlistRow } from '@/types/watchlist';
-import { addedNotice, addFailedNotice, dataStateCopy } from './watchlistCopy';
+import { NA } from '@/lib/format';
+import { addedNotice, addFailedNotice, dataStateCopy, rowDataText } from './watchlistCopy';
 
 // 09:00 EST; the most recent elapsed 00:30 ET is 2026-11-13T05:30:00Z.
 const NOW = new Date('2026-11-13T14:00:00Z');
@@ -29,6 +30,37 @@ describe('dataStateCopy', () => {
 
   it('a row with a bar has no data-state copy; the bar date shows instead', () => {
     expect(dataStateCopy(row('2026-11-13T06:00:00Z', '2026-11-12'), NOW)).toBeNull();
+  });
+
+  it('an unparsable added_at has no data-state copy, never "no data for this symbol"', () => {
+    expect(dataStateCopy(row('not-a-timestamp', null), NOW)).toBeNull();
+  });
+});
+
+// Rule 4: a malformed value renders as the unavailable placeholder, never as
+// a state the row does not have.
+describe('rowDataText', () => {
+  const UNAVAILABLE = `${NA} unavailable`;
+
+  it('a null-bar row added after the boundary waits for tonight', () => {
+    expect(rowDataText(row('2026-11-13T06:00:00Z', null), NOW)).toBe("data arrives after tonight's fetch");
+  });
+
+  it('a null-bar row added before the boundary has no data', () => {
+    expect(rowDataText(row('2026-11-12T20:00:00Z', null), NOW)).toBe('no data for this symbol');
+  });
+
+  it('a row with a bar shows its date', () => {
+    expect(rowDataText(row('2026-11-12T20:00:00Z', '2026-11-12'), NOW)).toBe('last bar 2026-11-12');
+  });
+
+  it('a null-bar row whose added_at does not parse is unavailable', () => {
+    expect(rowDataText(row('not-a-timestamp', null), NOW)).toBe(UNAVAILABLE);
+    expect(rowDataText(row('', null), NOW)).toBe(UNAVAILABLE);
+  });
+
+  it('an empty last_daily_bar is unavailable, never a blank "last bar "', () => {
+    expect(rowDataText(row('2026-11-12T20:00:00Z', ''), NOW)).toBe(UNAVAILABLE);
   });
 });
 
@@ -78,6 +110,13 @@ describe('addedNotice', () => {
       NOW,
     );
     expect(notice.message).toBe("Added to your watchlist: data arrives after tonight's fetch");
+  });
+
+  it('a row whose added_at does not parse reads as unavailable', () => {
+    expect(addedNotice(list(listRow('AAPL', 'not-a-timestamp', null)), 'AAPL', NOW)).toEqual({
+      kind: 'success',
+      message: `Added to your watchlist: ${NA} unavailable`,
+    });
   });
 
   it('a response that does not list the ticker is an error, never a success', () => {
