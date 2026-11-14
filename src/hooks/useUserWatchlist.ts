@@ -2,7 +2,7 @@
 //
 // Identity is the Firebase ID token that src/lib/authedFetch.ts attaches to
 // every relative /api call, so these hooks use the ordinary relative fetch and
-// send no apikey, no custom auth header and no body field naming the user.
+// send no API key header, no custom auth header and no body field naming the user.
 import { useEffect } from 'react';
 import {
   useMutation,
