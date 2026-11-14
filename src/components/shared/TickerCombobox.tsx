@@ -6,10 +6,11 @@ import { usePopoverPosition } from '@/components/shared/popoverPosition';
 import {
   useTickerSearch,
   useTickerCoverage,
-  useAddToWatchlist,
   type SearchMatch,
   type TickerCoverage,
 } from '@/hooks/useTickerSearch';
+import { useAddUserTicker } from '@/hooks/useUserWatchlist';
+import { addedNotice, addFailedNotice, type WatchlistNotice } from '@/components/insights/watchlistCopy';
 
 export type CoverageBadge = 'full' | 'daily' | 'new';
 export type Coverage = TickerCoverage;
@@ -123,14 +124,14 @@ function BadgeChip({ badge }: { badge: CoverageBadge }) {
 
 interface TickerComboboxProps {
   className?: string;
-  /** Called whenever a symbol is picked (any badge). Auto-ingest for
-   *  never-before-seen ("new"-badged) tickers is handled internally —
-   *  see the `choose` handler below — this prop is for extra page-level
-   *  side effects, if a consumer ever needs one. */
+  /** Called whenever a symbol is picked (any badge). The auto-add of
+   *  never-before-seen ("new"-badged) tickers to the user's watchlist is
+   *  handled internally (see the `choose` handler below); this prop is for
+   *  extra page-level side effects, if a consumer ever needs one. */
   onPickNew?: (symbol: string) => void;
 }
 
-type IngestNotice = { kind: 'success' | 'error'; message: string };
+type IngestNotice = WatchlistNotice;
 
 const INGEST_NOTICE_MS = 8_000;
 
@@ -158,7 +159,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [ingestNotice, setIngestNotice] = useState<IngestNotice | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const addToWatchlist = useAddToWatchlist();
+  const addUserTicker = useAddUserTicker();
 
   // Viewport-clamped positioning (shared helper — never bleed off-screen).
   // The dropdown and the ingest notice share the same trigger button, hence
@@ -259,7 +260,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
   const choose = (symbol: string) => {
     const upper = symbol.toUpperCase();
 
-    // Auto-ingest only fires for a SEARCH row badged "new" — quick-picks and
+    // The auto-add only fires for a SEARCH row badged "new": quick-picks and
     // recents never carry a badge (no coverage was queried for them), and if
     // the coverage lookup itself errored, badges are unreliable so we must
     // not trust a "new" reading enough to write to the watchlist.
@@ -272,21 +273,16 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
     close();
 
     if (shouldAutoIngest) {
-      addToWatchlist.mutate(upper, {
-        onSuccess: () =>
-          showIngestNotice({
-            kind: 'success',
-            message: `Tracking ${upper}: daily data lands after tonight's fetch`,
-          }),
-        onError: (err) =>
-          // Never swallow the failure — browsing is still allowed (setTicker
+      addUserTicker.mutate(
+        { ticker: upper, source: 'combobox-auto-add' },
+        {
+          onSuccess: (list) => showIngestNotice(addedNotice(list, upper, new Date())),
+          // Never swallow the failure: browsing is still allowed (setTicker
           // above already ran), but the user must know the watchlist write
           // didn't happen so pages can't silently look "tracked".
-          showIngestNotice({
-            kind: 'error',
-            message: `couldn't add ${upper} to tracking, ${err.message}`,
-          }),
-      });
+          onError: (err) => showIngestNotice(addFailedNotice(upper, err.message)),
+        },
+      );
     }
   };
 
@@ -490,7 +486,7 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
         </div>
       )}
 
-      {/* Auto-ingest notice, success or failure of the watchlist-add fired
+      {/* Auto-add notice, success or failure of the watchlist-add fired
           from `choose()` above. Renders below the trigger (popover is
           already closed by the time this can appear) and self-clears after
           INGEST_NOTICE_MS, mirroring JournalPage's exportStatus toast. */}
