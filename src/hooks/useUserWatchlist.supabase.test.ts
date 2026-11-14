@@ -7,6 +7,15 @@ import { describe, expect, it } from 'vitest';
 // file the feature creates or edits and fails if any names a Supabase surface.
 // The forbidden strings are built from parts so this file contains none of
 // them literally and is scanned like every other file in the list.
+//
+// Two tiers. SCANNED_FILES are the files this change owns: none may contain a
+// forbidden string. EDITED_RESEARCH_SPECS are the research workspace's own
+// Playwright specs, which name that workspace's edge-function routes before
+// and independently of this change and which the spec keeps untouched; this
+// change edited only their watchlist route glob. They are checked on the lines
+// this change owns (no line naming a watchlist route holds a forbidden
+// string) and pinned elsewhere (each forbidden string's occurrence count must
+// equal the count measured before the change, so a new one fails).
 
 const FORBIDDEN: readonly string[] = [
   ['integrations', 'supabase'].join('/'),
@@ -45,6 +54,18 @@ const SCANNED_FILES: readonly string[] = [
   'src/hooks/useUserWatchlist.supabase.test.ts',
 ];
 
+// Pinned occurrence counts of each forbidden string, as measured on the files
+// before this change; a forbidden string not listed here is pinned at zero.
+const EDITED_RESEARCH_SPECS: ReadonlyArray<{ file: string; pinned: Readonly<Record<string, number>> }> = [
+  { file: 'tests/ai-insights-lovable/final-findings.spec.ts', pinned: { [['functions', 'v1'].join('/')]: 3 } },
+  { file: 'tests/ai-insights-lovable/workspace-integration.spec.ts', pinned: { [['functions', 'v1'].join('/')]: 8 } },
+];
+
+// The only lines this change edits in those specs name a watchlist route.
+const WATCHLIST_ROUTES: readonly string[] = ['/api/insights/watchlist', '/api/me/watchlist'];
+
+const countOf = (text: string, needle: string): number => text.split(needle).length - 1;
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
 
@@ -59,6 +80,25 @@ describe('per-user watchlist touches no Supabase surface', () => {
       }
     }
     expect(hits).toEqual([]);
+  });
+
+  it('the edited research specs hold only their pinned forbidden strings, none on a watchlist route line', () => {
+    const problems: string[] = [];
+    for (const { file, pinned } of EDITED_RESEARCH_SPECS) {
+      const text = fs.readFileSync(path.join(REPO, file), 'utf8');
+      for (const needle of FORBIDDEN) {
+        const expected = pinned[needle] ?? 0;
+        const actual = countOf(text, needle);
+        if (actual !== expected) problems.push(`${file} has ${actual} of "${needle}", pinned at ${expected}`);
+      }
+      text.split('\n').forEach((line, i) => {
+        if (!WATCHLIST_ROUTES.some((route) => line.includes(route))) return;
+        for (const needle of FORBIDDEN) {
+          if (line.includes(needle)) problems.push(`${file}:${i + 1} names a watchlist route and "${needle}"`);
+        }
+      });
+    }
+    expect(problems).toEqual([]);
   });
 
   it('adds no supabase migrations', () => {
