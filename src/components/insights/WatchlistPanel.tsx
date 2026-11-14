@@ -174,7 +174,12 @@ export function WatchlistPanel({
               {watchlist.data.candidate_count} candidates ·{' '}
               {watchlist.data.excluded_count} excluded by liquidity gate
             </span>
-            <span>{watchlist.data.duration_ms}ms · run {watchlist.data.run_id.slice(0, 8)}</span>
+            <span>
+              {/* keepPreviousData: these are the previous key's rows while the
+                  ranking for the new extras loads, so they say so. */}
+              {watchlist.isPlaceholderData && 'updating · '}
+              {watchlist.data.duration_ms}ms · run {watchlist.data.run_id.slice(0, 8)}
+            </span>
           </div>
 
           {/* Table */}

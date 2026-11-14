@@ -12,8 +12,10 @@ let client: QueryClient;
 let root: Root;
 let container: HTMLDivElement;
 
+const seen: { latest?: ReturnType<typeof useWatchlist> } = {};
+const report = (value: ReturnType<typeof useWatchlist>) => { seen.latest = value; };
 function Probe({ extras }: { extras: string[] }) {
-  useWatchlist({ extras });
+  report(useWatchlist({ extras }));
   return null;
 }
 async function render(extras: string[]) {
@@ -68,5 +70,19 @@ describe('useWatchlist extras', () => {
     await render(['nvda', 'AAPL']);
     await settle();
     expect(urls()).toHaveLength(3);
+  });
+
+  it('keeps the previous ranking on screen, marked as placeholder, while the new extras load', async () => {
+    await render([]);
+    await settle();
+    const first = seen.latest?.data;
+    expect(first).toEqual({ items: [] });
+
+    fetchMock.mockImplementation(() => new Promise<Response>(() => {}));
+    await render(['NVDA']);
+    await settle();
+    expect(seen.latest?.isLoading).toBe(false);
+    expect(seen.latest?.isPlaceholderData).toBe(true);
+    expect(seen.latest?.data).toBe(first);
   });
 });

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { CatalystType, WatchlistResponse } from '@/types/watchlist';
 
 interface UseWatchlistOpts {
@@ -40,5 +40,9 @@ export function useWatchlist(opts: UseWatchlistOpts = {}) {
     },
     enabled,
     staleTime: 5 * 60_000,
+    // The key changes with the user's extras (the list loads after the
+    // panel mounts, and on every add or remove), so the ranked rows already
+    // shown stay on screen while the new ranking loads, never a spinner.
+    placeholderData: keepPreviousData,
   });
 }
