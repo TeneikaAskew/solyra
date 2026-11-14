@@ -131,9 +131,9 @@ interface TickerComboboxProps {
   onPickNew?: (symbol: string) => void;
 }
 
-type IngestNotice = WatchlistNotice;
+type AddNotice = WatchlistNotice;
 
-const INGEST_NOTICE_MS = 8_000;
+const ADD_NOTICE_MS = 8_000;
 
 /**
  * Ticker type-ahead combobox (`TickerCombobox`) — replaces the old fixed
@@ -157,15 +157,15 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
   const [userNavigated, setUserNavigated] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [ingestNotice, setIngestNotice] = useState<IngestNotice | null>(null);
+  const [addNotice, setAddNotice] = useState<AddNotice | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const addUserTicker = useAddUserTicker();
 
   // Viewport-clamped positioning (shared helper — never bleed off-screen).
-  // The dropdown and the ingest notice share the same trigger button, hence
+  // The dropdown and the add notice share the same trigger button, hence
   // the callback ref fan-out below. 288px = w-72, the old desktop width.
   const dropdown = usePopoverPosition<HTMLButtonElement>(open, 288);
-  const notice = usePopoverPosition<HTMLButtonElement>(!!ingestNotice, 288);
+  const notice = usePopoverPosition<HTMLButtonElement>(!!addNotice, 288);
 
   const debounced = useDebouncedValue(query.trim(), 300);
   const searchEnabled = debounced.length >= 1;
@@ -251,10 +251,10 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
   // against an unmounted component.
   useEffect(() => () => clearTimeout(noticeTimerRef.current), []);
 
-  const showIngestNotice = (notice: IngestNotice) => {
+  const showAddNotice = (notice: AddNotice) => {
     clearTimeout(noticeTimerRef.current);
-    setIngestNotice(notice);
-    noticeTimerRef.current = setTimeout(() => setIngestNotice(null), INGEST_NOTICE_MS);
+    setAddNotice(notice);
+    noticeTimerRef.current = setTimeout(() => setAddNotice(null), ADD_NOTICE_MS);
   };
 
   const choose = (symbol: string) => {
@@ -265,22 +265,22 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
     // the coverage lookup itself errored, badges are unreliable so we must
     // not trust a "new" reading enough to write to the watchlist.
     const searchRow = searchRows.find((r) => r.symbol.toUpperCase() === upper);
-    const shouldAutoIngest = !!searchRow && searchRow.badge === 'new' && !coverage.isError;
+    const shouldAutoAdd = !!searchRow && searchRow.badge === 'new' && !coverage.isError;
 
     setTicker(upper);
     pushRecent(upper);
     onPickNew?.(upper);
     close();
 
-    if (shouldAutoIngest) {
+    if (shouldAutoAdd) {
       addUserTicker.mutate(
         { ticker: upper, source: 'combobox-auto-add' },
         {
-          onSuccess: (list) => showIngestNotice(addedNotice(list, upper, new Date())),
+          onSuccess: (list) => showAddNotice(addedNotice(list, upper, new Date())),
           // Never swallow the failure: browsing is still allowed (setTicker
           // above already ran), but the user must know the watchlist write
           // didn't happen so pages can't silently look "tracked".
-          onError: (err) => showIngestNotice(addFailedNotice(upper, err.message)),
+          onError: (err) => showAddNotice(addFailedNotice(upper, err.message)),
         },
       );
     }
@@ -489,19 +489,19 @@ export function TickerCombobox({ className, onPickNew }: TickerComboboxProps) {
       {/* Auto-add notice, success or failure of the watchlist-add fired
           from `choose()` above. Renders below the trigger (popover is
           already closed by the time this can appear) and self-clears after
-          INGEST_NOTICE_MS, mirroring JournalPage's exportStatus toast. */}
-      {ingestNotice && notice.panelStyle && (
+          ADD_NOTICE_MS, mirroring JournalPage's exportStatus toast. */}
+      {addNotice && notice.panelStyle && (
         <div
           data-testid="ticker-ingest-notice"
-          role={ingestNotice.kind === 'error' ? 'alert' : 'status'}
+          role={addNotice.kind === 'error' ? 'alert' : 'status'}
           style={notice.panelStyle}
           className={`rounded-lg border px-3 py-2 text-xs ${
-            ingestNotice.kind === 'error'
+            addNotice.kind === 'error'
               ? 'border-[var(--bear)]/40 bg-[var(--bear)]/10 text-[var(--bear)]'
               : 'border-[var(--bull)]/40 bg-[var(--bull)]/10 text-[var(--bull)]'
           }`}
         >
-          {ingestNotice.message}
+          {addNotice.message}
         </div>
       )}
     </div>

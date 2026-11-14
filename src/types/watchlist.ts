@@ -56,4 +56,6 @@ export type MeWatchlistResponse =
 export type MeWatchlistRow = MeWatchlistResponse['tickers'][number];
 
 /** DELETE /api/me/watchlist/{ticker} answers the list without the ticker. */
+// Derived from components['schemas'], not paths[...]: the path literal would
+// read to src/mocks/contract.test.ts's scanner as a request the app makes.
 export type MeWatchlistRemoveResponse = components['schemas']['MeWatchlistRemoveResponse'];

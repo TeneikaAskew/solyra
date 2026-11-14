@@ -3,7 +3,7 @@ import { Loader2, Plus, Search, X } from 'lucide-react';
 import { useAddUserTicker, useRemoveUserTicker, useUserWatchlist } from '@/hooks/useUserWatchlist';
 import { useTickerSearch, type SearchMatch } from '@/hooks/useTickerSearch';
 import type { MeWatchlistRow } from '@/types/watchlist';
-import { dataStateCopy } from './watchlistCopy';
+import { rowDataText } from './watchlistCopy';
 
 interface Props {
   onSelectTicker: (ticker: string) => Promise<void> | void;
@@ -18,7 +18,34 @@ export function MyWatchlistSection({ onSelectTicker }: Props) {
   const { query, signedOut } = useUserWatchlist();
   const removeMutation = useRemoveUserTicker();
   const [showSearch, setShowSearch] = useState(false);
+  // Per ticker, so a second remove in flight never re-enables the first
+  // row's button, and each failure names its own ticker.
+  const [pendingRemoves, setPendingRemoves] = useState<ReadonlySet<string>>(() => new Set());
+  const [removeErrors, setRemoveErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
   const now = new Date();
+
+  const remove = async (ticker: string) => {
+    setPendingRemoves((prev) => new Set(prev).add(ticker));
+    setRemoveErrors((prev) => {
+      const next = new Map(prev);
+      next.delete(ticker);
+      return next;
+    });
+    try {
+      await removeMutation.mutateAsync(ticker);
+    } catch (err) {
+      // Shown below, per ticker: the mutation's own state holds only the
+      // latest call, so an earlier failure would otherwise be lost.
+      const message = err instanceof Error ? err.message : String(err);
+      setRemoveErrors((prev) => new Map(prev).set(ticker, message));
+    } finally {
+      setPendingRemoves((prev) => {
+        const next = new Set(prev);
+        next.delete(ticker);
+        return next;
+      });
+    }
+  };
 
   return (
     <section
@@ -30,6 +57,7 @@ export function MyWatchlistSection({ onSelectTicker }: Props) {
         {!signedOut && (
           <button
             onClick={() => setShowSearch((v) => !v)}
+            aria-expanded={showSearch}
             className="flex items-center gap-1 rounded border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] hover:text-[var(--color-text-primary)] transition-colors"
           >
             <Plus size={10} />
@@ -59,19 +87,23 @@ export function MyWatchlistSection({ onSelectTicker }: Props) {
                 row={row}
                 now={now}
                 onSelect={() => onSelectTicker(row.ticker)}
-                onRemove={() => removeMutation.mutate(row.ticker)}
-                removing={removeMutation.isPending && removeMutation.variables === row.ticker}
+                onRemove={() => void remove(row.ticker)}
+                removing={pendingRemoves.has(row.ticker)}
               />
             ))}
           </div>
         )
       ) : null}
 
-      {removeMutation.isError && (
-        <div className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-[10px] text-red-300">
-          {removeMutation.error.message}
+      {[...removeErrors].map(([ticker, message]) => (
+        <div
+          key={ticker}
+          role="alert"
+          className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-[10px] text-red-300"
+        >
+          Couldn't remove {ticker}: {message}
         </div>
-      )}
+      ))}
     </section>
   );
 }
@@ -89,7 +121,6 @@ function MyWatchlistRow({
   onRemove: () => void;
   removing: boolean;
 }) {
-  const state = dataStateCopy(row, now);
   return (
     <div
       data-testid={`my-watchlist-row-${row.ticker}`}
@@ -104,7 +135,7 @@ function MyWatchlistRow({
       </button>
       {row.name && <span className="truncate text-[11px] text-[var(--color-text-secondary)]">{row.name}</span>}
       <span className="ml-auto text-[10px] text-[var(--color-text-muted)]">
-        {state ?? `last bar ${row.last_daily_bar}`}
+        {rowDataText(row, now)}
       </span>
       <button
         onClick={onRemove}
@@ -254,7 +285,7 @@ function TickerSearchPanel({ onClose }: { onClose: () => void }) {
       {/* Error: the API's detail, verbatim */}
       {addMutation.isError && (
         <div className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-[10px] text-red-300">
-          Failed to add: {addMutation.error.message}
+          {addMutation.error.message}
         </div>
       )}
     </div>

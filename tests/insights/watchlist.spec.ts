@@ -15,8 +15,10 @@
  * Signed in runs the Firebase sign-in of
  * tests/ai-insights-lovable/workspace-integration.spec.ts. Signed out is a
  * 401 from /api/me/watchlist in open auth mode: in Firebase mode a signed-out
- * visitor sees the sign-in screen instead of the page, and a gated 401 signs
- * the app out, so the section's own signed-out copy is reachable only there.
+ * visitor sees the sign-in screen instead of the page, so the section's own
+ * signed-out copy is reachable only there. The hook treats that 401 as the
+ * signed-out state; the fetch wrapper does not sign the app out on it
+ * (nothing outside its own unit test registers setOnUnauthorized).
  */
 import { expect, test, type Page } from '@playwright/test';
 import type { TickerSearchResult } from '@/hooks/useTickerSearch';
@@ -179,9 +181,12 @@ test.describe('Watchlist tab: default list and my watchlist', () => {
     expect(me.posts).toEqual([{ ticker: 'NVDA', source: 'ui' }]);
     await page.screenshot({ path: testInfo.outputPath('my-watchlist-after-add.png') });
 
-    // Remove it.
+    // Remove it. Hovering the control first makes before-remove a distinct
+    // state from after-add: the screenshot shows the row's remove button armed.
+    const removeNvda = page.getByRole('button', { name: 'Remove NVDA from my watchlist', exact: true });
+    await removeNvda.hover();
     await page.screenshot({ path: testInfo.outputPath('my-watchlist-before-remove.png') });
-    await page.getByRole('button', { name: 'Remove NVDA from my watchlist', exact: true }).click();
+    await removeNvda.click();
     await expect(page.getByTestId('my-watchlist-row-NVDA')).toHaveCount(0);
     expect(me.deletes).toEqual(['NVDA']);
     // The seeded rows are still listed.

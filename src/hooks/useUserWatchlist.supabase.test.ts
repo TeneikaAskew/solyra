@@ -52,11 +52,8 @@ describe('per-user watchlist touches no Supabase surface', () => {
   it('no scanned file names a forbidden string', () => {
     const hits: string[] = [];
     for (const rel of SCANNED_FILES) {
-      const abs = path.join(REPO, rel);
-      if (!fs.existsSync(abs)) {
-        throw new Error(`scanned file is missing: ${rel}`);
-      }
-      const text = fs.readFileSync(abs, 'utf8');
+      // readFileSync throws ENOENT naming the path for a missing file.
+      const text = fs.readFileSync(path.join(REPO, rel), 'utf8');
       for (const needle of FORBIDDEN) {
         if (text.includes(needle)) hits.push(`${rel} contains "${needle}"`);
       }
@@ -69,7 +66,9 @@ describe('per-user watchlist touches no Supabase surface', () => {
   });
 
   it('supabase/functions holds only _shared and insights-research', () => {
-    const entries = fs.readdirSync(path.join(REPO, 'supabase', 'functions')).sort();
+    const dir = path.join(REPO, 'supabase', 'functions');
+    expect(fs.existsSync(dir), 'supabase/functions is missing; it holds the insights-research function').toBe(true);
+    const entries = fs.readdirSync(dir).sort();
     expect(entries).toEqual(['_shared', 'insights-research']);
   });
 });
