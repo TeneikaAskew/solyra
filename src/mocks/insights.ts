@@ -13,6 +13,10 @@
  *   GET  /api/insights/runs/{run_id}            useRunStatus         → RunStatus
  *   GET  /api/insights/reports/{report_id}      useInsightReportById → InsightReportEnvelope
  *   GET  /api/insights/watchlist?…              useWatchlist         → WatchlistResponse
+ *   GET  /api/insights/watchlist/default        useDefaultWatchlist  → WatchlistDefaultResponse
+ *   GET  /api/me/watchlist                      useUserWatchlist     → MeWatchlistResponse
+ *   POST /api/me/watchlist                      useAddUserTicker     → MeWatchlistResponse
+ *   DELETE /api/me/watchlist/{ticker}           useRemoveUserTicker  → MeWatchlistRemoveResponse
  *   GET  /api/dashboard/brief/{ticker}          useBriefDirection
  *
  * Contract note: `MOCK_WATCHLIST` is the real `WatchlistResponse` shape
@@ -28,8 +32,13 @@ import type {
   RefreshResponse,
   RunStatus,
 } from '@/types/insights';
-import type { WatchlistResponse } from '@/types/watchlist';
-import type { WatchlistAddResult } from '@/hooks/useTickerSearch';
+import type {
+  MeWatchlistRemoveResponse,
+  MeWatchlistResponse,
+  MeWatchlistRow,
+  WatchlistDefaultResponse,
+  WatchlistResponse,
+} from '@/types/watchlist';
 import type { RouteRow } from '@/hooks/useAdmin';
 import type { MockRoute } from './types';
 
@@ -275,47 +284,91 @@ export const MOCK_CHAT_REPLY =
   'The 220 strike carries the largest positive gamma, so expect it to act as a magnet into the close. ' +
   'Invalidation is a 1-hour close below 218.';
 
+/** GET /api/insights/watchlist/default: the seeded default list, every flag on. */
+export const MOCK_WATCHLIST_DEFAULT = {
+  as_of: '2026-04-24T14:00:00Z',
+  owner: 'default',
+  rows: ['SPY', 'QQQ', 'IWM'].map((ticker) => ({
+    ticker,
+    in_brief: true,
+    in_insight: true,
+    signals: true,
+    source: 'seed',
+    added_at: '2026-04-01T00:00:00Z',
+  })),
+} satisfies WatchlistDefaultResponse;
+
+/** GET /api/me/watchlist: one ticker with a daily bar, one still awaiting its first fetch. */
+export const MOCK_ME_WATCHLIST = {
+  as_of: '2026-04-24T14:00:00Z',
+  owner_email: 'trader@example.com',
+  tickers: [
+    {
+      ticker: 'NVDA',
+      added_at: '2026-04-20T15:00:00Z',
+      source: 'ui',
+      name: 'NVIDIA Corporation',
+      exchange: 'NASDAQ',
+      asset_type: 'Common Stock',
+      last_daily_bar: '2026-04-23',
+    },
+    {
+      ticker: 'ABCD',
+      added_at: '2026-04-24T13:30:00Z',
+      source: 'combobox-auto-add',
+      name: null,
+      exchange: null,
+      asset_type: null,
+      last_daily_bar: null,
+    },
+  ],
+} satisfies MeWatchlistResponse;
+
 /**
- * Mock-mode route table for `/insights` — the happy-path translation of
+ * POST /api/me/watchlist in mock mode: MOCK_ME_WATCHLIST with the posted
+ * ticker appended as the API answers a ticker it has just added. A ticker
+ * already listed leaves the list as it is. A body without a string `ticker`
+ * answers 422 with the FastAPI validation detail.
+ */
+function meWatchlistWithAdded(body: unknown): MeWatchlistResponse {
+  const { ticker, source } = body as { ticker: string; source: string };
+  const upper = ticker.toUpperCase();
+  if (MOCK_ME_WATCHLIST.tickers.some((row) => row.ticker === upper)) return MOCK_ME_WATCHLIST;
+  return {
+    ...MOCK_ME_WATCHLIST,
+    tickers: [
+      ...MOCK_ME_WATCHLIST.tickers,
+      {
+        ticker: upper,
+        added_at: new Date().toISOString(),
+        source,
+        name: null,
+        exchange: null,
+        asset_type: null,
+        last_daily_bar: null,
+      } satisfies MeWatchlistRow,
+    ],
+  } satisfies MeWatchlistResponse;
+}
+
+/**
+ * Mock-mode route table for `/insights`: the happy-path translation of
  * `mockInsightsApi` (tests/helpers/fixtures/insights.ts) with its default
- * options: report present, empty history, empty watchlist, runs 'done'.
+ * options: report present, empty history, runs 'done'. The ranked watchlist
+ * is populated here so mock mode shows real-looking rows.
+ *
+ * The four watchlist-list operations: GET /api/insights/watchlist/default
+ * answers the seeded default list; GET /api/me/watchlist answers
+ * MOCK_ME_WATCHLIST; POST /api/me/watchlist answers that list with the
+ * posted ticker appended (upper-cased, the body's `source`, `added_at` now,
+ * null info fields and no daily bar yet, as the API answers a new ticker);
+ * DELETE /api/me/watchlist/{ticker} answers `removed: true` with that
+ * ticker gone from the list. They hold no state between requests.
  *
  * Chat is a STREAMING endpoint: the page reads resp.body via a reader and
- * concatenates decoded chunks, so it is answered as plain text, not JSON —
+ * concatenates decoded chunks, so it is answered as plain text, not JSON;
  * a JSON envelope would render verbatim into the bubble.
  */
-/** POST /api/insights/watchlist/add — a successful auto-ingest with the AV
- *  OVERVIEW/GLOBAL_QUOTE lookups populated (issue #57). The route echoes the
- *  requested ticker over this base. */
-export const MOCK_WATCHLIST_ADD = {
-  ticker: 'IWM',
-  added: true,
-  info: {
-    symbol: 'IWM',
-    name: 'iShares Russell 2000 ETF',
-    exchange: 'NYSE ARCA',
-    sector: null,
-    industry: null,
-    market_cap: null,
-    asset_type: 'ETF',
-    description: 'Tracks the Russell 2000 small-cap index.',
-  },
-  quote: {
-    symbol: 'IWM',
-    open: 219.4,
-    high: 221.9,
-    low: 218.7,
-    price: 220.55,
-    volume: 31200000,
-    latest_trading_day: '2026-04-24',
-    previous_close: 219.1,
-    change: 1.45,
-    change_percent: '0.6618%',
-  },
-  peers: ['SPY', 'QQQ'],
-  watchlist: ['IWM', 'SPY', 'QQQ'],
-} satisfies WatchlistAddResult;
-
 export const insightsRoutes: MockRoute[] = [
   { pattern: /^\/api\/insights\/report\/IWM$/, reply: () => ({ body: MOCK_INSIGHT_REPORT }) },
   {
@@ -335,6 +388,40 @@ export const insightsRoutes: MockRoute[] = [
   // Owns the endpoint app-wide (the panel mounts on /insights AND /help):
   // the POPULATED ranking, so mock mode shows real-looking rows.
   { pattern: /^\/api\/insights\/watchlist$/, reply: () => ({ body: MOCK_WATCHLIST }) },
+  {
+    pattern: /^\/api\/insights\/watchlist\/default$/,
+    reply: () => ({ body: MOCK_WATCHLIST_DEFAULT }),
+  },
+  { pattern: /^\/api\/me\/watchlist$/, reply: () => ({ body: MOCK_ME_WATCHLIST }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/me\/watchlist$/,
+    reply: (req) => {
+      // FastAPI's 422 for a body without a string ticker.
+      const posted = req.body as { ticker?: unknown } | null | undefined;
+      if (typeof posted?.ticker !== 'string') {
+        return {
+          status: 422,
+          body: { detail: [{ loc: ['body', 'ticker'], msg: 'field required', type: 'missing' }] },
+        };
+      }
+      return { body: meWatchlistWithAdded(req.body) };
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/me\/watchlist\/([^/]+)$/,
+    reply: (_req, match) => {
+      const ticker = decodeURIComponent(match[1]).toUpperCase();
+      return {
+        body: {
+          ...MOCK_ME_WATCHLIST,
+          tickers: MOCK_ME_WATCHLIST.tickers.filter((row) => row.ticker !== ticker),
+          removed: true,
+        } satisfies MeWatchlistRemoveResponse,
+      };
+    },
+  },
   // AgentsPanel (rendered on this page) reads the model-routing table. It is
   // NOT admin-gated in the UI here, so it needs an answer on /insights too.
   // GET /api/admin/routes is owned by ./admin (its table is the superset
@@ -343,36 +430,5 @@ export const insightsRoutes: MockRoute[] = [
     method: 'POST',
     pattern: /^\/api\/insights\/chat$/,
     reply: () => ({ text: MOCK_CHAT_REPLY, contentType: 'text/plain; charset=utf-8' }),
-  },
-  // Watchlist mutations (issue #57). Only IWM has fixture metadata; any
-  // other symbol gets the server's honest lookup-empty shape (info/quote/
-  // peers null) rather than IWM's fund name and price wearing the typed
-  // ticker (Codex, #64) — AddedTickerCard renders its null-tolerant state.
-  {
-    method: 'POST',
-    pattern: /^\/api\/insights\/watchlist\/add$/,
-    reply: (req) => {
-      const ticker =
-        typeof (req.body as { ticker?: unknown } | undefined)?.ticker === 'string'
-          ? ((req.body as { ticker: string }).ticker.toUpperCase())
-          : 'IWM';
-      if (ticker === 'IWM') return { body: MOCK_WATCHLIST_ADD };
-      const body = {
-        ticker,
-        added: true,
-        info: null,
-        quote: null,
-        peers: null,
-        watchlist: [...MOCK_WATCHLIST_ADD.watchlist, ticker],
-      } satisfies WatchlistAddResult;
-      return { body };
-    },
-  },
-  {
-    method: 'DELETE',
-    pattern: /^\/api\/insights\/watchlist\/([^/]+)$/,
-    reply: (_req, match) => ({
-      body: { ticker: match[1].toUpperCase(), removed: true, watchlist: [] },
-    }),
   },
 ];

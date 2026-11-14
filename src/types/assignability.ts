@@ -88,12 +88,7 @@ import type { OptionsDatesResponse } from '@/hooks/useOptionsDates';
 import type { GreeksResponse } from '@/hooks/useOptionsGreeks';
 import type { PlaybookEvaluateResponse } from '@/hooks/usePlaybookEvaluation';
 import type { SimilarResponse } from '@/hooks/useSimilarSetups';
-import type {
-  CoverageResult,
-  TickerSearchResult,
-  WatchlistAddResult,
-  WatchlistRemoveResult,
-} from '@/hooks/useTickerSearch';
+import type { CoverageResult, TickerSearchResult } from '@/hooks/useTickerSearch';
 import type { TradeStats } from '@/hooks/useTradeAnalytics';
 import type { MeResponse } from '@/hooks/useUser';
 import type { ReportListResponse } from '@/lib/reports';
@@ -224,7 +219,5 @@ export type AssignabilityChecks = [
   Expect<IsAssignable<S['RuntimeConfigResponse'], RuntimeConfig>>,
   Expect<IsAssignable<S['StratEnginePredictResponse'], StratPredictResponse>>,
   Expect<IsAssignable<S['TickerSearchResponse'], TickerSearchResult>>,
-  Expect<IsAssignable<S['WatchlistAddResponse'], WatchlistAddResult>>,
-  Expect<IsAssignable<S['WatchlistRemoveResponse'], WatchlistRemoveResult>>,
   Expect<IsAssignable<S['_TradeStats'], TradeStats>>,
 ];

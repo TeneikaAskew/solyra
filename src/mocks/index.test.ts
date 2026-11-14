@@ -459,3 +459,24 @@ describe('journal mutation semantics (server parity)', () => {
     expect(wrongTickerById!.status).toBe(404);
   });
 });
+
+describe('POST /api/me/watchlist body guard', () => {
+  const post = (body: unknown) =>
+    resolveMock('POST', new URL('http://mock.test/api/me/watchlist'), body);
+  const missingTicker = [{ loc: ['body', 'ticker'], msg: 'field required', type: 'missing' }];
+
+  it.each([undefined, null, {}, { ticker: 5 }, { source: 'ui' }])(
+    'answers 422 with a FastAPI detail array for the body %j',
+    (body) => {
+      const hit = post(body);
+      expect(hit?.status).toBe(422);
+      expect(JSON.parse(hit!.payload)).toEqual({ detail: missingTicker });
+    },
+  );
+
+  it('still appends a valid ticker', () => {
+    const hit = post({ ticker: 'msft', source: 'ui' });
+    expect(hit?.status).toBe(200);
+    expect(JSON.parse(hit!.payload).tickers.map((r: { ticker: string }) => r.ticker)).toContain('MSFT');
+  });
+});

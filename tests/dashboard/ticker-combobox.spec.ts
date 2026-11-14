@@ -7,7 +7,8 @@
  * the page's active ticker (the trigger's own label). All API calls mocked —
  * hermetic, no live backend required.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Route } from '@playwright/test';
+import type { MeWatchlistResponse } from '@/types/watchlist';
 import { M } from '../helpers/mocks';
 import {
   MOCK_BACKTEST_ALL,
@@ -23,8 +24,48 @@ import {
   mockDashboardCards,
 } from '../helpers/fixtures/dashboard';
 
+/**
+ * The fixed browser clock every test here runs under: 09:00 EST on Friday
+ * 2026-11-13, so the most recent ingest boundary is 2026-11-13T05:30Z. A
+ * real clock would let a run that straddles 00:30 ET read a different data
+ * state from the one asserted.
+ */
+const FIXED_NOW = '2026-11-13T14:00:00Z';
+
+/**
+ * The user's list as POST /api/me/watchlist answers it after `ticker` was
+ * added just now: no daily bar yet and added at FIXED_NOW, after the most
+ * recent ingest boundary, so the honest data state is that data arrives
+ * after tonight's fetch.
+ */
+const addedJustNow = (ticker: string): MeWatchlistResponse => ({
+  as_of: FIXED_NOW,
+  owner_email: 'trader@example.com',
+  tickers: [
+    {
+      ticker,
+      added_at: FIXED_NOW,
+      source: 'combobox-auto-add',
+      name: null,
+      exchange: null,
+      asset_type: null,
+      last_daily_bar: null,
+    },
+  ],
+});
+
+/** An empty list for the GET the page may make; anything else is the test's handler. */
+const isListRead = (r: Route) => r.request().method() === 'GET';
+const EMPTY_LIST: MeWatchlistResponse = {
+  as_of: FIXED_NOW,
+  owner_email: 'trader@example.com',
+  tickers: [],
+};
+
 test.describe('TickerCombobox', () => {
   test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(new Date(FIXED_NOW));
+
     // After the pick the page re-requests its whole fan-out for AAPL. These
     // ticker-agnostic registrations serve the same typed payloads the IWM
     // fixtures use (the specs assert only on the combobox, never on card
@@ -209,16 +250,15 @@ test.describe('TickerCombobox', () => {
     await expect(page.getByTestId('ticker-coverage-error')).toContainText('coverage lookup unavailable');
   });
 
-  test('picking a "new"-badged suggestion auto-adds it to the watchlist with an honest ingest notice', async ({ page }) => {
+  test('picking a "new"-badged suggestion auto-adds it to the user\'s watchlist with an honest data-state notice', async ({ page }) => {
     // AAPL has no coverage entry at all → badge is the honest "new" default.
     await page.route('**/api/market/coverage**', (r) => r.fulfill(M.ok({ coverage: {} })));
 
     let addRequestBody: unknown = null;
-    await page.route('**/api/insights/watchlist/add', (r) => {
+    await page.route('**/api/me/watchlist*', (r) => {
+      if (isListRead(r)) return r.fulfill(M.ok(EMPTY_LIST));
       addRequestBody = JSON.parse(r.request().postData() ?? '{}');
-      return r.fulfill(
-        M.ok({ ticker: 'AAPL', added: true, info: null, quote: null, peers: null, watchlist: ['AAPL'] })
-      );
+      return r.fulfill(M.ok(addedJustNow('AAPL')));
     });
 
     await page.getByTestId('ticker-combobox').click();
@@ -228,10 +268,10 @@ test.describe('TickerCombobox', () => {
     await option.click();
 
     await expect(page.getByTestId('ticker-ingest-notice')).toBeVisible();
-    await expect(page.getByTestId('ticker-ingest-notice')).toContainText(
-      "Tracking AAPL: daily data lands after tonight's fetch"
+    await expect(page.getByTestId('ticker-ingest-notice')).toHaveText(
+      "Added to your watchlist: data arrives after tonight's fetch"
     );
-    expect(addRequestBody).toEqual({ ticker: 'AAPL' });
+    expect(addRequestBody).toEqual({ ticker: 'AAPL', source: 'combobox-auto-add' });
   });
 
   test('picking a "full"-badged suggestion does NOT auto-add to the watchlist', async ({ page }) => {
@@ -240,11 +280,10 @@ test.describe('TickerCombobox', () => {
     );
 
     let addCalled = false;
-    await page.route('**/api/insights/watchlist/add', (r) => {
+    await page.route('**/api/me/watchlist*', (r) => {
+      if (isListRead(r)) return r.fulfill(M.ok(EMPTY_LIST));
       addCalled = true;
-      return r.fulfill(
-        M.ok({ ticker: 'AAPL', added: true, info: null, quote: null, peers: null, watchlist: ['AAPL'] })
-      );
+      return r.fulfill(M.ok(addedJustNow('AAPL')));
     });
 
     await page.getByTestId('ticker-combobox').click();
@@ -261,12 +300,14 @@ test.describe('TickerCombobox', () => {
 
   test('watchlist-add failure shows a loud inline error but still sets the active ticker', async ({ page }) => {
     await page.route('**/api/market/coverage**', (r) => r.fulfill(M.ok({ coverage: {} })));
-    await page.route('**/api/insights/watchlist/add', (r) =>
-      r.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify({ detail: 'watchlist write to Cloud SQL failed: connection refused' }),
-      })
+    await page.route('**/api/me/watchlist*', (r) =>
+      isListRead(r)
+        ? r.fulfill(M.ok(EMPTY_LIST))
+        : r.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ detail: 'watchlist write to Cloud SQL failed: connection refused' }),
+          })
     );
 
     await page.getByTestId('ticker-combobox').click();
@@ -275,9 +316,11 @@ test.describe('TickerCombobox', () => {
 
     const notice = page.getByTestId('ticker-ingest-notice');
     await expect(notice).toBeVisible();
-    await expect(notice).toContainText('503');
-    await expect(notice).toContainText('connection refused');
-    // Browsing is allowed even when ingest fails — the active ticker still updates.
+    // The API's detail verbatim, in the error notice's shape.
+    await expect(notice).toHaveText(
+      "couldn't add AAPL to tracking, watchlist write to Cloud SQL failed: connection refused"
+    );
+    // Browsing is allowed even when the add fails: the active ticker still updates.
     await expect(page.getByTestId('ticker-combobox')).toContainText('AAPL');
   });
 
@@ -337,7 +380,7 @@ test.describe('TickerCombobox', () => {
   test('coverage error → NO auto-add, ticker still set', async ({ page }) => {
     // Simulate coverage lookup failure (503).
     // The implementation gate is `!coverage.isError` in TickerCombobox.tsx:205,
-    // so auto-ingest must NOT fire when coverage fails, even if the search row
+    // so the auto-add must NOT fire when coverage fails, even if the search row
     // badge falls back to "new".
     await page.unroute('**/api/market/coverage**');
     await page.route('**/api/market/coverage**', (r) =>
@@ -345,11 +388,10 @@ test.describe('TickerCombobox', () => {
     );
 
     let addCalled = false;
-    await page.route('**/api/insights/watchlist/add', (r) => {
+    await page.route('**/api/me/watchlist*', (r) => {
+      if (isListRead(r)) return r.fulfill(M.ok(EMPTY_LIST));
       addCalled = true;
-      return r.fulfill(
-        M.ok({ ticker: 'AAPL', added: true, info: null, quote: null, peers: null, watchlist: ['AAPL'] })
-      );
+      return r.fulfill(M.ok(addedJustNow('AAPL')));
     });
 
     await page.getByTestId('ticker-combobox').click();
@@ -365,10 +407,10 @@ test.describe('TickerCombobox', () => {
     await expect(page.getByTestId('ticker-coverage-error')).toBeVisible({ timeout: 5000 });
 
     // Now click the "new"-badged option. Since coverage errored (isError=true),
-    // the gate `!coverage.isError` will be false, so auto-ingest should NOT fire.
+    // the gate `!coverage.isError` will be false, so the auto-add should NOT fire.
     await option.click();
 
-    // Assertions: no auto-add occurred, ticker still updated, no ingest notice.
+    // Assertions: no auto-add occurred, ticker still updated, no add notice.
     await expect(page.getByTestId('ticker-combobox-panel')).not.toBeVisible();
     await expect(page.getByTestId('ticker-combobox')).toContainText('AAPL');
     await expect(page.getByTestId('ticker-ingest-notice')).not.toBeVisible();
@@ -376,15 +418,14 @@ test.describe('TickerCombobox', () => {
   });
 
   test('keyboard path: type, arrow-down, enter triggers watchlist auto-add', async ({ page }) => {
-    // AAPL has no coverage entry → badge is "new" → auto-ingest should fire on selection.
+    // AAPL has no coverage entry → badge is "new" → the auto-add should fire on selection.
     await page.route('**/api/market/coverage**', (r) => r.fulfill(M.ok({ coverage: {} })));
 
     let addRequestBody: unknown = null;
-    await page.route('**/api/insights/watchlist/add', (r) => {
+    await page.route('**/api/me/watchlist*', (r) => {
+      if (isListRead(r)) return r.fulfill(M.ok(EMPTY_LIST));
       addRequestBody = JSON.parse(r.request().postData() ?? '{}');
-      return r.fulfill(
-        M.ok({ ticker: 'AAPL', added: true, info: null, quote: null, peers: null, watchlist: ['AAPL'] })
-      );
+      return r.fulfill(M.ok(addedJustNow('AAPL')));
     });
 
     await page.getByTestId('ticker-combobox').click();
@@ -399,24 +440,23 @@ test.describe('TickerCombobox', () => {
     await input.press('ArrowDown');
     await input.press('Enter');
 
-    // The selection → auto-ingest flow fires the watchlist POST.
+    // The selection → auto-add flow fires the watchlist POST.
     await expect(page.getByTestId('ticker-ingest-notice')).toBeVisible();
-    await expect(page.getByTestId('ticker-ingest-notice')).toContainText(
-      "Tracking AAPL: daily data lands after tonight's fetch"
+    await expect(page.getByTestId('ticker-ingest-notice')).toHaveText(
+      "Added to your watchlist: data arrives after tonight's fetch"
     );
-    expect(addRequestBody).toEqual({ ticker: 'AAPL' });
+    expect(addRequestBody).toEqual({ ticker: 'AAPL', source: 'combobox-auto-add' });
     await expect(page.getByTestId('ticker-combobox')).toContainText('AAPL');
   });
 
   test('bare Enter with empty query selects first quick pick (IWM) without auto-add', async ({ page }) => {
     // Popover open, no typing, no arrow navigation → Enter should select flat[0] (IWM quick pick).
-    // Since IWM has full coverage (intraday: true, daily: true), no auto-ingest fires.
+    // Since IWM has full coverage (intraday: true, daily: true), no auto-add fires.
     let addCalled = false;
-    await page.route('**/api/insights/watchlist/add', (r) => {
+    await page.route('**/api/me/watchlist*', (r) => {
+      if (isListRead(r)) return r.fulfill(M.ok(EMPTY_LIST));
       addCalled = true;
-      return r.fulfill(
-        M.ok({ ticker: 'IWM', added: true, info: null, quote: null, peers: null, watchlist: ['IWM'] })
-      );
+      return r.fulfill(M.ok(addedJustNow('IWM')));
     });
 
     const trigger = page.getByTestId('ticker-combobox');
@@ -433,17 +473,16 @@ test.describe('TickerCombobox', () => {
     expect(addCalled).toBe(false);
   });
 
-  test('bare Enter with typed query on "new"-badged search row fires auto-ingest POST', async ({ page }) => {
-    // AAPL has no coverage entry → badge is "new" → auto-ingest fires on selection.
+  test('bare Enter with typed query on "new"-badged search row fires auto-add POST', async ({ page }) => {
+    // AAPL has no coverage entry → badge is "new" → the auto-add fires on selection.
     // This variant uses bare Enter (no arrow keys), not the arrow-down path.
     await page.route('**/api/market/coverage**', (r) => r.fulfill(M.ok({ coverage: {} })));
 
     let addRequestBody: unknown = null;
-    await page.route('**/api/insights/watchlist/add', (r) => {
+    await page.route('**/api/me/watchlist*', (r) => {
+      if (isListRead(r)) return r.fulfill(M.ok(EMPTY_LIST));
       addRequestBody = JSON.parse(r.request().postData() ?? '{}');
-      return r.fulfill(
-        M.ok({ ticker: 'AAPL', added: true, info: null, quote: null, peers: null, watchlist: ['AAPL'] })
-      );
+      return r.fulfill(M.ok(addedJustNow('AAPL')));
     });
 
     const trigger = page.getByTestId('ticker-combobox');
@@ -455,12 +494,12 @@ test.describe('TickerCombobox', () => {
     // Bare Enter — no arrow navigation. Should land on top search hit (AAPL).
     await input.press('Enter');
 
-    // The selection → auto-ingest flow fires the watchlist POST.
+    // The selection → auto-add flow fires the watchlist POST.
     await expect(page.getByTestId('ticker-ingest-notice')).toBeVisible();
-    await expect(page.getByTestId('ticker-ingest-notice')).toContainText(
-      "Tracking AAPL: daily data lands after tonight's fetch"
+    await expect(page.getByTestId('ticker-ingest-notice')).toHaveText(
+      "Added to your watchlist: data arrives after tonight's fetch"
     );
-    expect(addRequestBody).toEqual({ ticker: 'AAPL' });
+    expect(addRequestBody).toEqual({ ticker: 'AAPL', source: 'combobox-auto-add' });
     await expect(page.getByTestId('ticker-combobox-panel')).not.toBeVisible();
     await expect(trigger).toContainText('AAPL');
   });
@@ -468,7 +507,7 @@ test.describe('TickerCombobox', () => {
   test('bare Enter with typed query but coverage 503 → NO auto-add, ticker still set', async ({ page }) => {
     // Simulate coverage lookup failure (503).
     // The implementation gate is `!coverage.isError` in TickerCombobox.tsx:205,
-    // so auto-ingest must NOT fire on bare Enter when coverage fails, even if the
+    // so the auto-add must NOT fire on bare Enter when coverage fails, even if the
     // search row badge falls back to "new".
     await page.unroute('**/api/market/coverage**');
     await page.route('**/api/market/coverage**', (r) =>
@@ -476,11 +515,10 @@ test.describe('TickerCombobox', () => {
     );
 
     let addCalled = false;
-    await page.route('**/api/insights/watchlist/add', (r) => {
+    await page.route('**/api/me/watchlist*', (r) => {
+      if (isListRead(r)) return r.fulfill(M.ok(EMPTY_LIST));
       addCalled = true;
-      return r.fulfill(
-        M.ok({ ticker: 'AAPL', added: true, info: null, quote: null, peers: null, watchlist: ['AAPL'] })
-      );
+      return r.fulfill(M.ok(addedJustNow('AAPL')));
     });
 
     const trigger = page.getByTestId('ticker-combobox');
@@ -498,10 +536,10 @@ test.describe('TickerCombobox', () => {
     await expect(page.getByTestId('ticker-coverage-error')).toBeVisible({ timeout: 5000 });
 
     // Bare Enter on the "new"-badged option. Since coverage errored (isError=true),
-    // the gate `!coverage.isError` will be false, so auto-ingest should NOT fire.
+    // the gate `!coverage.isError` will be false, so the auto-add should NOT fire.
     await input.press('Enter');
 
-    // Assertions: no auto-add occurred, ticker still updated, no ingest notice.
+    // Assertions: no auto-add occurred, ticker still updated, no add notice.
     await expect(page.getByTestId('ticker-combobox-panel')).not.toBeVisible();
     await expect(trigger).toContainText('AAPL');
     await expect(page.getByTestId('ticker-ingest-notice')).not.toBeVisible();

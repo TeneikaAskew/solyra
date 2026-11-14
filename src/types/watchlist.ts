@@ -1,6 +1,8 @@
 // Types that mirror the deterministic ranker API at
 // GET /api/insights/watchlist  →  lib.agents.ranker.rank_tickers(...)
 
+import type { components, paths } from './stocksOpenApi.gen';
+
 export type CatalystType =
   | 'earnings'
   | 'sec_8k'
@@ -38,3 +40,22 @@ export interface WatchlistResponse {
   weights_used: Record<string, number>;
   duration_ms: number;
 }
+
+// FEAT-INSIGHT-001 per-user watchlist. Derived from the vendored OpenAPI
+// document so a drifted response shape fails the build, not the page.
+
+/** GET /api/insights/watchlist/default (read-only default list). */
+export type WatchlistDefaultResponse =
+  paths['/api/insights/watchlist/default']['get']['responses']['200']['content']['application/json'];
+
+/** GET and POST /api/me/watchlist answer the caller's list. */
+export type MeWatchlistResponse =
+  paths['/api/me/watchlist']['get']['responses']['200']['content']['application/json'];
+
+/** One row of the caller's watchlist. */
+export type MeWatchlistRow = MeWatchlistResponse['tickers'][number];
+
+/** DELETE /api/me/watchlist/{ticker} answers the list without the ticker. */
+// Derived from components['schemas'], not paths[...]: the path literal would
+// read to src/mocks/contract.test.ts's scanner as a request the app makes.
+export type MeWatchlistRemoveResponse = components['schemas']['MeWatchlistRemoveResponse'];

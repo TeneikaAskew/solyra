@@ -51,7 +51,7 @@ test('INS-FINAL-005 pressure-test starts the report ticker as new research',asyn
 });
 test('INS-FINAL-006 late saved read cannot overwrite new context',async({page},info)=>{
  const {MOCK_WATCHLIST}=await import('@/mocks/insights');
- await page.route('**/api/insights/watchlist**',r=>r.fulfill(M.ok(MOCK_WATCHLIST)));
+ await page.route('**/api/insights/watchlist?**',r=>r.fulfill(M.ok(MOCK_WATCHLIST)));
  let release!:()=>void;const held=new Promise<void>(r=>release=r);let readStarted=false;
  await page.route('**/functions/v1/insights-research',async r=>{if(r.request().postDataJSON()?.action!=='read')return r.fallback();readStarted=true;await held;return r.fulfill(M.ok({session:saved,messages:[{id:'m',question:saved.title,answer,run_state:'completed'}],sources:[]}));});
  await page.getByRole('tab',{name:/^History/}).click();await page.getByRole('button').filter({hasText:'Saved IWM question'}).click();await expect.poll(()=>readStarted).toBe(true);
@@ -70,7 +70,7 @@ test('ACC-FAILED-HISTORY refreshes terminal failure into unified history',async(
 });
 test('INS-FINAL-004/010 preserves saved signals, prior direction and cost',async({page},info)=>{
  const {MOCK_WATCHLIST,MOCK_INSIGHT_REPORT}=await import('@/mocks/insights');
- await page.route('**/api/insights/watchlist**',r=>r.fulfill(M.ok(MOCK_WATCHLIST)));
+ await page.route('**/api/insights/watchlist?**',r=>r.fulfill(M.ok(MOCK_WATCHLIST)));
  await page.setViewportSize({width:390,height:900});await page.getByRole('tab',{name:'Watchlist',exact:true}).click();
  await expect(page.getByRole('button',{name:'Ask research',exact:true}).first()).toBeVisible();
  const geometry=await page.evaluate(()=>({pageOverflow:document.documentElement.scrollWidth-innerWidth,buttons:[...document.querySelectorAll('button')].filter(x=>x.textContent?.includes('Generate report')).map(x=>({text:x.textContent,right:x.getBoundingClientRect().right}))}));
