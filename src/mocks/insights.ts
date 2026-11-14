@@ -28,7 +28,11 @@ import type {
   RefreshResponse,
   RunStatus,
 } from '@/types/insights';
-import type { WatchlistResponse } from '@/types/watchlist';
+import type {
+  MeWatchlistResponse,
+  WatchlistDefaultResponse,
+  WatchlistResponse,
+} from '@/types/watchlist';
 import type { WatchlistAddResult } from '@/hooks/useTickerSearch';
 import type { RouteRow } from '@/hooks/useAdmin';
 import type { MockRoute } from './types';
@@ -316,6 +320,46 @@ export const MOCK_WATCHLIST_ADD = {
   watchlist: ['IWM', 'SPY', 'QQQ'],
 } satisfies WatchlistAddResult;
 
+/** GET /api/insights/watchlist/default: the seeded default list, every flag on. */
+export const MOCK_WATCHLIST_DEFAULT = {
+  as_of: '2026-04-24T14:00:00Z',
+  owner: 'default',
+  rows: ['SPY', 'QQQ', 'IWM'].map((ticker) => ({
+    ticker,
+    in_brief: true,
+    in_insight: true,
+    signals: true,
+    source: 'seed',
+    added_at: '2026-04-01T00:00:00Z',
+  })),
+} satisfies WatchlistDefaultResponse;
+
+/** GET /api/me/watchlist: one ticker with a daily bar, one still awaiting its first fetch. */
+export const MOCK_ME_WATCHLIST = {
+  as_of: '2026-04-24T14:00:00Z',
+  owner_email: 'trader@example.com',
+  tickers: [
+    {
+      ticker: 'NVDA',
+      added_at: '2026-04-20T15:00:00Z',
+      source: 'ui',
+      name: 'NVIDIA Corporation',
+      exchange: 'NASDAQ',
+      asset_type: 'Common Stock',
+      last_daily_bar: '2026-04-23',
+    },
+    {
+      ticker: 'ABCD',
+      added_at: '2026-04-24T13:30:00Z',
+      source: 'combobox-auto-add',
+      name: null,
+      exchange: null,
+      asset_type: null,
+      last_daily_bar: null,
+    },
+  ],
+} satisfies MeWatchlistResponse;
+
 export const insightsRoutes: MockRoute[] = [
   { pattern: /^\/api\/insights\/report\/IWM$/, reply: () => ({ body: MOCK_INSIGHT_REPORT }) },
   {
@@ -335,6 +379,11 @@ export const insightsRoutes: MockRoute[] = [
   // Owns the endpoint app-wide (the panel mounts on /insights AND /help):
   // the POPULATED ranking, so mock mode shows real-looking rows.
   { pattern: /^\/api\/insights\/watchlist$/, reply: () => ({ body: MOCK_WATCHLIST }) },
+  {
+    pattern: /^\/api\/insights\/watchlist\/default$/,
+    reply: () => ({ body: MOCK_WATCHLIST_DEFAULT }),
+  },
+  { pattern: /^\/api\/me\/watchlist$/, reply: () => ({ body: MOCK_ME_WATCHLIST }) },
   // AgentsPanel (rendered on this page) reads the model-routing table. It is
   // NOT admin-gated in the UI here, so it needs an answer on /insights too.
   // GET /api/admin/routes is owned by ./admin (its table is the superset

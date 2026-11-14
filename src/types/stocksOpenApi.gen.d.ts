@@ -390,10 +390,11 @@ export interface paths {
          * Replay Trades
          * @description Score the signed-in user's labeled journal trades against actual bars
          *     and benchmark them against the system (Task 3.2). 422 if neither
-         *     `trade_ids` nor `session_id` is given; 404 if nothing matches; strict
-         *     fail-loud (uncaught exception -> 500) on any Cloud SQL error loading the
-         *     journal rows or the bars — never a silent empty/zero-filled result
-         *     (CLAUDE.md Rule 3.7).
+         *     `trade_ids` nor `session_id` is given; 404 if nothing matches. A failed
+         *     read of the journal rows or of the bars is never a silent
+         *     empty/zero-filled result (CLAUDE.md Rule 3.7): a database outage is a
+         *     503 (`Could not read ...`) and a defect is a 500. A date the table holds
+         *     no bars for is not a failure: its trades come back `unavailable`.
          */
         post: operations["replay_trades_api_backtest_replay_trades_post"];
         delete?: never;
@@ -1238,6 +1239,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/insights/watchlist/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Watchlist
+         * @description Return the active default watchlist with its surface flags, read-only.
+         *
+         *     Identical for an open-mode caller and a signed-in caller: the web reads
+         *     the default list, it cannot change it (Discord and the CLI can). Reads
+         *     through ``query_to_dataframe_strict`` so a Cloud SQL outage is a 503
+         *     with the exception text (a defect stays a 500), never an empty list; zero rows is a 200 with
+         *     ``rows: []`` (an empty default list is a true state).
+         */
+        get: operations["get_default_watchlist_api_insights_watchlist_default_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/journal/examples/{ticker}": {
         parameters: {
             query?: never;
@@ -1831,14 +1858,20 @@ export interface paths {
          * Get Reference Levels
          * @description Get previous day OHLC reference levels for support/resistance.
          *
-         *     Strategy:
-         *       1. AlphaVantage TIME_SERIES_DAILY when requested date is within the last ~30 days
-         *          (AV is always real-time; avoids stale Cloud SQL issues)
-         *       2. Cloud SQL market_data_daily for historical requests (fast, has indicators)
-         *       3. Local parquet fallback (minute bars aggregated)
+         *     date format: YYYYMMDD (e.g., 20260220) or YYYY-MM-DD.
          *
-         *     Returns the OHLC of the trading day immediately before the requested date,
-         *     plus a `week` block containing the high/low across the previous 5 trading days.
+         *     One read: the five newest `market_data_daily` rows dated before the
+         *     requested date that hold a close. A row the premarket refresh has
+         *     inserted and the nightly fetch has not yet filled has no prices and is
+         *     never the reference day. The newest is the reference day; `week` is the
+         *     high/low across those rows (null under two rows). `source` is always
+         *     `cloud_sql`.
+         *     `stale_days` is the calendar days from the reference day to the requested
+         *     date when the request is under 30 days old and that gap is over 3, else 0.
+         *
+         *     404 when the table holds no daily bar before the date (`No daily bar for
+         *     ...`) or the date is malformed (`Invalid date ...`). 503 when the database
+         *     cannot be read (`Could not read ...`). No vendor is called.
          */
         get: operations["get_reference_levels_api_market_reference__ticker___date__get"];
         put?: never;
@@ -1955,6 +1988,69 @@ export interface paths {
         put: operations["put_profile_api_me_profile_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/watchlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Me Watchlist
+         * @description List the caller's active watchlist (401 without a signed-in identity,
+         *     503 on a Cloud SQL outage; a defect stays a 500).
+         */
+        get: operations["get_me_watchlist_api_me_watchlist_get"];
+        put?: never;
+        /**
+         * Add Me Watchlist
+         * @description Add a ticker to the caller's watchlist and answer the updated list.
+         *
+         *     One transaction: the per-owner advisory lock first (adds for one owner
+         *     serialize, so the cap cannot be raced), then the count (409 at the cap),
+         *     the shared ticker row, and the membership upsert. A re-add clears
+         *     removed_at and never rewrites added_at. 401 without an identity, 422 for a
+         *     bad ticker, 503 on a Cloud SQL outage; a defect stays a 500.
+         *
+         *     The write is committed before the list is read back, so a 503 from that
+         *     read does not undo it. A client should refresh with GET rather than retry
+         *     the write (a retried add at the cap would answer 409 for a ticker already
+         *     on the list).
+         */
+        post: operations["add_me_watchlist_api_me_watchlist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/watchlist/{ticker}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Me Watchlist
+         * @description Soft-remove a ticker from the caller's watchlist and answer the list.
+         *
+         *     404 when the caller has no active row for it, 422 for a bad ticker, 401
+         *     without an identity, 503 on a Cloud SQL outage; a defect stays a 500.
+         *
+         *     The write is committed before the list is read back, so a 503 from that
+         *     read does not undo it. A client should refresh with GET rather than retry
+         *     the write (a retried remove would answer 404 for a ticker already removed).
+         */
+        delete: operations["remove_me_watchlist_api_me_watchlist__ticker__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2417,8 +2513,9 @@ export interface paths {
          *     every "not enough signal yet" case — too few closed trades, or mining
          *     produced no profile for either direction — since these are expected,
          *     recoverable states for a user early in their journal history, not
-         *     errors. A genuine Cloud SQL failure still propagates as a 5xx (Rule
-         *     3.7 — INTERNAL failures fail loud, never a fabricated empty result).
+         *     errors. A failed read of the journal rows or of the per-trade bars is
+         *     not one of them (Rule 3.7): a database outage is a 503 (`Could not
+         *     read ...`) and a defect is a 500, never a fabricated empty result.
          */
         post: operations["mine_and_validate_api_style_mine_and_validate_post"];
         delete?: never;
@@ -3240,6 +3337,20 @@ export interface components {
             start_value?: number | null;
             /** Total Return Pct */
             total_return_pct?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * ErrorDetail
+         * @description The body of a 404 or 503 from the bar and replay routes: one string.
+         *
+         *     The frontend tells the cases apart by how `detail` starts (`No 1-min
+         *     bars for `, `No daily bar for `, `Invalid date `, `Could not read `),
+         *     never by the status alone.
+         */
+        ErrorDetail: {
+            /** Detail */
+            detail: string;
         } & {
             [key: string]: unknown;
         };
@@ -4244,6 +4355,64 @@ export interface components {
             is_admin: boolean;
             /** Is Dev */
             is_dev: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        /** MeWatchlistAddRequest */
+        MeWatchlistAddRequest: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "ui" | "combobox-auto-add";
+            /** Ticker */
+            ticker: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** MeWatchlistRemoveResponse */
+        MeWatchlistRemoveResponse: {
+            /** As Of */
+            as_of: string;
+            /** Owner Email */
+            owner_email: string;
+            /**
+             * Removed
+             * @constant
+             */
+            removed: true;
+            /** Tickers */
+            tickers: components["schemas"]["MeWatchlistRow"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** MeWatchlistResponse */
+        MeWatchlistResponse: {
+            /** As Of */
+            as_of: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Tickers */
+            tickers: components["schemas"]["MeWatchlistRow"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** MeWatchlistRow */
+        MeWatchlistRow: {
+            /** Added At */
+            added_at: string;
+            /** Asset Type */
+            asset_type?: string | null;
+            /** Exchange */
+            exchange?: string | null;
+            /** Last Daily Bar */
+            last_daily_bar?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Ticker */
+            ticker: string;
         } & {
             [key: string]: unknown;
         };
@@ -5852,6 +6021,52 @@ export interface components {
             /** Watchlist */
             watchlist: string[];
         };
+        /**
+         * WatchlistDefaultResponse
+         * @description GET /api/insights/watchlist/default (FEAT-INSIGHT-001 stage A).
+         *
+         *     Read-only: the owner is the literal 'default' for every caller, and the
+         *     rows are ordered by added_at, then ticker. An empty default list is a
+         *     200 with ``rows: []``; a failed Cloud SQL read is a 503, never an empty
+         *     list (CLAUDE.md 3.7).
+         */
+        WatchlistDefaultResponse: {
+            /** As Of */
+            as_of: string;
+            /**
+             * Owner
+             * @constant
+             */
+            owner: "default";
+            /** Rows */
+            rows: components["schemas"]["WatchlistDefaultRow"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * WatchlistDefaultRow
+         * @description One active row of the default watchlist with its surface flags.
+         *
+         *     ``added_at`` is the ISO instant of the TIMESTAMPTZ column, never a pandas
+         *     Timestamp repr (solyra types it as a string). ``source`` is nullable in
+         *     gcp/schema.sql; the three flags are NOT NULL there.
+         */
+        WatchlistDefaultRow: {
+            /** Added At */
+            added_at: string;
+            /** In Brief */
+            in_brief: boolean;
+            /** In Insight */
+            in_insight: boolean;
+            /** Signals */
+            signals: boolean;
+            /** Source */
+            source?: string | null;
+            /** Ticker */
+            ticker: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** WatchlistRemoveResponse */
         WatchlistRemoveResponse: {
             /** Removed */
@@ -6393,6 +6608,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
         };
@@ -7398,6 +7622,26 @@ export interface operations {
             };
         };
     };
+    get_default_watchlist_api_insights_watchlist_default_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistDefaultResponse"];
+                };
+            };
+        };
+    };
     get_examples_api_journal_examples__ticker__get: {
         parameters: {
             query?: never;
@@ -8000,6 +8244,15 @@ export interface operations {
                     "application/json": components["schemas"]["MarketDataResponse"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -8007,6 +8260,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
         };
@@ -8083,6 +8345,15 @@ export interface operations {
                     "application/json": components["schemas"]["ReferenceResponse"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -8090,6 +8361,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
         };
@@ -8227,6 +8507,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_me_watchlist_api_me_watchlist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeWatchlistResponse"];
+                };
+            };
+        };
+    };
+    add_me_watchlist_api_me_watchlist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeWatchlistAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeWatchlistResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_me_watchlist_api_me_watchlist__ticker__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticker: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeWatchlistRemoveResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8860,6 +9224,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorDetail"];
                 };
             };
         };
