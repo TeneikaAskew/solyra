@@ -95,7 +95,11 @@ export function MyWatchlistSection({ onSelectTicker }: Props) {
         )
       ) : null}
 
-      {[...removeErrors].map(([ticker, message]) => (
+      {/* A remove error for a ticker the list no longer holds is stale: the API
+          committed the delete before its read-back failed, and the refresh shows it gone. */}
+      {[...removeErrors]
+        .filter(([ticker]) => query.data?.tickers.some((row) => row.ticker === ticker))
+        .map(([ticker, message]) => (
         <div
           key={ticker}
           role="alert"

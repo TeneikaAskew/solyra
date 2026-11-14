@@ -187,6 +187,27 @@ describe('MyWatchlistSection removes and the add toggle', () => {
     expect(alerts).toEqual(["Couldn't remove NVDA: Cloud SQL unreachable"]);
   });
 
+  it('a failed remove for a ticker the refreshed list no longer holds shows no error', async () => {
+    await act(async () => removeButton('NVDA').click());
+    await act(async () => removeButton('ABCD').click());
+    // The API committed the NVDA delete before its read-back failed with a 503.
+    await act(async () => state.removes.get('NVDA')!.reject(new Error('Cloud SQL unreachable')));
+    await act(async () => state.removes.get('ABCD')!.reject(new Error('Cloud SQL unreachable')));
+    const alertTexts = () => [...container.querySelectorAll('[role="alert"]')].map((el) => el.textContent);
+    expect(alertTexts()).toEqual([
+      "Couldn't remove NVDA: Cloud SQL unreachable",
+      "Couldn't remove ABCD: Cloud SQL unreachable",
+    ]);
+
+    // onSettled's refetch now lists neither NVDA; ABCD is still there.
+    state.me = {
+      ...state.me,
+      data: { ...ME_WITH_STALE_ROW, tickers: ME_WITH_STALE_ROW.tickers.filter((row) => row.ticker !== 'NVDA') },
+    };
+    await act(async () => root.render(createElement(MyWatchlistSection, { onSelectTicker: () => {} })));
+    expect(alertTexts()).toEqual(["Couldn't remove ABCD: Cloud SQL unreachable"]);
+  });
+
   it('the Add Ticker toggle reports whether the search is open', async () => {
     const toggle = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Add Ticker'))!;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
