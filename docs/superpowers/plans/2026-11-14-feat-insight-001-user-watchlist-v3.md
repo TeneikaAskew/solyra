@@ -3,7 +3,7 @@ feat_id: FEAT-INSIGHT-001
 spec: docs/superpowers/specs/2026-11-14-feat-insight-001-user-watchlist-v3.md
 branch: feature/feat-insight-001-user-watchlist-v3
 pr: 341
-status: ready
+status: done
 ---
 
 # Per-user watchlist served by the stocks API (solyra, v3) implementation plan
