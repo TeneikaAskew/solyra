@@ -29,6 +29,7 @@ import type {
   RunStatus,
 } from '@/types/insights';
 import type {
+  MeWatchlistRemoveResponse,
   MeWatchlistResponse,
   WatchlistDefaultResponse,
   WatchlistResponse,
@@ -384,6 +385,12 @@ export const insightsRoutes: MockRoute[] = [
     reply: () => ({ body: MOCK_WATCHLIST_DEFAULT }),
   },
   { pattern: /^\/api\/me\/watchlist$/, reply: () => ({ body: MOCK_ME_WATCHLIST }) },
+  { method: 'POST', pattern: /^\/api\/me\/watchlist$/, reply: () => ({ body: MOCK_ME_WATCHLIST }) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/me\/watchlist\/[^/]+$/,
+    reply: () => ({ body: { ...MOCK_ME_WATCHLIST, removed: true } satisfies MeWatchlistRemoveResponse }),
+  },
   // AgentsPanel (rendered on this page) reads the model-routing table. It is
   // NOT admin-gated in the UI here, so it needs an answer on /insights too.
   // GET /api/admin/routes is owned by ./admin (its table is the superset
