@@ -6,19 +6,26 @@
  * the fixture layer. See that module for the endpoint fan-out and the
  * per-payload contract notes.
  */
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
 import type {
   InsightHistoryResponse,
   InsightReportEnvelope,
   RunStatus,
 } from '@/types/insights';
-import type { WatchlistResponse } from '@/types/watchlist';
+import type {
+  MeWatchlistRemoveResponse,
+  MeWatchlistResponse,
+  MeWatchlistRow,
+  WatchlistDefaultResponse,
+  WatchlistResponse,
+} from '@/types/watchlist';
 import {
   MOCK_AGENT_ROUTES,
   MOCK_CHAT_REPLY,
   MOCK_INSIGHT_HISTORY_EMPTY,
   MOCK_INSIGHT_REPORT,
   MOCK_REFRESH_QUEUED,
+  MOCK_WATCHLIST_DEFAULT,
   MOCK_WATCHLIST_EMPTY,
   runStatus,
 } from '@/mocks/insights';
@@ -32,7 +39,9 @@ export {
   MOCK_INSIGHT_REPORT,
   MOCK_INSIGHT_REPORT_DEGRADED,
   MOCK_REFRESH_QUEUED,
+  MOCK_ME_WATCHLIST,
   MOCK_WATCHLIST,
+  MOCK_WATCHLIST_DEFAULT,
   MOCK_WATCHLIST_EMPTY,
   RUN_ID,
   runStatus,
@@ -96,4 +105,106 @@ export async function mockInsightsApi(page: Page, opts: InsightsMockOpts = {}) {
       body: opts.chatReply ?? MOCK_CHAT_REPLY,
     })
   );
+}
+
+/** The owner email the per-user watchlist mock answers under. */
+const ME_WATCHLIST_OWNER = 'trader@example.test';
+
+export interface MeWatchlistMockOpts {
+  /**
+   * `added_at` for a row a POST adds, read at request time. Default the real
+   * clock; a spec under page.clock.setFixedTime passes its fixed instant so
+   * the added row's data state is deterministic.
+   */
+  now?: () => string;
+}
+
+/** What the per-user watchlist mock saw, for request assertions. */
+export interface MeWatchlistMock {
+  /** The list as the mock holds it now. */
+  rows: () => MeWatchlistRow[];
+  /** Body of every POST /api/me/watchlist, in order. */
+  posts: Array<{ ticker: string; source: string }>;
+  /** Ticker of every DELETE /api/me/watchlist/{ticker}, in order. */
+  deletes: string[];
+}
+
+/**
+ * The signed-in user's own watchlist as the stocks routes serve it, held in
+ * memory: GET answers the list, POST adds `{ticker, source}` (an existing
+ * ticker leaves the list as it is) and answers the list, DELETE removes the
+ * ticker and answers the list with `removed: true`, or a 404 with a detail
+ * when the ticker is not on it.
+ *
+ * Register AFTER mockInsightsApi: Playwright matches newest-first, and
+ * nothing there answers /api/me/watchlist, so this one is unambiguous; the
+ * glob ends in `**` because DELETE carries the ticker as a path segment.
+ */
+export async function mockMeWatchlist(
+  page: Page,
+  initial: MeWatchlistRow[],
+  opts: MeWatchlistMockOpts = {},
+): Promise<MeWatchlistMock> {
+  const now = opts.now ?? (() => new Date().toISOString());
+  let rows = initial.map((row) => ({ ...row }));
+  const mock: MeWatchlistMock = { rows: () => rows, posts: [], deletes: [] };
+  const list = (): MeWatchlistResponse => ({ as_of: now(), owner_email: ME_WATCHLIST_OWNER, tickers: rows });
+
+  await page.route('**/api/me/watchlist**', (r: Route) => {
+    const req = r.request();
+    const path = new URL(req.url()).pathname;
+    if (req.method() === 'GET' && path === '/api/me/watchlist') return r.fulfill(M.ok(list()));
+    if (req.method() === 'POST' && path === '/api/me/watchlist') {
+      const body = req.postDataJSON() as { ticker: string; source: string };
+      mock.posts.push(body);
+      const ticker = body.ticker.toUpperCase();
+      if (!rows.some((row) => row.ticker === ticker)) {
+        rows = [
+          ...rows,
+          {
+            ticker,
+            added_at: now(),
+            source: body.source,
+            name: null,
+            exchange: null,
+            asset_type: null,
+            last_daily_bar: null,
+          } satisfies MeWatchlistRow,
+        ];
+      }
+      return r.fulfill(M.ok(list()));
+    }
+    const removed = /^\/api\/me\/watchlist\/([^/]+)$/.exec(path);
+    if (req.method() === 'DELETE' && removed) {
+      const ticker = decodeURIComponent(removed[1]).toUpperCase();
+      mock.deletes.push(ticker);
+      if (!rows.some((row) => row.ticker === ticker)) {
+        return r.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: `${ticker} is not on your watchlist` }),
+        });
+      }
+      rows = rows.filter((row) => row.ticker !== ticker);
+      return r.fulfill(M.ok({ ...list(), removed: true } satisfies MeWatchlistRemoveResponse));
+    }
+    return r.fulfill({
+      status: 405,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: `mockMeWatchlist: unexpected ${req.method()} ${path}` }),
+    });
+  });
+  return mock;
+}
+
+/**
+ * GET /api/insights/watchlist/default, the read-only list edited in Discord.
+ * Register AFTER mockInsightsApi so it wins over that helper's broader
+ * ranking route, whose glob also matches /api/insights/watchlist/default.
+ */
+export async function mockDefaultWatchlist(
+  page: Page,
+  body: WatchlistDefaultResponse = MOCK_WATCHLIST_DEFAULT,
+) {
+  await page.route('**/api/insights/watchlist/default', (r) => r.fulfill(M.ok(body)));
 }
