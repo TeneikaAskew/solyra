@@ -19,6 +19,29 @@ vi.mock('./useUser', () => ({
   useUser: () => ({ isSignedIn: auth.isSignedIn, uid: auth.uid, emailVerified: auth.emailVerified }),
 }));
 
+// The real fetch wrapper (src/lib/authedFetch.ts) runs for the bound-write
+// tests below, over a fake SDK: `sdk.uid` is the account the Firebase SDK holds
+// now, which a cross-tab switch moves independently of `auth.uid` (the account
+// this screen rendered for). getIdTokenFor behaves like firebaseImpl's: it
+// refuses with code 'account-changed' unless the SDK still holds that uid.
+const sdk = vi.hoisted(() => ({ uid: 'uid-a' as string | null, mode: 'open' as string }));
+vi.mock('@/lib/firebase', () => ({
+  getCurrentUid: async () => sdk.uid,
+  getIdToken: async () => (sdk.uid === null ? null : `tok-${sdk.uid}`),
+  getIdTokenFor: async (uid: string) => {
+    if (uid !== sdk.uid) {
+      throw Object.assign(new Error('Your account changed before this was sent. Nothing was saved.'), {
+        code: 'account-changed',
+      });
+    }
+    return `tok-${uid}`;
+  },
+}));
+vi.mock('@/lib/runtimeConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/runtimeConfig')>()),
+  getAuthMode: () => sdk.mode,
+}));
+
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
 const fetchMock = vi.fn();
 let client: QueryClient;
@@ -60,6 +83,8 @@ beforeEach(() => {
   auth.isSignedIn = true;
   auth.uid = 'uid-a';
   auth.emailVerified = true;
+  sdk.uid = 'uid-a';
+  sdk.mode = 'open';
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   container = document.createElement('div');
   document.body.append(container);
@@ -325,5 +350,106 @@ describe('useDefaultWatchlist', () => {
     const cached = client.getQueryCache().find({ queryKey: ['watchlist', 'default'], exact: true });
     expect(cached?.state.data).toEqual(MOCK_WATCHLIST_DEFAULT);
     expect(cached?.isStale()).toBe(false);
+  });
+});
+
+// Codex round 1 (P1): a write is sent only as the account whose screen composed
+// it. A cross-tab switch to B before this tab rerenders must not send A's click
+// with B's token. Runs through the real wrapper, so this is the behaviour, not
+// a check that some helper was called.
+describe('watchlist writes are bound to the account that rendered them', () => {
+  let wrapped: typeof fetch | undefined;
+  /** Install the real wrapper once (it installs once per module) over fetchMock. */
+  async function withRealWrapper(): Promise<void> {
+    if (!wrapped) {
+      const { installAuthFetch } = await import('@/lib/authedFetch');
+      window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => fetchMock(input, init)) as typeof fetch;
+      installAuthFetch();
+      wrapped = window.fetch;
+    }
+    vi.stubGlobal('fetch', wrapped);
+  }
+  const sentAuth = (i: number) => new Headers((fetchMock.mock.calls[i]?.[1] as RequestInit | undefined)?.headers).get('Authorization');
+
+  it('an add rendered for A and clicked after the SDK holds B sends nothing and rejects with the refusal', async () => {
+    sdk.mode = 'firebase';
+    await withRealWrapper();
+    fetchMock.mockImplementation(() => json(MOCK_ME_WATCHLIST));
+    await render(AddProbe);
+    sdk.uid = 'uid-b';
+    await act(async () => {
+      await expect(results.add?.mutateAsync({ ticker: 'NVDA', source: 'ui' })).rejects.toMatchObject({
+        code: 'account-changed',
+        message: 'Your account changed before this was sent. Nothing was saved.',
+      });
+    });
+    await settle();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(results.add?.error?.message).toBe('Your account changed before this was sent. Nothing was saved.');
+  });
+
+  it('a remove rendered for A and clicked after the SDK holds B sends nothing and rejects with the refusal', async () => {
+    sdk.mode = 'firebase';
+    await withRealWrapper();
+    fetchMock.mockImplementation(() => json({ ...MOCK_ME_WATCHLIST, removed: true }));
+    await render(RemoveProbe);
+    sdk.uid = 'uid-b';
+    await act(async () => {
+      await expect(results.remove?.mutateAsync('NVDA')).rejects.toMatchObject({
+        code: 'account-changed',
+        message: 'Your account changed before this was sent. Nothing was saved.',
+      });
+    });
+    await settle();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a write rendered for A after the SDK signed out sends nothing', async () => {
+    sdk.mode = 'firebase';
+    await withRealWrapper();
+    fetchMock.mockImplementation(() => json({ ...MOCK_ME_WATCHLIST, removed: true }));
+    await render(RemoveProbe);
+    sdk.uid = null;
+    await act(async () => {
+      await expect(results.remove?.mutateAsync('NVDA')).rejects.toMatchObject({ code: 'account-changed' });
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('an add and a remove rendered for A while the SDK still holds A go out with A\'s token', async () => {
+    sdk.mode = 'firebase';
+    await withRealWrapper();
+    fetchMock.mockImplementationOnce(() => json(MOCK_ME_WATCHLIST));
+    fetchMock.mockImplementationOnce(() => json({ ...MOCK_ME_WATCHLIST, removed: true }));
+    await render(AddProbe);
+    await act(async () => { await results.add?.mutateAsync({ ticker: 'NVDA', source: 'ui' }); });
+    await render(RemoveProbe);
+    await act(async () => { await results.remove?.mutateAsync('NVDA'); });
+    expect(calls()).toEqual([
+      { url: '/api/me/watchlist', method: 'POST' },
+      { url: '/api/me/watchlist/NVDA', method: 'DELETE' },
+    ]);
+    expect([sentAuth(0), sentAuth(1)]).toEqual(['Bearer tok-uid-a', 'Bearer tok-uid-a']);
+    const [, postInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(postInit.headers).get('Content-Type')).toBe('application/json');
+    expect(JSON.parse(postInit.body as string)).toEqual({ ticker: 'NVDA', source: 'ui' });
+  });
+
+  // Open auth mode (the hermetic Playwright suite) reports no account, so uid
+  // is null; the wrapper ignores the mark outside firebase mode.
+  it('in open auth mode a write rendered with no account still goes out', async () => {
+    sdk.mode = 'open';
+    auth.uid = null;
+    await withRealWrapper();
+    fetchMock.mockImplementationOnce(() => json(MOCK_ME_WATCHLIST));
+    fetchMock.mockImplementationOnce(() => json({ ...MOCK_ME_WATCHLIST, removed: true }));
+    await render(AddProbe);
+    await act(async () => { await results.add?.mutateAsync({ ticker: 'NVDA', source: 'ui' }); });
+    await render(RemoveProbe);
+    await act(async () => { await results.remove?.mutateAsync('NVDA'); });
+    expect(calls()).toEqual([
+      { url: '/api/me/watchlist', method: 'POST' },
+      { url: '/api/me/watchlist/NVDA', method: 'DELETE' },
+    ]);
   });
 });

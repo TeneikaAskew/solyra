@@ -187,6 +187,19 @@ describe('MyWatchlistSection removes and the add toggle', () => {
     expect(alerts).toEqual(["Couldn't remove NVDA: Cloud SQL unreachable"]);
   });
 
+  // Codex round 1: a remove refused because the account changed under it
+  // (authedFetch, code 'account-changed') is shown, never a silent no-op.
+  it('a remove refused for an account change names the ticker and says nothing was saved', async () => {
+    await act(async () => removeButton('NVDA').click());
+    const refused = Object.assign(new Error('Your account changed before this was sent. Nothing was saved.'), {
+      code: 'account-changed',
+    });
+    await act(async () => state.removes.get('NVDA')!.reject(refused));
+    const alerts = [...container.querySelectorAll('[role="alert"]')].map((el) => el.textContent);
+    expect(alerts).toEqual(["Couldn't remove NVDA: Your account changed before this was sent. Nothing was saved."]);
+    expect(removeButton('NVDA').disabled).toBe(false);
+  });
+
   it('a failed remove for a ticker the refreshed list no longer holds shows no error', async () => {
     await act(async () => removeButton('NVDA').click());
     await act(async () => removeButton('ABCD').click());

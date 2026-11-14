@@ -3,6 +3,9 @@
 // Identity is the Firebase ID token that src/lib/authedFetch.ts attaches to
 // every relative /api call, so these hooks use the ordinary relative fetch and
 // send no API key header, no custom auth header and no body field naming the user.
+// The add and remove writes are bound (boundToAccount) to the account their
+// screen rendered for, so a cross-tab account switch refuses them instead of
+// sending them with the other account's token.
 import {
   useMutation,
   useQuery,
@@ -10,6 +13,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/react-query';
+import { boundToAccount } from '@/lib/authedFetch';
 import { useUser } from './useUser';
 import type {
   MeWatchlistRemoveResponse,
@@ -173,26 +177,33 @@ export function useAddUserTicker(): UseMutationResult<
   Error,
   { ticker: string; source: 'ui' | 'combobox-auto-add' }
 > {
+  // The account this screen rendered for (null outside firebase mode). The
+  // write is sent only as that account; if the SDK now holds another account
+  // or none, authedFetch sends nothing and rejects with code 'account-changed',
+  // which the caller shows as the mutation's error.
+  const { uid } = useUser();
   const invalidate = useInvalidateWatchlists();
   return useMutation<MeWatchlistResponse, Error, { ticker: string; source: 'ui' | 'combobox-auto-add' }>({
     mutationFn: async ({ ticker, source }) =>
       readWatchlistResponse<MeWatchlistResponse>(
-        await fetch('/api/me/watchlist', {
+        await fetch('/api/me/watchlist', boundToAccount({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ticker, source }),
-        }),
+        }, uid)),
       ),
     onSettled: invalidate,
   });
 }
 
 export function useRemoveUserTicker(): UseMutationResult<MeWatchlistRemoveResponse, Error, string> {
+  // Bound like the add: a remove clicked on A's row never deletes from B's list.
+  const { uid } = useUser();
   const invalidate = useInvalidateWatchlists();
   return useMutation<MeWatchlistRemoveResponse, Error, string>({
     mutationFn: async (ticker) =>
       readWatchlistResponse<MeWatchlistRemoveResponse>(
-        await fetch(`/api/me/watchlist/${encodeURIComponent(ticker)}`, { method: 'DELETE' }),
+        await fetch(`/api/me/watchlist/${encodeURIComponent(ticker)}`, boundToAccount({ method: 'DELETE' }, uid)),
       ),
     onSettled: invalidate,
   });

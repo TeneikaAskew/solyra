@@ -227,9 +227,21 @@ const isUrlish = (n: ts.Node) =>
   ts.isStringLiteral(n) || ts.isTemplateExpression(n) || ts.isNoSubstitutionTemplateLiteral(n) ||
   ts.isConditionalExpression(n);
 
+/**
+ * An options argument as written, or the object a `boundToAccount(init, uid)`
+ * call marks (src/lib/authedFetch.ts): the marked object is the one fetch gets.
+ */
+function optionsLiteral(arg: ts.Expression): ts.Expression {
+  if (ts.isCallExpression(arg) && ts.isIdentifier(arg.expression) && arg.expression.text === 'boundToAccount') {
+    return arg.arguments[0] ?? arg;
+  }
+  return arg;
+}
+
 /** The `method:` of a call's options object, uppercased; GET when unset. */
 function methodOfCall(call: ts.CallExpression): string {
-  for (const arg of call.arguments) {
+  for (const raw of call.arguments) {
+    const arg = optionsLiteral(raw);
     if (!ts.isObjectLiteralExpression(arg)) continue;
     for (const prop of arg.properties) {
       if (!ts.isPropertyAssignment(prop)) continue;
@@ -849,6 +861,21 @@ describe('extractApiLiterals', () => {
   it('reads the verb of a literal used directly inside fetch()', () => {
     expect(verbs("await fetch('/api/journal/trades', { method: 'POST' });")).toEqual([
       { literal: '/api/journal/trades', method: 'POST' },
+    ]);
+  });
+
+  // The useUserWatchlist / usePreferences / useProfile shape: the options
+  // object is marked by boundToAccount (src/lib/authedFetch.ts) before fetch
+  // sees it, and its verb is still the request's verb, not a GET.
+  it('reads the verb of an options object wrapped in boundToAccount()', () => {
+    const src = [
+      'await fetch(`/api/me/watchlist/${t}`, boundToAccount({ method: \'DELETE\' }, uid));',
+      "const ENDPOINT = '/api/me/profile';",
+      "await fetch(ENDPOINT, boundToAccount({ method: 'PUT', body: b }, uid));",
+    ].join('\n');
+    expect(verbs(src)).toEqual([
+      { literal: '/api/me/watchlist/{p}', method: 'DELETE' },
+      { literal: '/api/me/profile', method: 'PUT' },
     ]);
   });
 
