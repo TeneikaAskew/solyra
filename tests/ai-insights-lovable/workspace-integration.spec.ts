@@ -201,7 +201,9 @@ test('Agents keeps run provenance when administrator routing is denied', async (
 
 test('watchlist research for a different ticker starts new work rather than changing a saved session', async ({ page }) => {
   await savedResearch(page);
-  await page.route('**/api/insights/watchlist**', r => r.fulfill(M.ok(MOCK_WATCHLIST)));
+  // The ranked request only (it always carries ?limit=), so the default list
+  // keeps mockInsightsApi's own /api/insights/watchlist/default answer.
+  await page.route('**/api/insights/watchlist?**', r => r.fulfill(M.ok(MOCK_WATCHLIST)));
   await page.route('**/api/insights/report/AAPL', r => r.fulfill(M.notFound()));
   await page.route('**/api/insights/report/AAPL/history?*', r => r.fulfill(M.ok({ ticker: 'AAPL', count: 0, reports: [] })));
   await page.getByRole('tab', { name: 'Watchlist', exact: true }).click();

@@ -89,6 +89,14 @@ export async function mockInsightsApi(page: Page, opts: InsightsMockOpts = {}) {
     r.fulfill(report === null ? M.notFound() : M.ok(report))
   );
   await page.route('**/api/insights/watchlist**', (r) => r.fulfill(M.ok(watchlist)));
+  // Registered after the broad ranking route, so Playwright's newest-first
+  // matching gives these two their own answers: the ranking glob above also
+  // matches /api/insights/watchlist/default, whose payload has `rows`, and
+  // nothing else here answers /api/me/watchlist, which would leave the
+  // browser for the dead E2E proxy. A spec's own mockMeWatchlist or
+  // mockDefaultWatchlist, registered later still, wins over both.
+  await page.route('**/api/insights/watchlist/default', (r) => r.fulfill(M.ok(MOCK_WATCHLIST_DEFAULT)));
+  await page.route('**/api/me/watchlist**', meWatchlistHandler([], {}).handler);
 
   // AgentsPanel (rendered on this page) reads the model-routing table. It is
   // NOT admin-gated in the UI here, so an unmocked /insights visit leaves the
@@ -121,7 +129,7 @@ export interface MeWatchlistMockOpts {
 
 /** What the per-user watchlist mock saw, for request assertions. */
 export interface MeWatchlistMock {
-  /** The list as the mock holds it now. */
+  /** A copy of the list as the mock holds it now. */
   rows: () => MeWatchlistRow[];
   /** Body of every POST /api/me/watchlist, in order. */
   posts: Array<{ ticker: string; source: string }>;
@@ -130,27 +138,22 @@ export interface MeWatchlistMock {
 }
 
 /**
- * The signed-in user's own watchlist as the stocks routes serve it, held in
- * memory: GET answers the list, POST adds `{ticker, source}` (an existing
- * ticker leaves the list as it is) and answers the list, DELETE removes the
- * ticker and answers the list with `removed: true`, or a 404 with a detail
- * when the ticker is not on it.
- *
- * Register AFTER mockInsightsApi: Playwright matches newest-first, and
- * nothing there answers /api/me/watchlist, so this one is unambiguous; the
- * glob ends in `**` because DELETE carries the ticker as a path segment.
+ * The in-memory per-user watchlist behind both mockInsightsApi (which starts
+ * it empty) and mockMeWatchlist (which seeds it): GET answers the list, POST
+ * adds `{ticker, source}` (an existing ticker leaves the list as it is) and
+ * answers the list, DELETE removes the ticker and answers the list with
+ * `removed: true`, or a 404 with a detail when the ticker is not on it.
  */
-export async function mockMeWatchlist(
-  page: Page,
+function meWatchlistHandler(
   initial: MeWatchlistRow[],
-  opts: MeWatchlistMockOpts = {},
-): Promise<MeWatchlistMock> {
+  opts: MeWatchlistMockOpts,
+): { handler: (r: Route) => Promise<void>; mock: MeWatchlistMock } {
   const now = opts.now ?? (() => new Date().toISOString());
   let rows = initial.map((row) => ({ ...row }));
-  const mock: MeWatchlistMock = { rows: () => rows, posts: [], deletes: [] };
+  const mock: MeWatchlistMock = { rows: () => rows.map((row) => ({ ...row })), posts: [], deletes: [] };
   const list = (): MeWatchlistResponse => ({ as_of: now(), owner_email: ME_WATCHLIST_OWNER, tickers: rows });
 
-  await page.route('**/api/me/watchlist**', (r: Route) => {
+  const handler = (r: Route) => {
     const req = r.request();
     const path = new URL(req.url()).pathname;
     if (req.method() === 'GET' && path === '/api/me/watchlist') return r.fulfill(M.ok(list()));
@@ -193,14 +196,34 @@ export async function mockMeWatchlist(
       contentType: 'application/json',
       body: JSON.stringify({ detail: `mockMeWatchlist: unexpected ${req.method()} ${path}` }),
     });
-  });
+  };
+  return { handler, mock };
+}
+
+/**
+ * The signed-in user's own watchlist, seeded with `initial`, served by the
+ * same in-memory handler mockInsightsApi registers empty (see
+ * meWatchlistHandler for what each verb answers).
+ *
+ * Register AFTER mockInsightsApi: Playwright matches newest-first, so this
+ * seeded list wins over that helper's empty one. The glob ends in `**`
+ * because DELETE carries the ticker as a path segment.
+ */
+export async function mockMeWatchlist(
+  page: Page,
+  initial: MeWatchlistRow[],
+  opts: MeWatchlistMockOpts = {},
+): Promise<MeWatchlistMock> {
+  const { handler, mock } = meWatchlistHandler(initial, opts);
+  await page.route('**/api/me/watchlist**', handler);
   return mock;
 }
 
 /**
  * GET /api/insights/watchlist/default, the read-only list edited in Discord.
- * Register AFTER mockInsightsApi so it wins over that helper's broader
- * ranking route, whose glob also matches /api/insights/watchlist/default.
+ * mockInsightsApi already answers this route with MOCK_WATCHLIST_DEFAULT;
+ * register this AFTER it to serve a different `body`, since Playwright
+ * matches newest-first.
  */
 export async function mockDefaultWatchlist(
   page: Page,
