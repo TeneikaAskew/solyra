@@ -327,7 +327,8 @@ export const MOCK_ME_WATCHLIST = {
 /**
  * POST /api/me/watchlist in mock mode: MOCK_ME_WATCHLIST with the posted
  * ticker appended as the API answers a ticker it has just added. A ticker
- * already listed leaves the list as it is.
+ * already listed leaves the list as it is. A body without a string `ticker`
+ * answers 422 with the FastAPI validation detail.
  */
 function meWatchlistWithAdded(body: unknown): MeWatchlistResponse {
   const { ticker, source } = body as { ticker: string; source: string };
@@ -395,7 +396,17 @@ export const insightsRoutes: MockRoute[] = [
   {
     method: 'POST',
     pattern: /^\/api\/me\/watchlist$/,
-    reply: (req) => ({ body: meWatchlistWithAdded(req.body) }),
+    reply: (req) => {
+      // FastAPI's 422 for a body without a string ticker.
+      const posted = req.body as { ticker?: unknown } | null | undefined;
+      if (typeof posted?.ticker !== 'string') {
+        return {
+          status: 422,
+          body: { detail: [{ loc: ['body', 'ticker'], msg: 'field required', type: 'missing' }] },
+        };
+      }
+      return { body: meWatchlistWithAdded(req.body) };
+    },
   },
   {
     method: 'DELETE',
