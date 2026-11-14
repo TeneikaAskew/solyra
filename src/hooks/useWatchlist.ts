@@ -5,6 +5,14 @@ interface UseWatchlistOpts {
   catalystFilter?: CatalystType[];   // empty / undefined = no filter
   limit?: number;
   enabled?: boolean;
+  /** The user's own tickers; the ranker scores them beside the default list. */
+  extras?: string[];
+}
+
+/** Canonical extras list: upper-case, trimmed, deduped, sorted, comma-joined. Empty string = none. */
+export function normalizeExtras(extras: string[] | undefined): string {
+  const set = new Set((extras ?? []).map(t => t.trim().toUpperCase()).filter(Boolean));
+  return [...set].sort().join(',');
 }
 
 // ---------------------------------------------------------------------------
@@ -15,14 +23,16 @@ interface UseWatchlistOpts {
 // ---------------------------------------------------------------------------
 
 export function useWatchlist(opts: UseWatchlistOpts = {}) {
-  const { catalystFilter, limit = 10, enabled = true } = opts;
+  const { catalystFilter, limit = 10, enabled = true, extras } = opts;
+  const extrasKey = normalizeExtras(extras);
   const filterStr = (catalystFilter ?? []).filter(Boolean).join(',');
   const params = new URLSearchParams();
   if (filterStr) params.set('catalyst', filterStr);
   if (limit) params.set('limit', String(limit));
+  if (extrasKey) params.set('extras', extrasKey);
 
   return useQuery<WatchlistResponse>({
-    queryKey: ['watchlist', filterStr, limit],
+    queryKey: ['watchlist', filterStr, limit, extrasKey],
     queryFn: async () => {
       const r = await fetch(`/api/insights/watchlist?${params.toString()}`);
       if (!r.ok) throw new Error(`watchlist ${r.status}`);
