@@ -2,7 +2,7 @@
 feat_id: FEAT-INSIGHT-001
 spec: docs/superpowers/specs/2026-11-14-feat-insight-001-user-watchlist-v3.md
 branch: feature/feat-insight-001-user-watchlist-v3
-pr: null
+pr: 341
 status: ready
 ---
 
