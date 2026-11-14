@@ -687,7 +687,7 @@ const REQUEST_SAMPLES: Record<string, unknown> = {
   'POST /api/waitlist': { email: 'trader@example.com', source: 'landing-hero', website: '' },
   // src/hooks/useTickerSearch.ts:93
   'POST /api/insights/watchlist/add': { ticker: 'AAPL' },
-  // src/hooks/useUserWatchlist.ts:103
+  // src/hooks/useUserWatchlist.ts:125
   'POST /api/me/watchlist': { ticker: 'NVDA', source: 'ui' },
   // src/routes/InsightsPage.tsx:484
   'POST /api/insights/chat': {

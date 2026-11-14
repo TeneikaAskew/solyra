@@ -14,8 +14,10 @@ import {
   useUserWatchlist,
 } from './useUserWatchlist';
 
-const auth = vi.hoisted(() => ({ isSignedIn: true }));
-vi.mock('./useUser', () => ({ useUser: () => ({ isSignedIn: auth.isSignedIn }) }));
+const auth = vi.hoisted(() => ({ isSignedIn: true, uid: 'uid-a' as string | null, emailVerified: true as boolean | null }));
+vi.mock('./useUser', () => ({
+  useUser: () => ({ isSignedIn: auth.isSignedIn, uid: auth.uid, emailVerified: auth.emailVerified }),
+}));
 
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
 const fetchMock = vi.fn();
@@ -48,6 +50,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
   auth.isSignedIn = true;
+  auth.uid = 'uid-a';
+  auth.emailVerified = true;
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   container = document.createElement('div');
   document.body.append(container);
@@ -78,8 +82,10 @@ describe('useUserWatchlist', () => {
   it('a 503 is the error state with the API detail, no data and no placeholder list', async () => {
     fetchMock.mockImplementation(() => json({ detail: 'Cloud SQL unreachable' }, 503));
     await render(ListProbe);
-    await vi.waitFor(() => expect(results.list?.query.isError).toBe(true), { timeout: 4000 });
+    await settle();
+    expect(results.list?.query.isError).toBe(true);
     expect(results.list?.query.error?.message).toBe('Cloud SQL unreachable');
+    expect(calls()).toHaveLength(1);
     expect(results.list?.query.data).toBeUndefined();
     expect(results.list?.signedOut).toBe(false);
   });
@@ -87,7 +93,8 @@ describe('useUserWatchlist', () => {
   it('a non-OK response without a detail names the status', async () => {
     fetchMock.mockImplementation(() => Promise.resolve(new Response('upstream', { status: 502 })));
     await render(ListProbe);
-    await vi.waitFor(() => expect(results.list?.query.isError).toBe(true), { timeout: 4000 });
+    await settle();
+    expect(results.list?.query.isError).toBe(true);
     expect(results.list?.query.error?.message).toBe('Watchlist service 502');
   });
 
@@ -103,21 +110,45 @@ describe('useUserWatchlist', () => {
     expect(calls()).toEqual([{ url: '/api/me/watchlist', method: 'GET' }]);
   });
 
-  it('after a 401, signing out and back in fetches the list again', async () => {
+  it('a cached 401 re-enables and fetches again when another account signs in', async () => {
     fetchMock.mockImplementationOnce(() => json({ detail: 'Not authenticated' }, 401));
     await render(ListProbe);
     await settle();
     expect(results.list?.signedOut).toBe(true);
-    auth.isSignedIn = false;
-    await render(ListProbe);
-    await settle();
     fetchMock.mockImplementation(() => json(MOCK_ME_WATCHLIST));
-    auth.isSignedIn = true;
+    auth.uid = 'uid-b';
     await render(ListProbe);
     await settle();
+    expect(calls()).toHaveLength(2);
     expect(results.list?.signedOut).toBe(false);
     expect(results.list?.activeTickers).toEqual(['NVDA', 'ABCD']);
+  });
+
+  it('a cached 401 refetches when the same account becomes email-verified', async () => {
+    auth.emailVerified = false;
+    fetchMock.mockImplementationOnce(() => json({ detail: 'Not authenticated' }, 401));
+    await render(ListProbe);
+    await settle();
+    expect(results.list?.signedOut).toBe(true);
+    fetchMock.mockImplementation(() => json(MOCK_ME_WATCHLIST));
+    auth.emailVerified = true;
+    await render(ListProbe);
+    await settle();
     expect(calls()).toHaveLength(2);
+    expect(results.list?.signedOut).toBe(false);
+    expect(results.list?.activeTickers).toEqual(['NVDA', 'ABCD']);
+  });
+
+  it('signing out drops the cached list', async () => {
+    fetchMock.mockImplementation(() => json(MOCK_ME_WATCHLIST));
+    await render(ListProbe);
+    await settle();
+    expect(results.list?.activeTickers).toEqual(['NVDA', 'ABCD']);
+    auth.isSignedIn = false;
+    auth.uid = null;
+    await render(ListProbe);
+    await settle();
+    expect(client.getQueryCache().find({ queryKey: USER_WATCHLIST_KEY, exact: true })?.state.data).toBeUndefined();
   });
 
   it('signed out sends no request', async () => {
@@ -127,6 +158,25 @@ describe('useUserWatchlist', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(results.list?.signedOut).toBe(true);
     expect(results.list?.query.data).toBeUndefined();
+  });
+});
+
+describe('useUserWatchlist retry policy', () => {
+  it('follows the client default retry for a 503 but never retries a 401', async () => {
+    client = new QueryClient({ defaultOptions: { queries: { retry: 1, retryDelay: 0 } } });
+    fetchMock.mockImplementation(() => json({ detail: 'Cloud SQL unreachable' }, 503));
+    await render(ListProbe);
+    await settle();
+    expect(results.list?.query.isError).toBe(true);
+    expect(calls()).toHaveLength(2);
+    client.clear();
+    fetchMock.mockReset();
+    client = new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 0 } } });
+    fetchMock.mockImplementation(() => json({ detail: 'Not authenticated' }, 401));
+    await render(ListProbe);
+    await settle();
+    expect(results.list?.signedOut).toBe(true);
+    expect(calls()).toHaveLength(1);
   });
 });
 
@@ -175,6 +225,8 @@ describe('useDefaultWatchlist', () => {
     await settle();
     expect(calls()).toEqual([{ url: '/api/insights/watchlist/default', method: 'GET' }]);
     expect(results.defaults?.data).toEqual(MOCK_WATCHLIST_DEFAULT);
-    expect(client.getQueryCache().find({ queryKey: ['watchlist', 'default'], exact: true })?.state.data).toEqual(MOCK_WATCHLIST_DEFAULT);
+    const cached = client.getQueryCache().find({ queryKey: ['watchlist', 'default'], exact: true });
+    expect(cached?.state.data).toEqual(MOCK_WATCHLIST_DEFAULT);
+    expect(cached?.isStale()).toBe(false);
   });
 });
