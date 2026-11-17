@@ -1,6 +1,6 @@
 # Solyra
 
-**Last reviewed:** 2026-11-17 · **Depth:** verified · **Against:** `8fd25f02c6a2` · **Last scanned:** 2026-11-17 · **Owner:** TBD
+**Last reviewed:** 2026-11-17 · **Depth:** verified · **Against:** `0a44545351d6` · **Last scanned:** 2026-11-17 · **Owner:** TBD
 
 The frontend for the trading platform — a React + TypeScript single-page app
 covering the market dashboard, live quotes, charts, options/gamma analysis,
