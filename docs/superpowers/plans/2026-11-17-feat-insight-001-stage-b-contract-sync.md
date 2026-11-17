@@ -2,7 +2,7 @@
 feat_id: FEAT-INSIGHT-001
 spec: docs/superpowers/specs/2026-11-17-feat-insight-001-stage-b-contract-sync.md
 branch: fix/feat-insight-001-stage-b-contract-sync
-pr: null
+pr: 348
 status: ready
 ---
 
@@ -36,13 +36,13 @@ Spec: § Design, § Risks; advances done_when[1] and done_when[2].
 - [x] `npm run contract:check` against stocks main passes.
 - [x] No file under `src/` other than the generated types names either retired operation.
 - [x] `npx tsc -b`, the full `npx vitest run` (includes `src/mocks/contract.test.ts`) and `npm run build` pass.
-- [ ] `node scripts/docs-audit.mjs` on this branch and on main, and `python3 scripts/gate/spec_gate.py --pr origin/main`, recorded on the PR.
+- [x] `node scripts/docs-audit.mjs` on this branch and on main, and `python3 scripts/gate/spec_gate.py --pr origin/main`, recorded on the PR.
 
 ## Task 3: Open and record
 
 Spec: § Design; advances done_when[3].
-- [ ] Open the PR as a draft and set this plan's `pr`.
-- [ ] FEAT-INSIGHT-001 catalog row: Status names the sync, Last reviewed moves to the PR's date, PRs lists this PR.
+- [x] Open the PR as a draft (#348) and set this plan's `pr`.
+- [x] FEAT-INSIGHT-001 catalog row: Status names the sync, Last reviewed moves to the PR's date, PRs lists this PR.
 
 ## Out of scope
 
