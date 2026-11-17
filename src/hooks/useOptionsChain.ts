@@ -8,7 +8,19 @@ export interface OptionsResponse {
   date: string;
   options: ChainOptionRecord[];
   snapshot_timestamp: string;
-  metadata: { source: string; data_source: string; row_count: number };
+  metadata: {
+    source: string;
+    data_source: string;
+    row_count: number;
+    /** Which sides the stored rows carry (stocks PR 1916). Optional until the
+     *  contract sync that follows that PR's merge makes it required. */
+    sides_present?: 'both' | 'calls_only' | 'puts_only';
+  };
+  /** `unavailable` for a one-sided chain (stocks PR 1916): the rows are kept,
+   *  but no aggregate can be computed from them. Optional, as above. */
+  chain_state?: 'available' | 'unavailable';
+  /** Why the chain is unavailable, e.g. `puts_missing`. */
+  reason?: string | null;
   cached: boolean;
 }
 

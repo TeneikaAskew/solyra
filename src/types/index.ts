@@ -131,6 +131,9 @@ export interface MetricCardData {
   changeLabel?: string;
   /** Accent tone for a subtle left-border highlight. Defaults to neutral (no accent). */
   tone?: 'default' | 'brand' | 'bull' | 'bear' | 'warn';
+  /** Set when the value is unavailable (pass the em-dash as `value`): the card
+   *  shows the unavailable badge under it, with this text on hover. Rule 4. */
+  unavailableReason?: string;
 }
 
 // ---------------------------------------------------------------------------

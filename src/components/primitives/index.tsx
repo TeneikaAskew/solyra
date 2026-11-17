@@ -5,6 +5,7 @@
  * composes these; keep them dumb and presentational.
  */
 import type { ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 // ── Tone system ──────────────────────────────────────────────────────────────
 export type Tone = 'default' | 'bull' | 'bear' | 'warn' | 'brand';
@@ -276,5 +277,24 @@ export function CardHeader({ title, meta }: { title: ReactNode; meta?: ReactNode
       <h3 className="whitespace-nowrap text-[13px] font-semibold tracking-[-0.01em] text-[var(--on-surface)]">{title}</h3>
       {meta != null && <span className="text-[11px] tracking-[0.04em] text-[var(--on-surface-muted)]">{meta}</span>}
     </div>
+  );
+}
+
+// ── Unavailable badge ────────────────────────────────────────────────────────
+/**
+ * The badge that goes beside an em-dash for a value the backend reports as
+ * unavailable (Rule 4: the one allowed fallback is null rendered as the
+ * em-dash, ideally with this badge). `reason` is the hover text. Shared by the
+ * dashboard's movement read and the options screens.
+ */
+export function UnavailableBadge({ reason }: { reason?: string | null }) {
+  return (
+    <span
+      data-testid="unavailable-badge"
+      title={reason ?? 'data unavailable'}
+      className="inline-flex items-center gap-1 rounded bg-[var(--surface-3)] px-1.5 py-0.5 text-[10px] text-[var(--on-surface-muted)]"
+    >
+      <AlertTriangle size={10} /> data unavailable
+    </span>
   );
 }

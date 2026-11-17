@@ -66,14 +66,16 @@ export interface GammaGridSummary {
   /** `GammaRegime` today; plain string per schema — narrow with
    *  `asGammaRegime` (useGammaLevels) where a union is needed. */
   regime: string;
-  total_gex: number;
-  total_vex: number;
+  /** null when the chain cannot be aggregated (a one-sided chain, with
+   *  `reason` puts_missing or calls_missing, since stocks PR 1916). */
+  total_gex: number | null;
+  total_vex: number | null;
   cells: GammaGridCell[];
   expirations: string[]; // ascending: column headers
   strikes: number[]; // ascending: row headers
   window_pct: number;
   warnings: string[];
-  reason?: string | null; // present on the unavailable envelope
+  reason?: string | null; // the unavailable envelope's reason, or puts_missing / calls_missing for a one-sided chain
   /** Additive and nullable: null on the unavailable envelope, absent on an
    *  older server or an old cached body. */
   snapshot_provenance?: SnapshotProvenance | null;
