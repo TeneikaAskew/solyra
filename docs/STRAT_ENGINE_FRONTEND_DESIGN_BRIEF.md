@@ -8,7 +8,7 @@
 
 # Strat Engine — Frontend Design Brief
 
-**Last reviewed:** unknown · **Last scanned:** 2026-11-09 · **Owner:** TBD
+**Last reviewed:** 2026-11-16 · **Depth:** verified · **Against:** `80c82c22dab3` · **Last scanned:** 2026-11-16 · **Owner:** TBD
 
 **For:** the designer / design agent that will lay out the frontend surfaces.
 **From:** the backend + product close-out.
@@ -290,7 +290,7 @@ The Structure Brief is read primarily on desktop today (developer admins). Mobil
 Constraints if you support mobile:
 - Distribution bars at ~150px wide minimum — readable bars
 - Header strip should never wrap
-- 3-column grid collapses to 1-column at <640px (Tailwind `sm:` breakpoint)
+- 3-column grid from 1024px (`lg:`), 2 columns from 640px (`sm:`), 1 column below (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`, `StructureBrief.tsx:175`)
 - Mute reason text wraps; do NOT truncate or ellipsis it
 
 ---
@@ -335,7 +335,7 @@ The designer doesn't need to enforce this — but should be aware that **what yo
 |---|---|
 | `src/components/structure_brief/StructureBrief.tsx` | Current component implementation (cells, mute logic, distribution bars) — use as the starting code |
 | `src/components/structure_brief/StructureBrief.test.tsx` | The language audit + mute logic tests — any new copy must pass these |
-| `platform/api/routers/admin.py` (lines 173+) | API contracts for both `/structure-brief` and `/strat-engine/predict` |
+| `platform/api/routers/admin.py` (lines 217+) | API contracts for both `/structure-brief` and `/strat-engine/predict` |
 | `platform/api/main.py` (the `/dev` section) | The current /dev model-state rendering |
 | [`docs/STRUCTURE_BRIEF_DESIGN.md`](https://github.com/TeneikaAskew/stocks/blob/main/docs/STRUCTURE_BRIEF_DESIGN.md) | Track A's design rationale and deploy gate definition |
 | [`docs/STRAT_ENGINE_OPERATIONS.md`](https://github.com/TeneikaAskew/stocks/blob/main/docs/STRAT_ENGINE_OPERATIONS.md) | The full operations doc — designer should skim §1–§3 and §8 |

@@ -1,6 +1,6 @@
 # Options Flow — backend data contract (Skylit-aligned UI)
 
-**Last reviewed:** unknown · **Last scanned:** 2026-11-09 · **Owner:** TBD
+**Last reviewed:** 2026-11-16 · **Depth:** verified · **Against:** `80c82c22dab3` · **Last scanned:** 2026-11-16 · **Owner:** TBD
 
 The redesigned Options Flow page (`src/routes/OptionsFlowPage.tsx`) follows
 Skylit's product model. Three views are **real-data backed today**; two are
@@ -15,7 +15,7 @@ Both views bind Flip to the nullable backend `gamma_flip`, independently of `gam
 
 ## Historical findings — preserved 2026-10-11 observation
 
-The following findings describe the earlier observed source, not the current binding. #301 corrected flip/error/freshness binding; the production-field-truth successor addresses #87/#93 without rewriting this provenance.
+The following findings describe the earlier observed source, not the current binding. #301 corrected flip/error/freshness binding; the production-field-truth successor addressed #87/#93 (both closed as completed on 2026-11-11) without rewriting this provenance.
 
 **Corrected 2026-10-11: Swing was misclassified as mock.** `SwingMode.tsx`'s
 heatmap grid and pivot rail are real. `useGammaGrid` reads
@@ -43,7 +43,7 @@ tactical read, and those chips and rows render unlabeled.
 
 **The Flip on Profiles and Swing is the balance price or the strikes beside
 it, not the zero-gamma level** (TeneikaAskew/solyra#89). `/levels` returns two
-levels (`src/hooks/useGammaLevels.ts:45-49`): `gamma_balance`, the gamma-median
+levels (`src/hooks/useGammaLevels.ts:65-68`): `gamma_balance`, the gamma-median
 balance price, with half the chain's absolute gamma below it and half above
 (formerly mislabeled `flip`; `compute_gamma_balance` in stocks `lib/gamma.py`),
 and `gamma_flip`, the Black-Scholes zero-gamma level that divides the regimes. Swing sets its Flip to
@@ -58,8 +58,8 @@ show the strikes on either side of the balance price instead: one chip per
 entry in `gamma_balance_levels`, which stocks fills with the nearest strike at
 or below the balance price and the nearest at or above it (`classify_levels` in
 [`lib/gamma.py`](https://github.com/TeneikaAskew/stocks/blob/main/lib/gamma.py)).
-The typed mock has a 219.5 balance and a 219 chip (`src/mocks/options.ts:204`,
-`:217`). Each chip is titled "Adjacent to flip @" with the balance price
+The typed mock has a 219.5 balance and a 219 chip (`src/mocks/options.ts:218`,
+`:231`). Each chip is titled "Adjacent to flip @" with the balance price
 (`ProfilesTab.tsx:568-575`). Until solyra's mapping reads `gamma_flip`, read
 the Flip on Swing and Profiles' Gamma Flip card as the balance price, and
 Profiles' Flip chips as the strikes beside it.

@@ -1,6 +1,6 @@
 # Documentation registry
 
-**Last reviewed:** unknown · **Last scanned:** 2026-11-09 · **Owner:** TBD
+**Last reviewed:** unknown · **Last scanned:** 2026-11-16 · **Owner:** TBD
 
 Which documents this repo maintains, who owns each one, and what code each one
 describes. `scripts/docs-audit.mjs` reads the tables below; the prose around
@@ -120,6 +120,7 @@ renames are ignored, so a file-move wave does not flag every document.
 | C | docs/journal-one-stop-shop-design.md | | |
 | C | docs/solyra-landing-page-design.md | | |
 | C | docs/superpowers/**/*.md | | |
+| C | roadmap.md | | |
 | D | README.md | package.json, vite.config.ts, playwright.config.ts, scripts/e2e-server.mjs, scripts/docs-audit.test.mjs, tests, tsconfig.json, src/index.css | |
 | D | CLAUDE.md | src/lib/authedFetch.ts, src/lib/apiTargets.ts, vite.config.ts, .github/workflows, AGENTS.md, tests, playwright.config.ts, package.json | |
 | D | FRONTEND.md | src/routes, src/components, src/hooks, src/stores, src/lib, src/types, src/mocks, src/App.tsx, vite.config.ts, tsconfig.app.json, tsconfig.node.json, tsconfig.test.json, playwright.config.ts, package.json, tests, scripts/e2e-server.mjs, README.md | |
@@ -176,6 +177,6 @@ different thing.
 | FRONTEND.md | \((\d+) of them, one the | grep-count src/components/layout/navConfig.ts \{ path: ' |
 | FRONTEND.md | The (\d+) modules with TanStack Query imports | grep-files src/hooks from '@tanstack/react-query' |
 | FRONTEND.md | (\d+) stores in | grep-files src/stores ^export const use[A-Za-z]+Store = create |
-| FRONTEND.md | (\d+) of the \d+ modules | grep-files src/lib from 'vitest' |
+| FRONTEND.md | (\d+) test files cover | grep-files src/lib from 'vitest' |
 | FRONTEND.md | \d+ of the (\d+) modules | grep-files src/lib ^export[[:space:]] |
-| FRONTEND.md | The (\d+) non-GET call sites | grep-count src/hooks,src/routes,src/components/landing/waitlist.ts method: '(POST\|PUT\|PATCH\|DELETE)' |
+| FRONTEND.md | (\d+) `method:` literals counting | grep-count src/hooks,src/routes,src/components/landing/waitlist.ts method: '(POST\|PUT\|PATCH\|DELETE)' |
