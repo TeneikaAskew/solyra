@@ -8,7 +8,7 @@ done_when:
   - "tests/options/one-sided-chain.spec.ts passes: /options with the chain, greeks, levels and grid answered by page.route with the stocks PR 1916 one-sided payloads raises no page error; on the Profiles tab Total GEX, Total VEX, Max Pain, Put/Call OI, Gamma Flip and Gamma Balance each show the em-dash with an unavailable badge and no Positive, Negative or skew label, and a notice names the missing side; on the Gamma Map the heatmap names the missing side and a one-sided grid's Total VEX beside complete levels shows the em-dash with an unavailable badge; the spec saves profiles-calls-only-gex.png, profiles-calls-only-vex.png, profiles-puts-only.png, gamma-map-calls-only.png and gamma-map-one-sided-grid-total.png, and the same spec run against main fails on the TypeError from put_call_ratio.toFixed"
   - "npm run e2e -- tests/options --trace off passes, with tests/options/profiles-balance-flip.spec.ts expecting the em-dash where it expected -- for an absent Gamma Flip or Gamma Balance; tests/fixtures/stocks-openapi.json and every mock-mode payload are unchanged, so src/mocks/contract.test.ts still validates each mock against the vendored schema"
   - "The hand-written types accept both the current and the stocks PR 1916 payloads: OptionsMetrics total_gex, total_vex and put_call_ratio, GammaLevelsResponse total_gex and GammaGridSummary total_gex and total_vex are number | null; GreeksResponse and GammaLevelsResponse carry an optional reason; OptionsResponse carries optional chain_state, reason and metadata.sides_present; src/types/assignability.ts compiles against the vendored types"
-  - "npm run build, npm run lint and npm test pass on the branch"
+  - "npm run build, npm test and npm run contract:check pass on the branch, and npm run lint reports no problem on the branch that origin/main does not (CI does not gate lint, which exits 1 on main)"
   - "node scripts/docs-audit.mjs reports no finding on the branch that origin/main does not, and python3 scripts/gate/spec_gate.py --pr origin/main is clean"
   - "The FEAT-OPTION-001 catalog row shows a current Status and Last reviewed and lists the PR"
 status: approved
@@ -111,7 +111,8 @@ presentation module):
   local copy duplicates), so a reported zero stays `+0`; the em-dash for null, undefined or a non-finite value.
 - `exposureDirection(v)` and `putCallSkew(v)`: the existing Positive or Negative and Bearish or Bullish skew labels for
   a reported number, `undefined` (no label) for a missing one.
-- `putCallRatioText(v)` and `strikePriceText(v, digits)`: two-decimal ratio or a dollar price, the em-dash otherwise.
+- `putCallRatioText(v)` and `strikePriceText(v, digits)`: two-decimal ratio or a dollar price, the em-dash otherwise;
+  `reportedNumber(v)`: the backend number, or null when it reported none.
 - `asPartialChainReason(reason)`, `summaryPartialChain(summary)` (regime `unknown`, `total_gex` null and reason
   `puts_missing` or `calls_missing`, the PR 1916 detection rule for levels, grid and nodes) and
   `chainUnavailableReason(chain)` (`chain_state` `unavailable` with its `reason`, or `sides_present` `calls_only` or
