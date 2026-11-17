@@ -70,13 +70,18 @@ export interface GammaLevelsResponse {
   /** GammaRegime values today; plain string per schema — narrow with
    *  `asGammaRegime` before palette lookups. */
   regime: string;
-  total_gex: number;
+  /** null when the chain cannot be aggregated (a one-sided chain since stocks
+   *  PR 1916): unavailable, never zero. */
+  total_gex: number | null;
   levels: GammaLevel[];
   kings: GammaLevel[];
   gates: GammaLevel[];
   gamma_balance_levels: GammaLevel[];
   window_pct: number;
   warnings: string[];
+  /** Machine reason for an unavailable summary (stocks PR 1916): `puts_missing`
+   *  or `calls_missing` for a one-sided chain. Absent on a complete chain. */
+  reason?: string | null;
   snapshot_timestamp?: string | null;
   chain_size: number;
   /** Additive and nullable: absent on an older server or an old cached body. */

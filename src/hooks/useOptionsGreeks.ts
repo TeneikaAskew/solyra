@@ -60,13 +60,17 @@ export interface GEXByStrike {
   put_gex: number;
 }
 
+/** `total_gex`, `total_vex` and `put_call_ratio` are null when the backend
+ *  cannot aggregate the chain: a one-sided, empty or spotless chain (stocks
+ *  PR 1916, FEAT-OPTION-001), with `GreeksResponse.reason` saying why. Null is
+ *  unavailable, never zero: render it with the gammaPresentation helpers. */
 export interface OptionsMetrics {
-  total_gex: number;
-  total_vex: number;
+  total_gex: number | null;
+  total_vex: number | null;
   zero_gamma?: number | null;
   max_pain?: number | null;
   implied_move?: number | null;
-  put_call_ratio: number;
+  put_call_ratio: number | null;
 }
 
 export interface StrikeNode {
@@ -99,6 +103,9 @@ export interface GreeksResponse {
   metrics: OptionsMetrics;
   nodes: NodeResult;
   config: GreeksConfig;
+  /** Why the metrics are null (stocks PR 1916): `puts_missing`,
+   *  `calls_missing`, `empty_chain` or `spot_unavailable`. Absent otherwise. */
+  reason?: string | null;
 }
 
 export function useOptionsGreeks(
@@ -145,13 +152,15 @@ export function useOptionsGreeks(
 export const EMPTY_GREEKS: GreeksResponse = {
   aggregated: [],
   gex_by_strike: [],
+  // Placeholder while no analytics are available: every metric is null
+  // (unavailable), never a zero that reads as a measured flat chain (Rule 4).
   metrics: {
-    total_gex: 0,
-    total_vex: 0,
+    total_gex: null,
+    total_vex: null,
     zero_gamma: null,
     max_pain: null,
     implied_move: null,
-    put_call_ratio: 0,
+    put_call_ratio: null,
   },
   nodes: { kingNode: null, gatekeepers: [], midpoints: [], allNodes: [] },
   config: { strike_range_pct: 0.15, atm_tolerance: 0.02, node_min_gamma: 500 },

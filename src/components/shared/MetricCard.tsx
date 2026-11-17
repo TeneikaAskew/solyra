@@ -1,4 +1,5 @@
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { UnavailableBadge } from '@/components/primitives';
 import type { MetricCardData } from '@/types';
 
 const toneAccent: Record<NonNullable<MetricCardData['tone']>, string> = {
@@ -27,6 +28,7 @@ export function MetricCard({
   change,
   changeLabel,
   tone = 'default',
+  unavailableReason,
 }: MetricCardData) {
   // Resolve direction: prefer new `direction` prop, fall back to legacy `change` number
   const dir = direction ?? (change !== undefined ? (change >= 0 ? 'up' : 'down') : undefined);
@@ -53,8 +55,9 @@ export function MetricCard({
     >
       <p className="label-micro truncate">{label}</p>
       <p className="metric-value mt-3 truncate">{value}</p>
-      {(dir || subtitle || changeLabel) && (
+      {(dir || subtitle || changeLabel || unavailableReason !== undefined) && (
         <div className="mt-2 flex items-center gap-1.5">
+          {unavailableReason !== undefined && <UnavailableBadge reason={unavailableReason} />}
           {dir === 'up' && <TrendingUp size={12} className="text-[var(--bull)] shrink-0" />}
           {dir === 'down' && <TrendingDown size={12} className="text-[var(--bear)] shrink-0" />}
           {dir === 'neutral' && <Minus size={12} className="text-[var(--on-surface-muted)] shrink-0" />}

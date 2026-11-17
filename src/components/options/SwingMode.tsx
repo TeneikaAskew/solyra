@@ -1,5 +1,13 @@
 import { useMemo, useState } from 'react';
-import { gammaPrices, storedSnapshotClock, storedSnapshotDetail, STORED_SNAPSHOT_LABEL } from './gammaPresentation';
+import {
+  gammaPrices,
+  storedSnapshotClock,
+  storedSnapshotDetail,
+  STORED_SNAPSHOT_LABEL,
+  summaryPartialChain,
+  unavailableReasonText,
+} from './gammaPresentation';
+import { UnavailableBadge } from '@/components/primitives';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLatestOptionsDate } from '@/hooks/useOptionsDates';
 import { useNavigate } from 'react-router-dom';
@@ -306,7 +314,15 @@ function Toolbar({
 }
 
 // ─── Legend chips strip ────────────────────────────────────────
-function Legend({ overlay }: { overlay: RealOverlay }) {
+/** Why a legend value is missing, per source response; undefined while that
+ *  response has not answered (the em-dash then shows without a badge). */
+interface LegendReasons {
+  totalGex?: string;
+  totalVex?: string;
+  prices?: string;
+}
+
+function Legend({ overlay, reasons }: { overlay: RealOverlay; reasons: LegendReasons }) {
   const gateAbove = overlay.gateAbove;
   const gateBelow = overlay.gateBelow;
   const regimePositive = overlay.regime === 'positive_gamma';
@@ -388,10 +404,15 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
             <Term k="flip">Flip</Term>
           </div>
           <div className="val">{overlay.flipStrike != null ? overlay.flipStrike.toFixed(2) : '—'}</div>
+          {overlay.flipStrike == null && reasons.prices !== undefined && <UnavailableBadge reason={reasons.prices} />}
         </div>
       </span>
       <span className="chip balance" title="Absolute net-gamma median; not the true zero-gamma flip">
-        <div><div className="label">Gamma Balance</div><div className="val">{overlay.balanceStrike != null ? overlay.balanceStrike.toFixed(2) : '—'}</div></div>
+        <div>
+          <div className="label">Gamma Balance</div>
+          <div className="val">{overlay.balanceStrike != null ? overlay.balanceStrike.toFixed(2) : '—'}</div>
+          {overlay.balanceStrike == null && reasons.prices !== undefined && <UnavailableBadge reason={reasons.prices} />}
+        </div>
       </span>
       <span className="chip">
         <div>
@@ -407,6 +428,7 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
             Total <Term k="gex">GEX</Term>
           </div>
           <div className="val">{fmtBigGex(overlay.totalGex)}</div>
+          {overlay.totalGex == null && reasons.totalGex !== undefined && <UnavailableBadge reason={reasons.totalGex} />}
         </div>
       </span>
       <span className="chip">
@@ -417,6 +439,7 @@ function Legend({ overlay }: { overlay: RealOverlay }) {
           <div className="val" style={{ color: '#ef4444' }}>
             {fmtBigGex(overlay.totalVex)}
           </div>
+          {overlay.totalVex == null && reasons.totalVex !== undefined && <UnavailableBadge reason={reasons.totalVex} />}
         </div>
       </span>
     </div>
@@ -540,7 +563,10 @@ function RealHeatmapGrid({
     );
   }
   if (isError || !summary || summary.data_source === 'unavailable' || !built || built.columns.length === 0) {
-    const reason = unavailableReason ?? summary?.reason ?? summary?.warnings?.[0] ?? 'No options grid available for this symbol.';
+    // A one-sided chain's machine reason (stocks PR 1916) reads as words.
+    const reason = unavailableReasonText(
+      unavailableReason ?? summary?.reason ?? summary?.warnings?.[0] ?? 'No options grid available for this symbol.',
+    );
     return (
       <div className="card-i hs-grid-card">
         {Header}
@@ -832,6 +858,19 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
 
   const storedGrid = !!grid && PRESENT_SOURCES.has(grid.data_source);
 
+  // Why each legend value is missing, from the response it came from (the
+  // overlay's step 1 reads levels, step 2 the grid). A one-sided chain names
+  // its missing side (stocks PR 1916); a failed or unavailable grid says so.
+  const levelsReason = unavailableReasonText(summaryPartialChain(levels));
+  const gridAnswered = !!grid || gridQuery.isError || !!gridQuery.unavailableData;
+  const gridReason = unavailableReasonText(
+    summaryPartialChain(grid) ?? gridQuery.unavailableData?.reason ?? (gridQuery.isError ? 'gamma grid unavailable' : null),
+  );
+  const legendReasons: LegendReasons =
+    levels && levels.levels.length > 0
+      ? { totalGex: levelsReason, totalVex: gridAnswered ? gridReason : undefined, prices: levelsReason }
+      : { totalGex: gridReason, totalVex: gridReason, prices: levels ? levelsReason : gridReason };
+
   return (
     <div className="col" style={{ gap: 14 }}>
       {/* Source identity is evidence of the snapshot, not verified quote freshness. */}
@@ -873,7 +912,7 @@ export default function SwingMode({ focusSymbol }: SwingModeProps) {
           Source warnings: {(grid?.warnings ?? gridQuery.unavailableData?.warnings ?? []).join('; ') || gridQuery.unavailableData?.reason}
         </div>
       )}
-      {overlay.isReal && <Legend overlay={overlay} />}
+      {overlay.isReal && <Legend overlay={overlay} reasons={legendReasons} />}
 
       <div className="hs-stage">
         <div>

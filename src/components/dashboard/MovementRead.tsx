@@ -21,8 +21,8 @@
 // "—" plus a small "data unavailable" badge. We NEVER fabricate a number.
 // ---------------------------------------------------------------------------
 
-import { AlertTriangle, Activity } from 'lucide-react';
-import { Card, CardHeader } from '@/components/primitives';
+import { Activity } from 'lucide-react';
+import { Card, CardHeader, UnavailableBadge } from '@/components/primitives';
 import { useState } from 'react';
 import { acceptsScreenWrite, readScoped, writeScoped } from '@/lib/authGate';
 import { useMovementStatement } from '@/hooks/useMovementStatement';
@@ -78,17 +78,8 @@ export function isLowSample(rr: ReachRate | null | undefined): boolean {
 // Small shared badges.
 // ---------------------------------------------------------------------------
 
-export function UnavailableBadge({ reason }: { reason?: string | null }) {
-  return (
-    <span
-      data-testid="unavailable-badge"
-      title={reason ?? 'data unavailable'}
-      className="inline-flex items-center gap-1 rounded bg-[var(--surface-3)] px-1.5 py-0.5 text-[10px] text-[var(--on-surface-muted)]"
-    >
-      <AlertTriangle size={10} /> data unavailable
-    </span>
-  );
-}
+// UnavailableBadge lives in '@/components/primitives', shared with the options
+// screens.
 
 export function LowSampleBadge({ sampleN }: { sampleN?: number | null }) {
   return (

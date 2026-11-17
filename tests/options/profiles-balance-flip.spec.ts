@@ -24,7 +24,7 @@ test('Gamma Map binds true flip, not unequal balance',async({page},info)=>{
 test('Profiles does not substitute balance or legacy greek zero_gamma for absent true flip',async({page},info)=>{
  await setup(page,base);await page.getByRole('button',{name:'Profiles',exact:true}).click();
  const flip=page.locator('div.rounded-xl').filter({has:page.getByText('Gamma Flip',{exact:true})});
- await expect(flip.locator('.metric-value')).toHaveText('--',{timeout:3000});
+ await expect(flip.locator('.metric-value')).toHaveText('\u2014',{timeout:3000});
  await expect(page.getByText('Gamma Balance',{exact:true})).toBeVisible();
  await expect(page.getByText(/Balance level \$/)).toHaveCount(base.levels.gamma_balance_levels.length);
  await expect(page.getByText(/Source: cloud_sql/)).toContainText('2026-10-27 15:55 ET');
@@ -72,7 +72,7 @@ test('Profiles empty chain plus unavailable levels does not invent zero exposure
  await expect(page.getByText('No options data returned for IWM on 2026-10-27')).toBeVisible();
  await expect(page.getByText('Total GEX',{exact:true})).toHaveCount(0);
  await expect(page.getByRole('alert')).toContainText('Gamma levels unavailable');
- const prices=page.getByLabel('Backend gamma prices');await expect(prices.locator('.metric-value')).toHaveText(['--','--']);
+ const prices=page.getByLabel('Backend gamma prices');await expect(prices.locator('.metric-value')).toHaveText(['\u2014','\u2014']);
  await page.screenshot({path:info.outputPath('profiles-empty-unavailable.png'),fullPage:true});
 });
 test('Profiles failed analytics cannot display cached or placeholder zero totals',async({page},info)=>{

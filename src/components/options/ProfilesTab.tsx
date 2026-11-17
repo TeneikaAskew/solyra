@@ -19,7 +19,20 @@ import {
 import type { Ticker } from '@/types';
 import * as d3 from 'd3';
 import { estimateSpotStrikeFromDeltas } from './swingGridUtils';
-import { batchSnapshotLabel, gammaPrices } from './gammaPresentation';
+import {
+  asPartialChainReason,
+  batchSnapshotLabel,
+  chainUnavailableReason,
+  exposureDirection,
+  exposureTotalText,
+  gammaPrices,
+  putCallRatioText,
+  putCallSkew,
+  reportedNumber,
+  strikePriceText,
+  summaryPartialChain,
+  unavailableReasonText,
+} from './gammaPresentation';
 import { ChevronLeft, ChevronRight, AlertTriangle, Info, RefreshCw } from 'lucide-react';
 import { WidgetSkeleton } from '@/components/shared/WidgetState';
 
@@ -306,10 +319,32 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
     ? gexData.filter(d => Math.abs(d.strike - finalSpot) / finalSpot <= rangePct)
     : gexData;
 
+  // null since stocks PR 1916 when the chain cannot be aggregated: rendered as
+  // the em-dash with an unavailable badge, never as +0 (Rule 4).
   const totalGex = metrics.total_gex;
   const totalVex = metrics.total_vex;
 
   const displayMetricGex = metric === 'gex' ? totalGex : totalVex;
+  const exposureDir = exposureDirection(displayMetricGex);
+  const skew = putCallSkew(metrics.put_call_ratio);
+
+  // A one-sided chain (stocks PR 1916) keeps its rows but every aggregate is
+  // null. The chain says so in chain_state / sides_present; greeks and levels
+  // say so in `reason`. An older payload says nothing and takes the usual path.
+  const partialReason =
+    chainUnavailableReason(optionsData) ??
+    asPartialChainReason(availableGreeks?.reason) ??
+    summaryPartialChain(gammaLevels);
+  const metricsReason = unavailableReasonText(availableGreeks?.reason ?? partialReason);
+  // The gamma prices are unavailable once /levels has answered or failed; while
+  // it loads they show the em-dash without the badge.
+  const pricesReason = levelsQuery.isError
+    ? 'gamma levels unavailable'
+    : gammaLevels
+      ? unavailableReasonText(gammaLevels.reason ?? partialReason)
+      : undefined;
+  const unavailableIf = (value: unknown, reason: string | undefined) =>
+    reportedNumber(value) == null ? reason : undefined;
 
   return (
     <div className="space-y-6">
@@ -457,6 +492,25 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         </div>
       )}
 
+      {/* One-sided chain (stocks PR 1916): say which side is missing and that
+          the aggregates are unavailable, not zero. */}
+      {partialReason && (
+        <div
+          role="status"
+          aria-label="Chain completeness"
+          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-[var(--warn)]"
+        >
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <div>
+            <div className="font-semibold">Incomplete options chain: {unavailableReasonText(partialReason)}.</div>
+            <div className="mt-1 text-xs text-[var(--warn)]/90">
+              Exposure totals, put/call ratio, max pain, gamma flip and gamma balance are unavailable for this
+              snapshot, not zero.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Server-side warnings (e.g. median-strike fallback used) */}
       {gammaLevels?.warnings && gammaLevels.warnings.length > 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-300">
@@ -477,26 +531,29 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <MetricCard
             label={`Total ${metric.toUpperCase()}`}
-            value={formatGEX(displayMetricGex)}
-            change={displayMetricGex >= 0 ? 1 : -1}
-            changeLabel={displayMetricGex >= 0 ? 'Positive' : 'Negative'}
+            value={exposureTotalText(displayMetricGex)}
+            change={exposureDir?.change}
+            changeLabel={exposureDir?.label}
+            unavailableReason={unavailableIf(displayMetricGex, metricsReason)}
           />
           <MetricCard
             label="Max Pain"
-            value={metrics.max_pain ? `$${metrics.max_pain.toFixed(0)}` : '--'}
+            value={strikePriceText(metrics.max_pain, 0)}
+            unavailableReason={unavailableIf(metrics.max_pain, metricsReason)}
           />
           <MetricCard
             label="Put/Call OI"
-            value={metrics.put_call_ratio.toFixed(2)}
-            change={metrics.put_call_ratio > 1 ? -1 : 1}
-            changeLabel={metrics.put_call_ratio > 1 ? 'Bearish skew' : 'Bullish skew'}
+            value={putCallRatioText(metrics.put_call_ratio)}
+            change={skew?.change}
+            changeLabel={skew?.label}
+            unavailableReason={unavailableIf(metrics.put_call_ratio, metricsReason)}
           />
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-2" aria-label="Backend gamma prices">
-        <MetricCard label="Gamma Flip" value={flip != null ? `$${flip.toFixed(2)}` : '--'} subtitle="True zero-gamma level · backend price" />
-        <MetricCard label="Gamma Balance" value={balance != null ? `$${balance.toFixed(2)}` : '--'} subtitle="Absolute net-gamma median · not the flip" />
+        <MetricCard label="Gamma Flip" value={strikePriceText(flip, 2)} subtitle="True zero-gamma level · backend price" unavailableReason={unavailableIf(flip, pricesReason)} />
+        <MetricCard label="Gamma Balance" value={strikePriceText(balance, 2)} subtitle="Absolute net-gamma median · not the flip" unavailableReason={unavailableIf(balance, pricesReason)} />
       </div>
       {/* Regime + Levels taxonomy (balance levels are not zero-gamma flips) */}
       {gammaLevels && finalSpot > 0 && (
@@ -593,7 +650,11 @@ export default function ProfilesTab({ activeTicker }: ProfilesTabProps) {
       {metric === 'vex' && availableGreeks && finalSpot > 0 && (
         <div role="status" className="rounded-xl bg-[var(--surface-2)] p-3">
           <h3>Per-strike VEX unavailable</h3>
-          <p>The current chain analytics provide a VEX total, but no per-strike VEX profile.</p>
+          <p>
+            {reportedNumber(totalVex) == null
+              ? 'The chain analytics provide neither a VEX total nor a per-strike VEX profile for this snapshot.'
+              : 'The current chain analytics provide a VEX total, but no per-strike VEX profile.'}
+          </p>
         </div>
       )}
 
