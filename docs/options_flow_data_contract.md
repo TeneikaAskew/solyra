@@ -1,6 +1,6 @@
 # Options Flow — backend data contract (Skylit-aligned UI)
 
-**Last reviewed:** 2026-11-17 · **Depth:** verified · **Against:** `8fd25f02c6a2` · **Last scanned:** 2026-11-17 · **Owner:** TBD
+**Last reviewed:** 2026-11-17 · **Depth:** verified · **Against:** `0a44545351d6` · **Last scanned:** 2026-11-17 · **Owner:** TBD
 
 The redesigned Options Flow page (`src/routes/OptionsFlowPage.tsx`) follows
 Skylit's product model. Three views are **real-data backed today**; two are
@@ -11,7 +11,7 @@ This doc specifies the endpoints needed to make the mocked views real.
 
 Gamma renders actual independently dated grid and levels responses. Static SPY Hedge/Midpoint values and Tactical scenarios are removed; Tactical is explicitly unavailable for the selected symbol because no backend narrative is supplied. No guessed replacement node or price is inserted. Flow's separately labelled Demo feed/drilldown remains unchanged.
 
-Both views bind Flip to the nullable backend `gamma_flip`, independently of `gamma_balance`; actual zero, source dates and request/error recovery remain distinct. Profiles renders a GEX strike chart only in GEX mode. VEX uses the supplied `total_vex` (including zero), but explicitly says per-strike VEX is unavailable because the response provides no VEX strike profile. It does not relabel `gex_by_strike` or compute replacement financial values. These source changes require separate deployment verification.
+Both views bind Flip to the nullable backend `gamma_flip`, independently of `gamma_balance`; actual zero, source dates and request/error recovery remain distinct. Profiles renders a GEX strike chart only in GEX mode. VEX uses the supplied `total_vex` (including zero), but explicitly says per-strike VEX is unavailable because the response provides no VEX strike profile. It does not relabel `gex_by_strike` or compute replacement financial values. A one-sided chain (stocks #1916) answers with null totals and a null put/call ratio: Profiles and the Gamma Map render each as the em-dash with a data-unavailable badge and name the missing side, and never show `+0` (#351). These source changes require separate deployment verification.
 
 ## Historical findings — preserved 2026-10-11 observation
 
