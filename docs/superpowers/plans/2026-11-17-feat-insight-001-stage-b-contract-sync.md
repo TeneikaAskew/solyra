@@ -3,7 +3,7 @@ feat_id: FEAT-INSIGHT-001
 spec: docs/superpowers/specs/2026-11-17-feat-insight-001-stage-b-contract-sync.md
 branch: fix/feat-insight-001-stage-b-contract-sync
 pr: 348
-status: ready
+status: done
 ---
 
 # Stage B contract sync implementation plan
