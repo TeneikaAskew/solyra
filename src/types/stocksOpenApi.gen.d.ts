@@ -1200,10 +1200,8 @@ export interface paths {
         post?: never;
         /**
          * Remove From Watchlist
-         * @description Soft-delete a ticker from the watchlist (sets removed_at=NOW()).
-         *
-         *     Persists to the `watchlists` Cloud SQL table; the alert_config.json
-         *     file is no longer touched at runtime — it's a seed-only artefact.
+         * @deprecated
+         * @description Retired (FEAT-INSIGHT-001 stage B): answers 410 and writes nothing.
          */
         delete: operations["remove_from_watchlist_api_insights_watchlist__ticker__delete"];
         options?: never;
@@ -1222,15 +1220,8 @@ export interface paths {
         put?: never;
         /**
          * Add To Watchlist
-         * @description Add a ticker to the watchlist and return its info + quote.
-         *
-         *     Persists to the `watchlists` Cloud SQL table (durable, per-user)
-         *     instead of the old `alert_config.json` file path which only existed
-         *     on the Cloud Run service's ephemeral filesystem and never reached
-         *     the fetcher containers.
-         *
-         *     Fetches AV OVERVIEW (cached) and GLOBAL_QUOTE so the UI can
-         *     immediately display the ticker details without a second round-trip.
+         * @deprecated
+         * @description Retired (FEAT-INSIGHT-001 stage B): answers 410 and writes nothing.
          */
         post: operations["add_to_watchlist_api_insights_watchlist_add_post"];
         delete?: never;
@@ -7578,6 +7569,13 @@ export interface operations {
                     "application/json": components["schemas"]["WatchlistRemoveResponse"];
                 };
             };
+            /** @description The web write path is retired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -7610,6 +7608,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WatchlistAddResponse"];
                 };
+            };
+            /** @description The web write path is retired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
