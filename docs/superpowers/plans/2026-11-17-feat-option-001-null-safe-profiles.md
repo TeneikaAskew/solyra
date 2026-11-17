@@ -2,7 +2,7 @@
 feat_id: FEAT-OPTION-001
 spec: docs/superpowers/specs/2026-11-17-feat-option-001-null-safe-profiles.md
 branch: fix/feat-option-001-null-safe-profiles
-pr: null
+pr: 351
 status: ready
 ---
 
